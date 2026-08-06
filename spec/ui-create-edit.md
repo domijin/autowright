@@ -571,10 +571,10 @@ editors enter with
   nothing must not draw the eye), and at most one accent-primary button ever renders:
   **Sync now** while out of sync. Every other panel button is a compact borderless **text
   button** (the card-header treatment above — never a bordered or filled box): the state's
-  main action (Test the draft / Test again / a live test's Cancel) muted, every other
-  action (View run, Analyze the failure, the test-parameter and trigger-mock toggles, Sync
-  with spec) faint — the test button included: a failed test never blocks saving, so
-  testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
+  main actions (the Test the draft / Test again setup toggle, the setup section's Run
+  test, a live test's Cancel) muted, every other action (View run, Analyze the failure,
+  Sync with spec) faint — the test controls included: a failed test never blocks saving,
+  so testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
   space runs out — a panel button is never clipped.
   **Layout.** The header row holds only the `BUILD & TEST` eyebrow, never a button. In
   states 1–3 (drafting, sync in flight, out of sync) a **build zone** renders below it:
@@ -604,28 +604,30 @@ editors enter with
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
   4. **In sync, test executing** — the live status line, progress bar, and the action row
-     Cancel + View run + the disabled faint **Sync with spec** (below).
+     Cancel + View run + the disabled faint **Sync with spec** (below); the test-setup
+     section stays hidden while the test executes.
   5. **In sync, test settled** — the outcome line over the action row **Test again** /
-     **View run** / faint **Sync with spec** and, on failure, **Analyze the failure**,
-     which sends the canned analyze chat message (below).
-  6. **In sync, never tested** — one action row: muted **Test the draft** beside the
-     toggle buttons and the faint **Sync with spec**, with the plain-words
-     status-and-side-effects line — "In sync with the spec. A test executes the real
-     steps on this Mac — emails send, files move; memory is a scratch copy." — wrapping
-     below the buttons when space runs out.
-  The test-parameter section (below) renders only in the in-sync states (4–6): the
-  toggle button hides while a test is executing; the expanded editors persist
-  through every in-sync state. The Test
-  button is additionally gated on steps existing and no §8 job being in flight (inputs-lock
-  above).
+     faint **Sync with spec** / **View run** and, on failure, **Analyze the failure**,
+     which sends the canned analyze chat message (below). Test again is the same setup
+     toggle as state 6 — reopening shows the values the last test used.
+  6. **In sync, never tested** — one action row: the muted **Test the draft** setup
+     toggle directly beside the faint **Sync with spec** — always side by side, nothing
+     between them — with the plain-words status-and-side-effects line — "In sync with
+     the spec. A test executes the real steps on this Mac — emails send, files move;
+     memory is a scratch copy." — wrapping below the buttons when space runs out.
+  The test-setup section (below) renders only in the in-sync states (4–6) and never
+  while a test is executing. **Run test** is additionally gated on steps existing and no
+  §8 job being in flight (inputs-lock above); the setup toggle disables under the same
+  inputs-lock.
   **Test** — executes the draft's **real steps** as a **test execution record** (§4.5:
   `test: true`, `ver: "Test"`, `trigger: "Test"`) through the exact engine path a real
   execution takes (there is no simulation mode): the record and its `steps/` (the sent
   draft's scripts), `workspace/`, `result/`, and per-step-attempt logs all live under
   `executions/<uuid>/`, progress streams over the ordinary `exec.*` WS events, and the
   result, failure diagnostics, and secret redaction work exactly as in §7. The panel's
-  test button reads **"Test the draft"** ("Test again" once a test outcome exists;
-  Cancel while a test is executing) — never "Execute", which is reserved for real
+  setup toggle reads **"Test the draft"** ("Test again" once a test outcome exists;
+  a live test shows Cancel in its place) and the setup section's run button reads
+  **"Run test"** — never "Execute", which is reserved for real
   executions (§4.4 "Execute draft", §7 "Execute again"). A test uses: in-editor param
   values and grants (never the stored automation's), and **scratch memory** — copied to a
   temp dir from the draft container's `memory/` when it exists (edit mode falls back to
@@ -638,43 +640,47 @@ editors enter with
   (one per draft container, and one **live** test per container: §19 answers 409), and a
   settled draft (discard, save as vN+1, Create, Start over) deletes its test records.
   Deleting the automation deletes them too.
-  **Test parameter values (create and edit mode):** when the draft has params, a faint
-  toggle text button (button treatment above) rides the test zone's action row beside the
-  test button — never a strip of
-  its own between dividers, and it never moves. Collapsed it reads "Set test
-  parameters"; pressing it expands the editors as a section **below** the action row,
-  opened by a dim hairline (the zone's top hairline stays the only full divider): the
-  `PARAMETER VALUES · THIS TEST ONLY` eyebrow header, then
-  one editor per param (§4.2 kinds), prefilled in edit mode with the automation's
-  current values (draft default when a param is new) and in create mode with the draft
-  defaults. The edited values ride the §19 `paramValues` body field and apply to this test
-  only — nothing is stored, and the read-only Parameters card is untouched. Left collapsed,
-  the test uses the automation's stored values (edit) or the draft defaults (create), exactly
-  like executing the draft. The same button collapses the section back: while expanded its
-  label switches to "Use current values" in edit mode and "Use defaults" in create mode. The resolved values are snapshotted on the test record, so
-  its execution page shows them like any execution's. Side effects outside memory are real
-  (emails send, files move, notifications post per settings) and the card says so plainly.
-  **Test trigger message (create and edit mode):** when the editor's trigger list (the
-  TRIGGERS card list) holds a message trigger (§4.3 discord/imessage, `off` state
-  irrelevant), a second toggle rides the same action row, after the set-params
-  button and under the same rules (hidden while a test executes, never a strip of its
-  own). Collapsed it reads "Mock a trigger message"; expanded, "No trigger message", and
-  the section renders below the action row (below the expanded param editors when both
-  are open), opened by the same dim hairline: the `TRIGGER MESSAGE · THIS TEST ONLY`
-  eyebrow, a trigger picker when the list holds several message triggers (the §4.3
-  long labels; single-trigger lists skip the picker), a **From** field (prefilled with
-  the trigger's `from` for iMessage, "Test" for Discord; switching the picked trigger
-  re-prefills it), and a **Message** text field (empty, placeholder-hinted). The mock
-  rides the §19 `triggerMock` body field **only when the message text is nonempty** —
-  left empty (or collapsed) the test runs without a payload, exactly as before; nothing
-  is ever stored, and the trigger list is untouched. The section's footer says so and
-  names the reply behavior plainly: applies to this test only; a step's `reply()` posts
-  to the **real** Discord channel, and an iMessage reply can't send from a mocked
-  message (§6.1). The built §4.5 payload is snapshotted on the test record like a real
-  firing's, so the test's execution page shows the message and sender like any message
-  execution's; the record's trigger label stays "Test". Like the test-parameter
-  section, a change to the draft's trigger list collapses the section back to its
-  default.
+  **Test setup section (create and edit mode):** the test button (**Test the draft** /
+  **Test again**) is a **disclosure toggle**, not the run trigger — it never starts a
+  test. It carries a caret (pointing left collapsed, down expanded — the §9.2 step-row
+  caret language) and expands the test-setup section **below** the action row, opened by
+  a dim hairline (the zone's top hairline stays the only full divider). The section
+  shows **every test option at once** — no nested toggles, nothing behind a second
+  click:
+  - When the draft has params: the `PARAMETER VALUES · THIS TEST ONLY` eyebrow, then one
+    editor per param (§4.2 kinds), prefilled in edit mode with the automation's current
+    values (draft default when a param is new) and in create mode with the draft
+    defaults. The values ride the §19 `paramValues` body field and apply to this test
+    only — nothing is stored, and the read-only Parameters card is untouched. Untouched
+    prefills send the same values a closed section would use — the automation's stored
+    values (edit) or the draft defaults (create), exactly like executing the draft.
+  - When the editor's trigger list (the TRIGGERS card list) holds a message trigger
+    (§4.3 discord/imessage, `off` state irrelevant): the `TRIGGER MESSAGE · THIS TEST
+    ONLY` eyebrow, a trigger picker when the list holds several message triggers (the
+    §4.3 long labels; single-trigger lists skip the picker), a **From** field (prefilled
+    with the trigger's `from` for iMessage, "Test" for Discord; switching the picked
+    trigger re-prefills it), and a **Message** text field (empty, placeholder-hinted).
+    The mock rides the §19 `triggerMock` body field **only when the message text is
+    nonempty** — left empty the test runs without a payload; nothing is ever stored, and
+    the trigger list is untouched. The sub-section's footer says so and names the reply
+    behavior plainly: applies to this test only; a step's `reply()` posts to the
+    **real** Discord channel, and an iMessage reply can't send from a mocked message
+    (§6.1). The built §4.5 payload is snapshotted on the test record like a real
+    firing's, so the test's execution page shows the message and sender like any message
+    execution's; the record's trigger label stays "Test".
+  - The closing **run row**: the muted **Run test** button — the only control that
+    starts a test — and, when a test record exists, the faint **View run** beside it,
+    over the this-test-only note ("Values and the message apply to this test only —
+    nothing is saved.").
+  Clicking the toggle again collapses the section; starting a test collapses it too
+  (its inputs were snapshotted), and it stays hidden while the test executes. The
+  entered values survive a collapse — reopening shows them again; seeding happens only
+  when the section opens without prior values. A change to the draft's param
+  definitions or trigger list collapses the section and drops its values. A chat-armed
+  test with values (§8 actions) pre-fills the param editors, so Test again reopens on
+  what ran. The resolved values are snapshotted on the test record, so its execution
+  page shows them like any execution's. Side effects outside memory are real (emails
+  send, files move, notifications post per settings) and the card says so plainly.
   **The panel stays compact — status + progress, no logs:** while the test executes it
   shows a status line ("Executing — step 2 of 5 · <step name>"), a progress bar (terminal
   steps over total), and a **"View run"** button opening the test's §7 execution page, where

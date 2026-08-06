@@ -234,6 +234,36 @@ describe('CreateFlow Build & test panel (§11)', () => {
     expect(syncBtn.classList.contains('dim')).toBe(true)
   })
 
+  it('Test the draft is a disclosure: setup shows every option at once, only Run test starts it', async () => {
+    armPendingPoll()
+    storeMod.useStore.setState({
+      autos: [{
+        ...AUTO,
+        params: [{ name: 'city', kind: 'text', label: 'City', help: '', value: 'Oslo' }],
+        triggers: [{ kind: 'discord', channel: '#general', secret: 'DISCORD_TOKEN', off: false }],
+      } as unknown as Auto],
+    })
+    render(<CreateFlow />)
+    const panel = cardOf(screen.getByText('BUILD & TEST'))
+    // collapsed: no setup section, no Run test
+    expect(within(panel).queryByText('Run test')).toBeNull()
+    expect(within(panel).queryByText('PARAMETER VALUES · THIS TEST ONLY')).toBeNull()
+    // the toggle expands the setup — it never starts a test
+    fireEvent.click(within(panel).getByText('Test the draft'))
+    expect(mockedApi.postTest).not.toHaveBeenCalled()
+    // both option groups render together — no nested toggles
+    expect(within(panel).getByText('PARAMETER VALUES · THIS TEST ONLY')).toBeTruthy()
+    expect(within(panel).getByText('TRIGGER MESSAGE · THIS TEST ONLY')).toBeTruthy()
+    // Run test is the only control that starts a test
+    fireEvent.click(within(panel).getByText('Run test'))
+    await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1))
+    const body = (mockedApi.postTest as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(body.paramValues).toEqual({ city: 'Oslo' })
+    expect(body.triggerMock).toBeUndefined() // empty message → no payload
+    // starting the test collapsed the setup section
+    expect(within(panel).queryByText('Run test')).toBeNull()
+  })
+
   it('a diagnosed blocked sync lands a thread blockers entry with the build-failure headline', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'j1', status: 'blocked', stage: null, detail: null, error: null, draft: null,

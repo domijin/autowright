@@ -931,11 +931,15 @@ export default function CreateFlow() {
   // again / blocker answers re-run against it).
   const [chatText, setChatText] = useState('')
   const lastCreateRef = useRef('')
-  // §11 test parameter values (edit mode): null = collapsed — the test uses the
-  // automation's stored values; non-null = the per-test overrides being edited.
+  // §11 test-setup section: the Test the draft / Test again disclosure toggle —
+  // expanding shows every test option at once (param editors, trigger message,
+  // the Run test row). Values survive a collapse; only Run test starts a test.
+  const [testOpen, setTestOpen] = useState(false)
+  // §11 test parameter values: seeded when the setup section first opens; the
+  // values ride §19 `paramValues` and apply to this test only.
   const [testParams, setTestParams] = useState<ParamDef[] | null>(null)
-  // §11 test trigger message: null = collapsed — the test runs without a payload;
-  // the mock rides §19 `triggerMock` only when the message text is nonempty.
+  // §11 test trigger message: the mock rides §19 `triggerMock` only when the
+  // message text is nonempty — an empty message runs the test without a payload.
   const [testMock, setTestMock] = useState<{ idx: number; text: string; sender: string } | null>(null)
   const [confirmSpecCancel, setConfirmSpecCancel] = useState(false)
   // §11 Secrets card New secret modal — a secret saved here is auto-allowed.
@@ -1914,15 +1918,16 @@ export default function CreateFlow() {
     if (d.kind === 'kv') return { ...d, rows: cur?.rows ?? (Array.isArray(d.default) ? d.default as { k: string; v: string }[] : []) }
     return { ...d, value: cur?.value ?? (d.default as string | number | undefined) }
   })
-  // A synced/reloaded draft may rename or retype params — collapse back to stored values.
-  useEffect(() => { setTestParams(null) }, [rev?.params])
+  // A synced/reloaded draft may rename or retype params — collapse the setup
+  // section and drop its values.
+  useEffect(() => { setTestOpen(false); setTestParams(null) }, [rev?.params])
   // §11 test trigger message: mock only against a message trigger in the editor's
   // list (off state irrelevant); a changed trigger list collapses the section.
   const msgTriggers = (rev?.triggers ?? []).filter(
     (t): t is Extract<DraftTrigger, { kind: 'discord' | 'imessage' }> =>
       t.kind === 'discord' || t.kind === 'imessage')
   const mockSenderSeed = (t: DraftTrigger) => (t.kind === 'imessage' ? t.from : 'Test')
-  useEffect(() => { setTestMock(null) }, [rev?.triggers])
+  useEffect(() => { setTestOpen(false); setTestMock(null) }, [rev?.triggers])
   const testTriggerMock = (m: { idx: number; text: string; sender: string }) => {
     const t = msgTriggers[m.idx]
     if (!t || !m.text || !m.sender.trim()) return undefined
@@ -1946,32 +1951,25 @@ export default function CreateFlow() {
   // never clipped.
   const panelBtnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', padding: '6px 0' }
   const panelRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 18px' }
-  // §11 test zone: the set-params toggle rides the action rows and never moves
-  // (hidden while a test executes — its values are already applied). Expanded,
-  // the editors render below the row and this same button collapses them.
-  const setParamsBtn = rev && rev.params.length > 0 && !testLive ? (
-    <button
-      className="ad-btn-text dim" disabled={busyRewrite}
-      onClick={() => setTestParams(testParams === null ? seedTestParams() : null)}
-      style={panelBtnStyle}
-    >
-      <i className="fa-solid fa-sliders" style={{ fontSize: 10 }} />{' '}
-      {testParams === null ? 'Set test parameters' : isEdit ? 'Use current values' : 'Use defaults'}
+  // §11 test-setup disclosure: Test the draft / Test again never starts a test —
+  // it expands the setup section below the action row with every option at once
+  // (param editors, trigger message, the Run test row). Entered values survive a
+  // collapse; seeding happens only when the section opens without prior values.
+  const toggleTestSetup = () => {
+    if (testOpen) { setTestOpen(false); return }
+    if (rev && rev.params.length > 0 && testParams === null) setTestParams(seedTestParams())
+    if (msgTriggers.length > 0 && testMock === null) {
+      setTestMock({ idx: 0, text: '', sender: mockSenderSeed(msgTriggers[0]) })
+    }
+    setTestOpen(true)
+  }
+  // §9.2 step-row caret language: left collapsed, down expanded.
+  const testToggleBtn = (label: string) => (
+    <button className="ad-btn-text" disabled={busyRewrite} onClick={toggleTestSetup} style={panelBtnStyle}>
+      {label}{' '}
+      <i className={`fa-solid ${testOpen ? 'fa-caret-down' : 'fa-caret-left'}`} style={{ fontSize: 10 }} />
     </button>
-  ) : null
-  // §11 test trigger message: second toggle on the same action row, after
-  // set-params and under the same rules (hidden while a test executes).
-  const setMockBtn = rev && msgTriggers.length > 0 && !testLive ? (
-    <button
-      className="ad-btn-text dim" disabled={busyRewrite}
-      onClick={() => setTestMock(testMock === null
-        ? { idx: 0, text: '', sender: mockSenderSeed(msgTriggers[0]) } : null)}
-      style={panelBtnStyle}
-    >
-      <i className="fa-solid fa-message" style={{ fontSize: 10 }} />{' '}
-      {testMock === null ? 'Mock a trigger message' : 'No trigger message'}
-    </button>
-  ) : null
+  )
   // §11: in the in-sync states the build zone is gone — sync access stays as
   // this faint text button riding the test action rows (disabled, never hidden).
   const syncGhostBtn = (
@@ -2006,6 +2004,7 @@ export default function CreateFlow() {
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
       })
       beginTest(execId)
+      setTestOpen(false) // §11: starting a test collapses the setup section — its inputs were snapshotted
     } catch (e) {
       showToast((e as Error).message)
     }
@@ -3078,9 +3077,9 @@ export default function CreateFlow() {
                     </div>
                   )}
                   {/* test zone — in-sync states only. One hairline opens the zone;
-                      the expanded param editors live inside it as a sub-block over
-                      a dim divider, and the collapsed set-params affordance rides
-                      the action rows (setParamsBtn) — never a strip of its own. */}
+                      the Test the draft / Test again disclosure on the action row
+                      expands the test-setup section (param editors, trigger message,
+                      Run test) as sub-blocks over dim dividers. */}
                   {!drafting && !rev.syncBusy && !outOfSync && (
                     <>
                       {/* §11: no build zone in sync — the header hairline opens the
@@ -3121,27 +3120,17 @@ export default function CreateFlow() {
                                   </div>
                                 )}
                                 <div style={{ ...panelRowStyle, marginTop: 8 }}>
+                                  {/* §11 state 5: Test again is the setup toggle, side by
+                                      side with Sync with spec — Run test lives in the
+                                      expanded setup section */}
                                   {testLive ? (
                                     <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
                                       Cancel
                                     </button>
                                   ) : (
-                                    <button
-                                      className="ad-btn-text"
-                                      disabled={rev.steps.length === 0 || busyRewrite}
-                                      onClick={() => void runTest()}
-                                      style={panelBtnStyle}
-                                    >
-                                      Test again
-                                    </button>
+                                    testToggleBtn('Test again')
                                   )}
-                                  {/* §11: sends the canned analyze chat message — the
-                                      whole repair loop lives in the thread */}
-                                  {testExec.status === 'failed' && !anyJobBusy && (
-                                    <button className="ad-btn-text dim" onClick={runAnalyze} style={panelBtnStyle}>
-                                      <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze the failure
-                                    </button>
-                                  )}
+                                  {syncGhostBtn}
                                   <button
                                     className="ad-btn-text dim"
                                     onClick={() => go('execution', { execId: test.execId })}
@@ -3149,9 +3138,13 @@ export default function CreateFlow() {
                                   >
                                     <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
                                   </button>
-                                  {setParamsBtn}
-                                  {setMockBtn}
-                                  {syncGhostBtn}
+                                  {/* §11: sends the canned analyze chat message — the
+                                      whole repair loop lives in the thread */}
+                                  {!testLive && testExec.status === 'failed' && !anyJobBusy && (
+                                    <button className="ad-btn-text dim" onClick={runAnalyze} style={panelBtnStyle}>
+                                      <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze the failure
+                                    </button>
+                                  )}
                                 </div>
                               </>
                             )}
@@ -3169,14 +3162,8 @@ export default function CreateFlow() {
                               </div>
                             )}
                             <div style={{ ...panelRowStyle, marginTop: 8 }}>
-                              <button
-                                className="ad-btn-text"
-                                disabled={rev.steps.length === 0 || busyRewrite}
-                                onClick={() => void runTest()}
-                                style={panelBtnStyle}
-                              >
-                                Test again
-                              </button>
+                              {testToggleBtn('Test again')}
+                              {syncGhostBtn}
                               {!!rev.lastTest.execId && execs.some((e) => e.id === rev.lastTest!.execId) && (
                                 <button
                                   className="ad-btn-text dim"
@@ -3186,28 +3173,16 @@ export default function CreateFlow() {
                                   <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
                                 </button>
                               )}
-                              {setParamsBtn}
-                              {setMockBtn}
-                              {syncGhostBtn}
                             </div>
                           </div>
                         ) : (
-                          /* §11 in sync, never tested: quiet test button (testing
-                             never shouts — a failed test never blocks saving), the
-                             toggles, the ghost sync, and the plain-words
+                          /* §11 in sync, never tested: the quiet setup toggle (testing
+                             never shouts — a failed test never blocks saving) side by
+                             side with the ghost sync, and the plain-words
                              status-and-side-effects line — which wraps below the
                              buttons when space runs out */
                           <div style={{ ...panelRowStyle, padding: '10px 20px 12px' }}>
-                            <button
-                              className="ad-btn-text"
-                              disabled={rev.steps.length === 0 || busyRewrite}
-                              onClick={() => void runTest()}
-                              style={panelBtnStyle}
-                            >
-                              Test the draft
-                            </button>
-                            {setParamsBtn}
-                            {setMockBtn}
+                            {testToggleBtn('Test the draft')}
                             {syncGhostBtn}
                             <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
                               In sync with the spec. A test executes the real steps on this Mac — emails send, files move; memory is a scratch copy.
@@ -3215,9 +3190,10 @@ export default function CreateFlow() {
                           </div>
                         )}
                       </div>
-                      {/* §11 expanded test-parameter editors — below the action row;
-                          the row's toggle button collapses them */}
-                      {rev.params.length > 0 && testParams !== null && (
+                      {/* §11 test-setup section — expanded by the Test the draft /
+                          Test again disclosure toggle, hidden while a test executes;
+                          shows every option at once, then the Run test row */}
+                      {testOpen && !testLive && rev.params.length > 0 && testParams !== null && (
                         <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
                           <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-faintest)' }}>
                             PARAMETER VALUES · THIS TEST ONLY
@@ -3228,14 +3204,11 @@ export default function CreateFlow() {
                               upd={(patch) => setTestParams((ps) => ps && ps.map((x) => (x.name === p.name ? { ...x, ...patch } : x)))}
                             />
                           ))}
-                          <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
-                            These values apply to this test only — nothing is saved.
-                          </div>
                         </div>
                       )}
-                      {/* §11 expanded test-trigger-message editors — below the param
-                          editors when both are open; the row's toggle collapses them */}
-                      {msgTriggers.length > 0 && testMock !== null && (
+                      {/* §11 trigger-message fields — below the param editors, same
+                          setup section */}
+                      {testOpen && !testLive && msgTriggers.length > 0 && testMock !== null && (
                         <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
                           <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-faintest)' }}>
                             TRIGGER MESSAGE · THIS TEST ONLY
@@ -3282,6 +3255,41 @@ export default function CreateFlow() {
                               ? 'A step’s reply() posts to the real Discord channel.'
                               : 'A step’s reply() can’t send from a mocked iMessage — it logs the failed send instead.'}
                           </div>
+                        </div>
+                      )}
+                      {/* §11 run row — closes the setup section: Run test is the only
+                          control that starts a test; View run rides beside it when a
+                          test record exists */}
+                      {testOpen && !testLive && (
+                        <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', padding: '4px 20px 10px', ...lockStyle }}>
+                          <div style={panelRowStyle}>
+                            <button
+                              className="ad-btn-text"
+                              disabled={rev.steps.length === 0 || busyRewrite}
+                              onClick={() => void runTest()}
+                              style={panelBtnStyle}
+                            >
+                              <i className="fa-solid fa-play" style={{ fontSize: 10 }} /> Run test
+                            </button>
+                            {(test || (!!rev.lastTest?.execId && execs.some((e) => e.id === rev.lastTest!.execId))) && (
+                              <button
+                                className="ad-btn-text dim"
+                                onClick={() => go('execution', { execId: test ? test.execId : rev.lastTest!.execId! })}
+                                style={panelBtnStyle}
+                              >
+                                <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
+                              </button>
+                            )}
+                          </div>
+                          {(rev.params.length > 0 || msgTriggers.length > 0) && (
+                            <div style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)', paddingBottom: 2 }}>
+                              {rev.params.length > 0 && msgTriggers.length > 0
+                                ? 'Values and the message apply to this test only — nothing is saved.'
+                                : rev.params.length > 0
+                                  ? 'These values apply to this test only — nothing is saved.'
+                                  : 'The message applies to this test only — nothing is saved.'}
+                            </div>
+                          )}
                         </div>
                       )}
                     </>

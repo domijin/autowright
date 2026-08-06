@@ -1940,37 +1940,45 @@ export default function CreateFlow() {
   const testSteps = (test && execFull[test.execId]?.steps) ?? []
   const testDone = testSteps.filter((s) => s.status !== 'queued' && s.status !== 'executing').length
   const testLiveIdx = testSteps.findIndex((s) => s.status === 'executing')
+  // §11 panel buttons: compact borderless text buttons (the card-header
+  // treatment — never bordered or filled boxes); zero side padding keeps the
+  // rows left-aligned with the panel text, and the rows wrap so a button is
+  // never clipped.
+  const panelBtnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', padding: '6px 0' }
+  const panelRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 18px' }
   // §11 test zone: the set-params toggle rides the action rows and never moves
   // (hidden while a test executes — its values are already applied). Expanded,
   // the editors render below the row and this same button collapses them.
   const setParamsBtn = rev && rev.params.length > 0 && !testLive ? (
     <button
-      className="ad-btn-dashed" disabled={busyRewrite}
+      className="ad-btn-text dim" disabled={busyRewrite}
       onClick={() => setTestParams(testParams === null ? seedTestParams() : null)}
+      style={panelBtnStyle}
     >
       <i className="fa-solid fa-sliders" style={{ fontSize: 10 }} />{' '}
       {testParams === null ? 'Set test parameters' : isEdit ? 'Use current values' : 'Use defaults'}
     </button>
   ) : null
-  // §11 test trigger message: second dashed toggle on the same action row, after
+  // §11 test trigger message: second toggle on the same action row, after
   // set-params and under the same rules (hidden while a test executes).
   const setMockBtn = rev && msgTriggers.length > 0 && !testLive ? (
     <button
-      className="ad-btn-dashed" disabled={busyRewrite}
+      className="ad-btn-text dim" disabled={busyRewrite}
       onClick={() => setTestMock(testMock === null
         ? { idx: 0, text: '', sender: mockSenderSeed(msgTriggers[0]) } : null)}
+      style={panelBtnStyle}
     >
       <i className="fa-solid fa-message" style={{ fontSize: 10 }} />{' '}
       {testMock === null ? 'Mock a trigger message' : 'No trigger message'}
     </button>
   ) : null
   // §11: in the in-sync states the build zone is gone — sync access stays as
-  // this ghost button riding the test action rows (disabled, never hidden).
+  // this faint text button riding the test action rows (disabled, never hidden).
   const syncGhostBtn = (
     <button
-      className="ad-btn-ghost" disabled={syncDisabled}
+      className="ad-btn-text dim" disabled={syncDisabled}
       onClick={() => void runSync()}
-      style={{ flex: 'none', whiteSpace: 'nowrap' }}
+      style={panelBtnStyle}
     >
       Sync with spec
     </button>
@@ -3043,9 +3051,9 @@ export default function CreateFlow() {
                     {/* §11: no Cancel here — a running sync is cancelled from the
                         chat footer's action block; the button just disables */}
                     <button
-                      className={outOfSync ? 'ad-btn-primary' : 'ad-btn-soft'} disabled={syncDisabled}
+                      className={outOfSync ? 'ad-btn-primary' : 'ad-btn-text dim'} disabled={syncDisabled}
                       onClick={() => void runSync()}
-                      style={{ flex: 'none', whiteSpace: 'nowrap' }}
+                      style={outOfSync ? { flex: 'none', whiteSpace: 'nowrap' } : panelBtnStyle}
                     >
                       {outOfSync ? 'Sync now' : 'Sync with spec'}
                     </button>
@@ -3056,11 +3064,11 @@ export default function CreateFlow() {
                   {!rev.syncBusy && !drafting && outOfSync && (
                     <div style={{ padding: '12px 20px 14px', borderTop: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 12 }}>
                       {testLive ? (
-                        <button className="ad-btn-soft" onClick={cancelTest} style={{ flex: 'none' }}>
+                        <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
                           Cancel
                         </button>
                       ) : (
-                        <button className="ad-btn-soft" disabled style={{ flex: 'none' }}>
+                        <button className="ad-btn-text" disabled style={panelBtnStyle}>
                           {test || rev.lastTest ? 'Test again' : 'Test the draft'}
                         </button>
                       )}
@@ -3112,16 +3120,17 @@ export default function CreateFlow() {
                                     <ProgressBar pct={(testDone / testSteps.length) * 100} />
                                   </div>
                                 )}
-                                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                                <div style={{ ...panelRowStyle, marginTop: 8 }}>
                                   {testLive ? (
-                                    <button className="ad-btn-soft" onClick={cancelTest}>
+                                    <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
                                       Cancel
                                     </button>
                                   ) : (
                                     <button
-                                      className="ad-btn-soft"
+                                      className="ad-btn-text"
                                       disabled={rev.steps.length === 0 || busyRewrite}
                                       onClick={() => void runTest()}
+                                      style={panelBtnStyle}
                                     >
                                       Test again
                                     </button>
@@ -3129,13 +3138,14 @@ export default function CreateFlow() {
                                   {/* §11: sends the canned analyze chat message — the
                                       whole repair loop lives in the thread */}
                                   {testExec.status === 'failed' && !anyJobBusy && (
-                                    <button className="ad-btn-soft" onClick={runAnalyze}>
+                                    <button className="ad-btn-text dim" onClick={runAnalyze} style={panelBtnStyle}>
                                       <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze the failure
                                     </button>
                                   )}
                                   <button
-                                    className="ad-btn-ghost"
+                                    className="ad-btn-text dim"
                                     onClick={() => go('execution', { execId: test.execId })}
+                                    style={panelBtnStyle}
                                   >
                                     <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
                                   </button>
@@ -3158,18 +3168,20 @@ export default function CreateFlow() {
                                 <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--amber)' }}>Last test failed — {rev.lastTest.when}.</span>
                               </div>
                             )}
-                            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                            <div style={{ ...panelRowStyle, marginTop: 8 }}>
                               <button
-                                className="ad-btn-soft"
+                                className="ad-btn-text"
                                 disabled={rev.steps.length === 0 || busyRewrite}
                                 onClick={() => void runTest()}
+                                style={panelBtnStyle}
                               >
                                 Test again
                               </button>
                               {!!rev.lastTest.execId && execs.some((e) => e.id === rev.lastTest!.execId) && (
                                 <button
-                                  className="ad-btn-ghost"
+                                  className="ad-btn-text dim"
                                   onClick={() => go('execution', { execId: rev.lastTest!.execId! })}
+                                  style={panelBtnStyle}
                                 >
                                   <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
                                 </button>
@@ -3185,12 +3197,12 @@ export default function CreateFlow() {
                              toggles, the ghost sync, and the plain-words
                              status-and-side-effects line — which wraps below the
                              buttons when space runs out */
-                          <div style={{ padding: '12px 20px 14px', display: 'flex', alignItems: 'center', gap: '10px 14px', flexWrap: 'wrap' }}>
+                          <div style={{ ...panelRowStyle, padding: '10px 20px 12px' }}>
                             <button
-                              className="ad-btn-soft"
+                              className="ad-btn-text"
                               disabled={rev.steps.length === 0 || busyRewrite}
                               onClick={() => void runTest()}
-                              style={{ flex: 'none', whiteSpace: 'nowrap' }}
+                              style={panelBtnStyle}
                             >
                               Test the draft
                             </button>

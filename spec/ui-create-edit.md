@@ -569,18 +569,24 @@ editors enter with
   workflow shows no indicator dot at all (the dot is amber while out of sync, faint while
   a job runs, absent otherwise — never a spinner, and never green: a status that asks
   nothing must not draw the eye), and at most one accent-primary button ever renders:
-  **Sync now** while out of sync. Every other panel button is quiet (soft) or ghost — the
-  test button included: a failed test never blocks saving, so testing never shouts.
+  **Sync now** while out of sync. Every other panel button is a compact borderless **text
+  button** (the card-header treatment above — never a bordered or filled box): the state's
+  main action (Test the draft / Test again / a live test's Cancel) muted, every other
+  action (View run, Analyze the failure, the test-parameter and trigger-mock toggles, Sync
+  with spec) faint — the test button included: a failed test never blocks saving, so
+  testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
+  space runs out — a panel button is never clipped.
   **Layout.** The header row holds only the `BUILD & TEST` eyebrow, never a button. In
   states 1–3 (drafting, sync in flight, out of sync) a **build zone** renders below it:
   the indicator dot + status line, the explainer line beneath it indented to the status
   text's left edge, and the sync control right-aligned at the zone's top — accent-primary
-  **Sync now** while out of sync; disabled per Dirty gating (including while its own sync
+  **Sync now** while out of sync, a faint disabled text button while drafting or syncing;
+  disabled per Dirty gating (including while its own sync
   runs — cancelling lives in the footer action block), never hidden — with the **test
   zone** under a hairline. In the in-sync states (4–6) the build zone disappears and the
-  panel is a **single test zone** under the header hairline; sync access stays as a ghost
-  **Sync with spec** button riding the test zone's action row (the same §8 `sync` call on
-  demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
+  panel is a **single test zone** under the header hairline; sync access stays as a faint
+  **Sync with spec** text button riding the test zone's action row (the same §8 `sync`
+  call on demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
   test zone owns every test control — the test button never sits in the header: the test
   button with its hint / outcome / progress and their action rows, laid out per state
   below. Both zones share the card's 20 px side padding. States, first match wins:
@@ -598,12 +604,12 @@ editors enter with
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
   4. **In sync, test executing** — the live status line, progress bar, and the action row
-     Cancel + View run + the disabled ghost **Sync with spec** (below).
+     Cancel + View run + the disabled faint **Sync with spec** (below).
   5. **In sync, test settled** — the outcome line over the action row **Test again** /
-     **View run** / ghost **Sync with spec** and, on failure, **Analyze the failure**,
+     **View run** / faint **Sync with spec** and, on failure, **Analyze the failure**,
      which sends the canned analyze chat message (below).
-  6. **In sync, never tested** — one action row: quiet **Test the draft** beside the
-     dashed toggle buttons and the ghost **Sync with spec**, with the plain-words
+  6. **In sync, never tested** — one action row: muted **Test the draft** beside the
+     toggle buttons and the faint **Sync with spec**, with the plain-words
      status-and-side-effects line — "In sync with the spec. A test executes the real
      steps on this Mac — emails send, files move; memory is a scratch copy." — wrapping
      below the buttons when space runs out.
@@ -632,8 +638,9 @@ editors enter with
   (one per draft container, and one **live** test per container: §19 answers 409), and a
   settled draft (discard, save as vN+1, Create, Start over) deletes its test records.
   Deleting the automation deletes them too.
-  **Test parameter values (create and edit mode):** when the draft has params, a dashed
-  toggle button rides the test zone's action row beside the test button — never a strip of
+  **Test parameter values (create and edit mode):** when the draft has params, a faint
+  toggle text button (button treatment above) rides the test zone's action row beside the
+  test button — never a strip of
   its own between dividers, and it never moves. Collapsed it reads "Set test
   parameters"; pressing it expands the editors as a section **below** the action row,
   opened by a dim hairline (the zone's top hairline stays the only full divider): the
@@ -649,7 +656,7 @@ editors enter with
   (emails send, files move, notifications post per settings) and the card says so plainly.
   **Test trigger message (create and edit mode):** when the editor's trigger list (the
   TRIGGERS card list) holds a message trigger (§4.3 discord/imessage, `off` state
-  irrelevant), a second dashed toggle rides the same action row, after the set-params
+  irrelevant), a second toggle rides the same action row, after the set-params
   button and under the same rules (hidden while a test executes, never a strip of its
   own). Collapsed it reads "Mock a trigger message"; expanded, "No trigger message", and
   the section renders below the action row (below the expanded param editors when both

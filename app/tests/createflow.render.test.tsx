@@ -224,10 +224,14 @@ describe('CreateFlow Build & test panel (§11)', () => {
     // line) — the panel is a single test row with the ghost sync escape hatch
     expect(within(panel).getByText(/In sync with the spec/)).toBeTruthy()
     expect(panel.querySelector('.ad-btn-primary')).toBeNull()
+    // §11 button treatment: compact borderless text buttons — main action
+    // muted, the sync escape hatch faint; never bordered or filled boxes
     const testBtn = within(panel).getByText('Test the draft').closest('button')!
     expect(testBtn.disabled).toBe(false)
-    expect(testBtn.classList.contains('ad-btn-soft')).toBe(true)
-    expect((within(panel).getByText('Sync with spec').closest('button')!).classList.contains('ad-btn-ghost')).toBe(true)
+    expect(testBtn.classList.contains('ad-btn-text')).toBe(true)
+    const syncBtn = within(panel).getByText('Sync with spec').closest('button')!
+    expect(syncBtn.classList.contains('ad-btn-text')).toBe(true)
+    expect(syncBtn.classList.contains('dim')).toBe(true)
   })
 
   it('a diagnosed blocked sync lands a thread blockers entry with the build-failure headline', async () => {

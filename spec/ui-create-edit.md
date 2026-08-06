@@ -60,7 +60,8 @@ applies unchanged; the chat pane never collapses.
     reaches the agent's CONVERSATION context.
 - **Input:** pinned footer, an auto-growing textarea — the **ask-box pattern** referenced
   throughout this spec: sized to its content, never scrolls, no manual resize handle, Enter
-  sends, Shift+Enter inserts a newline. A send button sits beside the textarea — "Draft it"
+  sends, Shift+Enter inserts a newline. The box is sized the moment it mounts (not only
+  when the text changes), so the first keystroke never shifts its height. A send button sits beside the textarea — "Draft it"
   in the create empty state, "Send" otherwise — disabled while the input is disabled or
   holds only whitespace. Placeholder "Describe the job — one sentence is
   enough." while the draft has no spec (fresh create), else "Change something, or ask a

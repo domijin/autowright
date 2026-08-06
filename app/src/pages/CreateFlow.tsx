@@ -6,7 +6,7 @@
 // card first, steps skeletons after). This page also renders the Review
 // dirty-gating, version menu, per-step agent/secret tags, and the
 // secrets/agents warning cards.
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
 import type { Agent, Auto, Blocker, ChatEntry, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, VersionInfo } from '../types'
@@ -1709,11 +1709,14 @@ export default function CreateFlow() {
     if (el) el.scrollTop = el.scrollHeight
   }, [chatLen])
 
-  // Chat-input auto-grow (ask-box pattern). Runs only when the text changes —
-  // not on every render — and pins the thread's scrollTop across the transient
-  // height:auto collapse, which otherwise clamps the thread upward while typing.
+  // Chat-input auto-grow (ask-box pattern). Runs when the text changes and once
+  // when the textarea attaches (it mounts after `rev` loads and again whenever a
+  // job's busy footer swaps back to the input, so the mount-time effect pass
+  // misses it — an unsized box would then jump on the first keystroke). Pins the
+  // thread's scrollTop across the transient height:auto collapse, which
+  // otherwise clamps the thread upward while typing.
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null)
-  useLayoutEffect(() => {
+  const sizeChatInput = () => {
     const el = chatInputRef.current
     if (!el) return
     const sc = chatScrollRef.current
@@ -1721,7 +1724,12 @@ export default function CreateFlow() {
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
     if (sc) sc.scrollTop = keep
-  }, [chatText])
+  }
+  const attachChatInput = useCallback((el: HTMLTextAreaElement | null) => {
+    chatInputRef.current = el
+    if (el) sizeChatInput()
+  }, [])
+  useLayoutEffect(() => { sizeChatInput() }, [chatText])
 
   // §11 blockers-entry apply — same door for every non-clarification source:
   // write the edited cards into the spec's "Constraints & resolutions"
@@ -2262,7 +2270,7 @@ export default function CreateFlow() {
                 <textarea
                   className="ad-input oneline-ph"
                   value={chatText} rows={1} disabled={inputDisabled}
-                  ref={chatInputRef}
+                  ref={attachChatInput}
                   onChange={(e) => setChatText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
                   placeholder={testLive ? 'Wait for the test to finish.'

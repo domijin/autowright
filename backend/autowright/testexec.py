@@ -1,0 +1,214 @@
+"""§11 Test (§19 POST /tests): executes the sent draft's steps as a §4.5 test
+execution record (kind `test`, trigger kind `test`) through the exact
+engine path a real execution takes — record, workspace/result/logs, and the
+`exec.*` events all ordinary. Test-specific pieces live here: the sent draft's
+scripts land in the record's steps/ dir, memory is a scratch copy discarded at
+the end, one test record per draft container (409 while one is live, previous
+record deleted at start), and the last-test summary lands in the container's
+test.yaml. This module also builds the §8 chat call's RECENT RUNS context —
+failure analysis is an ordinary chat job reading it (there is no separate
+analysis call)."""
+from __future__ import annotations
+
+import shutil
+import tempfile
+import threading
+from pathlib import Path
+
+from . import paths, timefmt
+from .engine import Engine, _step_sha
+from .events import hub
+from .storage import exec_ver_label, is_test, safe_step_filename, store
+from .yamlio import save_yaml
+
+LOG_TAIL = 40      # lines per step handed to the §8 RECENT RUNS section
+RUNS_CAP = 5       # §8: newest settled runs included, across all §4.5 kinds
+RESULT_EXCERPT = 2000  # chars of result.md shown for a detailed successful run
+
+
+def start(engine: Engine, draft: dict, auto: dict | None,
+          enabled_agents: list, allowed_secrets: list, param_values: dict) -> str:
+    """Create and launch the test execution record; returns its exec id.
+    Raises RuntimeError while the container already has a live test (§19 409)."""
+    container_id = auto["id"] if auto else None  # §4.5: null autoId on create-mode tests
+    with store.lock:
+        if any(is_test(h) and h["auto_id"] == container_id
+               and h["status"] == "executing" for h in store.execs.values()):
+            raise RuntimeError("a test is already executing — cancel it or wait for it to finish")
+        # §11 keep-latest: one test record per draft container.
+        store.delete_test_execs(container_id)
+
+        # Same trust boundary as version writes: client `file` names are
+        # sanitized before they hit the record's steps/ directory.
+        taken: set[str] = set()
+        steps = []
+        for i, s in enumerate(draft.get("steps", []), 1):
+            f = safe_step_filename(s.get("file"), i, s.get("name"), taken)
+            taken.add(f)
+            steps.append({**s, "file": f})
+        ver = {"steps": steps, "params": draft.get("params", []) or [],
+               "packages": draft.get("packages", []) or [],
+               "spec": draft.get("spec") or []}
+        # §11: in-editor grants and values, never the stored automation's — the
+        # engine reads them off this shadow record; the real one is untouched.
+        shadow = {
+            "id": container_id,
+            "name": (auto["name"] if auto else draft.get("name")) or "New automation",
+            "enabled_agents": enabled_agents,
+            "allowed_secrets": allowed_secrets,
+            "param_values": {**(auto["param_values"] if auto else {}), **(param_values or {})},
+        }
+        rec_steps = [{"name": s.get("name", ""), "file": s["file"],
+                      "agent": bool(s.get("agent")), "sha": _step_sha(s),
+                      "status": "queued", "dur_ms": None, "attempts": []}
+                     for s in steps]
+        h = store.create_execution(shadow, "test", None, "test", rec_steps,
+                                   params=store.merged_params(shadow, ver))
+
+    # Any setup failure past this point must take the record with it: a
+    # permanent "executing" test record trips the 409 above forever (and
+    # delete_test_execs skips executing records), so only a backend restart
+    # would ever unblock testing again.
+    scratch: Path | None = None
+    try:
+        # The sent draft's scripts, as executed (§5 steps/) — a real version
+        # folder serves this role for ordinary executions.
+        steps_dir = store.exec_dir(h["id"]) / "steps"
+        steps_dir.mkdir(parents=True, exist_ok=True)
+        for s in steps:
+            (steps_dir / s["file"]).write_text(s.get("code", ""), encoding="utf-8")
+
+        # §11 scratch memory: draft container's memory/ when present (edit mode
+        # falls back to the automation's), create mode the pending slot's — copied
+        # to a temp dir and discarded when the test ends.
+        dbase = (store.auto_dir(auto) / "draft") if auto is not None else paths.pending_draft_dir()
+        scratch = Path(tempfile.mkdtemp(prefix="autowright-test-"))
+        mem_dir = scratch / "memory"
+        src = dbase / "memory"
+        if auto is not None and not src.exists():
+            src = store.auto_dir(auto) / "memory"
+        if src.exists():
+            shutil.copytree(src, mem_dir)
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        (dbase / "test.yaml").unlink(missing_ok=True)  # wiped at each test start (§5)
+
+        h["_test"] = {"vdir": str(steps_dir), "mem": str(mem_dir)}
+        state = {"proc": None, "cancel": False}
+        with engine._lock:
+            engine._live[h["id"]] = state
+        hub.publish("exec.started", execId=h["id"], autoId=container_id,
+                    exec_json=store.exec_json(h))
+        t = threading.Thread(target=_run, args=(engine, shadow, ver, h, state, dbase, scratch),
+                             daemon=True)
+        t.start()
+        return h["id"]
+    except BaseException:
+        with engine._lock:
+            engine._live.pop(h["id"], None)
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
+        store.delete_execution(h["id"])
+        raise
+
+
+def _run(engine: Engine, shadow: dict, ver: dict, h: dict, state: dict,
+         dbase: Path, scratch: Path) -> None:
+    try:
+        engine._execute(shadow, ver, h, state)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)  # §11: the memory copy is discarded
+    if h["status"] in ("succeeded", "failed"):
+        # §5 test.yaml — the last-test summary a resumed draft's Test card
+        # shows; deleted with the draft. A failed test is NOT analyzed here —
+        # analysis is a user-sent §8 chat message reading runs_context.
+        save_yaml(dbase / "test.yaml", {
+            "status": h["status"],
+            "when": timefmt.now_iso(),
+            "exec_id": h["id"],
+        })
+
+
+def _log_tail(h: dict, idx: int) -> list[str]:
+    # §4.5: attempt numbers are monotonic and old attempts prune — the latest
+    # attempt's `n` names the newest log file, never the list length.
+    atts = h["steps"][idx].get("attempts") or []
+    attempt = atts[-1]["n"] if atts else 1
+    lines = store.read_log(h["id"], idx, attempt)
+    return [l.get("text", "") for l in lines][-LOG_TAIL:]
+
+
+def runs_context(auto: dict | None, current_steps: list[dict],
+                 run_id: str | None = None) -> str | None:
+    """§8 RECENT RUNS: the newest settled executions of this automation/draft
+    (all §4.5 kinds — the draft's test record, Draft executions, version
+    executions), newest first, capped at RUNS_CAP. The newest run — and the
+    `run_id` one (§19, the Fix-with-AI entry), however old — carries full
+    detail: per-step outcomes, the error, log tails, the result. Every run is
+    marked against the in-editor step code (§4.5 per-step sha) so the agent
+    never reads stale output as current behavior. None when no run exists."""
+    container_id = auto["id"] if auto else None
+    with store.lock:
+        hs = [h for h in store.execs.values()
+              if h["auto_id"] == container_id
+              and h["status"] not in ("executing", "queued")]
+        hs.sort(key=lambda h: h.get("started_at") or "", reverse=True)
+        picked = hs[:RUNS_CAP]
+        if run_id and all(h["id"] != run_id for h in picked):
+            f = store.execs.get(run_id)
+            if (f and f["auto_id"] == container_id
+                    and f["status"] not in ("executing", "queued")):
+                picked.append(f)
+    if not picked:
+        return None
+    cur_shas = [_step_sha(s) for s in current_steps or []]
+    blocks = []
+    for i, h in enumerate(picked):
+        full = store.exec_full(h["id"]) or h
+        detail = i == 0 or (run_id is not None and h["id"] == run_id)
+        blocks.append(_run_block(full, cur_shas, detail))
+    return "\n\n".join(blocks)
+
+
+def _run_block(h: dict, cur_shas: list[str], detail: bool) -> str:
+    steps = h.get("steps") or []
+    shas = [s.get("sha") for s in steps]
+    stale = ("steps match the current draft" if shas == cur_shas
+             else "ran older steps — treat its behavior as historical")
+    started = ""
+    if h.get("started_at"):
+        started = timefmt.started_label(timefmt.parse_local(h["started_at"]))
+    head = (f"--- {exec_ver_label(h)} run · {h.get('status')} · started {started} · "
+            f"trigger {h.get('trigger')} · {stale} ---")
+    lines = [head]
+    err = h.get("error") or {}
+    if not detail:
+        if err.get("message"):
+            lines.append(f"failed at step {err.get('step')}: {err['message']}")
+        return "\n".join(lines)
+    for i, s in enumerate(steps, 1):
+        dur = f" · {s['dur_ms'] // 1000}s" if s.get("dur_ms") else ""
+        lines.append(f"step {i}: {s.get('name')} — {s.get('status')}{dur}")
+    if err.get("message"):
+        lines.append(f"error at step {err.get('step')}: {err['message']}"
+                     + (f" (possible reason: {err['reason']})" if err.get("reason") else ""))
+    failed_at = next((i for i, s in enumerate(steps) if s.get("status") == "failed"), None)
+    if failed_at is not None:
+        # The failing step's tail plus the earlier steps' — the cause is often upstream.
+        for j in range(failed_at):
+            if tail := _log_tail(h, j):
+                lines.append(f"log tail (step {j + 1}):\n" + "\n".join(tail))
+        if tail := _log_tail(h, failed_at):
+            lines.append("log tail (failing step):\n" + "\n".join(tail))
+    if h.get("chip"):
+        lines.append(f"result chip: {h['chip']}")
+    files = store.result_files(h["id"])
+    if files:
+        lines.append("result files: " + ", ".join(f["name"] for f in files))
+    rmd = store.exec_dir(h["id"]) / "result" / "result.md"
+    if rmd.is_file():
+        text = rmd.read_text(encoding="utf-8").strip()
+        if len(text) > RESULT_EXCERPT:
+            text = text[:RESULT_EXCERPT] + "\n… [result.md truncated]"
+        if text:
+            lines.append("result.md:\n" + text)
+    return "\n".join(lines)

@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Regenerate app/src/acknowledgements.md (§4.9 open-source libraries).
+
+Lists every shipped component with name, version, license id, and the package's
+license text when it ships one:
+  - npm production closure (`npm ls --omit=dev --all --json` in app/), plus
+    Electron — a dev dependency, but its runtime ships in the bundle
+  - backend venv: recursive distribution closure of the `autowright` package
+    (dev extras excluded)
+
+Run from anywhere: paths resolve relative to the repo root. build.sh runs this
+on every build so the file tracks dependency changes.
+"""
+from __future__ import annotations
+
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+APP = ROOT / "app"
+OUT = APP / "src" / "acknowledgements.md"
+
+LICENSE_FILE_RE = re.compile(r"^(licen[cs]e|copying|notice)", re.IGNORECASE)
+
+
+def read_license_text(pkg_dir: Path) -> str | None:
+    if not pkg_dir.is_dir():
+        return None
+    for f in sorted(pkg_dir.iterdir()):
+        if f.is_file() and LICENSE_FILE_RE.match(f.name):
+            try:
+                return f.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                return None
+    return None
+
+
+def npm_packages() -> list[dict]:
+    """Production closure from npm ls, plus Electron."""
+    out = subprocess.run(
+        ["npm", "ls", "--omit=dev", "--all", "--json"],
+        cwd=APP, capture_output=True, text=True, check=False,
+    ).stdout
+    tree = json.loads(out or "{}")
+
+    flat: dict[str, dict] = {}
+
+    def walk(deps: dict) -> None:
+        for name, node in (deps or {}).items():
+            version = node.get("version")
+            if version and name not in flat:
+                flat[name] = node
+            walk(node.get("dependencies") or {})
+
+    walk(tree.get("dependencies") or {})
+
+    pkgs = []
+    for name in sorted(flat, key=str.lower) + ["electron"]:
+        pkg_dir = APP / "node_modules" / name
+        meta_path = pkg_dir / "package.json"
+        if not meta_path.is_file():
+            continue
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        license_id = meta.get("license")
+        if isinstance(license_id, dict):
+            license_id = license_id.get("type")
+        pkgs.append({
+            "name": name,
+            "version": meta.get("version", "?"),
+            "license": license_id or "see license text",
+            "text": read_license_text(pkg_dir),
+        })
+    return pkgs
+
+
+def python_packages() -> list[dict]:
+    """Recursive dist closure of `autowright` in the repo venv, dev extras excluded."""
+    code = r"""
+import json, re
+from importlib import metadata
+
+def base_reqs(dist, extras=()):
+    for req in dist.requires or []:
+        marker = re.search(r';\s*(.+)$', req)
+        if marker and 'extra ==' in marker.group(1):
+            continue  # optional extra (e.g. [dev]) — not shipped
+        yield re.split(r'[\s;\[<>=!~]', req, 1)[0]
+
+seen, queue = {}, ['autowright']
+while queue:
+    name = queue.pop()
+    key = name.lower().replace('_', '-')
+    if key in seen:
+        continue
+    try:
+        dist = metadata.distribution(name)
+    except metadata.PackageNotFoundError:
+        continue
+    seen[key] = dist
+    queue.extend(base_reqs(dist))
+
+out = []
+for key in sorted(seen):
+    if key == 'autowright':
+        continue  # the app itself — not a third-party component
+    dist = seen[key]
+    text = None
+    for f in dist.files or []:
+        if re.match(r'(licen[cs]e|copying|notice)', f.name, re.IGNORECASE):
+            try:
+                text = f.locate().read_text(encoding='utf-8', errors='replace').strip()
+            except OSError:
+                pass
+            break
+    meta = dist.metadata
+    lic = meta.get('License-Expression') or meta.get('License')
+    if not lic or len(lic) > 40:
+        lic = next((c.split('::')[-1].strip() for c in meta.get_all('Classifier') or []
+                    if c.startswith('License ::')), None) or 'see license text'
+    out.append({'name': dist.name, 'version': dist.version, 'license': lic, 'text': text})
+print(json.dumps(out))
+"""
+    out = subprocess.run(
+        [str(ROOT / ".venv" / "bin" / "python"), "-c", code],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    return json.loads(out)
+
+
+def section(title: str, note: str, pkgs: list[dict]) -> list[str]:
+    lines = [f"## {title}", "", note, ""]
+    for p in pkgs:
+        lines += [f"### {p['name']} {p['version']} — {p['license']}", ""]
+        if p["text"]:
+            lines += ["```", p["text"], "```", ""]
+    return lines
+
+
+def main() -> None:
+    npm = npm_packages()
+    py = python_packages()
+    # No H1 and no HTML comment: the §4.9 modal supplies the title, and
+    # react-markdown shows raw HTML as literal text. The link-label line below
+    # is markdown's invisible-comment idiom — it never renders.
+    lines = [
+        "[//]: # (Generated by scripts/gen_licenses.py — do not edit by hand.)",
+        "",
+        "Autowright ships with these open-source components. Each keeps its own",
+        "license and copyright.",
+        "",
+        *section("App (npm)", "The Electron app and its production dependencies.", npm),
+        *section("Backend (Python)", "The backend service and its dependencies.", py),
+    ]
+    OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"wrote {OUT.relative_to(ROOT)} — {len(npm)} npm + {len(py)} python packages")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

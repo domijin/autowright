@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Fake `claude` CLI for tests (tests/bin is prepended to PATH by conftest).
+
+The backend invokes agents only by shelling out to the real CLI, so tests get a
+deterministic stand-in binary instead of a mock code path inside the app. It
+answers `--version` and one-shot `claude -p ... <prompt>` calls with canned
+envelopes matching the §8 drafting contract.
+"""
+import json
+import os
+import re
+import sys
+import time
+
+SPEC_ENVELOPE = """===FILE: spec.md===
+# {title}
+
+{desc}
+
+## Schedule
+
+Every day at 8:00.
+
+## What it does
+
+- Fetches what it needs and checks for anything new.
+- Builds a short result you can read at a glance.
+===END===
+"""
+
+STEPS_ENVELOPE = """===FILE: manifest.yaml===
+name: {title}
+desc: {desc}
+note: Drafted by the mock agent
+params:
+  - {{ name: notify_only_on_changes, kind: toggle, label: Notify only on changes, help: Skip the notification when nothing is new., default: true }}
+steps:
+  - {{ file: 01-check.py, name: Check for changes, desc: Looks for anything new since the last run. }}
+  - {{ file: 02-report.py, name: Build the result, desc: Summarizes what it found. }}
+===FILE: 01-check.py===
+from autowright import log, memory
+
+found = []
+log("checked — nothing to do in mock mode")
+memory.save("last_check", {{"found": len(found)}})
+===FILE: 02-report.py===
+from autowright import notify, params, result
+
+result.status("ok")
+result.chip("All good")
+(result.path / "result.md").write_text("Mock run — nothing new.")
+if not params["notify_only_on_changes"]:
+    notify("Mock run finished")
+===END===
+"""
+
+
+BLOCKED_ENVELOPE = """===BLOCKED===
+blockers:
+  - reason: The task needs access to physical mail.
+    fix: Point it at a digital source instead.
+    details: Autowright scripts can only read files and web pages.
+===END===
+"""
+
+
+def respond(prompt: str) -> str:
+    if "question:" in prompt.lower() and "=== TASK ===" not in prompt:
+        return "Mock answer: nothing new."
+    # §8 chat call (§11 chat pane) — the response shape decides the outcome:
+    # a question-shaped request gets prose, "fix-and-test" the full multi-block
+    # response (rewrites + actions), anything else the spec rewrite.
+    if "Decide what the USER REQUEST" in prompt:
+        m = re.search(r"=== USER REQUEST ===\n(.+)", prompt)
+        user = (m.group(1) if m else "").strip()
+        if "blocked-chat" in user.lower():
+            return BLOCKED_ENVELOPE
+        if "fix-and-test" in user.lower():
+            spec = SPEC_ENVELOPE.format(title="Fixed automation",
+                                        desc="Fixed by the mock agent.").split("===END===")[0]
+            return ("Fixed — rebuilding the steps and running a test.\n"
+                    + spec
+                    + "===FILE: notes.md===\n- Mock note: the fix-and-test path was exercised.\n"
+                    + "===FILE: actions.yaml===\nsync: true\ntest: true\n===END===\n")
+        if user.endswith("?"):
+            return ("The workflow has two steps: **Check for changes** looks for anything new "
+                    "since the last run, and **Build the result** summarizes what it found.")
+        title = user.rstrip(".")[:48].capitalize() or "New automation"
+        return SPEC_ENVELOPE.format(title=title, desc=f"{title} — rewritten by the mock agent.")
+    # §8 blocker envelope on demand: "blocked-spec" blocks call 1,
+    # "blocked-steps" blocks call 2 (it reaches call 2 via the spec title).
+    if "blocked-spec" in prompt.lower() and "Write the SPEC from the USER REQUEST" in prompt:
+        return BLOCKED_ENVELOPE
+    if "blocked-steps" in prompt.lower() and "Build the automation that implements the SPEC" in prompt:
+        return BLOCKED_ENVELOPE
+    if "Build the automation that implements the SPEC" in prompt:
+        # §8 call 2 — title comes from the SPEC's # heading
+        m = re.search(r"^# (.+)$", prompt.rsplit("=== SPEC", 1)[-1], re.M)
+        title = (m.group(1).strip() if m else "New automation")[:48]
+        return STEPS_ENVELOPE.format(title=title, desc=f"{title} — drafted by the mock agent.")
+    # §8 call 1 — title comes from the USER REQUEST section
+    m = re.search(r"=== USER REQUEST ===\n(.+)", prompt)
+    user = m.group(1) if m else "New automation"
+    title = user.strip().rstrip(".")[:48].capitalize() or "New automation"
+    return SPEC_ENVELOPE.format(title=title, desc=f"{title} — drafted by the mock agent.")
+
+
+def main() -> None:
+    args = sys.argv[1:]
+    if (args == ["auth", "status"]
+            and os.environ.get("AUTOWRIGHT_TEST_CLAUDE_SIGNED_OUT") == "1"):
+        # §19 sign-in knob: the real `signed_in("claude")` check shells out to
+        # `claude auth status` and reads only the exit code.
+        sys.stderr.write("Not signed in\n")
+        sys.exit(1)
+    if "--version" in args:
+        print("0.0.0 (autowright test fake)")
+        return
+    prompt = args[-1] if args else ""
+    text = respond(prompt)
+    if "stream-json" in args:
+        # §8 live progress: the backend reads stream-json — emit the reply as
+        # per-line text deltas, then the terminal result event with the full
+        # text. AUTOWRIGHT_TEST_STREAM_DELAY_MS paces the stream (manual UI
+        # verification); unset → instant, so the pytest suite stays fast.
+        delay = float(os.environ.get("AUTOWRIGHT_TEST_STREAM_DELAY_MS") or 0) / 1000
+        if "WebFetch,WebSearch" in args:
+            # web-enabled drafting call: one tool_use like the real CLI
+            # reports, so the §8 activity feed has a tool event to show
+            sys.stdout.write(json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "WebFetch",
+                 "input": {"url": "https://example.com/docs"}}]}}) + "\n")
+            sys.stdout.flush()
+            if delay:
+                time.sleep(delay * 3)
+        for ln in text.splitlines(keepends=True):
+            sys.stdout.write(json.dumps({
+                "type": "stream_event",
+                "event": {"type": "content_block_delta",
+                          "delta": {"type": "text_delta", "text": ln}},
+            }) + "\n")
+            sys.stdout.flush()
+            if delay:
+                time.sleep(delay)
+        sys.stdout.write(json.dumps({"type": "result", "subtype": "success",
+                                     "result": text}) + "\n")
+        return
+    sys.stdout.write(text)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,185 @@
+// §9.3 developer log overlay: `-key toggled bottom log panel, devMode-gated.
+// Inert (no listener, never renders) while devMode is off; polls over IPC
+// every 1 s only while open. First tab (default) is the §5 request-log
+// browser; the rest tail the four log files.
+import React, { useEffect, useRef, useState } from 'react'
+import { useStore } from './store'
+import { ScrollArea } from './ui'
+
+type Tail = { name: string; text: string }
+
+const REQUESTS = 'requests'
+
+// Shared mono log-body style (requests pane body + file-tail body) — the
+// ScrollArea scroller half; the flex sizing lives on the wrapper.
+const logBodyStyle: React.CSSProperties = {
+  padding: '4px 12px 10px', whiteSpace: 'pre-wrap',
+  fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.5, color: 'var(--code-text)',
+  wordBreak: 'break-word',
+}
+
+function editable(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false
+  return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable
+}
+
+// §5 request-log files: descending name list (newest first) + selected file body.
+function RequestsPane() {
+  const [names, setNames] = useState<string[] | null>(null)
+  const [sel, setSel] = useState<string | null>(null)
+  const [text, setText] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    const poll = async () => {
+      const list = (await window.autowright?.listRequestLogs()) ?? []
+      if (!alive) return
+      setNames(list)
+      setSel((s) => (s && list.includes(s) ? s : null))
+    }
+    void poll()
+    const id = window.setInterval(() => void poll(), 1000)
+    return () => { alive = false; clearInterval(id) }
+  }, [])
+
+  useEffect(() => {
+    if (!sel) { setText(''); return }
+    let alive = true
+    void window.autowright?.readRequestLog(sel).then((t) => { if (alive) setText(t ?? '') })
+    return () => { alive = false }
+  }, [sel])
+
+  return (
+    <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      <ScrollArea
+        wrapStyle={{ width: 280, flex: 'none', borderRight: '1px solid var(--hairline)' }}
+        style={{ padding: '4px 0 10px' }}
+      >
+        {(names ?? []).map((n) => (
+          <button
+            key={n}
+            className="ad-nav-row"
+            onClick={() => setSel(n)}
+            title={n}
+            style={{
+              display: 'block', width: '100%', textAlign: 'left', padding: '2px 12px',
+              fontFamily: 'var(--mono)', fontSize: 11, whiteSpace: 'nowrap',
+              overflow: 'hidden', textOverflow: 'ellipsis',
+              color: n === sel ? 'var(--text)' : 'var(--text-muted)',
+              ...(n === sel ? { background: 'var(--bg-active)' } : null),
+            }}
+          >
+            {n}
+          </button>
+        ))}
+        {names && names.length === 0 && (
+          <div style={{ padding: '4px 12px', fontSize: 11.5, color: 'var(--text-faint)' }}>
+            No request logs yet — make a request with Developer mode on
+          </div>
+        )}
+      </ScrollArea>
+      <ScrollArea wrapStyle={{ flex: 1, minWidth: 0 }} style={logBodyStyle}>
+        {sel ? text : names?.length ? 'Select a request' : ''}
+      </ScrollArea>
+    </div>
+  )
+}
+
+export default function DevLogOverlay() {
+  const devMode = useStore((s) => s.settings?.devMode) ?? false
+  const [open, setOpen] = useState(false)
+  const [tails, setTails] = useState<Tail[] | null>(null)
+  const [tab, setTab] = useState<string | null>(null)
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const followRef = useRef(true)
+
+  // Turning the setting off closes an open overlay.
+  useEffect(() => { if (!devMode) setOpen(false) }, [devMode])
+
+  useEffect(() => {
+    if (!devMode) return
+    const onKey = (e: KeyboardEvent) => {
+      // e.code, not e.key: §9.3 names the physical Backquote key — on many
+      // non-US layouts that key emits another glyph (or is a dead key), which
+      // would make the overlay untoggleable.
+      if (e.code === 'Backquote' && !editable(e.target)) {
+        e.preventDefault()
+        setOpen((v) => !v)
+      } else if (e.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [devMode])
+
+  useEffect(() => {
+    if (!open) { setTails(null); setTab(null); followRef.current = true; return }
+    let alive = true
+    const poll = async () => {
+      const r = await window.autowright?.tailLogs()
+      if (alive && r) setTails(r)
+    }
+    void poll()
+    const id = window.setInterval(() => void poll(), 1000)
+    return () => { alive = false; clearInterval(id) }
+  }, [open])
+
+  // Default tab: the requests browser; file tabs show only files that exist.
+  const active = tab && (tab === REQUESTS || tails?.some((t) => t.name === tab)) ? tab : REQUESTS
+  const text = tails?.find((t) => t.name === active)?.text ?? ''
+
+  // Auto-follow the tail while scrolled to the bottom; scrolling up pauses it.
+  useEffect(() => {
+    const el = bodyRef.current
+    if (el && followRef.current) el.scrollTop = el.scrollHeight
+  }, [text, active])
+
+  if (!devMode || !open) return null
+  return (
+    <div className="ad-anim-fade" style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      display: 'flex', flexDirection: 'column', background: 'var(--bg-code)',
+    }}>
+      {/* 38px top padding clears the macOS traffic lights (pinned at 14,14). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '38px 10px 6px', flex: 'none' }}>
+        {[REQUESTS, ...(tails ?? []).map((t) => t.name)].map((name) => (
+          <button
+            key={name}
+            className="ad-nav-row"
+            onClick={() => { setTab(name); followRef.current = true }}
+            style={{
+              padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontFamily: 'var(--mono)',
+              color: name === active ? 'var(--text)' : 'var(--text-muted)',
+              ...(name === active ? { background: 'var(--bg-active)' } : null),
+            }}
+          >
+            {name}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <button
+          className="ad-nav-row"
+          onClick={() => setOpen(false)}
+          title="Close"
+          style={{ width: 22, height: 22, borderRadius: 6, color: 'var(--text-faint)' }}
+        >
+          <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
+        </button>
+      </div>
+      {active === REQUESTS ? <RequestsPane /> : (
+        <ScrollArea
+          scrollRef={bodyRef}
+          onScroll={() => {
+            const el = bodyRef.current
+            if (el) followRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 4
+          }}
+          wrapStyle={{ flex: 1, minHeight: 0 }}
+          style={logBodyStyle}
+        >
+          {text}
+        </ScrollArea>
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,10 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#f68b43"/>
+
+  <!-- AW ligature: one continuous zigzag; the A's right leg doubles as the W's first stroke -->
+  <g stroke="#16100a" stroke-width="70" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M 240 690 L 350 360 L 460 690 L 570 360 L 680 690 L 790 360"/>
+    <!-- A crossbar -->
+    <path d="M 277 580 L 423 580"/>
+  </g>
+</svg>

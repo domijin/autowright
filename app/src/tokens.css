@@ -1,0 +1,428 @@
+/* Design tokens (SPEC.md §14 is authoritative). Dark theme only. */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+@import '@fortawesome/fontawesome-free/css/all.min.css';
+
+:root {
+  --bg-window: #0b0e12;
+  --bg-content: #0e1116;
+  --bg-sidebar: #0a0d11;
+  --bg-card: #12151c;
+  --bg-card-sel: #14181f;
+  --bg-inset: #0d1015;
+  --bg-menu: #161a22;
+  --bg-toast: #1b202a;
+
+  --text: #e9ecf1;
+  --text-2: #a8b0bc;
+  --text-2em: #c6cdd6;
+  --text-2emx: #dfe4ea;
+  --text-muted: #8a93a0;
+  --text-faint: #67707c;
+  --text-faintest: #4f5763;
+
+  --hairline: rgba(255, 255, 255, 0.06);
+  --border-card: rgba(255, 255, 255, 0.07);
+  --border-input: rgba(255, 255, 255, 0.10);
+  --border-btn: rgba(255, 255, 255, 0.11);
+  --border-hover: rgba(255, 255, 255, 0.25);
+  --border-dashed: rgba(255, 255, 255, 0.12);
+  --bg-active: rgba(255, 255, 255, 0.07);
+
+  --accent: oklch(0.74 0.155 52);
+  --accent-hover: oklch(0.79 0.155 52);
+  --accent-bg: oklch(0.74 0.155 52 / 0.15);
+  --accent-chip-bg: oklch(0.74 0.155 52 / 0.13);
+  --accent-hint-bg: oklch(0.74 0.155 52 / 0.08);
+  --on-accent: #16100a;
+  --link-hover: oklch(0.82 0.14 60);
+
+  --green: oklch(0.76 0.15 150);
+  --green-bg: oklch(0.76 0.15 150 / 0.13);
+  --cyan: oklch(0.78 0.12 210);
+  --cyan-bg: oklch(0.78 0.12 210 / 0.13);
+  --red: oklch(0.7 0.19 25);
+  --red-bg: oklch(0.7 0.19 25 / 0.13);
+  --amber: oklch(0.8 0.13 85);
+  --amber-bg: oklch(0.8 0.13 85 / 0.14);
+  --orange: oklch(0.72 0.15 60);
+  --orange-bg: oklch(0.72 0.15 60 / 0.13);
+  --magenta: oklch(0.72 0.16 340);
+  --magenta-bg: oklch(0.72 0.16 340 / 0.13);
+  --gray: #98a1ad;
+  --gray-bg: rgba(152, 161, 173, 0.13);
+
+  --red-hover: oklch(0.74 0.17 25);
+  --red-text: oklch(0.78 0.15 25);
+  --accent-sel: oklch(0.74 0.155 52 / 0.7);
+  --hairline-dim: rgba(255, 255, 255, 0.05);
+  --bg-code: #07090d;
+  --code-text: #9fb3c8;
+
+  --sans: 'IBM Plex Sans', -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Motion (§14): four durations, two curves. Call sites never hand-write
+     durations — use these tokens, the .ad-anim-* classes, or ui.tsx PULSE. */
+  --t-exit: 120ms;   /* all exits */
+  --t-hover: 150ms;  /* hover + control state changes */
+  --t-enter: 200ms;  /* element entrances, collapsibles, menus */
+  --t-page: 360ms;   /* page-root entrances */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { height: 100%; }
+
+body {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-window);
+  /* dark so the native overlay scrollbar thumb renders light on this background */
+  color-scheme: dark;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* All text is selectable by default so any information can be copied (right-click
+   shows Copy). Only buttons and the .ad-drag title-bar region are unselectable. */
+
+::selection { background: oklch(0.74 0.155 52 / 0.35); }
+
+input, textarea, select, button { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: none; user-select: none; }
+button:disabled { cursor: default; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--link-hover); text-decoration: underline; }
+
+/* Buttons — hover always via CSS :hover, never JS mouse-state (a JS hover flag
+   sticks when a re-render or layout shift moves the node under the cursor). */
+.ad-btn-primary {
+  background: var(--accent); color: var(--on-accent);
+  font-weight: 600; font-size: 13px; padding: 9px 16px; border-radius: 8px;
+  transition: background var(--t-hover) var(--ease-enter);
+}
+.ad-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.ad-btn-primary:disabled { background: rgba(255, 255, 255, 0.08); color: var(--text-faint); }
+/* disabled look while staying clickable (validation-on-click forms) */
+.ad-btn-primary.looks-disabled, .ad-btn-primary.looks-disabled:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08); color: var(--text-faint); cursor: default;
+}
+
+/* amber filled action button (Ollama sign-in / install CTAs) — primary geometry */
+.ad-btn-amber {
+  background: var(--amber); color: var(--on-accent);
+  font-weight: 600; font-size: 13px; padding: 9px 16px; border-radius: 8px;
+  transition: background var(--t-hover) var(--ease-enter);
+}
+.ad-btn-amber:hover:not(:disabled) { background: oklch(0.84 0.13 85); }
+.ad-btn-amber:disabled { opacity: .45; cursor: default; }
+
+.ad-btn-ghost {
+  color: var(--text-muted); border: 1px solid var(--border-btn); background: transparent;
+  font-weight: 500; font-size: 13px; padding: 8px 15px; border-radius: 8px;
+  transition: color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter);
+}
+.ad-btn-ghost:hover:not(:disabled) { color: var(--text-2); border-color: var(--border-hover); background: rgba(255, 255, 255, 0.04); }
+.ad-btn-ghost.danger, .ad-btn-ghost.danger:hover:not(:disabled) { color: var(--red); }
+
+/* bordered card-header button (Edit / Sync now / Run a dry check) */
+.ad-btn-soft {
+  background: rgba(255, 255, 255, 0.05); color: var(--text-2em);
+  border: 1px solid var(--border-btn); border-radius: 8px;
+  font: 500 13px var(--sans); padding: 8px 15px;
+  transition: color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
+}
+.ad-btn-soft:hover:not(:disabled) { border-color: var(--border-hover); color: var(--text); }
+.ad-btn-soft:disabled, .ad-btn-ghost:disabled, .ad-btn-text:disabled, .ad-btn-pill:disabled,
+.ad-btn-x:disabled, .ad-btn-dashed:disabled, .ad-btn-accent-ghost:disabled,
+.ad-btn-link:disabled { opacity: .45; cursor: default; }
+textarea:disabled, input:disabled { opacity: .45; }
+
+/* borderless text button; .dim for the fainter tone */
+.ad-btn-text { color: var(--text-muted); font: 500 13px var(--sans); padding: 6px 4px; transition: color var(--t-hover) var(--ease-enter); }
+.ad-btn-text:hover:not(:disabled) { color: var(--text); }
+.ad-btn-text.dim { color: var(--text-faint); }
+/* compact disclosure-toggle size (§9.2 setup guides, §11 card-header actions);
+   line-height 1 keeps the button inside the eyebrow line so card headers with
+   actions stay exactly as tall as headers without */
+.ad-btn-text.small { font-size: 11.5px; padding: 0; line-height: 1; }
+.ad-btn-text.dim:hover:not(:disabled) { color: var(--text-2); }
+.ad-btn-text.danger { color: var(--red); }
+.ad-btn-text.danger:hover:not(:disabled) { color: var(--red-hover); }
+
+/* accent link-styled button (matches the global <a> treatment) */
+.ad-btn-link { color: var(--accent); font: 500 13px var(--sans); padding: 6px 4px; transition: color var(--t-hover) var(--ease-enter); }
+.ad-btn-link:hover:not(:disabled) { color: var(--link-hover); }
+/* compact card-header action size (§11 editor cards) */
+.ad-btn-link.small { font-size: 11.5px; padding: 0; line-height: 1; }
+
+/* mono pill trigger (agent picker, version menu) */
+.ad-btn-pill {
+  display: flex; align-items: center; gap: 6px;
+  font: 600 10.5px var(--mono); color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 3px 7px;
+  transition: color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter);
+}
+.ad-btn-pill:hover:not(:disabled) { color: var(--text-2em); background: rgba(255, 255, 255, 0.09); }
+
+/* dashed add-row button (+ Add line / + Add pair) */
+.ad-btn-dashed {
+  align-self: flex-start; background: none;
+  border: 1px dashed var(--border-dashed); border-radius: 8px;
+  color: var(--text-muted); font: 500 13px var(--sans); padding: 8px 15px;
+  transition: color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
+}
+.ad-btn-dashed:hover:not(:disabled) { color: var(--text); border-color: rgba(255, 255, 255, 0.25); }
+
+/* row-remove ✕ */
+.ad-btn-x { color: var(--text-faintest); width: 24px; flex: none; font: 500 14px var(--sans); transition: color var(--t-hover) var(--ease-enter); }
+.ad-btn-x:hover:not(:disabled) { color: var(--red-hover); }
+
+/* accent-tinted ghost (Execute once / Execute draft / Add trigger / agent chips) */
+.ad-btn-accent-ghost {
+  background: oklch(0.74 0.155 52 / 0.1); border: 1px solid oklch(0.74 0.155 52 / 0.3);
+  color: var(--accent); font-weight: 600; font-size: 13px; padding: 8px 15px; border-radius: 8px;
+  transition: background var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
+}
+.ad-btn-accent-ghost:hover:not(:disabled) { background: oklch(0.74 0.155 52 / 0.18); border-color: oklch(0.74 0.155 52 / 0.45); }
+/* compact in-card-editor size (§9.2 trigger editor: Add/Save, New secret, permission checklist) */
+.ad-btn-accent-ghost.small { font: 500 11.5px var(--mono); padding: 5px 11px; border-radius: 7px; }
+
+/* square accent-filled icon button (per-card Execute now on the automations list) */
+.ad-btn-exec {
+  width: 28px; height: 28px; border-radius: 7px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: var(--on-accent);
+  transition: background var(--t-hover) var(--ease-enter), transform var(--t-hover) var(--ease-enter);
+}
+.ad-btn-exec:hover:not(:disabled) { background: var(--accent-hover); }
+.ad-btn-exec:active:not(:disabled) { transform: scale(0.94); }
+.ad-btn-exec:disabled { background: oklch(0.74 0.155 52 / 0.35); color: oklch(0.2 0.02 52 / 0.7); }
+
+/* red-tinted confirm (destructive confirms, cancel-execution) */
+.ad-btn-danger-ghost {
+  background: oklch(0.7 0.19 25 / 0.16); border: 1px solid oklch(0.7 0.19 25 / 0.4);
+  color: var(--red-text); font-weight: 600; font-size: 13px; padding: 8px 15px; border-radius: 8px;
+  transition: background var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
+}
+.ad-btn-danger-ghost:hover:not(:disabled) { background: oklch(0.7 0.19 25 / 0.22); border-color: oklch(0.7 0.19 25 / 0.55); }
+
+/* button labels never wrap — a tight flex row must yield elsewhere */
+.ad-btn-primary, .ad-btn-ghost, .ad-btn-soft, .ad-btn-dashed, .ad-btn-accent-ghost,
+.ad-btn-danger-ghost, .ad-btn-text, .ad-btn-link, .ad-btn-amber {
+  white-space: nowrap;
+}
+
+/* one shared press feedback for bordered/filled action buttons (§14 motion);
+   .ad-btn-exec keeps scale(.94), .ad-chip-btn its own translateY */
+.ad-btn-primary:active:not(:disabled), .ad-btn-ghost:active:not(:disabled),
+.ad-btn-soft:active:not(:disabled), .ad-btn-dashed:active:not(:disabled),
+.ad-btn-accent-ghost:active:not(:disabled), .ad-btn-danger-ghost:active:not(:disabled),
+.ad-btn-amber:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* clickable list/table row */
+.ad-hover-row { transition: background var(--t-hover) var(--ease-enter); }
+.ad-hover-row:hover { background: rgba(255, 255, 255, 0.03); }
+
+/* static card chrome — the non-clickable sibling of .ad-card-click */
+.ad-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; }
+
+/* clickable card (automations list) — class owns bg/border so :hover can restyle
+   them (inline base styles would beat the hover rule) */
+.ad-card-click {
+  background: var(--bg-card); border: 1px solid var(--border-card); cursor: pointer;
+  transition: background var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
+}
+.ad-card-click:hover { background: var(--bg-card-sel); border-color: var(--border-hover); }
+
+/* clickable page title linking elsewhere */
+.ad-link-title { transition: color var(--t-hover) var(--ease-enter); cursor: pointer; }
+.ad-link-title:hover { color: var(--accent); }
+
+/* click-to-edit page title/desc (automation rename) — hover reveals the pencil;
+   .always keeps it visible (§11 Review page). The pencil button is the only
+   click target — the text itself is inert. */
+.ad-title-rename { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.ad-title-rename .pencil {
+  opacity: 0; flex: none; font-size: 12px; color: var(--text-faint);
+  background: none; border: none; cursor: pointer;
+  transition: opacity var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter);
+}
+.ad-title-rename:hover .pencil, .ad-title-rename.always .pencil { opacity: 1; }
+.ad-title-rename .pencil:hover { color: var(--text-2); }
+
+/* sidebar nav row (App.tsx); active state keeps its inline accent-tint bg */
+.ad-nav-row { transition: background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter); }
+.ad-nav-row:hover:not(.active) { background: rgba(255, 255, 255, 0.04); }
+
+/* §9 hover-expanding floating nav rail: 58px icons-only, hover overlays at 212px.
+   Inner content stays a fixed 212px so rows never reflow — labels reveal by clip. */
+.ad-rail {
+  width: 58px; overflow: hidden;
+  border-radius: 0 12px 12px 0;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--hairline); border-left: none;
+  transition: width var(--t-enter) var(--ease-enter), box-shadow var(--t-enter) var(--ease-enter);
+}
+.ad-rail:hover {
+  width: 212px;
+  box-shadow: 10px 0 36px rgba(0, 0, 0, 0.38);
+}
+/* labels/pills/wordmark sit past the 58px clip but their first characters would
+   still peek — fade them with the width so collapsed is truly icons-only */
+.ad-rail-reveal { opacity: 0; transition: opacity var(--t-enter) var(--ease-enter); }
+.ad-rail:hover .ad-rail-reveal { opacity: 1; }
+
+/* text inputs/textareas: border + focus ring here, dimensions inline at call site */
+.ad-input {
+  border: 1px solid var(--border-input); border-radius: 8px; background: var(--bg-inset);
+  outline: none; transition: border-color var(--t-hover) var(--ease-enter);
+}
+.ad-input:focus, .ad-input:focus-within { border-color: oklch(0.74 0.155 52 / 0.6); }
+/* one-line placeholder: the ask-box auto-grow sizes to typed content only, so a
+   wrapped placeholder would clip — truncate it instead */
+.ad-input.oneline-ph::placeholder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad-input.amber:focus { border-color: oklch(0.8 0.13 85 / 0.55); }
+.ad-input.invalid, .ad-input.invalid:focus, .ad-input.invalid:focus-within { border-color: oklch(0.7 0.19 25 / 0.55); }
+
+/* example-prompt chip (create-flow Ask phase) */
+.ad-chip-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 16px; color: var(--text-2); font: 500 12px var(--sans); padding: 6px 13px;
+  transition: color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter), transform var(--t-hover) var(--ease-enter);
+}
+.ad-chip-btn i { font-size: 10px; color: var(--text-faint); transition: color var(--t-hover) var(--ease-enter); }
+.ad-chip-btn:hover { border-color: oklch(0.74 0.155 52 / 0.45); background: var(--accent-hint-bg); color: var(--text); }
+.ad-chip-btn:hover i { color: var(--accent); }
+.ad-chip-btn:active { transform: translateY(1px); }
+
+/* popover menu row */
+.ad-menu-row { padding: 8px 11px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: var(--text-2); }
+.ad-menu-row:hover { background: rgba(255, 255, 255, 0.05); }
+.ad-menu-row.active { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.ad-menu-row.danger { color: var(--red); }
+
+@keyframes adFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes adFadeOutDown {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(8px); }
+}
+@keyframes adFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes adSlideInRight {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes adSlideOutRight {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(14px); }
+}
+@keyframes adFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes adSpin { to { transform: rotate(360deg); } }
+@keyframes adPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes adBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@keyframes adBarSlide { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+
+/* §14 motion — the only way call sites apply entrances */
+.ad-anim-page { animation: adFadeUp var(--t-page) var(--ease-enter) both; }
+.ad-anim-item { animation: adFadeUp var(--t-enter) var(--ease-enter) both; }
+.ad-anim-fade { animation: adFadeIn var(--t-enter) var(--ease-enter) both; }
+
+/* collapsible body (ui.tsx Collapse): grid-rows 0fr→1fr height animation,
+   content stays mounted; the inner wrapper must clip while closed */
+/* §14 collapsible: asymmetric rows (open decelerates, close accelerates) with a content
+   crossfade — the wrapper fades out fast on close and fades in slightly after the rows
+   start opening, so text never visibly clips and hint↔body pairs hand off as one swap */
+.ad-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows var(--t-exit) var(--ease-exit); }
+.ad-collapse.open { grid-template-rows: 1fr; transition: grid-template-rows var(--t-enter) var(--ease-enter); }
+.ad-collapse > * { overflow: hidden; min-height: 0; opacity: 0; transition: opacity var(--t-exit) var(--ease-exit); }
+.ad-collapse.open > * { opacity: 1; transition: opacity var(--t-enter) var(--ease-enter) 40ms; }
+
+/* rotating header caret — single glyph, never an icon-class swap */
+.ad-caret { transition: transform var(--t-hover) var(--ease-enter); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* No ::-webkit-scrollbar styling: any such rule forces classic space-taking
+   scrollbars, which shift centered content when they appear. Native macOS
+   overlay scrollbars draw on top of the content instead. */
+/* §14 overlay scrollbar — app-wide. The native bar is hidden on the scroller
+   (.ad-scrollhide) and the pane draws its own thumb (.ad-thumb) absolutely over
+   the content: no track, zero layout space, content never shifts. Always visible
+   while the pane has overflow — no hover/scroll fade. */
+.ad-scrollhide { scrollbar-width: none; }
+.ad-thumb {
+  position: absolute;
+  right: 3px;
+  width: 5px;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.25);
+  pointer-events: none;
+}
+/* keep the textarea resize grip theme-colored — without this it flips to the
+   default light square */
+::-webkit-resizer {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M10.5 5 5 10.5M10.5 8.5l-2 2' stroke='rgba(255,255,255,0.28)' stroke-width='1.2' stroke-linecap='round' fill='none'/%3E%3C/svg%3E") no-repeat bottom right / 12px 12px;
+}
+
+/* drag region for the hiddenInset title bar */
+.ad-drag { -webkit-app-region: drag; user-select: none; }
+.ad-drag button, .ad-drag a, .ad-drag input, .ad-no-drag { -webkit-app-region: no-drag; }
+
+/* Markdown views — the shared §4.5 renderer (react-markdown + remark-gfm).
+   Assumes 18px card side padding: tables go full-bleed with -18px margins. */
+.ad-md { display: flex; flex-direction: column; gap: 10px; }
+.ad-md p { font-size: 13px; line-height: 1.6; color: var(--text-2em); text-wrap: pretty; }
+.ad-md h1, .ad-md h2, .ad-md h3, .ad-md h4, .ad-md h5, .ad-md h6 { font-weight: 600; color: var(--text); }
+.ad-md h1 { font-size: 15px; }
+.ad-md h2 { font-size: 13.5px; }
+.ad-md h3, .ad-md h4, .ad-md h5, .ad-md h6 { font-size: 12.5px; }
+.ad-md :is(h1, h2, h3, h4, h5, h6):not(:first-child) { margin-top: 6px; }
+.ad-md strong { font-weight: 600; color: var(--text); }
+.ad-md code { font-family: var(--mono); font-size: .92em; background: rgba(255, 255, 255, .06); border-radius: 4px; padding: 1px 5px; }
+.ad-md pre { font: 400 11.5px/1.7 var(--mono); color: var(--text-2em); background: var(--bg-inset); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 14px; overflow-x: auto; }
+.ad-md pre code { font: inherit; background: none; border-radius: 0; padding: 0; }
+.ad-md ul, .ad-md ol { list-style: none; display: flex; flex-direction: column; }
+.ad-md ul { gap: 6px; }
+.ad-md ol { gap: 7px; counter-reset: ad-md-ol; }
+.ad-md li { position: relative; font-size: 13px; line-height: 1.55; color: var(--text-2emx); }
+.ad-md ul > li { padding-left: 18px; }
+.ad-md ul > li::before { content: '•'; position: absolute; left: 1px; color: var(--text-faint); font-weight: 600; }
+.ad-md ol > li { padding-left: 25px; counter-increment: ad-md-ol; }
+.ad-md ol > li::before { content: counter(ad-md-ol) '.'; position: absolute; left: 0; width: 15px; text-align: right; font: 400 12px var(--mono); color: var(--text-faint); }
+.ad-md li > ul, .ad-md li > ol { margin-top: 6px; }
+.ad-md li.task-list-item { padding-left: 0; }
+.ad-md li.task-list-item::before { content: none; }
+.ad-md input[type='checkbox'] { accent-color: var(--accent); margin-right: 5px; pointer-events: none; }
+.ad-md blockquote { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid rgba(255, 255, 255, .12); padding-left: 12px; }
+.ad-md blockquote p { color: var(--text-muted); }
+.ad-md hr { border: none; border-top: 1px solid var(--hairline); margin: 4px 0; }
+.ad-md img { max-width: 100%; border-radius: 8px; }
+.ad-md del { color: var(--text-muted); }
+.ad-md-tablewrap { margin: 4px -18px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); overflow-x: auto; }
+.ad-md table { border-collapse: collapse; width: 100%; }
+.ad-md thead tr { background: var(--bg-inset); }
+.ad-md th { padding: 9px 5px; text-align: left; font: 600 9.5px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--text-faint); }
+.ad-md td { padding: 10px 5px; vertical-align: top; border-top: 1px solid var(--hairline); overflow-wrap: break-word; font-size: 12.5px; line-height: 1.55; color: var(--text-2); }
+.ad-md td:first-child { color: var(--text); font-weight: 500; }
+.ad-md th:first-child, .ad-md td:first-child { padding-left: 18px; }
+.ad-md th:last-child, .ad-md td:last-child { padding-right: 18px; }

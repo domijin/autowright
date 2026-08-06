@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# Build the production distribution (SPEC §3): "Autowright.app" with the
+# relocatable CPython (python-build-standalone) + the autowright backend and
+# curated packages in Contents/Resources/python/, plus a DMG — all
+# under build/. Always Developer-ID-signed with hardened runtime and notarized —
+# no ad-hoc fallback: a downloaded (quarantined) ad-hoc build can never start
+# its backend LaunchAgent (Gatekeeper silently refuses to spawn the unsigned
+# bundled Python). Identity: CODESIGN_IDENTITY, or auto-detected as the single
+# "Developer ID Application" identity in the Keychain. Notarization uses the
+# Keychain credentials profile named by NOTARY_PROFILE (default:
+# autowright-notary).
+#
+#   ./scripts/prod.sh
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ---- version gate: refuse to build a distributable on version mismatch ----
+"$ROOT/scripts/release.sh" --check
+
+# ---- signing identity (required, resolved up front so failures are instant) ----
+if [ -z "${CODESIGN_IDENTITY:-}" ]; then
+  CODESIGN_IDENTITY="$(security find-identity -v -p codesigning \
+    | grep 'Developer ID Application' | sed -n 's/.*"\(.*\)"/\1/p' | head -1)"
+fi
+if [ -z "$CODESIGN_IDENTITY" ]; then
+  echo "no Developer ID Application identity found — set CODESIGN_IDENTITY or add one to the Keychain."
+  echo "Distributable builds must be signed + notarized (SPEC §3); ad-hoc builds cannot run their backend after download."
+  exit 1
+fi
+NOTARY_PROFILE="${NOTARY_PROFILE:-autowright-notary}"
+
+# ---- fast build first (venv + deps + typecheck + renderer bundle) ----
+"$ROOT/scripts/build.sh"
+
+BUILD="$ROOT/build"
+CACHE="$BUILD/cache"
+mkdir -p "$CACHE"
+
+ARCH="$(uname -m)"                       # arm64 | x86_64
+case "$ARCH" in
+  arm64)  PBS_ARCH="aarch64-apple-darwin"; EP_ARCH="arm64" ;;
+  x86_64) PBS_ARCH="x86_64-apple-darwin";  EP_ARCH="x64" ;;  # electron-packager spells it x64
+  *) echo "unsupported arch: $ARCH"; exit 1 ;;
+esac
+
+# ---- bundled relocatable CPython (python-build-standalone, pinned) ----
+PBS_TAG="20260623"
+PY_FULL="3.14.6"
+PBS_URL="${AUTOWRIGHT_PBS_URL:-https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PY_FULL+$PBS_TAG-$PBS_ARCH-install_only.tar.gz}"
+TARBALL="$CACHE/$(basename "$PBS_URL")"
+if [ ! -f "$TARBALL" ]; then
+  echo "· downloading bundled Python ($PY_FULL, $PBS_ARCH)"
+  curl -fL --retry 3 -o "$TARBALL.tmp" "$PBS_URL"
+  mv "$TARBALL.tmp" "$TARBALL"
+fi
+
+PYSTAGE="$BUILD/python"
+echo "· staging bundled Python → build/python"
+rm -rf "$PYSTAGE"
+mkdir -p "$PYSTAGE"
+tar -xzf "$TARBALL" -C "$PYSTAGE" --strip-components 1   # tarball root is python/
+
+# Backend + curated packages (§6.2) install into the bundled interpreter.
+# pip's bin/ entry-point scripts get absolute staging-path shebangs, so inside
+# the bundle the backend/CLI execute as `python3 -m autowright.main` / `-m autowright.cli`.
+echo "· installing backend into bundled Python"
+"$PYSTAGE/bin/python3" -m pip -q install "$ROOT/backend"
+
+# ---- app icon (checked-in, SPEC §14) ----
+cp "$ROOT/app/electron/icon/icon.icns" "$BUILD/icon.icns"
+
+# ---- package Electron (.app) ----
+# Only electron/ + dist/ + package.json ship: the renderer is fully bundled into
+# dist/ and main.cjs/preload.cjs use Electron builtins only, so node_modules,
+# src/ and the vite scaffolding stay out of the bundle.
+echo "· packaging Autowright.app"
+(cd "$ROOT/app" && npx electron-packager . "Autowright" \
+  --platform=darwin --arch="$EP_ARCH" --out "$BUILD/pkg" --overwrite \
+  --icon "$BUILD/icon.icns" \
+  --app-bundle-id com.autowright.app \
+  --ignore '^/src($|/)' \
+  --ignore '^/node_modules($|/)' \
+  --ignore '^/e2e($|/)' \
+  --ignore '^/tests($|/)' \
+  --ignore '^/brand-electron\.cjs$' \
+  --ignore '^/ds-entry\.ts$' \
+  --ignore '^/index\.html$' \
+  --ignore '^/vite\.config\.ts$' \
+  --ignore '^/vitest\.config\.ts$' \
+  --ignore '^/vitest\.e2e\.config\.ts$' \
+  --ignore '^/tsconfig\.json$' \
+  --ignore '^/UI-GUIDE\.md$' \
+  --ignore '^/package-lock\.json$')
+
+APP="$BUILD/pkg/Autowright-darwin-$ARCH/Autowright.app"
+[ -d "$APP" ] || { echo "packaging failed: $APP missing"; exit 1; }
+
+echo "· bundling Python → Contents/Resources/python"
+rm -rf "$APP/Contents/Resources/python"
+cp -R "$PYSTAGE" "$APP/Contents/Resources/python"
+
+# ---- smoke check: bundled interpreter works from inside the bundle ----
+# MUST run before signing: imports write .pyc files into Resources/python, and
+# any write after signing breaks the bundle's resource seal (notarization then
+# rejects the main binary). PYTHONDONTWRITEBYTECODE keeps the tree untouched.
+PYTHONDONTWRITEBYTECODE=1 "$APP/Contents/Resources/python/bin/python3" -c \
+  'import autowright, fastapi, uvicorn, websockets, yaml, keyring, requests, httpx, bs4, lxml, feedparser, dateutil' \
+  || { echo "bundled Python smoke check failed"; exit 1; }
+echo "· bundled Python imports OK"
+
+# ---- codesign (SPEC §3: inside-out, never --deep) ----
+# --deep leaves Electron Framework's nested dylibs unsigned/un-timestamped and
+# breaks the outer seal — notarization rejects the archive. Sign every Mach-O
+# explicitly, innermost first, then bundles outward. Electron/V8 needs JIT
+# entitlements under the hardened runtime or the app crashes at launch.
+ENTITLEMENTS="$BUILD/entitlements.plist"
+cat > "$ENTITLEMENTS" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+</dict>
+</plist>
+EOF
+
+echo "· codesigning (identity: $CODESIGN_IDENTITY, hardened runtime, inside-out)"
+SIGN=(codesign --force --options runtime --timestamp -s "$CODESIGN_IDENTITY")
+
+# 1. Python tree: shared objects + executables
+find "$APP/Contents/Resources/python" -type f \( -name '*.so' -o -name '*.dylib' \) -print0 \
+  | xargs -0 -n 16 "${SIGN[@]}"
+find "$APP/Contents/Resources/python/bin" -type f -perm +111 -print0 \
+  | xargs -0 -n 16 "${SIGN[@]}"
+
+# 2. every Mach-O inside Frameworks — detect by content, not name/location:
+# executables hide in odd places (Squirrel's Resources/ShipIt, Electron's
+# Helpers/chrome_crashpad_handler) and any one left unsigned fails notarization.
+while IFS= read -r -d '' f; do
+  if file -b "$f" | grep -q 'Mach-O'; then "${SIGN[@]}" "$f"; fi
+done < <(find "$APP/Contents/Frameworks" -type f -print0)
+
+# 3. framework bundles
+for fw in "$APP/Contents/Frameworks/"*.framework; do
+  "${SIGN[@]}" "$fw"
+done
+
+# 4. Electron helper apps (GPU/Renderer/Plugin) — JIT entitlements
+for helper in "$APP/Contents/Frameworks/"*.app; do
+  "${SIGN[@]}" --entitlements "$ENTITLEMENTS" "$helper"
+done
+
+# 5. the app bundle itself
+"${SIGN[@]}" --entitlements "$ENTITLEMENTS" "$APP"
+codesign --verify --deep --strict "$APP"
+
+# ---- notarize the app (SPEC §3) ----
+# Submit a zip of the signed app, then staple the ticket onto the app itself so
+# the DMG below carries a stapled bundle (Gatekeeper passes offline).
+# Re-verify the seal right before submission — anything that touched the bundle
+# since signing (a stray .pyc, a log file) makes notarization reject it.
+codesign --verify --deep --strict "$APP" \
+  || { echo "bundle was modified after signing — aborting before notarization"; exit 1; }
+APPZIP="$BUILD/Autowright-notarize.zip"
+rm -f "$APPZIP"
+ditto -c -k --keepParent "$APP" "$APPZIP"
+echo "· notarizing app (profile: $NOTARY_PROFILE — takes a few minutes)"
+xcrun notarytool submit "$APPZIP" --keychain-profile "$NOTARY_PROFILE" --wait \
+  || { echo "notarization failed — inspect with: xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"; exit 1; }
+rm -f "$APPZIP"
+xcrun stapler staple "$APP"
+
+# ---- update zip (SPEC §3: the Squirrel.Mac artifact release.sh uploads) ----
+# Zipped from the stapled app, so the downloaded update passes Gatekeeper offline.
+VERSION="$(node -p "require('$ROOT/app/package.json').version")"
+ZIP="$BUILD/Autowright-$VERSION-darwin-$ARCH.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+
+# ---- DMG ----
+DMG="$BUILD/Autowright-$VERSION-darwin-$ARCH.dmg"
+rm -f "$DMG"
+hdiutil create -volname "Autowright" -srcfolder "$APP" -ov -quiet -format UDZO "$DMG"
+
+# ---- notarize the DMG ----
+codesign --force --timestamp -s "$CODESIGN_IDENTITY" "$DMG"
+echo "· notarizing DMG (profile: $NOTARY_PROFILE)"
+xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait \
+  || { echo "notarization failed — inspect with: xcrun notarytool log <submission-id> --keychain-profile $NOTARY_PROFILE"; exit 1; }
+xcrun stapler staple "$DMG"
+
+# ---- final gate: never emit an artifact Gatekeeper would reject ----
+spctl --assess --type open --context context:primary-signature "$DMG" \
+  || { echo "Gatekeeper rejected the DMG — do not distribute"; exit 1; }
+spctl --assess --type execute "$APP" \
+  || { echo "Gatekeeper rejected the app — do not distribute"; exit 1; }
+echo "· Gatekeeper assessment OK (app + DMG)"
+
+echo "· dist done:"
+echo "    $APP"
+echo "    $DMG"
+echo "    $ZIP"

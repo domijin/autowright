@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Regenerate knowledge.md — a gitignored, developer-only orientation doc.
+# Uses claude (Opus 5) with read-only tools to explore the repo and emit
+# a concise, diagram-heavy overview. Never read by agents; never used to
+# build the app.
+# Developer-only: agents must never run this script.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+command -v claude >/dev/null || { echo "claude CLI not found." >&2; exit 1; }
+
+out="knowledge.md"
+tmp="$(mktemp "${TMPDIR:-/tmp}/knowledge.XXXXXX")"
+trap 'rm -f "$tmp"' EXIT
+
+prompt='Generate the body of knowledge.md: a concise orientation doc so a developer
+can quickly understand how this app works. It is gitignored and read by humans
+only — never by agents — so optimize for fast reading, not completeness.
+
+Sources: read SPEC.md first (source of truth), then verify the details you use
+against the actual code. Use `git ls-files` for the file tree.
+
+Style rules:
+- Concise. Prefer mermaid diagrams and markdown tables over prose. Short
+  sentences between them only where a diagram cannot carry the meaning.
+- Terminology: an automation "executes"; an occurrence is an "execution" —
+  never "run".
+- Target roughly 700-1000 lines total; the data model section may take up to
+  a third of that.
+
+Required sections, in order:
+1. **What it is** — 2-3 sentences.
+2. **Architecture** — one mermaid diagram: Electron renderer / main process /
+   preload bridge / Python backend (FastAPI, engine, scheduler, storage) /
+   harness CLIs / launchd, with the transport between each (HTTP, WebSocket,
+   IPC, backend.json).
+3. **File structure** — annotated tree (top 2 levels plus the key files),
+   one-line note per entry.
+4. **Key files** — table: path | what it holds | when you would open it.
+5. **Data model** — the core section. Derive everything from
+   backend/autowright/storage.py, paths.py, execdb.py, and app/src/types.ts —
+   do not guess from memory. Three parts:
+
+   5a. **On-disk data tree** — one annotated tree of the ENTIRE data
+   directory as it looks for an app with real content: Application Support
+   root, automations/<id>/ (automation.yaml, versions/vN/, draft/,
+   executions/, memory/), the global pending draft slot, agents.yaml,
+   secrets.yaml, settings.yaml, backend.json, and the logs dir. One-line
+   note per entry saying what it stores.
+
+   5b. **File-by-file reference** — for EVERY persisted file, in this order:
+   automation.yaml, version manifest, draft, test.yaml, executions.yaml,
+   executions.db, execution NDJSON logs, result.yaml, memory + snapshot.yaml,
+   agents.yaml, secrets.yaml, settings.yaml, backend.json. For each file give:
+   - a realistic example of its full contents in a fenced yaml/json block
+     (NDJSON: a few example lines; executions.db: its table schema instead),
+     showing every field with plausible values — field names and enum values
+     (trigger kinds cron/time/app_start, statuses, etc.) taken from the code;
+   - a field table: field | type | meaning (skip only if the example plus a
+     sentence already makes every field obvious);
+   - a one-line "who touches it": which process/component writes it and which
+     reads it (scheduler, engine, executor, drafting agent, harness CLI,
+     API/renderer, launchd), and why it needs to exist — what breaks or is
+     forgotten without it.
+
+   5c. **Runtime-only structures** — short table (in-memory Store,
+   DraftJob + Blocker, EventHub) plus a note that app/src/types.ts mirrors
+   the serialized API shapes (StateSnapshot envelope), and that secret
+   values live only in the macOS Keychain — secrets.yaml holds metadata.
+6. **Action flows** — for each action below, a mermaid sequenceDiagram of the
+   steps end-to-end (which process, which endpoint/file touched):
+   - app launch (backend discovery via backend.json)
+   - onboarding
+   - creating an automation (draft → agent build → review → accept)
+   - testing an automation from the draft
+   - a scheduled execution firing (scheduler → engine → step scripts → logs)
+   - editing an existing automation
+   - adding an agent and a secret, and how a step script uses them
+7. **CLI** — derive from backend/autowright/cli.py and spec/cli.md. One table
+   of EVERY command and subcommand: command | arguments/flags | what it does |
+   example invocation. Follow with short notes on the authoring loop
+   (pull → edit workdir → push), execute/follow, and export/import.
+8. **Agent skill** — what skills/autowright/SKILL.md is: how an AI coding
+   agent drives the whole app through the CLI, the review-promise rule
+   (summary before save/execute), and how a user installs it. A few
+   sentences plus a small table of the workflows it teaches.
+9. **Python APIs** — two parts:
+   9a. **Step SDK** — what a step script can import and call
+   (backend/autowright/executor.py, §6.1): params, secrets, memory,
+   outputs, logging. Table: name | signature | what it does, plus one
+   realistic example step script.
+   9b. **Backend HTTP/WS API** — from backend/autowright/api.py: table of
+   endpoint | method | purpose, grouped by resource; note the WebSocket
+   event stream and the StateSnapshot envelope. One line per endpoint —
+   this is a map, not a reference.
+10. **Message triggers** — how Discord triggers work today
+    (backend/autowright/listeners.py, schedule.py, spec §6): a mermaid
+    sequenceDiagram from Discord gateway connection → message match →
+    execution → reply sending, including where the bot token lives and
+    what happens when the app/backend is closed. Then a short subsection
+    on iMessage and pubsub: reserved trigger kinds only ("coming soon" in
+    UI, rejected by the API) — describe the intended shape per the spec
+    without inventing implementation detail.
+11. **Dev workflow** — table of scripts/ entries (dev.sh, build.sh, prod.sh,
+    test-fast.sh, release.sh, knowledge.sh, commit.sh …): script | what it
+    does | when to use. Note the test tiers (§15 shift-left order) and the
+    fake agent CLI under tests/bin.
+12. **Where things live at runtime** — table of data dir, logs dir, version
+    folders, backend.json.
+
+Anything else you notice that a developer would want at a glance (packaging /
+update feed, launchd service, gotchas) — add briefly where it fits; do not
+pad.
+
+Output ONLY the raw markdown body — no preamble, no closing remarks, no
+surrounding code fence.'
+
+claude --model claude-opus-5 -p "$prompt" \
+  --allowedTools "Read,Glob,Grep,Bash(ls:*),Bash(tree:*),Bash(git ls-files:*),Bash(git log:*),Bash(wc:*),Bash(head:*),Bash(cat:*)" \
+  > "$tmp"
+
+if [[ ! -s "$tmp" ]]; then
+  echo "Generation returned empty output; $out left untouched." >&2
+  exit 1
+fi
+
+{
+  echo "<!-- Generated by scripts/knowledge.sh on $(date '+%Y-%m-%d %H:%M') —"
+  echo "     gitignored, developer reading only. Do not feed to agents; SPEC.md"
+  echo "     is the source of truth. Regenerate instead of editing. -->"
+  echo
+  cat "$tmp"
+} > "$out"
+
+echo "Wrote $out ($(wc -l < "$out") lines)."

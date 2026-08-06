@@ -1,0 +1,128 @@
+# Autowright — SPEC
+
+Source of truth. Holds enough detail to rebuild the app from scratch, including the pixel-exact
+values where they matter (colors, spacing, typography) — §14 is the authoritative design-token
+sheet, implemented in code by `app/src/tokens.css`.
+
+The spec is split across this index file and `spec/*.md`. § numbers are global across all spec
+files; the map below says which file holds each section. Read this file first, then open only the
+spec files the task touches. Keep the map current when sections are added or moved.
+
+**Section map** — ordered so later sections build on earlier ones:
+
+- **Foundations:** §1 product · §2 components (both below, in this file) ·
+  §3 packaging & process lifecycle → [spec/packaging.md](spec/packaging.md)
+- **Data:** §4 data model (entities) → [spec/data-model.md](spec/data-model.md) ·
+  §5 storage (files on disk, incl. §5.1 transfer archives) → [spec/storage.md](spec/storage.md)
+- **Runtime:** §6 engine contract & framework policies (incl. §6.1 step SDK · §6.2 curated
+  packages) → [spec/engine.md](spec/engine.md) ·
+  §7 execution lifecycle → [spec/execution.md](spec/execution.md) ·
+  §19 backend API → [spec/backend-api.md](spec/backend-api.md) ·
+  §20 CLI → [spec/cli.md](spec/cli.md)
+- **AI:** §8 agent drafting contract → [spec/agent-pipeline.md](spec/agent-pipeline.md)
+- **UI:** §9 shell & navigation (incl. §9.1 automations list · §9.2 automation detail ·
+  §9.3 developer log overlay · §9.4 about page) ·
+  §10 onboarding · §12 agents & secrets pages · §13 menu bar →
+  [spec/ui-shell.md](spec/ui-shell.md) ·
+  §11 create/edit flow → [spec/ui-create-edit.md](spec/ui-create-edit.md) ·
+  §14 design tokens → [spec/design-tokens.md](spec/design-tokens.md)
+- **Dev:** §15 dev/test knobs · §16 test seed data · §18 commands →
+  [spec/dev-test.md](spec/dev-test.md) · §17 repository (below, in this file)
+
+## 1. Product overview
+
+Autowright is a macOS desktop app for recurring personal automations. The user describes a job in
+plain words ("Check the manga I follow for new chapters every morning at 8"); a connected AI agent
+(Claude Code, Gemini CLI, Codex, or OpenCode — the latter optionally driving a local Ollama
+model) writes it as human-readable
+scripts; Autowright executes those scripts on a schedule, entirely on the user's Mac, and shows results.
+
+Core promises (exact UI copy, repeated in the onboarding footer):
+- "Your automations execute only on this Mac"
+- "Passwords never leave your Keychain"
+
+## 2. Architecture
+
+Four components (per top-level README):
+
+- **Electron desktop app** — the UI (dark theme only; visual language in §14). One window plus
+  a menu-bar (tray) surface. Talks to the backend over a local API.
+- **Python backend** — long-lived local service: owns the data store (automations, versions,
+  executions, agents, settings), the scheduler (fires triggers even when the app window is closed),
+  Keychain access for secrets, and orchestration of AI agents that draft/edit automation specs
+  and step scripts.
+- **Python engine** — executes an automation's steps as scripts, streams per-step status and logs,
+  enforces the framework policies (§6), injects secrets at runtime, persists execution results.
+- **CLI** — command-line access to the same backend, full UI parity (§20): manage, author
+  (pull/push workdirs), and execute automations; executions, secrets, agents, settings; §5.1
+  export/import. Headless operation is a supported mode (§3), not just a debug aid, and the
+  §17 agent skill drives everything through it. Naming: user-facing surface (command names,
+  arguments, metavars, help and error text) always spells out `automation` — never the `auto`
+  shorthand. Grants are explicit (§20 grant model): `create`/`push` grant only the agents and
+  secrets named by `--grant-agent`/`--grant-secret` flags — no all-on seed, no silent widening.
+
+**Stack (decided):** the Electron renderer is React 18 + TypeScript + Vite (state: one zustand
+store mirroring the §4 model; markdown rendering is react-markdown + remark-gfm — see §4.5). The backend is Python 3.14 + FastAPI/uvicorn (PyYAML, keyring for
+Keychain; request/response bodies are plain dicts — pydantic is not used directly). Transport is localhost HTTP (JSON) plus one WebSocket for live events —
+the full API surface is §19. Packaging is decided — see §3. Storage is decided — see §5.
+
+## 17. Repository structure
+
+- `SPEC.md` + `spec/` — the spec: `SPEC.md` is the index (holds §1, §2, §17 and the section map);
+  `spec/*.md` hold every other section, grouped by domain.
+- `backend/` — Python package `autowright`: storage, engine (+`executor.py` step SDK,
+  `imports_check.py` shared §6.2 import allowlist), scheduler, `listeners.py` (§6
+  message-trigger listener manager — Discord gateway connections, the §6 iMessage chat.db
+  watcher, reply sending), `imessage.py` (chat.db reader + ROWID cursor, typedstream
+  `attributedBody` decoder, osascript Messages sender, §19 permission probes),
+  drafting, harness adapters,
+  transfer archives (`transfer.py`, §5.1), FastAPI API (`api.py`), launchd service
+  (`service.py`), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
+  `autowright/instructions/` holds the §8 prompt texts as markdown (packaged via
+  `[tool.setuptools.package-data]`): `framework-instructions.md` (contract preamble) and
+  `default-build-instructions.md` (default build instructions seeded into new automations).
+  `pyproject.toml` defines the `autowright` / `autowright-backend` entry points.
+- `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
+  bridge), Vite + React + TS renderer under `src/` (`store.ts` central model, `api.ts` client,
+  `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen).
+  `brand-electron.cjs` (npm `postinstall`) renames the dev Electron.app bundle to "Autowright"
+  (§14). `electron/icon/` holds the checked-in AW app-icon assets (§14: `icon.svg`
+  source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon).
+  `UI-GUIDE.md` records the renderer conventions.
+- `scripts/` — project scripts (`dev.sh`, `build.sh`, `prod.sh`, `build-clean.sh` — §18;
+  `uninstall/` — developer-only uninstall scripts for the harness CLIs and Ollama, §18;
+  `gen_tray_icon.py` renders the tray template PNGs;
+  `gen_icon.cjs` regenerates `app/electron/icon/icon.png` + `icon.icns` from `icon.svg`
+  (§14) — invoked from `app/` as `./node_modules/.bin/electron ../scripts/gen_icon.cjs`;
+  `commit` stages all uncommitted changes, generates a commit message via
+  `claude --model claude-opus-5 -p` from the staged diff, and commits;
+  `release.sh` sets the app version from the repo-root `VERSION` file, invokes
+  `prod.sh` to build the release distributable, publishes the DMG + update zip as a
+  GitHub release via `gh`, and rewrites the §3 update feed under `docs/updates/`, §18;
+  `test-fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
+  `knowledge.sh` regenerates `knowledge.md`, §18;
+  `gen_licenses.py` regenerates `app/src/acknowledgements.md` — the §4.9
+  open-source-libraries list, checked in, refreshed by `build.sh` on every build).
+- `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
+  and compatible harnesses) to drive Autowright end-to-end through the §20 CLI — create/edit
+  automations via pull/push workdirs, execute and follow, inspect results, manage params,
+  triggers, secrets, settings. The skill presents a summary for user confirmation before
+  saving or executing — the full command including `--grant-*` flags (§20 review-promise and
+  grant-model rules). Checked in beside the code; users copy or symlink it into their agent's
+  skill directory.
+- `tests/` — pytest suite for the backend (storage, drafting, engine, schedule, API), plus the
+  test doubles: `tests/bin/claude` (fake agent CLI) and `tests/seed_data.py` (§16 fixture).
+- `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
+  single self-contained page + `CNAME` with the custom domain). Dark, matches the §14 visual
+  language (IBM Plex, brand orange accent, hammer mark); minimal copy — an animated app-window
+  demo (plain-words prompt → drafted steps → scheduled runs) carries the pitch, followed by the
+  three §1 core-promise cards and the supported-agent list. Links to the GitHub repo. Not part
+  of the app build. Also serves `updates/darwin-<arch>.json` — the §3 Squirrel.Mac update
+  feeds, rewritten by `scripts/release.sh` on every release.
+- `VERSION` — single source of truth for the app version (one line, semver). Synced into
+  `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
+  `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to
+  build on mismatch.
+- `LICENSE` — MIT, copyright David Zhang (also `"license": "MIT"` in `app/package.json`).
+- `PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
+  page (raw import into the renderer bundle) and read by GitHub visitors in place.

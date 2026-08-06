@@ -1,0 +1,196 @@
+# Autowright SPEC — Design tokens
+
+Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers are global across spec files.
+
+## 14. Design tokens (authoritative — `app/src/tokens.css` implements them)
+
+- Dark theme only. Fonts: IBM Plex Sans 400/500/600 (all UI text; `--sans`; no 700 anywhere), IBM Plex Mono
+  400/500/600 (timestamps, version labels, chips, eyebrows, counts, technical metadata;
+  `--mono`), bundled via `@fontsource`. `-webkit-font-smoothing: antialiased`.
+- Type scale: base UI 13 px; page titles 20 px/600 (26–30 px in onboarding/create); card titles
+  15 px/600; body 13–13.5 px/400, line-height 1.55–1.6; secondary 12–12.5 px; metadata/mono
+  10.5–12 px; eyebrows 9.5–10 px/600 mono uppercase, letter-spacing `.09em`. Headings tighten
+  letter-spacing (`-.01em` to `-.02em`).
+- Backgrounds: window `#0b0e12` (`--bg-window`), content `#0e1116`, sidebar `#0a0d11`, cards
+  `#12151c` (`--bg-card`; selectable/hovered cards `#14181f` `--bg-card-sel`), inset/result
+  wells `#0d1015` (`--bg-inset`), popover menus `#161a22` (`--bg-menu`), toast `#1b202a`
+  (`--bg-toast`). Menu-bar panel: `rgba(25,28,35,.94)`, 334 px wide, radius 12,
+  border `rgba(255,255,255,.1)`.
+- Text: primary `#e9ecf1` (`--text`), secondary `#a8b0bc` (`--text-2`), emphasized secondary
+  `#c6cdd6` / `#dfe4ea` (`--text-2em`/`--text-2emx`), muted `#8a93a0`, faint `#67707c`,
+  faintest `#4f5763`.
+- Borders (white at alpha): hairlines `.06` (`--hairline`), cards `.07`, inputs `.10`,
+  buttons `.11`, hover `.25` (`--border-hover`), dashed placeholders/add-rows `.12`
+  (`--border-dashed` — empty states, draft banner, `.ad-btn-dashed`). Selected/active rows and
+  tabs share one background wash: `rgba(255,255,255,.07)` (`--bg-active` — sidebar nav, devlog
+  rows/tabs, executions filter, selected step row).
+- Accent (brand orange): `oklch(0.74 0.155 52)`; hover `oklch(0.79 0.155 52)`; tint backgrounds
+  `--accent-bg` `/ .15`, `--accent-chip-bg` `/ .13`, `--accent-hint-bg` `/ .08`; text on accent
+  `#16100a` (`--on-accent`); link hover `oklch(0.82 0.14 60)`; `::selection` accent `/ .35`.
+- Status colors (oklch; tint backgrounds at the alpha shown): green `oklch(0.76 0.15 150)`
+  `/ .13`, cyan `oklch(0.78 0.12 210)` `/ .13`, red `oklch(0.7 0.19 25)` `/ .13`, amber
+  `oklch(0.8 0.13 85)` `/ .14`, magenta `oklch(0.72 0.16 340)` `/ .13`, gray `#98a1ad` /
+  `rgba(152,161,173,.13)`. One extra chip color: orange `oklch(0.72 0.15 60)` `/ .13` for
+  attention-flavored result chips (e.g. "5 of 6 checked").
+- Status/error text: static error and validation copy always uses `--red-text` (never `--red`
+  or `--red-hover`, which stay for icons/dots and hover states). Invalid text fields always use
+  the `.ad-input.invalid` class — no inline red borders or glows.
+- Tinted notice banners (red/amber/accent/cyan) share one slim geometry: radius 10, padding
+  `11px 14px`, tint background at `/ .07`, border at `/ .3`, 7 px leading dot. Card-sized
+  notices (`FailureNotice`, the §9.2 draft banner) are radius 12. Notice body text is
+  `--text-2em`.
+- Radii: buttons/inputs 8 px, chips 6–7 px, cards 12 px, pills 16–20 px,
+  popover menus 10 px, toast 9 px. Cards are flat (border only); floating surfaces get large
+  soft shadows — popovers `0 18px 44px rgba(0,0,0,.5)`, toast `0 10px 30px rgba(0,0,0,.4)`,
+  modal `0 24px 60px rgba(0,0,0,.5)`, menu-bar panel `0 18px 50px rgba(0,0,0,.55)`.
+- Selection: all text is selectable by default — every piece of information on screen can be
+  highlighted and copied. Only buttons and the drag region are `user-select: none`.
+  `.ad-drag` marks the hidden-title-bar drag region
+  (interactive children opt out with `no-drag`).
+- All hover and focus states are CSS classes in `tokens.css` — never JS mouse-state (a JS hover
+  flag sticks when a re-render or layout shift moves the node under the cursor). Buttons:
+  `.ad-btn-primary`, `.ad-btn-ghost`, `.ad-btn-soft`, `.ad-btn-text`[`.dim`], `.ad-btn-pill`,
+  `.ad-btn-dashed`, `.ad-btn-x`, `.ad-btn-accent-ghost` (accent-tinted ghost: Execute once/draft,
+  Add trigger), `.ad-btn-danger-ghost` (red-tinted confirm), `.ad-btn-text.danger` (red text
+  button), `.ad-btn-link` (accent link-styled button), `.ad-chip-btn`, `.ad-menu-row`.
+  Surfaces: `.ad-hover-row` (clickable list/table rows), `.ad-card-click` (clickable cards),
+  `.ad-link-title` (clickable titles), `.ad-title-rename` (click-to-edit automation title/desc
+  on the §11 Review page — the pencil is the only click target (the text itself is inert);
+  the `.always` modifier keeps the pencil visible), `.ad-nav-row` (sidebar nav). Text fields use `.ad-input`
+  (border + accent focus ring, also on `:focus-within` so grouped multi-field inputs like the
+  §9.2 segmented time entry ring as one control; `.amber` variant on amber notice cards;
+  `.invalid` variant — a red border that holds through focus — for live-invalid values, e.g.
+  the §9.2 trigger editor inputs). Classes own colors,
+  interaction, **and size** — call sites never override button padding/font-size/radius inline
+  (layout-only styles such as `flex`, `whiteSpace`, margins are fine). All action buttons share
+  one size: 13 px font, radius 8 px, padding 8 px 15 px on bordered buttons (`.ad-btn-ghost`,
+  `.ad-btn-soft`, `.ad-btn-dashed`, `.ad-btn-accent-ghost`, `.ad-btn-danger-ghost`) and
+  9 px 16 px on the borderless filled `.ad-btn-primary` — same rendered box. Borderless text
+  buttons (`.ad-btn-text`, `.ad-btn-link`) are 500 13 px with 6 px 4 px padding. Dense in-card
+  editors get one sanctioned compact size, still class-owned: `.ad-btn-accent-ghost.small`
+  (500 11.5 px mono, 5 px 11 px, radius 7 — the §9.2 trigger editor's Add/Save, New secret, and
+  permission-checklist buttons) and `.ad-btn-text.small` (11.5 px, no padding — the §9.2 setup
+  guide disclosure toggles); no other ad-hoc button sizes. Button labels
+  never wrap (`white-space: nowrap` on all action/text button classes) — a tight flex row must
+  yield elsewhere, never by squeezing a button onto two lines. Non-action
+  controls keep their own scale: `.ad-btn-pill` (mono metadata pill), `.ad-chip-btn`
+  (example-prompt chip), `.ad-btn-x` (row-remove ✕), `.ad-btn-exec` (square icon button).
+  `.ad-btn-amber` is the amber filled action button (Ollama sign-in/install CTAs): primary
+  geometry (600 13 px, 9 px 16 px, radius 8), `--amber` fill, `--on-accent` text,
+  hover `oklch(0.84 0.13 85)`. `.ad-btn-primary.looks-disabled` renders the disabled
+  primary treatment while staying clickable (validation-on-click forms). Static cards use
+  `.ad-card` (`--bg-card`, `--border-card`, radius 12) — the non-clickable sibling of
+  `.ad-card-click`.
+- Derived tokens beyond the base palette: `--red-hover`, `--red-text`, `--accent-sel`
+  (selected-card border), `--hairline-dim` (in-card row dividers; `--hairline` stays for card
+  borders/headers), `--bg-code` + `--code-text` (script/log wells). Recurring fragments are
+  `ui.tsx` primitives: `MiniBadge` (uppercase mono chip; status `Badge` maps onto it),
+  `ProgressBar` (`pct: number | null` — null renders the indeterminate `adBarSlide` bar; the
+  only progress bar, never hand-rolled), `GreenCheck`, `Spinner` (optional `color`; inline
+  next-to-label size is 13), `PageTitle`, `Eyebrow`, `EmptyState` (dashed-card empty state
+  with CTA — automations/agents/secrets lists), `EmptyNotice` (dashed card, title 13.5/500 +
+  12.5 muted body — executions list, execution page, detail page), `LoadingRow` (Spinner 13 +
+  500 12.5 `--text-2` label, gap 9), `BackLink` (`.ad-btn-text` + 10 px chevron-left),
+  `Caret` (default 10 px).
+- Icons: Font Awesome 6.5.2. App mark: the AW monogram — rounded square filled with the app
+  accent (`#f68b43`, the sRGB hex of `--accent` oklch(0.74 0.155 52)) carrying a continuous
+  zigzag AW ligature (the A's right leg doubles as the W's first stroke) plus the A crossbar,
+  stroked in `--on-accent` `#16100a` at width 70 of the 1024 canvas (round caps/joins).
+  Source of truth is `app/electron/icon/icon.svg`; the `Logo`
+  primitive (`ui.tsx`) renders it full-bleed (the SVG's transparent canvas margin — the mark
+  spans 824 of the 1024 canvas — is cropped at display time; the asset is untouched) and is
+  the mark's only in-app renderer: sidebar, loading screen, onboarding, and the §13 menu-bar
+  panel rows' execute buttons (instead of a play glyph). Other checked-in assets in
+  `app/electron/icon/`: `icon.png` (1024 px raster; dock icon set at startup via
+  `app.dock.setIcon` in `app/electron/main.cjs` so dev sessions don't show the default
+  Electron icon) and `icon.icns` (the bundle icon §18 prod.sh packages with). Both are
+  derived from `icon.svg` by `scripts/gen_icon.cjs` (Electron render → `icon.png`,
+  then sips + iconutil → `icon.icns`; run from `app/` as
+  `./node_modules/.bin/electron ../scripts/gen_icon.cjs`) — rerun it whenever the SVG
+  changes so the three assets never drift.
+  The dev app *name* (menu bar / dock / Cmd-Tab — macOS reads the running bundle's
+  `CFBundleName`, which `app.setName` cannot override) is branded by `app/brand-electron.cjs`,
+  an npm `postinstall` step: on macOS it sets `CFBundleName`/`CFBundleDisplayName` to
+  "Autowright" in `node_modules/electron/dist/Electron.app/Contents/Info.plist` and ad-hoc
+  re-signs the bundle (a modified plist would otherwise invalidate the signature and the kernel
+  would kill the app). Idempotent; re-runs automatically when a new Electron version is
+  installed. Release builds get the name from `@electron/packager` (§18 prod.sh), which
+  excludes `brand-electron.cjs` from the bundle.
+- Motion (keyframes in `tokens.css`: `adFadeUp`, `adFadeOutDown`, `adFadeIn`, `adFadeOut`,
+  `adSpin`, `adPulse`, `adBlink`, `adBarSlide`). One timing system, tokenized in `tokens.css`:
+  - **Duration tokens:** `--t-exit` 120 ms (all exits), `--t-hover` 150 ms (hover/control state
+    changes: buttons, toggles, radios, carets, hover rows), `--t-enter` 200 ms (element
+    entrances: menus, modals, toasts, in-page items, collapsibles, sidebar collapse,
+    determinate progress-bar width), `--t-page` 360 ms (page-root entrances). Call sites never
+    hand-write durations.
+  - **Easing tokens:** `--ease-enter` `cubic-bezier(0.16, 1, 0.3, 1)` (decelerate — all
+    entrances and state transitions), `--ease-exit` `cubic-bezier(0.4, 0, 1, 1)` (accelerate —
+    all exits). Continuous loops keep their own curves: spinner `.85s linear`, pulse/bar-slide
+    `ease-in-out`.
+  - **Entrance utility classes** (the only way call sites apply entrances):
+    `.ad-anim-page` (fade-up, `--t-page`) on every page root; `.ad-anim-item` (fade-up,
+    `--t-enter`) on elements appearing inside a mounted page (notices — `FailureNotice`
+    carries it itself — chat rows, checklist rows, footer buttons, inline editors like the
+    §9.2 trigger editor); `.ad-anim-fade` (fade-in, `--t-enter`) for opacity-only entrances
+    (boot splash, overlays, in-place control-cluster swaps like the §9.2 memory-card
+    confirm/rename rows — keyed remounts, so the row never jumps).
+  - **Two-way surfaces:** `Modal`, popover menus (`PopMenu` in `ui.tsx` — wraps `menuStyle`,
+    used by every `usePopover` consumer) and `Toast` all enter at `--t-enter` and play a
+    `--t-exit` fade-down before unmounting, on every dismissal path.
+  - **Collapsibles:** the `Collapse` primitive in `ui.tsx` (`.ad-collapse` grid-rows
+    `0fr`→`1fr`; content stays mounted) animates every expand/collapse section (the §11
+    review cards — body and collapsed hint alike — §9.2 step rows and setup-guide
+    disclosures, result view cards). Motion is asymmetric per the duration tokens — rows
+    open at `--t-enter`/`--ease-enter` and close at `--t-exit`/`--ease-exit` — and the
+    region's content crossfades with the resize: the inner wrapper sits at opacity 0 while
+    closed (fading out at exit timing on close) and fades in on open at enter timing with a
+    40 ms delay so the height change leads. Collapsing text fades instead of visibly
+    clipping, and paired regions (a §11 card's collapsed hint vs its body) hand off as one
+    crossfade rather than two competing height animations.
+    Header carets are a single glyph rotated via `transform` transition (`--t-hover`) — never
+    an icon-class swap.
+  - **Executing pulse:** one value app-wide — `adPulse 1.4s ease-in-out infinite`, exported as
+    the `PULSE` const in `ui.tsx`; all executing badges/dots use it.
+  - **Press feedback:** all bordered/filled action buttons get `:active` `translateY(1px)`
+    (`.ad-btn-exec` keeps its `scale(.94)`; `.ad-chip-btn` its `translateY(1px)`).
+  - **Reduced motion:** a global `@media (prefers-reduced-motion: reduce)` rule collapses all
+    animation/transition durations to .01 ms (loops stop; exit-then-unmount flows still fire
+    their `animationend`).
+  - Modals (shared `Modal` shell in `ui.tsx`: backdrop + card, used by the secret add/edit
+    modal and `ConfirmModal`) animate both ways, and every dismissal path (backdrop click,
+    Escape, Cancel, save/confirm) plays the exit before unmount; confirm actions fire after
+    the exit finishes.
+- Layout: sidebar 212 px fixed; page gutter 30–32 px, max width 1200 px (Review page 1800 px,
+  forms 620–720 px, settings 640 px); card padding 15–22 px; control padding 9–10 px vertical /
+  14–18 px horizontal. Grid cards (Automations §4, Agents §4.7) share one format: grid
+  `repeat(auto-fill, minmax(310px, 1fr))` gap 14, card padding 18 px 20 px, title 15 px/600 with
+  10 px header gap, 10 px column gap between card rows, description 12.5 px / 1.55.
+- Scroll chaining: inner scroll panels embedded in the page flow (spec viewer, execution log
+  pane, etc.) chain to the page — reaching their bottom continues scrolling the page (browser
+  default; no `overscroll-behavior: contain`). Only floating surfaces (popovers, dropdowns,
+  modals) may contain overscroll.
+- Scroll chrome: overlay scrollbars everywhere — they draw on top of the content and take
+  zero layout space, so content never shifts when one appears. Electron main enables
+  Chromium's `OverlayScrollbar` feature (`app.commandLine.appendSwitch('enable-features',
+  'OverlayScrollbar')`) — required because macOS "Automatic"/"Always" system scrollbar
+  settings otherwise force classic space-taking bars. No `::-webkit-scrollbar` styling
+  anywhere (custom rules would force classic bars back). The root declares
+  `color-scheme: dark` so the overlay thumb renders light on the dark background.
+  Overlay scrollbar (app-wide — **every** vertical scroll pane, including the main
+  content/page scroller: create/edit chat thread, spec view/editor and
+  framework-instructions scrollers, execution log pane, onboarding body, About
+  licenses list, menu-bar panel list, automation-page inner scrollers, dev-log
+  overlay panes): the native bar is hidden (`scrollbar-width: none`) and the pane
+  draws its own thin thumb absolutely **over the content** — no track background and
+  zero layout space, so content never shifts when it appears. The thumb (5 px wide,
+  white 25 %, min 24 px tall, right inset 3 px) is **always visible** while the pane
+  has overflow — no hover/scroll fade — and is indicator-only — it is not draggable;
+  scrolling stays wheel/trackpad/keyboard. Implemented once as the
+  shared `ScrollArea` wrapper / `useOverlayThumb` hook (ui.tsx); textareas wire the
+  hook directly since they can't host the thumb node. Horizontal scrollers (markdown
+  code blocks, full-bleed tables) keep the native overlay bar — the primitive is
+  vertical-only. `scrollbar-color`/`scrollbar-width: thin` styling is banned along
+  with `::-webkit-scrollbar` — either one forces classic space-taking bars.
+  Textarea resize grip (`::-webkit-resizer`) is an inline-SVG grip icon — two rounded
+  diagonal strokes, white 28 % — so it stays crisp instead of WebKit's light default square.
+

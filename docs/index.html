@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autowright — personal automations, written in plain words</title>
+<meta name="description" content="Describe a job in plain words. An AI agent writes it as readable scripts. Your Mac runs it on a schedule — locally, only after you review it.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23ef9b4e'/%3E%3Cg fill='%2316100a' transform='rotate(45 32 32)'%3E%3Crect x='13' y='12' width='38' height='17' rx='4'/%3E%3Crect x='28' y='29' width='8' height='25' rx='4'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0b0e12; --bg-content:#0e1116; --bg-card:#12151c; --bg-inset:#0d1015;
+    --text:#e9ecf1; --text-2:#a8b0bc; --muted:#8a93a0; --faint:#67707c;
+    --hairline:rgba(255,255,255,.06); --card-border:rgba(255,255,255,.07);
+    --accent:#ef9b4e; --accent:oklch(0.74 0.155 52);
+    --accent-hover:#f5ab63; --accent-hover:oklch(0.79 0.155 52);
+    --on-accent:#16100a;
+    --green:#4fce85; --green:oklch(0.76 0.15 150);
+    --sans:'IBM Plex Sans',-apple-system,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{color-scheme:dark}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.6; overflow-x:hidden;
+  }
+  a{color:inherit; text-decoration:none}
+  .wrap{max-width:980px; margin:0 auto; padding:0 28px}
+
+  /* header */
+  header{padding:22px 0}
+  .hrow{display:flex; align-items:center; gap:11px}
+  .mark{
+    width:30px; height:30px; border-radius:8px; background:var(--accent);
+    display:grid; place-items:center; flex:none;
+  }
+  .mark svg{width:17px; height:17px; fill:var(--on-accent)}
+  .brand{font-weight:600; font-size:15.5px; letter-spacing:-.01em}
+  .hrow .gh{margin-left:auto; font-size:13px; color:var(--text-2); border:1px solid rgba(255,255,255,.11);
+    border-radius:8px; padding:7px 14px; transition:border-color .15s, color .15s}
+  .hrow .gh:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+
+  /* hero */
+  .hero{padding:72px 0 44px; text-align:center}
+  .eyebrow{
+    font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--accent); margin-bottom:18px;
+  }
+  h1{
+    font-size:clamp(30px,5.5vw,50px); font-weight:700; letter-spacing:-.02em; line-height:1.12;
+    max-width:17em; margin:0 auto;
+  }
+  h1 .dim{color:var(--faint)}
+  .sub{color:var(--text-2); font-size:16.5px; max-width:34em; margin:20px auto 0}
+  .ctas{display:flex; gap:12px; justify-content:center; margin-top:32px; flex-wrap:wrap}
+  .btn{
+    font-size:13.5px; font-weight:600; border-radius:8px; padding:11px 22px;
+    transition:background .15s, border-color .15s;
+  }
+  .btn.primary{background:var(--accent); color:var(--on-accent)}
+  .btn.primary:hover{background:var(--accent-hover)}
+  .btn.ghost{border:1px solid rgba(255,255,255,.11); color:var(--text-2)}
+  .btn.ghost:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+  .platform{margin-top:14px; font-family:var(--mono); font-size:11px; color:var(--faint)}
+
+  /* demo window */
+  .demo{padding:34px 0 10px}
+  .window{
+    background:var(--bg-content); border:1px solid var(--card-border); border-radius:12px;
+    box-shadow:0 24px 60px rgba(0,0,0,.5); overflow:hidden; max-width:660px; margin:0 auto;
+  }
+  .titlebar{
+    display:flex; align-items:center; gap:8px; padding:13px 14px;
+    border-bottom:1px solid var(--hairline); background:var(--bg);
+  }
+  .dot{width:12px; height:12px; border-radius:50%; background:#2a2f38}
+  .dot:nth-child(1){background:#ff5f57}.dot:nth-child(2){background:#febc2e}.dot:nth-child(3){background:#28c840}
+  .wtitle{flex:1; text-align:center; font-size:12px; color:var(--faint); margin-right:52px}
+  .stage{padding:26px 28px 30px; min-height:340px}
+
+  .prompt{
+    background:var(--bg-inset); border:1px solid rgba(255,255,255,.10); border-radius:8px;
+    padding:13px 16px; font-size:13.5px; color:var(--text); min-height:48px;
+  }
+  .prompt .label{font-family:var(--mono); font-size:9.5px; font-weight:600; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--faint); display:block; margin-bottom:6px}
+  .caret{display:inline-block; width:1px; height:1.05em; background:var(--accent);
+    vertical-align:text-bottom; animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  .drafting{display:flex; align-items:center; gap:9px; margin-top:20px; font-family:var(--mono);
+    font-size:11.5px; color:var(--muted); opacity:0; transition:opacity .2s}
+  .spinner{width:12px; height:12px; border:1.5px solid rgba(255,255,255,.15);
+    border-top-color:var(--accent); border-radius:50%; animation:spin .85s linear infinite; flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .steps{margin-top:20px; display:flex; flex-direction:column; gap:8px}
+  .step{
+    display:flex; align-items:center; gap:11px; background:var(--bg-card);
+    border:1px solid var(--card-border); border-radius:8px; padding:10px 14px;
+    font-size:13px; opacity:0; transform:translateY(6px);
+    transition:opacity .2s cubic-bezier(.16,1,.3,1), transform .2s cubic-bezier(.16,1,.3,1);
+  }
+  .step.in{opacity:1; transform:none}
+  .step .num{font-family:var(--mono); font-size:10.5px; color:var(--faint); width:14px; flex:none}
+  .step .file{margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--faint)}
+  .check{width:15px; height:15px; flex:none; display:none}
+  .check svg{width:15px; height:15px; stroke:var(--green); fill:none; stroke-width:2.4;
+    stroke-linecap:round; stroke-linejoin:round}
+  .step.done .num{display:none}
+  .step.done .check{display:block}
+
+  .result{
+    margin-top:20px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    opacity:0; transform:translateY(6px);
+    transition:opacity .2s cubic-bezier(.16,1,.3,1), transform .2s cubic-bezier(.16,1,.3,1);
+  }
+  .result.in{opacity:1; transform:none}
+  .chip{
+    font-family:var(--mono); font-size:10.5px; font-weight:500; border-radius:7px;
+    padding:5px 10px; letter-spacing:.02em;
+  }
+  .chip.sched{color:var(--accent); background:rgba(239,155,78,.13)}
+  .chip.ok{color:var(--green); background:rgba(79,206,133,.13)}
+  .result .note{font-size:12.5px; color:var(--text-2)}
+
+  /* promises */
+  .promises{padding:70px 0 10px}
+  .grid3{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px}
+  .card{
+    background:var(--bg-card); border:1px solid var(--card-border); border-radius:12px;
+    padding:22px 22px 20px;
+  }
+  .card .ic{
+    width:34px; height:34px; border-radius:8px; background:rgba(239,155,78,.13);
+    display:grid; place-items:center; margin-bottom:14px;
+  }
+  .card .ic svg{width:16px; height:16px; stroke:var(--accent); fill:none; stroke-width:1.8;
+    stroke-linecap:round; stroke-linejoin:round}
+  .card p{font-size:14px; font-weight:500; letter-spacing:-.01em}
+  .card .why{font-size:12.5px; font-weight:400; color:var(--muted); margin-top:6px}
+
+  /* agents */
+  .agents{padding:64px 0 8px; text-align:center}
+  .agents .eyebrow{color:var(--faint)}
+  .badges{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:6px}
+  .badge{
+    font-family:var(--mono); font-size:12px; font-weight:500; color:var(--text-2);
+    border:1px solid rgba(255,255,255,.10); border-radius:16px; padding:8px 17px;
+  }
+  .badge span{color:var(--faint)}
+
+  footer{
+    margin-top:84px; border-top:1px solid var(--hairline); padding:26px 0 40px;
+    display:flex; gap:20px; align-items:center; font-size:12.5px; color:var(--faint); flex-wrap:wrap;
+  }
+  footer a{color:var(--muted); transition:color .15s}
+  footer a:hover{color:var(--text)}
+  footer .spacer{margin-left:auto}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.01ms !important; transition-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="hrow">
+      <div class="mark"><svg viewBox="0 0 24 24"><g transform="rotate(45 12 12)"><rect x="4.5" y="4" width="15" height="6.5" rx="1.6"/><rect x="10.4" y="10.5" width="3.2" height="10" rx="1.6"/></g></svg></div>
+      <div class="brand">Autowright</div>
+      <a class="gh" href="https://github.com/hansololz/auto-dave">GitHub</a>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="eyebrow">macOS · open source · runs locally</div>
+    <h1>Say what you want done.<br><span class="dim">Your Mac keeps doing it.</span></h1>
+    <p class="sub">Describe a recurring job in plain words. The AI agent you already use writes it as readable scripts. Autowright runs them on a schedule — on your Mac, only after you approve.</p>
+    <div class="ctas">
+      <a class="btn primary" href="https://github.com/hansololz/auto-dave/releases">Download for macOS</a>
+      <a class="btn ghost" href="https://github.com/hansololz/auto-dave">View source</a>
+    </div>
+    <div class="platform">Apple Silicon · MIT licensed</div>
+  </section>
+
+  <section class="demo">
+    <div class="window">
+      <div class="titlebar">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="wtitle">Autowright</div>
+      </div>
+      <div class="stage">
+        <div class="prompt"><span class="label">New automation</span><span id="typed"></span><span class="caret" id="caret"></span></div>
+        <div class="drafting" id="drafting"><div class="spinner"></div><span id="draftlabel">Claude Code is drafting…</span></div>
+        <div class="steps" id="steps"></div>
+        <div class="result" id="result">
+          <span class="chip sched" id="schedchip"></span>
+          <span class="chip ok" id="okchip"></span>
+          <span class="note" id="oknote"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="promises">
+    <div class="grid3">
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+        <p>Your automations execute only on this Mac</p>
+        <p class="why">No cloud runners. Close the window — the schedule still fires, locally.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <p>Nothing executes until you review it</p>
+        <p class="why">Every script is human-readable. You read it, then you approve it.</p>
+      </div>
+      <div class="card">
+        <div class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+        <p>Passwords never leave your Keychain</p>
+        <p class="why">Secrets stay in macOS Keychain and are injected only at runtime.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="agents">
+    <div class="eyebrow">Bring the agent you already use</div>
+    <div class="badges">
+      <div class="badge">Claude Code</div>
+      <div class="badge">Gemini CLI</div>
+      <div class="badge">Codex</div>
+      <div class="badge">OpenCode <span>+ local Ollama</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>© David Zhang · MIT</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/hansololz/auto-dave">GitHub</a>
+    <a href="https://github.com/hansololz/auto-dave/blob/main/PRIVACY.md">Privacy</a>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const scenes = [
+    {
+      prompt: "Check the manga I follow for new chapters every morning at 8",
+      agent: "Claude Code is drafting…",
+      steps: [
+        ["Fetch my followed series", "fetch_series.py"],
+        ["Diff against last seen chapters", "diff_chapters.py"],
+        ["Notify me about new releases", "notify.py"],
+      ],
+      sched: "EVERY DAY · 8:00 AM",
+      ok: "RAN 8:00 AM",
+      note: "2 new chapters found",
+    },
+    {
+      prompt: "Every Friday, back up my notes folder and summarize what changed",
+      agent: "Gemini CLI is drafting…",
+      steps: [
+        ["Archive the notes folder", "archive_notes.py"],
+        ["Diff against last week's backup", "diff_backup.py"],
+        ["Write a change summary", "summarize.py"],
+      ],
+      sched: "FRIDAYS · 6:00 PM",
+      ok: "RAN FRIDAY",
+      note: "14 notes changed, backup saved",
+    },
+    {
+      prompt: "Watch this apartment listings page and tell me about new posts",
+      agent: "OpenCode is drafting…",
+      steps: [
+        ["Load the listings page", "load_page.py"],
+        ["Compare with previously seen posts", "compare_posts.py"],
+        ["Send me the new ones", "notify.py"],
+      ],
+      sched: "EVERY 2 HOURS",
+      ok: "RAN 2:00 PM",
+      note: "1 new listing",
+    },
+  ];
+
+  const typed = document.getElementById("typed");
+  const caret = document.getElementById("caret");
+  const drafting = document.getElementById("drafting");
+  const draftlabel = document.getElementById("draftlabel");
+  const stepsEl = document.getElementById("steps");
+  const result = document.getElementById("result");
+  const schedchip = document.getElementById("schedchip");
+  const okchip = document.getElementById("okchip");
+  const oknote = document.getElementById("oknote");
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, reduced ? 0 : ms));
+
+  async function type(text) {
+    typed.textContent = "";
+    if (reduced) { typed.textContent = text; return; }
+    for (const ch of text) {
+      typed.textContent += ch;
+      await sleep(28 + Math.random() * 40);
+    }
+  }
+
+  function stepRow([label, file], i) {
+    const el = document.createElement("div");
+    el.className = "step";
+    el.innerHTML =
+      '<span class="num">' + (i + 1) + "</span>" +
+      '<span class="check"><svg viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg></span>' +
+      "<span>" + label + "</span>" +
+      '<span class="file">' + file + "</span>";
+    return el;
+  }
+
+  async function play(scene) {
+    stepsEl.innerHTML = "";
+    result.classList.remove("in");
+    drafting.style.opacity = 0;
+    caret.style.display = "inline-block";
+
+    await type(scene.prompt);
+    await sleep(500);
+    caret.style.display = "none";
+    draftlabel.textContent = scene.agent;
+    drafting.style.opacity = 1;
+    await sleep(1600);
+    drafting.style.opacity = 0;
+
+    const rows = scene.steps.map(stepRow);
+    for (const row of rows) {
+      stepsEl.appendChild(row);
+      await sleep(30);
+      row.classList.add("in");
+      await sleep(380);
+    }
+    await sleep(700);
+    for (const row of rows) {
+      row.classList.add("done");
+      await sleep(340);
+    }
+
+    schedchip.textContent = scene.sched;
+    okchip.textContent = "✓ " + scene.ok;
+    oknote.textContent = scene.note;
+    await sleep(300);
+    result.classList.add("in");
+    await sleep(4200);
+  }
+
+  (async () => {
+    let i = 0;
+    for (;;) {
+      await play(scenes[i % scenes.length]);
+      i++;
+      if (reduced) break;
+    }
+  })();
+})();
+</script>
+</body>
+</html>

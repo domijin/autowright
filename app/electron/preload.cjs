@@ -1,0 +1,33 @@
+const { contextBridge, ipcRenderer } = require('electron')
+
+contextBridge.exposeInMainWorld('autowright', {
+  backendInfo: () => ipcRenderer.invoke('backend-info'),
+  // §3 ensure-backend outcome for the §9 boot splash
+  backendStatus: () => ipcRenderer.invoke('backend-status'),
+  openApp: (hash) => ipcRenderer.invoke('open-app', hash),
+  pickFolder: (defaultPath) => ipcRenderer.invoke('pick-folder', defaultPath),
+  resizePanel: (h) => ipcRenderer.invoke('resize-panel', h),
+  // §5.1 transfer archives: native dialogs + file IO for export/import
+  saveFile: (defaultName, data) => ipcRenderer.invoke('save-file', defaultName, data),
+  openArchive: () => ipcRenderer.invoke('open-archive'),
+  revealPath: (p) => ipcRenderer.invoke('reveal-path', p),
+  setLoginItem: (on) => ipcRenderer.invoke('set-login-item', on),
+  // §9.3 developer log overlay
+  tailLogs: () => ipcRenderer.invoke('tail-logs'),
+  listRequestLogs: () => ipcRenderer.invoke('list-request-logs'),
+  readRequestLog: (name) => ipcRenderer.invoke('read-request-log', name),
+  trayAlert: (on) => ipcRenderer.invoke('tray-alert', on),
+  // §9.4 in-app updates (§3): manual check → download → restart-install
+  updateCheck: () => ipcRenderer.invoke('update-check'),
+  updateDownload: () => ipcRenderer.invoke('update-download'),
+  updateInstall: () => ipcRenderer.invoke('update-install'),
+  // Download percent (null = size unknown). Re-registering replaces the
+  // previous listener — the About page re-subscribes on every mount.
+  onUpdateProgress: (cb) => {
+    ipcRenderer.removeAllListeners('update-progress')
+    ipcRenderer.on('update-progress', (_e, pct) => cb(pct))
+  },
+  // Deep-link target ('/app?auto=<id>') pushed by main when the window already
+  // exists — a reload would drop the WS and all renderer state.
+  onOpenTarget: (cb) => ipcRenderer.on('open-target', (_e, hash) => cb(hash)),
+})

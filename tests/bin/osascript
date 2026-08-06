@@ -1,0 +1,16 @@
+#!/bin/sh
+# Fake osascript (§15 test double): the §6 iMessage sender resolves osascript
+# through PATH, so tests exercise the real subprocess send path against this
+# recorder. Argv is appended to AUTOWRIGHT_TEST_OSASCRIPT_LOG (one line per
+# call, fields tab-separated); AUTOWRIGHT_TEST_OSASCRIPT_FAIL simulates the
+# macOS Automation denial (Apple events error -1743).
+if [ -n "$AUTOWRIGHT_TEST_OSASCRIPT_LOG" ]; then
+  out=""
+  for a in "$@"; do out="$out$a	"; done
+  printf '%s\n' "$out" >> "$AUTOWRIGHT_TEST_OSASCRIPT_LOG"
+fi
+if [ -n "$AUTOWRIGHT_TEST_OSASCRIPT_FAIL" ]; then
+  echo "execution error: Not authorized to send Apple events to Messages. (-1743)" >&2
+  exit 1
+fi
+exit 0

@@ -562,18 +562,28 @@ editors enter with
   state (Dirty gating above) and the draft test into one build→test surface: sync, then
   test, in one place. Same card background as the other cards (`--bg-card` /
   `--border-card`); the panel never disappears — only its content changes with state.
-  **Layout — two zones, one action each.** The header row holds only the `BUILD & TEST`
-  eyebrow, never a button. Below it the **build zone**: the sync indicator (a
-  green/amber/faint dot — never a spinner) + status line, the explainer line beneath it
-  indented to the status text's left edge, and the panel's one **sync control**
-  right-aligned at the zone's top — accent-primary **Sync now** while out of sync, quiet
-  (soft) **Sync with spec** while in sync; disabled per Dirty gating (including while its
-  own sync runs — cancelling lives in the footer action block), never hidden. Under a hairline, the **test zone** owns every
-  test control — the test button never sits in the header: the test button with its
-  hint / outcome / progress and their action rows, laid out per state below. At most one
-  accent-primary button renders in the panel: **Sync now** when out of sync, the test
-  button when in sync with no test outcome yet; every other panel button is quiet or
-  ghost. Both zones share the card's 20 px side padding. States, first match wins:
+  **Posture: quiet when fine, loud only when blocking.** Chat is the primary way to build
+  and test — a chat message can request the sync and the test through the §8 actions — so
+  the panel stays a status surface with one-click escape hatches and shouts only when
+  saving is genuinely blocked. Concretely: the panel has **no green state** — an in-sync
+  workflow shows no indicator dot at all (the dot is amber while out of sync, faint while
+  a job runs, absent otherwise — never a spinner, and never green: a status that asks
+  nothing must not draw the eye), and at most one accent-primary button ever renders:
+  **Sync now** while out of sync. Every other panel button is quiet (soft) or ghost — the
+  test button included: a failed test never blocks saving, so testing never shouts.
+  **Layout.** The header row holds only the `BUILD & TEST` eyebrow, never a button. In
+  states 1–3 (drafting, sync in flight, out of sync) a **build zone** renders below it:
+  the indicator dot + status line, the explainer line beneath it indented to the status
+  text's left edge, and the sync control right-aligned at the zone's top — accent-primary
+  **Sync now** while out of sync; disabled per Dirty gating (including while its own sync
+  runs — cancelling lives in the footer action block), never hidden — with the **test
+  zone** under a hairline. In the in-sync states (4–6) the build zone disappears and the
+  panel is a **single test zone** under the header hairline; sync access stays as a ghost
+  **Sync with spec** button riding the test zone's action row (the same §8 `sync` call on
+  demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
+  test zone owns every test control — the test button never sits in the header: the test
+  button with its hint / outcome / progress and their action rows, laid out per state
+  below. Both zones share the card's 20 px side padding. States, first match wins:
   1. **Drafting** (create job in flight) — the coarse §8 stage label as static text over
      a plain faint dot (no spinner). The live `detail` line lives in the footer action
      block (Drafting on Review above), and the other right-column cards show their static
@@ -588,14 +598,15 @@ editors enter with
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
   4. **In sync, test executing** — the live status line, progress bar, and the action row
-     Cancel + View run (below).
+     Cancel + View run + the disabled ghost **Sync with spec** (below).
   5. **In sync, test settled** — the outcome line over the action row **Test again** /
-     **View run** and, on failure, **Analyze the failure**, which sends the canned analyze
-     chat message (below).
-  6. **In sync, never tested** — build zone: green dot, muted line "Steps are generated
-     from the spec.", quiet **Sync with spec** (the same §8 `sync` call on demand); test
-     zone: accent-primary **Test the draft** beside the plain-words side-effects line
-     (below).
+     **View run** / ghost **Sync with spec** and, on failure, **Analyze the failure**,
+     which sends the canned analyze chat message (below).
+  6. **In sync, never tested** — one action row: quiet **Test the draft** beside the
+     dashed toggle buttons and the ghost **Sync with spec**, with the plain-words
+     status-and-side-effects line — "In sync with the spec. A test executes the real
+     steps on this Mac — emails send, files move; memory is a scratch copy." — wrapping
+     below the buttons when space runs out.
   The test-parameter section (below) renders only in the in-sync states (4–6): the
   toggle button hides while a test is executing; the expanded editors persist
   through every in-sync state. The Test
@@ -672,7 +683,7 @@ editors enter with
   finished-at, and the test execution's id) into the draft container, wiped at the next test
   start and deleted with the draft. It rides the draft payload as `test` ({ status, when:
   §4.1 started-label, execId }) — on the automation's `draft` object and on `GET /draft` —
-  and a resumed draft's panel renders it in place of the empty hint: a status line
+  and a resumed draft's panel renders it in place of the never-tested row: a status line
   ("Last test succeeded — <when>" green / "Last test failed — <when>" amber) plus the
   View-run button while the record still exists (retention may outlive it — the button
   hides when the record is gone); the test button reads "Test again". A live test always

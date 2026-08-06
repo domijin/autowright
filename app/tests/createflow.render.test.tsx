@@ -217,11 +217,17 @@ describe('CreateFlow Build & test panel (§11)', () => {
     expect((screen.getByText('Test the draft').closest('button')!).disabled).toBe(false)
   })
 
-  it('in sync: the panel offers Test the draft beside the green sync line', () => {
+  it('in sync: quiet panel — no indicator dot, no accent button, one test row', () => {
     render(<CreateFlow />)
-    expect(screen.getByText('BUILD & TEST')).toBeTruthy()
-    expect(screen.getByText('Steps are generated from the spec.')).toBeTruthy()
-    expect((screen.getByText('Test the draft').closest('button')!).disabled).toBe(false)
+    const panel = cardOf(screen.getByText('BUILD & TEST'))
+    // §11 quiet posture: the in-sync build zone is gone (no green dot, no status
+    // line) — the panel is a single test row with the ghost sync escape hatch
+    expect(within(panel).getByText(/In sync with the spec/)).toBeTruthy()
+    expect(panel.querySelector('.ad-btn-primary')).toBeNull()
+    const testBtn = within(panel).getByText('Test the draft').closest('button')!
+    expect(testBtn.disabled).toBe(false)
+    expect(testBtn.classList.contains('ad-btn-soft')).toBe(true)
+    expect((within(panel).getByText('Sync with spec').closest('button')!).classList.contains('ad-btn-ghost')).toBe(true)
   })
 
   it('a diagnosed blocked sync lands a thread blockers entry with the build-failure headline', async () => {
@@ -413,7 +419,7 @@ describe('CreateFlow chat response application (§11)', () => {
     send('Remember the rate limit')
     await waitFor(() => expect(screen.getByText('Notes updated.')).toBeTruthy(), { timeout: 3000 })
     expect(bodyLi('The site rate-limits at 10 rpm')).toBeTruthy() // NOTES card content
-    expect(screen.getByText('Steps are generated from the spec.')).toBeTruthy()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
     expect(screen.queryByText(/out of sync/)).toBeNull()
   })
 
@@ -429,7 +435,7 @@ describe('CreateFlow chat response application (§11)', () => {
     expect(draftBody(0).mode).toBe('chat')
     expect(draftBody(1).mode).toBe('sync')
     // the chained sync cleared the dirty flag again
-    expect(screen.getByText('Steps are generated from the spec.')).toBeTruthy()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
   })
 
   it('actions.test is dropped with the system chip when the chained sync blocks', async () => {
@@ -565,7 +571,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     fireEvent.click(within(card).getByText('Save'))
     expect(bodyLi('Pruned')).toBeTruthy()
     // §4.1: notes never mark the workflow out of sync or block saving
-    expect(screen.getByText('Steps are generated from the spec.')).toBeTruthy()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
     expect(screen.queryByText(/out of sync/)).toBeNull()
     expect((screen.getByText('Save as v2').closest('button')!).disabled).toBe(false)
   })

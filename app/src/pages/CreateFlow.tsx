@@ -1964,6 +1964,17 @@ export default function CreateFlow() {
       {testMock === null ? 'Mock a trigger message' : 'No trigger message'}
     </button>
   ) : null
+  // §11: in the in-sync states the build zone is gone — sync access stays as
+  // this ghost button riding the test action rows (disabled, never hidden).
+  const syncGhostBtn = (
+    <button
+      className="ad-btn-ghost" disabled={syncDisabled}
+      onClick={() => void runSync()}
+      style={{ flex: 'none', whiteSpace: 'nowrap' }}
+    >
+      Sync with spec
+    </button>
+  )
   // A live test survives leaving the editor — re-attach the card on entry.
   useEffect(() => {
     if (test) return
@@ -2984,42 +2995,41 @@ export default function CreateFlow() {
                 {/* BUILD & TEST — §11: one persistent panel merging the workflow's
                     sync state (above Steps: a sync rewrites the steps AND the param
                     definitions) and the draft test — sync, then test, in one place.
-                    Layout: eyebrow-only header, then the build zone (sync status +
-                    the one sync control, right-aligned), then a hairline test zone
-                    owning every test control. At most one accent-primary button:
-                    Sync now (out of sync) or Test the draft (in sync, untested). */}
+                    Quiet when fine, loud only when blocking: chat is the primary way
+                    to build and test (§8 actions), so the build zone renders only
+                    while drafting / syncing / out of sync, the in-sync states are a
+                    single test zone with a ghost sync button on the action row, no
+                    dot is ever green, and the one accent-primary button is Sync now
+                    while out of sync. */}
                 <div style={cardStyle}>
                   <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
                     <Eyebrow>BUILD &amp; TEST</Eyebrow>
                   </div>
-                  {/* build zone */}
+                  {/* build zone — states 1–3 only (drafting, sync in flight, out of
+                      sync); an in-sync workflow shows no indicator at all */}
+                  {(drafting || rev.syncBusy || outOfSync) && (
                   <div style={{ padding: '12px 20px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       {/* the indicator sits in an 18px box matching the title's line-height,
                           so it stays centered on the first line even when the text wraps */}
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
                         <span style={{ height: 18, display: 'flex', alignItems: 'center', flex: 'none' }}>
-                          {/* §11: never a spinner here — the live surface is the
-                              chat footer's action block; a faint dot marks a job */}
-                          {rev.syncBusy || drafting ? (
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-faint)' }} />
-                          ) : (
-                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: outOfSync ? 'var(--amber)' : 'var(--green)' }} />
-                          )}
+                          {/* §11: never a spinner here (the live surface is the chat
+                              footer's action block) and never green — a faint dot
+                              marks a job, amber marks out of sync */}
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: rev.syncBusy || drafting ? 'var(--text-faint)' : 'var(--amber)' }} />
                         </span>
                         <span style={{
                           minWidth: 0,
-                          font: rev.syncBusy || drafting || outOfSync ? "500 12.5px/18px var(--sans)" : "400 12.5px/18px var(--sans)",
-                          color: rev.syncBusy || drafting ? 'var(--text-2)' : outOfSync ? 'var(--text)' : 'var(--text-muted)',
+                          font: "500 12.5px/18px var(--sans)",
+                          color: rev.syncBusy || drafting ? 'var(--text-2)' : 'var(--text)',
                         }}>
                           {drafting ? stageLabel
                             : rev.syncBusy
                               ? `${selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'Your agent'} is rewriting the steps from your spec…`
-                              : outOfSync
-                                ? (rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
-                                  : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
-                                    : 'The workflow is out of sync — steps use a secret that isn’t allowed.')
-                                : 'Steps are generated from the spec.'}
+                              : (rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
+                                : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
+                                  : 'The workflow is out of sync — steps use a secret that isn’t allowed.')}
                         </span>
                       </div>
                       {!rev.syncBusy && !drafting && outOfSync && (
@@ -3040,6 +3050,7 @@ export default function CreateFlow() {
                       {outOfSync ? 'Sync now' : 'Sync with spec'}
                     </button>
                   </div>
+                  )}
                   {/* §11 test zone, out of sync: the test button disabled beside the
                       sync-first hint — but a still-executing test keeps its Cancel */}
                   {!rev.syncBusy && !drafting && outOfSync && (
@@ -3064,7 +3075,9 @@ export default function CreateFlow() {
                       the action rows (setParamsBtn) — never a strip of its own. */}
                   {!drafting && !rev.syncBusy && !outOfSync && (
                     <>
-                      <div style={{ borderTop: '1px solid var(--hairline)' }}>
+                      {/* §11: no build zone in sync — the header hairline opens the
+                          single test zone directly */}
+                      <div>
                         {test ? (
                           /* §11: status + progress only — the live step timeline,
                              logs, and result live on the test's execution page */
@@ -3128,6 +3141,7 @@ export default function CreateFlow() {
                                   </button>
                                   {setParamsBtn}
                                   {setMockBtn}
+                                  {syncGhostBtn}
                                 </div>
                               </>
                             )}
@@ -3162,15 +3176,18 @@ export default function CreateFlow() {
                               )}
                               {setParamsBtn}
                               {setMockBtn}
+                              {syncGhostBtn}
                             </div>
                           </div>
                         ) : (
-                          /* §11 in sync, never tested: the panel's one primary, the
-                             set-params affordance, and the plain-words side-effects
-                             line — which wraps below the buttons when space runs out */
+                          /* §11 in sync, never tested: quiet test button (testing
+                             never shouts — a failed test never blocks saving), the
+                             toggles, the ghost sync, and the plain-words
+                             status-and-side-effects line — which wraps below the
+                             buttons when space runs out */
                           <div style={{ padding: '12px 20px 14px', display: 'flex', alignItems: 'center', gap: '10px 14px', flexWrap: 'wrap' }}>
                             <button
-                              className="ad-btn-primary"
+                              className="ad-btn-soft"
                               disabled={rev.steps.length === 0 || busyRewrite}
                               onClick={() => void runTest()}
                               style={{ flex: 'none', whiteSpace: 'nowrap' }}
@@ -3179,8 +3196,9 @@ export default function CreateFlow() {
                             </button>
                             {setParamsBtn}
                             {setMockBtn}
+                            {syncGhostBtn}
                             <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
-                              Executes the draft's real steps on this Mac — emails send, files move. Memory is a scratch copy; real executions aren't affected.
+                              In sync with the spec. A test executes the real steps on this Mac — emails send, files move; memory is a scratch copy.
                             </span>
                           </div>
                         )}

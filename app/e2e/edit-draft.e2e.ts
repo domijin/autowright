@@ -48,12 +48,15 @@ describe('edit draft e2e', () => {
     // panel's Test executes v1's real steps on scratch memory. (The spec-edit
     // path is exercised after the run — an out-of-sync draft can't be tested.)
     await page.getByRole('button', { name: 'Test the draft' }).click()
+    await page.getByRole('button', { name: 'Run test' }).click()
     await page.getByText('Test succeeded — the memory copy was discarded.').waitFor({ timeout: 60_000 })
     // §11: the settled test also lands as a quiet system chip in the chat thread.
     await page.getByText('Test succeeded.', { exact: true }).waitFor()
     await shot(page, 'edit-draft-test.png')
 
-    // The test is a real execution record: View run shows the step's log line.
+    // The test is a real execution record: View run (inside the reopened setup
+    // section's run row) shows the step's log line.
+    await page.getByRole('button', { name: 'Test the draft' }).click()
     await page.getByRole('button', { name: 'View run' }).click()
     await page.getByText('Draft test').waitFor({ timeout: 10_000 })
     await page.getByText('edit-draft distinctive log line').waitFor({ timeout: 20_000 })

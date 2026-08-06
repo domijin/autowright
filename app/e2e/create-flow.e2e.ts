@@ -43,8 +43,10 @@ describe('create flow e2e', () => {
     await page.getByText('Notify only on changes').first().waitFor()
     await shot(page, 'create-review.png')
 
-    // Test: a real draft execution through the engine (scratch memory).
+    // Test: the toggle opens the setup section; Run test starts the real
+    // draft execution through the engine (scratch memory).
     await page.getByRole('button', { name: 'Test the draft' }).click()
+    await page.getByRole('button', { name: 'Run test' }).click()
     await page.getByText('Test succeeded — the memory copy was discarded.').waitFor({ timeout: 60_000 })
     await shot(page, 'create-test-succeeded.png')
 

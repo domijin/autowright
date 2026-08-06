@@ -571,7 +571,7 @@ editors enter with
   nothing must not draw the eye), and at most one accent-primary button ever renders:
   **Sync now** while out of sync. Every other panel button is a compact borderless **text
   button** (the card-header treatment above — never a bordered or filled box): the state's
-  main actions (the Test the draft / Test again setup toggle, the setup section's Run
+  main actions (the Test the draft setup toggle, the setup section's Run
   test, a live test's Cancel) muted, every other action (View run, Analyze the failure,
   Sync with spec) faint — the test controls included: a failed test never blocks saving,
   so testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
@@ -606,12 +606,13 @@ editors enter with
   4. **In sync, test executing** — the live status line, progress bar, and the action row
      Cancel + View run + the disabled faint **Sync with spec** (below); the test-setup
      section stays hidden while the test executes.
-  5. **In sync, test settled** — the outcome line over the action row **Test again** /
-     faint **Sync with spec** / **View run** and, on failure, **Analyze the failure**,
-     which sends the canned analyze chat message (below). Test again is the same setup
-     toggle as state 6 — reopening shows the values the last test used.
-  6. **In sync, never tested** — one action row: the muted **Test the draft** setup
-     toggle directly beside the faint **Sync with spec** — always side by side, nothing
+  5. **In sync, test settled** — the outcome line over the action row faint **Sync with
+     spec** / **Test the draft** and, on failure, **Analyze the failure**, which sends
+     the canned analyze chat message (below). Test the draft is the same setup toggle as
+     state 6 — reopening shows the values the last test used — and **View run** lives
+     only inside the setup section's run row, not on the action row.
+  6. **In sync, never tested** — one action row: the faint **Sync with spec** directly
+     beside the muted **Test the draft** setup toggle — always side by side, nothing
      between them — with the plain-words status-and-side-effects line — "In sync with
      the spec. A test executes the real steps on this Mac — emails send, files move;
      memory is a scratch copy." — wrapping below the buttons when space runs out.
@@ -625,8 +626,9 @@ editors enter with
   draft's scripts), `workspace/`, `result/`, and per-step-attempt logs all live under
   `executions/<uuid>/`, progress streams over the ordinary `exec.*` WS events, and the
   result, failure diagnostics, and secret redaction work exactly as in §7. The panel's
-  setup toggle reads **"Test the draft"** ("Test again" once a test outcome exists;
-  a live test shows Cancel in its place) and the setup section's run button reads
+  setup toggle always reads **"Test the draft"** — the label never changes once a test
+  outcome exists (a live test shows Cancel in its place) — and the setup section's run
+  button reads
   **"Run test"** — never "Execute", which is reserved for real
   executions (§4.4 "Execute draft", §7 "Execute again"). A test uses: in-editor param
   values and grants (never the stored automation's), and **scratch memory** — copied to a
@@ -640,8 +642,8 @@ editors enter with
   (one per draft container, and one **live** test per container: §19 answers 409), and a
   settled draft (discard, save as vN+1, Create, Start over) deletes its test records.
   Deleting the automation deletes them too.
-  **Test setup section (create and edit mode):** the test button (**Test the draft** /
-  **Test again**) is a **disclosure toggle**, not the run trigger — it never starts a
+  **Test setup section (create and edit mode):** the test button (**Test the draft**)
+  is a **disclosure toggle**, not the run trigger — it never starts a
   test. It carries a caret (pointing left collapsed, down expanded — the §9.2 step-row
   caret language) and expands the test-setup section **below** the action row, opened by
   a dim hairline (the zone's top hairline stays the only full divider). The section
@@ -669,7 +671,8 @@ editors enter with
     firing's, so the test's execution page shows the message and sender like any message
     execution's; the record's trigger label stays "Test".
   - The closing **run row**: the muted **Run test** button — the only control that
-    starts a test — and, when a test record exists, the faint **View run** beside it,
+    starts a test — and, when a test record exists, the faint **View run** beside it
+    (the settled states' only View-run home — the action rows never carry it),
     over the this-test-only note ("Values and the message apply to this test only —
     nothing is saved.").
   Clicking the toggle again collapses the section; starting a test collapses it too
@@ -677,8 +680,8 @@ editors enter with
   entered values survive a collapse — reopening shows them again; seeding happens only
   when the section opens without prior values. A change to the draft's param
   definitions or trigger list collapses the section and drops its values. A chat-armed
-  test with values (§8 actions) pre-fills the param editors, so Test again reopens on
-  what ran. The resolved values are snapshotted on the test record, so its execution
+  test with values (§8 actions) pre-fills the param editors, so reopening the setup
+  shows what ran. The resolved values are snapshotted on the test record, so its execution
   page shows them like any execution's. Side effects outside memory are real (emails
   send, files move, notifications post per settings) and the card says so plainly.
   **The panel stays compact — status + progress, no logs:** while the test executes it
@@ -687,8 +690,8 @@ editors enter with
   the live step timeline, streaming logs, and (when finished) the full result views are the
   ordinary execution-page surfaces — one run UI everywhere instead of a second, smaller one
   in the panel. When the test finishes the panel shows the outcome line ("Test succeeded —
-  the memory copy was discarded." green / "Test failed." amber / "Test cancelled." faint)
-  with the same View-run button. Navigating
+  the memory copy was discarded." green / "Test failed." amber / "Test cancelled." faint);
+  View run then lives only in the setup section's run row. Navigating
   away from the editor no longer cancels a live test — it is a real record, visible and
   cancellable from its execution page; re-entering the editor re-attaches the card to a
   still-executing test. **The outcome is never thrown away with the editing session:** a
@@ -697,14 +700,14 @@ editors enter with
   start and deleted with the draft. It rides the draft payload as `test` ({ status, when:
   §4.1 started-label, execId }) — on the automation's `draft` object and on `GET /draft` —
   and a resumed draft's panel renders it in place of the never-tested row: a status line
-  ("Last test succeeded — <when>" green / "Last test failed — <when>" amber) plus the
-  View-run button while the record still exists (retention may outlive it — the button
-  hides when the record is gone); the test button reads "Test again". A live test always
+  ("Last test succeeded — <when>" green / "Last test failed — <when>" amber); the setup
+  section's run row shows View run while the record still exists (retention may outlive
+  it — the button hides when the record is gone). A live test always
   takes over the panel. **When a test settles the thread hears about it:** the editor
   appends a run-settled **system** entry — "Test succeeded." / "Test failed at step
   `<name>` — `<message>`." — so follow-up messages have an anchor and the agent's
   CONVERSATION context names the run. **On failure nothing analyzes by itself:** the panel
-  shows the "Test failed" line plus an **"Analyze the failure"** button beside View run —
+  shows the "Test failed" line plus an **"Analyze the failure"** button on the action row —
   it sends the **canned analyze chat message** "The test failed at step `<name>` — figure
   out why and change the automation so it won't happen again." as an ordinary §8 chat job
   (gated exactly like the chat input, so it disables while any §8 job is in flight): the

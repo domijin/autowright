@@ -931,7 +931,7 @@ export default function CreateFlow() {
   // again / blocker answers re-run against it).
   const [chatText, setChatText] = useState('')
   const lastCreateRef = useRef('')
-  // §11 test-setup section: the Test the draft / Test again disclosure toggle —
+  // §11 test-setup section: the Test the draft disclosure toggle —
   // expanding shows every test option at once (param editors, trigger message,
   // the Run test row). Values survive a collapse; only Run test starts a test.
   const [testOpen, setTestOpen] = useState(false)
@@ -1951,7 +1951,7 @@ export default function CreateFlow() {
   // never clipped.
   const panelBtnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', padding: '6px 0' }
   const panelRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 18px' }
-  // §11 test-setup disclosure: Test the draft / Test again never starts a test —
+  // §11 test-setup disclosure: Test the draft never starts a test —
   // it expands the setup section below the action row with every option at once
   // (param editors, trigger message, the Run test row). Entered values survive a
   // collapse; seeding happens only when the section opens without prior values.
@@ -3068,7 +3068,7 @@ export default function CreateFlow() {
                         </button>
                       ) : (
                         <button className="ad-btn-text" disabled style={panelBtnStyle}>
-                          {test || rev.lastTest ? 'Test again' : 'Test the draft'}
+                          Test the draft
                         </button>
                       )}
                       <span style={{ minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
@@ -3077,7 +3077,7 @@ export default function CreateFlow() {
                     </div>
                   )}
                   {/* test zone — in-sync states only. One hairline opens the zone;
-                      the Test the draft / Test again disclosure on the action row
+                      the Test the draft disclosure on the action row
                       expands the test-setup section (param editors, trigger message,
                       Run test) as sub-blocks over dim dividers. */}
                   {!drafting && !rev.syncBusy && !outOfSync && (
@@ -3120,30 +3120,36 @@ export default function CreateFlow() {
                                   </div>
                                 )}
                                 <div style={{ ...panelRowStyle, marginTop: 8 }}>
-                                  {/* §11 state 5: Test again is the setup toggle, side by
-                                      side with Sync with spec — Run test lives in the
-                                      expanded setup section */}
+                                  {/* §11 state 5: Sync with spec, then the Test the draft
+                                      setup toggle — Run test and View run live in the
+                                      expanded setup section; only a live test keeps
+                                      View run on the action row (the setup is hidden) */}
                                   {testLive ? (
-                                    <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
-                                      Cancel
-                                    </button>
+                                    <>
+                                      <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
+                                        Cancel
+                                      </button>
+                                      {syncGhostBtn}
+                                      <button
+                                        className="ad-btn-text dim"
+                                        onClick={() => go('execution', { execId: test.execId })}
+                                        style={panelBtnStyle}
+                                      >
+                                        <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
+                                      </button>
+                                    </>
                                   ) : (
-                                    testToggleBtn('Test again')
-                                  )}
-                                  {syncGhostBtn}
-                                  <button
-                                    className="ad-btn-text dim"
-                                    onClick={() => go('execution', { execId: test.execId })}
-                                    style={panelBtnStyle}
-                                  >
-                                    <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
-                                  </button>
-                                  {/* §11: sends the canned analyze chat message — the
-                                      whole repair loop lives in the thread */}
-                                  {!testLive && testExec.status === 'failed' && !anyJobBusy && (
-                                    <button className="ad-btn-text dim" onClick={runAnalyze} style={panelBtnStyle}>
-                                      <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze the failure
-                                    </button>
+                                    <>
+                                      {syncGhostBtn}
+                                      {testToggleBtn('Test the draft')}
+                                      {/* §11: sends the canned analyze chat message — the
+                                          whole repair loop lives in the thread */}
+                                      {testExec.status === 'failed' && !anyJobBusy && (
+                                        <button className="ad-btn-text dim" onClick={runAnalyze} style={panelBtnStyle}>
+                                          <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze the failure
+                                        </button>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </>
@@ -3162,17 +3168,8 @@ export default function CreateFlow() {
                               </div>
                             )}
                             <div style={{ ...panelRowStyle, marginTop: 8 }}>
-                              {testToggleBtn('Test again')}
                               {syncGhostBtn}
-                              {!!rev.lastTest.execId && execs.some((e) => e.id === rev.lastTest!.execId) && (
-                                <button
-                                  className="ad-btn-text dim"
-                                  onClick={() => go('execution', { execId: rev.lastTest!.execId! })}
-                                  style={panelBtnStyle}
-                                >
-                                  <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
-                                </button>
-                              )}
+                              {testToggleBtn('Test the draft')}
                             </div>
                           </div>
                         ) : (
@@ -3182,16 +3179,16 @@ export default function CreateFlow() {
                              status-and-side-effects line — which wraps below the
                              buttons when space runs out */
                           <div style={{ ...panelRowStyle, padding: '10px 20px 12px' }}>
-                            {testToggleBtn('Test the draft')}
                             {syncGhostBtn}
+                            {testToggleBtn('Test the draft')}
                             <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
                               In sync with the spec. A test executes the real steps on this Mac — emails send, files move; memory is a scratch copy.
                             </span>
                           </div>
                         )}
                       </div>
-                      {/* §11 test-setup section — expanded by the Test the draft /
-                          Test again disclosure toggle, hidden while a test executes;
+                      {/* §11 test-setup section — expanded by the Test the draft
+                          disclosure toggle, hidden while a test executes;
                           shows every option at once, then the Run test row */}
                       {testOpen && !testLive && rev.params.length > 0 && testParams !== null && (
                         <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>

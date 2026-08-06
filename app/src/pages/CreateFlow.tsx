@@ -934,6 +934,9 @@ export default function CreateFlow() {
   // §11 test parameter values (edit mode): null = collapsed — the test uses the
   // automation's stored values; non-null = the per-test overrides being edited.
   const [testParams, setTestParams] = useState<ParamDef[] | null>(null)
+  // §11 test trigger message: null = collapsed — the test runs without a payload;
+  // the mock rides §19 `triggerMock` only when the message text is nonempty.
+  const [testMock, setTestMock] = useState<{ idx: number; text: string; sender: string } | null>(null)
   const [confirmSpecCancel, setConfirmSpecCancel] = useState(false)
   // §11 Secrets card New secret modal — a secret saved here is auto-allowed.
   const [secretModal, setSecretModal] = useState(false)
@@ -1913,6 +1916,20 @@ export default function CreateFlow() {
   })
   // A synced/reloaded draft may rename or retype params — collapse back to stored values.
   useEffect(() => { setTestParams(null) }, [rev?.params])
+  // §11 test trigger message: mock only against a message trigger in the editor's
+  // list (off state irrelevant); a changed trigger list collapses the section.
+  const msgTriggers = (rev?.triggers ?? []).filter(
+    (t): t is Extract<DraftTrigger, { kind: 'discord' | 'imessage' }> =>
+      t.kind === 'discord' || t.kind === 'imessage')
+  const mockSenderSeed = (t: DraftTrigger) => (t.kind === 'imessage' ? t.from : 'Test')
+  useEffect(() => { setTestMock(null) }, [rev?.triggers])
+  const testTriggerMock = (m: { idx: number; text: string; sender: string }) => {
+    const t = msgTriggers[m.idx]
+    if (!t || !m.text || !m.sender.trim()) return undefined
+    return t.kind === 'discord'
+      ? { kind: 'discord', text: m.text, sender: m.sender.trim(), channel: t.channel, secret: t.secret }
+      : { kind: 'imessage', text: m.text, sender: m.sender.trim() }
+  }
   const testParamValues = (ps: ParamDef[]) => Object.fromEntries(ps.map((p) => [p.name,
     p.kind === 'toggle' ? !!p.on
     : p.kind === 'list' ? (p.lines ?? [])
@@ -1935,6 +1952,18 @@ export default function CreateFlow() {
       {testParams === null ? 'Set test parameters' : isEdit ? 'Use current values' : 'Use defaults'}
     </button>
   ) : null
+  // §11 test trigger message: second dashed toggle on the same action row, after
+  // set-params and under the same rules (hidden while a test executes).
+  const setMockBtn = rev && msgTriggers.length > 0 && !testLive ? (
+    <button
+      className="ad-btn-dashed" disabled={busyRewrite}
+      onClick={() => setTestMock(testMock === null
+        ? { idx: 0, text: '', sender: mockSenderSeed(msgTriggers[0]) } : null)}
+    >
+      <i className="fa-solid fa-message" style={{ fontSize: 10 }} />{' '}
+      {testMock === null ? 'Mock a trigger message' : 'No trigger message'}
+    </button>
+  ) : null
   // A live test survives leaving the editor — re-attach the card on entry.
   useEffect(() => {
     if (test) return
@@ -1949,10 +1978,12 @@ export default function CreateFlow() {
     clearTest()
     try {
       const values = valuesOverride ?? (testParams ? testParamValues(testParams) : undefined)
+      const mock = testMock ? testTriggerMock(testMock) : undefined
       const { execId } = await api.postTest({
         draft: serializeDraft(rev),
         ...(isEdit && auto ? { autoId: auto.id } : {}), // edit: scratch memory copies the automation's
         ...(values ? { paramValues: values } : {}), // §11 test-only values
+        ...(mock ? { triggerMock: mock } : {}), // §11 test trigger message — only when text is nonempty
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
       })
       beginTest(execId)
@@ -3096,6 +3127,7 @@ export default function CreateFlow() {
                                     <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
                                   </button>
                                   {setParamsBtn}
+                                  {setMockBtn}
                                 </div>
                               </>
                             )}
@@ -3129,6 +3161,7 @@ export default function CreateFlow() {
                                 </button>
                               )}
                               {setParamsBtn}
+                              {setMockBtn}
                             </div>
                           </div>
                         ) : (
@@ -3145,6 +3178,7 @@ export default function CreateFlow() {
                               Test the draft
                             </button>
                             {setParamsBtn}
+                            {setMockBtn}
                             <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
                               Executes the draft's real steps on this Mac — emails send, files move. Memory is a scratch copy; real executions aren't affected.
                             </span>
@@ -3166,6 +3200,57 @@ export default function CreateFlow() {
                           ))}
                           <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
                             These values apply to this test only — nothing is saved.
+                          </div>
+                        </div>
+                      )}
+                      {/* §11 expanded test-trigger-message editors — below the param
+                          editors when both are open; the row's toggle collapses them */}
+                      {msgTriggers.length > 0 && testMock !== null && (
+                        <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
+                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-faintest)' }}>
+                            TRIGGER MESSAGE · THIS TEST ONLY
+                          </div>
+                          <div style={{ padding: '13px 20px 3px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {msgTriggers.length > 1 && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                {msgTriggers.map((t, i) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => setTestMock({ ...testMock, idx: i, sender: mockSenderSeed(t) })}
+                                    style={{
+                                      font: "500 12px var(--mono)", borderRadius: 6, padding: '3px 9px', whiteSpace: 'nowrap',
+                                      color: i === testMock.idx ? 'var(--accent)' : 'var(--text-muted)',
+                                      background: i === testMock.idx ? 'var(--accent-chip-bg)' : 'rgba(255, 255, 255, 0.06)',
+                                    }}
+                                  >
+                                    {triggerLabel(t)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ flex: 'none', width: 64, font: "600 10px var(--mono)", letterSpacing: '.07em', color: 'var(--text-faint)' }}>FROM</span>
+                              <input
+                                className="ad-input" value={testMock.sender}
+                                onChange={(e) => setTestMock({ ...testMock, sender: e.target.value })}
+                                style={{ flex: 1, minWidth: 0, color: 'var(--text)', font: "400 12px var(--mono)", padding: '7px 10px' }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ flex: 'none', width: 64, font: "600 10px var(--mono)", letterSpacing: '.07em', color: 'var(--text-faint)' }}>MESSAGE</span>
+                              <input
+                                className="ad-input" value={testMock.text}
+                                placeholder="The message that starts this test"
+                                onChange={(e) => setTestMock({ ...testMock, text: e.target.value })}
+                                style={{ flex: 1, minWidth: 0, color: 'var(--text)', font: "400 12px var(--mono)", padding: '7px 10px' }}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
+                            Applies to this test only — nothing is saved; leave the message empty to test without one.{' '}
+                            {msgTriggers[testMock.idx]?.kind === 'discord'
+                              ? 'A step’s reply() posts to the real Discord channel.'
+                              : 'A step’s reply() can’t send from a mocked iMessage — it logs the failed send instead.'}
                           </div>
                         </div>
                       )}

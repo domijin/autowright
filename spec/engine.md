@@ -248,7 +248,12 @@ SDK name it uses** — `from autowright import params, log, result` (or `import 
   Fire-and-forget: a failed send logs an
   err line ("reply failed — …") but never fails the step; a successful send logs a sys line
   naming the medium it actually went to (Discord channel or iMessage chat).
-  Calling `reply` in an execution not started by a message trigger raises.
+  Calling `reply` in an execution not started by a message trigger raises — a §11 test
+  whose request carried a mocked payload (§19 `triggerMock`) counts as message-started:
+  a Discord reply sends **for real** (the mock carries the trigger's real `channel` and
+  `secret`); an iMessage mock has `chat: null`, so the send fails with the ordinary err
+  line ("reply failed — the triggering message has no chat to reply to") and the step
+  continues.
   **Secret scan** — reply text is an outbound message to a third party, so it gets the same
   scan `agent.ask` prompts get (§6, against ALL of the automation's secret values, multi-line
   values line by line): a hit raises in the step and nothing is sent. This is a hard refusal,

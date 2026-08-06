@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, 
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from . import __version__, awake, harness, imessage, installer, keychain, paths
-from . import drafting, packages as pkglib, reqlog, schedule, transfer
+from . import drafting, packages as pkglib, reqlog, schedule, timefmt, transfer
 from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
@@ -581,12 +581,37 @@ def imessage_automation_probe() -> dict:
 
 
 # ---------- tests (§11 Test — §19 POST /tests) ----------
+def _mock_payload(mock: dict) -> dict:
+    """§19 `triggerMock` → the §4.5 payload stored on the test record. Fields
+    the backend can't truthfully supply are null; `at` is the test start."""
+    kind = mock.get("kind")
+    text = mock.get("text")
+    sender = mock.get("sender")
+    if kind not in ("discord", "imessage"):
+        raise HTTPException(422, "triggerMock kind must be discord | imessage")
+    if not isinstance(text, str) or not text or not isinstance(sender, str) or not sender:
+        raise HTTPException(422, "triggerMock needs nonempty text and sender")
+    if kind == "imessage":
+        return {"kind": "imessage", "text": text, "sender": sender,
+                "chat": None, "messageId": None, "at": timefmt.now_iso()}
+    channel = mock.get("channel")
+    secret = mock.get("secret")
+    if not isinstance(channel, str) or not channel.isascii() or not channel.isdigit():
+        raise HTTPException(422, "triggerMock channel must be an ASCII-digit string")
+    if not isinstance(secret, str) or not SECRET_NAME_RE.match(secret):
+        raise HTTPException(422, "triggerMock secret must be a valid secret name")
+    return {"kind": "discord", "text": text, "sender": sender, "channel": channel,
+            "channelName": None, "guildName": None, "messageId": None,
+            "guildId": None, "secret": secret, "at": timefmt.now_iso()}
+
+
 @app.post("/tests", dependencies=[Depends(auth)])
 def post_test(body: dict) -> dict:
     d = body.get("draft")
     if not d or not d.get("steps"):
         raise HTTPException(422, "draft with steps required")
     d = {**d, "steps": _norm_steps(d.get("steps"))}
+    payload = _mock_payload(body["triggerMock"]) if body.get("triggerMock") else None
     auto = None
     if body.get("autoId"):
         # A stale/unknown autoId must 404 — falling through to create mode
@@ -603,7 +628,7 @@ def post_test(body: dict) -> dict:
         allowed = auto["allowed_secrets"] if auto else [s["name"] for s in store.secrets]
     try:
         exec_id = testexec.start(engine, d, auto, enabled, allowed,
-                                 body.get("paramValues") or {})
+                                 body.get("paramValues") or {}, trigger_payload=payload)
     except RuntimeError as e:  # §19: one live test per draft container
         raise HTTPException(409, str(e)) from e
     return {"execId": exec_id}

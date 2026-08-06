@@ -362,6 +362,53 @@ def test_test_param_values_override(client, monkeypatch):
     assert any("greeting=bonjour" in t for t in logs)
 
 
+def test_test_trigger_mock_imessage_payload(client, monkeypatch):
+    # §19 triggerMock: the mocked payload rides the record like a real firing's
+    # (unsuppliable fields null), reaches the step via execution.trigger_payload,
+    # and the trigger label still says "Test".
+    events = _capture_events(monkeypatch)
+    d = _echo_draft(steps=[{"file": "01-see.py", "name": "See", "desc": "",
+                            "code": "from autowright import execution, log, result\n"
+                                    "p = execution.trigger_payload\n"
+                                    "log(f\"mock={p['kind']}:{p['sender']}:{p['text']}\")\n"
+                                    "result.status('ok')\n"}])
+    r = client.post("/tests", json={
+        "draft": d,
+        "triggerMock": {"kind": "imessage", "text": "new chapter?", "sender": "+15551234567"},
+    })
+    assert r.status_code == 200
+    eid = r.json()["execId"]
+    assert _until_finished(events, eid)["exec_json"]["status"] == "succeeded"
+    logs = [e["line"]["text"] for e in events if e["ev"] == "exec.log"]
+    assert any("mock=imessage:+15551234567:new chapter?" in t for t in logs)
+    full = client.get(f"/executions/{eid}").json()
+    assert full["test"] is True and full["trigger"] == "Test"
+    assert full["triggerPayload"]["chat"] is None
+    assert full["triggerPayload"]["messageId"] is None
+    assert full["triggerSender"] == "+15551234567"
+
+
+def test_test_trigger_mock_discord_shape_and_validation(client, monkeypatch):
+    # §19 triggerMock validation: 422 on a bad kind, empty text/sender, a
+    # non-digit discord channel, or an invalid secret name — and the discord
+    # payload carries the trigger's channel/secret with the rest null.
+    ok = {"kind": "discord", "text": "go", "sender": "Dave",
+          "channel": "123456", "secret": "BOT_TOKEN"}
+    for bad in [{**ok, "kind": "cron"}, {**ok, "text": ""}, {**ok, "sender": ""},
+                {**ok, "channel": "12a"}, {**ok, "channel": "12٣4"},
+                {**ok, "secret": "lower"}, {k: v for k, v in ok.items() if k != "channel"}]:
+        r = client.post("/tests", json={"draft": _echo_draft(), "triggerMock": bad})
+        assert r.status_code == 422, bad
+    from autowright.storage import store
+
+    events = _capture_events(monkeypatch)
+    eid = client.post("/tests", json={"draft": _echo_draft(), "triggerMock": ok}).json()["execId"]
+    p = store.execs[eid]["trigger_payload"]
+    assert p["channel"] == "123456" and p["secret"] == "BOT_TOKEN"
+    assert p["channelName"] is None and p["guildId"] is None and p["messageId"] is None
+    _until_finished(events, eid)
+
+
 def test_test_stored_values_and_flagged_record(client, monkeypatch):
     # §19: with autoId (edit mode) the stored values are the base; the record is
     # flagged test and never touches the automation's derived display state.
@@ -1365,7 +1412,7 @@ def test_test_grant_arrays_propagate(client, monkeypatch):
 
     captured = {}
 
-    def fake_start(engine, d, auto, enabled, allowed, param_values):
+    def fake_start(engine, d, auto, enabled, allowed, param_values, trigger_payload=None):
         captured["enabled"], captured["allowed"] = enabled, allowed
         return "exec-x"
 

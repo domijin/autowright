@@ -27,7 +27,8 @@ RESULT_EXCERPT = 2000  # chars of result.md shown for a detailed successful run
 
 
 def start(engine: Engine, draft: dict, auto: dict | None,
-          enabled_agents: list, allowed_secrets: list, param_values: dict) -> str:
+          enabled_agents: list, allowed_secrets: list, param_values: dict,
+          trigger_payload: dict | None = None) -> str:
     """Create and launch the test execution record; returns its exec id.
     Raises RuntimeError while the container already has a live test (§19 409)."""
     container_id = auto["id"] if auto else None  # §4.5: null autoId on create-mode tests
@@ -62,8 +63,11 @@ def start(engine: Engine, draft: dict, auto: dict | None,
                       "agent": bool(s.get("agent")), "sha": _step_sha(s),
                       "status": "queued", "dur_ms": None, "attempts": []}
                      for s in steps]
+        # §19 triggerMock: the mocked §4.5 payload rides the record like a real
+        # firing's — the trigger kind stays `test`, so labels still say "Test".
         h = store.create_execution(shadow, "test", None, "test", rec_steps,
-                                   params=store.merged_params(shadow, ver))
+                                   params=store.merged_params(shadow, ver),
+                                   trigger_payload=trigger_payload)
 
     # Any setup failure past this point must take the record with it: a
     # permanent "executing" test record trips the 409 above forever (and

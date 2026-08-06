@@ -115,7 +115,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   `{ name }` — rename; null/"" clears · `POST /automations/{id}/memory/snapshots/{sid}/restore`
   — §6.3 restore (409 while live) · `DELETE /automations/{id}/memory/snapshots/{sid}` —
   delete the snapshot; unknown `sid` answers 404
-- `POST /tests` `{ autoId?, draft, enabledAgents?, allowedSecrets?, paramValues? }`
+- `POST /tests` `{ autoId?, draft, enabledAgents?, allowedSecrets?, paramValues?, triggerMock? }`
   → `{ execId }` — the §11 Test: starts a §4.5 **test execution record** of the sent draft's
   steps (§4.5 kind `test`, trigger kind `test` — serialized as `test: true`, `ver: "Test"`,
   `trigger: "Test"`; a stale `autoId` answers 404; 409
@@ -126,7 +126,16 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   `/drafts`; param resolution uses the automation's stored values when `autoId` is given
   (else the draft's defaults), with `paramValues` (name → value, §5 matching rules) overriding
   on top for this test only — never stored; the resolved values are snapshotted on the
-  record. Progress, logs, and the result flow over the ordinary `exec.*` events and
+  record. `triggerMock` is the §11 mocked trigger message:
+  `{ kind: discord | imessage, text, sender, channel?, secret? }` — 422 unless `text` and
+  `sender` are nonempty strings, and for discord `channel` is a nonempty ASCII-digit string
+  and `secret` a valid §4.8 secret name (the §4.3 trigger rules; iMessage takes no extra
+  fields — `sender` is the handle). The backend builds the §4.5 payload from it (fields it
+  can't truthfully supply are null — discord `channelName`/`guildName`/`guildId`/`messageId`,
+  iMessage `chat`/`messageId`; `at` is the test start) and stores it on the record: the
+  trigger kind stays `test` (`ver`/`trigger` still serialize "Test"), but `triggerSender`
+  and every payload surface fill like a real message execution, and §6.1 `reply()` becomes
+  callable (§6.1 mocked-payload rules). Progress, logs, and the result flow over the ordinary `exec.*` events and
   `/executions/*` endpoints; cancel and skip-step are `POST /executions/{id}/cancel` and
   `/skip-step` like any execution (retry answers 409 — the draft may have changed). A
   failed execution is **not** analyzed automatically — and there is no analysis endpoint:

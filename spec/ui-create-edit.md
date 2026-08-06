@@ -636,6 +636,27 @@ editors enter with
   label switches to "Use current values" in edit mode and "Use defaults" in create mode. The resolved values are snapshotted on the test record, so
   its execution page shows them like any execution's. Side effects outside memory are real
   (emails send, files move, notifications post per settings) and the card says so plainly.
+  **Test trigger message (create and edit mode):** when the editor's trigger list (the
+  TRIGGERS card list) holds a message trigger (§4.3 discord/imessage, `off` state
+  irrelevant), a second dashed toggle rides the same action row, after the set-params
+  button and under the same rules (hidden while a test executes, never a strip of its
+  own). Collapsed it reads "Mock a trigger message"; expanded, "No trigger message", and
+  the section renders below the action row (below the expanded param editors when both
+  are open), opened by the same dim hairline: the `TRIGGER MESSAGE · THIS TEST ONLY`
+  eyebrow, a trigger picker when the list holds several message triggers (the §4.3
+  long labels; single-trigger lists skip the picker), a **From** field (prefilled with
+  the trigger's `from` for iMessage, "Test" for Discord; switching the picked trigger
+  re-prefills it), and a **Message** text field (empty, placeholder-hinted). The mock
+  rides the §19 `triggerMock` body field **only when the message text is nonempty** —
+  left empty (or collapsed) the test runs without a payload, exactly as before; nothing
+  is ever stored, and the trigger list is untouched. The section's footer says so and
+  names the reply behavior plainly: applies to this test only; a step's `reply()` posts
+  to the **real** Discord channel, and an iMessage reply can't send from a mocked
+  message (§6.1). The built §4.5 payload is snapshotted on the test record like a real
+  firing's, so the test's execution page shows the message and sender like any message
+  execution's; the record's trigger label stays "Test". Like the test-parameter
+  section, a change to the draft's trigger list collapses the section back to its
+  default.
   **The panel stays compact — status + progress, no logs:** while the test executes it
   shows a status line ("Executing — step 2 of 5 · <step name>"), a progress bar (terminal
   steps over total), and a **"View run"** button opening the test's §7 execution page, where

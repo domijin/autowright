@@ -406,7 +406,12 @@ triggerPayload: message-trigger context | null (every non-message execution) —
   reply routing, §6.1), messageId (the message guid), at (message ISO
   timestamp) }. Persisted on the record, snapshotted at start —
   reply() keeps working on an in-place §7 retry even if the trigger was edited since.
-  Exposed to steps via §6.1 (`execution.trigger_payload`, `AUTOWRIGHT_TRIGGER_PAYLOAD`)
+  Exposed to steps via §6.1 (`execution.trigger_payload`, `AUTOWRIGHT_TRIGGER_PAYLOAD`).
+  A §4.5 `test` execution also carries a payload when the test request mocked one (§19
+  `triggerMock`, §11 test trigger message): same shapes, with the fields the backend can't
+  truthfully supply null — discord `channelName`/`guildName`/`guildId`/`messageId`,
+  iMessage `chat`/`messageId` — and `at` set to the test start; the trigger kind stays
+  `test`
 triggerSender: string | null — the payload's `sender`, lifted onto every execution row
   (list JSON carries no payload; the full payload is full-record-only). Lets the §7 and
   §9.2 trigger columns read "Discord · Dave · v3" without fetching the full record;

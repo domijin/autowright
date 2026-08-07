@@ -98,6 +98,16 @@ describe('executions list sections (§7)', () => {
     expect(screen.queryByText('FINISHED')).toBeNull()
   })
 
+  it('lists §11 test executions like any run, printing "Test" once in the trigger column', () => {
+    seed([ex('e-test', { test: true, trigger: 'Test', ver: 'Test', autoName: 'New automation' })])
+    const { container } = render(<ExecutionsList />)
+
+    expect(screen.getByText('e-test')).toBeTruthy()
+    // trigger and ver labels are both "Test" — the row never prints the pair (§7)
+    expect(container.textContent).not.toContain('Test · Test')
+    expect(screen.getByText('Test')).toBeTruthy()
+  })
+
   it('keeps waiting rows visible under a filter that only applies to finished rows', () => {
     seed([
       ex('e-wait', { status: 'queued', dur: '', endedMs: 0, queuedMs: NOW - 1_000 }),

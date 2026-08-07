@@ -228,8 +228,15 @@ No files at all → the whole view stack (footer included) is replaced by a dash
 placeholder card: "The latest execution didn't produce any result files."
 Deleted-automation handling: historical name, marked deleted.
 
-**Executions list:** all executions across automations — except §4.5 `test` executions, which
-are reachable only from the §11 Build & test panel's View-run button. Three sections, top to bottom —
+**Executions list:** all executions across automations, §4.5 `test` executions included — a
+Build & test run lands here like any other (the §11 panel's View-run button stays as a
+shortcut). A test row reads like any row: `autoName` is the §11 shadow record's name (the
+automation's; in create mode the draft's name, "New automation" fallback), never marked
+"(deleted)" (a create-mode test has no automation by design), and its trigger column prints
+"Test" **once** — the §4.5 trigger and ver labels are both "Test", and the row never prints
+the redundant pair (a mocked sender still appears between: "Test · Dave"). Test rows share
+the record's draft-scoped lifetime (§11 keep-latest): starting the next test replaces the
+previous row, and a settling draft removes its rows. Three sections, top to bottom —
 active work, then what it is holding up, then history: **Running** (`executing` rows, newest
 start first), **Waiting** (§6 firing-queue `queued` rows, oldest wait first — the drain order,
 so the next one to run reads top), **Finished** (most recently ended first, by §4.5 `endedMs`;

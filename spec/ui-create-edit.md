@@ -646,7 +646,8 @@ editors enter with
   the automation's memory dir; create mode to empty) and discarded when the test ends, so
   a test can never poison the memory the deployed version reads (§4.1). What distinguishes
   a test record from a real execution: it never touches the automation's derived display
-  state or the one-execution-at-a-time gate (§5), it is excluded from the Executions list,
+  state or the one-execution-at-a-time gate (§5), it lists in the Executions list like any
+  run but its row lives and dies with the record (§7),
   it cannot be retried or re-executed from its execution page,
   and its lifetime is the draft's — starting a new test deletes the previous test record
   (one per draft container, and one **live** test per container: §19 answers 409), and a

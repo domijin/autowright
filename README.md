@@ -1,4 +1,4 @@
-# Autowright
+# <img src="app/electron/icon/icon.png" width="32" alt="Autowright logo" align="top"> Autowright
 
 > Describe the job once. Your Mac does it every day, exactly the same way, forever.
 

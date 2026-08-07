@@ -48,9 +48,10 @@ function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: bo
           style={e.status === 'executing' ? { animation: PULSE } : undefined}
         />
       </div>
-      {/* §4.5: message-triggered rows read "Discord · Dave · v3" */}
+      {/* §4.5: message-triggered rows read "Discord · Dave · v3"; a test row's
+        * trigger and ver labels are both "Test" — print it once (§7). */}
       <span style={{ fontSize: 12, color: 'var(--text-2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {e.trigger + (e.triggerSender ? ' · ' + e.triggerSender : '') + (e.ver ? ' · ' + e.ver : '')}
+        {e.trigger + (e.triggerSender ? ' · ' + e.triggerSender : '') + (e.ver && e.ver !== e.trigger ? ' · ' + e.ver : '')}
       </span>
       <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>
         {/* A queued row has no duration — it hasn't started (§7). */}
@@ -92,18 +93,15 @@ export default function ExecutionsList() {
   const { execs, go } = useStore()
   const [filt, setFilt] = useState<Filter>('All')
 
-  // §11 test executions are draft-scoped — reachable only from the Test card's
-  // View-run button, never listed here.
-  const listed = execs.filter((e) => !e.test)
-  const running = listed
+  const running = execs
     .filter((e) => e.status === 'executing')
     .sort((a, b) => b.startedMs - a.startedMs)
   // §6 firing queue: oldest wait first — the drain order, so the next one to
   // run reads top.
-  const waiting = listed
+  const waiting = execs
     .filter((e) => e.status === 'queued')
     .sort((a, b) => (a.queuedMs || a.startedMs) - (b.queuedMs || b.startedMs))
-  const finished = listed
+  const finished = execs
     .filter((e) => e.status !== 'queued' && e.status !== 'executing')
     .filter((e) =>
       filt === 'All' ? true : filt === 'Succeeded' ? e.status === 'succeeded' : e.status === 'failed')

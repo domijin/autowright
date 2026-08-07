@@ -393,10 +393,10 @@ id: uuid, autoId: uuid | null (null on a create-mode test — no automation reco
 kind: version | draft | test — what was executed (§11 test executions are kind `test`), status,
 version: int | null — the executed version number; null unless kind is `version`. The API
   serialization derives the display pair from these two: `ver` ("v3", "Draft", "Test") and
-  `test` (kind == test) — neither is stored. Test executions are excluded from the Executions
-  list, the detail page's RECENT EXECUTIONS, and an automation's execution-derived display
-  state (lastStatus / latest result / live); deleted when the draft settles and by starting
-  the next test
+  `test` (kind == test) — neither is stored. Test executions appear in the Executions list
+  (§7) but are excluded from the detail page's RECENT EXECUTIONS and an automation's
+  execution-derived display state (lastStatus / latest result / live); deleted when the
+  draft settles and by starting the next test — the list row disappears with the record
 trigger: manual | menubar | cron | time | app_start | discord | imessage | test (future:
   pubsub) — the machine kind of what started the execution; stored as data, never the UI
   copy. The serialized `trigger` is the derived display label (manual → "Manual",

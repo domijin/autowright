@@ -243,7 +243,7 @@ editor applies the whole outcome (§11).
      - cron: "0 8 * * *"             # needs no trigger (manual/menu bar only)
      - { cron: "0 9 * * 1", tz: Asia/Tokyo }   # tz optional — only when the spec names a zone
      - { imessage: "+15551234567", pattern: check }     # details from the spec only
-     - { discord: "1234567890", secret: DISCORD_BOT }   # ditto; + optional pattern/mention
+     - { discord: "1234567890", secret: DISCORD_BOT }   # ditto; + optional pattern/mention/author
    params:                           # full definitions per §4.2, each with a default
      - { name: sources, kind: list, label: Manga URLs, help: ..., validate: true }
    packages:                         # §6.2 declared packages — beyond curated only, bare
@@ -346,8 +346,9 @@ notes rewrite (§11).
      `tz` a known IANA zone included only when the spec names one.
    - `{ imessage: handle }` (+ optional `pattern`) — `handle` a §4.3-valid sender (E.164
      phone or email), mapped to the stored `from` field.
-   - `{ discord: channel-id, secret: NAME }` (+ optional `pattern`, `mention`) — channel a
-     numeric id, `secret` a §4.3-valid secret name, `mention` a bool.
+   - `{ discord: channel-id, secret: NAME }` (+ optional `pattern`, `mention`, `author`) —
+     channel a numeric id, `secret` a §4.3-valid secret name, `mention` a bool, `author` a
+     numeric Discord user id (§4.3 sender filter).
    - `app_start: true`.
 
    The agent derives triggers from the spec's words — and **may add an entry it judges the

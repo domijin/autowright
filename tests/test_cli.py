@@ -409,10 +409,13 @@ def test_merge_draft_triggers_message_entries_additive():
                {"kind": "imessage", "from": "a@b.co", "off": False},          # new → adds
                {"kind": "discord", "channel": "1", "secret": "S", "off": False,
                 "pattern": "go"},                                             # pattern differs → adds
+               {"kind": "discord", "channel": "1", "secret": "S", "off": False,
+                "author": "777"},                                             # author differs → adds
                {"kind": "time", "at": "2030-01-01T09:00", "off": False}]      # never drafted → dropped
     merged = cli.merge_draft_triggers(stored, drafted)
     assert [(t["kind"], t.get("id")) for t in merged] == [
-        ("imessage", "t1"), ("discord", "t2"), ("imessage", None), ("discord", None)]
+        ("imessage", "t1"), ("discord", "t2"), ("imessage", None), ("discord", None),
+        ("discord", None)]
     assert merged[0]["off"] is True  # matched entry keeps its off state
 
 
@@ -424,18 +427,18 @@ def test_trigger_add_discord():
     c = _WorkdirClient()
     cli.cmd_trigger_add(c, SimpleNamespace(
         automation="Daily Report", discord="123", secret="BOT_TOKEN",
-        pattern="go", mention=True, imessage=None, app_start=False,
+        pattern="go", mention=True, author="777", imessage=None, app_start=False,
         at=None, expr=None, tz=None))
     method, path, body = c.posted[-1]
     assert (method, path) == ("PATCH", f"/automations/{FULL_AUTO['id']}")
     assert body["triggers"][-1] == {"kind": "discord", "channel": "123",
                                     "secret": "BOT_TOKEN", "pattern": "go",
-                                    "mention": True, "off": False}
+                                    "mention": True, "author": "777", "off": False}
     # --discord without --secret exits with guidance, nothing sent
     with pytest.raises(SystemExit):
         cli.cmd_trigger_add(c, SimpleNamespace(
             automation="Daily Report", discord="123", secret=None, pattern=None,
-            mention=False, imessage=None, app_start=False,
+            mention=False, author=None, imessage=None, app_start=False,
             at=None, expr=None, tz=None))
 
 

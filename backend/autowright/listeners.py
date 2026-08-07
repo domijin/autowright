@@ -53,6 +53,8 @@ def message_matches(t: dict, d: dict, bot_id: str | None,
     author = d.get("author") or {}
     if author.get("bot") or (bot_id and author.get("id") == bot_id):
         return False
+    if t.get("author") and author.get("id") != t["author"]:
+        return False
     if t.get("mention"):
         mentioned = any((u or {}).get("id") == bot_id
                         for u in d.get("mentions") or [])

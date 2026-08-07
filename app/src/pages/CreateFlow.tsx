@@ -501,6 +501,7 @@ export function stripTrigger(t: Trigger | DraftTrigger): DraftTrigger {
     case 'discord': return {
       ...base, kind: 'discord', channel: t.channel, secret: t.secret,
       ...(t.pattern ? { pattern: t.pattern } : {}), ...(t.mention ? { mention: true } : {}),
+      ...(t.author ? { author: t.author } : {}),
     }
     case 'imessage': return {
       ...base, kind: 'imessage', from: t.from,
@@ -517,6 +518,7 @@ function sameNonCron(a: DraftTrigger, b: DraftTrigger): boolean {
   if (a.kind === 'discord' && b.kind === 'discord') {
     return a.channel === b.channel && a.secret === b.secret
       && (a.pattern ?? '') === (b.pattern ?? '') && !!a.mention === !!b.mention
+      && (a.author ?? '') === (b.author ?? '')
   }
   return false
 }

@@ -114,14 +114,14 @@ def test_triggers_message_and_app_start_parsed():
         "note: Created\n",
         'note: Created\ntriggers:\n'
         '  - { imessage: "+1 (555) 123-4567", pattern: go }\n'
-        '  - { discord: "123456", secret: BOT, mention: true }\n'
+        '  - { discord: "123456", secret: BOT, mention: true, author: "777" }\n'
         '  - app_start: true\n')
     draft, errors = validate_steps(parse_envelope(withtrig))
     assert errors == []
     assert draft["triggers"] == [
         {"kind": "imessage", "from": "+15551234567", "off": False, "pattern": "go"},
         {"kind": "discord", "channel": "123456", "secret": "BOT", "off": False,
-         "mention": True},
+         "mention": True, "author": "777"},
         {"kind": "app_start", "off": False}]
 
 

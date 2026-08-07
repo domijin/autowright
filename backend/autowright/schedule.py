@@ -205,6 +205,9 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             return "the Discord message pattern must be a nonempty text"
         if not isinstance(t.get("mention", False), bool):
             return "the Discord mention flag must be true or false"
+        au = t.get("author")
+        if au is not None and not (isinstance(au, str) and _ascii_digits(au.strip())):
+            return "the Discord sender filter must be the numeric user id"
         return None
     if kind == "imessage":
         # §4.3: from = sender handle — an email, or an E.164 phone matching
@@ -278,6 +281,8 @@ def normalize_triggers(raw: list) -> tuple[list[dict], str | None]:
                 n["pattern"] = t["pattern"].strip()
             if t.get("mention"):
                 n["mention"] = True
+            if t.get("author"):
+                n["author"] = t["author"].strip()
         elif t["kind"] == "imessage":
             n["from"] = normalize_handle(t["from"])
             if t.get("pattern"):

@@ -405,7 +405,8 @@ class Store:
                                {"at": t["at"]} if t["kind"] == "time" else
                                {"channel": t["channel"], "secret": t["secret"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {}),
-                                **({"mention": True} if t.get("mention") else {})}
+                                **({"mention": True} if t.get("mention") else {}),
+                                **({"author": t["author"]} if t.get("author") else {})}
                                if t["kind"] == "discord" else
                                {"from": t["from"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {})}

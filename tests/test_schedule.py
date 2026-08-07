@@ -189,20 +189,26 @@ def test_discord_trigger_validation():
     assert validate_trigger({**ok, "pattern": "  "})
     assert validate_trigger({**ok, "mention": "yes"})
     assert validate_trigger({**ok, "pattern": "deploy", "mention": True}) is None
+    # author: optional sender filter, numeric user id only
+    assert validate_trigger({**ok, "author": "dave"})
+    assert validate_trigger({**ok, "author": ""})
+    assert validate_trigger({**ok, "author": 123})
+    assert validate_trigger({**ok, "author": "9876543210"}) is None
 
 
 def test_discord_trigger_normalize_and_display():
     norm, err = normalize_triggers([{"kind": "discord", "channel": " 42 ",
                                      "secret": " TOKEN ", "pattern": " go ",
-                                     "mention": True}])
+                                     "mention": True, "author": " 777 "}])
     assert err is None
     t = norm[0]
-    assert (t["channel"], t["secret"], t["pattern"], t["mention"]) == ("42", "TOKEN", "go", True)
+    assert (t["channel"], t["secret"], t["pattern"], t["mention"], t["author"]) == \
+        ("42", "TOKEN", "go", True, "777")
     from autowright.schedule import trigger_display
 
     assert trigger_display(t) == ("Discord · 42 · “go”", "Discord")
     plain, _ = normalize_triggers([{"kind": "discord", "channel": "42", "secret": "TOKEN"}])
-    assert "pattern" not in plain[0] and "mention" not in plain[0]
+    assert "pattern" not in plain[0] and "mention" not in plain[0] and "author" not in plain[0]
     assert trigger_display(plain[0]) == ("Discord · 42", "Discord")
     # no computable next occurrence (§4.3) — nextAt ignores discord
     assert trigger_next(plain[0]) is None

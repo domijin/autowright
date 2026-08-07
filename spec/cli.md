@@ -118,7 +118,7 @@ crons the manifest no longer lists are dropped; the manifest's `discord`/`imessa
 stored non-cron triggers always survive untouched. `pull` writes the stored crons into the
 manifest, so an untouched manifest round-trips the schedule unchanged. Between pushes, `trigger add` (cron by default,
 `--at` for a §4.3 one-shot, `--app-start`, `--discord <channel> --secret <name>
-[--pattern <text>] [--mention]` for a §4.3 discord trigger, or `--imessage <from>
+[--pattern <text>] [--mention] [--author <user-id>]` for a §4.3 discord trigger, or `--imessage <from>
 [--pattern <text>]` for a §4.3 imessage trigger), `trigger on|off <n>`, and
 `trigger remove <n>`
 edit the stored list directly (1-based indexes as printed by `trigger list`) via the §19 PATCH.

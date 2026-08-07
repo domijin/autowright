@@ -345,7 +345,7 @@ function SecretPick({ secrets, selected, onPick }: {
 type TriggerDraft = TriggerKindFields
 type TriggerFieldBag = {
   kind?: AddableKind; expr?: string; at?: string; tz?: string
-  channel?: string; secret?: string; pattern?: string; mention?: boolean
+  channel?: string; secret?: string; pattern?: string; mention?: boolean; author?: string
   from?: string
 }
 
@@ -373,6 +373,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const [pattern, setPattern] = useState(init.pattern ?? '')
   // §9.2: mention-only by default for new triggers — a busy channel shouldn't fire on every message
   const [mention, setMention] = useState(initial ? !!init.mention : true)
+  const [author, setAuthor] = useState(init.author ?? '')
   const [from, setFrom] = useState(init.from ?? '')
   const [guide, setGuide] = useState(false)
   const [secretModal, setSecretModal] = useState(false)
@@ -386,6 +387,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const atDate = at ? timeAt(at, tz || undefined) : null
   const atOk = !!atDate && !Number.isNaN(atDate.getTime()) && atDate > new Date()
   const channelOk = /^[0-9]+$/.test(channel)
+  const authorOk = author === '' || /^[0-9]+$/.test(author) // §4.3: optional sender filter, digits only
   // §4.3: email, or E.164 phone after stripping obvious formatting — a
   // number without the country code could never match a stored handle.
   const fromNorm = from.includes('@') ? from.trim() : from.trim().replace(/[\s().-]/g, '')
@@ -393,7 +395,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
     ? !!from.trim() && !/\s/.test(from.trim())
     : /^\+[0-9]{3,15}$/.test(fromNorm)
   const canAdd = kind === 'cron' ? exprOk : kind === 'time' ? atOk
-    : kind === 'discord' ? channelOk && !!secret
+    : kind === 'discord' ? channelOk && !!secret && authorOk
     : kind === 'imessage' ? fromOk : true
   const nxt = kind === 'cron' && exprOk ? cronNext(expr, undefined, tz || undefined) : null
   const preview = kind === 'cron'
@@ -520,6 +522,15 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             spellCheck={false}
             style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
           />
+          <input
+            className={`ad-input${author && !authorOk ? ' invalid' : ''}`}
+            value={author}
+            onChange={(e) => setAuthor(e.target.value.trim())}
+            placeholder="Sender filter — only messages from this user id (optional)"
+            title="Fires only on messages from this Discord user — right-click their name → Copy User ID (needs Developer Mode, enabled in step 8)"
+            spellCheck={false}
+            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
+          />
           <label style={{
             display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, alignSelf: 'flex-start',
             color: 'var(--text-2em)', cursor: 'pointer', userSelect: 'none',
@@ -565,6 +576,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
                   kind, channel, secret,
                   ...(pattern.trim() ? { pattern: pattern.trim() } : {}),
                   ...(mention ? { mention: true } : {}),
+                  ...(author ? { author } : {}),
                 }
               : kind === 'imessage' ? {
                   kind, from: fromNorm,

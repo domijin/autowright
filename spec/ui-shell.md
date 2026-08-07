@@ -222,11 +222,16 @@ Sections top to bottom:
   the channel id below, choose the bot-token secret, press Add. The editor then has an
   optional message-filter text input (§4.3 `pattern`; placeholder "Message filter — only
   messages containing… (optional)", title "Fires only when the message contains this text —
-  case-insensitive, plain substring"), and an "Only when the bot
+  case-insensitive, plain substring"), an optional sender-filter text input (§4.3 `author`;
+  placeholder "Sender filter — only messages from this user id (optional)", title "Fires only
+  on messages from this Discord user — right-click their name → Copy User ID (needs Developer
+  Mode, enabled in step 8)"; digits only, same invalid styling as the channel input), and an
+  "Only when the bot
   is mentioned" checkbox (§4.3 `mention`) — checked by default, so a fresh trigger fires only
   on @-mentions unless the user unticks it; the label hugs its content (`align-self:
   flex-start`) so the click target doesn't span the editor's full width; preview line "On Discord message in `<channel>`";
-  Add stays disabled until the channel is digits and a secret is chosen. The
+  Add stays disabled until the channel is digits, a secret is chosen, and the sender filter
+  is empty or digits. The
   **iMessage editor**: while iMessage is the selected kind, a **setup guide** disclosure sits
   directly below the kind-picker chip row (where the Discord setup guide sits; same pattern:
   quiet toggle link "How iMessage triggers work"): (1) this Mac's

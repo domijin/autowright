@@ -145,7 +145,7 @@ the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-d
   ids; stored crons the draft no longer derives are dropped.
 - **Message and app-start entries are additive**: a drafted `discord`/`imessage`/`app_start`
   entry matching a stored trigger of the same kind on its identity fields (discord:
-  `channel`, `secret`, `pattern`, `mention`; imessage: `from`, `pattern`; app_start: the kind
+  `channel`, `secret`, `pattern`, `mention`, `author`; imessage: `from`, `pattern`; app_start: the kind
   alone) leaves the stored trigger as is; an unmatched one is appended enabled with a fresh
   id. Stored message/app-start triggers the draft doesn't mention always survive — a sync
   never drops one.
@@ -162,7 +162,7 @@ strings `label` and `short`. The backend assigns `id` to entries that arrive wit
 | `cron` | `expr`: 5-field cron expression · optional `tz` | at every match | humanized when simple (below), else the raw expression in mono |
 | `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `tz` | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
 | `app_start` | — | at every desktop-app launch (§6 firing path) | "On app start" / "App start" |
-| `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: name of the §4.8 secret holding the bot token · optional `pattern`: text filter · optional `mention`: bool | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
+| `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: name of the §4.8 secret holding the bot token · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a Discord user id (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
 | `imessage` | `from`: sender handle (E.164 phone or email) · optional `pattern`: text filter | at every matching iMessage on this Mac (rules below) | "iMessage · `<from>`" (+ " · “`<pattern>`”" when set) / "iMessage" |
 | `pubsub` | — | future message trigger | — |
 
@@ -192,7 +192,12 @@ in the trigger. Firing rules, applied by the §6 listener manager to every gatew
   (`mention_roles` carrying a role whose `tags.bot_id` is the bot) — typing `@BotName` in a
   server often inserts the role mention Discord created for the bot, not the user mention.
   `@everyone`/`@here` do not count;
+- `author` → only messages whose author's user id equals it fire — the authorization
+  filter for shared channels: without it, any channel member who passes the other
+  filters can start the automation;
 - `pattern` → only messages containing the pattern fire (case-insensitive substring).
+
+All present filters must pass (AND).
 
 A firing starts an execution with trigger label "Discord" and the §4.5 `triggerPayload`; the
 §6 one-execution-at-a-time skip applies like any trigger. Like
@@ -201,7 +206,8 @@ list whose only enabled triggers are message triggers shows the listening status
 Validation (§19, 422 otherwise): `channel` a nonempty ASCII-digit string, `secret` a valid
 §4.8 secret name (the Secrets-API rule, `[A-Z][A-Z0-9_]*`; it need not exist yet — a
 missing/valueless secret surfaces as a `conn` error, not a 422), `pattern` when present a
-nonempty string, `mention` a bool. The serialized trigger of
+nonempty string, `mention` a bool, `author` when present a nonempty ASCII-digit string
+(a Discord user id, like `channel`). The serialized trigger of
 kind `discord` additionally carries **`conn`** — derived, never stored: the listener
 manager's connection state for the trigger's token,
 `{ state: connected | connecting | error, error? }` (`error` is the plain-word failure, e.g.

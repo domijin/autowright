@@ -92,7 +92,8 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
                 triggers.append({"kind": "discord", "channel": t["channel"],
                                  "secret": t["secret"],
                                  **({"pattern": t["pattern"]} if t.get("pattern") else {}),
-                                 **({"mention": True} if t.get("mention") else {})})
+                                 **({"mention": True} if t.get("mention") else {}),
+                                 **({"author": t["author"]} if t.get("author") else {})})
             elif t["kind"] == "imessage":
                 triggers.append({"kind": "imessage", "from": t["from"],
                                  **({"pattern": t["pattern"]} if t.get("pattern") else {})})
@@ -225,7 +226,8 @@ def _validate(z: zipfile.ZipFile) -> dict:
         if t["kind"] == "app_start" and any(x["kind"] == "app_start" for x in triggers):
             raise TransferError("the archive holds more than one app_start trigger")
         probe = ({"kind": "discord", "channel": t.get("channel"), "secret": t.get("secret"),
-                  "pattern": t.get("pattern"), "mention": t.get("mention", False)}
+                  "pattern": t.get("pattern"), "mention": t.get("mention", False),
+                  "author": t.get("author")}
                  if t["kind"] == "discord"
                  else {"kind": "imessage", "from": t.get("from"),
                        "pattern": t.get("pattern")}
@@ -238,7 +240,8 @@ def _validate(z: zipfile.ZipFile) -> dict:
                          **({"tz": t["tz"]} if t.get("tz") and t["kind"] == "cron" else {}),
                          **({"channel": t["channel"].strip(), "secret": t["secret"].strip(),
                              **({"pattern": t["pattern"].strip()} if t.get("pattern") else {}),
-                             **({"mention": True} if t.get("mention") else {})}
+                             **({"mention": True} if t.get("mention") else {}),
+                             **({"author": t["author"].strip()} if t.get("author") else {})}
                             if t["kind"] == "discord" else {}),
                          # §4.3: normalize like every other ingest path — a
                          # formatted number stored verbatim would never match

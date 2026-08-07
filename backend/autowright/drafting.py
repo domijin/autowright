@@ -87,7 +87,7 @@ packages:                              # extra PyPI packages beyond the allowed 
 triggers:                              # see Triggers above; omit the whole key when the automation needs no trigger (manual / menu bar only)
   - cron: "0 8 * * *"                  # optional tz: IANA zone, only when the spec names one
   - { imessage: "+15551234567" }       # sender handle from the SPEC only; optional pattern
-  - { discord: "1234567890", secret: BOT_TOKEN_NAME }   # channel id + granted token secret from the SPEC only; optional pattern / mention
+  - { discord: "1234567890", secret: BOT_TOKEN_NAME }   # channel id + granted token secret from the SPEC only; optional pattern / mention / author (numeric user id sender filter)
   - app_start: true                    # executes when the app starts
 steps:                                 # ordered; file names NN-name.py, two-digit, gapless from 01;
                                        # timeout: seconds the step may run before it is stopped (see Timeouts above);
@@ -333,7 +333,8 @@ def _trigger_ref(t: dict) -> dict:
     elif k == "discord":
         d = {"discord": t.get("channel"), "secret": t.get("secret"),
              **({"pattern": t["pattern"]} if t.get("pattern") else {}),
-             **({"mention": True} if t.get("mention") else {})}
+             **({"mention": True} if t.get("mention") else {}),
+             **({"author": t["author"]} if t.get("author") else {})}
     elif k == "app_start":
         d = {"app_start": True}
     else:
@@ -750,11 +751,12 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                     errors.append(f"triggers: {err}")
                 else:
                     norm_trigs.append(entry)
-            elif "discord" in keys and keys <= {"discord", "secret", "pattern", "mention"}:
+            elif "discord" in keys and keys <= {"discord", "secret", "pattern", "mention", "author"}:
                 entry = {"kind": "discord", "channel": str(t["discord"]).strip(),
                          "secret": str(t.get("secret", "")).strip(), "off": False,
                          **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {}),
-                         **({"mention": True} if t.get("mention") is True else {})}
+                         **({"mention": True} if t.get("mention") is True else {}),
+                         **({"author": str(t["author"]).strip()} if t.get("author") else {})}
                 if err := schedule.validate_trigger(entry):
                     errors.append(f"triggers: {err}")
                 else:
@@ -768,7 +770,7 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                 errors.append(
                     f"triggers entry {t!r} must be {{ cron: expr[, tz] }}, "
                     f"{{ imessage: handle[, pattern] }}, "
-                    f"{{ discord: channel-id, secret: NAME[, pattern, mention] }}, "
+                    f"{{ discord: channel-id, secret: NAME[, pattern, mention, author] }}, "
                     f"or app_start: true")
     if errors:
         return {}, errors

@@ -111,7 +111,7 @@ export type TriggerKindFields =
   | { kind: 'cron'; expr: string; tz?: string }       // 5-field expression; tz = §4.3 IANA zone
   | { kind: 'time'; at: string; tz?: string }         // one-shot wall-clock ISO timestamp
   | { kind: 'app_start' }
-  | { kind: 'discord'; channel: string; secret: string; pattern?: string; mention?: boolean }
+  | { kind: 'discord'; channel: string; secret: string; pattern?: string; mention?: boolean; author?: string }
   | { kind: 'imessage'; from: string; pattern?: string }
 
 // The stored/serialized trigger (§4.3): id + off + backend-derived display

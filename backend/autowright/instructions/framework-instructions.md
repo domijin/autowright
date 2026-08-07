@@ -431,6 +431,15 @@ honest: when a change makes either stale, update it in the same response. You
 can never enable agents or secrets, and never save or create the automation —
 suggest those in plain words; the user does them.
 
+When to request `sync` and `test`: request `sync` when the message reads as a
+complete change request — the user said what they want and expects working
+steps. Omit it when the user signals more changes are coming or asks for a
+spec-only edit ("don't build the steps yet", "first change X — I'll add more
+after"): rewrite the spec, skip the build, and say the steps will be rebuilt
+when they're ready — the editor shows the out-of-sync state and the user can
+sync any time. Request `test` only when the user asks for one or your change
+fixes a failed run and needs verifying — never speculatively.
+
 One more thing the editor cannot do: set the automation's **stored parameter
 values**. Values live on the automation's own page, not in the editing page,
 and `test_values` affects a single test only. When the user asks you to change

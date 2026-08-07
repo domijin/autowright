@@ -62,6 +62,8 @@ also served to the create/edit page via §19 `GET /instructions`):
   rewrites, the TASK's actions file lets the agent sync, test (with test-only parameter
   values), rename the automation, and rewrite its one-line description — keep both honest
   when a change makes them stale — while grants and save/create stay the user's alone.
+  The section carries the **action policy** (the when-to-request rules under
+  "actions.yaml" below), so deferral phrasing like "don't build yet" is honored.
   The section also carries the **stored-values redirect**: the editor cannot set the
   automation's stored parameter values (`test_values` affects a test only) — when the
   user asks for a stored-value change, the agent says so plainly and points them at the
@@ -209,6 +211,17 @@ rebuilds the steps may name params the rebuild will create, so the check is skip
 of sync once the rewrites land (§11). Grants are **not** actions: the agent may suggest
 enabling an agent or secret in prose but can never do it, and there is no save/create
 action — the final commit stays the user's (§11 hard boundaries).
+
+**Action policy** — when the agent requests `sync`/`test` (stated in
+`framework-instructions.md`'s editing-sessions section, so the agent honors deferral
+phrasing): request `sync: true` when the message reads as a complete change request;
+omit it when the user signals more changes are coming or asks for a spec-only edit
+("don't build the steps yet", "first change X — I'll add more after") — a deferred
+build is never invisible: the §11 out-of-sync state, the rewrite entry's inline Sync
+now action, and the panel's Sync now button all remain. Request `test: true` only when
+the user asks for a test or the change fixes a failed run and needs verifying — never
+speculatively. Stacked spec-only rewrites then build once at the end, instead of one
+steps build per message.
 
 Chat-call validation, by response shape: a valid blocker envelope settles the job `blocked`
 (`blockedAt: chat`); a response with no `===FILE:` marker is an **answer** — the raw

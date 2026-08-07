@@ -194,7 +194,8 @@ in the trigger. Firing rules, applied by the §6 listener manager to every gatew
   `@everyone`/`@here` do not count;
 - `author` → only messages whose author's user id equals it fire — the authorization
   filter for shared channels: without it, any channel member who passes the other
-  filters can start the automation;
+  filters can start the automation. One id per trigger — to allow several senders,
+  add one trigger per user id (they fire independently);
 - `pattern` → only messages containing the pattern fire (case-insensitive substring).
 
 All present filters must pass (AND).

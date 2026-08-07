@@ -225,7 +225,9 @@ Sections top to bottom:
   case-insensitive, plain substring"), an optional sender-filter text input (§4.3 `author`;
   placeholder "Sender filter — only messages from this user id (optional)", title "Fires only
   on messages from this Discord user — right-click their name → Copy User ID (needs Developer
-  Mode, enabled in step 8)"; digits only, same invalid styling as the channel input), and an
+  Mode, enabled in step 8). A user id is a long number like 234567890123456789. To allow
+  several senders, add one trigger per user id."; digits only, same invalid styling as the
+  channel input), and an
   "Only when the bot
   is mentioned" checkbox (§4.3 `mention`) — checked by default, so a fresh trigger fires only
   on @-mentions unless the user unticks it; the label hugs its content (`align-self:

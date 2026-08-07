@@ -1068,7 +1068,9 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("--mention", action="store_true",
                    help="only Discord messages that mention the bot (with --discord)")
     p.add_argument("--author", metavar="USER_ID",
-                   help="only Discord messages from this numeric user id (with --discord)")
+                   help="only Discord messages from this numeric user id, like "
+                        "234567890123456789 (with --discord; for several senders, "
+                        "add one trigger per user id)")
     p.add_argument("--tz", help="IANA zone for the cron/one-shot")
     p = _sub(tg, "on", cmd_trigger_toggle, "enable a trigger by index")
     p.add_argument("automation")

@@ -527,7 +527,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             value={author}
             onChange={(e) => setAuthor(e.target.value.trim())}
             placeholder="Sender filter — only messages from this user id (optional)"
-            title="Fires only on messages from this Discord user — right-click their name → Copy User ID (needs Developer Mode, enabled in step 8)"
+            title="Fires only on messages from this Discord user — right-click their name → Copy User ID (needs Developer Mode, enabled in step 8). A user id is a long number like 234567890123456789. To allow several senders, add one trigger per user id."
             spellCheck={false}
             style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
           />

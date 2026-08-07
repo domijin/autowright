@@ -314,7 +314,8 @@ Message and app-start triggers can be drafted too:
 - `- { discord: "1234567890", secret: BOT_TOKEN_NAME }` — the numeric channel
   id and the granted secret holding the bot token; optional `pattern`,
   `mention: true`, and `author` (numeric user id — fires only on that
-  sender's messages).
+  sender's messages; one id per entry — for several senders, draft one
+  trigger per user id).
 - `- app_start: true` — executes when the app starts.
 
 When you judge the automation is missing a trigger the spec implies — a

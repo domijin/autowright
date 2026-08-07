@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Regenerate knowledge.md — a gitignored, developer-only orientation doc.
-# Uses claude (Opus 5) with read-only tools to explore the repo and emit
-# a concise, diagram-heavy overview. Never read by agents; never used to
-# build the app.
+# `audit` mode instead writes knowledge-audit.md: a soundness audit that
+# cross-checks the spec'd data model, on-disk layout, and repository
+# structure against the actual code and file tree.
+# Uses claude (Opus 5) with read-only tools to explore the repo. Output is
+# never read by agents; never used to build the app.
 # Developer-only: agents must never run this script.
 set -euo pipefail
 
@@ -10,11 +12,47 @@ cd "$(git rev-parse --show-toplevel)"
 
 command -v claude >/dev/null || { echo "claude CLI not found." >&2; exit 1; }
 
-out="knowledge.md"
+mode="${1:-doc}"
+case "$mode" in doc|audit) ;; *) echo "Usage: $0 [audit]" >&2; exit 1;; esac
+
 tmp="$(mktemp "${TMPDIR:-/tmp}/knowledge.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
 
-prompt='Generate the body of knowledge.md: a concise orientation doc so a developer
+audit_prompt='Generate the body of knowledge-audit.md: a soundness audit of this
+repo. Do not describe the app — report mismatches. Cross-check three layers,
+each spec-vs-code, and list every finding. Read SPEC.md first for the section
+map, then only the files named below. Verify every claim against the actual
+code — never from memory.
+
+Layer 1 — Data model (§4, spec/data-model.md). For EVERY entity and field in
+the spec, check it against the backend (backend/autowright/storage.py,
+execdb.py) and the renderer mirror (app/src/types.ts, app/src/store.ts).
+Flag: fields missing on either side, type or enum drift (trigger kinds,
+statuses, etc.), fields present in code but absent from the spec and vice
+versa, and TS mirror shapes that no longer match the serialized API shapes.
+
+Layer 2 — On-disk layout (§5, spec/storage.md). Check the spec'"'"'d data-dir
+tree against backend/autowright/paths.py and the actual read/write sites in
+the backend. Flag: paths or files the spec promises but no code ever writes,
+files code writes that the spec omits, and filename/location drift.
+
+Layer 3 — Repository structure (§17 in SPEC.md). Check the documented tree
+against `git ls-files` (top two levels plus named key files). Flag: entries
+documented but missing from the repo, and top-level files or dirs present
+but undocumented.
+
+Output format, per layer:
+- a heading, then a findings table: finding | where spec says | where code
+  says | severity (mismatch / spec-missing / code-missing);
+- if a layer is clean, write exactly "Sound — no findings." under its
+  heading instead of a table;
+- end with a one-paragraph overall verdict.
+No orientation prose, no diagrams, no praise — findings only.
+
+Output ONLY the raw markdown body — no preamble, no closing remarks, no
+surrounding code fence.'
+
+doc_prompt='Generate the body of knowledge.md: a concise orientation doc so a developer
 can quickly understand how this app works. It is gitignored and read by humans
 only — never by agents — so optimize for fast reading, not completeness.
 
@@ -115,6 +153,14 @@ pad.
 
 Output ONLY the raw markdown body — no preamble, no closing remarks, no
 surrounding code fence.'
+
+if [[ "$mode" == "audit" ]]; then
+  out="knowledge-audit.md"
+  prompt="$audit_prompt"
+else
+  out="knowledge.md"
+  prompt="$doc_prompt"
+fi
 
 claude --model claude-opus-5 -p "$prompt" \
   --allowedTools "Read,Glob,Grep,Bash(ls:*),Bash(tree:*),Bash(git ls-files:*),Bash(git log:*),Bash(wc:*),Bash(head:*),Bash(cat:*)" \

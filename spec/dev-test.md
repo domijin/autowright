@@ -342,6 +342,21 @@ Dev workflow:
   this script (`.claude/CLAUDE.md` forbids it). The §18 PreToolUse hooks reject
   any Bash command or `Read|Edit|Write|Grep|Glob` call targeting the repo-root `knowledge.md`
   (only that exact path — same-named files elsewhere are unaffected).
+  **`audit` mode** — `./scripts/knowledge.sh audit` writes `knowledge-audit.md` (repo root,
+  gitignored, developer-only, same generated-at header) instead of the orientation doc: a
+  soundness audit, run with the same read-only Claude invocation, that cross-checks three
+  layers against each other and reports every mismatch rather than describing the app.
+  Coverage: (1) **data model** — every §4 entity/field in `spec/data-model.md` vs the backend
+  (`storage.py`, `execdb.py`) vs the renderer mirror (`app/src/types.ts`, `store.ts`): missing
+  fields, type/enum drift, fields present in code but absent from the spec or vice versa;
+  (2) **on-disk layout** — the §5 storage tree in `spec/storage.md` vs `paths.py` and the
+  read/write sites: paths or files the spec promises but code never writes, and files code
+  writes that the spec omits; (3) **repository structure** — §17 vs `git ls-files`: entries
+  documented but missing, top-level files/dirs present but undocumented. Output is a findings
+  table per layer (finding, where spec says, where code says, severity: mismatch /
+  spec-missing / code-missing) with an explicit "sound — no findings" verdict for any clean
+  layer; no orientation prose. Fails (non-empty check, same as the doc mode) if generation
+  returns nothing.
 - **`./scripts/commit`** — stages all uncommitted changes (`git add -A`), asks Claude
   (Opus 5, `claude --model claude-opus-5 -p`) for a commit message based on the staged diff
   (≤72-char imperative summary, whole message capped at 2-3 sentences), prints it, and commits. Exits 0 with no commit if

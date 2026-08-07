@@ -102,7 +102,7 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   `prod.sh` to build the release distributable, publishes the DMG + update zip as a
   GitHub release via `gh`, and rewrites the §3 update feed under `docs/updates/`, §18;
   `test-fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
-  `knowledge.sh` regenerates `knowledge.md`, §18;
+  `knowledge.sh` regenerates `knowledge.md`; its `audit` mode writes `knowledge-audit.md`, §18;
   `gen_licenses.py` regenerates `app/src/acknowledgements.md` — the §4.9
   open-source-libraries list, checked in, refreshed by `build.sh` on every build).
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code

@@ -38,8 +38,9 @@ build/
 *.log
 .dev-home/
 
-# Generated dev-only orientation doc (scripts/knowledge.sh)
+# Generated dev-only orientation doc + audit report (scripts/knowledge.sh)
 knowledge.md
+knowledge-audit.md
 
 # design-sync (staged converter scripts, build output, machine state)
 .ds-sync/

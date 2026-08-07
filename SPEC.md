@@ -116,9 +116,29 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   test doubles: `tests/bin/claude` (fake agent CLI) and `tests/seed_data.py` (§16 fixture).
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
   single self-contained page + `CNAME` with the custom domain). Dark, matches the §14 visual
-  language (IBM Plex, brand orange accent, hammer mark); minimal copy — an animated app-window
-  demo (plain-words prompt → drafted steps → scheduled runs) carries the pitch, followed by the
-  three §1 core-promise cards and the supported-agent list. Links to the GitHub repo. Not part
+  language (IBM Plex Sans/Mono — no 700 weight, per §14 — brand orange accent `#f68b43`, and
+  the §14 AW-monogram mark as both header mark and favicon, inlined from
+  `app/electron/icon/icon.svg`). Audience: technically savvy users plus curious
+  non-technical people — plain-language copy, no jargon. Page structure, in order: header
+  (mark + wordmark + GitHub link) · hero (headline, one-paragraph pitch, "Download for
+  macOS" → the repo's latest GitHub release, "View source") · an animated app-window demo
+  that mirrors the §11 chat-first create flow (58 px icon rail with the §9 nav icon set —
+  bolt, clock-rotate-left, robot, key, sliders, circle-info pinned at the bottom — and all
+  page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
+  `@fortawesome/fontawesome-free` package into `<symbol>` defs; chat
+  composer with a bordered `.ad-input`-style textarea and the real empty placeholder, typed
+  plain-words prompt, agent-picker and Send/Cancel both rendered as `.ad-btn-pill` clones —
+  mono 10.5 px, white .06 background, radius 6, robot glyph + `name · model` + caret-down on
+  the picker; the progress block sits above the textarea, §11 stage labels "Working on the request…" / "Writing the spec…" / "Generating the
+  steps…", numbered step rows with `.py` file tags, then trigger + ran-result chips; three
+  looping scenes cover a cron, a Discord-trigger, and an interval job across different
+  agents) · a three-step "how it works" strip (say it → read it → let it run) · three promise
+  cards (the two §1 core promises plus the review promise "Nothing executes until you
+  approve it") · a feature grid (message triggers, runs-with-window-closed + menu bar,
+  versions, memory + snapshots, execution history, `.autowright` share/import) ·
+  supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · closing
+  download CTA · footer (GitHub, Privacy, MIT). All repo links point to
+  `hansololz/autowright`. Respects `prefers-reduced-motion`. Not part
   of the app build. Also serves `updates/darwin-<arch>.json` — the §3 Squirrel.Mac update
   feeds, rewritten by `scripts/release.sh` on every release.
 - `VERSION` — single source of truth for the app version (one line, semver). Synced into

@@ -542,14 +542,16 @@ there is no eyebrow and no collapse — the list is always visible, with a note 
 
 Every card resolves inside itself — there is no page-level Continue button, no radio selection,
 and no multi-ready banner. All step-2 cards keep the neutral card border in every state —
-no accent tint and no "Connected" label on connect; the Continue button alone is the
+no accent tint and no "Connected" label on connect; the Use-as-default button alone is the
 success signal (the accent "FOUND ON THIS MAC" eyebrow alone marks the detected section). Each card carries a single
 action slot that advances through its states in place. All machines are real — backend installs,
 real sign-in checks; no simulation in any mode:
 - **Found card, signed in** — the connection check runs automatically as soon as
   the cards land; the user never has to ask for it. The card starts on an inline spinner
   "Checking connection…" (real §19 `POST /agents/check-harness`) → a primary
-  "Continue with `<name>` →" button in the same card. A failed check shows amber
+  "Use as default →" button in the same card — one uniform label on every card (the card
+  already names the provider); it states the pick's effect (that provider becomes the
+  default agent) instead of a bare "Continue". A failed check shows amber
   "Not ready — `<reason>`" with a "Check again" button.
 - **Found card, not signed in** — skips the auto-check (it would fail); sign-in help only
   when necessary: amber "Sign in" button →
@@ -558,18 +560,18 @@ real sign-in checks; no simulation in any mode:
   back. We'll notice on our own."; Terminal for the others — "We opened Terminal — finish
   signing in there and come back. We'll notice on our own."), with "Cancel" returning to idle.
   The UI polls §19 `GET /agents/signin/{id}` every 2 s; once signed in the card runs the
-  connection check automatically and lands on Connected + Continue.
+  connection check automatically and lands on Connected + Use as default.
 - **Setup status line** — once every found card's auto-check has settled (none still
   checking), a line under the found section says whether the user can move on: "You're
-  ready — continue with a connected AI, or set up another below." when at least one found
-  card is connected, otherwise amber "More setup needed — finish the steps above before
-  continuing."
+  ready — pick a connected AI as your default, or set up another below." when at least one
+  found card is connected, otherwise amber "More setup needed — finish the steps above
+  before continuing."
 - **Suggestion card** (one per missing harness) — "Claude" ("Set up Claude Code") /
   "Codex" / "Gemini" / "OpenCode" (each "Set up `<name>`"): install via §19
   `POST /agents/install` → labelled progress ("Installing `<name>`…"; determinate bar when the
   `harness.install` stream carries a percent, indeterminate otherwise) → then the sign-in flow
   above **only if the provider needs an account and isn't signed in** → connected:
-  "Continue with `<name>` →" alone. An install failure shows red
+  "Use as default →" alone. An install failure shows red
   "Install failed — `<first error line>`" with "Try again". There is no sudo step: every
   install lands in user-writable locations (§19 channels), so macOS never prompts for an
   admin password.
@@ -596,7 +598,7 @@ real sign-in checks; no simulation in any mode:
   (only the still-missing pieces install — no model download). When every piece is already
   present as the cards land, the card skips the install button and runs the connection check
   automatically (§19 `POST /agents/check-harness` with harness OpenCode and the card's
-  model) → "Continue with local AI →". A failed check shows the amber not-ready line (the
+  model) → "Use as default →". A failed check shows the amber not-ready line (the
   model-missing reason names the card's model) with "Check again" — plus, when the check ran
   against a found model, a "Download Qwen3 8B · 5.2 GB" button that discards the found model
   and pulls `qwen3:8b` instead (recovery for installed models that can't chat, e.g.
@@ -608,7 +610,7 @@ real sign-in checks; no simulation in any mode:
   at any piece shows red "Install failed — `<first error line>`" with "Try again", which
   resumes at the still-missing pieces.
 
-Clicking a card's Continue is what picks the provider and completes onboarding — it lands in
+Clicking a card's Use-as-default button is what picks the provider and completes onboarding — it lands in
 the app shell, where the empty Automations list (§9.1) invites the first automation; there is
 no third step. The picked provider becomes the default agent, all
 connected/ready cards are committed as agent records — a harness card as
@@ -617,7 +619,7 @@ connected/ready cards are committed as agent records — a harness card as
 model, or `qwen3:8b` after a download (a null name always falls
 back to the harness name for display, so agent labels read harness · model, e.g.
 "OpenCode · qwen3:8b" — never the model twice) — and any existing
-automations get the chosen default agent. While committing, all Continue buttons are disabled. "Skip for now" always
+automations get the chosen default agent. While committing, all Use-as-default buttons are disabled. "Skip for now" always
 available (commits any connected providers, goes to the app). Persistent footer: the two
 green-dot promises (§1).
 

@@ -39,7 +39,7 @@ describe('autowright e2e', () => {
     // The fake CLI surfaced through the real detect path (`claude --version`).
     await page.getByText(/autowright test fake/).waitFor()
     // The automatic read-only connection check passes (fake `claude auth status`).
-    await page.getByRole('button', { name: 'Continue with Claude Code →' }).waitFor({ timeout: 20_000 })
+    await page.getByRole('button', { name: 'Use as default →' }).waitFor({ timeout: 20_000 })
     await shot(page, 'onboarding-step2.png')
 
     // Never proceed further: suggestion-card "Set up …" buttons run real installs.

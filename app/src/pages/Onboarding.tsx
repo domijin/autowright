@@ -56,13 +56,8 @@ const SUG: Record<string, { title: string; body: string; btn: string; primary: b
     body: `Sets up OpenCode with Ollama and Qwen3 8B. Local to this Mac, works offline. ${LOCAL_FIT}`,
   },
 }
-const CONTINUE_LABEL: Record<string, string> = {
-  claude: 'Continue with Claude →',
-  codex: 'Continue with Codex →',
-  gemini: 'Continue with Gemini →',
-  opencode: 'Continue with OpenCode →',
-  [LOCAL_ID]: 'Continue with local AI →',
-}
+// §10: one uniform pick label on every step-2 card — the card names the provider.
+const CONTINUE_LABEL = 'Use as default →'
 
 interface Ob {
   phase: 'welcome' | 'connect'
@@ -629,7 +624,7 @@ export default function Onboarding() {
                 {foundPhases.every((ph) => ph !== 'checking') && (
                   foundPhases.some((ph) => ph === 'connected') ? (
                     <div className="ad-anim-item" style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                      You’re ready — continue with a connected AI, or set up another below.
+                      You’re ready — pick a connected AI as your default, or set up another below.
                     </div>
                   ) : (
                     <div className="ad-anim-item" style={{ fontSize: 13, color: 'var(--amber)' }}>
@@ -756,7 +751,7 @@ export default function Onboarding() {
             disabled={ob.committing}
             style={{ flex: 'none', opacity: ob.committing ? 0.6 : 1 }}
           >
-            {`Continue with ${f.name} →`}
+            {CONTINUE_LABEL}
           </button>
         )}
       </div>
@@ -827,7 +822,7 @@ export default function Onboarding() {
               disabled={ob.committing}
               style={{ flex: 'none', opacity: ob.committing ? 0.6 : 1 }}
             >
-              {CONTINUE_LABEL[p.id]}
+              {CONTINUE_LABEL}
             </button>
           )}
         </div>

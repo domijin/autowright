@@ -223,11 +223,11 @@ Sections top to bottom:
   optional message-filter text input (§4.3 `pattern`; placeholder "Message filter — only
   messages containing… (optional)", title "Fires only when the message contains this text —
   case-insensitive, plain substring"), an optional sender-filter text input (§4.3 `author`;
-  placeholder "Sender filter — only messages from this user id (optional)", title "Fires only
-  on messages from this Discord user — right-click their name → Copy User ID (needs Developer
-  Mode, enabled in step 8). A user id is a long number like 234567890123456789. To allow
-  several senders, add one trigger per user id."; digits only, same invalid styling as the
-  channel input), and an
+  placeholder "Sender filter — only messages from this user id (optional)"; digits only, same
+  invalid styling as the channel input; directly below it a visible helper line (11.5px,
+  `--text-faintest`): "Fires only on messages from this Discord user. A user id is a long
+  number like 234567890123456789 — right-click their name → Copy User ID (needs Developer
+  Mode, enabled in step 8). For several senders, add one trigger per user id."), and an
   "Only when the bot
   is mentioned" checkbox (§4.3 `mention`) — checked by default, so a fresh trigger fires only
   on @-mentions unless the user unticks it; the label hugs its content (`align-self:

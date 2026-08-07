@@ -44,7 +44,7 @@ def _build(store: Store):
                   {"id": new_id(), "kind": "app_start", "off": False},
                   {"id": new_id(), "kind": "time", "off": False, "at": "2999-01-01T09:00"},
                   {"id": new_id(), "kind": "discord", "off": False, "channel": "42",
-                   "secret": "BOT_TOKEN", "pattern": "go", "author": "777"},
+                   "secret": "BOT_TOKEN", "pattern": "go", "author": ["111", "777"]},
                   {"id": new_id(), "kind": "imessage", "off": False,
                    "from": "+15551234567", "pattern": "run"}],
         enabled_agents=[g["id"] for g in store.agents],
@@ -81,7 +81,7 @@ def test_export_layout_and_sanitization(store):
                                     {"kind": "app_start"},
                                     {"kind": "discord", "channel": "42",
                                      "secret": "BOT_TOKEN", "pattern": "go",
-                                     "author": "777"},
+                                     "author": ["111", "777"]},
                                     {"kind": "imessage", "from": "+15551234567",
                                      "pattern": "run"}]
     assert manifest["param_values"] == {"count": 7}
@@ -126,7 +126,7 @@ def test_import_on_fresh_machine(store, monkeypatch, tmp_path_factory):
     assert {t["kind"] for t in b["triggers"]} == {"cron", "app_start", "discord", "imessage"}
     d = next(t for t in b["triggers"] if t["kind"] == "discord")
     assert (d["channel"], d["secret"], d["pattern"], d["author"]) == \
-        ("42", "BOT_TOKEN", "go", "777")
+        ("42", "BOT_TOKEN", "go", ["111", "777"])
     im = next(t for t in b["triggers"] if t["kind"] == "imessage")
     assert (im["from"], im["pattern"]) == ("+15551234567", "run")
     # secrets became placeholders, agents were created — and only those granted

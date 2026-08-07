@@ -189,21 +189,25 @@ def test_discord_trigger_validation():
     assert validate_trigger({**ok, "pattern": "  "})
     assert validate_trigger({**ok, "mention": "yes"})
     assert validate_trigger({**ok, "pattern": "deploy", "mention": True}) is None
-    # author: optional sender filter, numeric user id only
-    assert validate_trigger({**ok, "author": "dave"})
-    assert validate_trigger({**ok, "author": ""})
-    assert validate_trigger({**ok, "author": 123})
-    assert validate_trigger({**ok, "author": "9876543210"}) is None
+    # author: optional sender filter, a nonempty list of numeric user ids
+    assert validate_trigger({**ok, "author": "9876543210"})   # scalar → API shape is a list
+    assert validate_trigger({**ok, "author": []})
+    assert validate_trigger({**ok, "author": ["dave"]})
+    assert validate_trigger({**ok, "author": ["123", ""]})
+    assert validate_trigger({**ok, "author": [123]})
+    assert validate_trigger({**ok, "author": ["9876543210"]}) is None
+    assert validate_trigger({**ok, "author": ["1", "2"]}) is None
 
 
 def test_discord_trigger_normalize_and_display():
     norm, err = normalize_triggers([{"kind": "discord", "channel": " 42 ",
                                      "secret": " TOKEN ", "pattern": " go ",
-                                     "mention": True, "author": " 777 "}])
+                                     "mention": True, "author": [" 777 ", "111", "777"]}])
     assert err is None
     t = norm[0]
+    # author normalizes trimmed + deduped + sorted (§4.3 merge identity)
     assert (t["channel"], t["secret"], t["pattern"], t["mention"], t["author"]) == \
-        ("42", "TOKEN", "go", True, "777")
+        ("42", "TOKEN", "go", True, ["111", "777"])
     from autowright.schedule import trigger_display
 
     assert trigger_display(t) == ("Discord · 42 · “go”", "Discord")

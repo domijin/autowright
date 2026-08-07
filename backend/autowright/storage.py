@@ -406,7 +406,8 @@ class Store:
                                {"channel": t["channel"], "secret": t["secret"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {}),
                                 **({"mention": True} if t.get("mention") else {}),
-                                **({"author": t["author"]} if t.get("author") else {})}
+                                **({"author": schedule.normalize_authors(t["author"])}
+                                   if t.get("author") else {})}
                                if t["kind"] == "discord" else
                                {"from": t["from"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {})}

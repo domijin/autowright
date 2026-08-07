@@ -345,7 +345,7 @@ function SecretPick({ secrets, selected, onPick }: {
 type TriggerDraft = TriggerKindFields
 type TriggerFieldBag = {
   kind?: AddableKind; expr?: string; at?: string; tz?: string
-  channel?: string; secret?: string; pattern?: string; mention?: boolean; author?: string
+  channel?: string; secret?: string; pattern?: string; mention?: boolean; author?: string[]
   from?: string
 }
 
@@ -373,7 +373,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const [pattern, setPattern] = useState(init.pattern ?? '')
   // §9.2: mention-only by default for new triggers — a busy channel shouldn't fire on every message
   const [mention, setMention] = useState(initial ? !!init.mention : true)
-  const [author, setAuthor] = useState(init.author ?? '')
+  const [author, setAuthor] = useState((init.author ?? []).join(', '))
   const [from, setFrom] = useState(init.from ?? '')
   const [guide, setGuide] = useState(false)
   const [secretModal, setSecretModal] = useState(false)
@@ -387,7 +387,10 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const atDate = at ? timeAt(at, tz || undefined) : null
   const atOk = !!atDate && !Number.isNaN(atDate.getTime()) && atDate > new Date()
   const channelOk = /^[0-9]+$/.test(channel)
-  const authorOk = author === '' || /^[0-9]+$/.test(author) // §4.3: optional sender filter, digits only
+  // §4.3: optional sender filter — comma-separated numeric user ids
+  const authorIds = author.split(',').map((s) => s.trim()).filter(Boolean)
+  const authorOk = author.trim() === ''
+    || (authorIds.length > 0 && authorIds.every((a) => /^[0-9]+$/.test(a)))
   // §4.3: email, or E.164 phone after stripping obvious formatting — a
   // number without the country code could never match a stored handle.
   const fromNorm = from.includes('@') ? from.trim() : from.trim().replace(/[\s().-]/g, '')
@@ -525,15 +528,15 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
           <input
             className={`ad-input${author && !authorOk ? ' invalid' : ''}`}
             value={author}
-            onChange={(e) => setAuthor(e.target.value.trim())}
-            placeholder="Sender filter — only messages from this user id (optional)"
+            onChange={(e) => setAuthor(e.target.value)}
+            placeholder="Sender filter — only messages from these user ids (optional)"
             spellCheck={false}
             style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
           />
           <div style={{ fontSize: 11.5, color: 'var(--text-faintest)', lineHeight: 1.5, marginTop: -2 }}>
-            Fires only on messages from this Discord user. A user id is a long number like
-            234567890123456789 — right-click their name → Copy User ID (needs Developer Mode,
-            enabled in step 8). For several senders, add one trigger per user id.
+            Fires only on messages from these Discord users — comma-separate several ids.
+            A user id is a long number like 234567890123456789 — right-click their name →
+            Copy User ID (needs Developer Mode, enabled in step 8).
           </div>
           <label style={{
             display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, alignSelf: 'flex-start',
@@ -580,7 +583,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
                   kind, channel, secret,
                   ...(pattern.trim() ? { pattern: pattern.trim() } : {}),
                   ...(mention ? { mention: true } : {}),
-                  ...(author ? { author } : {}),
+                  ...(authorIds.length ? { author: [...new Set(authorIds)].sort() } : {}),
                 }
               : kind === 'imessage' ? {
                   kind, from: fromNorm,

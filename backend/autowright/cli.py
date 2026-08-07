@@ -281,7 +281,7 @@ def merge_draft_triggers(stored: list[dict], drafted: list[dict]) -> list[dict]:
             return (a.get("channel") == b.get("channel") and a.get("secret") == b.get("secret")
                     and (a.get("pattern") or "") == (b.get("pattern") or "")
                     and bool(a.get("mention")) == bool(b.get("mention"))
-                    and (a.get("author") or "") == (b.get("author") or ""))
+                    and (a.get("author") or []) == (b.get("author") or []))
         return False
 
     out = [t for t in stored if t["kind"] != "cron"]
@@ -673,7 +673,8 @@ def cmd_trigger_add(c: Client, args) -> None:
         if args.mention:
             entry["mention"] = True
         if args.author:
-            entry["author"] = args.author
+            entry["author"] = [a.strip() for v in args.author
+                               for a in v.split(",") if a.strip()]
     elif args.imessage:
         entry = {"kind": "imessage", "from": args.imessage, "off": False}
         if args.pattern:
@@ -1067,10 +1068,10 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                         "(with --discord or --imessage)")
     p.add_argument("--mention", action="store_true",
                    help="only Discord messages that mention the bot (with --discord)")
-    p.add_argument("--author", metavar="USER_ID",
-                   help="only Discord messages from this numeric user id, like "
-                        "234567890123456789 (with --discord; for several senders, "
-                        "add one trigger per user id)")
+    p.add_argument("--author", metavar="USER_ID", action="append",
+                   help="only Discord messages from these numeric user ids, like "
+                        "234567890123456789 (with --discord; repeat the flag or "
+                        "comma-separate for several senders)")
     p.add_argument("--tz", help="IANA zone for the cron/one-shot")
     p = _sub(tg, "on", cmd_trigger_toggle, "enable a trigger by index")
     p.add_argument("automation")

@@ -223,17 +223,18 @@ Sections top to bottom:
   optional message-filter text input (§4.3 `pattern`; placeholder "Message filter — only
   messages containing… (optional)", title "Fires only when the message contains this text —
   case-insensitive, plain substring"), an optional sender-filter text input (§4.3 `author`;
-  placeholder "Sender filter — only messages from this user id (optional)"; digits only, same
-  invalid styling as the channel input; directly below it a visible helper line (11.5px,
-  `--text-faintest`): "Fires only on messages from this Discord user. A user id is a long
-  number like 234567890123456789 — right-click their name → Copy User ID (needs Developer
-  Mode, enabled in step 8). For several senders, add one trigger per user id."), and an
+  placeholder "Sender filter — only messages from these user ids (optional)"; accepts
+  comma-separated ids, each digits only, same invalid styling as the channel input; directly
+  below it a visible helper line (11.5px, `--text-faintest`): "Fires only on messages from
+  these Discord users — comma-separate several ids. A user id is a long number like
+  234567890123456789 — right-click their name → Copy User ID (needs Developer Mode, enabled
+  in step 8)."), and an
   "Only when the bot
   is mentioned" checkbox (§4.3 `mention`) — checked by default, so a fresh trigger fires only
   on @-mentions unless the user unticks it; the label hugs its content (`align-self:
   flex-start`) so the click target doesn't span the editor's full width; preview line "On Discord message in `<channel>`";
   Add stays disabled until the channel is digits, a secret is chosen, and the sender filter
-  is empty or digits. The
+  is empty or a comma-separated list of digit ids. The
   **iMessage editor**: while iMessage is the selected kind, a **setup guide** disclosure sits
   directly below the kind-picker chip row (where the Discord setup guide sits; same pattern:
   quiet toggle link "How iMessage triggers work"): (1) this Mac's

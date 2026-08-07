@@ -115,13 +115,16 @@ def test_triggers_message_and_app_start_parsed():
         'note: Created\ntriggers:\n'
         '  - { imessage: "+1 (555) 123-4567", pattern: go }\n'
         '  - { discord: "123456", secret: BOT, mention: true, author: "777" }\n'
+        '  - { discord: "123456", secret: BOT, author: ["999", "888"] }\n'
         '  - app_start: true\n')
     draft, errors = validate_steps(parse_envelope(withtrig))
     assert errors == []
     assert draft["triggers"] == [
         {"kind": "imessage", "from": "+15551234567", "off": False, "pattern": "go"},
         {"kind": "discord", "channel": "123456", "secret": "BOT", "off": False,
-         "mention": True, "author": "777"},
+         "mention": True, "author": ["777"]},   # scalar shorthand → one-element list
+        {"kind": "discord", "channel": "123456", "secret": "BOT", "off": False,
+         "author": ["888", "999"]},             # lists normalize sorted
         {"kind": "app_start", "off": False}]
 
 

@@ -181,6 +181,13 @@ def normalize_handle(frm: str) -> str:
     return frm if "@" in frm else re.sub(r"[\s().\-]", "", frm)
 
 
+def normalize_authors(raw: list) -> list[str]:
+    """§4.3 discord `author` normalization: trimmed, deduped, sorted — element
+    order must never distinguish two triggers (the merge identity compares
+    the normalized list)."""
+    return sorted({str(a).strip() for a in raw})
+
+
 def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
     """§19 PATCH rule: error message, or None when the trigger is storable.
     `allow_past` skips the future check for one-shots — an EXISTING stored
@@ -206,8 +213,9 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
         if not isinstance(t.get("mention", False), bool):
             return "the Discord mention flag must be true or false"
         au = t.get("author")
-        if au is not None and not (isinstance(au, str) and _ascii_digits(au.strip())):
-            return "the Discord sender filter must be the numeric user id"
+        if au is not None and not (isinstance(au, list) and au and all(
+                isinstance(a, str) and _ascii_digits(a.strip()) for a in au)):
+            return "the Discord sender filter must be a list of numeric user ids"
         return None
     if kind == "imessage":
         # §4.3: from = sender handle — an email, or an E.164 phone matching
@@ -282,7 +290,7 @@ def normalize_triggers(raw: list) -> tuple[list[dict], str | None]:
             if t.get("mention"):
                 n["mention"] = True
             if t.get("author"):
-                n["author"] = t["author"].strip()
+                n["author"] = normalize_authors(t["author"])
         elif t["kind"] == "imessage":
             n["from"] = normalize_handle(t["from"])
             if t.get("pattern"):

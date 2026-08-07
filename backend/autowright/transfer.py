@@ -241,7 +241,8 @@ def _validate(z: zipfile.ZipFile) -> dict:
                          **({"channel": t["channel"].strip(), "secret": t["secret"].strip(),
                              **({"pattern": t["pattern"].strip()} if t.get("pattern") else {}),
                              **({"mention": True} if t.get("mention") else {}),
-                             **({"author": t["author"].strip()} if t.get("author") else {})}
+                             **({"author": schedule.normalize_authors(t["author"])}
+                                if t.get("author") else {})}
                             if t["kind"] == "discord" else {}),
                          # §4.3: normalize like every other ingest path — a
                          # formatted number stored verbatim would never match

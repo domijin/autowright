@@ -348,7 +348,8 @@ notes rewrite (§11).
      phone or email), mapped to the stored `from` field.
    - `{ discord: channel-id, secret: NAME }` (+ optional `pattern`, `mention`, `author`) —
      channel a numeric id, `secret` a §4.3-valid secret name, `mention` a bool, `author` a
-     numeric Discord user id (§4.3 sender filter).
+     numeric Discord user id or a list of them (§4.3 sender filter; a scalar is accepted as
+     shorthand and stored as a one-element list).
    - `app_start: true`.
 
    The agent derives triggers from the spec's words — and **may add an entry it judges the

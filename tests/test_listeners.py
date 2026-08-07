@@ -49,12 +49,13 @@ def test_message_matches_rules():
     # pattern: case-insensitive substring
     assert message_matches(_trig(pattern="deploy"), _msg(), "bot9")
     assert not message_matches(_trig(pattern="rollback"), _msg(), "bot9")
-    # author: only the configured sender's messages fire
-    assert message_matches(_trig(author="7"), _msg(), "bot9")
-    assert not message_matches(_trig(author="8"), _msg(), "bot9")
+    # author: only the configured senders' messages fire
+    assert message_matches(_trig(author=["7"]), _msg(), "bot9")
+    assert message_matches(_trig(author=["6", "7"]), _msg(), "bot9")
+    assert not message_matches(_trig(author=["8"]), _msg(), "bot9")
     # filters AND together
-    assert message_matches(_trig(author="7", pattern="deploy"), _msg(), "bot9")
-    assert not message_matches(_trig(author="8", pattern="deploy"), _msg(), "bot9")
+    assert message_matches(_trig(author=["7"], pattern="deploy"), _msg(), "bot9")
+    assert not message_matches(_trig(author=["8"], pattern="deploy"), _msg(), "bot9")
 
 
 def test_trigger_payload_shape():

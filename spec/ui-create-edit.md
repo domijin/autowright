@@ -30,15 +30,9 @@ applies unchanged; the chat pane never collapses.
 
 **Chat pane anatomy.**
 
-- **Header:** the **drafting-agent picker** alone, left-aligned — no `CHAT` label; the
-  thread and input make the pane self-evident, so the picker pill (`name · model`, menu
-  opening downward over the thread, left-aligned so it stays inside the pane) is the
-  pane's identity. The picker lives here —
-  the agent is a property of the conversation (it answers chat, writes the spec, generates
-  the steps), so it is chosen where its output appears. Same gating as every other rewrite
-  input (disabled while a §8 job is in flight); picking an agent shows the confirmation
-  toast "`<name> · <model>` now writes the spec and steps here." and, in edit mode, marks
-  the draft touched.
+- **No header:** the pane has no header row — the thread starts at the top of the card
+  and the composer carries the pane's identity (the drafting-agent picker below). No
+  `CHAT` label anywhere; the thread and input make the pane self-evident.
 - **Thread:** scrolling body, newest at the bottom, auto-scrolled on new content. Entry
   kinds (persisted shapes per §4.4; progress is transient editor state):
   - **user** — the message as quiet plain text.
@@ -57,12 +51,22 @@ applies unchanged; the chat pane never collapses.
   - **error** — a red-tinted failure entry (a failed §8 job's message, the Failures
     paragraph below). Persisted like the other kinds (§4.4), so it survives a reload and
     reaches the agent's CONVERSATION context.
-- **Input:** pinned footer, an auto-growing textarea — the **ask-box pattern** referenced
-  throughout this spec: sized to its content, never scrolls, no manual resize handle, Enter
-  sends, Shift+Enter inserts a newline. The box is sized the moment it mounts (not only
-  when the text changes), so the first keystroke never shifts its height. A send button sits beside the textarea — "Draft it"
-  in the create empty state, "Send" otherwise — disabled while the input is disabled or
-  holds only whitespace. Placeholder "Describe the job — one sentence is
+- **Input:** pinned footer composer, two stacked rows. Top row: a full-width auto-growing
+  textarea — the **ask-box pattern** referenced throughout this spec: sized to its
+  content, never scrolls, no manual resize handle, Enter sends (the primary send path),
+  Shift+Enter inserts a newline. The box is sized the moment it mounts (not only when the
+  text changes), so the first keystroke never shifts its height. Bottom row: the
+  **drafting-agent picker** on the left, a send button on the right. The picker pill
+  (`name · model`, menu opening **upward** over the thread, left-aligned so it stays
+  inside the pane; the pill shrinks and truncates its label with an ellipsis rather
+  than overlap the send button when the agent name is long) lives in the composer — the agent is a property of the message being
+  sent (it answers chat, writes the spec, generates the steps), so it is chosen where the
+  message is written. Same gating as every other rewrite input (disabled while a §8 job is
+  in flight); picking an agent shows the confirmation toast "`<name> · <model>` now writes
+  the spec and steps here." and, in edit mode, marks the draft touched. The send button is
+  a quiet secondary affordance (Enter is primary): borderless, pill-height — the same
+  height as the picker pill — always labeled "Send", disabled while the input is
+  disabled or holds only whitespace. Placeholder "Describe the job — one sentence is
   enough." while the draft has no spec (fresh create), else "Change something, or ask a
   question…"; while viewing an old version the input is disabled with the placeholder
   "Back to the draft to edit or ask." (and while a test executes, "Wait for the test to
@@ -237,7 +241,7 @@ the draft in the Version menu (Restore never renames). In create mode the usual
 provisional-name flow (spec `#` title, then the manifest name) still runs — renaming becomes
 available once drafting has finished.
 Lede line, under the title: the automation's `desc` (§4.1). (The drafting-agent picker
-lives in the chat pane header, not here.) The desc is editable in place with the same
+lives in the chat pane composer, not here.) The desc is editable in place with the same
 pattern as the name (always-visible pencil as the only click target, single-line input,
 Enter/blur commits, Esc cancels) and the same gating (hidden while a job runs or while
 viewing an old version). The lede row is height-stable: the rendered text and the in-place

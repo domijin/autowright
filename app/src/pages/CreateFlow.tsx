@@ -251,14 +251,14 @@ function BlockerCards({ blockers, onChange, bare, readOnly }: {
   )
 }
 
-/** Drafting-agent picker — lives in the chat pane header (§11); menu opens
-    downward over the thread, left-aligned so it stays inside the pane. */
+/** Drafting-agent picker — lives in the chat pane composer (§11); menu opens
+    upward over the thread, left-aligned so it stays inside the pane. */
 function AgentPick({ agents, selected, onPick, disabled }: {
   agents: Agent[]; selected: Agent | null; onPick: (g: Agent) => void; disabled?: boolean
 }) {
   const [open, setOpen, ref] = usePopover()
   return (
-    <div ref={ref} style={{ position: 'relative', flex: 'none', minWidth: 0 }}>
+    <div ref={ref} style={{ position: 'relative', flex: '0 1 auto', minWidth: 0 }}>
       <button
         className="ad-btn-pill" disabled={disabled}
         onClick={() => setOpen(!open)}
@@ -269,7 +269,7 @@ function AgentPick({ agents, selected, onPick, disabled }: {
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected ? `${agName(selected)} · ${dispModel(selected)}` : 'No agent'}</span>
         <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
       </button>
-      <PopMenu show={open} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 290 }}>
+      <PopMenu show={open} style={{ bottom: 'calc(100% + 6px)', left: 0, minWidth: 290 }}>
           {agents.map((g) => {
             const sel = !!selected && g.id === selected.id
             return (
@@ -2098,21 +2098,7 @@ export default function CreateFlow() {
             background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12,
             display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }}>
-            <div style={{ flex: 'none', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', borderBottom: '1px solid var(--hairline)' }}>
-              {/* drafting-agent picker (§11) — the agent answers here, so it is chosen
-                  here; it is the header's identity, no CHAT label */}
-              <AgentPick
-                agents={agents} selected={selAgent} disabled={busyRewrite}
-                onPick={(g) => {
-                  if (busyRewrite || drafting) { showToast('Wait for the current rewrite to finish first.'); return }
-                  if (selAgent && selAgent.id === g.id) return
-                  setAgentId(g.id)
-                  if (isEdit) up({ touched: true })
-                  showToast(`${agName(g)} · ${dispModel(g)} now writes the spec and steps here.`, 3000)
-                }}
-              />
-            </div>
-            {/* thread */}
+            {/* thread — no header row (§11); the composer below carries the pane's identity */}
             <ScrollArea scrollRef={chatScrollRef} wrapStyle={{ flex: 1, minHeight: 0 }} style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
               {rev.chat.length === 0 && !anyJobBusy && (isCreateEmpty ? (
                 <div style={{ padding: '10px 4px' }}>
@@ -2300,7 +2286,7 @@ export default function CreateFlow() {
                 </button>
               </div>
             ) : (
-              <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '12px 14px', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '12px 14px' }}>
                 <textarea
                   className="ad-input oneline-ph"
                   value={chatText} rows={1} disabled={inputDisabled}
@@ -2312,13 +2298,28 @@ export default function CreateFlow() {
                       : isCreateEmpty ? 'Describe the job — one sentence is enough.'
                         : 'Change something, or ask a question…'}
                   style={{
-                    flex: 1, color: 'var(--text)', font: "400 12.5px/1.5 var(--sans)", padding: '8px 12px',
+                    width: '100%', color: 'var(--text)', font: "400 12.5px/1.5 var(--sans)", padding: '8px 12px',
                     resize: 'none', overflow: 'hidden', display: 'block',
                   }}
                 />
-                <button className="ad-btn-soft" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ whiteSpace: 'nowrap' }}>
-                  {isCreateEmpty ? 'Draft it' : 'Send'}
-                </button>
+                {/* composer toolbar (§11) — the drafting-agent picker is a property of the
+                    message being sent, so it is chosen here; Send is a quiet pill-height
+                    secondary affordance (Enter is the primary send path) */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
+                  <AgentPick
+                    agents={agents} selected={selAgent} disabled={busyRewrite}
+                    onPick={(g) => {
+                      if (busyRewrite || drafting) { showToast('Wait for the current rewrite to finish first.'); return }
+                      if (selAgent && selAgent.id === g.id) return
+                      setAgentId(g.id)
+                      if (isEdit) up({ touched: true })
+                      showToast(`${agName(g)} · ${dispModel(g)} now writes the spec and steps here.`, 3000)
+                    }}
+                  />
+                  <button className="ad-btn-pill" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+                    Send
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -2454,7 +2455,7 @@ export default function CreateFlow() {
             {/* lede: the automation's desc (§4.1) — editable like the name; create mode
                 shows the static drafting lede until drafting settles. The row is
                 height-stable: every state shares one fixed-height box. The drafting-agent
-                picker lives in the chat pane header, not here. */}
+                picker lives in the chat pane composer, not here. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, height: 26, minWidth: 0, margin: '0 0 20px' }}>
               {!isEdit && drafting ? (
                 <p style={{

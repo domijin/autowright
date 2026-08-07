@@ -61,7 +61,13 @@ also served to the create/edit page via §19 `GET /instructions`):
   parameters, spec, steps, notes, runs); beyond the spec / build-instructions / notes
   rewrites, the TASK's actions file lets the agent sync, test (with test-only parameter
   values), rename the automation, and rewrite its one-line description — keep both honest
-  when a change makes them stale — while grants and save/create stay the user's alone. The §11
+  when a change makes them stale — while grants and save/create stay the user's alone.
+  The section also carries the **stored-values redirect**: the editor cannot set the
+  automation's stored parameter values (`test_values` affects a test only) — when the
+  user asks for a stored-value change, the agent says so plainly and points them at the
+  automation page, while offering what it can do from the editor: change the parameter
+  definitions and triggers through a spec rewrite + sync, and set test-only values for a
+  test run. The §11
   Framework-instructions card renders this file as markdown.
 - `backend/autowright/instructions/default-build-instructions.md` — the default best-practice
   build instructions, written as a markdown bullet list (never delete files, write only to

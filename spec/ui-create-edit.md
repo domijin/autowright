@@ -457,8 +457,12 @@ editors enter with
   drafted definition's default (the initial values v1 seeds — e.g. a URL the AI captured from
   the prompt); in edit mode the automation's live value, matched by name and kind (§5), so a
   drafted param without a stored match falls back to its default. Footer: "Values
-  aren't part of a version — set them on the automation page after saving; for a test, set
-  test-only values in the Build & test panel." Value input lives on the §9.2 detail page
+  aren't part of a version — set them on the automation page after saving. For a test, set
+  test-only values in the Build & test panel — or ask your AI, which can change the
+  parameter definitions and set test values when it runs a test." (The AI changes
+  definitions only through the spec + sync, and never sets a test trigger message — the
+  §8 actions carry `test_values` only; the message mock stays a panel-only input.)
+  Value input lives on the §9.2 detail page
   (§4.2 edit behaviors) and, test-only, in the Build & test panel at the top of the column.
   Empty state:
   "No settings needed — your AI didn't ask for any."

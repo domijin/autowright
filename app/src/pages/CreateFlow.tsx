@@ -3383,7 +3383,7 @@ export default function CreateFlow() {
                         )
                       })}
                       <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
-                        Values aren’t part of a version — set them on the automation page after saving; for a test, set test-only values in the Test card.
+                        Values aren’t part of a version — set them on the automation page after saving. For a test, set test-only values in the Build & test panel — or ask your AI, which can change the parameter definitions and set test values when it runs a test.
                       </div>
                     </>
                   )}

@@ -138,8 +138,15 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   versions, memory + snapshots, execution history, `.autowright` share/import) ·
   supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · closing
   download CTA · footer (GitHub, Privacy, MIT). All repo links point to
-  `hansololz/autowright`. Respects `prefers-reduced-motion`. Not part
-  of the app build. Also serves `updates/darwin-<arch>.json` — the §3 Squirrel.Mac update
+  `hansololz/autowright`. Respects `prefers-reduced-motion`. Head metadata: canonical
+  `https://autowright.ai/`, `theme-color` `#0b0e12`, Open Graph + Twitter-card tags with a
+  1200×630 social image (`docs/og.png`, AW mark + headline on the dark background),
+  `docs/apple-touch-icon.png` (180 px full-bleed AW mark), and JSON-LD
+  (`SoftwareApplication`, macOS, free, MIT). Sections below the demo fade up on first
+  scroll-into-view (IntersectionObserver adding an `.in` class; entrance uses the app's
+  §14 motion values — 360 ms `cubic-bezier(0.16,1,0.3,1)`). `::selection` is the accent at
+  .35 alpha and links/buttons get a visible `:focus-visible` accent outline, per §14. A
+  faint accent radial glow sits behind the demo window. Also serves `updates/darwin-<arch>.json` — the §3 Squirrel.Mac update
   feeds, rewritten by `scripts/release.sh` on every release.
 - `VERSION` — single source of truth for the app version (one line, semver). Synced into
   `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by

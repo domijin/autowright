@@ -5,6 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Autowright — personal automations in plain words</title>
 <meta name="description" content="Describe a recurring job in plain words. Your AI writes it as readable scripts, and your Mac runs them on schedule — locally, only after you approve.">
+<meta name="theme-color" content="#0b0e12">
+<link rel="canonical" href="https://autowright.ai/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://autowright.ai/">
+<meta property="og:site_name" content="Autowright">
+<meta property="og:title" content="Autowright — personal automations in plain words">
+<meta property="og:description" content="Describe a recurring job in plain words. Your AI writes it as readable scripts, and your Mac runs them on schedule — locally, only after you approve.">
+<meta property="og:image" content="https://autowright.ai/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Autowright — personal automations in plain words">
+<meta name="twitter:description" content="Describe a recurring job in plain words. Your AI writes it as readable scripts, and your Mac runs them on schedule — locally, only after you approve.">
+<meta name="twitter:image" content="https://autowright.ai/og.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Autowright",
+  "operatingSystem": "macOS",
+  "applicationCategory": "UtilitiesApplication",
+  "description": "Describe a recurring job in plain words. An AI agent writes it as readable scripts, and Autowright runs them on a schedule, entirely on your Mac.",
+  "url": "https://autowright.ai/",
+  "downloadUrl": "https://github.com/hansololz/autowright/releases/latest",
+  "license": "https://github.com/hansololz/autowright/blob/main/LICENSE",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -29,7 +58,15 @@
     -webkit-font-smoothing:antialiased; line-height:1.6; overflow-x:hidden;
   }
   a{color:inherit; text-decoration:none}
+  ::selection{background:rgba(246,139,67,.35)}
+  a:focus-visible,button:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:8px}
   .wrap{max-width:980px; margin:0 auto; padding:0 28px}
+
+  /* app-style entrance: sections fade up on first scroll-into-view (§14 motion) */
+  .reveal{opacity:0; transform:translateY(14px);
+    transition:opacity .36s cubic-bezier(.16,1,.3,1), transform .36s cubic-bezier(.16,1,.3,1)}
+  .reveal.in{opacity:1; transform:none}
+  @media (prefers-reduced-motion: reduce){ .reveal{opacity:1; transform:none} }
 
   /* AW mark */
   .mark{width:30px; height:30px; flex:none; display:block}
@@ -66,8 +103,13 @@
   .platform{margin-top:14px; font-family:var(--mono); font-size:11px; color:var(--faint)}
 
   /* demo window */
-  .demo{padding:34px 0 8px}
-  .window{
+  .demo{padding:34px 0 8px; position:relative}
+  .demo::before{
+    content:""; position:absolute; left:50%; top:46%; width:640px; height:420px;
+    transform:translate(-50%,-50%); pointer-events:none;
+    background:radial-gradient(closest-side, rgba(246,139,67,.07), transparent 70%);
+  }
+  .window{position:relative;
     background:var(--bg-content); border:1px solid var(--card-border); border-radius:12px;
     box-shadow:0 24px 60px rgba(0,0,0,.5); overflow:hidden; max-width:700px; margin:0 auto;
   }
@@ -254,7 +296,7 @@
       <a class="btn primary" href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
       <a class="btn ghost" href="https://github.com/hansololz/autowright">View source</a>
     </div>
-    <div class="platform">Apple Silicon · MIT licensed</div>
+    <div class="platform">Apple Silicon · MIT licensed · Windows &amp; Linux coming soon</div>
   </section>
 
   <section class="demo">
@@ -294,7 +336,7 @@
     </div>
   </section>
 
-  <section class="how">
+  <section class="how reveal">
     <div class="eyebrow">How it works</div>
     <div class="grid3">
       <div class="hstep">
@@ -315,7 +357,7 @@
     </div>
   </section>
 
-  <section class="promises">
+  <section class="promises reveal">
     <div class="grid3">
       <div class="card">
         <div class="ic"><svg><use href="#fa-desktop"/></svg></div>
@@ -335,7 +377,7 @@
     </div>
   </section>
 
-  <section class="features">
+  <section class="features reveal">
     <div class="eyebrow">Under the hood</div>
     <div class="fgrid">
       <div class="feat">
@@ -365,7 +407,7 @@
     </div>
   </section>
 
-  <section class="agents">
+  <section class="agents reveal">
     <div class="eyebrow">Bring the AI you already use</div>
     <div class="badges">
       <div class="badge">Claude Code</div>
@@ -376,12 +418,12 @@
     <p class="local">No AI on this Mac yet? Autowright sets one up for you — including a free local model that never goes online.</p>
   </section>
 
-  <section class="closing">
-    <h2>Describe your first job tonight.</h2>
+  <section class="closing reveal">
+    <h2>Describe your first job today.</h2>
     <div class="ctas">
       <a class="btn primary" href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
     </div>
-    <div class="platform">Free · open source · Apple Silicon</div>
+    <div class="platform">Free · open source · Apple Silicon · Windows &amp; Linux coming soon</div>
   </section>
 
   <footer>
@@ -534,6 +576,14 @@
       if (reduced) break;
     }
   })();
+
+  // scroll reveals — first entry into view only
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    }
+  }, { threshold: 0.12 });
+  document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 })();
 </script>
 </body>

@@ -194,7 +194,7 @@ def test_install_tarball_without_matching_member_errors(tmp_path, local_bin,
 
 def test_stream_shell_streams_each_line_and_succeeds(home):
     rec = Recorder()
-    installer._stream_shell(["/bin/sh", "-c", "echo one; echo two"], rec)
+    installer._stream_shell(["/bin/sh", "-c", "echo one; echo two"], rec, "claude")
     assert rec.lines == ["one", "two"]
 
 
@@ -204,14 +204,14 @@ def test_stream_shell_failure_raises_with_last_output_line(home):
     rec = Recorder()
     script = "; ".join(f"echo l{i}" for i in range(1, 7)) + "; exit 7"
     with pytest.raises(RuntimeError) as ei:
-        installer._stream_shell(["/bin/sh", "-c", script], rec)
+        installer._stream_shell(["/bin/sh", "-c", script], rec, "claude")
     assert str(ei.value) == "l6"
     assert rec.lines == [f"l{i}" for i in range(1, 7)]
 
 
 def test_stream_shell_silent_failure_reports_exit_code(home):
     with pytest.raises(RuntimeError, match="exited with code 9"):
-        installer._stream_shell(["/bin/sh", "-c", "exit 9"], Recorder())
+        installer._stream_shell(["/bin/sh", "-c", "exit 9"], Recorder(), "claude")
 
 
 def test_stream_shell_timeout_sigkills_whole_process_group(home, tmp_path,
@@ -222,7 +222,7 @@ def test_stream_shell_timeout_sigkills_whole_process_group(home, tmp_path,
            f"sleep 30 & echo $! > {pidfile}; echo started; wait"]
     t0 = time.monotonic()
     with pytest.raises(RuntimeError, match="timed out"):
-        installer._stream_shell(cmd, Recorder())
+        installer._stream_shell(cmd, Recorder(), "claude")
     assert time.monotonic() - t0 < 10  # timer fired, not a natural exit
 
     # the backgrounded sleep shares the session's process group → killed too
@@ -323,7 +323,7 @@ def test_gemini_with_node_runs_npm_global_into_local_prefix(home, monkeypatch):
                         lambda name: fake_npm if name == "npm" else "/x/gemini")
     argvs = []
     monkeypatch.setattr(installer, "_stream_shell",
-                        lambda cmd, emit, env_extra=None: argvs.append(list(cmd)))
+                        lambda cmd, emit, provider_id, env_extra=None: argvs.append(list(cmd)))
     installer._install_gemini(Recorder())
     assert argvs == [[fake_npm, "install", "-g", "--prefix",
                       os.path.expanduser("~/.local"), "@google/gemini-cli"]]
@@ -332,7 +332,7 @@ def test_gemini_with_node_runs_npm_global_into_local_prefix(home, monkeypatch):
 def test_claude_recipe_pipes_official_installer_and_requires_binary(monkeypatch):
     calls = []
     monkeypatch.setattr(installer, "_stream_shell",
-                        lambda cmd, emit, env_extra=None: calls.append(list(cmd)))
+                        lambda cmd, emit, provider_id, env_extra=None: calls.append(list(cmd)))
     required = []
     monkeypatch.setattr(installer, "_require", required.append)
     installer._install_claude(Recorder())
@@ -389,7 +389,7 @@ def test_login_codex_runs_detached_and_reports_browser(monkeypatch):
 def test_login_terminal_providers_open_terminal_in_neutral_cwd(monkeypatch, pid,
                                                                binname, args):
     # §19: interactive TUI logins open Terminal.app via osascript, cd'ing into
-    # the empty harness-cwd first so the CLI startup scan never walks ~.
+    # the provider's empty workspace first so the CLI startup scan never walks ~.
     monkeypatch.setattr(harness, "resolve_bin", lambda b: f"/fake/{b}")
     runs = []
     monkeypatch.setattr(installer.subprocess, "run",
@@ -401,7 +401,7 @@ def test_login_terminal_providers_open_terminal_in_neutral_cwd(monkeypatch, pid,
     expected = f"/fake/{binname}" + (f" {args}" if args else "")
     assert expected in script
     assert 'do script "cd ' in script
-    assert harness._neutral_cwd() in script
+    assert harness._neutral_cwd(pid) in script
 
 
 def test_login_requires_installed_binary(monkeypatch):
@@ -415,7 +415,7 @@ def test_login_requires_installed_binary(monkeypatch):
 def test_opencode_recipe_pipes_installer_with_install_dir_env(monkeypatch):
     calls = {}
 
-    def fake_stream(cmd, emit, env_extra=None):
+    def fake_stream(cmd, emit, provider_id, env_extra=None):
         calls["cmd"], calls["env"] = cmd, env_extra
 
     monkeypatch.setattr(installer, "_stream_shell", fake_stream)

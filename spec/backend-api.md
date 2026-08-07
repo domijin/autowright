@@ -264,7 +264,8 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   callback), method `browser` · Claude Code / Gemini CLI / OpenCode — their login flows are
   interactive TUIs, so the backend opens Terminal.app via `osascript` running the harness's
   login command (`claude /login` / `gemini` / `opencode auth login`), method `terminal`.
-  The Terminal command `cd`s into the empty `harness-cwd/` dir (§6) first — Terminal shells
+  The Terminal command `cd`s into the provider's empty `harness/<provider-id>/workspace/`
+  dir (§6) first — Terminal shells
   otherwise start in `~`, and the CLI's startup scan must not walk the home folder.
   `GET /agents/signin/{id}` → `{ installed, signedIn }` is the cheap poll (§10 waits on it
   every 2 s) — it runs only that provider's sign-in rule, never version lookups.

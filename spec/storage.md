@@ -32,8 +32,11 @@ electron/                      # Electron's Chromium profile (Cache, Cookies, Lo
 site-packages/                 # §6.2 declared packages, installed by the app via
                                # `pip install --target` — user-writable, survives app updates,
                                # safe to delete (re-ensured before the next execution)
-harness-cwd/                   # empty cwd for harness CLI children (§6) — keeps their startup
-                               # scans out of TCC-protected folders; never written to
+harness/                       # per-provider workspaces for provider CLI children (§6)
+  <provider-id>/               #   §19 provider id: claude · codex · gemini · opencode · ollama
+    workspace/                 #   cwd for that provider's children (invocations, installs,
+                               #   probes, login helpers) — created on demand, kept empty by
+                               #   the app; keeps startup scans out of TCC-protected folders
 draft/                         # THE pending create-mode draft (§4.4) — a single slot: created
                                # (with an empty memory/) the moment the create flow opens,
                                # deleted when Create or Start over settles it; same

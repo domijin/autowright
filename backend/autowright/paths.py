@@ -45,10 +45,11 @@ def pending_draft_dir() -> Path:
     return app_support() / "draft"
 
 
-def harness_cwd() -> Path:
-    """Empty cwd for harness CLI children — keeps their startup project
-    scans out of TCC-protected folders (§6), so macOS never prompts."""
-    return app_support() / "harness-cwd"
+def harness_workspace(provider_id: str) -> Path:
+    """Empty per-provider cwd for provider CLI children — keeps their startup
+    project scans out of TCC-protected folders (§6), so macOS never prompts.
+    Created on demand by `harness._neutral_cwd`."""
+    return app_support() / "harness" / provider_id / "workspace"
 
 
 def logs_dir() -> Path:
@@ -66,5 +67,4 @@ def ensure_dirs() -> None:
     app_support().mkdir(parents=True, exist_ok=True)
     automations_dir().mkdir(parents=True, exist_ok=True)
     default_data_path().mkdir(parents=True, exist_ok=True)
-    harness_cwd().mkdir(parents=True, exist_ok=True)
     logs_dir().mkdir(parents=True, exist_ok=True)

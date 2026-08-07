@@ -97,12 +97,12 @@ def login(provider_id: str) -> str:
         subprocess.Popen([binpath, "login"], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
                          start_new_session=True, env=harness.spawn_env(binpath),
-                         cwd=harness._neutral_cwd())
+                         cwd=harness._neutral_cwd("codex"))
         return "browser"
     args = {"claude": ["/login"], "gemini": [], "opencode": ["auth", "login"]}[provider_id]
-    # §6/§19: Terminal shells start in ~ — cd into the empty harness-cwd first
-    # so the CLI's startup scan never walks the home folder.
-    cmd = (f"cd {shlex.quote(harness._neutral_cwd())} && "
+    # §6/§19: Terminal shells start in ~ — cd into the provider's empty
+    # workspace first so the CLI's startup scan never walks the home folder.
+    cmd = (f"cd {shlex.quote(harness._neutral_cwd(provider_id))} && "
            + " ".join(shlex.quote(p) for p in [binpath, *args]))
     osa = cmd.replace("\\", "\\\\").replace('"', '\\"')
     subprocess.run(["osascript", "-e", 'tell application "Terminal" to activate',
@@ -113,7 +113,8 @@ def login(provider_id: str) -> str:
 
 # ---------- mechanics ----------
 
-def _stream_shell(cmd: list[str], emit, env_extra: dict | None = None) -> None:
+def _stream_shell(cmd: list[str], emit, provider_id: str,
+                  env_extra: dict | None = None) -> None:
     """Run an installer child, forwarding each output line; raise on failure
     with the last decisive line as the message."""
     env = harness.spawn_env(cmd[0])
@@ -122,7 +123,7 @@ def _stream_shell(cmd: list[str], emit, env_extra: dict | None = None) -> None:
         env.update(env_extra)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             stdin=subprocess.DEVNULL, text=True, errors="replace",
-                            env=env, cwd=harness._neutral_cwd(),
+                            env=env, cwd=harness._neutral_cwd(provider_id),
                             # own session: the timeout kill reaches the whole
                             # pipeline (curl | bash spawns children)
                             start_new_session=True)
@@ -203,14 +204,15 @@ def _require(binname: str) -> None:
 
 def _install_claude(emit) -> None:
     emit(line="Downloading the Claude Code installer…")
-    _stream_shell(["/bin/bash", "-c", f"curl -fsSL {CLAUDE_INSTALLER} | bash"], emit)
+    _stream_shell(["/bin/bash", "-c", f"curl -fsSL {CLAUDE_INSTALLER} | bash"], emit,
+                  "claude")
     _require("claude")
 
 
 def _install_opencode(emit) -> None:
     emit(line="Downloading the OpenCode installer…")
     _stream_shell(["/bin/bash", "-c", f"curl -fsSL {OPENCODE_INSTALLER} | bash"], emit,
-                  env_extra={"OPENCODE_INSTALL_DIR": LOCAL_BIN})
+                  "opencode", env_extra={"OPENCODE_INSTALL_DIR": LOCAL_BIN})
     _require("opencode")
 
 
@@ -222,7 +224,7 @@ def _install_gemini(emit) -> None:
                            "then try again.")
     emit(line="Installing @google/gemini-cli with npm…")
     _stream_shell([npm, "install", "-g", "--prefix", os.path.expanduser("~/.local"),
-                   "@google/gemini-cli"], emit)
+                   "@google/gemini-cli"], emit, "gemini")
     _require("gemini")
 
 

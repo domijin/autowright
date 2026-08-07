@@ -86,10 +86,10 @@ _FALLBACK_BIN_DIRS = (
 )
 
 
-def _neutral_cwd() -> str:
-    """§6: every harness child runs in this empty dir so CLI startup scans
-    never touch TCC-protected folders (no macOS permission prompts)."""
-    d = paths.harness_cwd()
+def _neutral_cwd(provider_id: str) -> str:
+    """§6: every provider child runs in its provider's empty workspace dir so
+    CLI startup scans never touch TCC-protected folders (no macOS prompts)."""
+    d = paths.harness_workspace(provider_id)
     d.mkdir(parents=True, exist_ok=True)
     return str(d)
 
@@ -264,7 +264,7 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     # 5-minute cap silently never fires).
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             stdin=subprocess.DEVNULL, text=True, errors="replace",
-                            env=spawn_env(binpath), cwd=_neutral_cwd(),
+                            env=spawn_env(binpath), cwd=_neutral_cwd(HARNESS_ID[harness]),
                             start_new_session=True)
     if proc_holder is not None:
         proc_holder["proc"] = proc
@@ -445,7 +445,7 @@ def ollama_status() -> dict:
         try:
             subprocess.Popen([binpath, "serve"], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True,
-                             env=spawn_env(binpath), cwd=_neutral_cwd())
+                             env=spawn_env(binpath), cwd=_neutral_cwd("ollama"))
         except Exception:  # noqa: BLE001
             pass
         else:
@@ -488,10 +488,10 @@ PROVIDER_BIN = {"claude": "claude", "codex": "codex", "gemini": "gemini",
 HARNESS_ID = {name: pid for pid, name in PROVIDERS if pid != "ollama"}
 
 
-def _status_ok(cmd: list[str]) -> bool:
+def _status_ok(cmd: list[str], provider_id: str) -> bool:
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
-                           env=spawn_env(cmd[0]), cwd=_neutral_cwd())
+                           env=spawn_env(cmd[0]), cwd=_neutral_cwd(provider_id))
         return r.returncode == 0
     except Exception:  # noqa: BLE001
         return False
@@ -504,10 +504,10 @@ def signed_in(provider_id: str) -> bool | None:
         return None
     if provider_id == "claude":
         binpath = resolve_bin("claude")
-        return bool(binpath) and _status_ok([binpath, "auth", "status"])
+        return bool(binpath) and _status_ok([binpath, "auth", "status"], "claude")
     if provider_id == "codex":
         binpath = resolve_bin("codex")
-        return bool(binpath) and _status_ok([binpath, "login", "status"])
+        return bool(binpath) and _status_ok([binpath, "login", "status"], "codex")
     if provider_id == "gemini":
         return (os.path.exists(os.path.expanduser("~/.gemini/oauth_creds.json"))
                 or bool(os.environ.get("GEMINI_API_KEY")))
@@ -569,10 +569,10 @@ def detect() -> list[dict]:
     """§10 step 2 — one entry per harness, all four always present, with real
     installed and sign-in state (§19). Ollama is not part of detection — the
     §10 Free local AI card reads its state from `/ollama/status`."""
-    def version_of(binpath: str) -> str | None:
+    def version_of(binpath: str, pid: str) -> str | None:
         try:
             r = subprocess.run([binpath, "--version"], capture_output=True, text=True,
-                               timeout=5, env=spawn_env(binpath), cwd=_neutral_cwd())
+                               timeout=5, env=spawn_env(binpath), cwd=_neutral_cwd(pid))
             return (r.stdout or r.stderr).strip().splitlines()[0][:40] if r.returncode == 0 else None
         except Exception:  # noqa: BLE001
             return None
@@ -587,7 +587,7 @@ def detect() -> list[dict]:
                         "signedIn": False, "detail": ""})
             continue
         s = signed_in(pid) is True
-        v = version_of(binpath)
+        v = version_of(binpath, pid)
         detail = f"{v or 'installed'} · {'signed in' if s else 'not signed in yet'}"
         out.append({"id": pid, "name": name, "installed": True,
                     "signedIn": s, "detail": detail})

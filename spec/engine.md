@@ -176,7 +176,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   `--model <model>` to the harness command, the same flag on all four CLIs; an OpenCode
   agent with a local model adds `--model ollama/<model>`). Every harness CLI child
   (drafting and runtime alike)
-  runs with its cwd set to an empty `harness-cwd/` directory under Application Support: CLI
+  runs with its cwd set to its provider's own `harness/<provider-id>/workspace/` directory
+  under Application Support (§5) — created on demand, kept empty by the app: CLI
   startup project scans stay inside that empty folder and never enter TCC-protected locations
   (Photos, Music, Desktop, …), so macOS shows no permission prompts attributed to the backend.
   Secret values never enter a prompt: the engine

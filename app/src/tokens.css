@@ -186,7 +186,7 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-btn-x { color: var(--text-faintest); width: 24px; flex: none; font: 500 14px var(--sans); transition: color var(--t-hover) var(--ease-enter); }
 .ad-btn-x:hover:not(:disabled) { color: var(--red-hover); }
 
-/* accent-tinted ghost (Execute once / Execute draft / Add trigger / agent chips) */
+/* accent-tinted ghost (Execute once / Add trigger / agent chips) */
 .ad-btn-accent-ghost {
   background: oklch(0.74 0.155 52 / 0.1); border: 1px solid oklch(0.74 0.155 52 / 0.3);
   color: var(--accent); font-weight: 600; font-size: 13px; padding: 8px 15px; border-radius: 8px;

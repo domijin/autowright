@@ -312,7 +312,7 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   triggers themselves stay unversioned), sets `specMeta` to "vN · updated Today".
   Prior versions are untouched.
 - Leaving the editor with unsaved touched changes snapshots a **draft** onto the automation
-  (toast: "Draft kept — resume or execute it from this automation anytime."). Every exit path
+  (toast: "Draft kept — resume it from this automation anytime."). Every exit path
   persists it — the header back button, system back/forward navigation, anything that closes
   the editor — never just the header button. Discard draft and Save as vN+1 settle the draft:
   leaving after either writes nothing (a discarded or saved draft is never resurrected).
@@ -368,8 +368,11 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   once — triggers and Execute now stay on vN."). The detail-page version menu carries a footer
   explainer: "Executing an older version once doesn't change anything — triggers and Execute now
   always use the current version. To make an older version current, open Edit and restore it from
-  the Version menu." Draft banner offers Execute draft / Resume editing / Discard.
-- **Execute draft executes on the draft's own memory** (`draft/memory/`, §5): seeded as a copy
+  the Version menu." Draft banner offers Resume editing / Discard — the UI has no
+  Execute-draft action; draft iteration happens through the editor's §11 Test.
+- **A Draft execution executes on the draft's own memory** (`draft/memory/`, §5). Draft
+  executions start only from the §19 execute API (`version: "draft"`) — no UI surface offers
+  one. The memory is seeded as a copy
   of the automation's live memory the first time the draft executes, then reused by every later
   Draft execution — so a draft iterates on one stable memory — and kept across draft re-saves
   from the editor. It is deleted with the draft (discard, or save as vN+1: the new version

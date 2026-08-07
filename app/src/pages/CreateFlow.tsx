@@ -1829,7 +1829,7 @@ export default function CreateFlow() {
       if (rev && holdsDraftEdits(rev, auto)) {
         try { await api.putDraft(auto.id, serializeDraft(rev)) } catch { /* backend restarting */ }
         draftSettled.current = true
-        showToast('Draft kept — resume or execute it from this automation anytime.', 3400)
+        showToast('Draft kept — resume it from this automation anytime.', 3400)
       }
       setSurface('app')
       go('automation')

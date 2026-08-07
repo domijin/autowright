@@ -1438,15 +1438,8 @@ export default function AutomationDetail() {
         }}>
           <MiniBadge c="var(--accent)" bg="var(--accent-chip-bg)" style={{ flex: 'none' }}>Draft</MiniBadge>
           <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2em)' }}>
-            Unsaved edit based on v{auto.version} — kept from your last edit session. Execute it like any other version, or resume editing.
+            Unsaved edit based on v{auto.version} — kept from your last edit session. Resume editing to keep working on it.
           </span>
-          <button
-            className="ad-btn-accent-ghost"
-            onClick={() => doExecute('Draft')}
-            style={{ flex: 'none' }}
-          >
-            <i className="fa-solid fa-play" style={{ fontSize: 9 }} /> Execute draft
-          </button>
           <button
             className="ad-btn-soft"
             onClick={() => setSurface('create', 'edit')}

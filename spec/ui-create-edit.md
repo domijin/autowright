@@ -636,7 +636,7 @@ editors enter with
   outcome exists (a live test shows Cancel in its place) — and the setup section's run
   button reads
   **"Run test"** — never "Execute", which is reserved for real
-  executions (§4.4 "Execute draft", §7 "Execute again"). A test uses: in-editor param
+  executions (§9.2 "Execute now", §7 "Execute again"). A test uses: in-editor param
   values and grants (never the stored automation's), and **scratch memory** — copied to a
   temp dir from the draft container's `memory/` when it exists (edit mode falls back to
   the automation's memory dir; create mode to empty) and discarded when the test ends, so
@@ -738,8 +738,8 @@ appended, and the user asks when the job settles.
 **Settled runs seed the thread.** Beyond the test entries above, entering the editor in
 edit mode appends a run-settled system entry ("Draft execution failed at step `<name>` —
 `<message>`." / "Draft execution succeeded.") when the automation's newest settled Draft
-execution (§4.5 kind `draft`) finished after the thread's last entry — the user who
-iterates via Execute draft picks the conversation up where the run left off. Duplicate
+execution (§4.5 kind `draft`) finished after the thread's last entry — a draft iterated
+via the §19 execute API picks the conversation up where the run left off. Duplicate
 seeds are suppressed the same way (only runs newer than the last thread entry qualify).
 
 Create (new) → version 1, `lastStatus: none`, navigate to detail, toast "Created — nothing has

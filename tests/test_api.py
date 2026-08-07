@@ -86,6 +86,71 @@ def test_export_import_endpoints(client):
     assert client.get("/automations/nope/export").status_code == 404
 
 
+
+def test_import_preview_confirm_flow(client):
+    from autowright.storage import new_id, store
+
+    ver = {"desc": "Web thing", "params": [],
+           "steps": [{"name": "Go", "desc": "", "code": "print(1)\n"}],
+           "spec": [{"k": "h1", "text": "T"}], "instr": None}
+    a = store.create_automation(ver, name="Previewed", agent_id="mock",
+                                triggers=[{"id": new_id(), "kind": "cron", "off": False,
+                                           "expr": "0 9 * * *"}])
+    data = client.get(f"/automations/{a['id']}/export").content
+    n_before = len(store.autos)
+
+    r = client.post("/automations/import/preview", content=data,
+                    headers={"Content-Type": "application/octet-stream"})
+    assert r.status_code == 200
+    body = r.json()
+    # §5.2: preview writes nothing — the automation lands only on confirm
+    assert len(store.autos) == n_before
+    assert body["preview"]["name"] == "Previewed"
+    assert [s["name"] for s in body["preview"]["steps"]] == ["Go"]
+    assert body["preview"]["triggers"] == [{"kind": "cron", "expr": "0 9 * * *"}]
+
+    r2 = client.post("/automations/import/confirm", json={"token": body["token"]})
+    assert r2.status_code == 200
+    assert r2.json()["auto"]["name"] == "Previewed"
+    assert r2.json()["auto"]["triggersOff"] is True
+    assert len(store.autos) == n_before + 1
+
+    # the token is one-time; unknown tokens 404 too
+    assert client.post("/automations/import/confirm", json={"token": body["token"]}).status_code == 404
+    assert client.post("/automations/import/confirm", json={"token": "nope"}).status_code == 404
+    # an invalid archive previews as the same §5.1 422
+    assert client.post("/automations/import/preview", content=b"junk",
+                       headers={"Content-Type": "application/octet-stream"}).status_code == 422
+
+
+def test_import_url_endpoint(client, monkeypatch):
+    from autowright import transfer
+    from autowright.storage import new_id, store
+
+    ver = {"desc": "", "params": [],
+           "steps": [{"name": "Go", "desc": "", "code": "print(1)\n"}],
+           "spec": [{"k": "h1", "text": "T"}], "instr": None}
+    a = store.create_automation(ver, name="From web", agent_id="mock", triggers=[])
+    data = client.get(f"/automations/{a['id']}/export").content
+
+    monkeypatch.setattr(transfer, "fetch_archive",
+                        lambda url: (data, "https://gh/dl/from-web.autowright"))
+    r = client.post("/automations/import/url", json={"url": "https://github.com/alice/from-web"})
+    assert r.status_code == 200
+    p = r.json()["preview"]
+    assert p["sourceUrl"] == "https://github.com/alice/from-web"
+    assert p["resolvedUrl"] == "https://gh/dl/from-web.autowright"
+    assert client.post("/automations/import/confirm",
+                       json={"token": r.json()["token"]}).status_code == 200
+
+    # §5.2 URL-rule failures surface as 422 with the reason
+    def boom(url):
+        raise transfer.TransferError("only https:// URLs can be imported")
+    monkeypatch.setattr(transfer, "fetch_archive", boom)
+    r = client.post("/automations/import/url", json={"url": "http://x/a.autowright"})
+    assert r.status_code == 422 and "https" in r.json()["detail"]
+    assert client.post("/automations/import/url", json={}).status_code == 422
+
 def test_draft_job_and_create_flow(client):
     r = client.post("/drafts", json={"mode": "create", "text": "Watch a product price", "agentId": "mock"})
     job_id = r.json()["jobId"]

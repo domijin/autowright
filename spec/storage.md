@@ -418,3 +418,43 @@ referenced but not granted, agents created vs. reused, declared packages (the ap
 them on first execution as usual, §6.2; a §20 CLI import runs the ensure right away) —
 rendered by the §9.1 summary modal.
 
+### 5.2 URL import (decided)
+
+An archive can be imported straight from the web: the backend downloads it and runs the §5.1
+import path unchanged — same validation, same 422-writes-nothing rule, same summary. The
+security posture is §5.1's, unchanged: triggers land off, created secrets are valueless
+placeholders, nothing pre-existing is auto-granted.
+
+**URL rules** — anything that fits no rule answers 422 with the reason:
+
+- HTTPS only; plain `http://` is rejected.
+- A URL whose **path ends `.autowright`** downloads directly — any host (GitHub release
+  assets, `raw.githubusercontent.com`, gist raw links, any web server).
+- A **`github.com/{owner}/{repo}`** page (optional trailing `/`, or `/releases/latest`)
+  resolves through the unauthenticated GitHub API: the latest release's first asset named
+  `*.autowright`; when the repo has no release with such an asset, the repo root's file
+  listing, first `*.autowright` alphabetically. `github.com/{owner}/{repo}/releases/tag/{tag}`
+  resolves against that release's assets. Public repos only — no token ever travels.
+- Download: `User-Agent: autowright/<version>`, 30-second timeout, streamed with the §5.1
+  64 MB archive cap enforced during the read — an oversized or non-archive download is a 422,
+  and the §5.1 decompression caps still apply after.
+
+**Preview + confirm.** Import from the UI is two-phase, so the user reviews exactly the bytes
+that will land (no re-download between review and import):
+
+- §19 `POST /automations/import/url` (a URL) and `POST /automations/import/preview` (raw
+  archive bytes — the file path through the same review step) validate the archive fully,
+  write nothing, and park the bytes in backend memory under a one-time **token** (15-minute
+  expiry; a handful of slots, oldest evicted). The response carries the token plus a
+  **preview**: name, desc, steps (name/desc/agent flag), param definitions, triggers,
+  declared packages, and the §5.1 match rules run dry — each referenced secret with
+  `exists`, each agent with `reused`; URL fetches add `sourceUrl` (as pasted) and
+  `resolvedUrl` (after GitHub resolution; equal for direct links).
+- `POST /automations/import/confirm` `{token}` lands the parked bytes through the §5.1
+  import. A spent, expired, or unknown token answers 404.
+- The one-shot `POST /automations/import` (raw body, §5.1) stays for callers that need no
+  preview: the §20 CLI file import and the §17 agent skill.
+
+The UI flow is the §9.1 import modal. The §20 `automation import` accepts a URL and confirms
+immediately — the typed command is the user's explicit action, so no interactive preview.
+

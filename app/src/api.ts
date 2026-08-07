@@ -10,7 +10,7 @@ declare global {
       pickFolder(defaultPath?: string): Promise<string | null>
       resizePanel(h: number): Promise<void>
       saveFile(defaultName: string, data: ArrayBuffer): Promise<string | null>
-      openArchive(): Promise<Uint8Array | null>
+      openArchive(): Promise<{ name: string; data: Uint8Array } | null>
       revealPath(p: string): Promise<void>
       setLoginItem(on: boolean): Promise<void>
       tailLogs(): Promise<{ name: string; text: string }[]>
@@ -36,6 +36,21 @@ export async function connectInfo(): Promise<boolean> {
   base = `http://127.0.0.1:${info.port}`
   token = info.token
   return true
+}
+
+// §5.1/§5.2 archives ride as raw zip bytes (§19: no multipart)
+async function rawPost<T>(path: string, data: Uint8Array): Promise<T> {
+  const r = await fetch(base + path, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
+    body: data as unknown as BodyInit,
+  })
+  if (!r.ok) {
+    let detail = ''
+    try { detail = (await r.json()).detail } catch { /* ignore */ }
+    throw Object.assign(new Error(detail || r.statusText), { status: r.status })
+  }
+  return r.json()
 }
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -156,19 +171,19 @@ export const api = {
     if (!r.ok) throw new Error(r.statusText)
     return r.arrayBuffer()
   },
-  importAuto: async (data: Uint8Array): Promise<{ auto: import('./types').Auto; summary: import('./types').ImportSummary }> => {
-    const r = await fetch(`${base}/automations/import`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/octet-stream' },
-      body: data as unknown as BodyInit,
-    })
-    if (!r.ok) {
-      let detail = ''
-      try { detail = (await r.json()).detail } catch { /* ignore */ }
-      throw Object.assign(new Error(detail || r.statusText), { status: r.status })
-    }
-    return r.json()
-  },
+  importAuto: (data: Uint8Array) =>
+    rawPost<{ auto: import('./types').Auto; summary: import('./types').ImportSummary }>(
+      '/automations/import', data),
+  // §5.2 two-phase import — preview (URL or file bytes), then confirm by token
+  importPreview: (data: Uint8Array) =>
+    rawPost<{ token: string; preview: import('./types').ImportPreview }>(
+      '/automations/import/preview', data),
+  importFromUrl: (url: string) =>
+    req<{ token: string; preview: import('./types').ImportPreview }>(
+      'POST', '/automations/import/url', { url }),
+  importConfirm: (tok: string) =>
+    req<{ auto: import('./types').Auto; summary: import('./types').ImportSummary }>(
+      'POST', '/automations/import/confirm', { token: tok }),
   // Raw result-dir file (§4.5) — Response, not JSON: callers .text() or .blob() it.
   resultFile: async (execId: string, name: string): Promise<Response> => {
     const r = await fetch(`${base}/executions/${execId}/result/${encodeURIComponent(name)}`, {

@@ -110,6 +110,14 @@ learns about an install failure at build time, not when a trigger fires.
   agent authors. The §17 skill's pre-save summary must show the full command including grant
   flags. `execute` is unchanged — it runs the stored version under the stored grants.
 
+**`automation import`** takes a `.autowright` file path or an HTTPS URL (§5.2 rules — a
+direct `*.autowright` link on any host, or a `github.com` repo/release page resolved to its
+archive asset). A URL goes through §19 `POST /automations/import/url` and confirms
+immediately — the typed command is the user's explicit action, so no interactive preview;
+when GitHub resolution changed the URL, the resolved source is printed. A file path POSTs
+`/automations/import` unchanged. Both paths print the same summary lines and run the
+package ensure.
+
 **Trigger semantics on push** — the §4.3 trigger merge, performed client-side exactly
 like the editor: the manifest's cron entries are matched against the stored list on
 (`expr`, `tz`) — matches keep their `id` and `off` state, new entries arrive enabled, stored

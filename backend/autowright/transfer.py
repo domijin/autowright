@@ -8,9 +8,13 @@ state never do. Import validates the whole archive first (`TransferError` →
 from __future__ import annotations
 
 import io
+import json
 import re
+import urllib.error
+import urllib.request
 import zipfile
 from datetime import datetime
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -344,15 +348,49 @@ def _validate(z: zipfile.ZipFile) -> dict:
             "agents": agents, "secrets": secrets}
 
 
-def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
-    """Validate and land a §5.1 archive; returns (automation, summary)."""
+def _open_archive(data: bytes) -> zipfile.ZipFile:
     if len(data) > MAX_ARCHIVE_BYTES:
         raise TransferError("the archive is larger than the 64 MB import limit")
     try:
-        z = zipfile.ZipFile(io.BytesIO(data))
+        return zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile:
         raise TransferError("not a valid .autowright archive") from None
-    with z:
+
+
+def _agent_match(store: Store, g: dict) -> dict | None:
+    """The §5.1 exact-config match: name + harness + mode + model."""
+    model = g.get("model") if g.get("mode", "default") != "default" else None
+    return next((x for x in store.agents
+                 if harness.grant_name(x) == g["name"]
+                 and x.get("harness") == g["harness"]
+                 and x.get("mode", "default") == g.get("mode", "default")
+                 and x.get("model") == model), None)
+
+
+def preview_archive(store: Store, data: bytes) -> dict:
+    """§5.2 preview: validate fully, write nothing, run the §5.1 match rules dry."""
+    with _open_archive(data) as z:
+        arch = _validate(z)
+    with store.lock:
+        secrets = [{"name": s["name"], "desc": s.get("desc") or "",
+                    "exists": any(x["name"] == s["name"] for x in store.secrets)}
+                   for s in arch["secrets"]]
+        agents = [{"name": g["name"], "harness": g["harness"],
+                   "mode": g.get("mode", "default"),
+                   "model": g.get("model") if g.get("mode", "default") != "default" else None,
+                   "reused": _agent_match(store, g) is not None}
+                  for g in arch["agents"]]
+    return {"name": arch["name"], "desc": arch["desc"],
+            "steps": [{"name": s["name"], "desc": s.get("desc", ""),
+                       "agent": bool(s.get("agent"))} for s in arch["steps"]],
+            "params": [{"name": p["name"], "kind": p["kind"]} for p in arch["params"]],
+            "triggers": arch["triggers"], "packages": arch["packages"],
+            "agents": agents, "secrets": secrets}
+
+
+def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
+    """Validate and land a §5.1 archive; returns (automation, summary)."""
+    with _open_archive(data) as z:
         arch = _validate(z)
     with store.lock:
         # Secrets: a missing referenced name becomes a §4.8 placeholder;
@@ -374,11 +412,7 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
         matched: dict[str, dict] = {}   # archive name → local record
         for g in arch["agents"]:
             model = g.get("model") if g.get("mode", "default") != "default" else None
-            local = next((x for x in store.agents
-                          if harness.grant_name(x) == g["name"]
-                          and x.get("harness") == g["harness"]
-                          and x.get("mode", "default") == g.get("mode", "default")
-                          and x.get("model") == model), None)
+            local = _agent_match(store, g)
             if local:
                 matched[g["name"]] = local
                 reused_agents.append(g["name"])
@@ -415,3 +449,100 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                "agentsCreated": created_agents, "agentsReused": reused_agents,
                "packages": arch["packages"]}
     return a, summary
+
+
+# ---------- URL import (§5.2) ----------
+FETCH_TIMEOUT = 30                          # seconds, connect + read
+_FETCH_CHUNK = 256 * 1024
+
+_GH_REPO_RE = re.compile(r"^/([^/]+)/([^/]+?)(?:\.git)?(?:/releases/latest)?$")
+_GH_TAG_RE = re.compile(r"^/([^/]+)/([^/]+)/releases/tag/([^/]+)$")
+
+
+def _headers() -> dict:
+    return {"User-Agent": f"autowright/{__version__}"}
+
+
+def _github_api(path: str):
+    """Unauthenticated GitHub API GET; None on 404, TransferError otherwise."""
+    req = urllib.request.Request(
+        f"https://api.github.com{path}",
+        headers={**_headers(), "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        if e.code in (403, 429):
+            raise TransferError("GitHub rate-limited the lookup — try again in a "
+                                "few minutes, or paste the direct .autowright link") from None
+        raise TransferError(f"GitHub answered {e.code} for {path}") from None
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise TransferError(f"couldn't reach GitHub — {getattr(e, 'reason', e)}") from None
+
+
+def _release_asset(release) -> str | None:
+    for a in (release or {}).get("assets") or []:
+        if isinstance(a, dict) and str(a.get("name", "")).endswith(".autowright"):
+            return a.get("browser_download_url")
+    return None
+
+
+def resolve_url(url: str) -> str:
+    """§5.2: turn a pasted URL into a direct archive URL, or reject with 422."""
+    url = url.strip()
+    parts = urlsplit(url)
+    if parts.scheme != "https":
+        raise TransferError("only https:// URLs can be imported")
+    if parts.path.endswith(".autowright"):
+        return url
+    if parts.hostname != "github.com":
+        raise TransferError("the URL doesn't point to an .autowright archive — paste a "
+                            "direct link to one, or a github.com repository page")
+    path = parts.path.rstrip("/")
+    if m := _GH_TAG_RE.match(path):
+        owner, repo, tag = m.groups()
+        asset = _release_asset(_github_api(f"/repos/{owner}/{repo}/releases/tags/{tag}"))
+        if not asset:
+            raise TransferError(f"release {tag!r} of {owner}/{repo} has no "
+                                ".autowright asset")
+        return asset
+    if not (m := _GH_REPO_RE.match(path)):
+        raise TransferError("unrecognized github.com URL — paste the repository page, a "
+                            "release, or a direct .autowright link")
+    owner, repo = m.groups()
+    if asset := _release_asset(_github_api(f"/repos/{owner}/{repo}/releases/latest")):
+        return asset
+    listing = _github_api(f"/repos/{owner}/{repo}/contents/")
+    files = sorted((f["name"], f.get("download_url"))
+                   for f in (listing if isinstance(listing, list) else [])
+                   if isinstance(f, dict) and f.get("type") == "file"
+                   and str(f.get("name", "")).endswith(".autowright"))
+    if files and files[0][1]:
+        return files[0][1]
+    raise TransferError(f"{owner}/{repo} has no .autowright archive — checked the latest "
+                        "release's assets and the repository root")
+
+
+def fetch_archive(url: str) -> tuple[bytes, str]:
+    """§5.2 download: returns (archive bytes, resolved URL)."""
+    resolved = resolve_url(url)
+    req = urllib.request.Request(resolved, headers=_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as r:
+            # urllib follows redirects — a hop off https would sidestep the
+            # §5.2 HTTPS-only rule, so re-check the landing URL.
+            if urlsplit(r.geturl()).scheme != "https":
+                raise TransferError("the download redirected off https")
+            chunks, total = [], 0
+            while chunk := r.read(_FETCH_CHUNK):
+                total += len(chunk)
+                if total > MAX_ARCHIVE_BYTES:
+                    raise TransferError("the download is larger than the 64 MB import limit")
+                chunks.append(chunk)
+    except urllib.error.HTTPError as e:
+        raise TransferError(f"download failed — the server answered {e.code}") from None
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise TransferError(f"download failed — {getattr(e, 'reason', e)}") from None
+    return b"".join(chunks), resolved

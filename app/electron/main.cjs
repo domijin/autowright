@@ -424,7 +424,7 @@ ipcMain.handle('open-archive', async () => {
     filters: [{ name: 'Autowright automation', extensions: ['autowright'] }],
   })
   if (r.canceled || !r.filePaths[0]) return null
-  return fs.readFileSync(r.filePaths[0])
+  return { name: path.basename(r.filePaths[0]), data: fs.readFileSync(r.filePaths[0]) }
 })
 // §9.3 developer log overlay: tail of each existing log file. Polled by the
 // renderer while the overlay is open — no watchers, nothing runs while closed.

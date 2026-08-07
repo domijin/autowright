@@ -13,7 +13,8 @@ spec files the task touches. Keep the map current when sections are added or mov
 - **Foundations:** §1 product · §2 components (both below, in this file) ·
   §3 packaging & process lifecycle → [spec/packaging.md](spec/packaging.md)
 - **Data:** §4 data model (entities) → [spec/data-model.md](spec/data-model.md) ·
-  §5 storage (files on disk, incl. §5.1 transfer archives) → [spec/storage.md](spec/storage.md)
+  §5 storage (files on disk, incl. §5.1 transfer archives · §5.2 URL import) →
+  [spec/storage.md](spec/storage.md)
 - **Runtime:** §6 engine contract & framework policies (incl. §6.1 step SDK · §6.2 curated
   packages) → [spec/engine.md](spec/engine.md) ·
   §7 execution lifecycle → [spec/execution.md](spec/execution.md) ·
@@ -76,7 +77,8 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   watcher, reply sending), `imessage.py` (chat.db reader + ROWID cursor, typedstream
   `attributedBody` decoder, osascript Messages sender, §19 permission probes),
   drafting, harness adapters,
-  transfer archives (`transfer.py`, §5.1), FastAPI API (`api.py`), launchd service
+  transfer archives (`transfer.py`, §5.1 + §5.2 URL fetch/resolution), FastAPI API (`api.py`),
+  launchd service
   (`service.py`), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
   `autowright/instructions/` holds the §8 prompt texts as markdown (packaged via
   `[tool.setuptools.package-data]`): `framework-instructions.md` (contract preamble) and

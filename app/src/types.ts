@@ -250,6 +250,21 @@ export interface ImportSummary {
   packages: PackageDep[]
 }
 
+// §5.2 import preview — the archive's contents plus the §5.1 match rules run
+// dry (`exists`/`reused`); sourceUrl/resolvedUrl only on URL fetches (§19)
+export interface ImportPreview {
+  name: string
+  desc: string
+  steps: { name: string; desc: string; agent: boolean }[]
+  params: { name: string; kind: string }[]
+  triggers: { kind: 'cron' | 'app_start' | 'discord' | 'imessage'; expr?: string; tz?: string; channel?: string; from?: string; pattern?: string }[]
+  packages: PackageDep[]
+  agents: { name: string; harness: string; mode: string; model: string | null; reused: boolean }[]
+  secrets: { name: string; desc: string; exists: boolean }[]
+  sourceUrl?: string
+  resolvedUrl?: string
+}
+
 export interface Settings {
   login: boolean
   mbIcon: boolean

@@ -470,8 +470,7 @@ def export_auto(auto_id: str, values: int = 1):
                              f"filename*=UTF-8''{quote(fname)}"})
 
 
-@app.post("/automations/import", dependencies=[Depends(auth)])
-async def import_auto(request: Request) -> dict:
+async def _archive_body(request: Request) -> bytes:
     # §19: the archive is the raw request body — no multipart. Stream it in
     # with the transfer cap applied so an oversized upload can't balloon RAM
     # before import_automation ever sees it.
@@ -482,7 +481,10 @@ async def import_auto(request: Request) -> dict:
         if total > transfer.MAX_ARCHIVE_BYTES:
             raise HTTPException(413, "the archive is larger than the 64 MB import limit")
         chunks.append(chunk)
-    data = b"".join(chunks)
+    return b"".join(chunks)
+
+
+def _land_import(data: bytes) -> dict:
     try:
         a, summary = transfer.import_automation(store, data)
     except transfer.TransferError as e:
@@ -493,6 +495,63 @@ async def import_auto(request: Request) -> dict:
         hub.publish("agents.changed")
     hub.publish("auto.changed", autoId=a["id"])
     return {"auto": _auto_json_locked(a), "summary": summary}
+
+
+@app.post("/automations/import", dependencies=[Depends(auth)])
+async def import_auto(request: Request) -> dict:
+    return _land_import(await _archive_body(request))
+
+
+# §5.2 preview tokens: validated archive bytes parked in memory between the
+# preview and confirm calls, so the user imports exactly the bytes reviewed.
+_IMPORT_TTL = 15 * 60
+_IMPORT_SLOTS = 4
+_import_parked: dict[str, tuple[float, bytes]] = {}
+
+
+def _park_archive(data: bytes) -> str:
+    now = time.time()
+    for k in [k for k, (t, _) in _import_parked.items() if now - t > _IMPORT_TTL]:
+        del _import_parked[k]
+    while len(_import_parked) >= _IMPORT_SLOTS:
+        del _import_parked[min(_import_parked, key=lambda k: _import_parked[k][0])]
+    token = pysecrets.token_hex(16)
+    _import_parked[token] = (now, data)
+    return token
+
+
+@app.post("/automations/import/preview", dependencies=[Depends(auth)])
+async def import_preview(request: Request) -> dict:
+    data = await _archive_body(request)
+    try:
+        preview = transfer.preview_archive(store, data)
+    except transfer.TransferError as e:
+        raise HTTPException(422, str(e)) from e
+    return {"token": _park_archive(data), "preview": preview}
+
+
+@app.post("/automations/import/url", dependencies=[Depends(auth)])
+def import_url(body: dict) -> dict:
+    url = (body.get("url") or "").strip()
+    if not url:
+        raise HTTPException(422, "no URL given")
+    try:
+        data, resolved = transfer.fetch_archive(url)
+        preview = transfer.preview_archive(store, data)
+    except transfer.TransferError as e:
+        raise HTTPException(422, str(e)) from e
+    preview["sourceUrl"] = url
+    preview["resolvedUrl"] = resolved
+    return {"token": _park_archive(data), "preview": preview}
+
+
+@app.post("/automations/import/confirm", dependencies=[Depends(auth)])
+def import_confirm(body: dict) -> dict:
+    token = body.get("token")
+    slot = _import_parked.pop(token, None) if isinstance(token, str) else None
+    if slot is None or time.time() - slot[0] > _IMPORT_TTL:
+        raise HTTPException(404, "the import preview expired — fetch it again")
+    return _land_import(slot[1])
 
 
 @app.post("/automations/{auto_id}/restore", dependencies=[Depends(auth)])

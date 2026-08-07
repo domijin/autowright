@@ -108,6 +108,18 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   422 with the reason and writes nothing. Size caps (untrusted input): the upload itself is
   capped at 64 MB (413), one member at 32 MB decompressed and the whole archive at 256 MB
   decompressed (422) — a crafted archive can't balloon into memory
+- `POST /automations/import/preview` — raw archive body exactly like `/automations/import`
+  (same caps) → `{ token, preview }`: validates fully, writes nothing, parks the bytes under
+  the one-time `token` (§5.2 — 15-minute expiry). `preview` is `{ name, desc, steps: [{name,
+  desc, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
+  model, reused}], secrets: [{name, desc, exists}] }` — `reused`/`exists` are the §5.1 match
+  rules run dry
+- `POST /automations/import/url` `{ url }` → same `{ token, preview }` shape plus
+  `preview.sourceUrl` (as given) and `preview.resolvedUrl` (after §5.2 GitHub resolution;
+  equal for direct links). Any §5.2 URL-rule failure — non-HTTPS, unresolvable page, download
+  error, oversized or non-archive download — answers 422 with the reason
+- `POST /automations/import/confirm` `{ token }` → `{ auto, summary }` exactly like
+  `/automations/import`; the token is one-time — spent, expired, or unknown answers 404
 - `POST /automations/{id}/memory/clear` — §6.3 pre-clear snapshot, then empty the §4.1 memory
   directory (backs §9.2 "Clear memory")
 - `POST /automations/{id}/memory/snapshots` `{ name? }` — §6.3 manual snapshot (409 while

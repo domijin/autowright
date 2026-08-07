@@ -772,6 +772,26 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
     assert "triggers imported off" in out
 
 
+
+def test_cmd_automation_import_url_confirms_immediately(capsys):
+    # §5.2/§20: a URL fetches + previews on the backend and confirms right away —
+    # the typed command is the user's explicit action.
+    reply = {"token": "tok1",
+             "preview": {"resolvedUrl": "https://gh/dl/watcher.autowright"},
+             "auto": {"name": "Web", "id": "cafebabe-2"},
+             "summary": {"secretsCreated": [], "secretsExisting": [],
+                         "agentsCreated": [], "agentsReused": [], "packages": []}}
+    c = _RouteClient(reply=reply)
+    _run(c, "automation", "import", "https://github.com/alice/watcher")
+    assert c.calls == [
+        ("POST", "/automations/import/url", {"url": "https://github.com/alice/watcher"}),
+        ("POST", "/automations/import/confirm", {"token": "tok1"}),
+    ]
+    out = capsys.readouterr().out
+    assert "resolved to https://gh/dl/watcher.autowright" in out
+    assert "imported 'Web' [cafebabe]" in out
+
+
 def test_cmd_automation_import_missing_file_exits():
     with pytest.raises(SystemExit) as ei:
         _run(_RouteClient(), "automation", "import", "/nope/missing.autowright")

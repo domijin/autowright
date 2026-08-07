@@ -2,8 +2,9 @@
 import React, { useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import type { Auto, ImportSummary } from '../types'
+import type { Auto, ImportPreview, ImportSummary } from '../types'
 import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
+import { triggerLabel } from '../cron'
 
 // §5.1/§9.1 import summary modal — only the sections that apply render.
 function ImportSummaryModal({ name, autoId, summary, onClose }: {
@@ -69,6 +70,212 @@ function ImportSummaryModal({ name, autoId, summary, onClose }: {
           </div>
         </>
       )}
+    </Modal>
+  )
+}
+
+
+// §5.2/§9.1 import modal — input step (URL field or file picker), then the
+// preview step; Import confirms the parked token and hands off to the summary.
+function ImportModal({ onDone, onClose }: {
+  onDone: (r: { name: string; autoId: string; summary: ImportSummary }) => void
+  onClose: () => void
+}) {
+  const [url, setUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<{ msg: string; src: 'url' | 'file' } | null>(null)
+  const [pv, setPv] = useState<{
+    token: string; preview: ImportPreview; source: string; srcKind: 'url' | 'file'
+  } | null>(null)
+
+  const fetchUrl = async () => {
+    if (!url.trim() || busy) return
+    setBusy(true); setError(null)
+    try {
+      const r = await api.importFromUrl(url.trim())
+      setPv({ token: r.token, preview: r.preview,
+              source: r.preview.resolvedUrl || url.trim(), srcKind: 'url' })
+    } catch (e) { setError({ msg: (e as Error).message, src: 'url' }) }
+    setBusy(false)
+  }
+  const chooseFile = async () => {
+    if (busy) return
+    const f = await window.autowright?.openArchive()
+    if (!f) return
+    setBusy(true); setError(null)
+    try {
+      const r = await api.importPreview(f.data)
+      setPv({ token: r.token, preview: r.preview, source: f.name, srcKind: 'file' })
+    } catch (e) { setError({ msg: (e as Error).message, src: 'file' }) }
+    setBusy(false)
+  }
+
+  const errLine = (msg: string) => (
+    <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--red)', margin: '8px 0 0' }}>
+      {msg}
+    </p>
+  )
+  const nameRow = (n: string, extra?: React.ReactNode) => (
+    <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}>
+      <span style={{ font: `500 12px var(--mono)`, color: 'var(--text)' }}>{n}</span>
+      {extra}
+    </div>
+  )
+  const section = (title: string, body: React.ReactNode) => (
+    <div style={{ marginTop: 16 }}>
+      <Eyebrow style={{ margin: '0 0 7px' }}>{title}</Eyebrow>
+      {body}
+    </div>
+  )
+
+  return (
+    <Modal onClose={onClose} width={460} cardStyle={{ padding: '22px 24px' }}>
+      {(close) => {
+        const confirm = async () => {
+          if (!pv || busy) return
+          setBusy(true); setError(null)
+          try {
+            const r = await api.importConfirm(pv.token)
+            close()
+            onDone({ name: r.auto.name, autoId: r.auto.id, summary: r.summary })
+          } catch (e) { setError({ msg: (e as Error).message, src: pv.srcKind }); setBusy(false) }
+        }
+        return pv === null ? (
+          <>
+            <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text)' }}>
+              Import automation
+            </h2>
+            <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '6px 0 0' }}>
+              Add an automation someone shared — from a link, or a file on this Mac.
+            </p>
+            <Eyebrow style={{ margin: '18px 0 6px' }}>FROM A LINK</Eyebrow>
+            <input
+              className="ad-input"
+              value={url}
+              onChange={(e) => { setUrl(e.target.value); setError(null) }}
+              onKeyDown={(e) => { if (e.key === 'Enter') void fetchUrl() }}
+              autoFocus
+              spellCheck={false}
+              placeholder="https://github.com/… or a direct .autowright link"
+              style={{
+                width: '100%', boxSizing: 'border-box', color: 'var(--text)',
+                font: `400 12.5px var(--mono)`, padding: '9px 11px',
+              }}
+            />
+            {error?.src === 'url' ? errLine(error.msg) : (
+              <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: '7px 0 0' }}>
+                A GitHub repository page, a release, or any https link to an .autowright file.
+              </p>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0' }}>
+              <div style={{ flex: 1, height: 1, background: 'var(--hairline)' }} />
+              <span style={{
+                font: `600 10.5px var(--mono)`, letterSpacing: '.08em', color: 'var(--text-faint)',
+              }}>
+                OR
+              </span>
+              <div style={{ flex: 1, height: 1, background: 'var(--hairline)' }} />
+            </div>
+            <button
+              className="ad-btn-dashed"
+              onClick={() => { void chooseFile() }}
+              disabled={busy}
+              style={{
+                alignSelf: 'stretch', width: '100%', padding: '12px 15px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+              }}
+            >
+              <i className="fa-solid fa-file-import" style={{ fontSize: 12, color: 'var(--text-faint)' }} />
+              Choose an .autowright file on this Mac…
+            </button>
+            {error?.src === 'file' && errLine(error.msg)}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+              <BtnGhost onClick={close} disabled={busy}>Cancel</BtnGhost>
+              <BtnPrimary onClick={() => { void fetchUrl() }} disabled={!url.trim() || busy}>
+                {busy ? 'Fetching…' : 'Import'}
+              </BtnPrimary>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text)' }}>
+              {pv.preview.name}
+            </h2>
+            {pv.preview.desc && (
+              <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                {pv.preview.desc}
+              </p>
+            )}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-inset)',
+              border: '1px solid var(--hairline)', borderRadius: 7, padding: '8px 11px',
+              marginTop: 12,
+            }}>
+              <i
+                className={`fa-solid ${pv.srcKind === 'url' ? 'fa-link' : 'fa-file-zipper'}`}
+                style={{ fontSize: 10, color: 'var(--text-faint)' }}
+              />
+              <span style={{
+                font: `500 11.5px var(--mono)`, color: 'var(--text-muted)', minWidth: 0,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {pv.source}
+              </span>
+            </div>
+            {pv.preview.triggers.length > 0 && section('TRIGGERS', (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {pv.preview.triggers.map((t, i) => (
+                  <span key={i} style={{
+                    fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
+                    color: 'var(--text-muted)', background: 'var(--hairline-dim)',
+                    borderRadius: 6, padding: '3px 8px',
+                  }}>
+                    {triggerLabel(t)}
+                  </span>
+                ))}
+              </div>
+            ))}
+            {section('STEPS', pv.preview.steps.map((s, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '3px 0' }}>
+                <span style={{
+                  font: `600 10.5px var(--mono)`, color: 'var(--text-faint)',
+                  width: 14, textAlign: 'right', flexShrink: 0,
+                }}>
+                  {i + 1}
+                </span>
+                <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)' }}>{s.name}</span>
+                {s.agent && <MiniBadge c="var(--accent)" bg="var(--accent-bg)">AGENT</MiniBadge>}
+              </div>
+            )))}
+            {pv.preview.secrets.length > 0 && section('SECRETS', (
+              pv.preview.secrets.map((s) => nameRow(s.name, s.exists
+                ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">ON THIS MAC</MiniBadge>
+                : <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>))
+            ))}
+            {pv.preview.agents.length > 0 && section('AGENTS', (
+              pv.preview.agents.map((g) => nameRow(g.name, g.reused
+                ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">REUSED</MiniBadge> : undefined))
+            ))}
+            <div style={{ borderTop: '1px solid var(--hairline)', marginTop: 18, paddingTop: 12 }}>
+              {pv.preview.packages.length > 0 && (
+                <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)', margin: '0 0 4px' }}>
+                  {pv.preview.packages.length} package{pv.preview.packages.length === 1 ? '' : 's'} install on the first execution.
+                </p>
+              )}
+              <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: 0 }}>
+                Its triggers arrive off — review the scripts in the editor before enabling them.
+              </p>
+            </div>
+            {error && errLine(error.msg)}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+              <BtnGhost onClick={() => { setPv(null); setError(null) }} disabled={busy}>Back</BtnGhost>
+              <BtnPrimary onClick={() => { void confirm() }} disabled={busy}>
+                {busy ? 'Importing…' : 'Import'}
+              </BtnPrimary>
+            </div>
+          </>
+        )
+      }}
     </Modal>
   )
 }
@@ -153,10 +360,10 @@ export default function AutomationsList() {
   const autos = useStore((s) => s.autos)
   const setSurface = useStore((s) => s.setSurface)
   const pendingDraft = useStore((s) => s.pendingDraft)
-  const showToast = useStore((s) => s.showToast)
   const refresh = useStore((s) => s.refresh)
   const [confirmFresh, setConfirmFresh] = useState(false)
-  const [imported, setImported] = useState<{ name: string; autoId: string; summary: import('../types').ImportSummary } | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [imported, setImported] = useState<{ name: string; autoId: string; summary: ImportSummary } | null>(null)
 
   // §4.4/§9.1: with a kept pending draft, New automation starts fresh —
   // confirm, delete the slot, then open the create flow empty.
@@ -166,15 +373,11 @@ export default function AutomationsList() {
     setSurface('create', 'app')
   }
 
-  // §5.1/§9.1 import: native open dialog → raw archive bytes → the backend.
-  const doImport = async () => {
-    const data = await window.autowright?.openArchive()
-    if (!data) return
-    try {
-      const r = await api.importAuto(data)
-      await refresh()
-      setImported({ name: r.auto.name, autoId: r.auto.id, summary: r.summary })
-    } catch (e) { showToast((e as Error).message) }
+  // §5.2/§9.1 import: the modal previews (URL or file), confirm lands it.
+  const importDone = async (r: { name: string; autoId: string; summary: ImportSummary }) => {
+    setImportOpen(false)
+    await refresh()
+    setImported(r)
   }
 
   return (
@@ -182,7 +385,7 @@ export default function AutomationsList() {
       <PageTitle
         right={(
           <HeaderActions>
-            <BtnGhost onClick={() => { void doImport() }}>
+            <BtnGhost onClick={() => setImportOpen(true)}>
               Import…
             </BtnGhost>
             {pendingDraft && (
@@ -200,6 +403,12 @@ export default function AutomationsList() {
       >
         Automations
       </PageTitle>
+      {importOpen && (
+        <ImportModal
+          onDone={(r) => { void importDone(r) }}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
       {imported && (
         <ImportSummaryModal
           name={imported.name}

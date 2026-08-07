@@ -531,12 +531,21 @@ def cmd_automation_export(c: Client, args) -> None:
 
 
 def cmd_automation_import(c: Client, args) -> None:
-    try:
-        with open(args.path, "rb") as f:
-            data = f.read()
-    except OSError as e:
-        sys.exit(str(e))
-    r = json.loads(c.req_raw("POST", "/automations/import", data).decode() or "{}")
+    if args.path.startswith(("http://", "https://")):
+        # §5.2: fetch + preview on the backend, confirm immediately — the typed
+        # command is the user's explicit action (http:// gets the backend's 422).
+        pr = c.req("POST", "/automations/import/url", {"url": args.path})
+        resolved = pr.get("preview", {}).get("resolvedUrl")
+        if resolved and resolved != args.path.strip():
+            print(f"resolved to {resolved}")
+        r = c.req("POST", "/automations/import/confirm", {"token": pr.get("token")})
+    else:
+        try:
+            with open(args.path, "rb") as f:
+                data = f.read()
+        except OSError as e:
+            sys.exit(str(e))
+        r = json.loads(c.req_raw("POST", "/automations/import", data).decode() or "{}")
     s = r.get("summary", {})
     print(f"imported {r.get('auto', {}).get('name', '?')!r} [{r.get('auto', {}).get('id', '')[:8]}]")
     if s.get("secretsCreated"):
@@ -1038,8 +1047,10 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("automation")
     p.add_argument("path", nargs="?", help="output file (default: <name>.autowright)")
     p.add_argument("--no-values", action="store_true", help="leave your parameter values out")
-    p = _sub(ag, "import", cmd_automation_import, "import a .autowright file")
-    p.add_argument("path")
+    p = _sub(ag, "import", cmd_automation_import, "import a .autowright file or URL")
+    p.add_argument("path", metavar="path-or-url",
+                   help="a .autowright file, a direct https link to one, "
+                        "or a github.com repository/release page")
 
     pg = _sub(ag, "param", None, "parameter values").add_subparsers(dest="verb2", required=True)
     p = _sub(pg, "list", cmd_param_list, "list parameters and their values", json_flag=True)

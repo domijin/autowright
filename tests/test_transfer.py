@@ -370,3 +370,119 @@ def test_format_version_and_duplicate_app_start_rejected(store):
     with pytest.raises(transfer.TransferError, match="more than one app_start"):
         transfer.import_automation(store, _rezip(data, dupe))
     assert len(store.autos) == before
+
+
+# ---------- §5.2 URL import ----------
+
+def test_resolve_url_rules():
+    # https only
+    with pytest.raises(transfer.TransferError, match="https"):
+        transfer.resolve_url("http://example.com/a.autowright")
+    # a direct .autowright link passes through, any host
+    url = "https://example.com/dl/manga.autowright"
+    assert transfer.resolve_url(url) == url
+    # a non-github page with no archive suffix is rejected
+    with pytest.raises(transfer.TransferError, match="direct link"):
+        transfer.resolve_url("https://example.com/some/page")
+    # an unrecognized github path is rejected
+    with pytest.raises(transfer.TransferError, match="unrecognized github.com"):
+        transfer.resolve_url("https://github.com/alice/repo/issues/3")
+
+
+def test_resolve_github_release_tag_and_root_fallback(monkeypatch):
+    def fake_api(path):
+        table = {
+            "/repos/alice/watcher/releases/latest": {"assets": [
+                {"name": "notes.zip", "browser_download_url": "https://x/zip"},
+                {"name": "watcher.autowright", "browser_download_url": "https://x/w"}]},
+            "/repos/alice/watcher/releases/tags/v2": {"assets": [
+                {"name": "watcher.autowright", "browser_download_url": "https://x/v2"}]},
+            "/repos/alice/norel/releases/latest": None,
+            "/repos/alice/norel/contents/": [
+                {"type": "file", "name": "b.autowright", "download_url": "https://x/b"},
+                {"type": "file", "name": "a.autowright", "download_url": "https://x/a"},
+                {"type": "dir", "name": "c.autowright"}],
+            "/repos/alice/empty/releases/latest": None,
+            "/repos/alice/empty/contents/": [],
+        }
+        assert path in table, path
+        return table[path]
+
+    monkeypatch.setattr(transfer, "_github_api", fake_api)
+    # repo page and /releases/latest → the release's .autowright asset
+    assert transfer.resolve_url("https://github.com/alice/watcher") == "https://x/w"
+    assert transfer.resolve_url("https://github.com/alice/watcher/releases/latest") == "https://x/w"
+    # a tagged release resolves against that release's assets
+    assert transfer.resolve_url("https://github.com/alice/watcher/releases/tag/v2") == "https://x/v2"
+    # no release with an asset → repo root, first .autowright alphabetically
+    assert transfer.resolve_url("https://github.com/alice/norel/") == "https://x/a"
+    with pytest.raises(transfer.TransferError, match="no .autowright archive"):
+        transfer.resolve_url("https://github.com/alice/empty")
+
+
+class _FakeResp:
+    def __init__(self, data, url="https://x/a.autowright"):
+        self._buf, self._url = io.BytesIO(data), url
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self, n=-1):
+        return self._buf.read(n)
+
+    def geturl(self):
+        return self._url
+
+
+def test_fetch_archive_download_cap_and_redirect_guard(monkeypatch):
+    monkeypatch.setattr(transfer.urllib.request, "urlopen",
+                        lambda req, timeout: _FakeResp(b"DATA"))
+    data, resolved = transfer.fetch_archive("https://x/a.autowright")
+    assert data == b"DATA" and resolved == "https://x/a.autowright"
+
+    # the byte cap aborts mid-download
+    monkeypatch.setattr(transfer, "MAX_ARCHIVE_BYTES", 4)
+    monkeypatch.setattr(transfer.urllib.request, "urlopen",
+                        lambda req, timeout: _FakeResp(b"toolarge"))
+    with pytest.raises(transfer.TransferError, match="64 MB import limit"):
+        transfer.fetch_archive("https://x/a.autowright")
+
+    # a redirect off https is refused even though the pasted URL was https
+    monkeypatch.setattr(transfer, "MAX_ARCHIVE_BYTES", 64 * 1024 * 1024)
+    monkeypatch.setattr(transfer.urllib.request, "urlopen",
+                        lambda req, timeout: _FakeResp(b"D", url="http://x/a.autowright"))
+    with pytest.raises(transfer.TransferError, match="redirected off https"):
+        transfer.fetch_archive("https://x/a.autowright")
+
+
+def test_preview_archive_dry_match(store, monkeypatch, tmp_path_factory):
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+
+    # Same machine: every secret exists, every agent config matches — dry run,
+    # nothing written.
+    before = (len(store.autos), len(store.secrets), len(store.agents))
+    p = transfer.preview_archive(store, data)
+    assert (len(store.autos), len(store.secrets), len(store.agents)) == before
+    assert p["name"] == "Watcher" and p["desc"] == "Watches things"
+    assert [s["name"] for s in p["steps"]] == ["Fetch", "Summarize"]
+    assert [s["agent"] for s in p["steps"]] == [False, True]
+    assert p["params"] == [{"name": "count", "kind": "number"}]
+    assert {t["kind"] for t in p["triggers"]} == {"cron", "app_start", "discord", "imessage"}
+    assert all(s["exists"] for s in p["secrets"])
+    assert all(g["reused"] for g in p["agents"])
+    assert p["packages"] == [{"pip": "pandas", "import": "pandas"}]
+
+    # Fresh machine: nothing exists yet.
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    p2 = transfer.preview_archive(s2, data)
+    assert not any(s["exists"] for s in p2["secrets"])
+    assert not any(g["reused"] for g in p2["agents"])
+    assert len(s2.autos) == 0 and not s2.secrets and not s2.agents
+
+    # A broken archive rejects with the §5.1 message.
+    with pytest.raises(transfer.TransferError, match="not a valid .autowright archive"):
+        transfer.preview_archive(store, b"junk")

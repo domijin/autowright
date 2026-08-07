@@ -89,10 +89,31 @@ to the left of the primary **New automation** button — which then starts fresh
 confirm ("Start a new automation? — Your unsaved draft will be discarded. This can't be
 undone.") deletes the slot (`DELETE /draft`) before opening the create flow. Without a
 pending draft, the single New automation button opens the create flow directly. Left of
-these sits a ghost **Import…** button (always present): a native open dialog (main-process
-IPC, filtered to `.autowright`) reads the file and POSTs it to §19 `/automations/import`;
-a 422 surfaces as a toast with the backend's reason. Success opens the **import summary
-modal**: title "Imported "`<name>`"", then only the sections that apply — "Secrets that
+these sits a ghost **Import…** button (always present): it opens the **import modal**
+(§5.2 two-phase import). Input step: title "Import automation" over a one-line muted intro
+("Add an automation someone shared — from a link, or a file on this Mac."), an
+eyebrow-labeled URL field (FROM A LINK; mono text, placeholder
+`https://github.com/… or a direct .autowright link`) with a faint caption underneath
+("A GitHub repository page, a release, or any https link to an .autowright file."), a
+centered hairline OR divider, and a full-width dashed choose-file button (`.ad-btn-dashed`,
+file-import icon, "Choose an .autowright file on this Mac…" — native open dialog,
+main-process IPC, filtered to `.autowright`). Footer: quiet Cancel / accent **Import**
+(disabled while the field is empty; Enter submits). The URL POSTs to §19
+`/automations/import/url`; a chosen file's bytes to `/automations/import/preview`; while in
+flight the buttons disable. A 422 shows inline in red — under the field for URL failures,
+under the dashed button for file failures — never as a toast. Success swaps the modal to
+the **preview step**: the automation's name + desc, a source row (inset box — link or
+file-zipper icon, mono text: the resolved URL, or the chosen file's name), then only the
+sections that apply — TRIGGERS as §4.3 `triggerLabel` chips, STEPS as numbered rows (faint
+mono index, step name, accent AGENT mini-badge where `agent`), SECRETS (amber NOT SET
+mini-badge when `exists` is false — it will be created as a placeholder; gray ON THIS MAC
+when true), AGENTS (gray REUSED / plain when new) — and a hairline-divided footer note:
+the packages count when any, plus "Its triggers arrive off — review the scripts in the
+editor before enabling them." Footer: quiet **Back** (returns to the input step) / accent
+**Import** — POSTs `/automations/import/confirm` with the preview's token, closes the
+modal, and opens the **import summary modal** (a 404 — expired token — surfaces inline on
+the preview step).
+The summary modal: title "Imported "`<name>`"", then only the sections that apply — "Secrets that
 need values" (one row per created placeholder: name + amber Not set tag — "add values on
 the Secrets page"), "Already on this Mac — not granted" (pre-existing secrets/agents the
 automation references, §5.1: "review and grant them on the edit page"), "Agents added"

@@ -1163,7 +1163,7 @@ def test_data_path_switch_refused_while_queue_nonempty(client, tmp_path):
     assert "queued" in r.json()["detail"]
 
 
-def test_finish_queued_reports_promotion_loss():
+def test_finish_queued_reports_promotion_loss(client):
     """§6/§19 cancel race: finish_queued must say whether it won — a promoted
     entry answers False so cancel retries on the live record."""
     from autowright.scheduler import finish_queued

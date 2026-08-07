@@ -4,10 +4,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 
 ## 11. Create / edit flow
 
-Entry: New button, onboarding step 3, Edit on a detail page, or a §7/§9.2 **Fix with AI**
-button on a failed execution. If no agents exist (outside
-onboarding), redirect to Agents with toast "No agent yet — add one here first. Creating and
-editing automations needs an AI."
+Entry: New button, Edit on a detail page, or a §7/§9.2 **Fix with AI**
+button on a failed execution. If no agents exist, redirect to Agents with toast "No agent
+yet — add one here first. Creating and editing automations needs an AI."
 
 **Editor layout — chat pane + review grid.** The editor is **one screen from birth to
 save**: there is no separate Ask screen and no building screen. A **floating chat panel**
@@ -16,10 +15,10 @@ vertical rhythm: `clamp(340px, 26vw, 420px)` wide (420 px on wide windows, shrin
 the window so the review grid's two columns keep room on small ones), top edge at 46 px and
 bottom edge 12 px above the window
 bottom (sticky — it never scrolls with the review pane), 12 px radius on all four corners,
-card background with a 1 px `--border-card` border, own scroll, and a 12 px gap on its left —
-from the rail's 58 px reserve in the shell, from the window edge in onboarding (one geometry
-in both modes: the 46 px top clears the traffic lights, so the panel needs no header padding
-and no `no-drag` handling — it starts below the §9 drag strips, like the rail). The review
+card background with a 1 px `--border-card` border, own scroll, and a 12 px gap on its left
+from the rail's 58 px reserve (the 46 px top clears the traffic lights, so the panel needs no
+header padding and no `no-drag` handling — it starts below the §9 drag strips, like the
+rail). The review
 pane's content background shows around the panel. Beside it the **review pane** holds the
 Review grid (1800 px max-width, below) and scrolls independently. One gap value between
 content columns: the chat pane → grid gap equals the grid's own 18 px column gap (the

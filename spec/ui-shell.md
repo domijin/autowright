@@ -503,11 +503,13 @@ change before you accept and execute it. You are responsible for what your
 automations do; the author accepts no liability for any damage or loss they
 cause."
 
-## 10. Onboarding (3 steps, step label top-right in mono)
+## 10. Onboarding (2 steps, step label top-right in mono)
 
 Onboarding shows whenever `ad-onboarded` (§15) is unset — existing agents or automations do NOT
 bypass it: step 1 always renders. When prior data exists (any agent or any automation), step 1's
-Continue goes straight to the app shell instead of step 2.
+Continue goes straight to the app shell instead of step 2. The step label ("Step 1 of 2" /
+"Step 2 of 2") renders only when no prior data exists — with prior data step 1 is the only
+screen, so no counter shows.
 
 **Step 1 — Welcome.** Logo, headline "Recurring jobs, done exactly the same way every time.",
 then a live self-check card "Getting Autowright ready" with three steps (Checking your settings,
@@ -606,7 +608,9 @@ real sign-in checks; no simulation in any mode:
   at any piece shows red "Install failed — `<first error line>`" with "Try again", which
   resumes at the still-missing pieces.
 
-Clicking a card's Continue is what picks the provider: it becomes the default agent, all
+Clicking a card's Continue is what picks the provider and completes onboarding — it lands in
+the app shell, where the empty Automations list (§9.1) invites the first automation; there is
+no third step. The picked provider becomes the default agent, all
 connected/ready cards are committed as agent records — a harness card as
 `{ name: null, harness, mode: default, model: null }`, the Free local AI card as
 `{ name: null, harness: OpenCode, mode: ollama, model: <the card's model> }` — the found
@@ -617,13 +621,8 @@ automations get the chosen default agent. While committing, all Continue buttons
 available (commits any connected providers, goes to the app). Persistent footer: the two
 green-dot promises (§1).
 
-**Step 3 — First automation.** The Create flow (§11) labeled "Step 3 of 3", skippable.
-
-Onboarding state persists across steps: Back from step 3 returns to step 2 with detection
-results, connect states, and the chosen provider intact (no re-search). Installs and model
-downloads run in the backend, so an in-flight install survives the step-3 remount — on return
-the UI reattaches via §19 `GET /agents/install/{id}` and the live `harness.install` /
-`ollama.pull` streams; the model download "finishes in the background" as promised. Installs
+Installs and model downloads run in the backend, so an in-flight model download keeps going
+after onboarding hands off to the app — it "finishes in the background" as promised. Installs
 never need admin rights (§19 channels are all user-writable), so there is no sudo or
 permission-declined state anywhere in the flow.
 

@@ -21,7 +21,7 @@ describe('autowright e2e', () => {
     const { page } = handle
 
     // Step 1: welcome + live self-check.
-    await page.getByText('Step 1 of 3').waitFor({ timeout: 20_000 })
+    await page.getByText('Step 1 of 2').waitFor({ timeout: 20_000 })
     await page.getByText('Recurring jobs, done exactly the same way every time.').waitFor()
     await page.getByText('Getting Autowright ready').waitFor()
     // Self-check finishes (~4 s of staged timers + real connected gate).
@@ -31,7 +31,7 @@ describe('autowright e2e', () => {
 
     // Advance to step 2: real agent detection.
     await toConnect.click()
-    await page.getByText('Step 2 of 3').waitFor({ timeout: 10_000 })
+    await page.getByText('Step 2 of 2').waitFor({ timeout: 10_000 })
     await page.getByRole('heading', { name: 'Connect your AI' }).waitFor()
     // Detection spinner holds ≥1.9 s, then cards land.
     await page.getByText('FOUND ON THIS MAC').waitFor({ timeout: 20_000 })
@@ -54,7 +54,7 @@ describe('autowright e2e', () => {
     // Straight to the app shell: the seeded row is on the automations list.
     await page.getByText('E2E automation').waitFor({ timeout: 20_000 })
     await page.getByRole('heading', { name: 'Automations' }).waitFor()
-    expect(await page.getByText('Step 1 of 3').count()).toBe(0)
+    expect(await page.getByText('Step 1 of 2').count()).toBe(0)
     await shot(page, 'automations-list.png')
 
     // Into the detail page, then execute for real.

@@ -911,7 +911,6 @@ export default function CreateFlow() {
   const store = useStore()
   const { agents, secrets, autos, execs, execFull, createFrom, autoId, go, setSurface, showToast, loadAuto, test, beginTest, clearTest } = store
   const isEdit = createFrom === 'edit'
-  const isOnboard = createFrom === 'onboard'
   const auto = isEdit ? autos.find((a) => a.id === autoId) ?? null : null
 
   const [agentId, setAgentId] = useState<string | null>(() =>
@@ -1083,7 +1082,7 @@ export default function CreateFlow() {
 
   // ---- guards + edit-mode seeding ----
   useEffect(() => {
-    if (!isEdit && !isOnboard && agents.length === 0) {
+    if (!isEdit && agents.length === 0) {
       setSurface('app')
       go('agents')
       showToast('No agent yet — add one here first. Creating and editing automations needs an AI.', 3600)
@@ -1842,7 +1841,6 @@ export default function CreateFlow() {
       draftSettled.current = true
       showToast('Draft kept — Resume draft picks it up anytime.', 3400)
     }
-    if (isOnboard) { setSurface('onboard'); return }
     setSurface('app')
     go('automations')
   }
@@ -1890,7 +1888,6 @@ export default function CreateFlow() {
         // The detail page guards against unknown ids — make sure the store
         // knows the new automation before navigating (WS refresh may lag).
         await useStore.getState().loadAuto(created.id)
-        if (isOnboard) localStorage.setItem('ad-onboarded', '1')
         setSurface('app')
         go('automation', { autoId: created.id })
         showToast('Created — nothing has executed yet. Press Execute now when you’re ready.', 3600)
@@ -1899,12 +1896,6 @@ export default function CreateFlow() {
       draftSettled.current = false
       showToast((e as Error).message)
     }
-  }
-
-  const skipOnboard = () => {
-    localStorage.setItem('ad-onboarded', '1')
-    setSurface('app')
-    go('automations')
   }
 
   // ---- test (§11: create and edit mode) — executes the draft's REAL steps ----
@@ -2066,7 +2057,7 @@ export default function CreateFlow() {
   }, [testExec?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------- render ----------
-  const backLabel = isEdit ? (auto?.name ?? 'Automation') : isOnboard ? 'Back' : 'Automations'
+  const backLabel = isEdit ? (auto?.name ?? 'Automation') : 'Automations'
   // §11 create empty state: no spec, no steps, nothing drafting — the chat
   // pane shows the headline + example chips and the first message creates.
   const isCreateEmpty = !isEdit && !!rev && rev.spec.length === 0 && rev.steps.length === 0 && !drafting
@@ -2094,7 +2085,6 @@ export default function CreateFlow() {
   return (
     <div style={{
       minHeight: '100%', display: 'flex', flexDirection: 'column',
-      background: isOnboard ? 'radial-gradient(1000px 480px at 50% -12%, oklch(0.74 0.155 52 / .05), transparent 70%), var(--bg-window)' : 'transparent',
     }}>
       <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'flex-start' }}>
         {/* ===== chat panel (§11) — floating card matching the §9 rail rhythm:
@@ -2147,11 +2137,6 @@ export default function CreateFlow() {
                       </button>
                     ))}
                   </div>
-                  {isOnboard && (
-                    <button className="ad-btn-text dim" onClick={skipOnboard}>
-                      Skip for now
-                    </button>
-                  )}
                   <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faintest)', marginTop: 14 }}>
                     Your AI writes the steps — Autowright still executes everything on this Mac.
                   </div>
@@ -2350,7 +2335,6 @@ export default function CreateFlow() {
               <button className="ad-btn-text" onClick={() => void close()}>
                 <i className="fa-solid fa-chevron-left" style={{ fontSize: 10 }} /> {backLabel}
               </button>
-              {isOnboard && <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>Step 3 of 3</span>}
             </div>
           </div>
           {!rev && (
@@ -3508,18 +3492,6 @@ export default function CreateFlow() {
           )}
         </div>
       </div>
-
-      {/* onboarding trust footer */}
-      {isOnboard && (
-        <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '13px 28px', display: 'flex', justifyContent: 'center', gap: 26, flexWrap: 'wrap' }}>
-          {['Your automations execute only on this Mac', 'Passwords never leave your Keychain'].map((t) => (
-            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)' }} />
-              <span style={{ font: "400 12px var(--sans)", color: 'var(--text-muted)' }}>{t}</span>
-            </div>
-          ))}
-        </div>
-      )}
 
       {confirmSpecCancel && (
         <ConfirmModal

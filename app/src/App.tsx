@@ -164,7 +164,6 @@ export default function App() {
   const connected = useStore((s) => s.connected)
   const surface = useStore((s) => s.surface)
   const toast = useStore((s) => s.toast)
-  const createFrom = useStore((s) => s.createFrom)
   const boot = useStore((s) => s.boot)
   const disconnect = useStore((s) => s.disconnect)
 
@@ -177,17 +176,14 @@ export default function App() {
   if (surface === 'menubar') return <MenuBarPanel />
   if (surface === 'onboard') return <><Onboarding /><Toast msg={toast} /><DevLogOverlay /></>
 
-  const inShell = surface === 'app' || (surface === 'create' && createFrom !== 'onboard')
   return (
     <div style={{ height: '100vh', display: 'flex', background: 'var(--bg-window)' }}>
       <div className="ad-drag" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 18, zIndex: 100, pointerEvents: 'none' }} />
       {/* §9: layout reserves a constant 58px for the rail; the fixed panel inside
           Sidebar overlays the content pane when hover-expanded — content never reflows. */}
-      {inShell && (
-        <div style={{ width: 58, flex: 'none' }}>
-          <Sidebar />
-        </div>
-      )}
+      <div style={{ width: 58, flex: 'none' }}>
+        <Sidebar />
+      </div>
       <ScrollArea wrapStyle={{ flex: 1, minWidth: 0 }} style={{ background: 'var(--bg-content)', position: 'relative' }}>
         {/* Pure OS drag surface (§9): pointer-transparent so overlays beneath it
             stay DOM-clickable; must never hold children. */}

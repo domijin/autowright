@@ -1,6 +1,6 @@
 // Onboarding surface (SPEC §10): step 1 (welcome + live self-check) and
-// step 2 (connect your AI). Step 3 is the Create flow — on entry we mark
-// onboarding done and hand off via setSurface('create', 'onboard').
+// step 2 (connect your AI). A card's Continue commits the agents and lands
+// in the app shell — onboarding is done.
 //
 // Step 2 is fully real (§10/§19): detection reports installed + sign-in state
 // for the four harnesses, installs run in the backend (`harness.install` WS
@@ -88,23 +88,14 @@ interface Ob {
   sugOpen: boolean
 }
 
-// When the Create flow (step 3) navigates back into onboarding, resume at
-// step 2 instead of repeating the welcome self-check.
-let resumeAtConnect = false
-// Back from step 3 lands on step 2 with detection results, card states, and
-// the chosen provider intact. Persist the last state across unmount; installs
-// and downloads live in the backend, so the resume effect below reattaches.
-let savedOb: Ob | null = null
-
 const freshCard = (): Card => ({
   phase: 'idle', pct: null, line: '', pullPct: 0, method: null, error: null, notReady: null,
   queue: [], qi: 0,
 })
 
 function freshOb(): Ob {
-  if (resumeAtConnect && savedOb) return { ...savedOb, phase: 'connect', committing: false }
   return {
-    phase: resumeAtConnect ? 'connect' : 'welcome',
+    phase: 'welcome',
     smStarted: false,
     smSteps: [
       { name: 'Checking your settings', status: 'pending', dur: '' },
@@ -150,7 +141,6 @@ export default function Onboarding() {
   useEffect(() => () => {
     timers.current.forEach((id) => clearTimeout(id))
     ivals.current.forEach((id) => clearInterval(id))
-    savedOb = obRef.current
   }, [])
 
   // ----- step 1: live self-check (prototype runSample timings) -----
@@ -415,40 +405,6 @@ export default function Onboarding() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ollamaPull])
 
-  // ----- resume in-flight machines after remount (back from step 3) -----
-  // Installs and downloads run in the backend; reattach via the §19 status
-  // snapshot and re-arm the polls that died with the previous mount.
-  useEffect(() => {
-    for (const p of ob.provs) {
-      const c = ob.cards[p.id]
-      if (!c) continue
-      if (c.phase === 'installing') {
-        void api.installStatus(p.id).then((s) => {
-          if (card(p.id).phase !== 'installing') return
-          if (s.state === 'done') afterInstall(p.id)
-          else if (s.state === 'failed') setCard(p.id, { phase: 'failed', error: s.error ?? 'install failed' })
-          else if (s.state === 'idle') setCard(p.id, { phase: 'failed', error: 'the install didn’t start' })
-          // running → the live harness.install stream keeps feeding us
-        }).catch(() => { /* backend hiccup — the WS stream still lands */ })
-      } else if (c.phase === 'signin') pollSignin(p)
-      else if (c.phase === 'checking') startCheck(p)
-    }
-    const lc = ob.cards[LOCAL_ID]
-    if (lc) {
-      if (lc.phase === 'installing') {
-        const piece = lc.queue[lc.qi]
-        void api.installStatus(piece).then((s) => {
-          if (card(LOCAL_ID).phase !== 'installing') return
-          if (s.state === 'done') { markLocalPiece(piece); runLocalPiece(lc.queue, lc.qi + 1) }
-          else if (s.state === 'failed') setCard(LOCAL_ID, { phase: 'failed', error: s.error ?? 'install failed' })
-          else if (s.state === 'idle') setCard(LOCAL_ID, { phase: 'failed', error: 'the install didn’t start' })
-        }).catch(() => { /* backend hiccup — the WS stream still lands */ })
-      } else if (lc.phase === 'pulling') pollPull()
-      else if (lc.phase === 'checking') startLocalCheck()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // ----- derived (prototype obVals) -----
   const agentPre = agents.length > 0
   const autoPre = autos.length > 0
@@ -507,12 +463,9 @@ export default function Onboarding() {
         return
       }
       // The store only hears about the new agents via the async agents.changed
-      // refresh — pull state now so step 3 mounts seeing the picked default.
+      // refresh — pull state now so the app mounts seeing the picked default.
       await useStore.getState().refresh().catch(() => { /* WS refresh still lands */ })
-      // Step 3 = the Create flow, labelled by that page. Mark onboarding done first.
-      localStorage.setItem('ad-onboarded', '1')
-      resumeAtConnect = true
-      setSurface('create', 'onboard')
+      setSurface('app')
     })()
   }
   const obSkip = () => {
@@ -533,9 +486,12 @@ export default function Onboarding() {
       background: 'radial-gradient(1000px 480px at 50% -12%, oklch(0.74 0.155 52 / .05), transparent 70%)',
     }}>
       <div className="ad-drag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18, padding: '13px 28px', flex: 'none' }}>
-        <div style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)' }}>
-          {ob.phase === 'welcome' ? 'Step 1 of 3' : 'Step 2 of 3'}
-        </div>
+        {/* §10: with prior data step 1 is the only screen — no counter. */}
+        {!pre && (
+          <div style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)' }}>
+            {ob.phase === 'welcome' ? 'Step 1 of 2' : 'Step 2 of 2'}
+          </div>
+        )}
       </div>
 
       <ScrollArea wrapStyle={{ flex: 1, minHeight: 0 }}>

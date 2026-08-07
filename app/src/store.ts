@@ -8,7 +8,7 @@ export type Page =
   | 'automations' | 'automation' | 'executions' | 'execution'
   | 'agents' | 'agentNew' | 'secrets' | 'settings' | 'about'
 
-type CreateFrom = 'app' | 'onboard' | 'edit' | null
+type CreateFrom = 'app' | 'edit' | null
 
 // §12 agent status badge — cached for the app session so the Agents page
 // doesn't re-check on every visit.

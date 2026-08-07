@@ -106,20 +106,23 @@ applies unchanged; the chat pane never collapses.
     permissions and the final commit stay user clicks;
   - a **blocked** job appends a blockers entry (source: chat).
 
-  **Footer action block — the page's only live job surface.** While any §8 job is in
-  flight (create, chat, or sync, however started), the footer swaps the input for the
-  action block: a spinner, the job's stage label ("Working on the request…" / "Writing the
-  spec…" / "Installing the packages…" / "Generating the steps…" / "`<agent>` is rewriting
-  the steps from your spec…"), a compact **activity feed** beneath it — up to three of the
-  newest §8 `events` lines as dim history (oldest first, single-line ellipsis) above the
-  live §8 `detail` line; when `detail` extends the newest event (same message, growing
-  ` · N lines` count) that event shows only as the live line, never twice — and a ghost
-  **Cancel** anchored to the block's bottom edge, so it holds still while feed lines
-  accumulate and the block grows upward
+  **Composer progress block — the page's only live job surface.** While any §8 job is in
+  flight (create, chat, or sync, however started), the composer keeps its two-row shape —
+  the textarea stays visible but disabled, the agent picker stays in place — and gains a
+  **progress block** above the textarea: a spinner, the job's stage label ("Working on the
+  request…" / "Writing the spec…" / "Installing the packages…" / "Generating the steps…" /
+  "`<agent>` is rewriting the steps from your spec…"), and a compact **activity feed**
+  beneath it — up to three of the newest §8 `events` lines as dim history (oldest first,
+  single-line ellipsis) above the live §8 `detail` line; when `detail` extends the newest
+  event (same message, growing ` · N lines` count) that event shows only as the live line,
+  never twice. In the toolbar row the send button is replaced by a **Cancel** button at
+  the same pill height, so the row holds still while feed lines accumulate and the block
+  grows upward
   (`DELETE /drafts/{jobId}`; cancelling a chat/create job returns the request text to the
   input for editing, sync-cancel semantics under Dirty gating below). Pinned like the
-  input, so it never scrolls away with the thread; it reverts to the input when the job
-  settles, and its outcome lands as ordinary thread entries. Every other place on the page
+  input, so it never scrolls away with the thread; the progress block disappears and
+  Cancel reverts to Send when the job settles, and the outcome lands as ordinary thread
+  entries. Every other place on the page
   shows only static text while a job runs — no second spinner, live `detail` line, or
   Cancel anywhere. The draft **test** is not a §8 job and never appears here: while a test
   is executing the input stays, disabled with the hint "Wait for the test to finish." (a
@@ -136,7 +139,7 @@ applies unchanged; the chat pane never collapses.
   answers here and rewrites the spec when you ask for changes."
 - **Thread lifetime:** the thread rides the draft (§4.4 `chat` → §5 `chat.jsonl`): kept on
   every draft-keep path, restored when a draft resumes, deleted when the draft settles
-  (discard, save, Create, Start over). The footer action block is transient editor state,
+  (discard, save, Create, Start over). The composer progress block is transient editor state,
   never persisted.
 
 **Drafting on Review.** The first chat message starts the §8 create job; the review pane
@@ -148,14 +151,14 @@ renders in a drafting state and fills in as the pipeline delivers, driven by the
   over ghost cancels any in-flight job, deletes the pending slot (thread included), and
   returns the editor to the create empty state with the description back in the input.
 - **Spec card** — force-open, static "Writing the spec…" line (agent label, no spinner —
-  the live surface is the footer action block). The moment call 1
+  the live surface is the composer progress block). The moment call 1
   validates, the spec renders — while the steps are still generating — and is readable and
   editable right away.
 - **Right column** (steps, triggers, parameters, packages) — static placeholder cards: plain
   text, no spinner and no stage label, one line per card — "Steps appear here once the build
   finishes." / "Triggers appear here once the build finishes." / "Parameters appear here once
   the build finishes." / "Packages appear here once the build finishes.".
-- **Live progress** — the footer action block (Input above) is the only live drafting
+- **Live progress** — the composer progress block (Input above) is the only live drafting
   surface: the §8 stage label with the activity feed beneath it (recent §8 `events` as dim
   history over the live `detail` line), so a minutes-long call never looks stuck and web
   reads / retries stay visible. The spec card shows its static "Writing the spec…" line
@@ -319,7 +322,7 @@ editors enter with
   like a manual spec edit (toast "Spec updated — the workflow is out of sync. Sync the steps
   before saving."), and the Build & test panel's "Sync now" rebuilds the steps later; while
   the chat job is in flight the Save hint reads "Rewriting the spec…", and cancelling it
-  from the footer action block leaves the draft untouched (toast "Edit stopped — the
+  from the composer progress block leaves the draft untouched (toast "Edit stopped — the
   spec is unchanged."). On failure the §8 error renders as a thread error entry; a `blocked`
   outcome renders a thread blockers entry (source: chat) — either way the draft is
   untouched. Manual spec/instruction edits are mutually exclusive (one edit at a time), and
@@ -405,7 +408,7 @@ editors enter with
   Secrets card's New secret button), the
   build-instructions Edit button, the Build & test panel's test-values editors and its Test
   button, the version menu, the drafting-agent picker, and Discard draft / Start over. The only
-  live control is the running job's Cancel button (the footer action block's). **Rewrites
+  live control is the running job's Cancel button (the composer progress block's). **Rewrites
   lock while a test
   executes** — while a draft test is executing, every affordance that would rewrite the
   workflow under the running test disables: the panel's sync button, the spec card's Edit
@@ -416,7 +419,7 @@ editors enter with
   45 % opacity, default cursor, no hover response. The step list dims to the same 45 % opacity
   whenever it can't be trusted as-is: while the workflow is out of sync, while a sync is
   rewriting the steps, and while an agent spec rewrite is in flight. The Steps card header carries no in-sync badge (no "in sync with
-  spec" check) — sync state lives only in the panel. The footer action block's ghost
+  spec" check) — sync state lives only in the panel. The composer progress block's
   **Cancel** button cancels the in-flight sync (`DELETE /drafts/{jobId}`) no matter
   how it was started (the panel, a repair-block apply, "Rebuild the steps"): the steps and spec
   are left untouched, the workflow stays out of sync, and the panel returns to its out-of-sync
@@ -585,7 +588,7 @@ editors enter with
   text's left edge, and the sync control right-aligned at the zone's top — accent-primary
   **Sync now** while out of sync, a faint disabled text button while drafting or syncing;
   disabled per Dirty gating (including while its own sync
-  runs — cancelling lives in the footer action block), never hidden — with the **test
+  runs — cancelling lives in the composer progress block), never hidden — with the **test
   zone** under a hairline. In the in-sync states (4–6) the build zone disappears and the
   panel is a **single test zone** under the header hairline; sync access stays as a faint
   **Sync with spec** text button riding the test zone's action row (the same §8 `sync`

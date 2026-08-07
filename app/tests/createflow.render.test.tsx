@@ -351,7 +351,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
-    fireEvent.click(screen.getByText('Draft it'))
+    fireEvent.click(screen.getByText('Send'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
     // spec-source explainer + the clarify primary
     expect(screen.getByText('It couldn’t write a spec for this request. Answer below — your answers are added to the request and the spec is rewritten.')).toBeTruthy()
@@ -404,7 +404,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
-    fireEvent.click(screen.getByText('Draft it'))
+    fireEvent.click(screen.getByText('Send'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByText('It couldn’t build the steps as the spec asks. Edit the fix below, then apply it to the spec and rebuild.')).toBeTruthy()
     expect(screen.getByText('Apply to the spec & sync')).toBeTruthy()
@@ -532,7 +532,7 @@ describe('CreateFlow footer action block + input lock (§11)', () => {
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
-    fireEvent.click(screen.getByText('Draft it'))
+    fireEvent.click(screen.getByText('Send'))
     // call 1 in flight — the footer (and spec card) show the spec stage
     expect(screen.getAllByText('Writing the spec…').length).toBeGreaterThan(0)
     // the spec lands mid-job → steps stage plus the finer detail line

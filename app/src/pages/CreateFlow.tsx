@@ -2248,45 +2248,42 @@ export default function CreateFlow() {
                 )
               })}
             </ScrollArea>
-            {/* footer: the action block while a §8 job runs — the page's only
-                live job surface (spinner + stage + detail + Cancel, §11) —
-                otherwise the input */}
-            {anyJobBusy ? (
-              <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <Spinner size={13} style={{ marginTop: 2, flex: 'none' }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: "500 12.5px var(--sans)", color: 'var(--text-2)' }}>
-                    {rev.chatBusy ? 'Working on the request…'
-                      : rev.specBusy ? 'Writing the spec…'
-                        : rev.syncBusy
-                          ? `${selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'Your agent'} is rewriting the steps from your spec…`
-                          : installingPkgs ? 'Installing the packages…' : 'Generating the steps…'}
+            {/* footer composer — while a §8 job runs it keeps its shape and gains
+                the progress block above the textarea (the page's only live job
+                surface: spinner + stage + activity feed, §11); Send becomes Cancel */}
+            <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '12px 14px' }}>
+                {anyJobBusy && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                    <Spinner size={13} style={{ marginTop: 2, flex: 'none' }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ font: "500 12.5px var(--sans)", color: 'var(--text-2)' }}>
+                        {rev.chatBusy ? 'Working on the request…'
+                          : rev.specBusy ? 'Writing the spec…'
+                            : rev.syncBusy
+                              ? `${selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'Your agent'} is rewriting the steps from your spec…`
+                              : installingPkgs ? 'Installing the packages…' : 'Generating the steps…'}
+                      </div>
+                      {(() => {
+                        // §11 activity feed: dim event history over the live detail
+                        // line; the newest event hides when detail extends it (same
+                        // message, growing line count) so it never shows twice.
+                        const evs = rev.genEvents
+                        const last = evs.length ? evs[evs.length - 1] : null
+                        const hist = (rev.genDetail && last && rev.genDetail.startsWith(last) ? evs.slice(0, -1) : evs).slice(-3)
+                        return (
+                          <>
+                            {hist.map((t, i) => (
+                              <div key={`${i}-${t}`} style={{ font: "400 11px/1.5 var(--sans)", color: 'var(--text-faint)', marginTop: i === 0 ? 2 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>
+                            ))}
+                            {rev.genDetail && (
+                              <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: hist.length ? 0 : 2 }}>{rev.genDetail}</div>
+                            )}
+                          </>
+                        )
+                      })()}
+                    </div>
                   </div>
-                  {(() => {
-                    // §11 activity feed: dim event history over the live detail
-                    // line; the newest event hides when detail extends it (same
-                    // message, growing line count) so it never shows twice.
-                    const evs = rev.genEvents
-                    const last = evs.length ? evs[evs.length - 1] : null
-                    const hist = (rev.genDetail && last && rev.genDetail.startsWith(last) ? evs.slice(0, -1) : evs).slice(-3)
-                    return (
-                      <>
-                        {hist.map((t, i) => (
-                          <div key={`${i}-${t}`} style={{ font: "400 11px/1.5 var(--sans)", color: 'var(--text-faint)', marginTop: i === 0 ? 2 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>
-                        ))}
-                        {rev.genDetail && (
-                          <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: hist.length ? 0 : 2 }}>{rev.genDetail}</div>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
-                <button className="ad-btn-ghost" onClick={rev.chatBusy ? cancelChat : rev.syncBusy ? cancelSync : cancelCreate} style={{ flex: 'none', alignSelf: 'flex-end' }}>
-                  Cancel
-                </button>
-              </div>
-            ) : (
-              <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '12px 14px' }}>
+                )}
                 <textarea
                   className="ad-input oneline-ph"
                   value={chatText} rows={1} disabled={inputDisabled}
@@ -2316,12 +2313,17 @@ export default function CreateFlow() {
                       showToast(`${agName(g)} · ${dispModel(g)} now writes the spec and steps here.`, 3000)
                     }}
                   />
-                  <button className="ad-btn-pill" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-                    Send
-                  </button>
+                  {anyJobBusy ? (
+                    <button className="ad-btn-pill" onClick={rev.chatBusy ? cancelChat : rev.syncBusy ? cancelSync : cancelCreate} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+                      Cancel
+                    </button>
+                  ) : (
+                    <button className="ad-btn-pill" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+                      Send
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
           </div>
         )}
 

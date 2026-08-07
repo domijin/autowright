@@ -50,11 +50,11 @@ function AmberNotice({ body, btn, onBtn, style }: {
   return (
     <div className="ad-anim-item" style={{
       display: 'flex', alignItems: 'center', gap: 10,
-      background: 'oklch(0.8 0.13 85 / .07)', border: '1px solid oklch(0.8 0.13 85 / .3)',
+      background: 'var(--notice-amber-bg)', border: '1px solid var(--notice-amber-border)',
       borderRadius: 10, padding: '11px 14px', ...style,
     }}>
       <span style={{ width: 7, height: 7, borderRadius: '50%', background: P.amber, flex: 'none' }} />
-      <span style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2em)' }}>{body}</span>
+      <span style={{ flex: 1, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2)' }}>{body}</span>
       <button className="ad-btn-amber" onClick={onBtn} style={{ flex: 'none' }}>
         {btn}
       </button>
@@ -373,7 +373,7 @@ export default function AgentNewPage() {
         </div>
       )}
 
-      <Eyebrow style={{ margin: '0 0 10px' }}>DESCRIPTION <span style={{ color: 'var(--text-faintest)' }}>· OPTIONAL</span></Eyebrow>
+      <Eyebrow style={{ margin: '0 0 10px' }}>DESCRIPTION <span style={{ color: 'var(--text-deco)' }}>· OPTIONAL</span></Eyebrow>
       <textarea
         className="ad-input"
         value={desc}
@@ -412,7 +412,7 @@ export default function AgentNewPage() {
                   <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT INSTALLED</MiniBadge>
                 )}
               </div>
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2)' }}>{h.desc}</p>
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{h.desc}</p>
             </div>
           )
         })}
@@ -423,10 +423,10 @@ export default function AgentNewPage() {
       {harness && !hInstalled && (
         hInst === 'installing' ? (
           <div className="ad-anim-item" style={{
-            background: 'oklch(0.8 0.13 85 / .07)', border: '1px solid oklch(0.8 0.13 85 / .3)',
+            background: 'var(--notice-amber-bg)', border: '1px solid var(--notice-amber-border)',
             borderRadius: 10, padding: '11px 14px', marginBottom: 16,
           }}>
-            <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2em)', marginBottom: 8 }}>
+            <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>
               Installing {HARNESS_NAME[harness]}…{' '}
               {hPct !== null && (
                 <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-muted)' }}>{Math.round(hPct)}%</span>
@@ -481,7 +481,7 @@ export default function AgentNewPage() {
                 >
                   <RadioRing selected={on} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, fontSize: 13, color: on ? 'var(--text)' : 'var(--text-2em)' }}>{md.name}</div>
+                    <div style={{ fontWeight: 500, fontSize: 13, color: on ? 'var(--text)' : 'var(--text-2)' }}>{md.name}</div>
                     <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 2 }}>{md.note}</div>
                   </div>
                 </button>
@@ -508,10 +508,10 @@ export default function AgentNewPage() {
           {needsOllama && st && !ready && (
             inst === 'installing' ? (
               <div className="ad-anim-item" style={{
-                background: 'oklch(0.8 0.13 85 / .07)', border: '1px solid oklch(0.8 0.13 85 / .3)',
+                background: 'var(--notice-amber-bg)', border: '1px solid var(--notice-amber-border)',
                 borderRadius: 10, padding: '11px 14px', marginBottom: 16,
               }}>
-                <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2em)', marginBottom: 8 }}>
+                <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>
                   Installing Ollama…{' '}
                   {instPct !== null && (
                     <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-muted)' }}>{Math.round(instPct)}%</span>
@@ -555,7 +555,7 @@ export default function AgentNewPage() {
                         }}
                       >
                         <RadioRing selected={on} />
-                        <span style={{ flex: 1, font: `500 13px var(--mono)`, color: on ? 'var(--text)' : 'var(--text-2em)' }}>{n}</span>
+                        <span style={{ flex: 1, font: `500 13px var(--mono)`, color: on ? 'var(--text)' : 'var(--text-2)' }}>{n}</span>
                         <span style={{ font: `400 11px var(--mono)`, color: 'var(--text-faint)' }}>{sug?.meta ?? ''}</span>
                       </div>
                     )
@@ -593,7 +593,7 @@ export default function AgentNewPage() {
                   padding: '13px 16px', marginBottom: 12,
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-                    <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2em)' }}>
+                    <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)' }}>
                       Downloading <span style={{ font: `500 12px var(--mono)`, color: 'var(--text)' }}>{pulling}</span>…
                     </span>
                     <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-muted)' }}>
@@ -615,7 +615,7 @@ export default function AgentNewPage() {
                         className="ad-chip-btn"
                         onClick={() => setPullText(sg.id)}
                       >
-                        <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-2em)' }}>{sg.id}</span>
+                        <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-2)' }}>{sg.id}</span>
                         <span style={{ font: `400 10.5px var(--mono)`, color: 'var(--text-faint)' }}>{sg.meta}</span>
                       </button>
                     ))}

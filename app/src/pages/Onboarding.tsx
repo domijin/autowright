@@ -508,8 +508,8 @@ export default function Onboarding() {
   function renderWelcome() {
     const stepDot = (s: Ob['smSteps'][number]) =>
       s.status === 'executing' ? { dot: 'var(--cyan)', anim: PULSE, c: 'var(--text)' }
-      : s.status === 'done' ? { dot: 'var(--green)', anim: 'none', c: 'var(--text-2em)' }
-      : { dot: 'var(--text-faintest)', anim: 'none', c: 'var(--text-faint)' }
+      : s.status === 'done' ? { dot: 'var(--green)', anim: 'none', c: 'var(--text-2)' }
+      : { dot: 'var(--text-deco)', anim: 'none', c: 'var(--text-faint)' }
     const chips = ['Settings created', 'Folders in place']
     if (agentPre) chips.push('Agent found')
     if (autoPre) chips.push('Automations found')
@@ -534,7 +534,7 @@ export default function Onboarding() {
         <h1 style={{ fontWeight: 600, fontSize: 26, lineHeight: 1.25, letterSpacing: '-.02em', margin: '0 0 12px' }}>
           Recurring jobs, done exactly the same way every time.
         </h1>
-        <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-2)', margin: '0 0 28px' }}>
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 28px' }}>
           Describe a job in plain words. Your AI writes it as scripts you can read. Autowright executes them on your schedule and shows you the result.
         </p>
 
@@ -565,18 +565,18 @@ export default function Onboarding() {
                   <span key={ch} style={{
                     display: 'inline-flex', padding: '3px 9px', borderRadius: 6, fontFamily: 'var(--mono)',
                     fontWeight: 500, fontSize: 11.5, background: 'var(--hairline-dim)',
-                    color: 'var(--text-2em)',
+                    color: 'var(--text-2)',
                   }}>
                     {ch}
                   </span>
                 ))}
               </div>
-              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--text-2em)' }}>{para}</p>
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--text-2)' }}>{para}</p>
             </div>
           )}
         </div>
 
-        <p style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--text-2)', margin: '20px 0 16px' }}>{nextPara}</p>
+        <p style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--text-muted)', margin: '20px 0 16px' }}>{nextPara}</p>
         {ob.smDone
           ? <button className="ad-btn-primary ad-anim-item" onClick={obToConnect}>{nextLabel}</button>
           : <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12, color: 'var(--text-faint)' }}>Setting things up…</span>}
@@ -603,14 +603,14 @@ export default function Onboarding() {
     return (
       <div className="ad-anim-page" style={{ maxWidth: 720, margin: '0 auto', padding: '44px 32px 60px' }}>
         <h1 style={{ fontWeight: 600, fontSize: 26, lineHeight: 1.25, letterSpacing: '-.02em', margin: '0 0 10px' }}>Connect your AI</h1>
-        <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-2)', margin: '0 0 26px' }}>
+        <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 26px' }}>
           The AI only writes the scripts — Autowright executes them.
         </p>
 
         {ob.det === 'searching' && (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, padding: 22, display: 'flex', alignItems: 'center', gap: 12 }}>
             <Spinner size={13} style={{ flex: 'none' }} />
-            <span style={{ fontSize: 13.5, color: 'var(--text-2)' }}>Looking for an AI already on this Mac…</span>
+            <span style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>Looking for an AI already on this Mac…</span>
           </div>
         )}
 
@@ -623,7 +623,7 @@ export default function Onboarding() {
                 {ob.localFound && renderSuggestionCard(localDet)}
                 {foundPhases.every((ph) => ph !== 'checking') && (
                   foundPhases.some((ph) => ph === 'connected') ? (
-                    <div className="ad-anim-item" style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                    <div className="ad-anim-item" style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                       You’re ready — pick a connected AI as your default, or set up another below.
                     </div>
                   ) : (
@@ -641,7 +641,7 @@ export default function Onboarding() {
                 marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10,
               }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-faint)', flex: 'none' }} />
-                <span style={{ fontSize: 13, color: 'var(--text-2)' }}>No AI app was found on this Mac — here are some suggestions for moving forward.</span>
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No AI app was found on this Mac — here are some suggestions for moving forward.</span>
               </div>
             )}
 
@@ -830,7 +830,7 @@ export default function Onboarding() {
           <div style={{ marginTop: 14 }}>
             {c.phase === 'installing' && (
               <div>
-                <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2em)', marginBottom: 8 }}>
+                <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>
                   {isLocal
                     ? `Step ${c.qi + 1} of ${c.queue.length} — Installing ${c.queue[c.qi] === 'opencode' ? 'OpenCode' : 'Ollama'}…`
                     : `Installing ${p.name}…`}{' '}
@@ -848,7 +848,7 @@ export default function Onboarding() {
             )}
             {c.phase === 'pulling' && (
               <div>
-                <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2em)', marginBottom: 8 }}>
+                <div style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>
                   Step {c.qi + 1} of {c.queue.length} — Downloading Qwen3 8B…{' '}
                   <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)' }}>
                     {(c.pullPct / 100 * 5.2).toFixed(1)} GB of 5.2 GB

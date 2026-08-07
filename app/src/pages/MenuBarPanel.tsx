@@ -25,7 +25,7 @@ export default function MenuBarPanel() {
     <div
       ref={ref}
       style={{
-        width: 334, background: 'rgba(25,28,35,.94)', borderRadius: 12,
+        width: 334, background: 'rgba(32,36,44,.94)', borderRadius: 12,
         border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 18px 50px rgba(0,0,0,.55)',
         overflow: 'hidden', fontFamily: 'var(--sans)',
         display: 'flex', flexDirection: 'column', maxHeight: 640,
@@ -105,7 +105,7 @@ export default function MenuBarPanel() {
         >
           Open Autowright
         </button>
-        <span style={{ font: '500 11px var(--mono)', color: 'var(--text-faintest)' }}>v{version || '0.1.0'}</span>
+        <span style={{ font: '500 11px var(--mono)', color: 'var(--text-deco)' }}>v{version || '0.1.0'}</span>
       </div>
     </div>
   )

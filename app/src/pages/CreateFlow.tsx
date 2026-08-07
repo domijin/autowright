@@ -140,7 +140,7 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', cursor: inert ? 'default' : 'pointer', userSelect: 'none' }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-          <Caret open={open} style={{ width: 14, flex: 'none', textAlign: 'center', color: 'var(--text-faintest)' }} />
+          <Caret open={open} style={{ width: 14, flex: 'none', textAlign: 'center', color: 'var(--text-deco)' }} />
           <Eyebrow>{eyebrow}</Eyebrow>
         </span>
         {right}
@@ -149,7 +149,7 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
         <div
           onClick={() => onToggle(true)}
           style={{
-            padding: '0 20px 13px 43px', font: cardHintFont, color: 'var(--text-faintest)', cursor: 'pointer', userSelect: 'none',
+            padding: '0 20px 13px 43px', font: cardHintFont, color: 'var(--text-deco)', cursor: 'pointer', userSelect: 'none',
             ...(preview != null ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}),
           }}
         >
@@ -166,7 +166,7 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
 // in-card empty state, hint-styled and hint-indented (§11: same left edge as
 // the collapsed line, so an empty card's text stays put when the card opens)
 function CardEmpty({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '10px 20px 16px 43px', font: cardHintFont, color: 'var(--text-faintest)' }}>{children}</div>
+  return <div style={{ padding: '10px 20px 16px 43px', font: cardHintFont, color: 'var(--text-deco)' }}>{children}</div>
 }
 
 // §11: the one markdown body every card renders through — same padding, same
@@ -196,11 +196,11 @@ function CheckBox({ on }: { on: boolean }) {
 function WarnBanner({ text }: { text: string }) {
   return (
     <div className="ad-anim-item" style={{
-      background: 'oklch(0.7 0.19 25 / .07)', border: '1px solid oklch(0.7 0.19 25 / .3)',
+      background: 'var(--notice-red-bg)', border: '1px solid var(--notice-red-border)',
       borderRadius: 10, padding: '11px 14px', margin: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 9,
     }}>
       <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', flex: 'none', marginTop: 5 }} />
-      <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-2em)' }}>{text}</div>
+      <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-2)' }}>{text}</div>
     </div>
   )
 }
@@ -284,13 +284,13 @@ function AgentPick({ agents, selected, onPick, disabled }: {
               >
                 <span style={{ width: 14, flex: 'none', textAlign: 'center', font: "600 12px var(--mono)", color: 'var(--accent)' }}>{sel ? <i className="fa-solid fa-check" style={{ fontSize: 10 }} /> : ''}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: "600 12.5px var(--sans)", color: sel ? 'var(--text)' : 'var(--text-2em)' }}>{agName(g)}</div>
+                  <div style={{ font: "600 12.5px var(--sans)", color: sel ? 'var(--text)' : 'var(--text-2)' }}>{agName(g)}</div>
                   <div style={{ font: "400 11.5px/1.45 var(--mono)", color: 'var(--text-muted)', marginTop: 1 }}>{dispModel(g)}</div>
                 </div>
               </div>
             )
           })}
-          <div style={{ padding: '9px 14px', font: "400 11px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
+          <div style={{ padding: '9px 14px', font: "400 11px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
             Writes the spec and generates the steps for this automation. Autowright still executes everything.
           </div>
       </PopMenu>
@@ -660,7 +660,7 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
           </div>
           <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{step.desc}</div>
         </div>
-        <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-faintest)', flex: 'none' }}>
+        <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
           <Caret open={open} openDeg={0} closedDeg={90} style={{ fontSize: 12 }} />
         </span>
       </div>
@@ -672,7 +672,7 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
           }}>
             <i className="fa-solid fa-robot" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
             <span style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
-              <span style={{ font: "500 11.5px var(--sans)", color: 'var(--text-2em)' }}>Why an agent: </span>{step.why || ''}
+              <span style={{ font: "500 11.5px var(--sans)", color: 'var(--text-2)' }}>Why an agent: </span>{step.why || ''}
             </span>
           </div>
         )}
@@ -2107,7 +2107,7 @@ export default function CreateFlow() {
                   <h2 style={{ font: "600 19px/1.3 var(--sans)", letterSpacing: '-.02em', margin: '0 0 8px' }}>
                     What should Autowright do for you?
                   </h2>
-                  <p style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-2)', margin: '0 0 20px' }}>
+                  <p style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: '0 0 20px' }}>
                     Describe the job in plain words. Your AI writes it as scripts — you review everything before it executes.
                   </p>
                   <Eyebrow>OR START FROM AN EXAMPLE</Eyebrow>
@@ -2125,12 +2125,12 @@ export default function CreateFlow() {
                       </button>
                     ))}
                   </div>
-                  <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faintest)', marginTop: 14 }}>
+                  <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-deco)', marginTop: 14 }}>
                     Your AI writes the steps — Autowright still executes everything on this Mac.
                   </div>
                 </div>
               ) : (
-                <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-faintest)', textAlign: 'center', padding: '26px 12px' }}>
+                <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-deco)', textAlign: 'center', padding: '26px 12px' }}>
                   Ask anything, or describe a change — your AI answers here and rewrites the spec when you ask for changes.
                 </div>
               ))}
@@ -2138,7 +2138,7 @@ export default function CreateFlow() {
                 if (e.kind === 'user') {
                   return (
                     <div key={e.id} style={{
-                      font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-2em)',
+                      font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-2)',
                       background: 'var(--bg-inset)', border: '1px solid var(--hairline)',
                       borderRadius: 9, padding: '8px 12px', alignSelf: 'flex-end', maxWidth: '92%',
                       whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
@@ -2149,7 +2149,7 @@ export default function CreateFlow() {
                 }
                 if (e.kind === 'answer') {
                   return (
-                    <div key={e.id} style={{ font: "400 12.5px/1.65 var(--sans)", color: 'var(--text-2em)' }}>
+                    <div key={e.id} style={{ font: "400 12.5px/1.65 var(--sans)", color: 'var(--text-2)' }}>
                       <Markdown text={e.text ?? ''} />
                     </div>
                   )
@@ -2189,7 +2189,7 @@ export default function CreateFlow() {
                 if (e.kind === 'blockers') {
                   if (e.dismissed) {
                     return (
-                      <div key={e.id} style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)', textAlign: 'center' }}>
+                      <div key={e.id} style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)', textAlign: 'center' }}>
                         {(e.blockers ?? []).length} blocker{(e.blockers ?? []).length === 1 ? '' : 's'} — dismissed
                       </div>
                     )
@@ -2233,7 +2233,7 @@ export default function CreateFlow() {
                   return (
                     <div key={e.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', flex: 'none', marginTop: 5 }} />
-                      <span style={{ flex: 1, minWidth: 0, font: "400 12px/1.6 var(--sans)", color: 'var(--text-2em)', overflowWrap: 'break-word' }}>{e.text}</span>
+                      <span style={{ flex: 1, minWidth: 0, font: "400 12px/1.6 var(--sans)", color: 'var(--text-2)', overflowWrap: 'break-word' }}>{e.text}</span>
                       {e.source === 'spec' && !anyJobBusy && !isEdit && (
                         <button className="ad-btn-soft" onClick={() => void submitCreate(lastCreateRef.current)} style={{ flex: 'none' }}>
                           Try again
@@ -2258,7 +2258,7 @@ export default function CreateFlow() {
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
                     <Spinner size={13} style={{ marginTop: 2, flex: 'none' }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ font: "500 12.5px var(--sans)", color: 'var(--text-2)' }}>
+                      <div style={{ font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
                         {rev.chatBusy ? 'Working on the request…'
                           : rev.specBusy ? 'Writing the spec…'
                             : rev.syncBusy
@@ -2420,7 +2420,7 @@ export default function CreateFlow() {
                           >
                             <span style={{ width: 14, flex: 'none', textAlign: 'center', font: "600 12px var(--mono)", color: 'var(--accent)' }}>{sel ? <i className="fa-solid fa-check" style={{ fontSize: 10 }} /> : ''}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ font: "600 12.5px var(--mono)", color: sel ? 'var(--text)' : 'var(--text-2em)' }}>{it.label}</div>
+                              <div style={{ font: "600 12.5px var(--mono)", color: sel ? 'var(--text)' : 'var(--text-2)' }}>{it.label}</div>
                               <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 1 }}>{it.sub}</div>
                             </div>
                           </div>
@@ -2463,7 +2463,7 @@ export default function CreateFlow() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, height: 26, minWidth: 0, margin: '0 0 20px' }}>
               {!isEdit && drafting ? (
                 <p style={{
-                  font: "400 13.5px/1.6 var(--sans)", color: 'var(--text-2)', margin: 0, minWidth: 0,
+                  font: "400 13.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: 0, minWidth: 0,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}>
                   Read what your AI wrote. Change anything — nothing executes until you create it.
@@ -2490,7 +2490,7 @@ export default function CreateFlow() {
                   <p style={{
                     font: "400 13.5px/1.6 var(--sans)", margin: 0, minWidth: 0,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    color: rev.desc ? 'var(--text-2)' : 'var(--text-muted)',
+                    color: rev.desc ? 'var(--text-muted)' : 'var(--text-faint)',
                   }}>
                     {rev.desc || (canRename ? 'No description yet — press the pencil to add one.' : 'No description yet.')}
                   </p>
@@ -2506,7 +2506,7 @@ export default function CreateFlow() {
             {/* old-version banner */}
             {viewingOld && auto && (
               <div className="ad-anim-item" style={{
-                background: 'oklch(0.74 0.155 52 / .07)', border: '1px solid oklch(0.74 0.155 52 / .3)',
+                background: 'var(--notice-accent-bg)', border: '1px solid var(--notice-accent-border)',
                 borderRadius: 10, padding: '11px 14px', margin: '0 0 18px',
                 display: 'flex', alignItems: 'center', gap: 11,
               }}>
@@ -2523,7 +2523,7 @@ export default function CreateFlow() {
             {/* live-execution note */}
             {isEdit && !!auto?.live.length && (
               <div className="ad-anim-item" style={{
-                background: 'oklch(0.78 0.12 210 / .07)', border: '1px solid oklch(0.78 0.12 210 / .3)',
+                background: 'var(--notice-cyan-bg)', border: '1px solid var(--notice-cyan-border)',
                 borderRadius: 10, padding: '11px 14px', margin: '0 0 18px',
                 display: 'flex', alignItems: 'center', gap: 11,
               }}>
@@ -2610,8 +2610,8 @@ export default function CreateFlow() {
                       the live surface is the chat footer's action block */}
                   {rev.specBusy ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '46px 20px 50px' }}>
-                      <span style={{ font: "500 13px var(--sans)", color: 'var(--text-2)' }}>Writing the spec…</span>
-                      <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faintest)' }}>
+                      <span style={{ font: "500 13px var(--sans)", color: 'var(--text-muted)' }}>Writing the spec…</span>
+                      <span style={{ font: "500 11px var(--mono)", color: 'var(--text-deco)' }}>
                         {selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'No agent'}
                       </span>
                     </div>
@@ -2624,7 +2624,7 @@ export default function CreateFlow() {
                           onChange={(e) => up({ specText: e.target.value, touched: true })}
                           onScroll={specThumb.onScroll}
                           style={{
-                            width: '100%', background: 'var(--bg-inset)', border: 'none', color: 'var(--text-2em)',
+                            width: '100%', background: 'var(--bg-inset)', border: 'none', color: 'var(--text-2)',
                             font: "400 12.5px/1.7 var(--mono)", padding: '12px 20px 18px', resize: 'none', outline: 'none', display: 'block',
                             minHeight: 92, maxHeight: 440, overflowY: 'auto',
                           }}
@@ -2632,7 +2632,7 @@ export default function CreateFlow() {
                         />
                         {specThumb.node}
                       </div>
-                      <div style={{ padding: '9px 20px', borderTop: '1px solid var(--hairline-dim)', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
+                      <div style={{ padding: '9px 20px', borderTop: '1px solid var(--hairline-dim)', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
                         Saving rewrites the steps to match the new spec.
                       </div>
                     </>
@@ -2715,7 +2715,7 @@ export default function CreateFlow() {
                       placeholder="Markdown — your AI’s working knowledge for this automation. Prune anything stale or wrong."
                       style={{
                         width: '100%', background: 'var(--bg-inset)', border: 'none',
-                        color: 'var(--text-2em)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
+                        color: 'var(--text-2)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
                         resize: 'none', outline: 'none', display: 'block', minHeight: 92, overflow: 'hidden',
                       }}
                     />
@@ -2730,7 +2730,7 @@ export default function CreateFlow() {
                   hint="Which agents steps may call mid-execution. Fewer enabled means more predictable executions."
                   preview={availAgents.length ? availAgents.map(agName).join(' · ') : null}
                   right={
-                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-faintest)', whiteSpace: 'nowrap', flex: 'none' }}>
+                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-deco)', whiteSpace: 'nowrap', flex: 'none' }}>
                       {availAgents.length} of {agents.length} enabled
                     </span>
                   }
@@ -2784,7 +2784,7 @@ export default function CreateFlow() {
                           </div>
                         )
                       })}
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
                         Steps marked <i className="fa-solid fa-robot" style={{ fontSize: 9, color: 'var(--accent-hover)' }} /> call one of these mid-execution — for the parts plain code can’t do, like reading a messy page or writing prose. Fewer enabled means more predictable executions.
                       </div>
                     </div>
@@ -2798,7 +2798,7 @@ export default function CreateFlow() {
                   hint="Only checked secrets are handed to this automation at execution time. Values come from your Keychain."
                   preview={rev.allowedSecrets.length ? rev.allowedSecrets.join(' · ') : null}
                   right={
-                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-faintest)', whiteSpace: 'nowrap', flex: 'none' }}>
+                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-deco)', whiteSpace: 'nowrap', flex: 'none' }}>
                       {rev.allowedSecrets.length} of {secrets.length} allowed
                     </span>
                   }
@@ -2853,7 +2853,7 @@ export default function CreateFlow() {
                         </div>
                       ))}
                       {secrets.length === 0 && secRefs.length === 0 && (
-                        <div style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "400 12px var(--sans)", color: 'var(--text-faintest)' }}>
+                        <div style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "400 12px var(--sans)", color: 'var(--text-deco)' }}>
                           No secrets in your Keychain yet — press New secret.
                         </div>
                       )}
@@ -2864,7 +2864,7 @@ export default function CreateFlow() {
                           New secret
                         </button>
                       </div>
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
                         Only checked secrets are handed to this automation at execution time — a step that asks for anything else fails. Values come from your Keychain and never appear in scripts or logs.
                       </div>
                     </div>
@@ -2958,7 +2958,7 @@ export default function CreateFlow() {
                         placeholder="Markdown — one rule per line: “Prefer Python.” “Never delete files — move them to the Trash.”"
                         style={{
                           width: '100%', background: 'var(--bg-inset)', border: 'none',
-                          color: 'var(--text-2em)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
+                          color: 'var(--text-2)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
                           resize: 'none', outline: 'none', display: 'block', minHeight: 92, maxHeight: 440, overflowY: 'auto',
                         }}
                         className="ad-scrollhide"
@@ -2978,9 +2978,9 @@ export default function CreateFlow() {
                     <CardMarkdown>
                       {fw
                         ? <Markdown text={fw} />
-                        : <div style={{ font: "400 12px/1.65 var(--mono)", color: 'var(--text-2em)' }}>Couldn’t load framework-instructions.md — reopen this page to retry.</div>}
+                        : <div style={{ font: "400 12px/1.65 var(--mono)", color: 'var(--text-2)' }}>Couldn’t load framework-instructions.md — reopen this page to retry.</div>}
                     </CardMarkdown>
-                    <div style={{ padding: '0 20px 16px', font: cardHintFont, color: 'var(--text-faintest)' }}>
+                    <div style={{ padding: '0 20px 16px', font: cardHintFont, color: 'var(--text-deco)' }}>
                       framework-instructions.md — sent to your AI, word for word, with every drafting request. Updates with the app, nothing for you to maintain.
                     </div>
                 </SectionCard>
@@ -3018,7 +3018,7 @@ export default function CreateFlow() {
                         <span style={{
                           minWidth: 0,
                           font: "500 12.5px/18px var(--sans)",
-                          color: rev.syncBusy || drafting ? 'var(--text-2)' : 'var(--text)',
+                          color: rev.syncBusy || drafting ? 'var(--text-muted)' : 'var(--text)',
                         }}>
                           {drafting ? stageLabel
                             : rev.syncBusy
@@ -3060,7 +3060,7 @@ export default function CreateFlow() {
                           Test the draft
                         </button>
                       )}
-                      <span style={{ minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
+                      <span style={{ minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
                         Sync first — a test executes the steps as generated from the spec.
                       </span>
                     </div>
@@ -3083,7 +3083,7 @@ export default function CreateFlow() {
                             ) : (
                               <>
                                 {testLive ? (
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, font: "400 12px var(--sans)", color: 'var(--text-2em)' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, font: "400 12px var(--sans)", color: 'var(--text-2)' }}>
                                     <Spinner size={13} />
                                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                       Executing
@@ -3170,7 +3170,7 @@ export default function CreateFlow() {
                           <div style={{ ...panelRowStyle, padding: '10px 20px 12px' }}>
                             {syncGhostBtn}
                             {testToggleBtn('Test the draft')}
-                            <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)' }}>
+                            <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
                               In sync with the spec. A test executes the real steps on this Mac — emails send, files move; memory is a scratch copy.
                             </span>
                           </div>
@@ -3181,7 +3181,7 @@ export default function CreateFlow() {
                           shows every option at once, then the Run test row */}
                       {testOpen && !testLive && rev.params.length > 0 && testParams !== null && (
                         <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
-                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-faintest)' }}>
+                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-deco)' }}>
                             PARAMETER VALUES · THIS TEST ONLY
                           </div>
                           {testParams.map((p) => (
@@ -3196,7 +3196,7 @@ export default function CreateFlow() {
                           setup section */}
                       {testOpen && !testLive && msgTriggers.length > 0 && testMock !== null && (
                         <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
-                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-faintest)' }}>
+                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-deco)' }}>
                             TRIGGER MESSAGE · THIS TEST ONLY
                           </div>
                           <div style={{ padding: '13px 20px 3px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3235,7 +3235,7 @@ export default function CreateFlow() {
                               />
                             </div>
                           </div>
-                          <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
+                          <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
                             Applies to this test only — nothing is saved; leave the message empty to test without one.{' '}
                             {msgTriggers[testMock.idx]?.kind === 'discord'
                               ? 'A step’s reply() posts to the real Discord channel.'
@@ -3268,7 +3268,7 @@ export default function CreateFlow() {
                             )}
                           </div>
                           {(rev.params.length > 0 || msgTriggers.length > 0) && (
-                            <div style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)', paddingBottom: 2 }}>
+                            <div style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)', paddingBottom: 2 }}>
                               {rev.params.length > 0 && msgTriggers.length > 0
                                 ? 'Values and the message apply to this test only — nothing is saved.'
                                 : rev.params.length > 0
@@ -3296,7 +3296,7 @@ export default function CreateFlow() {
                   {/* §11: a steps-call failure renders here; Rebuild runs a §8 sync against the landed spec */}
                   {rev.stepsErr && !rev.syncBusy && (
                     <div className="ad-anim-item" style={{
-                      background: 'oklch(0.7 0.19 25 / .07)', border: '1px solid oklch(0.7 0.19 25 / .3)',
+                      background: 'var(--notice-red-bg)', border: '1px solid var(--notice-red-border)',
                       borderRadius: 10, padding: '11px 14px', margin: '12px 14px',
                       display: 'flex', alignItems: 'flex-start', gap: 9,
                     }}>
@@ -3355,7 +3355,7 @@ export default function CreateFlow() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
                     <Eyebrow>PARAMETERS · YOUR AI ASKED FOR THESE</Eyebrow>
                     {!drafting && rev.params.length > 0 && (
-                      <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-faintest)' }}>READ-ONLY HERE</span>
+                      <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-deco)' }}>READ-ONLY HERE</span>
                     )}
                   </div>
                   {drafting || isCreateEmpty ? (
@@ -3374,7 +3374,7 @@ export default function CreateFlow() {
                           <div key={p.name} style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
                               <div style={{ font: "600 12.5px var(--sans)" }}>{p.label}</div>
-                              <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2em)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
+                              <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
                                 {paramSummary(live ?? p)}
                               </div>
                             </div>
@@ -3382,7 +3382,7 @@ export default function CreateFlow() {
                           </div>
                         )
                       })}
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
                         Values aren’t part of a version — set them on the automation page after saving. For a test, set test-only values in the Build & test panel — or ask your AI, which can change the parameter definitions and set test values when it runs a test.
                       </div>
                     </>
@@ -3399,12 +3399,12 @@ export default function CreateFlow() {
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                       {rev.packages.length > 0 && (
-                        <Caret open={pkgSecOpenEff} style={{ width: 14, flex: 'none', textAlign: 'center', color: 'var(--text-faintest)' }} />
+                        <Caret open={pkgSecOpenEff} style={{ width: 14, flex: 'none', textAlign: 'center', color: 'var(--text-deco)' }} />
                       )}
                       <Eyebrow>PACKAGES · PYTHON LIBRARIES</Eyebrow>
                     </span>
                     {rev.packages.length > 0 && (
-                      <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-faintest)', whiteSpace: 'nowrap', flex: 'none' }}>
+                      <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-deco)', whiteSpace: 'nowrap', flex: 'none' }}>
                         {rev.packages.filter((p) => p.status === 'installed').length} of {rev.packages.length} installed
                         {rev.packages.filter((p) => p.latest).length > 0 &&
                           ` · ${rev.packages.filter((p) => p.latest).length} update${rev.packages.filter((p) => p.latest).length === 1 ? '' : 's'}`}
@@ -3420,7 +3420,7 @@ export default function CreateFlow() {
                   ) : (<>
                     <Collapse open={!pkgSecOpenEff}>
                       {/* §11 status-aware collapsed line — the card only collapses when the list is non-empty */}
-                      <div onClick={() => up({ pkgSecOpen: true })} style={{ padding: '0 20px 13px 43px', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faintest)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div onClick={() => up({ pkgSecOpen: true })} style={{ padding: '0 20px 13px 43px', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {rev.packages.map((p) => p.pip).join(' · ')}
                       </div>
                     </Collapse>
@@ -3483,7 +3483,7 @@ export default function CreateFlow() {
                           </button>
                         </div>
                       )}
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-faintest)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
                         Your AI picked these Python packages for the steps. They install automatically — nothing for you to run.
                       </div>
                     </div>

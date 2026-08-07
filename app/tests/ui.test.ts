@@ -177,17 +177,17 @@ describe('logColor (§7 log views)', () => {
     expect(logColor('sys')).toBe('var(--text-faint)')
     expect(logColor('wrn')).toBe('var(--amber)')
     expect(logColor('err')).toBe('var(--red)')
-    expect(logColor('out')).toBe('var(--text-2em)')
-    expect(logColor('anything-else')).toBe('var(--text-2em)')
+    expect(logColor('out')).toBe('var(--text-2)')
+    expect(logColor('anything-else')).toBe('var(--text-2)')
   })
 })
 
 // ---------- highlightPython (via PyCode called as a plain function) ----------
 
 const COLOR = {
-  keyword: '#c792ea', const: '#f78c6c', string: '#c3e88d', number: '#f78c6c',
-  comment: '#5c6b7a', builtin: '#82aaff', call: '#82aaff', def: '#ffcb6b',
-  decorator: '#ffcb6b',
+  keyword: 'var(--syn-keyword)', const: 'var(--syn-const)', string: 'var(--syn-string)',
+  number: 'var(--syn-const)', comment: 'var(--syn-comment)', builtin: 'var(--syn-builtin)',
+  call: 'var(--syn-builtin)', def: 'var(--syn-def)', decorator: 'var(--syn-def)',
 }
 
 interface Tok { text: string; color?: string; italic?: boolean }

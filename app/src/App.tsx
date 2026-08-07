@@ -77,7 +77,7 @@ function Sidebar() {
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
                     borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',
                     color: active ? 'var(--text)' : 'var(--text-muted)',
-                    ...(active ? { background: 'var(--bg-active)' } : null),
+                    ...(active ? { background: 'var(--accent-hint-bg)' } : null),
                   }}
                 >
                   <i className={`fa-solid ${n.icon}`} style={{ width: 16, fontSize: 12, opacity: 0.85 }} />

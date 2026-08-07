@@ -36,7 +36,7 @@ const pickChipStyle = (active: boolean): React.CSSProperties => ({
   fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
   background: active ? 'var(--accent-chip-bg)' : 'rgba(255,255,255,.04)',
   border: `1px solid ${active ? 'oklch(0.74 0.155 52 / .4)' : 'var(--border-input)'}`,
-  color: active ? 'var(--accent)' : 'var(--text-2em)', borderRadius: 6, padding: '4px 10px', flex: 'none',
+  color: active ? 'var(--accent)' : 'var(--text-2)', borderRadius: 6, padding: '4px 10px', flex: 'none',
 })
 
 const TZ_LIST: string[] = Intl.supportedValuesOf('timeZone')
@@ -79,7 +79,7 @@ function ImsgPermissions() {
   const row = (icon: React.ReactNode, name: string, note: string, action?: React.ReactNode) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 24 }}>
       <span style={{ width: 14, flex: 'none', textAlign: 'center' }}>{icon}</span>
-      <span style={{ font: '500 11.5px var(--sans)', color: 'var(--text-2em)', flex: 'none' }}>{name}</span>
+      <span style={{ font: '500 11.5px var(--sans)', color: 'var(--text-2)', flex: 'none' }}>{name}</span>
       <span style={{
         flex: 1, minWidth: 0, font: '400 11.5px/1.4 var(--sans)', color: 'var(--text-muted)',
       }}>
@@ -266,7 +266,7 @@ function TzPick({ tz, onPick }: { tz: string; onPick: (z: string) => void }) {
             <MenuRow key={z} active={z === tz} onClick={() => { setOpen(false); onPick(z) }}>{z}</MenuRow>
           ))}
           {needle && zones.length === 0 && (
-            <div style={{ padding: '9px 11px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-faintest)' }}>
+            <div style={{ padding: '9px 11px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-deco)' }}>
               No timezone matches.
             </div>
           )}
@@ -300,7 +300,7 @@ function SecretPick({ secrets, selected, onPick }: {
       </button>
       <PopMenu show={open} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 240 }}>
         {secrets.length === 0 ? (
-          <div style={{ padding: '9px 14px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-faintest)' }}>
+          <div style={{ padding: '9px 14px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-deco)' }}>
             No secrets yet — press New secret.
           </div>
         ) : secrets.map((s) => {
@@ -320,7 +320,7 @@ function SecretPick({ secrets, selected, onPick }: {
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ font: `500 12px var(--mono)`, color: sel ? 'var(--text)' : 'var(--text-2em)' }}>{s.name}</span>
+                  <span style={{ font: `500 12px var(--mono)`, color: sel ? 'var(--text)' : 'var(--text-2)' }}>{s.name}</span>
                   {!s.set && <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>}
                 </div>
                 {s.desc && (
@@ -423,7 +423,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
               onClick={() => { if (!taken) setKind(m.kind) }}
               disabled={taken}
               title={taken ? 'Already added' : undefined}
-              style={{ ...pickChipStyle(kind === m.kind), ...(taken ? { color: 'var(--text-faintest)', cursor: 'default' } : {}) }}
+              style={{ ...pickChipStyle(kind === m.kind), ...(taken ? { color: 'var(--text-deco)', cursor: 'default' } : {}) }}
             >
               <i className={m.icon} style={{ fontSize: 9, marginRight: 5 }} />
               {m.label}
@@ -533,14 +533,14 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             spellCheck={false}
             style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
           />
-          <div style={{ fontSize: 11.5, color: 'var(--text-faintest)', lineHeight: 1.5, marginTop: -2 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--text-deco)', lineHeight: 1.5, marginTop: -2 }}>
             Fires only on messages from these Discord users — comma-separate several ids.
             A user id is a long number like 234567890123456789 — right-click their name →
             Copy User ID (needs Developer Mode, enabled in step 8).
           </div>
           <label style={{
             display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, alignSelf: 'flex-start',
-            color: 'var(--text-2em)', cursor: 'pointer', userSelect: 'none',
+            color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
           }}>
             <input type="checkbox" checked={mention} onChange={(e) => setMention(e.target.checked)} />
             Only when the bot is mentioned
@@ -660,7 +660,7 @@ function ConcurrencyCard({ auto, showToast }: { auto: Auto; showToast: (m: strin
     <div style={{ marginBottom: 26 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
         <Eyebrow>CONCURRENCY</Eyebrow>
-        <span style={{ fontSize: 11.5, color: 'var(--text-faintest)' }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-deco)' }}>
           Applies to incoming messages — no new version, no AI involved.
         </span>
       </div>
@@ -948,7 +948,7 @@ function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: bool
                   onChange={(e) => setRowsSaved(rows.map((x, i) => (i === j ? { ...x, k: e.target.value } : x)))}
                   onBlur={flush}
                   style={{
-                    flex: 1.3, minWidth: 0, color: 'var(--text-2)',
+                    flex: 1.3, minWidth: 0, color: 'var(--text-muted)',
                     fontFamily: 'var(--mono)', fontSize: 11.5, padding: '7px 10px',
                   }}
                 />
@@ -1031,7 +1031,7 @@ function StepRow({ s, n, open, onToggle, last, agentNames }: {
           </div>
           <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>{s.desc}</div>
         </div>
-        <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-faintest)', flex: 'none' }}>
+        <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
           <Caret open={open} openDeg={180} closedDeg={0} style={{ fontSize: 12 }} />
         </span>
       </div>
@@ -1043,7 +1043,7 @@ function StepRow({ s, n, open, onToggle, last, agentNames }: {
           }}>
             <i className="fa-solid fa-robot" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
             <span style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-muted)' }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-2em)' }}>Why an agent: </span>{s.why}
+              <span style={{ fontWeight: 500, color: 'var(--text-2)' }}>Why an agent: </span>{s.why}
             </span>
           </div>
         )}
@@ -1359,7 +1359,7 @@ export default function AutomationDetail() {
                   borderBottom: '1px solid var(--hairline-dim)',
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 12.5, color: 'var(--text-2em)' }}>v{v.v}</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 12.5, color: 'var(--text-2)' }}>v{v.v}</div>
                     <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>
                       {(v.note ? `${v.note} — ` : '') + v.when}
                     </div>
@@ -1425,7 +1425,7 @@ export default function AutomationDetail() {
           <p
             title={auto.desc}
             style={{
-              font: "400 13.5px/1.6 var(--sans)", color: 'var(--text-2)', margin: 0,
+              font: "400 13.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: 0,
               flex: '0 1 auto', minWidth: 0,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}
@@ -1456,7 +1456,7 @@ export default function AutomationDetail() {
           borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12,
         }}>
           <MiniBadge c="var(--accent)" bg="var(--accent-chip-bg)" style={{ flex: 'none' }}>Draft</MiniBadge>
-          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2em)' }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2)' }}>
             Unsaved edit based on v{auto.version} — kept from your last edit session. Resume editing to keep working on it.
           </span>
           <button
@@ -1539,7 +1539,7 @@ export default function AutomationDetail() {
                   <span
                     style={{
                       flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12,
-                      color: t.off ? 'var(--text-faint)' : 'var(--text-2em)',
+                      color: t.off ? 'var(--text-faint)' : 'var(--text-2)',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}
                   >
@@ -1596,7 +1596,7 @@ export default function AutomationDetail() {
         <div style={{ marginBottom: 26 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <Eyebrow>PARAMETERS</Eyebrow>
-            <span style={{ fontSize: 11.5, color: 'var(--text-faintest)' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--text-deco)' }}>
               Changes apply on the next execution — no new version, no AI involved.
             </span>
           </div>
@@ -1642,7 +1642,7 @@ export default function AutomationDetail() {
                   }}
                 />
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)', flex: 'none' }}>{e.id.slice(0, 8)}</span>
-                <span style={{ fontSize: 12.5, color: 'var(--text-2)', flex: 'none' }}>
+                <span style={{ fontSize: 12.5, color: 'var(--text-muted)', flex: 'none' }}>
                   {/* §9.2: message-triggered rows read "Discord · Dave · v3" */}
                   {e.trigger}{e.triggerSender ? ` · ${e.triggerSender}` : ''}{e.ver ? ` · ${e.ver}` : ''}
                 </span>
@@ -1650,7 +1650,7 @@ export default function AutomationDetail() {
                 <div style={{ flex: 1 }} />
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>{e.dur}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-faint)', width: 130, textAlign: 'right', flex: 'none' }}>{e.started}</span>
-                <span style={{ color: 'var(--text-faintest)' }}><i className="fa-solid fa-chevron-right" style={{ fontSize: 10 }} /></span>
+                <span style={{ color: 'var(--text-deco)' }}><i className="fa-solid fa-chevron-right" style={{ fontSize: 10 }} /></span>
               </div>
             ))}
           </div>
@@ -1674,7 +1674,7 @@ export default function AutomationDetail() {
               <div style={{ flex: 1 }} />
               {confirmClear ? (
                 <>
-                  <span style={{ fontSize: 12.5, color: 'var(--text-2em)' }}>
+                  <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
                     {auto.snapshotSettings.preClear
                       ? 'Next execution starts fresh, like the first time. Current memory is snapshotted first.'
                       : "Next execution starts fresh, like the first time. Automatic snapshots are off — this can't be undone."}
@@ -1742,7 +1742,7 @@ export default function AutomationDetail() {
                   >
                     {snapRow?.sid === s.id && snapRow.kind === 'restore' ? (
                       <>
-                        <span style={{ fontSize: 12.5, color: 'var(--text-2em)' }}>
+                        <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
                           {auto.snapshotSettings.preRestore
                             ? 'Replaces current memory — the current state is snapshotted first.'
                             : 'Replaces current memory — automatic snapshots are off, so the current state is lost.'}
@@ -1753,7 +1753,7 @@ export default function AutomationDetail() {
                           onClick={() => { if (!executing) doRestoreSnap(s.id) }}
                           style={{
                             border: '1px solid oklch(0.74 0.155 52 / .4)',
-                            color: executing ? 'var(--text-faintest)' : 'var(--accent)', fontWeight: 600,
+                            color: executing ? 'var(--text-deco)' : 'var(--accent)', fontWeight: 600,
                           }}
                         >
                           Restore
@@ -1783,7 +1783,7 @@ export default function AutomationDetail() {
                       </>
                     ) : snapRow?.sid === s.id && snapRow.kind === 'delete' ? (
                       <>
-                        <span style={{ fontSize: 12.5, color: 'var(--text-2em)' }}>Delete this snapshot?</span>
+                        <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>Delete this snapshot?</span>
                         <div style={{ flex: 1 }} />
                         <button className="ad-btn-text danger" onClick={() => doDeleteSnap(s.id)}>
                           Delete
@@ -1794,7 +1794,7 @@ export default function AutomationDetail() {
                       </>
                     ) : (
                       <>
-                        <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-2)' }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-muted)' }}>
                           {s.name ?? 'Snapshot'}
                         </span>
                         <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>
@@ -1825,7 +1825,7 @@ export default function AutomationDetail() {
               {SNAP_SETTINGS.map(({ key, label, help }) => (
                 <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '7px 0' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-2)' }}>{label}</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-muted)' }}>{label}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--text-faint)', marginTop: 2 }}>{help}</div>
                   </div>
                   <Toggle
@@ -1845,7 +1845,7 @@ export default function AutomationDetail() {
         <div style={{ marginBottom: 26 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <Eyebrow>STEPS</Eyebrow>
-            <span style={{ fontSize: 11.5, color: 'var(--text-faintest)' }}>Written by your AI — read them anytime.</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-deco)' }}>Written by your AI — read them anytime.</span>
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
             {/* §9.2: one agent tag per name in a step's agents list; empty →
@@ -1873,14 +1873,14 @@ export default function AutomationDetail() {
               <Eyebrow>SPEC</Eyebrow>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>{auto.specMeta}</span>
               <div style={{ flex: 1 }} />
-              <span style={{ color: 'var(--text-faintest)', fontSize: 11 }}>
+              <span style={{ color: 'var(--text-deco)', fontSize: 11 }}>
                 <Caret open={specOpen} openDeg={180} closedDeg={0} /> {specOpen ? 'collapse' : 'expand'}
               </span>
             </div>
             <Collapse open={specOpen}>
               <div style={{ borderTop: '1px solid var(--hairline)', padding: '8px 18px 18px' }}>
                 <SpecMarkdown blocks={spec} />
-                <div style={{ marginTop: 14, fontSize: 11.5, color: 'var(--text-faintest)' }}>
+                <div style={{ marginTop: 14, fontSize: 11.5, color: 'var(--text-deco)' }}>
                   The AI regenerates the steps from this document when you edit it. Every change mints a new version — older ones live in the Version menu on the edit page.
                 </div>
               </div>

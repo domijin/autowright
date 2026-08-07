@@ -77,7 +77,7 @@ export default function SecretsPage() {
                 </div>
               )}
             </div>
-            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>{s.usedBy.join(', ') || 'Not used yet'}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.usedBy.join(', ') || 'Not used yet'}</span>
             <span style={{
               font: `400 12px var(--mono)`,
               color: s.set ? 'var(--text-muted)' : 'var(--text-faint)',

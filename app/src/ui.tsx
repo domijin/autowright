@@ -109,7 +109,7 @@ export function FailureNotice({ error, onView, onFix, style }: {
 }) {
   return (
     <div className="ad-anim-item" style={{
-      background: 'oklch(0.7 0.19 25 / .07)', border: '1px solid oklch(0.7 0.19 25 / .3)',
+      background: 'var(--notice-red-bg)', border: '1px solid var(--notice-red-border)',
       borderRadius: 12, padding: '14px 18px', ...style,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -130,7 +130,7 @@ export function FailureNotice({ error, onView, onFix, style }: {
         )}
       </div>
       {error.reason && (
-        <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-2em)', marginTop: 7 }}>
+        <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-2)', marginTop: 7 }}>
           {error.reason}
         </div>
       )}
@@ -222,7 +222,7 @@ export function LoadingRow({ label, style }: { label: React.ReactNode; style?: R
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, ...style }}>
       <Spinner size={13} />
-      <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)' }}>{label}</span>
+      <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-muted)' }}>{label}</span>
     </div>
   )
 }
@@ -453,7 +453,7 @@ export function logColor(k: string): string {
   if (k === 'sys') return 'var(--text-faint)'
   if (k === 'wrn') return 'var(--amber)'
   if (k === 'err') return 'var(--red)'
-  return 'var(--text-2em)'
+  return 'var(--text-2)'
 }
 
 /** §4.3 countdown "next in Xd Xh" / "Xh Xm" from the backend-derived `nextAt`. */
@@ -497,7 +497,7 @@ export function CountPill({ n, active }: { n: number; active?: boolean }) {
     <span style={{
       fontFamily: 'var(--mono)', fontSize: 10.5, fontWeight: 600, padding: '1px 7px', borderRadius: 20,
       background: 'var(--hairline)',
-      color: active ? 'var(--text-2em)' : 'var(--text-faint)',
+      color: active ? 'var(--text-2)' : 'var(--text-faint)',
     }}>
       {n}
     </span>
@@ -647,9 +647,9 @@ const PY_BUILTINS = new Set([
   'tuple', 'type', 'zip', 'Exception', 'ValueError', 'KeyError', 'TypeError',
 ])
 const PY_COLOR = {
-  keyword: '#c792ea', const: '#f78c6c', string: '#c3e88d', number: '#f78c6c',
-  comment: '#5c6b7a', builtin: '#82aaff', call: '#82aaff', def: '#ffcb6b',
-  decorator: '#ffcb6b',
+  keyword: 'var(--syn-keyword)', const: 'var(--syn-const)', string: 'var(--syn-string)',
+  number: 'var(--syn-const)', comment: 'var(--syn-comment)', builtin: 'var(--syn-builtin)',
+  call: 'var(--syn-builtin)', def: 'var(--syn-def)', decorator: 'var(--syn-def)',
 }
 
 // Whitespace, newline, (prefix)string, comment, decorator, number, identifier, symbol.

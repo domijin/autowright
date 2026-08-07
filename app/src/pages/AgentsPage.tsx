@@ -85,7 +85,7 @@ function AgentCard({ ag, check, onDelete }: {
         {ag.harness} · {dispModel(ag)}
       </div>
       {/* Detail line = the §4.7 desc (drafting input) — never generated copy. */}
-      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: ag.desc?.trim() ? 'var(--text-2)' : 'var(--text-faint)' }}>
+      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: ag.desc?.trim() ? 'var(--text-muted)' : 'var(--text-faint)' }}>
         {ag.desc?.trim() ? ag.desc : 'No description yet — add one in Edit to tell the drafting AI what this agent is for.'}
       </p>
       {uses.length > 0 ? (

@@ -8,28 +8,31 @@
 @import '@fortawesome/fontawesome-free/css/all.min.css';
 
 :root {
-  --bg-window: #0b0e12;
-  --bg-content: #0e1116;
-  --bg-sidebar: #0a0d11;
-  --bg-card: #12151c;
-  --bg-card-sel: #14181f;
-  --bg-inset: #0d1015;
-  --bg-menu: #161a22;
-  --bg-toast: #1b202a;
+  /* Neutral ramp: one oklch formula — hue 262, chroma 0.016 (bg) / 0.006–0.02 (text).
+     sRGB hexes for mirrors (landing, result.tsx, Electron backgroundColor) live in §14. */
+  --bg-window: oklch(0.16 0.016 262);
+  --bg-content: oklch(0.175 0.016 262);
+  --bg-sidebar: oklch(0.155 0.016 262);
+  --bg-card: oklch(0.23 0.016 262);
+  --bg-card-sel: oklch(0.243 0.016 262);
+  --bg-inset: oklch(0.17 0.016 262);
+  --bg-menu: oklch(0.26 0.016 262);
+  --bg-toast: oklch(0.285 0.016 262);
 
-  --text: #e9ecf1;
-  --text-2: #a8b0bc;
-  --text-2em: #c6cdd6;
-  --text-2emx: #dfe4ea;
-  --text-muted: #8a93a0;
-  --text-faint: #67707c;
-  --text-faintest: #4f5763;
+  /* Text — five levels only. --text-deco is for non-informational glyphs
+     (bullets, resting ✕, carets), never running text. */
+  --text: oklch(0.94 0.006 262);
+  --text-2: oklch(0.845 0.012 262);
+  --text-muted: oklch(0.715 0.018 262);
+  --text-faint: oklch(0.625 0.018 262);
+  --text-deco: oklch(0.51 0.02 262);
 
   --hairline: rgba(255, 255, 255, 0.06);
   --border-card: rgba(255, 255, 255, 0.07);
   --border-input: rgba(255, 255, 255, 0.10);
   --border-btn: rgba(255, 255, 255, 0.11);
   --border-hover: rgba(255, 255, 255, 0.25);
+  --border-card-hover: oklch(0.74 0.155 52 / 0.3);
   --border-dashed: rgba(255, 255, 255, 0.12);
   --bg-active: rgba(255, 255, 255, 0.07);
 
@@ -40,6 +43,7 @@
   --accent-hint-bg: oklch(0.74 0.155 52 / 0.08);
   --on-accent: #16100a;
   --link-hover: oklch(0.82 0.14 60);
+  --focus-ring: oklch(0.74 0.155 52 / 0.55);
 
   --green: oklch(0.76 0.15 150);
   --green-bg: oklch(0.76 0.15 150 / 0.13);
@@ -53,14 +57,32 @@
   --orange-bg: oklch(0.72 0.15 60 / 0.13);
   --magenta: oklch(0.72 0.16 340);
   --magenta-bg: oklch(0.72 0.16 340 / 0.13);
-  --gray: #98a1ad;
-  --gray-bg: rgba(152, 161, 173, 0.13);
+  --gray: oklch(0.72 0.015 262);
+  --gray-bg: oklch(0.72 0.015 262 / 0.13);
+
+  /* Notice-banner tints (§14 slim geometry) — call sites never hand-write these */
+  --notice-red-bg: oklch(0.7 0.19 25 / 0.07);
+  --notice-red-border: oklch(0.7 0.19 25 / 0.3);
+  --notice-amber-bg: oklch(0.8 0.13 85 / 0.07);
+  --notice-amber-border: oklch(0.8 0.13 85 / 0.3);
+  --notice-accent-bg: oklch(0.74 0.155 52 / 0.07);
+  --notice-accent-border: oklch(0.74 0.155 52 / 0.3);
+  --notice-cyan-bg: oklch(0.78 0.12 210 / 0.07);
+  --notice-cyan-border: oklch(0.78 0.12 210 / 0.3);
+
+  /* Syntax palette (script wells; PY_COLOR in ui.tsx references these) */
+  --syn-keyword: oklch(0.72 0.13 310);
+  --syn-string: oklch(0.86 0.11 135);
+  --syn-const: oklch(0.74 0.14 45);
+  --syn-def: oklch(0.85 0.11 85);
+  --syn-builtin: oklch(0.73 0.11 265);
+  --syn-comment: oklch(0.54 0.02 262);
 
   --red-hover: oklch(0.74 0.17 25);
   --red-text: oklch(0.78 0.15 25);
   --accent-sel: oklch(0.74 0.155 52 / 0.7);
   --hairline-dim: rgba(255, 255, 255, 0.05);
-  --bg-code: #07090d;
+  --bg-code: oklch(0.14 0.016 262);
   --code-text: #9fb3c8;
 
   --sans: 'IBM Plex Sans', -apple-system, sans-serif;
@@ -95,6 +117,10 @@ body {
    shows Copy). Only buttons and the .ad-drag title-bar region are unselectable. */
 
 ::selection { background: oklch(0.74 0.155 52 / 0.35); }
+
+/* §14 keyboard focus ring — every focusable except .ad-input (border ring instead) */
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.ad-input:focus-visible, .ad-input :focus-visible { outline: none; }
 
 input, textarea, select, button { font: inherit; color: inherit; }
 button { cursor: pointer; background: none; border: none; user-select: none; }
@@ -135,7 +161,7 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
 
 /* bordered card-header button (Edit / Sync now / Run a dry check) */
 .ad-btn-soft {
-  background: rgba(255, 255, 255, 0.05); color: var(--text-2em);
+  background: rgba(255, 255, 255, 0.05); color: var(--text-2);
   border: 1px solid var(--border-btn); border-radius: 8px;
   font: 500 13px var(--sans); padding: 8px 15px;
   transition: color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
@@ -171,7 +197,7 @@ textarea:disabled, input:disabled { opacity: .45; }
   background: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 3px 7px;
   transition: color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter);
 }
-.ad-btn-pill:hover:not(:disabled) { color: var(--text-2em); background: rgba(255, 255, 255, 0.09); }
+.ad-btn-pill:hover:not(:disabled) { color: var(--text-2); background: rgba(255, 255, 255, 0.09); }
 
 /* dashed add-row button (+ Add line / + Add pair) */
 .ad-btn-dashed {
@@ -183,7 +209,7 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-btn-dashed:hover:not(:disabled) { color: var(--text); border-color: rgba(255, 255, 255, 0.25); }
 
 /* row-remove ✕ */
-.ad-btn-x { color: var(--text-faintest); width: 24px; flex: none; font: 500 14px var(--sans); transition: color var(--t-hover) var(--ease-enter); }
+.ad-btn-x { color: var(--text-deco); width: 24px; flex: none; font: 500 14px var(--sans); transition: color var(--t-hover) var(--ease-enter); }
 .ad-btn-x:hover:not(:disabled) { color: var(--red-hover); }
 
 /* accent-tinted ghost (Execute once / Add trigger / agent chips) */
@@ -234,16 +260,21 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-hover-row { transition: background var(--t-hover) var(--ease-enter); }
 .ad-hover-row:hover { background: rgba(255, 255, 255, 0.03); }
 
-/* static card chrome — the non-clickable sibling of .ad-card-click */
-.ad-card { background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; }
+/* static card chrome — the non-clickable sibling of .ad-card-click; inset top
+   highlight is the §14 tactile edge cue (cards never get drop shadows) */
+.ad-card {
+  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
 
 /* clickable card (automations list) — class owns bg/border so :hover can restyle
    them (inline base styles would beat the hover rule) */
 .ad-card-click {
   background: var(--bg-card); border: 1px solid var(--border-card); cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
   transition: background var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
 }
-.ad-card-click:hover { background: var(--bg-card-sel); border-color: var(--border-hover); }
+.ad-card-click:hover { background: var(--bg-card-sel); border-color: var(--border-card-hover); }
 
 /* clickable page title linking elsewhere */
 .ad-link-title { transition: color var(--t-hover) var(--ease-enter); cursor: pointer; }
@@ -299,7 +330,7 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-chip-btn {
   display: inline-flex; align-items: center; gap: 7px;
   background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 16px; color: var(--text-2); font: 500 12px var(--sans); padding: 6px 13px;
+  border-radius: 16px; color: var(--text-muted); font: 500 12px var(--sans); padding: 6px 13px;
   transition: color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter), transform var(--t-hover) var(--ease-enter);
 }
 .ad-chip-btn i { font-size: 10px; color: var(--text-faint); transition: color var(--t-hover) var(--ease-enter); }
@@ -308,7 +339,7 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-chip-btn:active { transform: translateY(1px); }
 
 /* popover menu row */
-.ad-menu-row { padding: 8px 11px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: var(--text-2); }
+.ad-menu-row { padding: 8px 11px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: var(--text-muted); }
 .ad-menu-row:hover { background: rgba(255, 255, 255, 0.05); }
 .ad-menu-row.active { color: var(--text); background: rgba(255, 255, 255, 0.04); }
 .ad-menu-row.danger { color: var(--red); }
@@ -391,7 +422,7 @@ textarea:disabled, input:disabled { opacity: .45; }
 /* Markdown views — the shared §4.5 renderer (react-markdown + remark-gfm).
    Assumes 18px card side padding: tables go full-bleed with -18px margins. */
 .ad-md { display: flex; flex-direction: column; gap: 10px; }
-.ad-md p { font-size: 13px; line-height: 1.6; color: var(--text-2em); text-wrap: pretty; }
+.ad-md p { font-size: 13px; line-height: 1.6; color: var(--text-2); text-wrap: pretty; }
 .ad-md h1, .ad-md h2, .ad-md h3, .ad-md h4, .ad-md h5, .ad-md h6 { font-weight: 600; color: var(--text); }
 .ad-md h1 { font-size: 15px; }
 .ad-md h2 { font-size: 13.5px; }
@@ -399,12 +430,12 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-md :is(h1, h2, h3, h4, h5, h6):not(:first-child) { margin-top: 6px; }
 .ad-md strong { font-weight: 600; color: var(--text); }
 .ad-md code { font-family: var(--mono); font-size: .92em; background: rgba(255, 255, 255, .06); border-radius: 4px; padding: 1px 5px; }
-.ad-md pre { font: 400 11.5px/1.7 var(--mono); color: var(--text-2em); background: var(--bg-inset); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 14px; overflow-x: auto; }
+.ad-md pre { font: 400 11.5px/1.7 var(--mono); color: var(--text-2); background: var(--bg-inset); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 14px; overflow-x: auto; }
 .ad-md pre code { font: inherit; background: none; border-radius: 0; padding: 0; }
 .ad-md ul, .ad-md ol { list-style: none; display: flex; flex-direction: column; }
 .ad-md ul { gap: 6px; }
 .ad-md ol { gap: 7px; counter-reset: ad-md-ol; }
-.ad-md li { position: relative; font-size: 13px; line-height: 1.55; color: var(--text-2emx); }
+.ad-md li { position: relative; font-size: 13px; line-height: 1.55; color: var(--text); }
 .ad-md ul > li { padding-left: 18px; }
 .ad-md ul > li::before { content: '•'; position: absolute; left: 1px; color: var(--text-faint); font-weight: 600; }
 .ad-md ol > li { padding-left: 25px; counter-increment: ad-md-ol; }
@@ -422,7 +453,7 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-md table { border-collapse: collapse; width: 100%; }
 .ad-md thead tr { background: var(--bg-inset); }
 .ad-md th { padding: 9px 5px; text-align: left; font: 600 9.5px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--text-faint); }
-.ad-md td { padding: 10px 5px; vertical-align: top; border-top: 1px solid var(--hairline); overflow-wrap: break-word; font-size: 12.5px; line-height: 1.55; color: var(--text-2); }
+.ad-md td { padding: 10px 5px; vertical-align: top; border-top: 1px solid var(--hairline); overflow-wrap: break-word; font-size: 12.5px; line-height: 1.55; color: var(--text-muted); }
 .ad-md td:first-child { color: var(--text); font-weight: 500; }
 .ad-md th:first-child, .ad-md td:first-child { padding-left: 18px; }
 .ad-md th:last-child, .ad-md td:last-child { padding-right: 18px; }

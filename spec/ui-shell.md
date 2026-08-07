@@ -246,7 +246,7 @@ Sections top to bottom:
   case-insensitive, plain substring"), an optional sender-filter text input (§4.3 `author`;
   placeholder "Sender filter — only messages from these user ids (optional)"; accepts
   comma-separated ids, each digits only, same invalid styling as the channel input; directly
-  below it a visible helper line (11.5px, `--text-faintest`): "Fires only on messages from
+  below it a visible helper line (11.5px, `--text-faint`): "Fires only on messages from
   these Discord users — comma-separate several ids. A user id is a long number like
   234567890123456789 — right-click their name → Copy User ID (needs Developer Mode, enabled
   in step 8)."), and an

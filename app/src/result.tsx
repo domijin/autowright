@@ -75,7 +75,7 @@ function ViewCard({ title, kind, meta, mono = true, defaultOpen = true, children
           </span>
         )}
         <span style={{ flex: 1 }} />
-        {meta && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faintest)' }}>{meta}</span>}
+        {meta && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-deco)' }}>{meta}</span>}
       </button>
       <Collapse open={open}>{children}</Collapse>
     </div>
@@ -123,21 +123,21 @@ const HTML_BASE = `<head>
 <base target="_blank">
 <style>
   :root { color-scheme: dark; }
-  body { margin: 0; padding: 4px 18px 16px; background: #12151c;
-         font: 400 13px/1.6 'IBM Plex Sans', -apple-system, sans-serif; color: #c6cdd6;
+  body { margin: 0; padding: 4px 18px 16px; background: #191d25;
+         font: 400 13px/1.6 'IBM Plex Sans', -apple-system, sans-serif; color: #c8ccd4;
          -webkit-font-smoothing: antialiased; }
-  h1, h2, h3 { color: #e9ecf1; font-weight: 600; margin: 14px 0 6px; }
+  h1, h2, h3 { color: #e9ebef; font-weight: 600; margin: 14px 0 6px; }
   h1 { font-size: 15px; } h2 { font-size: 13.5px; } h3 { font-size: 12.5px; }
   p { margin: 8px 0; } a { color: oklch(0.74 0.155 52); text-decoration: none; }
   a:hover { color: oklch(0.82 0.14 60); text-decoration: underline; }
   code { font-family: 'IBM Plex Mono', monospace; font-size: .92em; }
-  pre { font: 400 11.5px/1.7 'IBM Plex Mono', monospace; background: #0d1015; border: 1px solid rgba(255,255,255,.06); border-radius: 8px; padding: 10px 14px; overflow-x: auto; }
+  pre { font: 400 11.5px/1.7 'IBM Plex Mono', monospace; background: #0c0f16; border: 1px solid rgba(255,255,255,.06); border-radius: 8px; padding: 10px 14px; overflow-x: auto; }
   pre code { font: inherit; }
   table { border-collapse: collapse; width: 100%; }
   th { font: 600 9.5px 'IBM Plex Mono', monospace; letter-spacing: .09em; text-transform: uppercase;
-       color: #67707c; text-align: left; padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
-  td { font-size: 12.5px; line-height: 1.55; color: #a8b0bc; padding: 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
-  td:first-child { color: #e9ecf1; font-weight: 500; }
+       color: #828893; text-align: left; padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  td { font-size: 12.5px; line-height: 1.55; color: #9da3af; padding: 10px; border-bottom: 1px solid rgba(255,255,255,.06); }
+  td:first-child { color: #e9ebef; font-weight: 500; }
   img { max-width: 100%; }
 </style>
 </head>`
@@ -170,7 +170,7 @@ function TextView({ text }: { text: string }) {
     <div style={{ padding: '2px 18px 16px' }}>
       <pre style={{
         margin: 0, fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.7,
-        color: 'var(--text-2em)', overflowX: 'auto', whiteSpace: 'pre',
+        color: 'var(--text-2)', overflowX: 'auto', whiteSpace: 'pre',
       }}>
         {shown}
       </pre>
@@ -251,13 +251,13 @@ function FileRow({ execId, file, stamp, last }: {
       {kind
         ? <Caret open={open} style={{ fontSize: 10, width: 14, flex: 'none', color: 'var(--text-faint)' }} />
         : <i className="fa-solid fa-file-lines" style={{ fontSize: 11, color: 'var(--text-faint)', width: 14, flex: 'none' }} />}
-      <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-2em)', overflowWrap: 'break-word' }}>
+      <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-2)', overflowWrap: 'break-word' }}>
         {file.name}
       </span>
       {!kind && (
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-faintest)', flex: 'none' }}>no preview</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-deco)', flex: 'none' }}>no preview</span>
       )}
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faintest)', flex: 'none' }}>{file.size}</span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-deco)', flex: 'none' }}>{file.size}</span>
     </>
   )
   const rowStyle: React.CSSProperties = {
@@ -296,7 +296,7 @@ function FilesFooter({ files, path, execId, stamp, defaultOpen = true }: {
           borderBottom: '1px solid var(--hairline)',
         }}>
           <span style={{
-            flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faintest)',
+            flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-deco)',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', direction: 'rtl', textAlign: 'left',
           }}>
             {path ?? ''}
@@ -358,7 +358,7 @@ export function ResultSection({ label, result, execId, stamp, compact }: {
           </span>
         )}
         {result.when && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faintest)' }}>{result.when}</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-deco)' }}>{result.when}</span>
         )}
       </div>
       <Collapse open={open}>

@@ -11,37 +11,61 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   15 px/600; body 13–13.5 px/400, line-height 1.55–1.6; secondary 12–12.5 px; metadata/mono
   10.5–12 px; eyebrows 9.5–10 px/600 mono uppercase, letter-spacing `.09em`. Headings tighten
   letter-spacing (`-.01em` to `-.02em`).
-- Backgrounds: window `#0b0e12` (`--bg-window`), content `#0e1116`, sidebar `#0a0d11`, cards
-  `#12151c` (`--bg-card`; selectable/hovered cards `#14181f` `--bg-card-sel`), inset/result
-  wells `#0d1015` (`--bg-inset`), popover menus `#161a22` (`--bg-menu`), toast `#1b202a`
-  (`--bg-toast`). Menu-bar panel: `rgba(25,28,35,.94)`, 334 px wide, radius 12,
+- Neutral ramp: all background and text neutrals derive from one oklch formula — hue 262,
+  chroma 0.016 (backgrounds) / 0.006–0.02 (text) — so lightness steps are perceptually even.
+  Tokens are declared as `oklch()` in `tokens.css`; the hexes below are the sRGB equivalents
+  for mirrors that need literals (landing page, `result.tsx`, Electron `backgroundColor`).
+- Backgrounds (oklch L at chroma 0.016 hue 262): window 0.16 `#090d14` (`--bg-window`),
+  content 0.175 `#0d1118`, sidebar 0.155 `#090c13`, cards 0.23 `#191d25` (`--bg-card`;
+  selectable/hovered cards 0.243 `#1c2028` `--bg-card-sel`), inset/result wells 0.17
+  `#0c0f16` (`--bg-inset`), popover menus 0.26 `#20242c` (`--bg-menu`), toast 0.285
+  `#262a32` (`--bg-toast`), code wells 0.14 `#060910` (`--bg-code`). Card-vs-content
+  separation is deliberate: ΔL 0.055 (1.12:1) so cards read without leaning on the border.
+  Menu-bar panel: `rgba(32,36,44,.94)` (the menu tone), 334 px wide, radius 12,
   border `rgba(255,255,255,.1)`.
-- Text: primary `#e9ecf1` (`--text`), secondary `#a8b0bc` (`--text-2`), emphasized secondary
-  `#c6cdd6` / `#dfe4ea` (`--text-2em`/`--text-2emx`), muted `#8a93a0`, faint `#67707c`,
-  faintest `#4f5763`.
+- Text — five levels, no more (oklch hue 262): primary 0.94 `#e9ebef` (`--text`), secondary
+  0.845 `#c8ccd4` (`--text-2` — body/notice copy, emphasized values), muted 0.715 `#9da3af`
+  (`--text-muted` — descriptions, placeholders, secondary labels), faint 0.625 `#828893`
+  (`--text-faint` — eyebrows, table headers, metadata; ≥4.5:1 on every surface), decorative
+  0.51 `#606672` (`--text-deco` — non-informational glyphs only: list bullets, resting ✕,
+  carets; never running text).
 - Borders (white at alpha): hairlines `.06` (`--hairline`), cards `.07`, inputs `.10`,
-  buttons `.11`, hover `.25` (`--border-hover`), dashed placeholders/add-rows `.12`
-  (`--border-dashed` — empty states, draft banner, `.ad-btn-dashed`). Selected/active rows and
-  tabs share one background wash: `rgba(255,255,255,.07)` (`--bg-active` — sidebar nav, devlog
-  rows/tabs, executions filter, selected step row).
+  buttons `.11`, hover `.25` (`--border-hover` — buttons and neutral controls), dashed
+  placeholders/add-rows `.12` (`--border-dashed` — empty states, draft banner,
+  `.ad-btn-dashed`). Clickable cards hover to an accent-tinted border instead:
+  `oklch(0.74 0.155 52 / .3)` (`--border-card-hover` — `.ad-card-click:hover`).
+  Selected/active rows and tabs share one background wash: `rgba(255,255,255,.07)`
+  (`--bg-active` — devlog rows/tabs, executions filter, selected step row). The sidebar
+  nav's active row uses the accent wash instead (`--accent-hint-bg`).
 - Accent (brand orange): `oklch(0.74 0.155 52)`; hover `oklch(0.79 0.155 52)`; tint backgrounds
   `--accent-bg` `/ .15`, `--accent-chip-bg` `/ .13`, `--accent-hint-bg` `/ .08`; text on accent
-  `#16100a` (`--on-accent`); link hover `oklch(0.82 0.14 60)`; `::selection` accent `/ .35`.
+  `#16100a` (`--on-accent`); link hover `oklch(0.82 0.14 60)`; `::selection` accent `/ .35`;
+  keyboard focus ring `oklch(0.74 0.155 52 / .55)` (`--focus-ring`) — a global
+  `:focus-visible` rule draws a 2 px outline (offset 2) on every focusable element except
+  `.ad-input` fields, which keep their border ring.
 - Status colors (oklch; tint backgrounds at the alpha shown): green `oklch(0.76 0.15 150)`
   `/ .13`, cyan `oklch(0.78 0.12 210)` `/ .13`, red `oklch(0.7 0.19 25)` `/ .13`, amber
-  `oklch(0.8 0.13 85)` `/ .14`, magenta `oklch(0.72 0.16 340)` `/ .13`, gray `#98a1ad` /
-  `rgba(152,161,173,.13)`. One extra chip color: orange `oklch(0.72 0.15 60)` `/ .13` for
+  `oklch(0.8 0.13 85)` `/ .14`, magenta `oklch(0.72 0.16 340)` `/ .13`, gray `oklch(0.72 0.015 262)` `/ .13`. One extra chip color: orange `oklch(0.72 0.15 60)` `/ .13` for
   attention-flavored result chips (e.g. "5 of 6 checked").
+- Syntax palette (script/log wells; oklch, same family as the status set): keyword
+  `oklch(0.72 0.13 310)` (`--syn-keyword`), string `oklch(0.86 0.11 135)` (`--syn-string`),
+  const/number `oklch(0.74 0.14 45)` (`--syn-const`), def/decorator `oklch(0.85 0.11 85)`
+  (`--syn-def`), builtin/call `oklch(0.73 0.11 265)` (`--syn-builtin`), comment
+  `oklch(0.54 0.02 262)` (`--syn-comment`). `PY_COLOR` in `ui.tsx` references these tokens —
+  no literal syntax colors at call sites.
 - Status/error text: static error and validation copy always uses `--red-text` (never `--red`
   or `--red-hover`, which stay for icons/dots and hover states). Invalid text fields always use
   the `.ad-input.invalid` class — no inline red borders or glows.
 - Tinted notice banners (red/amber/accent/cyan) share one slim geometry: radius 10, padding
-  `11px 14px`, tint background at `/ .07`, border at `/ .3`, 7 px leading dot. Card-sized
-  notices (`FailureNotice`, the §9.2 draft banner) are radius 12. Notice body text is
-  `--text-2em`.
+  `11px 14px`, tint background at `/ .07`, border at `/ .3`, 7 px leading dot. The tints are
+  tokens — `--notice-red-bg`/`--notice-red-border` and likewise `-amber-`, `-accent-`,
+  `-cyan-` — never hand-written oklch at call sites. Card-sized notices (`FailureNotice`,
+  the §9.2 draft banner) are radius 12. Notice body text is `--text-2`.
 - Radii: buttons/inputs 8 px, chips 6–7 px, cards 12 px, pills 16–20 px,
-  popover menus 10 px, toast 9 px. Cards are flat (border only); floating surfaces get large
-  soft shadows — popovers `0 18px 44px rgba(0,0,0,.5)`, toast `0 10px 30px rgba(0,0,0,.4)`,
+  popover menus 10 px, toast 9 px. Cards stay in-plane (no drop shadow) but carry a 1 px
+  inset top highlight — `inset 0 1px 0 rgba(255,255,255,.035)` on `.ad-card`/`.ad-card-click`
+  — as a tactile edge cue. Floating surfaces are the only drop-shadow tier —
+  popovers `0 18px 44px rgba(0,0,0,.5)`, toast `0 10px 30px rgba(0,0,0,.4)`,
   modal `0 24px 60px rgba(0,0,0,.5)`, menu-bar panel `0 18px 50px rgba(0,0,0,.55)`.
 - Selection: all text is selectable by default — every piece of information on screen can be
   highlighted and copied. Only buttons and the drag region are `user-select: none`.
@@ -90,7 +114,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   next-to-label size is 13), `PageTitle`, `Eyebrow`, `EmptyState` (dashed-card empty state
   with CTA — automations/agents/secrets lists), `EmptyNotice` (dashed card, title 13.5/500 +
   12.5 muted body — executions list, execution page, detail page), `LoadingRow` (Spinner 13 +
-  500 12.5 `--text-2` label, gap 9), `BackLink` (`.ad-btn-text` + 10 px chevron-left),
+  500 12.5 `--text-muted` label, gap 9), `BackLink` (`.ad-btn-text` + 10 px chevron-left),
   `Caret` (default 10 px).
 - Icons: Font Awesome 6.5.2. App mark: the AW monogram — rounded square filled with the app
   accent (`#f68b43`, the sRGB hex of `--accent` oklch(0.74 0.155 52)) carrying a continuous

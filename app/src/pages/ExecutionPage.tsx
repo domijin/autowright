@@ -45,7 +45,7 @@ function StepRow({ step, selected, onSelect }: {
   step: ExecStep; selected: boolean; onSelect: () => void
 }) {
   const executing = step.status === 'executing'
-  const dot = step.status === 'queued' ? 'var(--text-faintest)' : badgeOf(step.status).c
+  const dot = step.status === 'queued' ? 'var(--text-deco)' : badgeOf(step.status).c
   return (
     <button
       className="ad-hover-row"
@@ -58,7 +58,7 @@ function StepRow({ step, selected, onSelect }: {
       }} />
       <span style={{
         flex: 1, fontSize: 12.5, lineHeight: 1.4, minWidth: 0,
-        color: step.status === 'queued' ? 'var(--text-faint)' : 'var(--text-2em)',
+        color: step.status === 'queued' ? 'var(--text-faint)' : 'var(--text-2)',
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>
         {step.name}
@@ -104,7 +104,7 @@ function TriggerMessage({ payload }: { payload: TriggerPayload }) {
       <Eyebrow style={{ marginBottom: 10 }}>TRIGGER MESSAGE</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 2 }}>
         <div style={{
-          fontSize: 12.5, color: 'var(--text-2em)', minWidth: 0,
+          fontSize: 12.5, color: 'var(--text-2)', minWidth: 0,
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>
           {payload.sender}
@@ -120,11 +120,11 @@ function TriggerMessage({ payload }: { payload: TriggerPayload }) {
           </a>
         )}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faintest)', marginBottom: 10 }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-deco)', marginBottom: 10 }}>
         {new Date(payload.at).toLocaleString()}
       </div>
       <div style={{
-        fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.7, color: 'var(--text-2)',
+        fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.7, color: 'var(--text-muted)',
         whiteSpace: 'pre-wrap', wordBreak: 'break-word',
       }}>
         {payload.text}
@@ -480,11 +480,11 @@ export default function ExecutionPage() {
                   {params.map((p) => (
                     <div key={p.name} style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '7px 0', borderTop: '1px solid var(--hairline-dim)' }}>
                       <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{p.label}</span>
-                      {p.help && <span style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-faintest)' }}>{p.help}</span>}
-                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-2em)' }}>{paramSummary(p)}</span>
+                      {p.help && <span style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-deco)' }}>{p.help}</span>}
+                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-2)' }}>{paramSummary(p)}</span>
                     </div>
                   ))}
-                  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-faintest)', paddingTop: 8, borderTop: '1px solid var(--hairline-dim)' }}>
+                  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-deco)', paddingTop: 8, borderTop: '1px solid var(--hairline-dim)' }}>
                     Values as used by this execution.
                   </div>
                 </div>
@@ -556,7 +556,7 @@ export default function ExecutionPage() {
                   <>
                     {logs.map((l) => (
                       <div key={l.seq} style={{ display: 'flex', gap: 12 }}>
-                        <span style={{ color: 'var(--text-faintest)', flex: 'none' }}>{l.t}</span>
+                        <span style={{ color: 'var(--text-deco)', flex: 'none' }}>{l.t}</span>
                         <span style={{
                           color: logColor(l.k), whiteSpace: 'pre-wrap', minWidth: 0,
                           fontStyle: l.k === 'sys' ? 'italic' : 'normal',
@@ -566,7 +566,7 @@ export default function ExecutionPage() {
                       </div>
                     ))}
                     {logs.length === 0 && (
-                      <div style={{ color: 'var(--text-faintest)' }}>
+                      <div style={{ color: 'var(--text-deco)' }}>
                         {steps.length === 0
                           ? 'No logs — this execution never started.'
                           : sel?.step == null

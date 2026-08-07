@@ -139,7 +139,7 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · closing
   download CTA · footer (GitHub, Privacy, MIT). All repo links point to
   `hansololz/autowright`. Respects `prefers-reduced-motion`. Head metadata: canonical
-  `https://autowright.ai/`, `theme-color` `#0b0e12`, Open Graph + Twitter-card tags with a
+  `https://autowright.ai/`, `theme-color` `#090d14`, Open Graph + Twitter-card tags with a
   1200×630 social image (`docs/og.png`, AW mark + headline on the dark background),
   `docs/apple-touch-icon.png` (180 px full-bleed AW mark), and JSON-LD
   (`SoftwareApplication`, macOS, free, MIT). Sections below the demo fade up on first

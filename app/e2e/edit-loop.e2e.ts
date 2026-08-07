@@ -38,7 +38,7 @@ describe('edit loop e2e', () => {
     // Sync: the real §8 steps call — the fake claude returns its canonical
     // steps envelope, and the panel returns to the in-sync state.
     await page.getByRole('button', { name: 'Sync now' }).click()
-    await page.getByText('Steps are generated from the spec.').waitFor({ timeout: 60_000 })
+    await page.getByText('In sync with the spec.').waitFor({ timeout: 60_000 })
     await page.getByText('Check for changes').waitFor()
     await shot(page, 'edit-loop-synced.png')
 

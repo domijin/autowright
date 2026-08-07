@@ -39,7 +39,12 @@ describe('autowright e2e', () => {
     // The fake CLI surfaced through the real detect path (`claude --version`).
     await page.getByText(/autowright test fake/).waitFor()
     // The automatic read-only connection check passes (fake `claude auth status`).
-    await page.getByRole('button', { name: 'Use as default →' }).waitFor({ timeout: 20_000 })
+    // Scoped to the Claude Code card: every connected card carries the same
+    // "Use as default →" label, and real CLIs on the dev Mac also get found.
+    await page
+      .getByText('Claude Code', { exact: true }).locator('..').locator('..')
+      .getByRole('button', { name: 'Use as default →' })
+      .waitFor({ timeout: 20_000 })
     await shot(page, 'onboarding-step2.png')
 
     // Never proceed further: suggestion-card "Set up …" buttons run real installs.

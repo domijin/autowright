@@ -45,7 +45,7 @@ describe('editor chat e2e', () => {
     await page.getByPlaceholder(CHAT_INPUT).fill('What does this workflow do?')
     await page.getByRole('button', { name: 'Send' }).click()
     await page.getByText(/The workflow has two steps/).waitFor({ timeout: 60_000 })
-    await page.getByText('Steps are generated from the spec.').waitFor() // still in sync
+    await page.getByText('In sync with the spec.').waitFor() // still in sync
 
     // A change request: while the §8 chat job runs, the footer swaps the input
     // for the page's only live-job surface — stage label + Cancel (§11).
@@ -64,7 +64,7 @@ describe('editor chat e2e', () => {
       .locator('..')
     await syncRow.getByRole('button', { name: 'Sync now' }).click()
     await page.getByText('Steps synced with the spec.', { exact: true }).waitFor({ timeout: 60_000 })
-    await page.getByText('Steps are generated from the spec.').waitFor()
+    await page.getByText('In sync with the spec.').waitFor()
     await shot(page, 'editor-chat-synced.png')
 
     // The chat-driven edit saves like any other draft.

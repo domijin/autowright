@@ -1,6 +1,7 @@
 // §15 e2e: the menu-bar surface (#menubar hash → §13 panel in the same
-// renderer), and Executions-list behavior (§11 test records hidden) plus
-// Settings persistence (retention clamp, notification radio).
+// renderer), and Executions-list behavior (§11 test records listed, trigger
+// "Test" printed once) plus Settings persistence (retention clamp,
+// notification radio).
 import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, clickNav, closeApp, launchApp, shot, waitFor, type AppHandle } from './harness'
 
@@ -47,15 +48,15 @@ describe('surfaces e2e', () => {
     await shot(page, 'menubar-executed.png')
   }, 120_000)
 
-  it('hides §11 test records in the executions list and persists settings', async () => {
+  it('lists §11 test records in the executions list and persists settings', async () => {
     backend = await new Backend().start()
     const { id } = await backend.createAutomation('Exec list e2e')
     const real = await backend.executeAndWait(id)
     expect(real.status).toBe('succeeded')
-    // A §11 draft-test record over the same steps — must stay hidden.
+    // A §11 draft-test record over the same steps — lists like any execution (§7).
     const { execId: testId } = await backend.api('POST', '/tests', {
       draft: {
-        desc: 'test', note: null, params: [],
+        name: 'Exec list e2e', desc: 'test', note: null, params: [],
         steps: [FINISH_STEP],
         spec: [{ k: 'h1', text: 'Exec list e2e' }], instr: null,
       },
@@ -70,13 +71,15 @@ describe('surfaces e2e', () => {
     const { page } = handle
     await page.getByRole('heading', { name: 'Automations' }).waitFor({ timeout: 20_000 })
 
-    // Executions list: exactly ONE row — the real one; the test is hidden.
-    // (The filter bar also says "Succeeded", so count rows, not that text.)
+    // Executions list: TWO rows — the real one and the §11 test record (§7).
+    // The test row's trigger column prints "Test" once, never "Test · Test".
     await clickNav(page, 'Executions')
-    await page.getByText('Exec list e2e').waitFor({ timeout: 10_000 })
-    expect(await page.locator('.ad-hover-row').count()).toBe(1)
-    expect(await page.getByText('Exec list e2e').count()).toBe(1)
-    await page.getByText('Exec list e2e').click()
+    await page.getByText('Exec list e2e').first().waitFor({ timeout: 10_000 })
+    expect(await page.locator('.ad-hover-row').count()).toBe(2)
+    expect(await page.getByText('Exec list e2e').count()).toBe(2)
+    expect(await page.getByText('Test', { exact: true }).count()).toBe(1)
+    expect(await page.getByText('Test · Test').count()).toBe(0)
+    await page.locator('.ad-hover-row', { hasText: 'Manual' }).click()
     await page.getByRole('button', { name: 'Execute again' }).waitFor({ timeout: 10_000 })
     await shot(page, 'executions-list-clickthrough.png')
 

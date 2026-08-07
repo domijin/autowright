@@ -33,7 +33,7 @@ describe('create flow e2e', () => {
     // create job. The fake claude titles the draft from this exact text
     // (call 1's USER REQUEST section).
     await page.getByPlaceholder('Describe the job — one sentence is enough.').fill('Track manga chapters e2e')
-    await page.getByRole('button', { name: 'Draft it' }).click()
+    await page.getByRole('button', { name: 'Send' }).click()
     await shot(page, 'create-drafting.png')
 
     // Call 1 lands the spec (fixed fake envelope), call 2 the steps + param.

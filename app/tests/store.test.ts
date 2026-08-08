@@ -248,6 +248,40 @@ describe('applyEvent — automation.changed row patching (§19)', () => {
     expect(state).not.toHaveBeenCalled()
   })
 
+  it('list-shape row merges over a full record — full-only fields survive', () => {
+    // §19: the event row has no params/steps/latest — replacing would blank an
+    // open detail page's sections (flicker, focus loss, scroll jump).
+    const full = auto('a1', {
+      params: [{ name: 'p', kind: 'text', value: 'v' }],
+      steps: [{ name: 's1' }],
+      latest: { executionId: 'e1' },
+    })
+    store.useStore.setState({ automations: [full] })
+    store.useStore.getState().applyEvent({
+      event: 'automation.changed', automationId: 'a1', automation: auto('a1', { lastStatus: 'succeeded' }),
+    })
+    const got = store.useStore.getState().automations[0]
+    expect(got.lastStatus).toBe('succeeded')
+    expect(got.params).toEqual([{ name: 'p', kind: 'text', value: 'v' }])
+    expect(got.steps).toEqual([{ name: 's1' }])
+    expect(got.latest).toEqual({ executionId: 'e1' })
+  })
+
+  it('refresh merges /state list rows over stored full records', async () => {
+    const state = vi.mocked(apiMod.api.state)
+    state.mockClear()
+    const full = auto('a1', { params: [{ name: 'p', kind: 'text', value: 'v' }] })
+    store.useStore.setState({ automations: [full] })
+    state.mockResolvedValueOnce({
+      automations: [auto('a1', { name: 'Renamed' })], executions: [], agents: [], secrets: [],
+      settings: {}, pendingDraft: null,
+    } as never)
+    await store.useStore.getState().refresh()
+    const got = store.useStore.getState().automations[0]
+    expect(got.name).toBe('Renamed')
+    expect(got.params).toEqual([{ name: 'p', kind: 'text', value: 'v' }])
+  })
+
   it('automation: null removes the deleted row', () => {
     store.useStore.setState({ automations: [auto('a1'), auto('a2')] })
     store.useStore.getState().applyEvent({ event: 'automation.changed', automationId: 'a1', automation: null })

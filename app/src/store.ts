@@ -212,7 +212,7 @@ export const useStore = create<Model>((set, get) => ({
       // A newer refresh started while this one was in flight — its snapshot is
       // fresher (or will be); applying this one would roll state backwards.
       if (n !== refreshSeq) return
-      set({ automations: s.automations, executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft })
+      set({ automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft })
       updateTrayAlert(s.automations)
     } catch { /* backend restarting; ws reconnect will re-trigger */ }
   },
@@ -249,7 +249,7 @@ export const useStore = create<Model>((set, get) => ({
     const patchAutomation = (id: string, row: Automation | null) => {
       const cur = get().automations
       if (row === null) set({ automations: cur.filter((a) => a.id !== id) })
-      else if (cur.some((a) => a.id === id)) set({ automations: cur.map((a) => (a.id === id ? row : a)) })
+      else if (cur.some((a) => a.id === id)) set({ automations: cur.map((a) => (a.id === id ? { ...a, ...row } : a)) })
       else { void m.refresh(); return }
       updateTrayAlert(get().automations)
     }
@@ -432,6 +432,17 @@ export const useStore = create<Model>((set, get) => ({
 // §19 log buckets: step+attempt select an attempt file, null/null the execution log.
 export function logKey(step: number | null, attempt: number | null) {
   return step === null ? 'x.0' : `${step}.${attempt ?? 1}`
+}
+
+// §19: event/state rows are list-shape — no params/steps/latest/memory/… — so
+// they merge over any stored record. Replacing would blank those fields on an
+// open detail page: its sections unmount (flicker, focus loss, scroll jump)
+// until the next full fetch puts them back.
+function mergeAutoRows(cur: Automation[], rows: Automation[]): Automation[] {
+  return rows.map((r) => {
+    const old = cur.find((a) => a.id === r.id)
+    return old ? { ...old, ...r } : r
+  })
 }
 
 function updateTrayAlert(automations: Automation[]) {

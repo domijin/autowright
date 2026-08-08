@@ -365,9 +365,14 @@ remain plain dicts (§2).
   (the record header, §19 executions-list shape; `finished` also carries `automation`, the
   list-shape automation, for the toast). `automation.changed` carries `automationId` plus
   `automation` — the changed automation in list shape, or `null` when it was deleted —
-  whenever exactly one automation changed; clients patch that one row in place. A bare
+  whenever exactly one automation changed; clients patch that one row in place by **merging**
+  it over the stored record, never replacing it. The list shape lacks the full-record fields
+  (`params`/`steps`/`latest`/`memory`/`snapshots`/`spec`/`versions`/`draft`), so a replace
+  would blank those fields on an open detail page — its sections unmount and remount around
+  the follow-up full fetch, which reads as a page-refresh flicker, drops input focus
+  mid-edit, and collapses the page height so the scroll position jumps to the top. A bare
   `automation.changed` (no `automationId`) means "many may have changed" (data-path switch,
-  startup repair): clients fall back to re-`GET /state`. Clients also re-`GET /state` on
-  reconnect. The handler streams from a hub queue while concurrently watching the socket for
+  startup repair): clients fall back to re-`GET /state`, applying its list rows with the
+  same merge. Clients also re-`GET /state` on reconnect. The handler streams from a hub queue while concurrently watching the socket for
   the client's disconnect, so a dropped client ends the handler immediately — an idle open
   socket never leaves uvicorn's graceful shutdown waiting.

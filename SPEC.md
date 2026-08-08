@@ -123,12 +123,12 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   (mark + wordmark + GitHub link) · hero (headline, one-paragraph pitch, "Download for
   macOS" → the repo's latest GitHub release, "View source") · an animated app-window demo
   that mirrors the §11 chat-first create flow (58 px icon rail with the §9 nav icon set —
-  bolt, clock-rotate-left, robot, key, sliders, circle-info pinned at the bottom — and all
+  bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
   page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
   `@fortawesome/fontawesome-free` package into `<symbol>` defs; chat
   composer with a bordered `.ad-input`-style textarea and the real empty placeholder, typed
   plain-words prompt, agent-picker and Send/Cancel both rendered as `.ad-btn-pill` clones —
-  mono 10.5 px, white .06 background, radius 6, robot glyph + `name · model` + caret-down on
+  mono 10.5 px, white .06 background, radius 6, microchip glyph + `name · model` + caret-down on
   the picker; the progress block sits above the textarea, §11 stage labels "Working on the request…" / "Writing the spec…" / "Generating the
   steps…", numbered step rows with `.py` file tags, then trigger + ran-result chips; three
   looping scenes cover a cron, a Discord-trigger, and an interval job across different

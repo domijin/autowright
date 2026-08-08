@@ -265,7 +265,7 @@ function AgentPick({ agents, selected, onPick, disabled }: {
         title="The agent that writes the spec and generates the steps"
         style={{ maxWidth: '100%' }}
       >
-        <i className="fa-solid fa-robot" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
+        <i className="fa-solid fa-microchip" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected ? `${agName(selected)} · ${dispModel(selected)}` : 'No agent'}</span>
         <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
       </button>
@@ -625,7 +625,7 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
                   : nm
                     ? `${nm} isn’t enabled for steps — this step would fail`
                     : 'No agent is enabled for steps — this step would fail'}
-                icon="fa-robot"
+                icon="fa-microchip"
                 bg={ag ? 'var(--accent-chip-bg)' : 'var(--red-bg)'}
                 border={ag ? 'oklch(0.74 0.155 52 / .3)' : 'oklch(0.7 0.19 25 / .4)'}
                 color={ag ? 'var(--accent-hover)' : 'var(--red-text)'}
@@ -670,7 +670,7 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
             display: 'flex', gap: 9, alignItems: 'flex-start', borderTop: '1px solid var(--hairline-dim)',
             background: 'var(--accent-hint-bg)', padding: '10px 20px',
           }}>
-            <i className="fa-solid fa-robot" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
+            <i className="fa-solid fa-microchip" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
             <span style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
               <span style={{ font: "500 11.5px var(--sans)", color: 'var(--text-2)' }}>Why an agent: </span>{step.why || ''}
             </span>
@@ -2785,7 +2785,7 @@ export default function CreateFlow() {
                         )
                       })}
                       <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
-                        Steps marked <i className="fa-solid fa-robot" style={{ fontSize: 9, color: 'var(--accent-hover)' }} /> call one of these mid-execution — for the parts plain code can’t do, like reading a messy page or writing prose. Fewer enabled means more predictable executions.
+                        Steps marked <i className="fa-solid fa-microchip" style={{ fontSize: 9, color: 'var(--accent-hover)' }} /> call one of these mid-execution — for the parts plain code can’t do, like reading a messy page or writing prose. Fewer enabled means more predictable executions.
                       </div>
                     </div>
                 </SectionCard>

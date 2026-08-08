@@ -1000,7 +1000,7 @@ function StepRow({ s, n, open, onToggle, last, agentNames }: {
                   fontSize: 10, whiteSpace: 'nowrap',
                 }}
               >
-                <i className="fa-solid fa-robot" style={{ fontSize: 8.5 }} /> {nm}
+                <i className="fa-solid fa-microchip" style={{ fontSize: 8.5 }} /> {nm}
               </span>
             ))}
             {stepSecrets.map((name) => (
@@ -1041,7 +1041,7 @@ function StepRow({ s, n, open, onToggle, last, agentNames }: {
             display: 'flex', gap: 9, alignItems: 'flex-start', borderTop: '1px solid var(--hairline-dim)',
             background: 'var(--accent-hint-bg)', padding: '10px 18px 10px 45px',
           }}>
-            <i className="fa-solid fa-robot" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
+            <i className="fa-solid fa-microchip" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
             <span style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-muted)' }}>
               <span style={{ fontWeight: 500, color: 'var(--text-2)' }}>Why an agent: </span>{s.why}
             </span>

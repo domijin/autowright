@@ -468,7 +468,7 @@ editors enter with
   "No settings needed — your AI didn't ask for any."
 - **Steps** — readable scripts with per-step read-only tags (same tag language as the §9.2
   detail page — never menus, every tag carries a plain-language `title` tooltip): an agent step
-  shows one robot-icon tag per name in its `agents`
+  shows one microchip-icon tag per name in its `agents`
   list (tooltip "This step calls `<name>` · `<model>` mid-execution"; a tag turns red when its
   name matches no enabled agent — red tooltip "`<name>` isn't enabled for steps — this step
   would fail"; an empty list shows one tag

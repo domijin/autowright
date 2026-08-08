@@ -376,7 +376,7 @@ Sections top to bottom:
   independently — opening one never closes another, so each §14 collapse animates alone
   instead of cancelling against a simultaneous close above it. Step tags are
   display-only — never menus, and every tag carries a plain-language `title` tooltip explaining
-  what it shows: an agent step carries one robot-icon tag per name in its `agents`
+  what it shows: an agent step carries one microchip-icon tag per name in its `agents`
   list (tooltip = the step's `why`, fallback "This step calls the `<name>` AI agent." when the
   step has no `why`; an empty list shows a single tag naming the automation's
   first enabled agent, fallback "agent"), a step carries one key-icon tag per secret it

@@ -834,7 +834,10 @@ renderers alive (window closed, panel never opened), and a scheduled failure in 
 must still light the dot (and a later success must clear it). Panel: 334 px translucent
 (blur), height grows with content up to the 640 px window cap — past that the automation
 rows list scrolls (native overlay scrollbar, per the §14 no-custom-scrollbar rule) while the
-header and footer stay pinned. Header row with "AUTOWRIGHT" eyebrow left and aggregate status right (mono 11 px; "All good
+header and footer stay pinned. The window tracks the panel's full rendered
+(border-box) height, rounded up, via a `ResizeObserver` — a content-only measure
+(`scrollHeight`) excludes the 1 px border, and a single measure at first render runs
+before fonts finish loading; either way the footer's bottom edge gets clipped. Header row with "AUTOWRIGHT" eyebrow left and aggregate status right (mono 11 px; "All good
 · N automation(s)" — pluralized by count — or "N need(s) attention" in red), one row per automation (7 px status dot —
 pulsing while executing, name, mono sub-line colored by state: cyan "Executing now…" / red when failed
 / accent for a result chip / faint otherwise, relative time right-aligned in a 56 px column, then

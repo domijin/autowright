@@ -16,8 +16,16 @@ export default function MenuBarPanel() {
     : `All good · ${autos.length} automation${autos.length === 1 ? '' : 's'}`
 
   useEffect(() => {
-    if (ref.current) void window.autowright?.resizePanel(ref.current.scrollHeight)
-  }, [autos.length])
+    const el = ref.current
+    if (!el) return
+    // Border-box measure (scrollHeight excludes the 1px border), re-sent whenever
+    // the panel grows — late font loads and row changes both land after mount.
+    const send = () => void window.autowright?.resizePanel(Math.ceil(el.getBoundingClientRect().height))
+    send()
+    const ro = new ResizeObserver(send)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   const openAuto = (id: string) => { void window.autowright?.openApp(`/app?auto=${id}`) }
 

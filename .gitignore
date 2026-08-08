@@ -26,6 +26,10 @@ build/
 .env
 .env.local
 *.local.yaml
+.claude/settings.local.json
+
+# IDE
+.idea/
 
 # Signing / notarization key material (never commit)
 *.p12

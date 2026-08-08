@@ -359,8 +359,9 @@ Dev workflow:
   returns nothing.
 - **`./scripts/commit`** — stages all uncommitted changes (`git add -A`), asks Claude
   (Opus 5, `claude --model claude-opus-5 -p`) for a commit message based on the staged diff
-  (≤72-char imperative summary, whole message capped at 2-3 sentences), prints it, and commits. Exits 0 with no commit if
-  the tree is clean; fails if message generation returns empty. Does not push. Developer-only:
+  (≤72-char imperative summary, whole message capped at 2-3 sentences), strips any markdown
+  code-fence lines (```/```lang) the model wraps the message in, prints it, and commits. Exits 0 with no commit if
+  the tree is clean; fails if the message is empty after stripping. Does not push. Developer-only:
   agents never run this script (`.claude/CLAUDE.md` forbids it).
 
 Claude Code commands:

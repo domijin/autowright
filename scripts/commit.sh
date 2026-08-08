@@ -27,7 +27,10 @@ $stat
 Diff:
 $diff")"
 
-if [[ -z "$message" ]]; then
+# The model sometimes wraps the message in markdown code fences; drop those lines.
+message="$(printf '%s\n' "$message" | sed '/^[[:space:]]*```/d' | sed '/./,$!d')"
+
+if [[ -z "${message//[[:space:]]/}" ]]; then
   echo "Failed to generate commit message." >&2
   exit 1
 fi

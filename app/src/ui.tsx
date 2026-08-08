@@ -567,8 +567,9 @@ const topModal = () =>
  * Ask panel) must yield to the modal stack instead of closing underneath it. */
 export const anyModalOpen = () => modalStack.length > 0
 
-export function Modal({ onClose, width, zIndex = 60, cardStyle, children }: {
+export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog', ariaLabel, children }: {
   onClose: () => void; width: number; zIndex?: number; cardStyle?: React.CSSProperties
+  role?: 'dialog' | 'alertdialog'; ariaLabel?: string
   children: (close: () => void) => React.ReactNode
 }) {
   const [closing, setClosing] = useState(false)
@@ -608,7 +609,7 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, children }: {
           : 'adFadeIn var(--t-enter) var(--ease-enter) both',
       }}
     >
-      <div style={{
+      <div role={role} aria-modal="true" aria-label={ariaLabel} style={{
         background: 'var(--bg-menu)', border: '1px solid var(--border-input)', borderRadius: 12,
         boxShadow: '0 24px 60px rgba(0,0,0,.5)', width,
         animation: closing ? EXIT_DOWN : ENTER_UP,
@@ -635,6 +636,7 @@ export function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onC
     <Modal
       onClose={() => { if (confirmed.current) onConfirm(); else onCancel() }}
       width={400} zIndex={90} cardStyle={{ padding: '22px 24px' }}
+      role="alertdialog" ariaLabel={title}
     >
       {(close) => (
         <>

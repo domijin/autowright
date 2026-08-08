@@ -78,7 +78,9 @@ describe('agents and secrets e2e', () => {
     // Delete it again — placeholder rows delete without any Keychain value.
     await page.getByTitle('Delete').click()
     await page.getByText('Delete this secret?').waitFor({ timeout: 10_000 })
-    await page.getByRole('button', { name: 'Delete secret' }).click()
+    // Scoped to the alertdialog: the row's icon button shares the accessible
+    // name "Delete secret" with the confirm button.
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete secret' }).click()
     await page.getByRole('button', { name: 'Add your first secret' }).waitFor({ timeout: 10_000 })
     expect(await page.getByText('E2E_TOKEN').count()).toBe(0)
     await shot(page, 'secrets-deleted.png')

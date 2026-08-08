@@ -60,6 +60,10 @@ animation animates `transform` and would knock the toast off-center while it pla
   users). `Toggle` renders `role="switch"` + `aria-checked`; radio groups (`RadioRing`
   rows) render `role="radio"`/`aria-checked` inside a `role="radiogroup"`; a segmented
   filter's buttons carry `aria-pressed`.
+- The `Modal` shell's card renders `role="dialog"` + `aria-modal="true"`;
+  `ConfirmModal` upgrades it to `role="alertdialog"` labelled by its title. This also
+  gives tests an unambiguous scope — a confirm button whose label matches a row action
+  (e.g. "Delete secret") is queried inside the dialog role.
 - The §14 focus ring must never be clipped: controls inside an `overflow: hidden` card use
   the inset variant (`.ad-focus-inset` — outline-offset −2 px) so the ring draws inside the
   clip instead of being cut.

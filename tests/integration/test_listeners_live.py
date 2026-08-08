@@ -72,7 +72,7 @@ def test_imessage_trigger_fires_and_replies(backend_factory, tmp_path):
         def connected():
             full = c.get(f"/automations/{a['id']}").json()
             t = (full.get("triggers") or [{}])[0]
-            return (t.get("conn") or {}).get("state") == "connected"
+            return (t.get("connection") or {}).get("state") == "connected"
 
         wait_for(connected, 30, "imessage watcher to connect")
         assert c.get("/executions").json() == []  # history row didn't fire

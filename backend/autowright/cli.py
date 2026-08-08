@@ -374,8 +374,8 @@ def cmd_status(c: Client, args) -> None:
     s = c.req("GET", "/state")
     info = {
         "version": h.get("version"), "backend": c.base,
-        "automations": len(s.get("autos") or s.get("automations") or []),
-        "executions": len(s.get("execs") or s.get("executions") or []),
+        "automations": len(s.get("automations") or []),
+        "executions": len(s.get("executions") or []),
         "agents": len(s.get("agents") or []),
         "secrets": len(s.get("secrets") or []),
         "pendingDraft": s.get("pendingDraft"),

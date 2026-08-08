@@ -127,7 +127,7 @@ def test_queue_stress_no_races(store, monkeypatch):
                 assert h["steps"], "succeeded with no steps"
             if h["status"] == "skipped":
                 assert h["note"], "skipped record with no note"
-            # a record that ran carries dur_ms
+            # a record that ran carries duration_ms
             if h["status"] in ("succeeded", "failed"):
                 assert h["duration_ms"] is not None
         # sanity: the storm actually exercised both paths

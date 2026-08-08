@@ -1259,7 +1259,7 @@ class DraftJobs:
     @staticmethod
     def _append_event(job: dict, text: str) -> None:
         ev = job["events"]
-        ev.append({"t": time.time(), "text": text})
+        ev.append({"time": time.time(), "text": text})
         # §8: capped at the newest 200 — a chatty stream must not grow the
         # job (and every poll response) for the call's whole lifetime.
         if len(ev) > 200:

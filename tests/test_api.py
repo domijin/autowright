@@ -389,15 +389,15 @@ def _capture_events(monkeypatch):
     from autowright import api
 
     events: list[dict] = []
-    monkeypatch.setattr(api.hub, "publish", lambda ev, **kw: events.append({"ev": ev, **kw}))
+    monkeypatch.setattr(api.hub, "publish", lambda ev, **kw: events.append({"event": ev, **kw}))
     return events
 
 
 def _until(events, ev, timeout=30):
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if any(e["ev"] == ev for e in events):
-            return next(e for e in events if e["ev"] == ev)
+        if any(e["event"] == ev for e in events):
+            return next(e for e in events if e["event"] == ev)
         time.sleep(0.05)
     raise AssertionError(f"{ev} never arrived (got {[e['ev'] for e in events]})")
 
@@ -405,7 +405,7 @@ def _until(events, ev, timeout=30):
 def _until_finished(events, execution_id, timeout=30):
     t0 = time.time()
     while time.time() - t0 < timeout:
-        e = next((e for e in events if e["ev"] == "execution.finished" and e["executionId"] == execution_id), None)
+        e = next((e for e in events if e["event"] == "execution.finished" and e["executionId"] == execution_id), None)
         if e:
             return e
         time.sleep(0.05)
@@ -423,7 +423,7 @@ def test_test_param_values_override(client, monkeypatch):
     full = client.get(f"/executions/{eid}").json()
     assert full["test"] is True and full["ver"] == "Test" and full["trigger"] == "Test"
     assert full["result"]["chip"] == "bonjour"
-    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
+    logs = [e["line"]["text"] for e in events if e["event"] == "execution.log"]
     assert any("greeting=bonjour" in t for t in logs)
 
 
@@ -444,7 +444,7 @@ def test_test_trigger_mock_imessage_payload(client, monkeypatch):
     assert r.status_code == 200
     eid = r.json()["executionId"]
     assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
-    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
+    logs = [e["line"]["text"] for e in events if e["event"] == "execution.log"]
     assert any("mock=imessage:+15551234567:new chapter?" in t for t in logs)
     full = client.get(f"/executions/{eid}").json()
     assert full["test"] is True and full["trigger"] == "Test"
@@ -487,7 +487,7 @@ def test_test_stored_values_and_flagged_record(client, monkeypatch):
     assert r.status_code == 200
     eid = r.json()["executionId"]
     _until_finished(events, eid)
-    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
+    logs = [e["line"]["text"] for e in events if e["event"] == "execution.log"]
     assert any("greeting=stored-hi" in t for t in logs)
     assert store.execs[eid]["kind"] == "test"
     aj = client.get(f"/automations/{auto['id']}").json()
@@ -508,7 +508,7 @@ def test_test_resolves_default_after_editor_roundtrip(client, monkeypatch):
     assert r.status_code == 200
     eid = r.json()["executionId"]
     assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
-    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
+    logs = [e["line"]["text"] for e in events if e["event"] == "execution.log"]
     assert any("greeting=hello" in t for t in logs)
 
 
@@ -565,7 +565,7 @@ def test_test_cancel(client, monkeypatch):
     eid = client.post("/tests", json={"draft": d}).json()["executionId"]
     t0 = time.time()
     while time.time() - t0 < 10:  # wait until the step subprocess is live
-        if any(e["ev"] == "execution.log" and e["line"]["text"] == "sleeping" for e in events):
+        if any(e["event"] == "execution.log" and e["line"]["text"] == "sleeping" for e in events):
             break
         time.sleep(0.05)
     assert client.post(f"/executions/{eid}/cancel").json()["ok"]
@@ -1523,8 +1523,8 @@ def test_ollama_status_endpoint(client, monkeypatch):
 def _wait_pull_done(events, timeout=10):
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if any(e["ev"] == "ollama.pull" and e.get("done") for e in events):
-            return [e for e in events if e["ev"] == "ollama.pull"]
+        if any(e["event"] == "ollama.pull" and e.get("done") for e in events):
+            return [e for e in events if e["event"] == "ollama.pull"]
         time.sleep(0.05)
     raise AssertionError(f"ollama.pull done never arrived (got {events})")
 
@@ -1563,7 +1563,7 @@ def test_ollama_pull_streams_lines_then_done(client, monkeypatch):
     assert pulls[-1]["done"] is True and pulls[-1]["ok"] is True
     assert all(e["model"] == "qwen3:8b" for e in pulls)
     t0 = time.time()
-    while not any(e["ev"] == "agents.changed" for e in events):
+    while not any(e["event"] == "agents.changed" for e in events):
         assert time.time() - t0 < 5
         time.sleep(0.05)
 

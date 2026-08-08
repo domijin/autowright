@@ -323,7 +323,7 @@ export interface Blocker {
 // §8 activity feed entry — one discrete drafting milestone (file started, web
 // tool used, retry notice, package install), `t` epoch seconds
 export interface DraftEvent {
-  t: number
+  time: number
   text: string
 }
 

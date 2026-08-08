@@ -332,7 +332,7 @@ def seed(store: Store) -> None:
     def _step_file(i, name):
         return f"{i + 1:02d}-{re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')}.py"
 
-    def put_exec(auto, ver, status, trigger, started, dur_ms, steps, logs, result=None,
+    def put_exec(auto, ver, status, trigger, started, duration_ms, steps, logs, result=None,
                  note=None, redacted=None, files=None):
         started_iso = started.astimezone(timezone.utc).isoformat()  # §5 canonical form
         # Step entries are (name, status, dur) — one attempt unless queued — or
@@ -354,10 +354,10 @@ def seed(store: Store) -> None:
                                    note=note, status="executing")
         h["started_at"] = started_iso
         h["status"] = status
-        h["duration_ms"] = dur_ms
+        h["duration_ms"] = duration_ms
         h["redacted_secrets"] = redacted or []
         if status in ("succeeded", "failed", "cancelled", "interrupted", "skipped"):
-            h["finished_at"] = (started + timedelta(milliseconds=dur_ms or 0)).astimezone(timezone.utc).isoformat()
+            h["finished_at"] = (started + timedelta(milliseconds=duration_ms or 0)).astimezone(timezone.utc).isoformat()
         # Log lines route by file (§5 logs/): a "▸ Step N — name" sys marker
         # switches to that step's latest attempt's file; lines before any
         # marker are execution-level (execution.ndjson).

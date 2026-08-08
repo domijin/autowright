@@ -668,7 +668,7 @@ class Engine:
                     else auto["enabled_agents"],
                     "allowed_secrets": ver["allowed_secrets"] if ver.get("allowed_secrets") is not None
                     else auto["allowed_secrets"]}
-        state["pass_start"] = time.time()  # §7: dur_ms accumulates across retry passes
+        state["pass_start"] = time.time()  # §7: duration_ms accumulates across retry passes
         result: dict[str, Any] = {"status": "ok", "chip": None}
         result_touched = False
         notify_text: str | None = None

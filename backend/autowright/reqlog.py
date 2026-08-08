@@ -104,7 +104,7 @@ def _body_text(body: bytes, total: int, redact: bool) -> str:
 
 
 def write_http(ts: str, scope: dict, req_body: bytes, req_total: int, status: int,
-               resp_body: bytes, resp_total: int, dur_ms: float) -> None:
+               resp_body: bytes, resp_total: int, duration_ms: float) -> None:
     """One served HTTP request → one file. Token query + Authorization header
     scrubbed; /secrets bodies fully redacted (§5: values never touch disk)."""
     path = scope.get("path") or "/"
@@ -117,7 +117,7 @@ def write_http(ts: str, scope: dict, req_body: bytes, req_total: int, status: in
         headers.append(f"  {key}: {val}")
     redact = path.startswith("/secrets")
     method = scope.get("method") or "?"
-    text = (f"{method} {target} → {status} · {dur_ms:.0f} ms\n\n"
+    text = (f"{method} {target} → {status} · {duration_ms:.0f} ms\n\n"
             f"request headers:\n" + "\n".join(headers) + "\n\n"
             f"request body ({req_total} bytes):\n{_body_text(req_body, req_total, redact)}\n\n"
             f"response body ({resp_total} bytes):\n{_body_text(resp_body, resp_total, redact)}\n")
@@ -125,12 +125,12 @@ def write_http(ts: str, scope: dict, req_body: bytes, req_total: int, status: in
 
 
 def write_agent(ts: str, harness: str, model: str, prompt: str,
-                response: str | None, error: str | None, dur_ms: float) -> None:
+                response: str | None, error: str | None, duration_ms: float) -> None:
     """One harness.invoke() → one file: full prompt + full response/error —
     never truncated, mirroring the §5 app.log framing."""
     tail = (f"response ({len(response)} chars):\n{response}\n" if response is not None
             else f"request failed: {error}\n")
-    text = (f"agent request · harness={harness} · model={model} · {dur_ms:.0f} ms\n\n"
+    text = (f"agent request · harness={harness} · model={model} · {duration_ms:.0f} ms\n\n"
             f"prompt ({len(prompt)} chars):\n{prompt}\n\n{tail}")
     write(ts, "AGENT", harness, text)
 

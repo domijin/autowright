@@ -38,16 +38,17 @@ applies unchanged; the chat pane never collapses.
   - **user** — the message as quiet plain text.
   - **answer** — the agent's reply rendered through the shared §4.5 Markdown renderer.
   - **rewrite** — a "Spec updated" event: the one-line summary, the out-of-sync note
-    ("The workflow is out of sync — sync the steps before saving."), a ghost **Undo**
-    action shown while the spec-undo snapshot below exists (same visibility rules as the
-    spec-card Undo button; both trigger the same restore), and — while the workflow is
-    still out of sync — an inline ghost **Sync now** action (the same §8 sync call and
-    gating as the panel's button), so the most common next step sits on the event itself.
+    ("The workflow is out of sync — sync the steps before saving."), and — while the
+    workflow is still out of sync — an inline ghost **Sync now** action (the same §8 sync
+    call and gating as the panel's button), so the most common next step sits on the event
+    itself. The entry carries no Undo of its own — undo restores the whole draft, not just
+    the spec, so it lives on the standalone undo row (Draft undo below).
   - **blockers** — the §8 blocker list as editable cards (below).
   - **system** — a quiet one-line status chip ("Steps synced with the spec.", "Sync
     stopped — the workflow is still out of sync.", the §7 Fix-with-AI failure seed, the
     run-settled entries below, "Build instructions updated.", "Notes updated.",
-    "Renamed to `<name>`.", "Description updated.").
+    "Renamed to `<name>`.", "Description updated.", the Draft-undo entry "Last change
+    undone — the rewrites above no longer apply.").
   - **error** — a red-tinted failure entry (a failed §8 job's message, the Failures
     paragraph below). Persisted like the other kinds (§4.4), so it survives a reload and
     reaches the agent's CONVERSATION context.
@@ -83,7 +84,8 @@ applies unchanged; the chat pane never collapses.
   - an **answer** appends an answer entry (first, when rewrites follow);
   - a **spec rewrite** replaces the spec exactly like a manual spec edit — out-of-sync
     marking, toast "Spec updated — the workflow is out of sync. Sync the steps before
-    saving.", the spec-undo snapshot stashed — and appends a rewrite entry (the toast is
+    saving.", the full-draft undo snapshot stashed (one snapshot for the whole response —
+    Draft undo below) — and appends a rewrite entry (the toast is
     skipped when the response's actions immediately sync);
   - an **instructions rewrite** replaces the Build-instructions text like a manual
     instructions Save (same dirty gating) and appends a system entry ("Build instructions
@@ -273,8 +275,8 @@ the whole header row toggles the card and is an `.ad-hover-row` hover surface (a
 open — the spec card while writing or being edited, the build-instructions and notes cards
 while being edited — keeps its header inert: no hover tint, default cursor, no collapse
 mid-edit). The step rows and the agent/secret checklist rows are `.ad-hover-row`
-surfaces too. Card-header actions (Edit / Cancel / Save and the ghost Undo / Reset to default)
-are compact borderless text buttons at the small text-button size — Edit muted, Cancel / Undo /
+surfaces too. Card-header actions (Edit / Cancel / Save and the ghost Reset to default)
+are compact borderless text buttons at the small text-button size — Edit muted, Cancel /
 Reset to default faint, Save link-styled in accent — never bordered or filled boxes: chat is
 the primary way to change these documents, so the manual controls stay quiet. Their line box is
 tightened (line-height 1) so they never exceed the eyebrow line: every card header — with or
@@ -327,17 +329,36 @@ editors enter with
   outcome renders a thread blockers entry (source: chat) — either way the draft is
   untouched. Manual spec/instruction edits are mutually exclusive (one edit at a time), and
   both are locked while a chat/sync job runs (inputs lock below).
-- **Spec undo** — one-level snapshot. Applying a chat rewrite or an
-  in-editor Save first stashes the previous spec blocks together with the dirty flags of that
-  moment. While a snapshot exists, a ghost **Undo** button shows next to Edit in the spec-card
-  header (hidden while the card is in an edit/busy/blocker/error state or a rewrite/sync job is
-  in flight). Clicking it restores the snapshot's spec, clears the snapshot, and — only when the
-  current out-of-sync cause is still the spec — restores the snapshot's dirty state too (so
-  undoing the sole unsynced spec change unblocks Save; an intervening agent/secret change keeps
-  its own out-of-sync state). Toast: "Last spec change undone." The snapshot is single-level —
-  each new agent rewrite or in-editor Save replaces it — and it clears on a successful sync, on
-  a repair-block spec amend, and on loading a version from the Version menu. It lives only in
+- **Draft undo** — one-level **full-draft snapshot** per agent request: when a chat
+  response changes the draft, the editor first stashes the draft **whole** — spec, steps,
+  parameter definitions, packages, triggers, build instructions, notes, and the dirty flag
+  of that moment (an answer-only response leaves the existing snapshot untouched; grants
+  and name/desc are user-owned, never agent-rewritten, and stay out). One ghost **Undo**
+  restores it all, so the draft looks **exactly as it did before that request** — including
+  steps a chained `sync: true` action rewrote, which is why a completed sync does **not**
+  clear the snapshot. The Undo is a **standalone thread row** — a quiet centered ghost
+  **"Undo this change"** button at the small text-button size, rendered directly beneath
+  the **last** thread entry the request produced (the snapshot's anchor): the response's
+  final rewrite/system chip — doc rewrites and the "Renamed to …" / "Description updated."
+  chips included — and, when a sync lands while the snapshot exists (chained or manual),
+  the anchor moves below that sync's "Steps synced with the spec." / "Notes updated."
+  chips, so the row always sits **below everything the request changed**. It is
+  deliberately its own row, never an action inside the
+  "Spec updated" entry: the restore covers the whole draft, not just the spec. The row is
+  the page's only undo affordance; it renders only while the snapshot exists and hides
+  while any §8 job is in flight, while viewing an old version, and while a test executes.
+  Restoring puts every
+  snapshotted field back, clears the snapshot, toasts "Last change undone.", and appends
+  the system entry "Last change undone — the rewrites above no longer apply." — the thread
+  persists (§4.4), so the agent's §8 CONVERSATION context learns the rollback and never
+  assumes its earlier rewrites still stand. The
+  snapshot is single-level — each new draft-changing response replaces it — and it clears
+  on any manual document Save (spec, build instructions, or notes — an undo would silently
+  destroy the newer manual work), on a repair-block spec amend, and on loading a version
+  from the Version menu. It lives only in
   editor state: it is not part of the serialized draft and does not survive leaving the page.
+  There is deliberately **no multi-level revert history**: chat can walk any change back, and
+  durable rollback is the version menu.
 - **BUILD INSTRUCTIONS** — collapsible card sitting second-last in the left column, directly
   above the Framework-instructions card (the two standing-rules documents close the column
   together); holds the §4.1 `instr` free text, with view/edit
@@ -391,7 +412,8 @@ editors enter with
   marks the workflow out of sync — the kept spec no longer has finished steps. While viewing an
   old version, grant gaps never lock Restore — permissions are not versioned (§5) and a vX step
   needing a now-revoked grant fails at execution time instead; the cards still warn. An old
-  version is browsed read-only: the spec card's Edit and Undo buttons disable while viewing
+  version is browsed read-only: the spec card's Edit button and the thread's undo row
+  disable while viewing
   one (like the sync button) — editing there would mark the workflow dirty and lock Restore
   behind a sync button that is itself disabled, a dead end; Restore first, then edit. Sync
   state lives in the **Build & test panel** (its own section below) at the top of the right
@@ -403,7 +425,7 @@ editors enter with
   generation was cancelled by an edit, or a resumed spec-only pending draft) must always be
   able to rebuild its steps through this button; an empty-steps state must never dead-end. **Inputs lock while rewriting** — while a sync
   or a chat job is in flight, every input on the review screen is disabled:
-  the spec Edit and Undo buttons, the chat input (its own busy hint above), the
+  the spec Edit button and the thread's undo row, the chat input (its own busy hint above), the
   agent-enablement and secret-allowance checkbox rows (and the missing-secret add row and the
   Secrets card's New secret button), the
   build-instructions Edit button, the Build & test panel's test-values editors and its Test
@@ -411,8 +433,8 @@ editors enter with
   live control is the running job's Cancel button (the composer progress block's). **Rewrites
   lock while a test
   executes** — while a draft test is executing, every affordance that would rewrite the
-  workflow under the running test disables: the panel's sync button, the spec card's Edit
-  and Undo, the chat input, and the build-instructions Edit.
+  workflow under the running test disables: the panel's sync button, the spec card's Edit,
+  the thread's undo row, the chat input, and the build-instructions Edit.
   Grant toggles, test-parameter editors, and navigation stay live — the test's inputs were
   snapshotted at start (a grant change surfaces through the ordinary out-of-sync state,
   where the live test keeps its Cancel). Every disabled control shares one look:

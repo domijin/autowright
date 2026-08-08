@@ -332,9 +332,14 @@ interface Rev {
   specEdit: boolean
   specText: string
   specTextOrig: string
-  // §11 spec undo: one-level snapshot taken before an agent rewrite or an
-  // in-editor Save lands; editor-state only, never serialized into the draft.
-  specUndo: { spec: SpecBlock[]; dirty: boolean } | null
+  // §11 draft undo: one-level full-draft snapshot stashed when a chat
+  // response changes the draft — Undo restores the draft exactly as it was
+  // before that request. entryId is the thread entry the ghost Undo rides;
+  // editor-state only, never serialized into the draft.
+  undo: {
+    spec: SpecBlock[]; steps: Step[]; params: Rev['params']; packages: PackageDep[]
+    triggers: DraftTrigger[]; instr: string; notes: string; dirty: boolean; entryId: string
+  } | null
   instrEdit: boolean
   instrDraft: string | null
   notesEdit: boolean
@@ -384,7 +389,7 @@ interface Rev {
 const revDefaults = {
   dirty: false, touched: false,
   specEdit: false, specText: '', specTextOrig: '',
-  specUndo: null as Rev['specUndo'],
+  undo: null as Rev['undo'],
   instrEdit: false, instrDraft: null as string | null,
   notesEdit: false, notesDraft: null as string | null,
   pendingSync: false, pendingTest: null as Rev['pendingTest'],
@@ -477,7 +482,7 @@ function loadVersionInto(r: Rev, snap: { spec: SpecBlock[]; steps: Step[]; instr
     packages: (snap.packages ?? []).map((p) => ({ ...p })),
     instr: snap.instr || '',
     notes: snap.notes || '',
-    specEdit: false, specText: '', specTextOrig: '', specUndo: null, instrEdit: false, instrDraft: null,
+    specEdit: false, specText: '', specTextOrig: '', undo: null, instrEdit: false, instrDraft: null,
     notesEdit: false, notesDraft: null, pendingSync: false, pendingTest: null,
     dirty: false, syncBusy: false, chatBusy: false,
     // A freshly loaded view is pristine — a stale carried-over `touched` would
@@ -1421,28 +1426,53 @@ export default function CreateFlow() {
             let next: Rev = { ...r, chatBusy: false }
             const chat = [...r.chat]
             if (d.answer) chat.push(newEntry({ kind: 'answer', text: d.answer }))
+            // §11 draft undo: a draft-changing response stashes the full
+            // pre-request draft as one snapshot, anchored to the LAST
+            // document entry it appends — the standalone undo row renders
+            // directly beneath it
+            let anchorId: string | null = null
             if (d.spec) {
-              // §11 spec undo: stash the pre-rewrite spec + dirty flag
-              next = { ...next, specUndo: { spec: r.spec, dirty: r.dirty }, spec: d.spec, dirty: true }
-              chat.push(newEntry({ kind: 'rewrite', text: request }))
+              const entry = newEntry({ kind: 'rewrite', text: request })
+              anchorId = entry.id
+              next = { ...next, spec: d.spec, dirty: true }
+              chat.push(entry)
             }
             if (d.instr != null && d.instr !== r.instr) {
+              const entry = newEntry({ kind: 'system', text: 'Build instructions updated.' })
+              anchorId = entry.id
               // like a manual Build-instructions save — same dirty gating (§11)
               next = { ...next, instr: d.instr, dirty: true }
-              chat.push(newEntry({ kind: 'system', text: 'Build instructions updated.' }))
+              chat.push(entry)
             }
             if (d.notes != null && d.notes !== r.notes) {
+              const entry = newEntry({ kind: 'system', text: 'Notes updated.' })
+              anchorId = entry.id
               // notes never mark the workflow out of sync (§4.1)
               next = { ...next, notes: d.notes }
-              chat.push(newEntry({ kind: 'system', text: 'Notes updated.' }))
+              chat.push(entry)
             }
             if (actions.name && actions.name !== r.name) {
+              const entry = newEntry({ kind: 'system', text: `Renamed to “${actions.name}”.` })
+              if (anchorId) anchorId = entry.id // the row sits below every chip the request produced
               next = { ...next, name: actions.name }
-              chat.push(newEntry({ kind: 'system', text: `Renamed to “${actions.name}”.` }))
+              chat.push(entry)
             }
             if (actions.desc && actions.desc !== r.desc) {
+              const entry = newEntry({ kind: 'system', text: 'Description updated.' })
+              if (anchorId) anchorId = entry.id
               next = { ...next, desc: actions.desc }
-              chat.push(newEntry({ kind: 'system', text: 'Description updated.' }))
+              chat.push(entry)
+            }
+            // an answer-only response leaves the existing snapshot untouched
+            if (anchorId) {
+              next = {
+                ...next,
+                undo: {
+                  spec: r.spec, steps: r.steps, params: r.params, packages: r.packages,
+                  triggers: r.triggers, instr: r.instr, notes: r.notes,
+                  dirty: r.dirty, entryId: anchorId,
+                },
+              }
             }
             if (empty) chat.push(newEntry({ kind: 'error', text: 'The agent returned an empty response.' }))
             // §11 action chaining: arm the sync/test pendings; the watcher
@@ -1497,16 +1527,25 @@ export default function CreateFlow() {
     void submitCreate(request)
   }
 
-  // §11 spec undo: restore the one-level snapshot, dirty flag included — grant
-  // sync state is derived, so an intervening agent/secret change keeps its own
-  // out-of-sync state regardless.
-  const undoSpec = () => {
+  // §11 draft undo: restore the full pre-request snapshot — the draft looks
+  // exactly as it did before the last agent request, chained-sync step
+  // rewrites included. Grant sync state is derived, so an intervening
+  // agent/secret change keeps its own out-of-sync state regardless.
+  const undoDraft = () => {
     setRev((r) => {
-      if (!r || !r.specUndo) return r
-      const snap = r.specUndo
-      return { ...r, spec: snap.spec, specUndo: null, touched: true, dirty: snap.dirty }
+      if (!r || !r.undo) return r
+      const snap = r.undo
+      return {
+        ...r,
+        spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
+        triggers: snap.triggers, instr: snap.instr, notes: snap.notes,
+        dirty: snap.dirty, undo: null, touched: true,
+        // §11: the thread records the rollback — persisted, so the agent's §8
+        // CONVERSATION context never assumes the undone rewrites still stand
+        chat: [...r.chat, newEntry({ kind: 'system', text: 'Last change undone — the rewrites above no longer apply.' })],
+      }
     })
-    showToast('Last spec change undone.', 3200)
+    showToast('Last change undone.', 3200)
   }
 
   // §11: a blocked sync lands as a thread blockers entry (source: sync);
@@ -1521,8 +1560,8 @@ export default function CreateFlow() {
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // discard unsaved edits
       notesDraft: null, notesEdit: false,
       syncBusy: true, genStage: null, genDetail: null, genEvents: [], touched: true, stepsErr: null,
-      // §11 spec undo: a repair amend replaces the spec outside the undo flow
-      ...(specOverride ? { spec: specOverride, specUndo: null } : {}),
+      // §11 draft undo: a repair amend replaces the spec outside the undo flow
+      ...(specOverride ? { spec: specOverride, undo: null } : {}),
     })
     const gen = cancelGenRef.current
     try {
@@ -1538,10 +1577,17 @@ export default function CreateFlow() {
           setRev((r) => {
             if (!r) return r
             const steps = d.steps ?? r.steps
+            const syncedEntry = newEntry({ kind: 'system', text: 'Steps synced with the spec.' })
+            const notesEntry = d.notes != null && d.notes !== r.notes
+              ? newEntry({ kind: 'system' as const, text: 'Notes updated.' }) : null
             // §8: the manifest's name/desc are create-only — a sync never
             // touches them (both are user-owned identity, §4.1).
             return {
-              ...r, syncBusy: false, genStage: null, dirty: false, specUndo: null,
+              // §11 draft undo: a completed sync keeps the snapshot — Undo
+              // reverts the whole request, chained-sync steps included — and
+              // re-anchors the undo row below the sync's own chips
+              ...r, syncBusy: false, genStage: null, dirty: false,
+              undo: r.undo ? { ...r.undo, entryId: (notesEntry ?? syncedEntry).id } : r.undo,
               steps, params: d.params ?? r.params, packages: d.packages ?? [],
               triggers: d.triggers ? mergeDraftTriggers(r.triggers, d.triggers) : r.triggers,
               // §8: call 2 may return an updated notes.md beside the manifest
@@ -1551,9 +1597,8 @@ export default function CreateFlow() {
               // a quiet system chip in the thread.
               chat: [
                 ...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed ? { ...e, dismissed: true } : e)),
-                newEntry({ kind: 'system', text: 'Steps synced with the spec.' }),
-                ...(d.notes != null && d.notes !== r.notes
-                  ? [newEntry({ kind: 'system' as const, text: 'Notes updated.' })] : []),
+                syncedEntry,
+                ...(notesEntry ? [notesEntry] : []),
               ],
             }
           })
@@ -2160,6 +2205,13 @@ export default function CreateFlow() {
                 </div>
               ))}
               {rev.chat.map((e) => {
+                // §11 draft undo: the standalone undo row — the page's only
+                // undo affordance — beneath the snapshot's anchor entry
+                const undoRow = e.id === rev.undo?.entryId && !anyJobBusy && !viewingOld && !testLive ? (
+                  <div style={{ textAlign: 'center' }}>
+                    <button className="ad-btn-text dim small" onClick={undoDraft}>Undo this change</button>
+                  </div>
+                ) : null
                 if (e.kind === 'user') {
                   return (
                     <div key={e.id} style={{
@@ -2181,16 +2233,14 @@ export default function CreateFlow() {
                 }
                 if (e.kind === 'rewrite') {
                   return (
-                    <div key={e.id} className="ad-anim-item" style={{
+                    <React.Fragment key={e.id}>
+                    <div className="ad-anim-item" style={{
                       border: '1px solid var(--border-card)', background: 'var(--bg-inset)',
                       borderRadius: 9, padding: '9px 12px',
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <i className="fa-solid fa-file-pen" style={{ fontSize: 10, color: 'var(--accent)' }} />
                         <span style={{ font: "600 12px var(--sans)", flex: 1, minWidth: 0 }}>Spec updated</span>
-                        {e.id === lastRewriteId && rev.specUndo && !anyJobBusy && !viewingOld && !testLive && (
-                          <button className="ad-btn-text dim" onClick={undoSpec}>Undo</button>
-                        )}
                       </div>
                       {e.text && (
                         <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 3, overflowWrap: 'break-word' }}>{e.text}</div>
@@ -2209,6 +2259,8 @@ export default function CreateFlow() {
                         </div>
                       )}
                     </div>
+                    {undoRow}
+                    </React.Fragment>
                   )
                 }
                 if (e.kind === 'blockers') {
@@ -2267,11 +2319,16 @@ export default function CreateFlow() {
                     </div>
                   )
                 }
-                // system chip
+                // system chip — the standalone undo row renders beneath it
+                // when it anchors the snapshot (a response that rewrote
+                // instructions or notes without touching the spec, §11)
                 return (
-                  <div key={e.id} style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faint)', textAlign: 'center', overflowWrap: 'break-word' }}>
+                  <React.Fragment key={e.id}>
+                  <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faint)', textAlign: 'center', overflowWrap: 'break-word' }}>
                     {e.text}
                   </div>
+                  {undoRow}
+                  </React.Fragment>
                 )
               })}
             </ScrollArea>
@@ -2578,13 +2635,6 @@ export default function CreateFlow() {
                   hint="What the automation should do, in plain words. The AI regenerates the steps from this document when it changes."
                   right={specOpenEff && !rev.specBusy && (!rev.specEdit ? (
                       <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-                      {rev.specUndo && (
-                        <button
-                          className="ad-btn-text dim small ad-focus-inset" disabled={busyRewrite || viewingOld || testLive}
-                          onClick={(e) => { e.stopPropagation(); undoSpec() }}                        >
-                          Undo
-                        </button>
-                      )}
                       <button
                         // §11: an old version is browsed read-only — editing
                         // here would mark the draft dirty and lock Restore
@@ -2625,8 +2675,9 @@ export default function CreateFlow() {
                           onClick={(e) => {
                             e.stopPropagation()
                             if (rev.specText === rev.specTextOrig) return
+                            // §11 draft undo: a manual Save under the snapshot clears it
                             up({
-                              specUndo: { spec: rev.spec, dirty: rev.dirty },
+                              undo: null,
                               spec: textToSpec(rev.specText), specEdit: false, specText: '', specTextOrig: '',
                               dirty: true, touched: true,
                             })
@@ -2719,8 +2770,9 @@ export default function CreateFlow() {
                           onClick={(e) => {
                             e.stopPropagation()
                             if (rev.notesDraft == null || rev.notesDraft === rev.notes) return
-                            // §4.1: a notes change never marks the workflow out of sync
-                            up({ notes: rev.notesDraft, notesDraft: null, notesEdit: false, touched: true })
+                            // §4.1: a notes change never marks the workflow out of sync;
+                            // §11 draft undo: a manual Save under the snapshot clears it
+                            up({ notes: rev.notesDraft, notesDraft: null, notesEdit: false, touched: true, undo: null })
                           }}
                         >
                           Save
@@ -2961,7 +3013,8 @@ export default function CreateFlow() {
                           onClick={(e) => {
                             e.stopPropagation()
                             if (rev.instrDraft == null || rev.instrDraft === rev.instr) return
-                            up({ instr: rev.instrDraft, instrDraft: null, instrEdit: false, touched: true, dirty: true })
+                            // §11 draft undo: a manual Save under the snapshot clears it
+                            up({ instr: rev.instrDraft, instrDraft: null, instrEdit: false, touched: true, dirty: true, undo: null })
                             showToast('Instructions saved — the workflow is out of sync. Sync the steps before saving.', 5800)
                           }}                        >
                           Save

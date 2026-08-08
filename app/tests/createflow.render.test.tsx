@@ -491,6 +491,126 @@ describe('CreateFlow chat response application (§11)', () => {
   })
 })
 
+describe('CreateFlow draft undo (§11)', () => {
+  beforeEach(armPendingPoll)
+
+  const done = (draft: Record<string, unknown>) => ({
+    id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'chat', draft,
+  })
+  const send = (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'),
+      { target: { value: text } })
+    fireEvent.click(screen.getByText('Send'))
+  }
+
+  it('one Undo reverts everything one response rewrote — spec, instructions, and notes', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Rewritten body.' }],
+      instr: '- be bold',
+      notes: '- Learned a quirk',
+    }))
+    render(<CreateFlow />)
+    send('Change everything')
+    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('Rewritten body.')).toBeTruthy()
+    expect(bodyLi('be bold')).toBeTruthy()
+    expect(bodyLi('Learned a quirk')).toBeTruthy()
+    // the standalone undo row is the page's only undo affordance
+    const undos = screen.getAllByText('Undo this change')
+    expect(undos).toHaveLength(1)
+    fireEvent.click(undos[0])
+    // every rewritten document came back, and the dirty flag with them
+    expect(screen.getByText('Does things.')).toBeTruthy()
+    expect(bodyLi('keep it simple')).toBeTruthy()
+    expect(screen.queryByText(/Learned a quirk/)).toBeNull()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
+    expect(screen.queryByText('Undo this change')).toBeNull() // single-level: the snapshot cleared
+    // the thread records the rollback for the agent's CONVERSATION context
+    expect(screen.getByText('Last change undone — the rewrites above no longer apply.')).toBeTruthy()
+    expect(storeMod.useStore.getState().toast).toBe('Last change undone.')
+  })
+
+  it('an instructions-only response renders the undo row beneath its system chip', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      spec: null, instr: '- be bold',
+    }))
+    render(<CreateFlow />)
+    send('Toughen the rules')
+    await waitFor(() => expect(screen.getByText('Build instructions updated.')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText(/out of sync/)).toBeTruthy()
+    const undos = screen.getAllByText('Undo this change')
+    expect(undos).toHaveLength(1)
+    // the row sits directly beneath the anchoring chip
+    const chip = screen.getByText('Build instructions updated.')
+    expect(chip.compareDocumentPosition(undos[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(undos[0])
+    expect(bodyLi('keep it simple')).toBeTruthy()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
+  })
+
+  it('a notes-only undo restores the notes and stays in sync', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      spec: null, notes: '- The site rate-limits at 10 rpm',
+    }))
+    render(<CreateFlow />)
+    send('Remember the rate limit')
+    await waitFor(() => expect(screen.getByText('Notes updated.')).toBeTruthy(), { timeout: 3000 })
+    expect(bodyLi('The site rate-limits at 10 rpm')).toBeTruthy()
+    const undos = screen.getAllByText('Undo this change')
+    expect(undos).toHaveLength(1)
+    fireEvent.click(undos[0])
+    expect(screen.queryByText(/rate-limits at 10 rpm/)).toBeNull()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
+  })
+
+  it('undo after a chained sync restores the pre-request steps too', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(done({
+        spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Synced body.' }],
+        actions: { sync: true },
+      }))
+      .mockResolvedValue({
+        id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'sync',
+        draft: {
+          steps: [{ file: '01-new.py', name: 'Fetch feeds', desc: '', code: 'log("new")' }],
+          params: [], packages: [], triggers: [],
+        },
+      })
+    render(<CreateFlow />)
+    send('Rewrite and sync')
+    await waitFor(() => expect(screen.getByText('Steps synced with the spec.')).toBeTruthy(), { timeout: 5000 })
+    expect(screen.getByText(/Fetch feeds/)).toBeTruthy() // the sync replaced the steps
+    // the completed sync kept the snapshot — Undo reverts the whole request —
+    // and re-anchored the row below its own "Steps synced" chip
+    const undos = screen.getAllByText('Undo this change')
+    expect(undos).toHaveLength(1)
+    const synced = screen.getByText('Steps synced with the spec.')
+    expect(synced.compareDocumentPosition(undos[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.click(undos[0])
+    expect(screen.getByText('Does things.')).toBeTruthy()
+    expect(screen.getByText(/Fetch pages/)).toBeTruthy()
+    expect(screen.queryByText(/Fetch feeds/)).toBeNull()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
+  })
+
+  it('a manual spec Save clears the snapshot — no Undo over newer manual work', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Rewritten body.' }],
+    }))
+    render(<CreateFlow />)
+    send('Change it')
+    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getAllByText('Undo this change')).toHaveLength(1)
+    const specCard = cardOf(screen.getByText('SPEC'))
+    fireEvent.click(within(specCard).getByText('Edit'))
+    fireEvent.change(screen.getByDisplayValue(/Rewritten body\./),
+      { target: { value: '# My auto\nHand-tuned body.' } })
+    fireEvent.click(within(specCard).getByText('Save'))
+    expect(screen.getByText('Hand-tuned body.')).toBeTruthy()
+    expect(screen.queryByText('Undo this change')).toBeNull()
+  })
+})
+
 describe('CreateFlow footer action block + input lock (§11)', () => {
   beforeEach(armPendingPoll)
 

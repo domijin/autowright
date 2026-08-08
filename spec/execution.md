@@ -160,7 +160,9 @@ page shows), one card:
   (the `· guildName` part is simply omitted when null — never a literal "null"/"undefined");
   an iMessage payload shows the sender alone (it has no channel). The payload's `secret` is
   never displayed.
-- right-aligned on the header line, Discord only: an **"Open in Discord"** external link to
+- right-aligned on the header line, Discord only: an **"Open in Discord"** external link
+  styled as a button — the same bordered ghost treatment (`.ad-btn-ghost`) as the page's other
+  actions (Retry / Execute again), never plain link text or the link underline — opening
   `https://discord.com/channels/<guildId>/<channel>/<messageId>` (`@me` in place of the guild
   id when `guildId` is null — the DM form), so the raw ids earn their keep as a deep link
   instead of being printed. Omitted entirely when `messageId` is null — a §4.5 mocked-test

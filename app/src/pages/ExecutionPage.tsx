@@ -138,9 +138,10 @@ function TriggerMessage({ payload }: { payload: TriggerPayload }) {
         </div>
         {discord && discord.messageId && (
           <a
+            className="ad-btn-ghost"
             href={`https://discord.com/channels/${discord.guildId ?? '@me'}/${discord.channel}/${discord.messageId}`}
             target="_blank" rel="noopener noreferrer"
-            style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}
+            style={{ marginLeft: 'auto', whiteSpace: 'nowrap', flex: 'none' }}
           >
             Open in Discord ↗
           </a>

@@ -157,6 +157,7 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   transition: color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter);
 }
 .ad-btn-ghost:hover:not(:disabled) { color: var(--text-2); border-color: var(--border-hover); background: rgba(255, 255, 255, 0.04); }
+a.ad-btn-ghost:hover { text-decoration: none; }  /* link-as-button (§7 Open in Discord) */
 .ad-btn-ghost.danger, .ad-btn-ghost.danger:hover:not(:disabled) { color: var(--red); }
 
 /* bordered card-header button (Edit / Sync now / Run a dry check) */

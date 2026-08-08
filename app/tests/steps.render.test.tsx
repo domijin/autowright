@@ -31,8 +31,9 @@ describe('StepList (shared)', () => {
     const steps = [step({ agent: true, code: 'import bs4' })]
     render(<StepList variant="editor" steps={steps} availAgents={[]} packages={packages} />)
     // 'bs4' also appears in the (collapsed) script body — assert the tag itself
+    // (the tooltip text rides the tag's aria-label — §14 Tag tooltip)
     const pkgTag = screen.getAllByText('bs4').find((el) =>
-      el.closest('span')?.getAttribute('title')?.includes('Python package'))
+      el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
     expect(pkgTag).toBeTruthy()
     expect(screen.getByText('no agent')).toBeTruthy()
     // inline "1." number prefix (editor keeps the left edge free)
@@ -43,7 +44,7 @@ describe('StepList (shared)', () => {
     const steps = [step({ agent: true, agents: [{ name: 'Cloud writer', why: 'writes prose' }] })]
     render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} packages={[]} />)
     const tag = screen.getByText('Cloud writer')
-    expect(tag.closest('span')?.getAttribute('title')).toContain('mid-execution')
+    expect(tag.closest('span')?.getAttribute('aria-label')).toContain('mid-execution')
   })
 })
 

@@ -129,7 +129,19 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   is a number — an indeterminate bar never shows "0%"),
   `Tag` (the small mono info tag on step rows — radius 6, padding 2 px 8 px, 10 px mono
   500, `--bg-inset` background, hairline border; optional leading icon; one primitive for
-  the create-flow review, detail-page STEPS, and import-preview step tags alike), `GreenCheck`, `Spinner` (optional `color`; inline
+  the create-flow review, detail-page STEPS, and import-preview step tags alike. Its
+  `title` prop renders the **Tag tooltip** — a custom hover bubble, never the native
+  `title` attribute (Chromium's native tooltip needs a ~1 s stationary hover and is
+  suppressed after clicks, after scrolls, and while the window is unfocused — it read as
+  broken on the step rows): shown after a 200 ms hover delay, hidden on mouse-leave,
+  mousedown, or any scroll; portal-rendered to `document.body` (`role="tooltip"`,
+  pointer-events none, z-index 120) fixed 7 px above the tag's horizontal center, flipped
+  to 7 px below when fewer than 46 px of viewport remain above the tag, and clamped so it
+  never comes within 8 px of the window's left/right edges; bubble: `--bg-menu`
+  background, `--border-input` border, radius 8, the menu shadow, padding 6 px 10 px,
+  400 11.5 px/1.5 sans `--text-2`, max-width 320 px, `adFadeUp` entrance
+  (`--t-enter`/`--ease-enter`). The tag span also carries the tooltip text as its
+  `aria-label`), `GreenCheck`, `Spinner` (optional `color`; inline
   next-to-label size is 13), `PageTitle`, `Eyebrow`, `EmptyState` (dashed-card empty state
   with CTA — automations/agents/secrets lists), `EmptyNotice` (dashed card, title 13.5/500 +
   12.5 muted body — executions list, execution page, detail page), `LoadingRow` (Spinner 13 +

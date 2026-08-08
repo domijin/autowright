@@ -496,7 +496,8 @@ editors enter with
   Empty state:
   "No settings needed — your AI didn't ask for any."
 - **Steps** — readable scripts with per-step read-only tags (same tag language as the §9.2
-  detail page — never menus, every tag carries a plain-language `title` tooltip): an agent step
+  detail page — never menus, every tag carries a plain-language tooltip — the §14 Tag
+  tooltip bubble, custom, not the native `title`): an agent step
   shows one microchip-icon tag per entry in its `agents`
   list (tooltip "This step calls `<name>` · `<model>` mid-execution", with " — `<why>`"
   appended when the entry carries its §4.1 role note; a tag turns red when its

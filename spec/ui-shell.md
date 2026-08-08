@@ -411,7 +411,8 @@ Sections top to bottom:
   highlighting; agent steps show the "Why an agent" note when expanded). Steps expand
   independently — opening one never closes another, so each §14 collapse animates alone
   instead of cancelling against a simultaneous close above it. Step tags are
-  display-only — never menus, and every tag carries a plain-language `title` tooltip explaining
+  display-only — never menus, and every tag carries a plain-language tooltip (the §14 Tag
+  tooltip bubble — custom, not the native `title`) explaining
   what it shows: an agent step carries one microchip-icon tag per entry in its `agents`
   list (tooltip = the entry's `why` — the §4.1 per-agent role note — falling back to the
   step's `why`, then to "This step calls the `<name>` AI agent."; an empty list shows a

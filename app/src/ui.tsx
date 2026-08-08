@@ -1,7 +1,7 @@
 // Shared UI primitives — one source of truth for badges, toggles, radios,
 // popovers, toasts (prototype Component helpers, §14 tokens). The result
 // section and its views live in result.tsx.
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ParamDef, Status, Step } from './types'
 import awMark from '../electron/icon/icon.svg'
@@ -63,20 +63,81 @@ export function Badge({ status, style }: { status: Status | string; style?: Reac
 }
 
 /** §14 step-row info tag (agent / secret / timeout tags) — one geometry for the
- * create-flow review, detail-page STEPS card, and import preview alike. */
+ * create-flow review, detail-page STEPS card, and import preview alike.
+ * `title` renders the §14 Tag tooltip — a custom bubble, never the native
+ * `title` attribute: Chromium suppresses native tooltips after clicks and
+ * scrolls (both constant on the step rows), so they read as broken. */
 export function Tag({ icon, children, c, title, style }: {
   icon?: string; children: React.ReactNode; c?: string; title?: string; style?: React.CSSProperties
 }) {
+  const anchor = useRef<HTMLSpanElement>(null)
+  const bubble = useRef<HTMLDivElement>(null)
+  const timer = useRef<number | null>(null)
+  const [tip, setTip] = useState<{ x: number; y: number; below: boolean } | null>(null)
+  const hide = () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    setTip(null)
+  }
+  const enter = () => {
+    if (!title) return
+    timer.current = window.setTimeout(() => {
+      const r = anchor.current?.getBoundingClientRect()
+      if (!r) return
+      const below = r.top < 46
+      setTip({ x: r.left + r.width / 2, y: below ? r.bottom + 7 : r.top - 7, below })
+    }, 200)
+  }
+  // Clamp the centered bubble 8 px inside the window's left/right edges once
+  // its width is measurable.
+  useLayoutEffect(() => {
+    if (!tip || !bubble.current) return
+    const half = bubble.current.offsetWidth / 2
+    const x = Math.min(Math.max(tip.x, 8 + half), window.innerWidth - 8 - half)
+    if (x !== tip.x) setTip({ ...tip, x })
+  }, [tip])
+  // Any scroll leaves the fixed-position bubble floating over stale
+  // coordinates — hide instead of tracking.
+  useEffect(() => {
+    if (!tip) return
+    const off = () => setTip(null)
+    window.addEventListener('scroll', off, true)
+    return () => window.removeEventListener('scroll', off, true)
+  }, [tip])
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
   return (
-    <span title={title} style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
-      color: c ?? 'var(--text-muted)', background: 'var(--bg-inset)',
-      border: '1px solid var(--hairline)', borderRadius: 6, padding: '2px 8px',
-      whiteSpace: 'nowrap', ...style,
-    }}>
+    <span
+      ref={anchor}
+      aria-label={title}
+      onMouseEnter={enter}
+      onMouseLeave={hide}
+      onMouseDown={hide}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
+        color: c ?? 'var(--text-muted)', background: 'var(--bg-inset)',
+        border: '1px solid var(--hairline)', borderRadius: 6, padding: '2px 8px',
+        whiteSpace: 'nowrap', ...style,
+      }}
+    >
       {icon && <i className={`fa-solid ${icon}`} style={{ fontSize: 9 }} />}
       {children}
+      {title && tip && createPortal(
+        <div style={{
+          position: 'fixed', left: tip.x, top: tip.y, zIndex: 120, pointerEvents: 'none',
+          transform: `translate(-50%, ${tip.below ? '0' : '-100%'})`,
+        }}>
+          <div ref={bubble} role="tooltip" style={{
+            background: 'var(--bg-menu)', border: '1px solid var(--border-input)',
+            borderRadius: 8, boxShadow: '0 18px 44px rgba(0,0,0,.5)', padding: '6px 10px',
+            font: '400 11.5px/1.5 var(--sans)', color: 'var(--text-2)',
+            maxWidth: 320, width: 'max-content',
+            animation: ENTER_UP,
+          }}>
+            {title}
+          </div>
+        </div>,
+        document.body,
+      )}
     </span>
   )
 }

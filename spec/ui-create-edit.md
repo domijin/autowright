@@ -497,14 +497,16 @@ editors enter with
   "No settings needed — your AI didn't ask for any."
 - **Steps** — readable scripts with per-step read-only tags (same tag language as the §9.2
   detail page — never menus, every tag carries a plain-language `title` tooltip): an agent step
-  shows one microchip-icon tag per name in its `agents`
-  list (tooltip "This step calls `<name>` · `<model>` mid-execution"; a tag turns red when its
+  shows one microchip-icon tag per entry in its `agents`
+  list (tooltip "This step calls `<name>` · `<model>` mid-execution", with " — `<why>`"
+  appended when the entry carries its §4.1 role note; a tag turns red when its
   name matches no enabled agent — red tooltip "`<name>` isn't enabled for steps — this step
   would fail"; an empty list shows one tag
   naming the automation's first enabled agent, and reads "no agent" in red when none is
   enabled — red tooltip "No agent is enabled for steps — this step would fail"), a step shows
-  one key-icon tag per secret it uses (its `secrets` list unioned with
-  the `secrets.NAME` references in its code; same §9.2 secret tooltip), a step that imports a
+  one key-icon tag per secret it uses (its `secrets` entries' names unioned with
+  the `secrets.NAME` references in its code; same §9.2 secret tooltip — the declared
+  entry's `why`, generic fallback), a step that imports a
   declared
   §6.2 package (its top-level `import` name appears in the step's code) shows one box-icon tag
   per package, labeled with the import name (tooltip "This step uses the `<name>` Python
@@ -566,7 +568,9 @@ editors enter with
   spinner) · **not installed** (amber — a
   saved automation whose packages went missing, found by the §19 check on page load) ·
   **failed** (red; the plain-word error beneath in mono, e.g. the §7 category wording with the
-  pip stderr tail). Header counts "N of M installed" (no count when the list is empty). Amber
+  pip stderr tail). Beneath each row, the package's `why` — the drafting agent's one-line
+  purpose (§8 rule 5) — in faint text, so the card explains every install it asks the user
+  to trust. Header counts "N of M installed" (no count when the list is empty). Amber
   and red rows share one **"Install" / "Retry"** button (the §19 install call; rows show
   the installing text while it runs). Collapsible: defaults collapsed when everything is installed,
   forced open while any row is installing, not installed, or failed; the collapsed line lists

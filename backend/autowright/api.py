@@ -155,8 +155,9 @@ def _agents_json() -> list[dict]:
     for ag in store.agents:
         used = [a["name"] for a in store.autos.values()
                 if a["agent_id"] == ag["id"]
-                or any(harness.grant_name(ag) in (s.get("agents") or [])
-                       for s in a["versions"].get(a["current_version"], {}).get("steps", []))]
+                or any(harness.grant_name(ag) == e.get("name")
+                       for s in a["versions"].get(a["current_version"], {}).get("steps", [])
+                       for e in (s.get("agents") or []))]
         out.append({**ag, "usedBy": used,
                     "default": ag["id"] == store.default_agent_id})
     return out

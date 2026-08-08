@@ -113,9 +113,11 @@ automations/<uuid>/
                                # steps: [{file, name, description, agent?, why?, agents?, secrets?,
                                #          timeout?, no_timeout?, retries?, infinite_retries?}]
                                #          (§4.1 per-step time limits and retry pair — both
-                               #          also travel in §5.1 archives)
+                               #          also travel in §5.1 archives; agents entries are
+                               #          {name, why?}, secrets entries {name, why} —
+                               #          §4.1 per-agent role notes and per-use secret notes)
                                # + declared packages (§6.2, absent when none):
-                               # packages: [{pip: pandas, import: pandas}]
+                               # packages: [{pip: pandas, import: pandas, why: one-line purpose}]
     spec.md                    # the version's spec as plain markdown (h1/h2/li/p blocks)
     instructions.md            # user's free-text instructions to the agent (§4.1 instructions),
                                # plain markdown; absent when none were given

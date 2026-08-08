@@ -81,10 +81,15 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, timeou
   code is
   human-readable script; agent
   marks a step that makes query-only runtime model calls (§6) — the script itself still does any
-  changes. agents (agent steps only): ordered list of §8 grant names the step may call — the first
-  is agent.ask's default, the others are addressable per call by name; empty/absent falls back to
-  the automation's first enabled agent. secrets: secret names the step uses — a step's effective
-  secrets are this list unioned with the secrets.NAME references in its code. Both lists are chosen
+  changes. agents (agent steps only): ordered list of §8 grants the step may call, as
+  { name, why? } entries — the first is agent.ask's default, the others are addressable per
+  call by name; empty/absent falls back to the automation's first enabled agent. An entry's
+  why is that agent's role note (its §9.2 tag tooltip); §8 validation requires one on every
+  entry when the step lists two or more agents. secrets: §8 grants the step uses, as
+  { name, why } entries — why is the per-use note (§8 rule 6, required on every declared
+  entry) shown as the key tag's tooltip (§9.2). A step's effective secrets are these names
+  unioned with the secrets.NAME references in its code; a code-referenced name with no
+  declared entry carries no why and keeps the generic tooltip. Both lists are chosen
   by the drafting agent per the §8 selection rule (the SPEC and build instructions win when they
   name a choice; the drafting agent's own judgment otherwise). timeout: optional per-step time
   limit in seconds (positive int) enforced by the §6 watchdog; noTimeout: true removes the limit
@@ -102,8 +107,10 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, timeou
   API serialization is `noTimeout`, `infiniteRetries`
 spec: block list [{ kind: h1|h2|p|li, text }] — the human-readable spec
 specMeta: "v3 · updated Yesterday" (shared time label)
-packages: [{ pip, import }] — the current version's §6.2 declared packages ([] when none);
-  versioned like spec/steps — each version entry below carries its own list
+packages: [{ pip, import, why }] — the current version's §6.2 declared packages ([] when
+  none); why is the drafting agent's one-line purpose (§8 rule 5 — required), shown under
+  the package's row on the §11 Packages card; versioned like spec/steps — each version
+  entry below carries its own list
 versions: [{ version, when, note, spec, steps, instructions, notes, params, packages }] — prior-version
   history, newest-first (the current version is not repeated in this list)
 draft: unsaved edit snapshot (create-flow shape) | null

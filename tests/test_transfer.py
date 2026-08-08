@@ -28,12 +28,12 @@ def _build(store: Store):
     ver = {
         "description": "Watches things",
         "params": [{"name": "count", "kind": "number", "label": "Count", "help": "", "default": 3}],
-        "packages": [{"pip": "pandas", "import": "pandas"}],
+        "packages": [{"pip": "pandas", "import": "pandas", "why": "builds the table"}],
         "steps": [
             {"name": "Fetch", "description": "", "code": "from autowright import secrets\nx = secrets.API_KEY\n",
-             "secrets": ["MAIL_PASS"]},
+             "secrets": [{"name": "MAIL_PASS", "why": "sends the mail"}]},
             {"name": "Summarize", "description": "", "code": "print('hi')\n",
-             "agent": True, "why": "judgment", "agents": ["Coder"]},
+             "agent": True, "why": "judgment", "agents": [{"name": "Coder"}]},
         ],
         "spec": [{"kind": "h1", "text": "Watch"}, {"kind": "p", "text": "Body."}],
         "instructions": "Keep it short.",
@@ -87,7 +87,7 @@ def test_export_layout_and_sanitization(store):
     assert manifest["param_values"] == {"count": 7}
     meta = yaml.safe_load(z.read("automation/automation.yaml"))
     assert "when" not in meta and "note" not in meta
-    assert meta["packages"] == [{"pip": "pandas", "import": "pandas"}]
+    assert meta["packages"] == [{"pip": "pandas", "import": "pandas", "why": "builds the table"}]
     # both referenced agents travel, without ids or credentials
     agents = yaml.safe_load(z.read("agents.yaml"))["agents"]
     assert {g["name"] for g in agents} == {"Researcher", "Coder"}
@@ -474,7 +474,7 @@ def test_preview_archive_dry_match(store, monkeypatch, tmp_path_factory):
     assert {t["kind"] for t in p["triggers"]} == {"cron", "app_start", "discord", "imessage"}
     assert all(s["exists"] for s in p["secrets"])
     assert all(g["reused"] for g in p["agents"])
-    assert p["packages"] == [{"pip": "pandas", "import": "pandas"}]
+    assert p["packages"] == [{"pip": "pandas", "import": "pandas", "why": "builds the table"}]
 
     # Fresh machine: nothing exists yet.
     s2 = _fresh_home(monkeypatch, tmp_path_factory)

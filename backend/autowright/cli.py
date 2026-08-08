@@ -313,7 +313,9 @@ def ensure_packages(c: Client, pkgs: list[dict]) -> None:
 
 
 def _step_grant_names(draft: dict, key: str) -> set[str]:
-    return {n for s in draft.get("steps", []) for n in s.get(key) or []}
+    # `agents` holds {name, why?} entries (§4.1); `secrets` holds plain names.
+    return {v["name"] if isinstance(v, dict) else v
+            for s in draft.get("steps", []) for v in s.get(key) or []}
 
 
 def _grants(c: Client, args, draft: dict,
@@ -428,7 +430,7 @@ def cmd_automation_show(c: Client, args) -> None:
         print(f"param {p['name']} ({p['kind']}): {_param_value(p)!r}")
     for i, s in enumerate(full.get("steps") or [], 1):
         tags = "".join([" [agent]" if s.get("agent") else "",
-                        f" [secrets: {', '.join(s['secrets'])}]" if s.get("secrets") else ""])
+                        f" [secrets: {', '.join(e['name'] for e in s['secrets'])}]" if s.get("secrets") else ""])
         print(f"step {i}: {s['name']}{tags}")
     vs = [f"v{v['version']}" for v in full.get("versions") or []]
     if vs:

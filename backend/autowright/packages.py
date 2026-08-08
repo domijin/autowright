@@ -65,6 +65,10 @@ def check(entries: list[dict]) -> list[dict]:
         version = installed.get(_norm(name)) if PIP_NAME_RE.match(name) else None
         r = {"pip": name, "import": str(e.get("import") or "").strip(),
              "status": "installed" if version else "missing"}
+        # §6.2: the declaration's why rides through check/ensure results so the
+        # §8 draft-stage install never strips it from the draft payload.
+        if e.get("why"):
+            r["why"] = str(e["why"])
         if version:
             r["version"] = version
         out.append(r)

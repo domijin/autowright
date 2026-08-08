@@ -56,13 +56,28 @@ Work down this ladder and stop at the first rung that does the job:
 ## Choosing agents and secrets
 
 Each step declares what it uses in `manifest.yaml`: `agents` (agent steps only —
-the granted agent names the step may call; the first is `agent.ask`'s default,
-and a step may list several and pick one per call with `agent.ask(...,
-agent="Name")`) and `secrets` (the granted secret names the step uses). One
-rule decides both choices: when the SPEC or BUILD INSTRUCTIONS name which agent
-or secret to use, follow them; otherwise pick whichever granted entries fit the
-step best, by your own judgment. Omit `agents` to let the step use the
-automation's default agent; omit `secrets` when the step uses none.
+the granted agents the step may call, as `{ name, why? }` entries; the first is
+`agent.ask`'s default, and a step may list several and pick one per call with
+`agent.ask(..., agent="Name")`) and `secrets` (the granted secrets the step
+uses, as `{ name, why }` entries — every entry carries a one-line `why` saying
+what the step needs that secret for, e.g.
+`secrets: [{ name: API_TOKEN, why: authenticates the CRM fetch }]`; the user
+reads it on the step's key tag before trusting the automation with a
+credential). When a step lists two or more agents, give EVERY entry its own
+one-line `why` naming that agent's role in the step — the roles differ or you
+wouldn't need two:
+
+```yaml
+agents:
+  - { name: Fast local, why: classifies each scraped row }
+  - { name: Claude, why: writes the final summary }
+```
+
+With a single entry the `why` is optional — the step's own `why` already covers
+it. One rule decides both choices: when the SPEC or BUILD INSTRUCTIONS name
+which agent or secret to use, follow them; otherwise pick whichever granted
+entries fit the step best, by your own judgment. Omit `agents` to let the step
+use the automation's default agent; omit `secrets` when the step uses none.
 
 ## Step scripts and the autowright SDK
 
@@ -257,12 +272,14 @@ needs another PyPI package, declare it in `manifest.yaml` and then import it:
 
 ```yaml
 packages:
-  - { pip: pandas, import: pandas }
+  - { pip: pandas, import: pandas, why: aggregates the report table }
 ```
 
 One entry per distribution: `pip` is the bare distribution name (never a
 version, pin, or range — the app manages versions), `import` the top-level
-module it provides. The app installs declared packages automatically — never
+module it provides, `why` a required one-line purpose in the user's plain
+words — it appears on the Packages card so the user understands every install;
+say what the steps use the package for, never restate its name. The app installs declared packages automatically — never
 write installation code or steps yourself: installs run when the automation is
 built or saved and self-heal before each execution, as pip wheels into the app's own
 package directory, nothing global on the Mac. The engine rejects any import that
@@ -286,8 +303,8 @@ the tool explicitly — e.g. video downloads needing ffmpeg:
 
 ```yaml
 packages:
-  - { pip: yt-dlp, import: yt_dlp }
-  - { pip: imageio-ffmpeg, import: imageio_ffmpeg }
+  - { pip: yt-dlp, import: yt_dlp, why: downloads the videos }
+  - { pip: imageio-ffmpeg, import: imageio_ffmpeg, why: bundles the ffmpeg yt-dlp needs to merge formats }
 ```
 
 ```python
@@ -401,9 +418,9 @@ Design for them, never re-implement them:
   notification, at the end, via `notify(text)` — the user's settings decide
   whether it is shown.
 - **Secrets & Keychain:** declare each step's secrets in its manifest entry
-  (`secrets: [NAME]`) and reference them by name (`secrets.NAME`); values are
-  injected at runtime and redacted from logs; a missing secret stops the
-  execution before any step. Never print or store them.
+  (`secrets: [{ name: NAME, why: ... }]`) and reference them by name
+  (`secrets.NAME`); values are injected at runtime and redacted from logs; a
+  missing secret stops the execution before any step. Never print or store them.
 
 ## Agent steps
 

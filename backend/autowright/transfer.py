@@ -42,7 +42,7 @@ def safe_filename(name: str) -> str:
 def _referenced_secrets(ver: dict, triggers: list[dict] | None = None) -> list[str]:
     names: set[str] = set()
     for s in ver.get("steps", []):
-        names |= set(s.get("secrets") or [])
+        names |= {e["name"] for e in s.get("secrets") or []}
         names |= set(SECRET_REF_RE.findall(s.get("code", "")))
     # §5.1: a discord trigger's bot-token secret travels by name too, so the
     # import lands a §4.8 placeholder for it.
@@ -59,8 +59,8 @@ def _referenced_agents(store: Store, a: dict, ver: dict) -> list[dict]:
         by_id[drafting["id"]] = drafting
     by_grant = {harness.grant_name(g): g for g in reversed(store.agents)}
     for s in ver.get("steps", []):
-        for n in s.get("agents") or []:
-            g = by_grant.get(n)
+        for e in s.get("agents") or []:
+            g = by_grant.get(e.get("name"))
             if g:
                 by_id.setdefault(g["id"], g)
     return [{"name": harness.grant_name(g), "description": g.get("description") or "",
@@ -107,7 +107,8 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
                 k: v for k, v in a["param_values"].items()
                 if any(p.get("name") == k for p in ver.get("params", []))}
         meta: dict = {"description": a.get("description", ""), "params": ver.get("params", [])}
-        pkgs = [{"pip": p.get("pip"), "import": p.get("import")}
+        pkgs = [{"pip": p.get("pip"), "import": p.get("import"),
+                 **({"why": p["why"]} if p.get("why") else {})}
                 for p in ver.get("packages", []) or []]
         if pkgs:
             meta["packages"] = pkgs
@@ -294,9 +295,21 @@ def _validate(z: zipfile.ZipFile) -> dict:
         if s.get("agent"):
             entry["agent"] = True
             entry["why"] = s.get("why", "")
-            entry["agents"] = list(s.get("agents") or [])
+            # §5.1: agent grants travel as {name, why?} entries — anything
+            # else in a foreign archive is dropped, not imported.
+            entry["agents"] = [
+                {"name": g["name"],
+                 **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
+                for g in (s.get("agents") or [])
+                if isinstance(g, dict) and isinstance(g.get("name"), str)]
         if s.get("secrets"):
-            entry["secrets"] = list(s["secrets"])
+            # §5.1: like agents, secret grants travel as {name, why} entries —
+            # malformed foreign entries are dropped, not imported.
+            entry["secrets"] = [
+                {"name": g["name"],
+                 **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
+                for g in s["secrets"]
+                if isinstance(g, dict) and isinstance(g.get("name"), str)]
         t = s.get("timeout")
         if t is not None:
             if not isinstance(t, int) or isinstance(t, bool) or t <= 0:

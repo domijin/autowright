@@ -176,7 +176,7 @@ FULL_AUTO = {
                 "lines": ["https://a.example/x"]}],
     "packages": [],
     "steps": [{"file": "01-fetch.py", "name": "Fetch", "description": "fetch pages",
-               "code": "import json\nprint('hi')\n", "secrets": ["API_TOKEN"]}],
+               "code": "import json\nprint('hi')\n", "secrets": [{"name": "API_TOKEN", "why": "authenticates the fetch"}]}],
     "stepAgents": [], "allowedSecrets": ["API_TOKEN"],
 }
 
@@ -223,7 +223,7 @@ def test_workdir_pull_push_round_trip(tmp_path):
     assert draft["instructions"] == "- keep it short"
     assert [s["file"] for s in draft["steps"]] == ["01-fetch.py"]
     assert draft["steps"][0]["code"] == "import json\nprint('hi')\n"
-    assert draft["steps"][0]["secrets"] == ["API_TOKEN"]
+    assert draft["steps"][0]["secrets"] == [{"name": "API_TOKEN", "why": "authenticates the fetch"}]
 
     merged = cli.merge_draft_triggers(FULL_AUTO["triggers"], draft["triggers"])
     assert {t["kind"] for t in merged} == {"cron", "app_start"}
@@ -320,8 +320,8 @@ def test_push_and_create_install_declared_packages(tmp_path, capsys):
     from autowright import cli
 
     auto = copy.deepcopy(FULL_AUTO)
-    auto["packages"] = [{"pip": "pandas", "import": "pandas"},
-                        {"pip": "ghostlib", "import": "ghostlib"}]
+    auto["packages"] = [{"pip": "pandas", "import": "pandas", "why": "builds the table"},
+                        {"pip": "ghostlib", "import": "ghostlib", "why": "parses ghosts"}]
     result = [
         {"pip": "pandas", "import": "pandas", "status": "installed", "version": "2.2.0"},
         {"pip": "ghostlib", "import": "ghostlib", "status": "failed",
@@ -845,7 +845,7 @@ def test_cmd_automation_push_grant_flag_widens(tmp_path, capsys):
 AGENT_STEP_AUTO = {
     **FULL_AUTO,
     "steps": [{**FULL_AUTO["steps"][0], "agent": True, "why": "judgment call",
-               "agents": ["Fast local"]}],
+               "agents": [{"name": "Fast local"}]}],
 }
 
 

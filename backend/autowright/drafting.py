@@ -83,7 +83,8 @@ note: One-line version note for the history menu
 params:                                # each param MUST carry a default
   - { name: snake_case_name, kind: toggle|list|kv|number|text, label: ..., help: ..., default: ... }
 packages:                              # extra PyPI packages beyond the allowed list (see Allowed imports);
-  - { pip: pandas, import: pandas }    # bare distribution name, NO version; omit the key when none are needed
+  - { pip: pandas, import: pandas,     # bare distribution name, NO version; omit the key when none are needed
+      why: one line — what the steps use the package for }
 triggers:                              # see Triggers above; omit the whole key when the automation needs no trigger (manual / menu bar only)
   - cron: "0 8 * * *"                  # optional timezone: IANA zone, only when the spec names one
   - { imessage: "+15551234567" }       # sender handle from the SPEC only; optional pattern
@@ -95,12 +96,17 @@ steps:                                 # ordered; file names NN-name.py, two-dig
                                        # retries: automatic re-attempts when the step fails (1-10, see Retries above);
                                        # infinite_retries: true = retry until success, only for persistent/listening
                                        # steps — never combined with retries;
-                                       # secrets: granted secret names the step uses (omit when none);
-                                       # agents: granted agent names an agent step may call,
-                                       # first = agent.ask default (omit to use the automation's default)
-  - { file: 01-fetch.py, name: ..., description: ..., timeout: 60, secrets: [API_TOKEN] }
+                                       # secrets: granted secrets the step uses, as { name, why }
+                                       # entries — why: one line on why the step needs that secret
+                                       # (omit the key when the step uses none);
+                                       # agents: granted agents an agent step may call, as { name, why? }
+                                       # entries — first = agent.ask default (omit the key to use the
+                                       # automation's default); when a step lists two or more, every
+                                       # entry needs its own why naming that agent's role in the step
+  - { file: 01-fetch.py, name: ..., description: ..., timeout: 60,
+      secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }] }
   - { file: 02-judge.py, name: ..., description: ..., timeout: 180, agent: true, why: one line — why judgment is needed,
-      agents: [Agent name] }
+      agents: [{ name: Agent name }] }
 ===FILE: 01-fetch.py===
 (python source)
 ===END===
@@ -620,25 +626,28 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         if p["kind"] == "number" and "min" not in p:
             p["min"] = 0
 
-    # §6.2/§8: declared packages — {pip, import}, bare distribution name,
+    # §6.2/§8: declared packages — {pip, import, why}, bare distribution name,
     # beyond stdlib/curated only. Their import names extend the step allowlist below.
     raw_pkgs = manifest.get("packages") or []
     norm_pkgs: list[dict] = []
     if not isinstance(raw_pkgs, list):
-        errors.append("packages must be a list of { pip, import } entries")
+        errors.append("packages must be a list of { pip, import, why } entries")
         raw_pkgs = []
     for e in raw_pkgs:
         if not isinstance(e, dict) or not e.get("pip") or not e.get("import"):
-            errors.append(f"packages entry malformed: {e!r} — need {{ pip: name, import: module }}")
+            errors.append(f"packages entry malformed: {e!r} — need {{ pip: name, import: module, why: purpose }}")
             continue
         name, imp = str(e["pip"]).strip(), str(e["import"]).strip()
+        why = str(e.get("why") or "").strip()
         if not pkglib.PIP_NAME_RE.match(name):
             errors.append(f"packages: {name!r} must be a bare distribution name — no version specifier")
         if not imp.isidentifier():
             errors.append(f"packages: import {imp!r} isn't a valid module name")
         elif imp in ALLOWED_IMPORTS:
             errors.append(f"packages: {imp} is already available — don't declare it")
-        norm_pkgs.append({"pip": name, "import": imp})
+        if not why:
+            errors.append(f"packages: {name} needs a why — one line on what the steps use it for")
+        norm_pkgs.append({"pip": name, "import": imp, "why": why})
     pkg_imports = [p["import"] for p in norm_pkgs]
 
     steps = manifest.get("steps") or []
@@ -669,12 +678,19 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         if ags is not None:
             if not s.get("agent"):
                 errors.append(f"step {s.get('name')}: agents is only valid on agent: true steps")
-            elif not isinstance(ags, list) or not all(isinstance(x, str) for x in ags):
-                errors.append(f"step {s.get('name')}: agents must be a list of granted agent names")
+            elif (not isinstance(ags, list)
+                  or not all(isinstance(x, dict) and isinstance(x.get("name"), str) for x in ags)):
+                errors.append(f"step {s.get('name')}: agents must be a list of "
+                              "{ name, why? } granted-agent entries")
             else:
                 for x in ags:
-                    if x not in granted_agents:
-                        errors.append(f"step {s.get('name')}: agent {x!r} isn't among the granted agents")
+                    if x["name"] not in granted_agents:
+                        errors.append(f"step {s.get('name')}: agent {x['name']!r} isn't among the granted agents")
+                    # §8 rule 7: with several agents, one shared step `why`
+                    # can't tell their jobs apart — each entry names its role.
+                    if len(ags) > 1 and not str(x.get("why") or "").strip():
+                        errors.append(f"step {s.get('name')}: agent {x['name']!r} needs a why — "
+                                      "one line on its role (required when a step lists several agents)")
         # §8 rule 8: short explicit timeout, or the explicit no-limit marker —
         # never both, never a sentinel value.
         t = s.get("timeout")
@@ -698,12 +714,18 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
             errors.append(f"step {s.get('name')}: retries and infinite_retries can't be combined")
         secs = s.get("secrets")
         if secs is not None:
-            if not isinstance(secs, list) or not all(isinstance(x, str) for x in secs):
-                errors.append(f"step {s.get('name')}: secrets must be a list of allowed secret names")
+            if (not isinstance(secs, list)
+                    or not all(isinstance(x, dict) and isinstance(x.get("name"), str) for x in secs)):
+                errors.append(f"step {s.get('name')}: secrets must be a list of "
+                              "{ name, why } allowed-secret entries")
             else:
                 for x in secs:
-                    if x not in granted_secrets:
-                        errors.append(f"step {s.get('name')}: secret {x!r} isn't among the allowed secrets")
+                    if x["name"] not in granted_secrets:
+                        errors.append(f"step {s.get('name')}: secret {x['name']!r} isn't among the allowed secrets")
+                    # §8 rule 6: every declared secret carries its per-use note.
+                    if not str(x.get("why") or "").strip():
+                        errors.append(f"step {s.get('name')}: secret {x['name']!r} needs a why — "
+                                      "one line on why the step uses it")
 
     norm_steps = []
     for s in steps:
@@ -721,8 +743,14 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         norm_steps.append({
             "file": s.get("file"), "name": s.get("name", ""), "description": s.get("description", ""),
             "agent": bool(s.get("agent")), "why": s.get("why", ""),
-            "agents": list(s.get("agents") or []) if s.get("agent") else [],
-            "secrets": list(s.get("secrets") or []),
+            "agents": [{"name": x["name"],
+                        **({"why": str(x["why"]).strip()} if str(x.get("why") or "").strip() else {})}
+                       for x in (s.get("agents") or [])
+                       if isinstance(x, dict) and isinstance(x.get("name"), str)]
+                      if s.get("agent") else [],
+            "secrets": [{"name": x["name"], "why": str(x.get("why") or "").strip()}
+                        for x in (s.get("secrets") or [])
+                        if isinstance(x, dict) and isinstance(x.get("name"), str)],
             **({"timeout": t} if isinstance(t, int) and not isinstance(t, bool) and t > 0 else {}),
             **({"no_timeout": True} if s.get("no_timeout") is True else {}),
             **({"retries": r} if isinstance(r, int) and not isinstance(r, bool)

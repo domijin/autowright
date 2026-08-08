@@ -1221,7 +1221,8 @@ def test_agent_step_multiple_agents_pick_by_name(store):
     ver = make_version()
     ver["steps"] = [
         {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
-         "agents": ["Slow", "Fast"],
+         "agents": [{"name": "Slow", "why": "answers question one"},
+                    {"name": "Fast", "why": "answers question two"}],
          "code": 'from autowright import agent, result\na = agent.ask("question: one")\n'
                  'b = agent.ask("question: two", agent="Fast")\n'
                  'result.status("ok")\n'},
@@ -1245,7 +1246,7 @@ def test_declared_step_secrets_injected(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-use.py", "name": "Use", "description": "", "secrets": ["MY_TOKEN"],
+        {"file": "01-use.py", "name": "Use", "description": "", "secrets": [{"name": "MY_TOKEN", "why": "authenticates the call"}],
          "code": 'from autowright import log, result, secrets\nv = getattr(secrets, "MY" + "_TOKEN")\n'
                  'log(f"got {len(v)} chars")\nresult.status("ok")\n'},
     ]
@@ -1380,10 +1381,10 @@ def test_agents_for_step_duplicate_grant_names_first_enabled_wins():
     a1 = {"id": "a1", "name": "Shared", "harness": "Claude Code", "model": "x"}
     a2 = {"id": "a2", "name": "Shared", "harness": "Codex", "model": "y"}
     agents = {"a1": a1, "a2": a2}
-    assert agents_for_step(agents, ["a1", "a2"], {"agents": ["Shared"]}) == [a1]
-    assert agents_for_step(agents, ["a2", "a1"], {"agents": ["Shared"]}) == [a2]
+    assert agents_for_step(agents, ["a1", "a2"], {"agents": [{"name": "Shared"}]}) == [a1]
+    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"name": "Shared"}]}) == [a2]
     # no resolvable names → first enabled agent
-    assert agents_for_step(agents, ["a2", "a1"], {"agents": ["Nope"]}) == [a2]
+    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"name": "Nope"}]}) == [a2]
 
 
 def test_draft_retry_rejected_after_step_code_drift(store):

@@ -276,19 +276,25 @@ editor applies the whole outcome (§11).
    params:                           # full definitions per §4.2, each with a default
      - { name: sources, kind: list, label: Manga URLs, help: ..., validate: true }
    packages:                         # §6.2 declared packages — beyond curated only, bare
-     - { pip: pandas, import: pandas }   # distribution name, no version; omit the key when none are needed
+     - { pip: pandas, import: pandas,    # distribution name, no version; omit the key when none are needed
+         why: one line — what the steps use the package for }
    steps:                            # ordered; file names NN-name.py, two-digit, gapless;
                                      # timeout: seconds the step may run (short, per the
                                      # timeout rule below); no_timeout: true = no limit;
                                      # retries: automatic re-attempts on failure (≤ 10, rule 8);
                                      # infinite_retries: true = retry until success — the
                                      # persistent-step shape, usually with no_timeout;
-                                     # secrets: granted secret names the step uses (optional);
-                                     # agents: granted agent names an agent step may call,
-                                     # first = agent.ask default (optional)
-     - { file: 01-fetch.py, name: Fetch pages, description: ..., timeout: 60, secrets: [API_TOKEN] }
+                                     # secrets: granted secrets the step uses, as { name, why }
+                                     # entries (optional key; why required per entry — one line
+                                     # on why the step needs that secret);
+                                     # agents: granted agents an agent step may call, as
+                                     # { name, why? } entries — first = agent.ask default
+                                     # (optional key; per-entry why required when a step
+                                     # lists two or more agents, naming each agent's role)
+     - { file: 01-fetch.py, name: Fetch pages, description: ..., timeout: 60,
+         secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }] }
      - { file: 02-classify.py, name: Classify updates, description: ..., timeout: 180, agent: true,
-         why: needs judgment on chapter titles, agents: [Fast local] }
+         why: needs judgment on chapter titles, agents: [{ name: Fast local }] }
    ===FILE: 01-fetch.py===
    ...python source...
    ===END===
@@ -336,22 +342,28 @@ notes rewrite (§11).
    nonempty, `steps[].file` ↔ file blocks match 1:1, filenames follow `NN-name.py` ordering.
 4. Every step file passes `ast.parse`; imports ⊆ stdlib + curated packages + `autowright` + the
    manifest's declared package imports (§6.2).
-5. `packages` is optional: a list of `{ pip, import }` entries — `pip` a bare distribution
+5. `packages` is optional: a list of `{ pip, import, why }` entries — `pip` a bare distribution
    name (PEP 503 name only, no version specifier, ranges, or extras), `import` a valid module
    name that is not already stdlib or curated (declaring one that is, is a validation error —
-   the list stays meaningful). After validation the job enters stage "Installing the packages"
+   the list stays meaningful), `why` a nonempty one-line purpose (what the steps use the
+   package for — shown on the §11 Packages card and stored with the declaration). After validation the job enters stage "Installing the packages"
    and runs the §6.2 ensure; per-package results ride the draft payload as
    `packages: [{ pip, import, status: installed | failed, version?, error? }]`. An install
    failure does **not** fail the job — the draft lands with the failure visible in the §11
    Packages card.
-6. Per-step `secrets` lists must name allowed secrets — an unknown name is a validation error.
+6. Per-step `secrets` lists hold `{ name, why }` entries — the name must be an allowed
+   secret (an unknown name is a validation error) and `why` is a required one-line note on
+   why the step needs that secret (the key tag's tooltip, §9.2).
    Step code is additionally scanned for `secrets.NAME` references → drives the Review-screen
    secret warnings (§11). Unknown or un-allowed secret references in code are Review warnings,
-   not validation failures.
+   not validation failures, and carry no `why`.
 7. `agent: true` is the query-only marker (§6); `why` is required with it, and the optional
-   `agents` list (agent steps only) must name enabled-agent grants — the engine resolves the
-   names against the automation's enabled agents at execution time; no per-step agent id is
-   ever assigned or stored.
+   `agents` list (agent steps only) holds `{ name, why? }` entries whose names must be
+   enabled-agent grants — the engine resolves the names against the automation's enabled
+   agents at execution time; no per-step agent id is ever assigned or stored. An entry's
+   `why` is that agent's role note (its tag tooltip, §9.2); a step listing two or more
+   entries must carry a `why` on every one — a single shared step `why` can't tell two
+   agents' jobs apart.
 8. Per-step `timeout` is an optional positive integer (seconds); `no_timeout: true` is the
    explicit no-limit marker (a separate field, never a `timeout` sentinel value); declaring
    both on one step is a validation error. Absent → the 900 s engine default (§6).

@@ -139,7 +139,7 @@ def agents_for_step(agents: dict[str, dict], enabled: list, s: dict) -> list[dic
     by_name: dict[str, dict] = {}
     for g in pool:  # duplicate grant names: the first enabled agent wins
         by_name.setdefault(harness.grant_name(g), g)
-    named = [by_name[n] for n in s.get("agents") or [] if n in by_name]
+    named = [by_name[e["name"]] for e in s.get("agents") or [] if e.get("name") in by_name]
     return named or pool[:1]
 
 
@@ -686,7 +686,7 @@ class Engine:
             needed: set[str] = set()
             for s in ver["steps"]:
                 needed |= set(SECRET_REF_RE.findall(s.get("code", "")))
-                needed |= set(s.get("secrets") or [])
+                needed |= {e["name"] for e in s.get("secrets") or []}
             secret_values: dict[str, str] = {}
             for name in sorted(needed):
                 if name not in auto["allowed_secrets"]:
@@ -957,7 +957,7 @@ class Engine:
         # manifest plus those its own source references. The full value map stays
         # engine-side for log redaction; reading an uninjected secret raises in
         # the executor and fails the execution.
-        step_refs = set(SECRET_REF_RE.findall(s.get("code", ""))) | set(s.get("secrets") or [])
+        step_refs = set(SECRET_REF_RE.findall(s.get("code", ""))) | {e["name"] for e in s.get("secrets") or []}
         step_secrets = {k: v for k, v in secret_values.items() if k in step_refs}
         ctx = {
             "params": params,

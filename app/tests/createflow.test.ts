@@ -11,7 +11,7 @@ vi.mock('../src/api', () => ({
 }))
 
 import {
-  specToText, textToSpec, amendSpec, stepSecretNames, secretRefsOf,
+  specToText, textToSpec, amendSpec, stepSecretNames, stepSecretTags, secretRefsOf,
   instrToMd, mergeDraftTriggers, persistChat, applyTestValues,
 } from '../src/pages/CreateFlow'
 
@@ -48,10 +48,20 @@ describe('specToText / textToSpec', () => {
 describe('stepSecretNames', () => {
   it('unions declared secrets with secrets.NAME code refs, deduped', () => {
     const s = step({
-      secrets: ['ALPHA'],
+      secrets: [{ name: 'ALPHA', why: 'signs the request' }],
       code: 'x = secrets.BETA + secrets.ALPHA\ny = secrets.BETA',
     })
     expect(stepSecretNames(s)).toEqual(['ALPHA', 'BETA'])
+  })
+  it('stepSecretTags keeps the declared why; code-referenced names carry none', () => {
+    const s = step({
+      secrets: [{ name: 'ALPHA', why: 'signs the request' }],
+      code: 'x = secrets.BETA',
+    })
+    expect(stepSecretTags(s)).toEqual([
+      { name: 'ALPHA', why: 'signs the request' },
+      { name: 'BETA' },
+    ])
   })
   it('lowercase secrets.foo is NOT matched', () => {
     expect(stepSecretNames(step({ code: 'y = secrets.foo' }))).toEqual([])

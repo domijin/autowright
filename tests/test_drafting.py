@@ -646,8 +646,8 @@ def test_step_agents_and_secrets_validate_against_grants():
     # ride the normalized steps.
     files = {
         "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
-                          "  - { file: 01-a.py, name: A, description: x, secrets: [TOKEN] }\n"
-                          "  - { file: 02-b.py, name: B, description: y, agent: true, why: w, agents: [Fast] }\n"),
+                          "  - { file: 01-a.py, name: A, description: x, secrets: [{ name: TOKEN, why: auth }] }\n"
+                          "  - { file: 02-b.py, name: B, description: y, agent: true, why: w, agents: [{ name: Fast }] }\n"),
         "01-a.py": "from autowright import log\nlog('a')\n",
         "02-b.py": "from autowright import log\nlog('b')\n",
     }
@@ -655,22 +655,60 @@ def test_step_agents_and_secrets_validate_against_grants():
               "secrets": [{"name": "TOKEN"}]}
     draft, errors = validate_steps(files, grants)
     assert errors == []
-    assert draft["steps"][0]["secrets"] == ["TOKEN"]
+    assert draft["steps"][0]["secrets"] == [{"name": "TOKEN", "why": "auth"}]
     assert draft["steps"][0]["agents"] == []
-    assert draft["steps"][1]["agents"] == ["Fast"]
+    assert draft["steps"][1]["agents"] == [{"name": "Fast"}]
 
     # Names outside the grants are validation errors.
     bad = dict(files, **{"manifest.yaml": files["manifest.yaml"]
-                         .replace("[Fast]", "[Nope]").replace("[TOKEN]", "[NOPE]")})
+                         .replace("name: Fast", "name: Nope").replace("name: TOKEN", "name: NOPE")})
     _, errors = validate_steps(bad, grants)
     assert any("Nope" in e for e in errors)
     assert any("NOPE" in e for e in errors)
 
     # `agents` only makes sense on agent steps.
     bad2 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
-                          .replace("secrets: [TOKEN]", "agents: [Fast]")})
+                          .replace("secrets: [{ name: TOKEN, why: auth }]", "agents: [{ name: Fast }]")})
     _, errors = validate_steps(bad2, grants)
     assert any("only valid on agent" in e for e in errors)
+
+    # §8 rule 6: a declared secret without a why, and the old bare-name shape,
+    # are both rejected.
+    bad4 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                          .replace("{ name: TOKEN, why: auth }", "{ name: TOKEN }")})
+    _, errors = validate_steps(bad4, grants)
+    assert any("needs a why" in e for e in errors)
+    bad5 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                          .replace("[{ name: TOKEN, why: auth }]", "[TOKEN]")})
+    _, errors = validate_steps(bad5, grants)
+    assert any("{ name, why }" in e for e in errors)
+
+    # §8 rule 7: bare name strings are the old shape — rejected.
+    bad3 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                          .replace("[{ name: Fast }]", "[Fast]")})
+    _, errors = validate_steps(bad3, grants)
+    assert any("{ name, why? }" in e for e in errors)
+
+
+def test_step_multiple_agents_need_per_entry_why():
+    # §8 rule 7: two or more agents entries → every one carries its own why.
+    grants = {"agents": [{"name": "Fast"}, {"name": "Smart"}], "secrets": []}
+    files = {
+        "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
+                          "  - { file: 01-a.py, name: A, description: x, agent: true, why: w,\n"
+                          "      agents: [{ name: Fast }, { name: Smart }] }\n"),
+        "01-a.py": "from autowright import log\nlog('a')\n",
+    }
+    _, errors = validate_steps(files, grants)
+    assert sum("needs a why" in e for e in errors) == 2
+
+    good = dict(files, **{"manifest.yaml": files["manifest.yaml"].replace(
+        "[{ name: Fast }, { name: Smart }]",
+        "[{ name: Fast, why: classifies rows }, { name: Smart, why: writes the summary }]")})
+    draft, errors = validate_steps(good, grants)
+    assert errors == []
+    assert draft["steps"][0]["agents"] == [{"name": "Fast", "why": "classifies rows"},
+                                           {"name": "Smart", "why": "writes the summary"}]
 
 
 # ---------- appended coverage: chat job shapes, job cancel, packages ----------
@@ -899,7 +937,7 @@ def test_draft_jobs_cancel_building_and_terminal_noop():
 
 STEPS_WITH_PACKAGES = GOOD_STEPS.replace(
     "note: Created\n",
-    "note: Created\npackages:\n  - { pip: leftpad3, import: leftpad3 }\n")
+    "note: Created\npackages:\n  - { pip: leftpad3, import: leftpad3, why: pads the report }\n")
 
 
 def test_package_ensure_failure_is_nonfatal(monkeypatch):
@@ -926,6 +964,7 @@ def test_package_ensure_failure_is_nonfatal(monkeypatch):
         time.sleep(0.05)
     assert j["status"] == "done", j
     assert j["draft"]["packages"] == [{"pip": "leftpad3", "import": "leftpad3",
+                                       "why": "pads the report",
                                        "status": "failed", "error": "pip exploded"}]
     assert [s["file"] for s in j["draft"]["steps"]] == ["01-a.py", "02-b.py"]
 
@@ -934,16 +973,23 @@ def test_validate_steps_package_blocks_and_number_min():
     # pip name with a version specifier → regex reject
     bad_pip = GOOD_STEPS.replace(
         "note: Created\n",
-        'note: Created\npackages:\n  - { pip: "pandas==2.2", import: pandas }\n')
+        'note: Created\npackages:\n  - { pip: "pandas==2.2", import: pandas, why: tables }\n')
     _, errors = validate_steps(parse_envelope(bad_pip))
     assert any("bare distribution name" in e for e in errors)
 
     # declaring a module already on the curated allowlist → error
     curated = GOOD_STEPS.replace(
         "note: Created\n",
-        "note: Created\npackages:\n  - { pip: requests, import: requests }\n")
+        "note: Created\npackages:\n  - { pip: requests, import: requests, why: http }\n")
     _, errors = validate_steps(parse_envelope(curated))
     assert any("already available" in e for e in errors)
+
+    # §8 rule 5: a missing why is a validation error
+    nowhy = GOOD_STEPS.replace(
+        "note: Created\n",
+        "note: Created\npackages:\n  - { pip: leftpad3, import: leftpad3 }\n")
+    _, errors = validate_steps(parse_envelope(nowhy))
+    assert any("needs a why" in e for e in errors)
 
     # number param: a missing `min` is injected as 0; the default stays required
     nomin = GOOD_STEPS.replace(

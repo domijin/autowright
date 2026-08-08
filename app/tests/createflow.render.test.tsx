@@ -197,7 +197,7 @@ describe('CreateFlow Build & test panel (§11)', () => {
     storeMod.useStore.setState({
       automations: [{
         ...AUTO,
-        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'log("a")', agent: true, why: 'w', agents: ['Fast local'] }],
+        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'log("a")', agent: true, why: 'w', agents: [{ name: 'Fast local' }] }],
       } as unknown as Automation],
     })
     render(<CreateFlow />)
@@ -711,7 +711,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     storeMod.useStore.setState({
       automations: [{
         ...AUTO,
-        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'x = secrets.CRM_API_KEY', agent: true, why: 'w', agents: ['Fast local'] }],
+        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'x = secrets.CRM_API_KEY', agent: true, why: 'w', agents: [{ name: 'Fast local' }] }],
       } as unknown as Automation],
     })
     render(<CreateFlow />)

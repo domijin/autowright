@@ -982,11 +982,15 @@ function ParamRow({ automationId, p, last }: { automationId: string; p: ParamDef
 
 // ---------- steps ----------
 
-function StepRow({ s, n, open, onToggle, last, agentNames }: {
-  s: Step; n: number; open: boolean; onToggle: () => void; last: boolean; agentNames: string[]
+function StepRow({ s, n, open, onToggle, last, agentTags }: {
+  s: Step; n: number; open: boolean; onToggle: () => void; last: boolean
+  agentTags: { name: string; why?: string }[]
 }) {
-  const stepSecrets = [...new Set([...(s.secrets ?? []),
-    ...[...(s.code || '').matchAll(/\bsecrets\.([A-Z][A-Z0-9_]*)/g)].map((m) => m[1])])]
+  // §9.2: declared entries carry the per-use `why`; code-referenced names don't.
+  const stepSecrets = (s.secrets ?? []).map((e) => ({ ...e }))
+  for (const m of (s.code || '').matchAll(/\bsecrets\.([A-Z][A-Z0-9_]*)/g)) {
+    if (!stepSecrets.some((t) => t.name === m[1])) stepSecrets.push({ name: m[1] })
+  }
   return (
     <div style={{ borderBottom: last ? 'none' : '1px solid var(--hairline-dim)' }}>
       <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
@@ -994,25 +998,25 @@ function StepRow({ s, n, open, onToggle, last, agentNames }: {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
-            {s.agent && agentNames.map((nm) => (
+            {s.agent && agentTags.map((t) => (
               <Tag
-                key={nm}
+                key={t.name}
                 icon="fa-microchip"
                 c="var(--accent)"
-                title={s.why || `This step calls the ${nm} AI agent.`}
+                title={t.why || s.why || `This step calls the ${t.name} AI agent.`}
                 style={{ background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' }}
               >
-                {nm}
+                {t.name}
               </Tag>
             ))}
-            {stepSecrets.map((name) => (
+            {stepSecrets.map((t) => (
               <Tag
-                key={name}
+                key={t.name}
                 icon="fa-key"
-                title={`This step uses the ${name} secret from your Keychain`}
+                title={t.why || `This step uses the ${t.name} secret from your Keychain`}
                 style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
               >
-                {name}
+                {t.name}
               </Tag>
             ))}
             <Tag
@@ -1073,7 +1077,7 @@ function StepList({ steps, fallbackAgent }: { steps: Step[]; fallbackAgent: stri
           open={open.has(i)}
           onToggle={() => toggle(i)}
           last={i === steps.length - 1}
-          agentNames={s.agents?.length ? s.agents : [fallbackAgent]}
+          agentTags={s.agents?.length ? s.agents : [{ name: fallbackAgent }]}
         />
       ))}
     </>

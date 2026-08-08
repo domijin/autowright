@@ -28,8 +28,12 @@ export interface Step {
   code: string
   file?: string
   agent?: boolean
-  agents?: string[]   // §8 grant names the step may call — the first is agent.ask's default
-  secrets?: string[]  // secret names the step uses beyond its code references
+  agents?: { name: string; why?: string }[] // §8 grant entries the step may call — the first
+                      // name is agent.ask's default; why = that agent's role note (§9.2 tag tooltip),
+                      // required by §8 validation when a step lists two or more
+  secrets?: { name: string; why?: string }[] // §8 secret grants the step uses beyond its code
+                      // references; why = the per-use note (§9.2 key-tag tooltip), required by
+                      // §8 validation on every declared entry
   why?: string
   timeout?: number    // §4.1 per-step time limit in seconds; absent → the 900 s engine default
   noTimeout?: boolean // §4.1 explicit no-limit marker — never combined with timeout
@@ -46,6 +50,8 @@ export interface Step {
 export interface PackageDep {
   pip: string
   import: string
+  why?: string // §8 rule 5 — the drafting agent's one-line purpose, shown under the §11 row
+               // (absent only on transient check/outdated response entries)
   status?: 'installed' | 'missing' | 'failed' | 'installing'
   version?: string
   error?: string

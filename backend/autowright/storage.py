@@ -564,7 +564,8 @@ class Store:
             (vd / "notes.md").unlink()
         # §6.2: statuses are transient (draft payload / API only) — the stored
         # manifest keeps just the declaration; absent when none are declared.
-        pkgs = [{"pip": p.get("pip"), "import": p.get("import")}
+        pkgs = [{"pip": p.get("pip"), "import": p.get("import"),
+                 **({"why": p["why"]} if p.get("why") else {})}
                 for p in ver.get("packages", []) or []]
         save_yaml(vd / "automation.yaml", {
             "when": ver.get("when"),
@@ -1129,7 +1130,8 @@ class Store:
         for a in self.autos.values():
             cur = a["versions"].get(a["current_version"], {})
             for s in cur.get("steps", []):
-                if name in s.get("secrets", []) or name in SECRET_REF_RE.findall(s.get("code", "")):
+                if (any(e.get("name") == name for e in s.get("secrets", []))
+                        or name in SECRET_REF_RE.findall(s.get("code", ""))):
                     used.append(a["name"])
                     break
         return used

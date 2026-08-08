@@ -412,12 +412,15 @@ Sections top to bottom:
   independently — opening one never closes another, so each §14 collapse animates alone
   instead of cancelling against a simultaneous close above it. Step tags are
   display-only — never menus, and every tag carries a plain-language `title` tooltip explaining
-  what it shows: an agent step carries one microchip-icon tag per name in its `agents`
-  list (tooltip = the step's `why`, fallback "This step calls the `<name>` AI agent." when the
-  step has no `why`; an empty list shows a single tag naming the automation's
-  first enabled agent, fallback "agent"), a step carries one key-icon tag per secret it
-  uses (its `secrets` list unioned with the `secrets.NAME` references in its code; tooltip
-  "This step uses the `<NAME>` secret from your Keychain"), and every
+  what it shows: an agent step carries one microchip-icon tag per entry in its `agents`
+  list (tooltip = the entry's `why` — the §4.1 per-agent role note — falling back to the
+  step's `why`, then to "This step calls the `<name>` AI agent."; an empty list shows a
+  single tag naming the automation's first enabled agent, fallback "agent", with the
+  step-`why` tooltip rule), a step carries one key-icon tag per secret it
+  uses (its `secrets` entries' names unioned with the `secrets.NAME` references in its code;
+  tooltip = the declared entry's `why` — the §4.1 per-use note — falling back to "This step
+  uses the `<NAME>` secret from your Keychain" for code-referenced names with no declared
+  entry), and every
   step carries one clock-icon tag showing its §4.1 time limit: the step's `timeout` humanized
   ("60s", "15m", "1h" — hours when divisible by 3600, else minutes when divisible by 60, else
   seconds), the 900 s default ("15m") when the step sets none, "no limit" for `noTimeout`

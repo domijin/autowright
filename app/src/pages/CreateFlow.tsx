@@ -55,12 +55,18 @@ export function persistChat(chat: ChatEntry[]): ChatEntry[] {
 }
 
 interface SecretRef { name: string; steps: number[] }
-// A step's secrets are its declared `secrets` list unioned with the
-// `secrets.NAME` references in its code (§4.1).
+// A step's secrets are its declared `secrets` entries unioned with the
+// `secrets.NAME` references in its code (§4.1). Tags carry the declared
+// entry's per-use `why`; a code-referenced name with no entry has none.
+export function stepSecretTags(s: Step): { name: string; why?: string }[] {
+  const tags = (s.secrets ?? []).map((e) => ({ ...e }))
+  for (const m of (s.code || '').matchAll(/\bsecrets\.([A-Z][A-Z0-9_]*)/g)) {
+    if (!tags.some((t) => t.name === m[1])) tags.push({ name: m[1] })
+  }
+  return tags
+}
 export function stepSecretNames(s: Step): string[] {
-  const names = new Set<string>(s.secrets ?? [])
-  for (const m of (s.code || '').matchAll(/\bsecrets\.([A-Z][A-Z0-9_]*)/g)) names.add(m[1])
-  return [...names]
+  return stepSecretTags(s).map((t) => t.name)
 }
 export function secretRefsOf(steps: Step[]): SecretRef[] {
   const refs: SecretRef[] = []
@@ -557,7 +563,7 @@ export function serializeDraft(r: Rev): DraftPayload {
   return {
     name: r.name, description: r.description, note: r.note,
     params: r.params,
-    packages: r.packages.map(({ pip, import: imp }) => ({ pip, import: imp })),
+    packages: r.packages.map(({ pip, import: imp, why }) => ({ pip, import: imp, why })),
     steps: r.steps,
     spec: r.spec,
     instructions: r.instructions,
@@ -594,14 +600,14 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
   availAgents: Agent[]
   packages: PackageDep[]  // §6.2 declared packages — tagged when the step imports one
 }) {
-  // §4.1: one tag per name in the step's `agents` list; an empty list falls
+  // §4.1: one tag per entry in the step's `agents` list; an empty list falls
   // back to the automation's first enabled agent ("no agent" when none is).
-  const agentTags: { nm: string | null; ag: Agent | null }[] = step.agent
+  const agentTags: { nm: string | null; why?: string; ag: Agent | null }[] = step.agent
     ? ((step.agents ?? []).length
-      ? (step.agents ?? []).map((nm) => ({ nm, ag: availAgents.find((g) => agName(g) === nm) ?? null }))
+      ? (step.agents ?? []).map((e) => ({ nm: e.name, why: e.why, ag: availAgents.find((g) => agName(g) === e.name) ?? null }))
       : [{ nm: availAgents[0] ? agName(availAgents[0]) : null, ag: availAgents[0] ?? null }])
     : []
-  const stepSecrets = stepSecretNames(step)
+  const stepSecrets = stepSecretTags(step)
   const stepPkgs = packages.filter((p) => new RegExp(`\\b(?:import|from)\\s+${p.import}\\b`).test(step.code || ''))
   return (
     <div style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
@@ -615,11 +621,11 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
             <div style={{ font: "600 13px var(--sans)" }}>
               <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{i + 1}.</span> {step.name}
             </div>
-            {agentTags.map(({ nm, ag }, j) => (
+            {agentTags.map(({ nm, why, ag }, j) => (
               <Tag
                 key={j}
                 title={ag
-                  ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution`
+                  ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution${why ? ` — ${why}` : ''}`
                   : nm
                     ? `${nm} isn’t enabled for steps — this step would fail`
                     : 'No agent is enabled for steps — this step would fail'}
@@ -633,14 +639,14 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
                 {nm ?? 'no agent'}
               </Tag>
             ))}
-            {stepSecrets.map((name) => (
+            {stepSecrets.map((t) => (
               <Tag
-                key={name}
-                title={`This step uses the ${name} secret from your Keychain`}
+                key={t.name}
+                title={t.why || `This step uses the ${t.name} secret from your Keychain`}
                 icon="fa-key" c="var(--text-muted)"
                 style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
               >
-                {name}
+                {t.name}
               </Tag>
             ))}
             {stepPkgs.map((p) => (
@@ -1263,7 +1269,7 @@ export default function CreateFlow() {
   // §4.1: a step's callable agents — its named grants resolved against the
   // enabled agents, falling back to the first enabled agent when none named.
   const resolveAgs = (s: Step): Agent[] => {
-    const named = (s.agents ?? []).map((nm) => availAgents.find((g) => agName(g) === nm)).filter((g): g is Agent => !!g)
+    const named = (s.agents ?? []).map((e) => availAgents.find((g) => agName(g) === e.name)).filter((g): g is Agent => !!g)
     return named.length ? named : availAgents.slice(0, 1)
   }
   const agentStepIdx = rev ? rev.steps.map((s, i) => (s.agent ? i : -1)).filter((i) => i >= 0) : []
@@ -1272,7 +1278,7 @@ export default function CreateFlow() {
     const refs: { name: string; steps: number[] }[] = []
     if (rev) rev.steps.forEach((s, i) => {
       if (!s.agent) return
-      for (const nm of s.agents ?? []) {
+      for (const { name: nm } of s.agents ?? []) {
         const r = refs.find((x) => x.name === nm)
         r ? r.steps.push(i) : refs.push({ name: nm, steps: [i] })
       }
@@ -1297,7 +1303,7 @@ export default function CreateFlow() {
   // have. Re-checking the grant clears it instantly; toggles alone never dirty.
   const agentGap = !!rev && agentStepIdx.some((i) => {
     const s = rev.steps[i]
-    const names = s.agents ?? []
+    const names = (s.agents ?? []).map((e) => e.name)
     return names.length
       ? names.some((nm) => !availAgents.some((g) => agName(g) === nm))
       : rev.enabledAgents.length === 0
@@ -1706,7 +1712,8 @@ export default function CreateFlow() {
         ...r, pkgBusy: false,
         packages: r.packages.map((p) => {
           const c = p.status === 'installing' && packages.find((z) => z.pip === p.pip)
-          return c ? { ...c, latest: undefined } : p
+          // merge onto the row — the §19 response carries no `why`
+          return c ? { ...p, ...c, latest: undefined } : p
         }),
       }))
       showToast('Updated — the new version applies to every automation using the package.', 3600)
@@ -1729,7 +1736,11 @@ export default function CreateFlow() {
       const { packages } = await api.installPackages(list)
       setRev((r) => r && ({
         ...r, pkgBusy: false,
-        packages: r.packages.map((p) => packages.find((z) => z.pip === p.pip) ?? p),
+        packages: r.packages.map((p) => {
+          const c = packages.find((z) => z.pip === p.pip)
+          // merge onto the row — the §19 response carries no `why`
+          return c ? { ...p, ...c } : p
+        }),
       }))
     } catch (e) {
       setRev((r) => r && ({
@@ -2853,7 +2864,7 @@ export default function CreateFlow() {
                         // warned row still shows where it's called; unnamed steps fall back to
                         // the first enabled agent.
                         const used = agentStepIdx.filter((i) => {
-                          const names = rev.steps[i].agents ?? []
+                          const names = (rev.steps[i].agents ?? []).map((e) => e.name)
                           return names.length ? names.includes(agName(g)) : availAgents[0]?.id === g.id
                         })
                         return (
@@ -3565,6 +3576,10 @@ export default function CreateFlow() {
                               </button>
                             )}
                           </div>
+                          {/* §11: the declaration's why — the card explains every install it asks the user to trust */}
+                          {p.why && (
+                            <div style={{ margin: '3px 0 0', font: "400 11px/1.5 var(--sans)", color: 'var(--text-muted)' }}>{p.why}</div>
+                          )}
                           {p.status === 'failed' && p.error && (
                             <div style={{ margin: '6px 0 0', font: "400 10.5px/1.5 var(--mono)", color: 'var(--red-text)', overflowWrap: 'break-word' }}>{p.error}</div>
                           )}

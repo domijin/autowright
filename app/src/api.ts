@@ -21,7 +21,7 @@ declare global {
       updateCheck(): Promise<{ state: 'uptodate' | 'error' } | { state: 'available'; version: string }>
       updateDownload(): Promise<{ ok: true } | { error: string }>
       updateInstall(): Promise<{ ok: true } | { busy: true }>
-      onUpdateProgress(cb: (pct: number | null) => void): void
+      onUpdateProgress(cb: (percent: number | null) => void): void
       onOpenTarget(cb: (hash: string) => void): void
     }
   }
@@ -74,57 +74,57 @@ export const api = {
   state: () => req<StateSnapshot>('GET', '/state'),
   instructions: () => req<{ framework: string; defaultBuild: string }>('GET', '/instructions'),
   // §4.5/§19: the machine kind — the API serializes the display label
-  executeNow: (autoId: string, version?: string, trigger: 'manual' | 'menubar' = 'manual') =>
-    req<{ execId: string }>('POST', `/automations/${autoId}/execute`, { version, trigger }),
-  cancelExec: (execId: string) => req('POST', `/executions/${execId}/cancel`),
+  executeNow: (automationId: string, version?: string, trigger: 'manual' | 'menubar' = 'manual') =>
+    req<{ executionId: string }>('POST', `/automations/${automationId}/execute`, { version, trigger }),
+  cancelExecution: (executionId: string) => req('POST', `/executions/${executionId}/cancel`),
   // §7 in-place retry: same execution record, from the failed step
-  retryExec: (execId: string) => req<{ execId: string }>('POST', `/executions/${execId}/retry`),
+  retryExecution: (executionId: string) => req<{ executionId: string }>('POST', `/executions/${executionId}/retry`),
   // §7 skip: index must be the currently executing step (409 otherwise)
-  skipStep: (execId: string, index: number) =>
-    req('POST', `/executions/${execId}/skip-step`, { index }),
-  getExec: (execId: string) => req<import('./types').Exec>('GET', `/executions/${execId}`),
+  skipStep: (executionId: string, index: number) =>
+    req('POST', `/executions/${executionId}/skip-step`, { index }),
+  getExecution: (executionId: string) => req<import('./types').Execution>('GET', `/executions/${executionId}`),
   // §19 lazy logs: both params → that step attempt's file; neither → the execution log
-  getExecLogs: (execId: string, step?: number, attempt?: number) =>
-    req<{ lines: import('./types').LogLine[] }>('GET', `/executions/${execId}/logs`
+  getExecutionLogs: (executionId: string, step?: number, attempt?: number) =>
+    req<{ lines: import('./types').LogLine[] }>('GET', `/executions/${executionId}/logs`
       + (step !== undefined ? `?step=${step}&attempt=${attempt ?? 1}` : '')),
-  getAuto: (autoId: string) => req<import('./types').Auto>('GET', `/automations/${autoId}`),
-  patchAuto: (autoId: string, patch: Record<string, unknown>) =>
-    req<import('./types').Auto>('PATCH', `/automations/${autoId}`, patch),
+  getAutomation: (automationId: string) => req<import('./types').Automation>('GET', `/automations/${automationId}`),
+  patchAutomation: (automationId: string, patch: Record<string, unknown>) =>
+    req<import('./types').Automation>('PATCH', `/automations/${automationId}`, patch),
   // §19 iMessage permission checklist (§9.2): status probe + Automation prompt
   imessagePermissions: () =>
     req<{ fullDisk: boolean; automation: 'granted' | 'denied' | 'unknown' }>(
       'GET', '/imessage/permissions'),
   imessageAutomationProbe: () =>
     req<{ automation: 'granted' | 'denied' }>('POST', '/imessage/permissions/automation-probe'),
-  deleteAuto: (autoId: string) => req('DELETE', `/automations/${autoId}`),
-  clearMemory: (autoId: string) => req('POST', `/automations/${autoId}/memory/clear`),
+  deleteAutomation: (automationId: string) => req('DELETE', `/automations/${automationId}`),
+  clearMemory: (automationId: string) => req('POST', `/automations/${automationId}/memory/clear`),
   // §6 firing queue — cancels every waiting entry; running executions are untouched
-  clearQueue: (autoId: string) =>
-    req<{ cancelled: number }>('POST', `/automations/${autoId}/queue/clear`),
+  clearQueue: (automationId: string) =>
+    req<{ cancelled: number }>('POST', `/automations/${automationId}/queue/clear`),
   // §6.3 memory snapshots
-  createSnapshot: (autoId: string, name?: string) =>
-    req<{ snapshot: import('./types').MemorySnapshot }>('POST', `/automations/${autoId}/memory/snapshots`, { name }),
-  renameSnapshot: (autoId: string, sid: string, name: string | null) =>
-    req<{ snapshot: import('./types').MemorySnapshot }>('PATCH', `/automations/${autoId}/memory/snapshots/${sid}`, { name }),
-  restoreSnapshot: (autoId: string, sid: string) =>
-    req('POST', `/automations/${autoId}/memory/snapshots/${sid}/restore`),
-  deleteSnapshot: (autoId: string, sid: string) =>
-    req('DELETE', `/automations/${autoId}/memory/snapshots/${sid}`),
-  createAuto: (body: Record<string, unknown>) => req<import('./types').Auto>('POST', '/automations', body),
-  saveVersion: (autoId: string, body: Record<string, unknown>) =>
-    req<{ version: number }>('POST', `/automations/${autoId}/versions`, body),
-  putDraft: (autoId: string, draft: unknown) => req('PUT', `/automations/${autoId}/draft`, { draft }),
-  deleteDraft: (autoId: string) => req('DELETE', `/automations/${autoId}/draft`),
+  createSnapshot: (automationId: string, name?: string) =>
+    req<{ snapshot: import('./types').MemorySnapshot }>('POST', `/automations/${automationId}/memory/snapshots`, { name }),
+  renameSnapshot: (automationId: string, sid: string, name: string | null) =>
+    req<{ snapshot: import('./types').MemorySnapshot }>('PATCH', `/automations/${automationId}/memory/snapshots/${sid}`, { name }),
+  restoreSnapshot: (automationId: string, sid: string) =>
+    req('POST', `/automations/${automationId}/memory/snapshots/${sid}/restore`),
+  deleteSnapshot: (automationId: string, sid: string) =>
+    req('DELETE', `/automations/${automationId}/memory/snapshots/${sid}`),
+  createAutomation: (body: Record<string, unknown>) => req<import('./types').Automation>('POST', '/automations', body),
+  saveVersion: (automationId: string, body: Record<string, unknown>) =>
+    req<{ version: number }>('POST', `/automations/${automationId}/versions`, body),
+  putDraft: (automationId: string, draft: unknown) => req('PUT', `/automations/${automationId}/draft`, { draft }),
+  deleteDraft: (automationId: string) => req('DELETE', `/automations/${automationId}/draft`),
   // §4.4 pending create-mode slot (<root>/draft/)
   getPendingDraft: () =>
     req<{ draft: import('./types').DraftPayload | null; agentId: string | null }>('GET', '/draft'),
   putPendingDraft: (draft: unknown, agentId: string | null) => req('PUT', '/draft', { draft, agentId }),
   openPendingDraft: () => req('POST', '/draft/open'),
   deletePendingDraft: () => req('DELETE', '/draft'),
-  restore: (autoId: string, v: number) => req<{ version: number }>('POST', `/automations/${autoId}/restore`, { v }),
+  restore: (automationId: string, v: number) => req<{ version: number }>('POST', `/automations/${automationId}/restore`, { version: v }),
   // §19 test: starts a §4.5 test execution record of the sent draft's steps;
   // progress via the ordinary exec.* events, cancel via POST /executions/{id}/cancel
-  postTest: (body: Record<string, unknown>) => req<{ execId: string }>('POST', '/tests', body),
+  postTest: (body: Record<string, unknown>) => req<{ executionId: string }>('POST', '/tests', body),
   // §6.2 declared packages: fast installed-check / blocking ensure (§19)
   checkPackages: (packages: { pip: string; import: string }[]) =>
     req<{ packages: import('./types').PackageDep[] }>('POST', '/packages/check', { packages }),
@@ -151,28 +151,28 @@ export const api = {
   // §19 real installs + sign-in help (§10 step 2)
   installHarness: (id: string) => req('POST', '/agents/install', { id }),
   installStatus: (id: string) =>
-    req<{ state: 'idle' | 'running' | 'done' | 'failed'; pct?: number; line?: string; error?: string }>(
+    req<{ state: 'idle' | 'running' | 'done' | 'failed'; percent?: number; line?: string; error?: string }>(
       'GET', `/agents/install/${id}`),
   loginHarness: (id: string) => req<{ ok: boolean; method: 'browser' | 'terminal' }>('POST', '/agents/login', { id }),
   signinStatus: (id: string) => req<{ installed: boolean; signedIn: boolean | null }>('GET', `/agents/signin/${id}`),
   ollamaStatus: () => req<{ ready: boolean; installed: boolean; models: string[] }>('GET', '/ollama/status'),
   ollamaPull: (model: string) => req('POST', '/ollama/pull', { model }),
-  putSecret: (name: string, value: string, desc?: string) =>
-    req('PUT', `/secrets/${name}`, desc === undefined ? { value } : { value, desc }),
+  putSecret: (name: string, value: string, description?: string) =>
+    req('PUT', `/secrets/${name}`, description === undefined ? { value } : { value, description }),
   deleteSecret: (name: string) => req('DELETE', `/secrets/${name}`),
   patchSettings: (patch: Record<string, unknown>) =>
     req<import('./types').Settings>('PATCH', '/settings', patch),
   setDataPath: (path: string) => req<import('./types').Settings>('POST', '/settings/data-path', { path }),
   // §5.1 transfer archives — raw zip bytes both ways (§19: no multipart)
-  exportAuto: async (autoId: string, values: boolean): Promise<ArrayBuffer> => {
-    const r = await fetch(`${base}/automations/${autoId}/export?values=${values ? 1 : 0}`, {
+  exportAutomation: async (automationId: string, values: boolean): Promise<ArrayBuffer> => {
+    const r = await fetch(`${base}/automations/${automationId}/export?values=${values ? 1 : 0}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!r.ok) throw new Error(r.statusText)
     return r.arrayBuffer()
   },
-  importAuto: (data: Uint8Array) =>
-    rawPost<{ auto: import('./types').Auto; summary: import('./types').ImportSummary }>(
+  importAutomation: (data: Uint8Array) =>
+    rawPost<{ automation: import('./types').Automation; summary: import('./types').ImportSummary }>(
       '/automations/import', data),
   // §5.2 two-phase import — preview (URL or file bytes), then confirm by token
   importPreview: (data: Uint8Array) =>
@@ -182,11 +182,11 @@ export const api = {
     req<{ token: string; preview: import('./types').ImportPreview }>(
       'POST', '/automations/import/url', { url }),
   importConfirm: (tok: string) =>
-    req<{ auto: import('./types').Auto; summary: import('./types').ImportSummary }>(
+    req<{ automation: import('./types').Automation; summary: import('./types').ImportSummary }>(
       'POST', '/automations/import/confirm', { token: tok }),
   // Raw result-dir file (§4.5) — Response, not JSON: callers .text() or .blob() it.
-  resultFile: async (execId: string, name: string): Promise<Response> => {
-    const r = await fetch(`${base}/executions/${execId}/result/${encodeURIComponent(name)}`, {
+  resultFile: async (executionId: string, name: string): Promise<Response> => {
+    const r = await fetch(`${base}/executions/${executionId}/result/${encodeURIComponent(name)}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!r.ok) throw new Error(r.statusText)
@@ -207,7 +207,7 @@ export function openWs(onEvent: (msg: Record<string, unknown>) => void): () => v
       // before each reconnect attempt or the loop retries a dead address forever.
       setTimeout(() => { void connectInfo().finally(connect) }, 1500)
     }
-    sock.onopen = () => onEvent({ ev: 'ws.open' })
+    sock.onopen = () => onEvent({ event: 'ws.open' })
   }
   connect()
   return () => { closed = true; sock?.close() }

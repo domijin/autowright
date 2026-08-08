@@ -109,36 +109,36 @@ def _pjson(data) -> None:
 
 # ---------------------------------------------------------------- log follow
 
-def follow_exec(c: Client, exec_id: str) -> str:
+def follow_exec(c: Client, execution_id: str) -> str:
     # Logs are lazy (§19): poll the record for step/attempt structure, then
-    # fetch each attempt's log file and print lines past the last seen seq.
+    # fetch each attempt's log file and print lines past the last seen sequence.
     # An attempt fetched once after it reached a terminal status can't grow —
     # skip it on later polls instead of re-downloading its whole file forever.
-    seen: dict[tuple, int] = {}   # (step index | None, attempt | None) → last printed seq
+    seen: dict[tuple, int] = {}   # (step index | None, attempt | None) → last printed sequence
     settled: set[tuple] = set()
     while True:
-        e = c.req("GET", f"/executions/{exec_id}")
+        e = c.req("GET", f"/executions/{execution_id}")
         targets: list[tuple[int | None, int | None, bool]] = [(None, None, False)]  # the execution log
         for i, s in enumerate(e.get("steps", [])):
             for a in s.get("attempts") or []:
                 terminal = a.get("status") not in ("executing", "queued")
-                targets.append((i, a["n"], terminal))
+                targets.append((i, a["number"], terminal))
         for step, attempt, terminal in targets:
             key = (step, attempt)
             if key in settled:
                 continue
             q = "" if step is None else f"?step={step}&attempt={attempt}"
-            lines = c.req("GET", f"/executions/{exec_id}/logs{q}").get("lines", [])
+            lines = c.req("GET", f"/executions/{execution_id}/logs{q}").get("lines", [])
             last = seen.get(key, 0)
             for ln in lines:
-                if ln["seq"] > last:
-                    print(f"  {ln['t']} [{ln['k']}] {ln['text']}")
-                    last = ln["seq"]
+                if ln["sequence"] > last:
+                    print(f"  {ln['time']} [{ln['kind']}] {ln['text']}")
+                    last = ln["sequence"]
             seen[key] = last
             if terminal:
                 settled.add(key)
         if e["status"] != "executing":
-            print(f"→ {e['status']} in {e['dur']}")
+            print(f"→ {e['status']} in {e['duration']}")
             return e["status"]
         time.sleep(1)
 
@@ -201,14 +201,14 @@ def validate_workdir(c: Client, d: Path) -> dict:
         sys.exit(1)
     draft["spec"] = spec["blocks"]
     if "instructions.md" in files:
-        draft["instr"] = files["instructions.md"].strip()
+        draft["instructions"] = files["instructions.md"].strip()
     if "notes.md" in files:
         draft["notes"] = files["notes.md"].strip()
     return draft
 
 
 def _manifest_step(s: dict) -> dict:
-    e: dict = {"file": s.get("file"), "name": s.get("name", ""), "desc": s.get("desc", "")}
+    e: dict = {"file": s.get("file"), "name": s.get("name", ""), "description": s.get("description", "")}
     if s.get("agent"):
         e["agent"] = True
         e["why"] = s.get("why", "")
@@ -237,8 +237,8 @@ def write_workdir(d: Path, auto: dict) -> list[str]:
     d.mkdir(parents=True, exist_ok=True)
     written = ["spec.md", "manifest.yaml"]
     (d / "spec.md").write_text(specmd.blocks_to_md(auto.get("spec") or []), encoding="utf-8")
-    manifest: dict = {"name": auto["name"], "desc": auto.get("desc", "")}
-    crons = [{"cron": t["expr"], **({"tz": t["tz"]} if t.get("tz") else {})}
+    manifest: dict = {"name": auto["name"], "description": auto.get("description", "")}
+    crons = [{"cron": t["expression"], **({"timezone": t["timezone"]} if t.get("timezone") else {})}
              for t in auto.get("triggers") or [] if t["kind"] == "cron"]
     if crons:
         manifest["triggers"] = crons
@@ -254,8 +254,8 @@ def write_workdir(d: Path, auto: dict) -> list[str]:
     for s in auto.get("steps") or []:
         (d / s["file"]).write_text(s.get("code", ""), encoding="utf-8")
         written.append(s["file"])
-    if auto.get("instr"):
-        (d / "instructions.md").write_text(auto["instr"] + "\n", encoding="utf-8")
+    if auto.get("instructions"):
+        (d / "instructions.md").write_text(auto["instructions"] + "\n", encoding="utf-8")
         written.append("instructions.md")
     if (auto.get("notes") or "").strip():
         (d / "notes.md").write_text(auto["notes"].strip() + "\n", encoding="utf-8")
@@ -265,7 +265,7 @@ def write_workdir(d: Path, auto: dict) -> list[str]:
 
 def merge_draft_triggers(stored: list[dict], drafted: list[dict]) -> list[dict]:
     """§4.3 trigger merge, client-side like the editor: drafted crons replace
-    the cron subset ((expr, tz) matches keep id and off state, new entries
+    the cron subset ((expression, timezone) matches keep id and enabled state, new entries
     arrive enabled, unmatched stored crons drop); drafted message/app-start
     entries add only when no stored trigger matches their identity fields;
     stored non-cron triggers always survive."""
@@ -288,7 +288,7 @@ def merge_draft_triggers(stored: list[dict], drafted: list[dict]) -> list[dict]:
     for d in drafted:
         if d["kind"] == "cron":
             kept = next((t for t in stored if t["kind"] == "cron"
-                         and t["expr"] == d["expr"] and t.get("tz") == d.get("tz")), None)
+                         and t["expression"] == d["expression"] and t.get("timezone") == d.get("timezone")), None)
             out.append(kept or d)
         elif d["kind"] != "time" and not any(same_non_cron(t, d) for t in stored):
             out.append(d)
@@ -321,7 +321,7 @@ def _grants(c: Client, args, draft: dict,
     """§20 grant model: the saved grants are the stored lists plus the explicit
     --grant-agent/--grant-secret flags — no all-on seed, no silent widening.
     Every name the workdir needs (per-step agents; per-step secrets plus
-    code-referenced secretRefs) must be granted, or this exits 1 naming the
+    code-referenced secretReferences) must be granted, or this exits 1 naming the
     exact flags to add. Unknown flag names exit with the candidate list."""
     agents = c.req("GET", "/agents")
     known_agents = [a.get("name") or a["harness"] for a in agents]
@@ -347,9 +347,9 @@ def _grants(c: Client, args, draft: dict,
         granted_secrets.add(name)
 
     need_agents = _step_grant_names(draft, "agents")
-    need_secrets = _step_grant_names(draft, "secrets") | set(draft.get("secretRefs") or [])
+    need_secrets = _step_grant_names(draft, "secrets") | set(draft.get("secretReferences") or [])
     # Manifest names are existence-checked by the validators; code-referenced
-    # secrets (secretRefs) aren't, so a nonexistent one needs storing, not a flag.
+    # secrets (secretReferences) aren't, so a nonexistent one needs storing, not a flag.
     unknown = sorted(n for n in need_secrets - granted_secrets if n not in known_secrets)
     if unknown:
         sys.exit(f"the step code references secrets that don't exist: {', '.join(unknown)} — "
@@ -418,19 +418,19 @@ def cmd_automation_show(c: Client, args) -> None:
         _pjson(full)
         return
     print(f"{full['name']} [{full['id']}] — {full['specMeta']}")
-    if full.get("desc"):
-        print(full["desc"])
+    if full.get("description"):
+        print(full["description"])
     print(f"status: {full['lastStatus']}"
           + (f" · {full['resultChip']}" if full.get("resultChip") else ""))
     for i, t in enumerate(full.get("triggers") or [], 1):
-        print(f"trigger {i}: {t['label']}" + (" (off)" if t.get("off") else ""))
+        print(f"trigger {i}: {t['label']}" + (" (off)" if not t["enabled"] else ""))
     for p in full.get("params") or []:
         print(f"param {p['name']} ({p['kind']}): {_param_value(p)!r}")
     for i, s in enumerate(full.get("steps") or [], 1):
         tags = "".join([" [agent]" if s.get("agent") else "",
                         f" [secrets: {', '.join(s['secrets'])}]" if s.get("secrets") else ""])
         print(f"step {i}: {s['name']}{tags}")
-    vs = [f"v{v['v']}" for v in full.get("versions") or []]
+    vs = [f"v{v['version']}" for v in full.get("versions") or []]
     if vs:
         print(f"history: {', '.join(vs)}")
     if full.get("draft"):
@@ -503,7 +503,7 @@ def cmd_automation_restore(c: Client, args) -> None:
     v = args.version.lstrip("vV")
     if not v.isdigit():
         sys.exit(f"version must be vN, got {args.version!r}")
-    r = c.req("POST", f"/automations/{a['id']}/restore", {"v": int(v)})
+    r = c.req("POST", f"/automations/{a['id']}/restore", {"version": int(v)})
     print(f"restored v{v} of {a['name']!r} as v{r.get('version', '?')}")
 
 
@@ -513,9 +513,9 @@ def cmd_automation_execute(c: Client, args) -> None:
     if args.version:
         body["version"] = args.version
     r = c.req("POST", f"/automations/{a['id']}/execute", body)
-    print(f"started — execution {r['execId']}")
+    print(f"started — execution {r['executionId']}")
     if args.follow:
-        _exit_by_status(follow_exec(c, r["execId"]))
+        _exit_by_status(follow_exec(c, r["executionId"]))
 
 
 def cmd_automation_export(c: Client, args) -> None:
@@ -547,7 +547,7 @@ def cmd_automation_import(c: Client, args) -> None:
             sys.exit(str(e))
         r = json.loads(c.req_raw("POST", "/automations/import", data).decode() or "{}")
     s = r.get("summary", {})
-    print(f"imported {r.get('auto', {}).get('name', '?')!r} [{r.get('auto', {}).get('id', '')[:8]}]")
+    print(f"imported {r.get('automation', {}).get('name', '?')!r} [{r.get('automation', {}).get('id', '')[:8]}]")
     if s.get("secretsCreated"):
         print(f"  secrets that need values: {', '.join(s['secretsCreated'])}")
     if s.get("secretsExisting"):
@@ -606,14 +606,14 @@ def parse_param_value(p: dict, raw: str):
                 sys.exit(f"param {p['name']}: bad JSON object — {e}")
             if not isinstance(v, dict):
                 sys.exit(f"param {p['name']}: expected a JSON object")
-            return [{"k": k, "v": str(x)} for k, x in v.items()]
+            return [{"key": k, "value": str(x)} for k, x in v.items()]
         rows = []
         for pair in raw.split(","):
             if pair.strip():
                 k, sep, v = pair.partition("=")
                 if not sep or not k.strip():
                     sys.exit(f"param {p['name']}: kv takes k=v[,k=v] or a JSON object, got {raw!r}")
-                rows.append({"k": k.strip(), "v": v.strip()})
+                rows.append({"key": k.strip(), "value": v.strip()})
         return rows
     return raw  # text
 
@@ -654,13 +654,13 @@ def cmd_trigger_list(c: Client, args) -> None:
     if not triggers:
         print("no triggers — executes only via `automation execute` or the menu bar")
     for i, t in enumerate(triggers, 1):
-        print(f"{i}. {t['label']}" + (" (off)" if t.get("off") else ""))
+        print(f"{i}. {t['label']}" + (" (off)" if not t["enabled"] else ""))
 
 
-def _stored_triggers(c: Client, auto_id: str) -> list[dict]:
+def _stored_triggers(c: Client, automation_id: str) -> list[dict]:
     # label/short are §4.3 display derivations — the PATCH normalizer ignores
     # extra keys, so stored entries round-trip as-is.
-    return c.req("GET", f"/automations/{auto_id}")["triggers"]
+    return c.req("GET", f"/automations/{automation_id}")["triggers"]
 
 
 def _trigger_at_index(triggers: list[dict], n: str) -> dict:
@@ -676,7 +676,7 @@ def cmd_trigger_add(c: Client, args) -> None:
             sys.exit("a Discord trigger needs --secret, the name of the secret "
                      "holding the bot token")
         entry: dict = {"kind": "discord", "channel": args.discord,
-                       "secret": args.secret, "off": False}
+                       "secret": args.secret, "enabled": True}
         if args.pattern:
             entry["pattern"] = args.pattern
         if args.mention:
@@ -685,21 +685,21 @@ def cmd_trigger_add(c: Client, args) -> None:
             entry["author"] = [a.strip() for v in args.author
                                for a in v.split(",") if a.strip()]
     elif args.imessage:
-        entry = {"kind": "imessage", "from": args.imessage, "off": False}
+        entry = {"kind": "imessage", "from": args.imessage, "enabled": True}
         if args.pattern:
             entry["pattern"] = args.pattern
     elif args.app_start:
-        entry = {"kind": "app_start", "off": False}
+        entry = {"kind": "app_start", "enabled": True}
     elif args.at:
-        entry = {"kind": "time", "at": args.at, "off": False}
-    elif args.expr:
-        entry = {"kind": "cron", "expr": args.expr, "off": False}
+        entry = {"kind": "time", "at": args.at, "enabled": True}
+    elif args.expression:
+        entry = {"kind": "cron", "expression": args.expression, "enabled": True}
     else:
         sys.exit("give a cron expression, --at for a one-shot, --app-start, "
                  "--discord for a Discord message trigger, or --imessage for "
                  "an iMessage trigger")
-    if args.tz:
-        entry["tz"] = args.tz
+    if args.timezone:
+        entry["timezone"] = args.timezone
     triggers = _stored_triggers(c, a["id"]) + [entry]
     r = c.req("PATCH", f"/automations/{a['id']}", {"triggers": triggers})
     print(f"added — now: {r['triggerChip']}")
@@ -709,9 +709,9 @@ def cmd_trigger_toggle(c: Client, args) -> None:
     a = find_automation(c, args.automation)
     triggers = _stored_triggers(c, a["id"])
     t = _trigger_at_index(triggers, args.index)
-    t["off"] = args.fn_off
+    t["enabled"] = args.fn_enabled
     c.req("PATCH", f"/automations/{a['id']}", {"triggers": triggers})
-    print(f"trigger {args.index} ({t['short']}) now {'off' if t['off'] else 'on'}")
+    print(f"trigger {args.index} ({t['short']}) now {'on' if t['enabled'] else 'off'}")
 
 
 def cmd_trigger_remove(c: Client, args) -> None:
@@ -785,8 +785,8 @@ def cmd_execution_list(c: Client, args) -> None:
         _pjson(execs[: args.n])
         return
     for e in execs[: args.n]:
-        print(f"{e['started']:<22} {e['autoName']:<30} {e['ver']:<6} {e['status']:<11} "
-              f"{e['dur']:<8} {e['trigger']:<9} [{e['id'][:8]}]")
+        print(f"{e['started']:<22} {e['automationName']:<30} {e['ver']:<6} {e['status']:<11} "
+              f"{e['duration']:<8} {e['trigger']:<9} [{e['id'][:8]}]")
 
 
 def cmd_execution_show(c: Client, args) -> None:
@@ -795,7 +795,7 @@ def cmd_execution_show(c: Client, args) -> None:
     if args.json:
         _pjson(full)
         return
-    print(f"{full['autoName']} {full['ver']} — {full['status']} in {full['dur']} "
+    print(f"{full['automationName']} {full['ver']} — {full['status']} in {full['duration']} "
           f"({full['trigger']}, {full['started']}) [{full['id']}]")
     p = full.get("triggerPayload")
     if p:
@@ -811,7 +811,7 @@ def cmd_execution_show(c: Client, args) -> None:
         print("trigger message: " + " · ".join(parts))
         print(f"  {p['text']}")
     for i, s in enumerate(full.get("steps") or [], 1):
-        print(f"step {i}: {s['name']:<32} {s['status']:<11} {s.get('dur') or ''}")
+        print(f"step {i}: {s['name']:<32} {s['status']:<11} {s.get('duration') or ''}")
     if full.get("error"):
         err = full["error"]
         print(f"error in {err['step']!r}: {err['message']}")
@@ -919,8 +919,8 @@ def cmd_agent_check(c: Client, args) -> None:
 
 # ---------------------------------------------------------------- settings
 
-SETTINGS_KEYS = {"login": bool, "mbIcon": bool, "keepAwake": bool, "notif": str, "days": int,
-                 "keepForever": bool, "devMode": bool}
+SETTINGS_KEYS = {"login": bool, "menuBarIcon": bool, "keepAwake": bool, "notifications": str, "days": int,
+                 "keepForever": bool, "developerMode": bool}
 
 
 def cmd_settings_show(c: Client, args) -> None:
@@ -1064,7 +1064,7 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("automation")
     p = _sub(tg, "add", cmd_trigger_add, "add a trigger")
     p.add_argument("automation")
-    p.add_argument("expr", nargs="?", help='cron expression ("0 8 * * *")')
+    p.add_argument("expression", nargs="?", help='cron expression ("0 8 * * *")')
     p.add_argument("--at", help='one-shot local ISO time ("2026-08-01T09:00")')
     p.add_argument("--app-start", action="store_true", help="fire at every app launch")
     p.add_argument("--discord", metavar="CHANNEL",
@@ -1083,15 +1083,15 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                    help="only Discord messages from these numeric user ids, like "
                         "234567890123456789 (with --discord; repeat the flag or "
                         "comma-separate for several senders)")
-    p.add_argument("--tz", help="IANA zone for the cron/one-shot")
+    p.add_argument("--timezone", help="IANA zone for the cron/one-shot")
     p = _sub(tg, "on", cmd_trigger_toggle, "enable a trigger by index")
     p.add_argument("automation")
     p.add_argument("index")
-    p.set_defaults(fn_off=False)
+    p.set_defaults(fn_enabled=True)
     p = _sub(tg, "off", cmd_trigger_toggle, "disable a trigger by index")
     p.add_argument("automation")
     p.add_argument("index")
-    p.set_defaults(fn_off=True)
+    p.set_defaults(fn_enabled=False)
     p = _sub(tg, "remove", cmd_trigger_remove, "remove a trigger by index")
     p.add_argument("automation")
     p.add_argument("index")

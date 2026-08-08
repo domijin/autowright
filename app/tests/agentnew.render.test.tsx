@@ -63,7 +63,7 @@ describe('AgentNewPage (§12)', () => {
     await waitFor(() => expect(mockedApi.addAgent).toHaveBeenCalledTimes(1))
     expect((mockedApi.addAgent as ReturnType<typeof vi.fn>).mock.calls[0][0]).toEqual({
       harness: 'Claude Code', mode: 'default', model: null,
-      name: 'My writer', desc: 'Cloud drafting',
+      name: 'My writer', description: 'Cloud drafting',
     })
     expect(storeMod.useStore.getState().page).toBe('agents')
   })
@@ -111,7 +111,7 @@ describe('AgentNewPage (§12)', () => {
 
     // the harness.install stream finishing ok re-polls status → gate lifts
     status({ ready: true, installed: true, models: [] })
-    storeMod.useStore.getState().applyEvent({ ev: 'harness.install', id: 'ollama', done: true, ok: true })
+    storeMod.useStore.getState().applyEvent({ event: 'harness.install', id: 'ollama', done: true, ok: true })
     expect(await screen.findByText('Ollama is installed and active.')).toBeTruthy()
     // still unsavable without a model — the submit stays gated
     fireEvent.change(screen.getByPlaceholderText('Name this agent'), { target: { value: 'Local' } })
@@ -150,7 +150,7 @@ describe('AgentNewPage (§12)', () => {
 
     // §12: the UI parses the percent out of the raw `ollama pull` line
     storeMod.useStore.getState().applyEvent({
-      ev: 'ollama.pull', model: 'qwen3-coder:30b', line: 'pulling 3f2a… 45% 8.6 GB/19 GB', done: false,
+      event: 'ollama.pull', model: 'qwen3-coder:30b', line: 'pulling 3f2a… 45% 8.6 GB/19 GB', done: false,
     })
     expect(await screen.findByText('45%')).toBeTruthy()
   })
@@ -166,7 +166,7 @@ describe('AgentNewPage (§12)', () => {
     await waitFor(() => expect(mockedApi.ollamaPull).toHaveBeenCalledWith('bogus:1b'))
 
     storeMod.useStore.getState().applyEvent({
-      ev: 'ollama.pull', model: 'bogus:1b', line: 'pull model manifest: file does not exist', done: true, ok: false,
+      event: 'ollama.pull', model: 'bogus:1b', line: 'pull model manifest: file does not exist', done: true, ok: false,
     })
     await waitFor(() => expect(screen.queryByText(/Downloading/)).toBeNull())
     expect(storeMod.useStore.getState().toast).toContain('Download failed')
@@ -198,7 +198,7 @@ describe('AgentNewPage (§12)', () => {
 
     // install stream finishes ok; already signed in → re-detect ungates the form
     detect({})
-    storeMod.useStore.getState().applyEvent({ ev: 'harness.install', id: 'claude', done: true, ok: true })
+    storeMod.useStore.getState().applyEvent({ event: 'harness.install', id: 'claude', done: true, ok: true })
     expect(await screen.findByText('Default model')).toBeTruthy()
     fireEvent.click(screen.getByText('Add agent'))
     await waitFor(() => expect(mockedApi.addAgent).toHaveBeenCalledTimes(1))
@@ -213,7 +213,7 @@ describe('AgentNewPage (§12)', () => {
     fireEvent.click(await screen.findByText('Download & set up'))
     await waitFor(() => expect(mockedApi.installHarness).toHaveBeenCalledWith('codex'))
 
-    storeMod.useStore.getState().applyEvent({ ev: 'harness.install', id: 'codex', done: true, ok: true })
+    storeMod.useStore.getState().applyEvent({ event: 'harness.install', id: 'codex', done: true, ok: true })
     await waitFor(() => expect(mockedApi.loginHarness).toHaveBeenCalledWith('codex'))
     expect(await screen.findByText(/Finish signing in — Autowright opened your browser/)).toBeTruthy()
   })

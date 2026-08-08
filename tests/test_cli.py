@@ -118,7 +118,7 @@ class _FollowClient:
 
     @staticmethod
     def _ln(seq, text):
-        return {"seq": seq, "t": f"T{seq}", "k": "log", "text": text}
+        return {"sequence": seq, "time": f"T{seq}", "kind": "log", "text": text}
 
     def req(self, method, path, body=None):
         assert method == "GET"
@@ -126,8 +126,8 @@ class _FollowClient:
             self.poll += 1
             return {
                 "status": "executing" if self.poll == 1 else "succeeded",
-                "dur": "2s",
-                "steps": [{"attempts": [{"n": 1, "status": "ok"}]}],  # terminal
+                "duration": "2s",
+                "steps": [{"attempts": [{"number": 1, "status": "ok"}]}],  # terminal
             }
         if path == "/executions/e1/logs":
             if self.poll == 1:
@@ -164,18 +164,18 @@ def test_follow_exec_dedupes_seqs_and_settles_terminal_attempts(monkeypatch, cap
 
 FULL_AUTO = {
     "id": "abc12345-0000-0000-0000-000000000000", "name": "Daily Report",
-    "desc": "Reports daily", "instr": "- keep it short",
-    "spec": [{"k": "h1", "text": "Daily Report"}, {"k": "p", "text": "Fetch and report."}],
+    "description": "Reports daily", "instructions": "- keep it short",
+    "spec": [{"kind": "h1", "text": "Daily Report"}, {"kind": "p", "text": "Fetch and report."}],
     "triggers": [
-        {"id": "t1", "kind": "cron", "expr": "0 8 * * *", "off": True, "tz": "Asia/Tokyo",
+        {"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False, "timezone": "Asia/Tokyo",
          "label": "Daily at 8:00 (Tokyo)", "short": "Daily 8:00 (Tokyo)"},
-        {"id": "t2", "kind": "app_start", "off": False, "label": "On app start",
+        {"id": "t2", "kind": "app_start", "enabled": True, "label": "On app start",
          "short": "App start"},
     ],
     "params": [{"name": "sources", "kind": "list", "label": "URLs", "default": [],
                 "lines": ["https://a.example/x"]}],
     "packages": [],
-    "steps": [{"file": "01-fetch.py", "name": "Fetch", "desc": "fetch pages",
+    "steps": [{"file": "01-fetch.py", "name": "Fetch", "description": "fetch pages",
                "code": "import json\nprint('hi')\n", "secrets": ["API_TOKEN"]}],
     "stepAgents": [], "allowedSecrets": ["API_TOKEN"],
 }
@@ -202,7 +202,7 @@ class _WorkdirClient:
         self.posted.append((method, path, body))
         if method == "POST" and path == "/packages/install":
             return {"packages": self.install_result or []}
-        return {"version": 2, "execId": "e9", "id": "new-id", "name": "Daily Report",
+        return {"version": 2, "executionId": "e9", "id": "new-id", "name": "Daily Report",
                 "triggers": [{}], "triggerChip": "2 triggers"}
 
 
@@ -220,7 +220,7 @@ def test_workdir_pull_push_round_trip(tmp_path):
 
     draft = cli.validate_workdir(c, d)
     assert draft["spec"] == FULL_AUTO["spec"]
-    assert draft["instr"] == "- keep it short"
+    assert draft["instructions"] == "- keep it short"
     assert [s["file"] for s in draft["steps"]] == ["01-fetch.py"]
     assert draft["steps"][0]["code"] == "import json\nprint('hi')\n"
     assert draft["steps"][0]["secrets"] == ["API_TOKEN"]
@@ -228,7 +228,7 @@ def test_workdir_pull_push_round_trip(tmp_path):
     merged = cli.merge_draft_triggers(FULL_AUTO["triggers"], draft["triggers"])
     assert {t["kind"] for t in merged} == {"cron", "app_start"}
     cron = next(t for t in merged if t["kind"] == "cron")
-    assert cron["id"] == "t1" and cron["off"] is True  # matched: keeps id + off state
+    assert cron["id"] == "t1" and cron["enabled"] is False  # matched: keeps id + enabled state
 
 
 def test_workdir_notes_round_trip(tmp_path):
@@ -293,7 +293,7 @@ def test_workdir_params_round_trip_without_values(tmp_path):
     manifest = yaml.safe_load((d / "manifest.yaml").read_text())
     assert manifest["params"] == [{"name": "sources", "kind": "list", "label": "URLs",
                                   "default": []}]
-    assert manifest["triggers"] == [{"cron": "0 8 * * *", "tz": "Asia/Tokyo"}]
+    assert manifest["triggers"] == [{"cron": "0 8 * * *", "timezone": "Asia/Tokyo"}]
 
 
 def test_validate_workdir_prints_errors_and_exits(tmp_path, capsys):
@@ -376,7 +376,7 @@ def test_import_installs_declared_packages(tmp_path, capsys):
     c = _WorkdirClient(install_result=[
         {"pip": "pandas", "import": "pandas", "status": "installed", "version": "2.2.0"}])
     c.req_raw = lambda method, path, data=None: json.dumps(
-        {"auto": {"name": "Shared", "id": "abcd1234-0000"},
+        {"automation": {"name": "Shared", "id": "abcd1234-0000"},
          "summary": {"packages": [{"pip": "pandas", "import": "pandas"}]}}).encode()
     f = tmp_path / "x.autowright"
     f.write_bytes(b"archive")
@@ -390,33 +390,33 @@ def test_import_installs_declared_packages(tmp_path, capsys):
 def test_merge_draft_triggers_drops_unlisted_and_adds_new():
     from autowright import cli
 
-    stored = [{"id": "t1", "kind": "cron", "expr": "0 8 * * *", "off": True},
-              {"id": "t3", "kind": "time", "at": "2027-01-01T09:00", "off": False},
-              {"id": "t4", "kind": "discord", "channel": "1", "secret": "S", "off": False}]
-    drafted = [{"kind": "cron", "expr": "0 9 * * 1", "off": False}]
+    stored = [{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False},
+              {"id": "t3", "kind": "time", "at": "2027-01-01T09:00", "enabled": True},
+              {"id": "t4", "kind": "discord", "channel": "1", "secret": "S", "enabled": True}]
+    drafted = [{"kind": "cron", "expression": "0 9 * * 1", "enabled": True}]
     merged = cli.merge_draft_triggers(stored, drafted)
     # one-shot and discord survive, the unlisted cron drops, the new cron arrives enabled
-    assert [(t["kind"], t.get("expr") or t.get("at") or t.get("channel")) for t in merged] == [
+    assert [(t["kind"], t.get("expression") or t.get("at") or t.get("channel")) for t in merged] == [
         ("time", "2027-01-01T09:00"), ("discord", "1"), ("cron", "0 9 * * 1")]
 
 
 def test_merge_draft_triggers_message_entries_additive():
     from autowright import cli
 
-    stored = [{"id": "t1", "kind": "imessage", "from": "+15551234567", "off": True},
-              {"id": "t2", "kind": "discord", "channel": "1", "secret": "S", "off": False}]
-    drafted = [{"kind": "imessage", "from": "+15551234567", "off": False},   # matches t1
-               {"kind": "imessage", "from": "a@b.co", "off": False},          # new → adds
-               {"kind": "discord", "channel": "1", "secret": "S", "off": False,
+    stored = [{"id": "t1", "kind": "imessage", "from": "+15551234567", "enabled": False},
+              {"id": "t2", "kind": "discord", "channel": "1", "secret": "S", "enabled": True}]
+    drafted = [{"kind": "imessage", "from": "+15551234567", "enabled": True},   # matches t1
+               {"kind": "imessage", "from": "a@b.co", "enabled": True},          # new → adds
+               {"kind": "discord", "channel": "1", "secret": "S", "enabled": True,
                 "pattern": "go"},                                             # pattern differs → adds
-               {"kind": "discord", "channel": "1", "secret": "S", "off": False,
+               {"kind": "discord", "channel": "1", "secret": "S", "enabled": True,
                 "author": ["777"]},                                           # author differs → adds
-               {"kind": "time", "at": "2030-01-01T09:00", "off": False}]      # never drafted → dropped
+               {"kind": "time", "at": "2030-01-01T09:00", "enabled": True}]      # never drafted → dropped
     merged = cli.merge_draft_triggers(stored, drafted)
     assert [(t["kind"], t.get("id")) for t in merged] == [
         ("imessage", "t1"), ("discord", "t2"), ("imessage", None), ("discord", None),
         ("discord", None)]
-    assert merged[0]["off"] is True  # matched entry keeps its off state
+    assert merged[0]["enabled"] is False  # matched entry keeps its enabled state
 
 
 def test_trigger_add_discord():
@@ -428,20 +428,20 @@ def test_trigger_add_discord():
     cli.cmd_trigger_add(c, SimpleNamespace(
         automation="Daily Report", discord="123", secret="BOT_TOKEN",
         pattern="go", mention=True, author=["777,888", "999"], imessage=None,
-        app_start=False, at=None, expr=None, tz=None))
+        app_start=False, at=None, expression=None, timezone=None))
     method, path, body = c.posted[-1]
     assert (method, path) == ("PATCH", f"/automations/{FULL_AUTO['id']}")
     # repeated --author flags and comma-separated values collect into one list
     assert body["triggers"][-1] == {"kind": "discord", "channel": "123",
                                     "secret": "BOT_TOKEN", "pattern": "go",
                                     "mention": True, "author": ["777", "888", "999"],
-                                    "off": False}
+                                    "enabled": True}
     # --discord without --secret exits with guidance, nothing sent
     with pytest.raises(SystemExit):
         cli.cmd_trigger_add(c, SimpleNamespace(
             automation="Daily Report", discord="123", secret=None, pattern=None,
             mention=False, author=None, imessage=None, app_start=False,
-            at=None, expr=None, tz=None))
+            at=None, expression=None, timezone=None))
 
 
 def test_trigger_add_imessage():
@@ -453,11 +453,11 @@ def test_trigger_add_imessage():
     cli.cmd_trigger_add(c, SimpleNamespace(
         automation="Daily Report", discord=None, secret=None,
         pattern="deploy", mention=False, imessage="+15551234567",
-        app_start=False, at=None, expr=None, tz=None))
+        app_start=False, at=None, expression=None, timezone=None))
     method, path, body = c.posted[-1]
     assert (method, path) == ("PATCH", f"/automations/{FULL_AUTO['id']}")
     assert body["triggers"][-1] == {"kind": "imessage", "from": "+15551234567",
-                                    "pattern": "deploy", "off": False}
+                                    "pattern": "deploy", "enabled": True}
 
 
 # ---------------------------------------------------------------- param parsing
@@ -468,8 +468,8 @@ def test_trigger_add_imessage():
     ("text", "hello there", "hello there"),
     ("list", "a, b, c", ["a", "b", "c"]),
     ("list", '["x", "y"]', ["x", "y"]),
-    ("kv", "k1=v1,k2=v2", [{"k": "k1", "v": "v1"}, {"k": "k2", "v": "v2"}]),
-    ("kv", '{"k1": "v1"}', [{"k": "k1", "v": "v1"}]),
+    ("kv", "k1=v1,k2=v2", [{"key": "k1", "value": "v1"}, {"key": "k2", "value": "v2"}]),
+    ("kv", '{"k1": "v1"}', [{"key": "k1", "value": "v1"}]),
 ])
 def test_parse_param_value(kind, raw, expected):
     from autowright import cli
@@ -497,7 +497,7 @@ def test_followed_execution_failure_exits_2(monkeypatch, capsys):
     class _FailClient:
         def req(self, method, path, body=None):
             if path == "/executions/e1":
-                return {"status": "failed", "dur": "3s", "steps": []}
+                return {"status": "failed", "duration": "3s", "steps": []}
             return {"lines": []}
 
     with pytest.raises(SystemExit) as ei:
@@ -647,7 +647,7 @@ def test_disabled_parser_shape_exposes_only_service():
 
 def test_cmd_status_prints_counts_and_json(capsys):
     gets = {"/health": {"version": "1.2.3"},
-            "/state": {"autos": [1], "execs": [1, 2], "agents": [], "secrets": [1],
+            "/state": {"automations": [1], "executions": [1, 2], "agents": [], "secrets": [1],
                        "pendingDraft": {"name": "New thing"}}}
     _run(_RouteClient(gets), "status")
     out = capsys.readouterr().out
@@ -681,8 +681,8 @@ def test_cmd_automation_list_row_format_and_json(capsys):
 
 def test_cmd_automation_show_prints_record(capsys):
     full = dict(FULL_AUTO, specMeta="v2 · edited today", lastStatus="failed",
-                resultChip="0 new", versions=[{"v": 1}, {"v": 2}], draft={"x": 1},
-                triggers=[{"kind": "cron", "label": "Daily at 8:00", "off": True}])
+                resultChip="0 new", versions=[{"version": 1}, {"version": 2}], draft={"x": 1},
+                triggers=[{"kind": "cron", "label": "Daily at 8:00", "enabled": False}])
     _run(_RouteClient(_auto_gets(full)), "automation", "show", "Daily Report")
     out = capsys.readouterr().out
     assert f"Daily Report [{AUTO_ID}] — v2 · edited today" in out
@@ -709,7 +709,7 @@ def test_cmd_automation_delete_needs_yes(capsys):
 def test_cmd_automation_restore_parses_vN(capsys):
     c = _RouteClient(_auto_gets(), reply={"version": 5})
     _run(c, "automation", "restore", "Daily Report", "v3")
-    assert c.calls == [("POST", f"/automations/{AUTO_ID}/restore", {"v": 3})]
+    assert c.calls == [("POST", f"/automations/{AUTO_ID}/restore", {"version": 3})]
     assert "restored v3 of 'Daily Report' as v5" in capsys.readouterr().out
 
     with pytest.raises(SystemExit) as ei:
@@ -718,12 +718,12 @@ def test_cmd_automation_restore_parses_vN(capsys):
 
 
 def test_cmd_automation_execute_posts_manual_trigger(capsys):
-    c = _RouteClient(_auto_gets(), reply={"execId": "e9"})
+    c = _RouteClient(_auto_gets(), reply={"executionId": "e9"})
     _run(c, "automation", "execute", "Daily Report")
     assert c.calls == [("POST", f"/automations/{AUTO_ID}/execute", {"trigger": "manual"})]
     assert "started — execution e9" in capsys.readouterr().out
 
-    c = _RouteClient(_auto_gets(), reply={"execId": "e9"})
+    c = _RouteClient(_auto_gets(), reply={"executionId": "e9"})
     _run(c, "automation", "execute", "Daily Report", "--version", "draft")
     assert c.calls[-1][2] == {"trigger": "manual", "version": "draft"}
 
@@ -749,7 +749,7 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
     src = tmp_path / "in.autowright"
     src.write_bytes(b"ARCHIVE")
     raw = json.dumps({
-        "auto": {"name": "Imported", "id": "deadbeef-1"},
+        "automation": {"name": "Imported", "id": "deadbeef-1"},
         "summary": {"secretsCreated": ["BOT_TOKEN"], "secretsExisting": ["API_TOKEN"],
                     "agentsCreated": ["Fast local"], "agentsReused": ["Claude"],
                     "packages": [{"pip": "requests"}]},
@@ -778,7 +778,7 @@ def test_cmd_automation_import_url_confirms_immediately(capsys):
     # the typed command is the user's explicit action.
     reply = {"token": "tok1",
              "preview": {"resolvedUrl": "https://gh/dl/watcher.autowright"},
-             "auto": {"name": "Web", "id": "cafebabe-2"},
+             "automation": {"name": "Web", "id": "cafebabe-2"},
              "summary": {"secretsCreated": [], "secretsExisting": [],
                          "agentsCreated": [], "agentsReused": [], "packages": []}}
     c = _RouteClient(reply=reply)
@@ -990,12 +990,12 @@ def test_cmd_trigger_toggle_by_index(capsys):
     _run(c, "automation", "trigger", "on", "Daily Report", "1")
     method, path, body = c.calls[-1]
     assert (method, path) == ("PATCH", f"/automations/{AUTO_ID}")
-    assert body["triggers"][0]["off"] is False
+    assert body["triggers"][0]["enabled"] is True
     assert "trigger 1 (Daily 8:00 (Tokyo)) now on" in capsys.readouterr().out
 
     c = _RouteClient(_auto_gets())
     _run(c, "automation", "trigger", "off", "Daily Report", "2")
-    assert c.calls[-1][2]["triggers"][1]["off"] is True
+    assert c.calls[-1][2]["triggers"][1]["enabled"] is False
     assert "now off" in capsys.readouterr().out
 
 
@@ -1056,13 +1056,13 @@ def test_find_snapshot_ambiguous_prefix_exits():
 
 
 FULL_EXEC = {
-    "id": "e1234567-0000", "autoName": "Daily Report", "ver": "v2", "status": "failed",
-    "dur": "3s", "trigger": "Discord", "started": "2026-07-29 08:00",
+    "id": "e1234567-0000", "automationName": "Daily Report", "ver": "v2", "status": "failed",
+    "duration": "3s", "trigger": "Discord", "started": "2026-07-29 08:00",
     "triggerPayload": {"kind": "discord", "sender": "dave", "channel": "42",
                        "channelName": "general", "guildName": "Ops",
                        "at": "08:00", "text": "go fetch"},
-    "steps": [{"name": "Fetch", "status": "succeeded", "dur": "1s"},
-              {"name": "Report", "status": "failed", "dur": "2s"}],
+    "steps": [{"name": "Fetch", "status": "succeeded", "duration": "1s"},
+              {"name": "Report", "status": "failed", "duration": "2s"}],
     "error": {"step": "Report", "message": "boom", "reason": "the API was down"},
     "result": {"chip": "0 new", "files": [{"name": "report.md", "size": "2 KB"}]},
 }
@@ -1211,10 +1211,10 @@ def test_cmd_settings_show_and_set(capsys):
     assert "keepAwake" in out
 
     c = _RouteClient()
-    _run(c, "settings", "set", "login=on", "days=14", "notif=failures")
+    _run(c, "settings", "set", "login=on", "days=14", "notifications=failures")
     assert c.calls == [("PATCH", "/settings",
-                        {"login": True, "days": 14, "notif": "failures"})]
-    assert "set login, days, notif" in capsys.readouterr().out
+                        {"login": True, "days": 14, "notifications": "failures"})]
+    assert "set login, days, notifications" in capsys.readouterr().out
 
     # keepAwake is a known bool key — both directions parse
     c = _RouteClient()

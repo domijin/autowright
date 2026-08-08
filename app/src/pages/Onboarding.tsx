@@ -19,7 +19,7 @@ type CardPhase = 'idle' | 'installing' | 'pulling' | 'signin' | 'checking' | 'co
 type LocalPiece = 'opencode' | 'ollama' | 'model'
 interface Card {
   phase: CardPhase
-  pct: number | null            // install percent, when the stream carries one
+  percent: number | null            // install percent, when the stream carries one
   line: string                  // latest install line
   pullPct: number               // §10 Qwen3 8B model download percent
   method: 'browser' | 'terminal' | null
@@ -62,7 +62,7 @@ const CONTINUE_LABEL = 'Use as default →'
 interface Ob {
   phase: 'welcome' | 'connect'
   smStarted: boolean
-  smSteps: { name: string; status: 'pending' | 'executing' | 'done'; dur: string }[]
+  smSteps: { name: string; status: 'pending' | 'executing' | 'done'; duration: string }[]
   smShowResult: boolean
   smDone: boolean
   det: 'searching' | 'cards'
@@ -84,7 +84,7 @@ interface Ob {
 }
 
 const freshCard = (): Card => ({
-  phase: 'idle', pct: null, line: '', pullPct: 0, method: null, error: null, notReady: null,
+  phase: 'idle', percent: null, line: '', pullPct: 0, method: null, error: null, notReady: null,
   queue: [], qi: 0,
 })
 
@@ -93,9 +93,9 @@ function freshOb(): Ob {
     phase: 'welcome',
     smStarted: false,
     smSteps: [
-      { name: 'Checking your settings', status: 'pending', dur: '' },
-      { name: 'Loading your automations', status: 'pending', dur: '' },
-      { name: 'Starting the execution engine', status: 'pending', dur: '' },
+      { name: 'Checking your settings', status: 'pending', duration: '' },
+      { name: 'Loading your automations', status: 'pending', duration: '' },
+      { name: 'Starting the execution engine', status: 'pending', duration: '' },
     ],
     smShowResult: false,
     smDone: false,
@@ -116,7 +116,7 @@ function freshOb(): Ob {
 
 export default function Onboarding() {
   const agents = useStore((s) => s.agents)
-  const autos = useStore((s) => s.autos)
+  const automations = useStore((s) => s.automations)
   const showToast = useStore((s) => s.showToast)
   const setSurface = useStore((s) => s.setSurface)
   const harnessInstall = useStore((s) => s.harnessInstall)
@@ -143,13 +143,13 @@ export default function Onboarding() {
     if (ob.phase !== 'welcome' || ob.smStarted) return
     ob.smStarted = true
     t(() => up((o) => { o.smSteps[0].status = 'executing' }), 500)
-    t(() => up((o) => { o.smSteps[0].status = 'done'; o.smSteps[0].dur = '1.1s'; o.smSteps[1].status = 'executing' }), 1700)
-    t(() => up((o) => { o.smSteps[1].status = 'done'; o.smSteps[1].dur = '1.4s'; o.smSteps[2].status = 'executing' }), 3100)
+    t(() => up((o) => { o.smSteps[0].status = 'done'; o.smSteps[0].duration = '1.1s'; o.smSteps[1].status = 'executing' }), 1700)
+    t(() => up((o) => { o.smSteps[1].status = 'done'; o.smSteps[1].duration = '1.4s'; o.smSteps[2].status = 'executing' }), 3100)
     const finish = () => {
       // Real verification: the store booted against the backend before this
       // surface rendered — only report "ready" once that connection is live.
       if (useStore.getState().connected === true) {
-        up((o) => { o.smSteps[2].status = 'done'; o.smSteps[2].dur = '0.8s'; o.smShowResult = true })
+        up((o) => { o.smSteps[2].status = 'done'; o.smSteps[2].duration = '0.8s'; o.smShowResult = true })
         t(() => up((o) => { o.smDone = true }), 550)
       } else {
         t(finish, 300)
@@ -271,7 +271,7 @@ export default function Onboarding() {
   // Suggestion-card install: real backend install (§19 POST /agents/install);
   // progress arrives via the harness.install effect below.
   const startInstall = (p: Det) => {
-    setCard(p.id, { phase: 'installing', pct: null, line: '', error: null })
+    setCard(p.id, { phase: 'installing', percent: null, line: '', error: null })
     // A previous attempt's terminal harness.install event may still sit in the
     // store — clear it or the effect below would instantly fail this retry.
     useStore.setState((s) => ({ harnessInstall: Object.fromEntries(Object.entries(s.harnessInstall).filter(([k]) => k !== p.id)) }))
@@ -331,7 +331,7 @@ export default function Onboarding() {
       pollPull()
       return
     }
-    setCard(LOCAL_ID, { phase: 'installing', pct: null, line: '', error: null, queue, qi })
+    setCard(LOCAL_ID, { phase: 'installing', percent: null, line: '', error: null, queue, qi })
     // Same stale-terminal-event guard as startInstall.
     useStore.setState((s) => ({ harnessInstall: Object.fromEntries(Object.entries(s.harnessInstall).filter(([k]) => k !== piece)) }))
     api.installHarness(piece).catch((e: Error & { status?: number }) => {
@@ -361,8 +361,8 @@ export default function Onboarding() {
       const c = ob.cards[id]
       if (c && c.phase === 'installing') {
         if (!evt.done) {
-          if (evt.line !== undefined || evt.pct !== undefined) {
-            setCard(id, { line: evt.line ?? c.line, pct: evt.pct ?? c.pct })
+          if (evt.line !== undefined || evt.percent !== undefined) {
+            setCard(id, { line: evt.line ?? c.line, percent: evt.percent ?? c.percent })
           }
         } else if (evt.ok) {
           afterInstall(id)
@@ -373,8 +373,8 @@ export default function Onboarding() {
       const lc = ob.cards[LOCAL_ID]
       if (lc && lc.phase === 'installing' && lc.queue[lc.qi] === id) {
         if (!evt.done) {
-          if (evt.line !== undefined || evt.pct !== undefined) {
-            setCard(LOCAL_ID, { line: evt.line ?? lc.line, pct: evt.pct ?? lc.pct })
+          if (evt.line !== undefined || evt.percent !== undefined) {
+            setCard(LOCAL_ID, { line: evt.line ?? lc.line, percent: evt.percent ?? lc.percent })
           }
         } else if (evt.ok) {
           markLocalPiece(id as LocalPiece)
@@ -402,7 +402,7 @@ export default function Onboarding() {
 
   // ----- derived (prototype obVals) -----
   const agentPre = agents.length > 0
-  const autoPre = autos.length > 0
+  const autoPre = automations.length > 0
   // With prior data (agents or automations), step 1 still shows but Continue
   // goes straight to the app instead of step 2.
   const pre = agentPre || autoPre
@@ -413,19 +413,19 @@ export default function Onboarding() {
   // a harness card as a default-mode agent, the local card as OpenCode
   // driving Qwen3 8B through Ollama.
   const commitOnboardAgents = async (pick: string | null): Promise<void> => {
-    const conn = ob.provs
+    const connection = ob.provs
       .filter((p) => card(p.id).phase === 'connected')
       .map((p) => ({ id: p.id, body: { name: null as string | null, harness: p.name, mode: 'default', model: null as string | null } }))
     if (card(LOCAL_ID).phase === 'connected') {
       // Null name → display falls back to the harness, so the agent reads
       // "OpenCode · <model>" (§10), never the model name twice.
-      conn.push({ id: LOCAL_ID, body: { name: null, harness: 'OpenCode', mode: 'ollama', model: ob.localModel ?? LOCAL_MODEL } })
+      connection.push({ id: LOCAL_ID, body: { name: null, harness: 'OpenCode', mode: 'ollama', model: ob.localModel ?? LOCAL_MODEL } })
     }
-    if (conn.length === 0) return
+    if (connection.length === 0) return
     const existing = useStore.getState().agents
-    const defPid = pick ?? conn[0].id
+    const defPid = pick ?? connection[0].id
     let defaultId: string | null = null
-    for (const { id: cid, body } of conn) {
+    for (const { id: cid, body } of connection) {
       const dup = existing.find((a) => a.harness === body.harness && a.model === body.model)
       const id = dup ? dup.id : (await api.addAgent(body)).id
       if (cid === defPid) defaultId = id
@@ -433,10 +433,10 @@ export default function Onboarding() {
     if (defaultId) {
       await api.patchAgent(defaultId, { default: true })
       // §10: every seed automation gets the chosen default agent.
-      const allAutos = useStore.getState().autos
+      const allAutos = useStore.getState().automations
       await Promise.all(
         allAutos.filter((a) => a.agentId !== defaultId)
-          .map((a) => api.patchAuto(a.id, { agentId: defaultId })),
+          .map((a) => api.patchAutomation(a.id, { agentId: defaultId })),
       )
     }
   }
@@ -553,7 +553,7 @@ export default function Onboarding() {
                 <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: d.dot, animation: d.anim, flex: 'none' }} />
                   <span style={{ flex: 1, fontSize: 13, color: d.c }}>{s.name}</span>
-                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>{s.dur}</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>{s.duration}</span>
                 </div>
               )
             })}
@@ -713,7 +713,7 @@ export default function Onboarding() {
 
   function renderFoundCard(f: Det) {
     const c = card(f.id)
-    const conn = c.phase === 'connected'
+    const connection = c.phase === 'connected'
     return (
       <div
         key={f.id}
@@ -745,7 +745,7 @@ export default function Onboarding() {
         {c.phase === 'signin' && (
           <div style={{ flex: 'none', maxWidth: 340 }}>{renderSigninWait(f)}</div>
         )}
-        {conn && (
+        {connection && (
           <button
             className="ad-btn-primary ad-anim-item"
             onClick={() => obContinue(f.id)}
@@ -775,7 +775,7 @@ export default function Onboarding() {
       ? `OpenCode with Ollama and ${found ?? LOCAL_MODEL} — local to this Mac, works offline. ${LOCAL_FIT}`
       : found ? `Sets up OpenCode with Ollama and ${found}, already on this Mac. Works offline. ${LOCAL_FIT}` : s.body
     const btn = found ? 'Set up local AI' : s.btn
-    const conn = c.phase === 'connected'
+    const connection = c.phase === 'connected'
     const busy = c.phase === 'installing' || c.phase === 'pulling' || c.phase === 'signin' || c.phase === 'failed'
     const start = () => { if (isLocal) startLocalSetup(); else startInstall(p) }
     return (
@@ -820,7 +820,7 @@ export default function Onboarding() {
           {c.phase === 'checking' && (
             <LoadingRow label="Checking connection…" style={{ flex: 'none' }} />
           )}
-          {conn && (
+          {connection && (
             <button
               className="ad-btn-primary ad-anim-item"
               onClick={() => obContinue(p.id)}
@@ -843,12 +843,12 @@ export default function Onboarding() {
                   {isLocal
                     ? `Step ${c.qi + 1} of ${c.queue.length} — Installing ${c.queue[c.qi] === 'opencode' ? 'OpenCode' : 'Ollama'}…`
                     : `Installing ${p.name}…`}{' '}
-                  {c.pct !== null && (
-                    <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)' }}>{Math.round(c.pct)}%</span>
+                  {c.percent !== null && (
+                    <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12, color: 'var(--text-muted)' }}>{Math.round(c.percent)}%</span>
                   )}
                 </div>
-                <ProgressBar pct={c.pct} />
-                {c.line && c.pct === null && (
+                <ProgressBar percent={c.percent} />
+                {c.line && c.percent === null && (
                   <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-faint)', marginTop: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {c.line}
                   </div>
@@ -863,7 +863,7 @@ export default function Onboarding() {
                     {(c.pullPct / 100 * 5.2).toFixed(1)} GB of 5.2 GB
                   </span>
                 </div>
-                <ProgressBar pct={c.pullPct} />
+                <ProgressBar percent={c.pullPct} />
                 <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 8 }}>
                   Ollama is installed. You can keep using your Mac — this finishes in the background.
                 </div>

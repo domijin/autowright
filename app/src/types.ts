@@ -16,15 +16,15 @@ export interface ParamDef {
   // merged current values:
   on?: boolean
   lines?: string[]
-  rows?: { k: string; v: string }[]
+  rows?: { key: string; value: string }[]
   value?: string | number
 }
 
-export interface SpecBlock { k: 'h1' | 'h2' | 'p' | 'li'; text: string }
+export interface SpecBlock { kind: 'h1' | 'h2' | 'p' | 'li'; text: string }
 
 export interface Step {
   name: string
-  desc: string
+  description: string
   code: string
   file?: string
   agent?: boolean
@@ -54,7 +54,7 @@ export interface PackageDep {
 
 export interface ResultFile { name: string; size: string }
 
-export interface ExecResult {
+export interface ExecutionResult {
   chip?: string
   chipStatus?: 'changes' | 'ok' | 'attention'
   files?: ResultFile[]
@@ -68,16 +68,16 @@ export interface ExecResult {
 export interface DraftTest {
   status: 'succeeded' | 'failed'
   when: string
-  execId?: string | null
+  executionId?: string | null
 }
 
 export interface VersionInfo {
-  v: number
+  version: number
   when: string
   note: string | null
   spec: SpecBlock[]
-  instr: string
-  notes?: string     // §4.1 agent-owned working-knowledge doc — versions like spec/instr
+  instructions: string
+  notes?: string     // §4.1 agent-owned working-knowledge doc — versions like spec/instructions
   steps: Step[]
   params: ParamDef[]
   packages: PackageDep[]
@@ -108,36 +108,36 @@ export interface ChatEntry {
 // fields, so the compiler enforces the pairing the backend validates with 422.
 // pubsub is a reserved kind the API refuses to store ("coming soon").
 export type TriggerKindFields =
-  | { kind: 'cron'; expr: string; tz?: string }       // 5-field expression; tz = §4.3 IANA zone
-  | { kind: 'time'; at: string; tz?: string }         // one-shot wall-clock ISO timestamp
+  | { kind: 'cron'; expression: string; timezone?: string }       // 5-field expression; timezone = §4.3 IANA zone
+  | { kind: 'time'; at: string; timezone?: string }         // one-shot wall-clock ISO timestamp
   | { kind: 'app_start' }
   | { kind: 'discord'; channel: string; secret: string; pattern?: string; mention?: boolean; author?: string[] }
   | { kind: 'imessage'; from: string; pattern?: string }
 
-// The stored/serialized trigger (§4.3): id + off + backend-derived display
-// strings; message triggers add the derived listener state `conn`.
+// The stored/serialized trigger (§4.3): id + enabled + backend-derived display
+// strings; message triggers add the derived listener state `connection`.
 export type Trigger = TriggerKindFields & {
   id: string
-  off: boolean
-  conn?: { state: 'connected' | 'connecting' | 'error'; error?: string }
+  enabled: boolean
+  connection?: { state: 'connected' | 'connecting' | 'error'; error?: string }
   label: string
   short: string
 }
 
 // The shape drafts carry (§8) and PATCH sends — no labels; `id` only on
 // entries that already exist on the automation (kept through an edit save).
-export type DraftTrigger = TriggerKindFields & { id?: string; off: boolean }
+export type DraftTrigger = TriggerKindFields & { id?: string; enabled: boolean }
 
-export interface Auto {
+export interface Automation {
   id: string
   name: string
-  desc: string
+  description: string
   version: number
   triggers: Trigger[]        // §4.3 — user-owned, never versioned
   triggerChip: string        // one → its short label · several → "N triggers" · none → "No triggers"
   triggersOff: boolean       // nonempty list, every trigger off (drives the OFF tag)
   nextAt: number | null      // epoch ms of the next enabled occurrence
-  instr: string
+  instructions: string
   notes: string              // §4.1 — the current version's notes doc ("" when empty)
   lastStatus: Status
   live: string[]             // §4.1 execution ids in progress, oldest first — maxParallel may allow several
@@ -145,13 +145,13 @@ export interface Auto {
   maxQueued: number          // §6 how many message firings may wait for a slot (≥ 0)
   resultChip: string | null
   resultStatus: 'changes' | 'ok' | 'attention' | null
-  lastExecLabel: string
+  lastExecutionLabel: string
   agentId: string | null
   stepAgents: string[]
   allowedSecrets: string[]
   snapshotSettings: SnapshotSettings // §6.3 automatic-snapshot toggles
   specMeta: string
-  latest?: (ExecResult & { execId: string; when: string }) | null
+  latest?: (ExecutionResult & { executionId: string; when: string }) | null
   params?: ParamDef[]
   memory?: { size: string; updated: string; path?: string }
   snapshots?: MemorySnapshot[] // §6.3 — newest-first
@@ -184,9 +184,9 @@ export interface MemorySnapshot {
 // attempt's status; logs are fetched lazily per (step, attempt) (§19). `n` is
 // monotonic: only the newest 20 attempts are retained, so the latest entry's
 // `n` is the true attempt count — never use the list length for that.
-export interface Attempt { n: number; status: Status; dur: string; startedMs: number }
-export interface ExecStep { name: string; status: Status; dur: string; attempts: Attempt[] }
-export interface LogLine { t: string; k: 'sys' | 'out' | 'wrn' | 'err'; seq: number; text: string }
+export interface Attempt { number: number; status: Status; duration: string; startedMs: number }
+export interface ExecutionStep { name: string; status: Status; duration: string; attempts: Attempt[] }
+export interface LogLine { time: string; kind: 'sys' | 'out' | 'wrn' | 'err'; sequence: number; text: string }
 
 // §4.5: what a message trigger was firing on — discriminated on kind.
 export type TriggerPayload =
@@ -197,17 +197,17 @@ export type TriggerPayload =
       chat: string | null }  // Messages chat guid (reply routing)
 // messageId/chat are null only on §4.5 mocked-test payloads — real firings always carry them.
 
-export interface Exec {
+export interface Execution {
   id: string
-  autoId: string | null  // §4.5: null on a create-mode test — no automation record exists
-  autoName: string
-  autoDeleted: boolean
+  automationId: string | null  // §4.5: null on a create-mode test — no automation record exists
+  automationName: string
+  automationDeleted: boolean
   ver: string
   status: Status
   trigger: 'Manual' | 'Menu bar' | 'Cron' | 'Once' | 'App start' | 'Discord' | 'iMessage' | 'Test'  // §4.5 labels
   triggerSender: string | null  // §4.5 — payload sender on every row ("Discord · Dave · v3")
   test: boolean  // §4.5 test executions — §11 draft tests
-  dur: string
+  duration: string
   started: string
   startedMs: number
   endedMs: number  // 0 while live or when finished_at was never set (§3 interrupted)
@@ -216,9 +216,9 @@ export interface Exec {
   // §4.5 failure diagnostics — failed executions only
   error: { step: string | null; message: string; reason: string | null } | null
   // full record only (§19 GET /executions/{id}) — absent on list headers
-  steps?: ExecStep[]
-  result?: ExecResult | null
-  redact?: string[] | null  // §4.5: a list — display joins it
+  steps?: ExecutionStep[]
+  result?: ExecutionResult | null
+  redactedSecrets?: string[] | null  // §4.5: a list — display joins it
   params?: ParamDef[]
   triggerPayload?: TriggerPayload | null
   workspace?: string  // §4.5: the execution's workspace dir — §7 Finder link
@@ -227,7 +227,7 @@ export interface Exec {
 export interface Agent {
   id: string
   name: string | null
-  desc?: string
+  description?: string
   harness: 'Claude Code' | 'Gemini CLI' | 'Codex' | 'OpenCode'
   // 'ollama' = OpenCode driving a local Ollama model (§4.7) — OpenCode only;
   // 'custom' = user-typed model string, valid with every harness
@@ -240,7 +240,7 @@ export interface Agent {
 
 // §4.8: set=false → placeholder (name reserved, no Keychain value yet).
 // usedBy is the list of automation names using the secret — the UI joins it.
-export interface SecretMeta { name: string; desc: string; set: boolean; usedBy: string[] }
+export interface SecretMeta { name: string; description: string; set: boolean; usedBy: string[] }
 
 // §5.1 import summary — what the import created vs. matched (§19)
 export interface ImportSummary {
@@ -255,25 +255,25 @@ export interface ImportSummary {
 // dry (`exists`/`reused`); sourceUrl/resolvedUrl only on URL fetches (§19)
 export interface ImportPreview {
   name: string
-  desc: string
-  steps: { name: string; desc: string; agent: boolean }[]
+  description: string
+  steps: { name: string; description: string; agent: boolean }[]
   params: { name: string; kind: string }[]
-  triggers: { kind: 'cron' | 'app_start' | 'discord' | 'imessage'; expr?: string; tz?: string; channel?: string; from?: string; pattern?: string }[]
+  triggers: { kind: 'cron' | 'app_start' | 'discord' | 'imessage'; expression?: string; timezone?: string; channel?: string; from?: string; pattern?: string }[]
   packages: PackageDep[]
   agents: { name: string; harness: string; mode: string; model: string | null; reused: boolean }[]
-  secrets: { name: string; desc: string; exists: boolean }[]
+  secrets: { name: string; description: string; exists: boolean }[]
   sourceUrl?: string
   resolvedUrl?: string
 }
 
 export interface Settings {
   login: boolean
-  mbIcon: boolean
+  menuBarIcon: boolean
   keepAwake: boolean
-  notif: 'attention' | 'all'
+  notifications: 'attention' | 'all'
   days: number
   keepForever: boolean
-  devMode: boolean
+  developerMode: boolean
   dataPath: string
   dataSize: string
   appPath?: string
@@ -286,24 +286,24 @@ export interface ChatActions {
   test?: boolean
   testValues?: Record<string, unknown>
   name?: string
-  desc?: string
+  description?: string
   undo?: boolean // §8: always alone — runs the §11 draft-undo restore
 }
 
-// §8: `chat` jobs return any subset of { answer, spec, instr, notes, actions };
+// §8: `chat` jobs return any subset of { answer, spec, instructions, notes, actions };
 // create/sync jobs return the full payload.
 export interface DraftPayload {
   name?: string | null
-  desc?: string
+  description?: string
   note?: string
   params?: ParamDef[]
   packages?: PackageDep[]    // §6.2 — statuses attached after the install stage
   steps?: Step[]
   spec: SpecBlock[] | null
-  instr?: string | null
+  instructions?: string | null
   notes?: string             // §4.1 notes doc — rides drafts and §8 chat/sync payloads
   triggers?: DraftTrigger[]  // §8: cron-only in drafts
-  secretRefs?: string[]
+  secretReferences?: string[]
   // §4.4: grant selections carried by the draft snapshot
   stepAgents?: string[]
   allowedSecrets?: string[]
@@ -354,8 +354,8 @@ export interface DraftJob {
 
 export interface StateSnapshot {
   version: string
-  autos: Auto[]
-  execs: Exec[]
+  automations: Automation[]
+  executions: Execution[]
   agents: Agent[]
   secrets: SecretMeta[]
   settings: Settings

@@ -22,7 +22,7 @@ def test_time_trigger_fires_and_is_consumed(backend, client):
     def fired():
         rows = client.get("/executions").json()
         return next((e for e in rows
-                     if e["autoId"] == a["id"] and e["trigger"] == "Once"), None)
+                     if e["automationId"] == a["id"] and e["trigger"] == "Once"), None)
 
     e = wait_for(fired, 15, "the one-shot to fire")
     assert e["status"] in ("executing", "succeeded")

@@ -1,4 +1,4 @@
-"""Backend entry point (§3/§4.9): the access-log devMode filter."""
+"""Backend entry point (§3/§4.9): the access-log developerMode filter."""
 import logging
 
 
@@ -25,7 +25,7 @@ def test_devmode_filter_scrubs_ws_token(home):
 
 
 def test_devmode_filter_gates_info_lines(home):
-    # §4.9: INFO request lines pass only while devMode is on; WARNING+ always.
+    # §4.9: INFO request lines pass only while developerMode is on; WARNING+ always.
     from autowright.main import _DevModeFilter
     from autowright.storage import store
 
@@ -34,12 +34,12 @@ def test_devmode_filter_gates_info_lines(home):
     info = _record(("GET /state",))
     warn = logging.LogRecord("uvicorn.error", logging.WARNING, __file__, 1,
                              "%s", ("boom",), None)
-    store.settings["devMode"] = False
+    store.settings["developerMode"] = False
     assert f.filter(info) is False
     assert f.filter(warn) is True
-    store.settings["devMode"] = True
+    store.settings["developerMode"] = True
     assert f.filter(info) is True
-    store.settings.pop("devMode", None)  # the store is a module singleton
+    store.settings.pop("developerMode", None)  # the store is a module singleton
 
 
 def test_boot_reconciles_keep_awake_from_settings(home, monkeypatch):
@@ -78,7 +78,7 @@ def test_boot_reconciles_keep_awake_from_settings(home, monkeypatch):
     try:
         main_mod.main()
     finally:
-        # main() attaches its devMode filter to the live root handlers — strip
+        # main() attaches its developerMode filter to the live root handlers — strip
         # it so later tests' log capture isn't gated by this suite's settings.
         for hnd in logging.getLogger().handlers:
             for f in list(hnd.filters):

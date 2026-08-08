@@ -70,10 +70,10 @@ def _retry_pause_s() -> float:
 
 
 def _next_attempt_n(step: dict) -> int:
-    """§4.5: `n` is monotonic per step — the prune drops old entries, so the
+    """§4.5: `number` is monotonic per step — the prune drops old entries, so the
     list length can't number the next attempt."""
     atts = step.get("attempts") or []
-    return (atts[-1]["n"] + 1) if atts else 1
+    return (atts[-1]["number"] + 1) if atts else 1
 
 
 # §7 failure diagnostics: exception types that read as "the network failed".
@@ -279,7 +279,7 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
                         continue
                     op = msg.get("op")
                     if op == "log":
-                        log(msg.get("k", "out"), msg.get("text", ""))
+                        log(msg.get("kind", "out"), msg.get("text", ""))
                     elif op == "result":
                         holder["result_touched"] = True
                         f, v = msg.get("field"), msg.get("value")
@@ -344,7 +344,7 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
 class Engine:
     def __init__(self, store: Store):
         self.store = store
-        self._live: dict[str, dict] = {}  # exec_id → {proc, cancel, thread}
+        self._live: dict[str, dict] = {}  # execution_id → {proc, cancel, thread}
         self._lock = threading.Lock()
         self.drain_queue = None  # set by the scheduler (§6 firing queue)
 
@@ -376,7 +376,7 @@ class Engine:
             # `sha` snapshots each step's script (§4.5) so a Draft retry can
             # detect a re-saved draft whose code changed under the same names.
             steps = [{"name": s["name"], "file": s.get("file"), "agent": bool(s.get("agent")),
-                      "sha": _step_sha(s), "status": "queued", "dur_ms": None, "attempts": []}
+                      "sha": _step_sha(s), "status": "queued", "duration_ms": None, "attempts": []}
                      for s in ver["steps"]]
             # §7: snapshot the resolved param values — the execution page shows them as used by this execution.
             params = self.store.merged_params(auto, ver)
@@ -410,7 +410,7 @@ class Engine:
         so two parallel first-executions of a version can't both take one."""
         if kind != "version":
             return
-        if any(x["auto_id"] == auto["id"] and x.get("kind") == "version"
+        if any(x["automation_id"] == auto["id"] and x.get("kind") == "version"
                and x.get("version") == version
                and not self.store.never_ran(x)
                for x in self.store.execs.values()):
@@ -468,8 +468,8 @@ class Engine:
         state["thread"] = t
         with self._lock:
             self._live[h["id"]] = state
-        hub.publish("exec.started", execId=h["id"], autoId=auto["id"],
-                    exec_json=self.store.exec_json(h))
+        hub.publish("execution.started", executionId=h["id"], automationId=auto["id"],
+                    execution_json=self.store.exec_json(h))
         t.start()
         return h
 
@@ -489,7 +489,7 @@ class Engine:
         t.daemon = True
         t.start()
 
-    def cancel(self, exec_id: str) -> bool:
+    def cancel(self, execution_id: str) -> bool:
         """§7 cancel for a running execution; §6 queue-leave for a waiting one.
         An entry promoted between the user's click and this call is cancelled
         by exactly one of the two branches — never both, never neither:
@@ -500,11 +500,11 @@ class Engine:
 
         while True:
             with self.store.lock:
-                h = self.store.execs.get(exec_id)
+                h = self.store.execs.get(execution_id)
                 queued = h is not None and h["status"] == "queued"
                 if not queued:
                     with self._lock:
-                        state = self._live.get(exec_id)
+                        state = self._live.get(execution_id)
             if queued:
                 # Outside store.lock: finish_queued replies to the §6.1 sender,
                 # and a network send must never run under the store lock.
@@ -520,14 +520,14 @@ class Engine:
             self._term_then_kill(proc, state.get("hard_kill"))
         return True
 
-    def skip_step(self, exec_id: str, index: int) -> bool:
+    def skip_step(self, execution_id: str, index: int) -> bool:
         """§7 skip: kill the currently executing step and continue with the
         next one. False unless `index` is the step executing right now."""
         with self._lock:
-            state = self._live.get(exec_id)
+            state = self._live.get(execution_id)
             if not state:
                 return False
-            h = self.store.execs.get(exec_id)
+            h = self.store.execs.get(execution_id)
             cur = (h or {}).get("_cur")
             if not cur or cur["i"] != index:
                 return False
@@ -538,9 +538,9 @@ class Engine:
             self._term_then_kill(proc, hard)
         return True
 
-    def is_live(self, exec_id: str) -> bool:
+    def is_live(self, execution_id: str) -> bool:
         with self._lock:
-            return exec_id in self._live
+            return execution_id in self._live
 
     def wait_finished(self, exec_ids, timeout: float = KILL_GRACE + 6.0) -> bool:
         """Block until each execution's engine thread has exited — its step
@@ -594,11 +594,11 @@ class Engine:
         for val, name in redactions.items():
             if val and val in text:
                 text = text.replace(val, "•••")
-                if name not in h["redacted"]:
-                    h["redacted"].append(name)
+                if name not in h["redacted_secrets"]:
+                    h["redacted_secrets"].append(name)
         return text
 
-    def _log(self, h: dict, k: str, text: str, redactions: dict[str, str]) -> None:
+    def _log(self, h: dict, kind: str, text: str, redactions: dict[str, str]) -> None:
         text = self._redact(h, text, redactions)
         cur = h.get("_cur")
         name = cur["log"] if cur else self.store.EXEC_LOG
@@ -609,16 +609,16 @@ class Engine:
             p = self.store.log_file(h["id"], name)
             seqs[name] = sum(1 for _ in p.open(encoding="utf-8")) if p.exists() else 0
         seqs[name] += 1
-        # On-disk shape (§5): {ts, k, seq, text} — the owning step/attempt is
+        # On-disk shape (§5): {timestamp, kind, sequence, text} — the owning step/attempt is
         # implicit in the filename. The serialized/UI shape adds the derived
-        # local clock label `t` (read_log for files, here for the live event).
-        line = {"ts": timefmt.now_iso(), "k": k, "seq": seqs[name], "text": text}
+        # local clock label `time` (read_log for files, here for the live event).
+        line = {"timestamp": timefmt.now_iso(), "kind": kind, "sequence": seqs[name], "text": text}
         self.store.append_log_line(h["id"], name, line)
-        hub.publish("exec.log", execId=h["id"], autoId=h["auto_id"],
+        hub.publish("execution.log", executionId=h["id"], automationId=h["automation_id"],
                     stepIndex=cur["i"] if cur else None,
-                    attempt=cur["n"] if cur else None,
-                    line={"t": datetime.now().strftime("%H:%M:%S"), "k": k,
-                          "seq": line["seq"], "text": text})
+                    attempt=cur["number"] if cur else None,
+                    line={"time": datetime.now().strftime("%H:%M:%S"), "kind": kind,
+                          "sequence": line["sequence"], "text": text})
 
     def _prune_attempts(self, h: dict, step: dict, i: int) -> None:
         """§4.5: keep the newest MAX_ATTEMPTS attempts — an infiniteRetries step
@@ -627,7 +627,7 @@ class Engine:
         atts = step["attempts"]
         while len(atts) > MAX_ATTEMPTS:
             old = atts.pop(0)
-            name = self.store.log_name(step.get("file"), i, old["n"])
+            name = self.store.log_name(step.get("file"), i, old["number"])
             try:
                 self.store.log_file(h["id"], name).unlink(missing_ok=True)
             except OSError:
@@ -653,9 +653,9 @@ class Engine:
         s = h["steps"][i]
         from .timefmt import dur_label
 
-        hub.publish("exec.step", execId=h["id"], autoId=h["auto_id"], index=i,
+        hub.publish("execution.step", executionId=h["id"], automationId=h["automation_id"], index=i,
                     step={"name": s["name"], "status": s["status"],
-                          "dur": dur_label(s["dur_ms"]) if s.get("dur_ms") else "",
+                          "duration": dur_label(s["duration_ms"]) if s.get("duration_ms") else "",
                           "attempts": self.store.step_attempts_json(s)})
 
     def _execute(self, auto: dict, ver: dict, h: dict, state: dict) -> None:
@@ -767,15 +767,15 @@ class Engine:
                 pass_tries = 0  # §7: automatic re-attempts count per execution pass
                 while True:
                     n = _next_attempt_n(step)
-                    attempt = {"n": n, "status": "executing",
+                    attempt = {"number": n, "status": "executing",
                                "started_at": timefmt.now_iso(),
-                               "dur_ms": None}
+                               "duration_ms": None}
                     step["attempts"].append(attempt)
                     self._prune_attempts(h, step, i)
                     step["status"] = "executing"
-                    step["dur_ms"] = None
+                    step["duration_ms"] = None
                     h["_cur_step"] = s["name"]  # engine-error fallback for §4.5 error.step
-                    h["_cur"] = {"i": i, "n": n,
+                    h["_cur"] = {"i": i, "number": n,
                                  "log": self.store.log_name(step.get("file"), i, n)}
                     self._step_event(h, i)
                     if pass_tries:
@@ -804,8 +804,8 @@ class Engine:
                     if notify_holder.get("result_touched"):
                         result_touched = True
                     dur = int((time.time() - t0) * 1000)
-                    step["dur_ms"] = dur
-                    attempt["dur_ms"] = dur
+                    step["duration_ms"] = dur
+                    attempt["duration_ms"] = dur
                     skip = state.pop("skip", None)
                     if state["cancel"]:
                         status = "cancelled"
@@ -863,7 +863,7 @@ class Engine:
             # ---- finalize ----
             h["_cur_step"] = None
             h["_cur"] = None
-            h["dur_ms"] = (h["dur_ms"] or 0) + int((time.time() - state["pass_start"]) * 1000)
+            h["duration_ms"] = (h["duration_ms"] or 0) + int((time.time() - state["pass_start"]) * 1000)
             if state["cancel"]:
                 h["status"] = "cancelled"
             elif failed:
@@ -927,16 +927,16 @@ class Engine:
             with self.store.lock:
                 # Belt and braces: even if update_execution failed above, the
                 # automation must never stay pinned "executing" in memory.
-                a = self.store.autos.get(h["auto_id"])
+                a = self.store.autos.get(h["automation_id"])
                 if a and h["status"] != "executing":
                     a["_live"].discard(h["id"])
-                hub.publish("exec.finished", execId=h["id"], autoId=h["auto_id"],
-                            exec_json=self.store.exec_json(h),
-                            auto_json=self.store.auto_json(a, full=False) if a else None)
+                hub.publish("execution.finished", executionId=h["id"], automationId=h["automation_id"],
+                            execution_json=self.store.exec_json(h),
+                            automation_json=self.store.auto_json(a, full=False) if a else None)
             # §6: a slot just freed — hand it to the longest-waiting firing.
             if self.drain_queue:
                 try:
-                    self.drain_queue(h["auto_id"])
+                    self.drain_queue(h["automation_id"])
                 except Exception:  # noqa: BLE001
                     log.exception("queue drain failed")
 
@@ -1023,7 +1023,7 @@ class Engine:
     def _notify_end(self, auto: dict, ver: dict, h: dict, result: dict | None,
                     notify_text: str | None) -> None:
         """§6: at most one notification, at the end, per the §4.9 setting."""
-        setting = self.store.settings.get("notif", "attention")
+        setting = self.store.settings.get("notifications", "attention")
         status = h["status"]
         interesting = (
             status == "failed"

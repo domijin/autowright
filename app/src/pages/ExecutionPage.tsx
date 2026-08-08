@@ -8,7 +8,7 @@ import { api } from '../api'
 import { logKey, useStore } from '../store'
 import { BackLink, Badge, badgeOf, Chip, EmptyNotice, Eyebrow, FailureNotice, HeaderActions, logColor, paramSummary, PULSE, ScrollArea, Spinner, waitedLabel } from '../ui'
 import { ResultSection } from '../result'
-import type { Exec, ExecStep, LogLine, TriggerPayload } from '../types'
+import type { Execution, ExecutionStep, LogLine, TriggerPayload } from '../types'
 
 // null = the execution-scoped log (§5 execution.ndjson)
 type Sel = { step: number | null; attempt: number | null }
@@ -42,7 +42,7 @@ function ExecLogRow({ selected, onSelect }: { selected: boolean; onSelect: () =>
 /** Selectable step row (§7): status dot + name + attempt chip + duration —
  * no row actions; skipping lives in the header's Skip-step button. */
 function StepRow({ step, selected, onSelect }: {
-  step: ExecStep; selected: boolean; onSelect: () => void
+  step: ExecutionStep; selected: boolean; onSelect: () => void
 }) {
   const executing = step.status === 'executing'
   const dot = step.status === 'queued' ? 'var(--text-deco)' : badgeOf(step.status).c
@@ -68,7 +68,7 @@ function StepRow({ step, selected, onSelect }: {
           ×{latestN(step)}
         </span>
       )}
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', flex: 'none' }}>{step.dur}</span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', flex: 'none' }}>{step.duration}</span>
     </button>
   )
 }
@@ -79,15 +79,15 @@ function ordinal(n: number): string {
 
 // §4.5: attempt `n` is monotonic and old attempts prune — the latest entry's
 // `n` is the true attempt count and the newest log's number; never the length.
-function latestN(step: ExecStep | undefined): number {
+function latestN(step: ExecutionStep | undefined): number {
   const atts = step?.attempts
-  return atts?.length ? atts[atts.length - 1].n : 1
+  return atts?.length ? atts[atts.length - 1].number : 1
 }
 
 /** §7 attempt pill — hover feedback over the badge colors needs local state,
  * so it's its own component; no instant background jumps. */
 function AttemptPill({ a, active, onSelect }: {
-  a: ExecStep['attempts'][number]; active: boolean; onSelect: () => void
+  a: ExecutionStep['attempts'][number]; active: boolean; onSelect: () => void
 }) {
   const [hover, setHover] = useState(false)
   const b = badgeOf(a.status)
@@ -105,7 +105,7 @@ function AttemptPill({ a, active, onSelect }: {
         transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
       }}
     >
-      Attempt {a.n} · {b.label}{a.dur ? ` · ${a.dur}` : ''}
+      Attempt {a.number} · {b.label}{a.duration ? ` · ${a.duration}` : ''}
     </button>
   )
 }
@@ -184,10 +184,10 @@ function WaitingBody({ pos, total, payload }: {
 }
 
 export default function ExecutionPage() {
-  const { execId, execs, execFull, execLogs, autos, go, showToast, loadExec, loadExecLogs } = useStore()
-  const full = execId ? execFull[execId] : undefined
-  const e = full ?? (execId ? execs.find((x) => x.id === execId) : undefined)
-  const auto = e ? autos.find((a) => a.id === e.autoId) : undefined
+  const { executionId, executions, executionFull, execLogs, automations, go, showToast, loadExecution, loadExecLogs } = useStore()
+  const full = executionId ? executionFull[executionId] : undefined
+  const e = full ?? (executionId ? executions.find((x) => x.id === executionId) : undefined)
+  const auto = e ? automations.find((a) => a.id === e.automationId) : undefined
 
   const [sel, setSel] = useState<Sel | null>(null)
   const [missing, setMissing] = useState(false) // fetched and truly gone (retention-purged deep link)
@@ -209,20 +209,20 @@ export default function ExecutionPage() {
     return () => clearInterval(t)
   }, [queued])
 
-  // Mount / execId change: guard, reset, (re)fetch the full record.
+  // Mount / executionId change: guard, reset, (re)fetch the full record.
   useEffect(() => {
-    if (!execId) { go('executions'); return }
+    if (!executionId) { go('executions'); return }
     manualSel.current = false
     stickRef.current = true
     setSel(null)
     setMissing(false)
-    void loadExec(execId).then(() => {
-      // loadExec swallows the 404 — if nothing landed anywhere, the record is
+    void loadExecution(executionId).then(() => {
+      // loadExecution swallows the 404 — if nothing landed anywhere, the record is
       // gone (deleted by retention): show that instead of a forever-spinner.
       const st = useStore.getState()
-      if (!st.execFull[execId] && !st.execs.some((x) => x.id === execId)) setMissing(true)
+      if (!st.executionFull[executionId] && !st.executions.some((x) => x.id === executionId)) setMissing(true)
     })
-  }, [execId])
+  }, [executionId])
 
   // Selection (§7): auto-follow the live step until the user picks a row; a
   // failed execution auto-selects the failed step's latest attempt.
@@ -244,12 +244,12 @@ export default function ExecutionPage() {
 
   // Fetch the selected log lazily (§19); live lines append via exec.log events.
   useEffect(() => {
-    if (!execId || sel === null) return
-    void loadExecLogs(execId, sel.step ?? undefined, sel.attempt ?? undefined)
-  }, [execId, sel])
+    if (!executionId || sel === null) return
+    void loadExecLogs(executionId, sel.step ?? undefined, sel.attempt ?? undefined)
+  }, [executionId, sel])
 
-  const logs: LogLine[] = (execId && sel !== null
-    ? execLogs[execId]?.[logKey(sel.step, sel.attempt)]
+  const logs: LogLine[] = (executionId && sel !== null
+    ? execLogs[executionId]?.[logKey(sel.step, sel.attempt)]
     : undefined) ?? []
   const liveSelected = executing && sel?.step === liveIdx && liveIdx >= 0
     && sel.attempt === latestN(steps[liveIdx])
@@ -260,7 +260,7 @@ export default function ExecutionPage() {
     if (el && liveSelected && stickRef.current) el.scrollTop = el.scrollHeight
   }, [logs.length, liveSelected])
 
-  if (!execId) return null
+  if (!executionId) return null
 
   const shell = (body: React.ReactNode) => (
     <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 30px 70px' }}>
@@ -284,7 +284,7 @@ export default function ExecutionPage() {
   }
 
   const cancelExecution = () => {
-    void api.cancelExec(e.id).catch((err: Error) => showToast(err.message))
+    void api.cancelExecution(e.id).catch((err: Error) => showToast(err.message))
   }
   const skipStep = (i: number) => {
     void api.skipStep(e.id, i).catch((err: Error) => showToast(err.message))
@@ -293,15 +293,15 @@ export default function ExecutionPage() {
     // §7 in-place retry: same execution record — stay on this page, the
     // re-published exec.started flips the badge back to Executing.
     manualSel.current = false
-    void api.retryExec(e.id).catch((err: Error) => showToast(err.message))
+    void api.retryExecution(e.id).catch((err: Error) => showToast(err.message))
   }
   const executeAgain = () => {
-    if (!e.autoId) return // §4.5: create-mode tests have no automation to re-execute
-    const autoId = e.autoId
+    if (!e.automationId) return // §4.5: create-mode tests have no automation to re-execute
+    const automationId = e.automationId
     void (async () => {
       try {
-        const r = await api.executeNow(autoId)
-        go('execution', { execId: r.execId })
+        const r = await api.executeNow(automationId)
+        go('execution', { executionId: r.executionId })
       } catch (err) {
         showToast((err as Error).message)
       }
@@ -313,10 +313,10 @@ export default function ExecutionPage() {
     setSel({ step, attempt })
   }
 
-  const canOpenAuto = !e.autoDeleted && !!auto
+  const canOpenAuto = !e.automationDeleted && !!auto
   // §11: tests aren't re-executable from here — iteration lives in the editor's Test card.
-  const retryPrimary = e.status === 'failed' && !e.autoDeleted && !e.test
-  const againQuiet = ['succeeded', 'failed', 'cancelled', 'interrupted', 'skipped'].includes(e.status) && !e.autoDeleted && !e.test
+  const retryPrimary = e.status === 'failed' && !e.automationDeleted && !e.test
+  const againQuiet = ['succeeded', 'failed', 'cancelled', 'interrupted', 'skipped'].includes(e.status) && !e.automationDeleted && !e.test
   // §7: values as used by this execution — snapshotted on the record; older records fall back
   // to the automation's current params.
   const params = (full?.params?.length ? full.params : auto?.params) ?? []
@@ -324,9 +324,9 @@ export default function ExecutionPage() {
 
   // §6 queue position — the queue *is* the automation's `queued` records, drained
   // oldest first, so the list gives the position without a second endpoint.
-  const queue: Exec[] = queued
-    ? execs
-      .filter((x) => x.autoId === e.autoId && x.status === 'queued')
+  const queue: Execution[] = queued
+    ? executions
+      .filter((x) => x.automationId === e.automationId && x.status === 'queued')
       .sort((a, b) => (a.queuedMs || a.startedMs) - (b.queuedMs || b.startedMs))
     : []
   const queuePos = queue.findIndex((x) => x.id === e.id) + 1
@@ -344,7 +344,7 @@ export default function ExecutionPage() {
   const redactNote = (
     <Chip style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10.5, fontWeight: 500 }}>
       <i className="fa-solid fa-key" style={{ fontSize: 8.5 }} />
-      secrets redacted: {e.redact?.join(', ')}
+      secrets redacted: {e.redactedSecrets?.join(', ')}
     </Chip>
   )
 
@@ -358,21 +358,21 @@ export default function ExecutionPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 13, margin: '14px 0 6px' }}>
         <h1
           className={canOpenAuto ? 'ad-link-title' : undefined}
-          onClick={() => { if (canOpenAuto) go('automation', { autoId: e.autoId }) }}
-          title={canOpenAuto ? `Open automation — ${e.autoName}` : e.autoName}
+          onClick={() => { if (canOpenAuto) go('automation', { automationId: e.automationId }) }}
+          title={canOpenAuto ? `Open automation — ${e.automationName}` : e.automationName}
           style={{
             fontSize: 20, fontWeight: 600, letterSpacing: '-.01em', margin: 0,
             cursor: canOpenAuto ? 'pointer' : 'default',
             minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}
         >
-          {e.autoName}
+          {e.automationName}
         </h1>
         {e.test && (
           /* §11 draft test — a create-mode test has no automation by design */
           <Chip style={{ fontSize: 10.5, fontWeight: 600 }}>Draft test</Chip>
         )}
-        {e.autoDeleted && !e.test && (
+        {e.automationDeleted && !e.test && (
           <span style={{ fontSize: 13, color: 'var(--text-faint)' }}>(deleted)</span>
         )}
         <Badge
@@ -425,7 +425,7 @@ export default function ExecutionPage() {
           * when it was queued and how long it has been waiting instead. */}
         {queued
           ? <> · queued {e.started} · waiting {waitedLabel(Date.now() - (e.queuedMs || e.startedMs))}</>
-          : <> · started {e.started} · {e.dur}</>}
+          : <> · started {e.started} · {e.duration}</>}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -445,7 +445,7 @@ export default function ExecutionPage() {
                 // still exists; tests iterate from the editor already
                 onFix={!e.test && auto ? () => {
                   useStore.setState({ fixExec: e.id })
-                  go('automation', { autoId: auto.id })
+                  go('automation', { automationId: auto.id })
                   useStore.getState().setSurface('create', 'edit')
                 } : undefined}
               />
@@ -461,7 +461,7 @@ export default function ExecutionPage() {
               <Spinner />
             </div>
           ) : result ? (
-            <ResultSection label="RESULT" result={result} execId={e.id} stamp={`${e.status}:${e.dur}`} />
+            <ResultSection label="RESULT" result={result} executionId={e.id} stamp={`${e.status}:${e.duration}`} />
           ) : (
             <EmptyNotice title="No result" body={noResultWhy} />
           )}
@@ -545,16 +545,16 @@ export default function ExecutionPage() {
                   <span style={{ display: 'inline-flex', gap: 4 }}>
                     {attempts.map((a) => (
                       <AttemptPill
-                        key={a.n}
+                        key={a.number}
                         a={a}
-                        active={sel?.attempt === a.n}
-                        onSelect={() => { manualSel.current = true; setSel({ step: sel!.step, attempt: a.n }) }}
+                        active={sel?.attempt === a.number}
+                        onSelect={() => { manualSel.current = true; setSel({ step: sel!.step, attempt: a.number }) }}
                       />
                     ))}
                   </span>
                 )}
                 <div style={{ flex: 1 }} />
-                {e.redact && redactNote}
+                {e.redactedSecrets && redactNote}
               </div>
               <ScrollArea
                 scrollRef={logRef}
@@ -570,11 +570,11 @@ export default function ExecutionPage() {
                 ) : (
                   <>
                     {logs.map((l) => (
-                      <div key={l.seq} style={{ display: 'flex', gap: 12 }}>
-                        <span style={{ color: 'var(--text-deco)', flex: 'none' }}>{l.t}</span>
+                      <div key={l.sequence} style={{ display: 'flex', gap: 12 }}>
+                        <span style={{ color: 'var(--text-deco)', flex: 'none' }}>{l.time}</span>
                         <span style={{
-                          color: logColor(l.k), whiteSpace: 'pre-wrap', minWidth: 0,
-                          fontStyle: l.k === 'sys' ? 'italic' : 'normal',
+                          color: logColor(l.kind), whiteSpace: 'pre-wrap', minWidth: 0,
+                          fontStyle: l.kind === 'sys' ? 'italic' : 'normal',
                         }}>
                           {l.text}
                         </span>

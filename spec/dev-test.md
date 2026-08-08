@@ -10,7 +10,7 @@ configuration (they relocate or re-tune the same behavior, never select differen
 Every knob defaults to the release value and is developer opt-in; the single knob dev.sh sets
 itself is `AUTOWRIGHT_RENDERER_URL` (below — same renderer source, served with HMR instead of
 pre-bundled). Dev sessions use the real app-support dir, real Keychain, real agent CLIs, random
-port, request logging via the §4.9 devMode setting (§5), and the real launchd service (§18
+port, request logging via the §4.9 developerMode setting (§5), and the real launchd service (§18
 dev.sh).
 
 Frontend state (localStorage/URL — production mechanisms, not dev branches): `ad-onboarded`
@@ -161,10 +161,10 @@ Keychain in every mode, so e2e only ever creates §4.8 placeholder secrets (blan
 name + description, no Keychain write); value-setting is covered by the unit tier's in-memory
 keychain. Two implementations of the same
 behavior are locked together by a shared golden fixture, `tests/fixtures/cron_parity.json`,
-holding two arrays: `next` — occurrence cases `{expr, tz, after_utc, next_utc|null}`,
+holding two arrays: `next` — occurrence cases `{expression, timezone, after_utc, next_utc|null}`,
 including the DST spring-forward gap, the fall-back single-fire plus its follow-on
 occurrence, and a mid-repeated-hour baseline — and `labels` — humanizing cases
-`{expr, tz|null, label, short}` including the leading-zero and dow-edge fallbacks. Both
+`{expression, timezone|null, label, short}` including the leading-zero and dow-edge fallbacks. Both
 arrays are executed verbatim, every case and every field, by both `test_schedule.py` and
 the Vitest cron suite, so the Python and TypeScript cron implementations cannot drift
 silently. Testability knobs (configuration only, release
@@ -276,7 +276,7 @@ Dev workflow:
   then (re)installs the real launchd LaunchAgent (`autowright service uninstall` +
   `service install`, `com.autowright.backend`, §3) so the backend behaves exactly as in release:
   launchd-managed, RunAtLoad/KeepAlive, cwd `/`, minimal launchd PATH, random free port,
-  macOS Keychain, devMode-gated request logging (§5) to `backend.out.log`/`backend.err.log`
+  macOS Keychain, developerMode-gated request logging (§5) to `backend.out.log`/`backend.err.log`
   and per-request files under `<logs>/requests/` (§5) under the logs
   dir (§5), data in `~/Library/Application Support/Autowright` (starts empty on a fresh
   machine); starts a Vite dev server on a random free port (`npx vite --strictPort`, log

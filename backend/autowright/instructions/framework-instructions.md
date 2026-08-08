@@ -304,8 +304,8 @@ Derive cron triggers from the user's words ("every morning at 8" →
 `- cron: "0 8 * * *"`; "Mondays at 9" → `- cron: "0 9 * * 1"`). Cron fields:
 minute hour day-of-month month day-of-week (0–6, Sun = 0); numbers, `*`,
 lists, ranges, and steps only — no names, no `@daily`. When the spec names a
-timezone, add `tz` with the IANA zone name — `- { cron: "0 9 * * 1",
-tz: Asia/Tokyo }`; otherwise omit `tz` and times read as the Mac's local time.
+timezone, add `timezone` with the IANA zone name — `- { cron: "0 9 * * 1",
+timezone: Asia/Tokyo }`; otherwise omit `timezone` and times read as the Mac's local time.
 
 Message and app-start triggers can be drafted too:
 
@@ -426,7 +426,7 @@ defines the exact response shape. Beyond rewriting the spec, build
 instructions, and notes, its actions file lets you rebuild the steps (`sync`),
 run a draft test (`test`, with `test_values` setting test-only parameter
 values — keys must be existing param names), rename the automation (`name`),
-rewrite its one-line description (`desc`), and restore the draft to the state
+rewrite its one-line description (`description`), and restore the draft to the state
 before the last request (`undo` — always alone: no other action keys and no
 rewrite blocks in the same response). Keep the name and description
 honest: when a change makes either stale, update it in the same response. You

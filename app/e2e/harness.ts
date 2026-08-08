@@ -117,25 +117,25 @@ export class Backend {
    * allowed-secrets grant list, or a drafting agent. */
   async createAutomation(
     name: string,
-    steps?: Array<{ file: string; name: string; desc: string; code: string }>,
+    steps?: Array<{ file: string; name: string; description: string; code: string }>,
     opts?: { params?: unknown[]; allowedSecrets?: string[]; agentId?: string },
   ): Promise<{ id: string }> {
     const draft = {
-      desc: 'Runs end to end through the real stack.',
+      description: 'Runs end to end through the real stack.',
       note: 'Created',
       params: opts?.params ?? [],
       steps: steps ?? [
         {
-          file: '01-say.py', name: 'Say', desc: 'prints',
+          file: '01-say.py', name: 'Say', description: 'prints',
           code: 'from autowright import log\nlog("e2e says hi")\n',
         },
         {
-          file: '02-finish.py', name: 'Finish', desc: 'result',
+          file: '02-finish.py', name: 'Finish', description: 'result',
           code: 'from autowright import result\nresult.status("ok")\nresult.chip("All good")\n',
         },
       ],
-      spec: [{ k: 'h1', text: name }, { k: 'p', text: 'It runs end to end.' }],
-      instr: null,
+      spec: [{ kind: 'h1', text: name }, { kind: 'p', text: 'It runs end to end.' }],
+      instructions: null,
     }
     return await this.api('POST', '/automations', {
       draft, name,
@@ -145,30 +145,30 @@ export class Backend {
   }
 
   /** §4.8 placeholder secret — blank value, so NOTHING touches the Keychain. */
-  async putSecretPlaceholder(name: string, desc: string): Promise<void> {
-    await this.api('PUT', `/secrets/${name}`, { value: '', desc })
+  async putSecretPlaceholder(name: string, description: string): Promise<void> {
+    await this.api('PUT', `/secrets/${name}`, { value: '', description })
   }
 
   /** Fire an execution and return its id without waiting. */
-  async execute(autoId: string): Promise<string> {
-    const { execId } = await this.api('POST', `/automations/${autoId}/execute`, {}) as { execId: string }
-    return execId
+  async execute(automationId: string): Promise<string> {
+    const { executionId } = await this.api('POST', `/automations/${automationId}/execute`, {}) as { executionId: string }
+    return executionId
   }
 
   /** Execute over HTTP and poll until the execution settles; returns the record. */
-  async executeAndWait(autoId: string, timeoutMs = 60_000): Promise<{ id: string; status: string }> {
-    const { execId } = await this.api('POST', `/automations/${autoId}/execute`, {}) as { execId: string }
+  async executeAndWait(automationId: string, timeoutMs = 60_000): Promise<{ id: string; status: string }> {
+    const { executionId } = await this.api('POST', `/automations/${automationId}/execute`, {}) as { executionId: string }
     return waitFor(async () => {
-      const e = await this.api('GET', `/executions/${execId}`) as { id: string; status: string }
+      const e = await this.api('GET', `/executions/${executionId}`) as { id: string; status: string }
       return e.status !== 'queued' && e.status !== 'executing' ? e : null
-    }, timeoutMs, `execution ${execId} to settle`)
+    }, timeoutMs, `execution ${executionId} to settle`)
   }
 
   /** Seed one config-only agent (fake `claude` on the backend's PATH answers
    * detection and readiness — no install, no login). */
   async createAgent(name: string): Promise<{ id: string }> {
     return await this.api('POST', '/agents', {
-      name, harness: 'Claude Code', mode: 'default', model: null, desc: '',
+      name, harness: 'Claude Code', mode: 'default', model: null, description: '',
     }) as { id: string }
   }
 

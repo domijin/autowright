@@ -45,7 +45,7 @@ FENCE_OPEN_RE = re.compile(r"^```[\w+.-]*$")
 # §8 prompt texts live as markdown next to the code so they can be read and
 # edited without touching Python: framework-instructions.md travels with EVERY
 # drafting call (role, envelope, SDK, §6 policies); default-build-instructions.md seeds
-# `instr` for new automations (users edit or delete freely — it versions like
+# `instructions` for new automations (users edit or delete freely — it versions like
 # any instructions). The per-call TASK directives below stay in Python because
 # they define the exact envelope the validators parse.
 _INSTRUCTIONS_DIR = Path(__file__).parent / "instructions"
@@ -78,14 +78,14 @@ Build the automation that implements the SPEC below, following the BUILD INSTRUC
 
 ===FILE: manifest.yaml===
 name: Suggested automation name        # create mode only
-desc: One-line description
+description: One-line description
 note: One-line version note for the history menu
 params:                                # each param MUST carry a default
   - { name: snake_case_name, kind: toggle|list|kv|number|text, label: ..., help: ..., default: ... }
 packages:                              # extra PyPI packages beyond the allowed list (see Allowed imports);
   - { pip: pandas, import: pandas }    # bare distribution name, NO version; omit the key when none are needed
 triggers:                              # see Triggers above; omit the whole key when the automation needs no trigger (manual / menu bar only)
-  - cron: "0 8 * * *"                  # optional tz: IANA zone, only when the spec names one
+  - cron: "0 8 * * *"                  # optional timezone: IANA zone, only when the spec names one
   - { imessage: "+15551234567" }       # sender handle from the SPEC only; optional pattern
   - { discord: "1234567890", secret: BOT_TOKEN_NAME }   # channel id + granted token secret from the SPEC only; optional pattern / mention / author (sender filter: numeric user id or list of them)
   - app_start: true                    # executes when the app starts
@@ -98,8 +98,8 @@ steps:                                 # ordered; file names NN-name.py, two-dig
                                        # secrets: granted secret names the step uses (omit when none);
                                        # agents: granted agent names an agent step may call,
                                        # first = agent.ask default (omit to use the automation's default)
-  - { file: 01-fetch.py, name: ..., desc: ..., timeout: 60, secrets: [API_TOKEN] }
-  - { file: 02-judge.py, name: ..., desc: ..., timeout: 180, agent: true, why: one line — why judgment is needed,
+  - { file: 01-fetch.py, name: ..., description: ..., timeout: 60, secrets: [API_TOKEN] }
+  - { file: 02-judge.py, name: ..., description: ..., timeout: 180, agent: true, why: one line — why judgment is needed,
       agents: [Agent name] }
 ===FILE: 01-fetch.py===
 (python source)
@@ -131,7 +131,7 @@ sync: true                  # rebuild the steps from the spec right away (after 
 test: true                  # run a draft test once the steps match the spec (implies sync when they don't)
 test_values: { url: "…" }   # parameter values for that test only (name → value, names from CURRENT parameters)
 name: New automation name   # rename the automation (current name under AUTOMATION above)
-desc: One-line description  # rewrite its one-line description
+description: One-line description  # rewrite its one-line description
 undo: true                  # restore the draft to before the last request — exact revert, one level
 ===END===
 
@@ -172,9 +172,9 @@ def _common_context(current: dict | None, grants: dict) -> list[str]:
     ]
     # §8: instructions travel with every call as context only — never returned by
     # the agent. In create mode the API seeds DEFAULT_INSTRUCTIONS when none given.
-    if (current or {}).get("instr"):
+    if (current or {}).get("instructions"):
         parts.append("=== BUILD INSTRUCTIONS (the user's standing rules — follow them; "
-                     "never return this file) ===\n" + current["instr"].strip())
+                     "never return this file) ===\n" + current["instructions"].strip())
     return parts
 
 
@@ -196,9 +196,9 @@ def build_spec_prompt(user_text: str | None, current: dict | None,
         "the user or the BUILD INSTRUCTIONS wins; otherwise pick by judgment) ===\n"
         f"{_grants_yaml(grants.get('secrets', []))}",
     ]
-    if (current or {}).get("instr"):
+    if (current or {}).get("instructions"):
         parts.append("=== BUILD INSTRUCTIONS (the user's standing rules — follow them; "
-                     "never return this file) ===\n" + current["instr"].strip())
+                     "never return this file) ===\n" + current["instructions"].strip())
     # §8: a resumed create draft can hold notes from an earlier steps call — a
     # blocker-driven re-create shouldn't rediscover what that round learned.
     if notes := _notes_section(current, " — context only, never returned here"):
@@ -269,7 +269,7 @@ def build_chat_prompt(user_text: str | None, current: dict | None,
     """§8 chat call — the ordinary context stack (framework + grants + build
     instructions) plus the agent's NOTES, the recent CONVERSATION, the RECENT
     RUNS (assembled by the API layer — test/draft/version output with log
-    tails), the declared-package state, the AUTOMATION identity (name + desc,
+    tails), the declared-package state, the AUTOMATION identity (name + description,
     editable only via actions.yaml), the in-editor spec, the CURRENT parameters
     (the names test_values keys must use), and every current step, closed by
     the USER REQUEST and the shape-deciding TASK."""
@@ -290,11 +290,11 @@ def build_chat_prompt(user_text: str | None, current: dict | None,
     # §8 AUTOMATION — the §4.1 user-owned identity, so a rename/redescribe
     # action edits what is really there (never returned as a file; actions only).
     name = str((current or {}).get("name") or "").strip()
-    desc = str((current or {}).get("desc") or "").strip()
+    desc = str((current or {}).get("description") or "").strip()
     if name or desc:
         parts.append("=== AUTOMATION (current name and description — change them only "
-                     "via actions.yaml `name` / `desc`) ===\n"
-                     + yaml.safe_dump({"name": name, "desc": desc},
+                     "via actions.yaml `name` / `description`) ===\n"
+                     + yaml.safe_dump({"name": name, "description": desc},
                                       sort_keys=False, allow_unicode=True).strip())
     parts.append("=== SPEC (spec.md) ===\n" + spec_as_md(current))
     # §8 CURRENT parameters — definitions + in-editor values; the only names
@@ -327,7 +327,7 @@ def _trigger_ref(t: dict) -> dict:
     context only, never part of what the agent may draft."""
     k = t.get("kind")
     if k == "cron":
-        d = {"cron": t.get("expr"), **({"tz": t["tz"]} if t.get("tz") else {})}
+        d = {"cron": t.get("expression"), **({"timezone": t["timezone"]} if t.get("timezone") else {})}
     elif k == "imessage":
         d = {"imessage": t.get("from"),
              **({"pattern": t["pattern"]} if t.get("pattern") else {})}
@@ -340,7 +340,7 @@ def _trigger_ref(t: dict) -> dict:
         d = {"app_start": True}
     else:
         d = {"time": t.get("at")}
-    if t.get("off"):
+    if not t.get("enabled", True):
         d["off"] = True
     return d
 
@@ -481,9 +481,9 @@ def validate_spec(files: dict[str, str]) -> tuple[dict, list[str]]:
         return {}, errors
     md = files["spec.md"]
     blocks = md_to_blocks(md)
-    if not blocks or blocks[0].get("k") != "h1" or not blocks[0].get("text", "").strip():
+    if not blocks or blocks[0].get("kind") != "h1" or not blocks[0].get("text", "").strip():
         errors.append("spec.md must start with a # title")
-    if not any(b.get("k") in ("p", "li") for b in blocks):
+    if not any(b.get("kind") in ("p", "li") for b in blocks):
         errors.append("spec.md has no body — describe the automation")
     if errors:
         return {}, errors
@@ -510,7 +510,7 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
     errors: list[str] = []
     out: dict = {}
     for k in data:
-        if k not in ("sync", "test", "test_values", "name", "desc", "undo"):
+        if k not in ("sync", "test", "test_values", "name", "description", "undo"):
             errors.append(f"actions.yaml: unknown key {k!r}")
     # §8: undo is exclusive — undoing and acting/rewriting in one response is
     # contradictory (the rewrite-block half is enforced in validate_chat)
@@ -536,7 +536,7 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
                         f"actions.yaml: test_values names unknown params {bad} — "
                         f"the automation's params are {sorted(param_names) or 'none'}")
             out["testValues"] = data["test_values"]
-    for k in ("name", "desc"):
+    for k in ("name", "description"):
         if k in data:
             if not isinstance(data[k], str) or not data[k].strip():
                 errors.append(f"actions.yaml: {k} must be a nonempty string")
@@ -550,7 +550,7 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
 def validate_chat(raw: str, files: dict[str, str],
                   param_names: list[str] | None = None) -> tuple[dict, list[str]]:
     """§8 chat-call response with file blocks → terminal payload
-    { answer?, spec?, instr?, notes?, actions? }. Prose before the first
+    { answer?, spec?, instructions?, notes?, actions? }. Prose before the first
     marker is the accompanying chat message; only the four CHAT_FILES names
     are allowed. `param_names` gates actions.yaml test_values keys."""
     errors: list[str] = []
@@ -565,7 +565,7 @@ def validate_chat(raw: str, files: dict[str, str],
         if not errs:
             payload["spec"] = spec["blocks"]
     if "instructions.md" in files:
-        payload["instr"] = files["instructions.md"].strip()
+        payload["instructions"] = files["instructions.md"].strip()
     if "notes.md" in files:
         payload["notes"] = files["notes.md"].strip()
     if "actions.yaml" in files:
@@ -719,7 +719,7 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         t = s.get("timeout")
         r = s.get("retries")
         norm_steps.append({
-            "file": s.get("file"), "name": s.get("name", ""), "desc": s.get("desc", ""),
+            "file": s.get("file"), "name": s.get("name", ""), "description": s.get("description", ""),
             "agent": bool(s.get("agent")), "why": s.get("why", ""),
             "agents": list(s.get("agents") or []) if s.get("agent") else [],
             "secrets": list(s.get("secrets") or []),
@@ -742,21 +742,21 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                 errors.append(f"triggers entry {t!r} must be an object")
                 continue
             keys = set(t)
-            if keys == {"cron"} or keys == {"cron", "tz"}:
-                entry = {"kind": "cron", "expr": str(t["cron"]).strip(), "off": False}
-                if "tz" in t:
-                    entry["tz"] = str(t["tz"])
-                    if err := schedule.tz_error(entry["tz"]):
+            if keys == {"cron"} or keys == {"cron", "timezone"}:
+                entry = {"kind": "cron", "expression": str(t["cron"]).strip(), "enabled": True}
+                if "timezone" in t:
+                    entry["timezone"] = str(t["timezone"])
+                    if err := schedule.tz_error(entry["timezone"]):
                         errors.append(f"triggers: {err}")
                         continue
                 try:
-                    schedule.parse_cron(entry["expr"])
+                    schedule.parse_cron(entry["expression"])
                     norm_trigs.append(entry)
                 except schedule.CronError as e:
                     errors.append(f"triggers: {e}")
             elif "imessage" in keys and keys <= {"imessage", "pattern"}:
                 entry = {"kind": "imessage",
-                         "from": schedule.normalize_handle(str(t["imessage"])), "off": False,
+                         "from": schedule.normalize_handle(str(t["imessage"])), "enabled": True,
                          **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {})}
                 if err := schedule.validate_trigger(entry):
                     errors.append(f"triggers: {err}")
@@ -767,7 +767,7 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                 au = t.get("author")
                 au = au if isinstance(au, list) else [au] if au else []
                 entry = {"kind": "discord", "channel": str(t["discord"]).strip(),
-                         "secret": str(t.get("secret", "")).strip(), "off": False,
+                         "secret": str(t.get("secret", "")).strip(), "enabled": True,
                          **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {}),
                          **({"mention": True} if t.get("mention") is True else {}),
                          **({"author": schedule.normalize_authors(au)} if au else {})}
@@ -779,10 +779,10 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                 if any(x["kind"] == "app_start" for x in norm_trigs):
                     errors.append("triggers: only one app_start entry")
                 else:
-                    norm_trigs.append({"kind": "app_start", "off": False})
+                    norm_trigs.append({"kind": "app_start", "enabled": True})
             else:
                 errors.append(
-                    f"triggers entry {t!r} must be {{ cron: expr[, tz] }}, "
+                    f"triggers entry {t!r} must be {{ cron: expression[, timezone] }}, "
                     f"{{ imessage: handle[, pattern] }}, "
                     f"{{ discord: channel-id, secret: NAME[, pattern, mention, author] }}, "
                     f"or app_start: true")
@@ -792,12 +792,12 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
     draft = {
         "triggers": norm_trigs,
         "name": manifest.get("name"),
-        "desc": manifest.get("desc", ""),
+        "description": manifest.get("description", ""),
         "note": manifest.get("note", ""),
         "params": params,
         "packages": norm_pkgs,
         "steps": norm_steps,
-        "secretRefs": sorted({m for st in norm_steps for m in SECRET_REF_RE.findall(st["code"])}),
+        "secretReferences": sorted({m for st in norm_steps for m in SECRET_REF_RE.findall(st["code"])}),
     }
     if (files.get("notes.md") or "").strip():
         draft["notes"] = files["notes.md"].strip()
@@ -950,7 +950,7 @@ class DraftJobs:
         if mode == "create":
             # Hand the (seeded or user-given) instructions back so the
             # Review card arrives pre-filled — agents never return them.
-            draft["instr"] = (current or {}).get("instr") or ""
+            draft["instructions"] = (current or {}).get("instructions") or ""
         self._settle(job, "done", draft=draft)
         return False
 
@@ -1005,7 +1005,7 @@ class DraftJobs:
     def _chat_shape(raw: str, param_names: list[str] | None = None):
         """Classify a chat-call response (§8): ("blocked", blockers) |
         ("done", payload) | ("invalid", errors) — payload is the terminal
-        { answer?, spec?, instr?, notes?, actions? } dict (empty for an empty
+        { answer?, spec?, instructions?, notes?, actions? } dict (empty for an empty
         response). Only envelope-shaped responses can be invalid — prose is
         always an answer."""
         try:
@@ -1094,7 +1094,7 @@ class DraftJobs:
     @staticmethod
     def _record_failure(job: dict, agent: dict, call: str, outcome: str, prompt: str,
                         rounds: list[dict], blockers: list[dict] | None) -> None:
-        """§5 build-failure record (devMode-gated, best-effort): one file per
+        """§5 build-failure record (developerMode-gated, best-effort): one file per
         drafting call whose response failed validation — material for improving
         the §8 agent instructions later."""
         reqlog.write_build_failure(

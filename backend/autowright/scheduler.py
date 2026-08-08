@@ -34,15 +34,15 @@ def finish_queued(store: Store, h: dict, note: str) -> bool:
             return False  # promoted or already finished under us
         h["status"] = "skipped"
         h["note"] = note
-        h["dur_ms"] = 0
+        h["duration_ms"] = 0
         h["finished_at"] = timefmt.now_iso()
         store.update_execution(h)
         payload = h.get("trigger_payload")
         exec_json = store.exec_json(h)
-        auto = store.autos.get(h["auto_id"])
+        auto = store.autos.get(h["automation_id"])
         auto_json = store.auto_json(auto, full=False) if auto else None
-    hub.publish("exec.finished", execId=h["id"], autoId=h["auto_id"],
-                exec_json=exec_json, auto_json=auto_json)
+    hub.publish("execution.finished", executionId=h["id"], automationId=h["automation_id"],
+                execution_json=exec_json, automation_json=auto_json)
     if payload:
         from .listeners import notify_busy
 
@@ -76,8 +76,8 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
                 # §6: admission is visible immediately — the §7 Waiting section
                 # and the §9.2 "N waiting" line update off this, and promotion
                 # publishes the ordinary exec.started for the same record.
-                hub.publish("exec.queued", execId=h["id"], autoId=a["id"],
-                            exec_json=store.exec_json(h))
+                hub.publish("execution.queued", executionId=h["id"], automationId=a["id"],
+                            execution_json=store.exec_json(h))
                 skipped = False
             else:
                 # §6: past maxQueued the *newest* firing is refused — never an
@@ -91,11 +91,11 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
                                            steps=[], status="skipped",
                                            note=note,
                                            trigger_payload=payload)
-                h["dur_ms"] = 0
+                h["duration_ms"] = 0
                 h["finished_at"] = h["started_at"]
                 store.update_execution(h)
-                hub.publish("exec.finished", execId=h["id"], autoId=a["id"],
-                            exec_json=store.exec_json(h), auto_json=None)
+                hub.publish("execution.finished", executionId=h["id"], automationId=a["id"],
+                            execution_json=store.exec_json(h), automation_json=None)
                 skipped = True
         else:
             try:
@@ -113,7 +113,7 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
     return started
 
 
-def cancel_unmatched_queue(store: Store, engine: Engine, auto_id: str) -> None:
+def cancel_unmatched_queue(store: Store, engine: Engine, automation_id: str) -> None:
     """§6: turning a message trigger off (or removing it) cancels the waiting
     entries it admitted — an entry whose payload no longer matches any enabled
     message trigger (same secret + channel for discord; sender matching `from`
@@ -126,22 +126,22 @@ def cancel_unmatched_queue(store: Store, engine: Engine, auto_id: str) -> None:
         return ("discord", payload.get("secret"), payload.get("channel"))
 
     with store.lock:
-        a = store.autos.get(auto_id)
+        a = store.autos.get(automation_id)
         if a is None:
             return
         live = {("discord", t.get("secret"), t.get("channel"))
                 for t in a["triggers"]
-                if t["kind"] == "discord" and not t["off"]}
+                if t["kind"] == "discord" and t["enabled"]}
         live |= {("imessage", (t.get("from") or "").lower())
                  for t in a["triggers"]
-                 if t["kind"] == "imessage" and not t["off"]}
-        doomed = [h["id"] for h in store.queued_execs(auto_id)
+                 if t["kind"] == "imessage" and t["enabled"]}
+        doomed = [h["id"] for h in store.queued_execs(automation_id)
                   if _key(h.get("trigger_payload") or {}) not in live]
     for eid in doomed:
         engine.cancel(eid)  # queued → finish_queued: skipped, sender told
 
 
-def drain_queue(store: Store, engine: Engine, auto_id: str) -> None:
+def drain_queue(store: Store, engine: Engine, automation_id: str) -> None:
     """§6: hand every free slot to the longest-waiting firing. Entries that
     waited past the TTL are finished instead of executed — answering a stale
     question is noise. Called whenever a slot frees (an execution finishing or
@@ -149,10 +149,10 @@ def drain_queue(store: Store, engine: Engine, auto_id: str) -> None:
     missed wake-up still gets picked up."""
     while True:
         with store.lock:
-            a = store.autos.get(auto_id)
+            a = store.autos.get(automation_id)
             if a is None or engine.at_capacity(a):
                 return
-            queue = store.queued_execs(auto_id)
+            queue = store.queued_execs(automation_id)
             if not queue:
                 return
             head = queue[0]
@@ -200,7 +200,7 @@ class Scheduler:
         self._baseline_utc: dict[tuple[str, str], datetime] = {}
         self._stop = threading.Event()
         self._last_retention = clock()
-        engine.drain_queue = lambda auto_id: drain_queue(self.store, self.engine, auto_id)  # type: ignore[attr-defined]
+        engine.drain_queue = lambda automation_id: drain_queue(self.store, self.engine, automation_id)  # type: ignore[attr-defined]
 
     def start(self) -> None:
         t = threading.Thread(target=self._loop, daemon=True, name="ad-scheduler")
@@ -244,14 +244,14 @@ class Scheduler:
                     # repeated hour fire once (§4.3).
                     base = now
                     self._set_baseline(key, now, now_utc)
-                if t["off"]:
+                if not t["enabled"]:
                     # Occurrences passing while off never fire, even after a re-enable.
                     self._set_baseline(key, now, now_utc)
                     if schedule.time_elapsed(t, now):
                         # §4.3: a spent one-shot never lingers — consumed even
                         # when its moment passed while the trigger was off.
                         self.store.consume_trigger(a, t["id"])
-                        hub.publish("auto.changed", autoId=a["id"])
+                        hub.publish("automation.changed", automationId=a["id"])
                     continue
                 occ = schedule.trigger_next(t, after=base)
                 if occ and occ <= now:
@@ -262,7 +262,7 @@ class Scheduler:
                     # §4.3: the one-shot's moment passed before the baseline
                     # (backend down when it passed) — consumed, never fired.
                     self.store.consume_trigger(a, t["id"])
-                    hub.publish("auto.changed", autoId=a["id"])
+                    hub.publish("automation.changed", automationId=a["id"])
             if due:
                 # §6: same-moment (and same-wake) occurrences coalesce into one execution.
                 due.sort(key=lambda p: p[0])
@@ -273,7 +273,7 @@ class Scheduler:
                         self.store.consume_trigger(a, t["id"])
                         consumed = True
                 if consumed:
-                    hub.publish("auto.changed", autoId=a["id"])
+                    hub.publish("automation.changed", automationId=a["id"])
             # §6: drain here as well as on every execution finish — a raised
             # maxParallel, or a finish whose drain lost a race, is picked up
             # within a tick rather than waiting for the next firing.
@@ -285,7 +285,7 @@ class Scheduler:
             self._last_retention = now
             removed = self.store.retention_cleanup()
             if removed:
-                hub.publish("auto.changed")
+                hub.publish("automation.changed")
 
     def _fire(self, a: dict, t: dict) -> None:
         # §6: a cron/one-shot/app-start firing with no free slot is skipped, never

@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { Badge, EmptyNotice, PageTitle, PULSE, waitedLabel } from '../ui'
-import type { Exec } from '../types'
+import type { Execution } from '../types'
 
 const FILTERS = ['All', 'Succeeded', 'Failed'] as const
 type Filter = (typeof FILTERS)[number]
@@ -16,7 +16,7 @@ const headCell: React.CSSProperties = {
   letterSpacing: '.09em', color: 'var(--text-faint)',
 }
 
-function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: boolean }) {
+function Row({ e, onOpen, waiting }: { e: Execution; onOpen: () => void; waiting?: boolean }) {
   return (
     <button
       className="ad-btn-bare ad-hover-row"
@@ -29,9 +29,9 @@ function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: bo
       <div style={{ minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
           <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {e.autoName}
+            {e.automationName}
           </span>
-          {e.autoDeleted && (
+          {e.automationDeleted && (
             <span style={{ fontSize: 12, color: 'var(--text-faint)', flex: 'none' }}>(deleted)</span>
           )}
         </div>
@@ -56,7 +56,7 @@ function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: bo
       </span>
       <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>
         {/* A queued row has no duration — it hasn't started (§7). */}
-        {waiting ? waitedLabel(Date.now() - (e.queuedMs || e.startedMs)) : e.dur}
+        {waiting ? waitedLabel(Date.now() - (e.queuedMs || e.startedMs)) : e.duration}
       </span>
       {/* Admission stamps started_at = queued_at, and promotion re-stamps it —
         * a row still in this section was never promoted, so `started` is
@@ -67,7 +67,7 @@ function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: bo
 }
 
 function Table({ rows, go, waiting }: {
-  rows: Exec[]; go: (page: 'execution', ids: { execId: string }) => void; waiting?: boolean
+  rows: Execution[]; go: (page: 'execution', ids: { executionId: string }) => void; waiting?: boolean
 }) {
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden' }}>
@@ -82,7 +82,7 @@ function Table({ rows, go, waiting }: {
         <span style={headCell}>{waiting ? 'QUEUED AT' : 'STARTED'}</span>
       </div>
       {rows.map((e) => (
-        <Row key={e.id} e={e} waiting={waiting} onOpen={() => go('execution', { execId: e.id })} />
+        <Row key={e.id} e={e} waiting={waiting} onOpen={() => go('execution', { executionId: e.id })} />
       ))}
     </div>
   )
@@ -91,18 +91,18 @@ function Table({ rows, go, waiting }: {
 const sectionLabel: React.CSSProperties = { ...headCell, display: 'block', margin: '0 0 8px 2px' }
 
 export default function ExecutionsList() {
-  const { execs, go } = useStore()
+  const { executions, go } = useStore()
   const [filt, setFilt] = useState<Filter>('All')
 
-  const running = execs
+  const running = executions
     .filter((e) => e.status === 'executing')
     .sort((a, b) => b.startedMs - a.startedMs)
   // §6 firing queue: oldest wait first — the drain order, so the next one to
   // run reads top.
-  const waiting = execs
+  const waiting = executions
     .filter((e) => e.status === 'queued')
     .sort((a, b) => (a.queuedMs || a.startedMs) - (b.queuedMs || b.startedMs))
-  const finished = execs
+  const finished = executions
     .filter((e) => e.status !== 'queued' && e.status !== 'executing')
     .filter((e) =>
       filt === 'All' ? true : filt === 'Succeeded' ? e.status === 'succeeded' : e.status === 'failed')

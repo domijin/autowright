@@ -22,7 +22,7 @@ def test_cli_execute_follow_streams_to_exit(backend, client):
     assert r.returncode == 0, r.stderr + r.stdout
     assert "integration says hi" in r.stdout
     e = client.get("/executions").json()[0]
-    assert e["autoId"] == a["id"]
+    assert e["automationId"] == a["id"]
     assert e["status"] == "succeeded"
 
 
@@ -68,25 +68,25 @@ def test_cli_pull_edit_push_roundtrip(backend, client, tmp_path):
 def test_cli_execution_cancel(backend, client):
     """§7 cancel through the CLI: a live sleeper settles `cancelled`."""
     a = create_auto(client, name="CliSleeper", steps=[
-        {"file": "01-sleep.py", "name": "Sleep", "desc": "hangs",
+        {"file": "01-sleep.py", "name": "Sleep", "description": "hangs",
          "code": 'from autowright import log\nimport time\nlog("sleeping")\ntime.sleep(60)\n'},
     ])
-    exec_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["execId"]
+    execution_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
     # the cancel must land on a genuinely live step, not a queued one
     wait_for(lambda: any("sleeping" in ln["text"] for ln in
-                         client.get(f"/executions/{exec_id}/logs",
+                         client.get(f"/executions/{execution_id}/logs",
                                     params={"step": 0, "attempt": 1}).json()["lines"]),
              30, "step to log")
-    r = run_cli(backend.home, "execution", "cancel", exec_id[:8])
+    r = run_cli(backend.home, "execution", "cancel", execution_id[:8])
     assert r.returncode == 0, r.stderr + r.stdout
-    e = wait_status(client, exec_id)
+    e = wait_status(client, execution_id)
     assert e["status"] == "cancelled"
 
 
 def test_cli_executions_lists_the_run(backend, client):
     a = create_auto(client, name="Historied")
-    exec_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["execId"]
-    wait_status(client, exec_id)
+    execution_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    wait_status(client, execution_id)
     r = run_cli(backend.home, "execution", "list")
     assert r.returncode == 0, r.stderr
     assert "Historied" in r.stdout

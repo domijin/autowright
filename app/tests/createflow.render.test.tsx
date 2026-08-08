@@ -6,7 +6,7 @@
 // payload assertions read the exact POST /drafts bodies.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { Agent, Auto, SecretMeta } from '../src/types'
+import type { Agent, Automation, SecretMeta } from '../src/types'
 
 vi.mock('../src/api', () => ({
   connectInfo: vi.fn(async () => false),
@@ -24,9 +24,9 @@ vi.mock('../src/api', () => ({
     deletePendingDraft: vi.fn(async () => ({})),
     checkPackages: vi.fn(async () => ({ packages: [] })),
     outdatedPackages: vi.fn(async () => ({ packages: [] })),
-    postTest: vi.fn(async () => ({ execId: 'e1' })),
+    postTest: vi.fn(async () => ({ executionId: 'e1' })),
     analyzeExec: vi.fn(async () => ({})),
-    getAuto: vi.fn(async () => ({})),
+    getAutomation: vi.fn(async () => ({})),
     state: vi.fn(async () => ({})),
   },
 }))
@@ -50,28 +50,28 @@ const AGENTS: Agent[] = [
   { id: 'g2', name: 'Fast local', harness: 'OpenCode', mode: 'ollama', model: 'qwen3:8b' },
 ]
 const SECRETS: SecretMeta[] = [
-  { name: 'MAIL_PASSWORD', desc: '', set: true, usedBy: '' },
-  { name: 'CRM_API_KEY', desc: '', set: true, usedBy: '' },
+  { name: 'MAIL_PASSWORD', description: '', set: true, usedBy: '' },
+  { name: 'CRM_API_KEY', description: '', set: true, usedBy: '' },
 ]
 const AUTO = {
-  id: 'a1', name: 'My auto', desc: '', version: 1,
+  id: 'a1', name: 'My auto', description: '', version: 1,
   triggers: [], triggerChip: 'No triggers', triggersOff: false, nextAt: null,
-  instr: '- keep it simple',
-  lastStatus: 'none', live: [], resultChip: null, resultStatus: null, lastExecLabel: '',
+  instructions: '- keep it simple',
+  lastStatus: 'none', live: [], resultChip: null, resultStatus: null, lastExecutionLabel: '',
   agentId: 'g1', stepAgents: ['g1', 'g2'], allowedSecrets: ['MAIL_PASSWORD', 'CRM_API_KEY'],
   snapshotSettings: { preVersion: true, preClear: true, preRestore: true },
   specMeta: '', params: [],
-  steps: [{ file: '01-a.py', name: 'Fetch pages', desc: '', code: 'log("a")' }],
-  spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Does things.' }],
+  steps: [{ file: '01-a.py', name: 'Fetch pages', description: '', code: 'log("a")' }],
+  spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Does things.' }],
   packages: [], versions: [], draft: null,
-} as unknown as Auto
+} as unknown as Automation
 
 beforeEach(() => {
   vi.clearAllMocks()
   storeMod.useStore.setState({
-    surface: 'create', createFrom: 'edit', page: 'automations', autoId: 'a1',
-    autos: [AUTO], agents: AGENTS, secrets: SECRETS,
-    execs: [], execFull: {}, execLogs: {}, toast: null, test: null,
+    surface: 'create', createFrom: 'edit', page: 'automations', automationId: 'a1',
+    automations: [AUTO], agents: AGENTS, secrets: SECRETS,
+    executions: [], executionFull: {}, execLogs: {}, toast: null, test: null,
   })
 })
 afterEach(() => cleanup())
@@ -102,12 +102,12 @@ const spinnersIn = (el: Element) =>
 // Reset getDraftJob to the never-answering default before each of the newer
 // suites — a prior test's mockResolvedValue would otherwise leak through
 // vi.clearAllMocks (which clears calls, not implementations). Also make
-// getAuto echo the seeded automation: the mount-time loadAuto stores its
+// getAutomation echo the seeded automation: the mount-time loadAuto stores its
 // response verbatim, and the default `{}` would erase the auto (no id match)
 // the moment the test awaits anything.
 const armPendingPoll = () => {
   ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockImplementation(() => new Promise(() => { /* poll never answers */ }))
-  ;(mockedApi.getAuto as ReturnType<typeof vi.fn>).mockImplementation(async () => storeMod.useStore.getState().autos[0] ?? {})
+  ;(mockedApi.getAutomation as ReturnType<typeof vi.fn>).mockImplementation(async () => storeMod.useStore.getState().automations[0] ?? {})
 }
 
 const BLOCKED_SYNC = {
@@ -133,7 +133,7 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
     const body = draftBody(0)
     expect(body.mode).toBe('sync')
-    expect(body.autoId).toBe('a1')
+    expect(body.automationId).toBe('a1')
     expect(body.enabledAgents).toEqual(['g1'])                    // g2 gone
     expect(body.allowedSecrets).toEqual(['MAIL_PASSWORD'])        // CRM_API_KEY gone
     // the serialized in-editor draft carries the same trimmed grants
@@ -195,10 +195,10 @@ describe('CreateFlow Build & test panel (§11)', () => {
   it('out of sync (grant gap): Sync now shows, Test disables with the sync-first hint', async () => {
     // an agent step pinned to g2 — unchecking g2 opens a derived grant gap
     storeMod.useStore.setState({
-      autos: [{
+      automations: [{
         ...AUTO,
-        steps: [{ file: '01-a.py', name: 'Judge', desc: '', code: 'log("a")', agent: true, why: 'w', agents: ['Fast local'] }],
-      } as unknown as Auto],
+        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'log("a")', agent: true, why: 'w', agents: ['Fast local'] }],
+      } as unknown as Automation],
     })
     render(<CreateFlow />)
     // the step tag renders the same name — target the checkbox row through its
@@ -237,11 +237,11 @@ describe('CreateFlow Build & test panel (§11)', () => {
   it('Test the draft is a disclosure: setup shows every option at once, only Run test starts it', async () => {
     armPendingPoll()
     storeMod.useStore.setState({
-      autos: [{
+      automations: [{
         ...AUTO,
         params: [{ name: 'city', kind: 'text', label: 'City', help: '', value: 'Oslo' }],
-        triggers: [{ kind: 'discord', channel: '#general', secret: 'DISCORD_TOKEN', off: false }],
-      } as unknown as Auto],
+        triggers: [{ kind: 'discord', channel: '#general', secret: 'DISCORD_TOKEN', enabled: true }],
+      } as unknown as Automation],
     })
     render(<CreateFlow />)
     const panel = cardOf(screen.getByText('BUILD & TEST'))
@@ -321,10 +321,10 @@ describe('CreateFlow blockers thread entries (§11)', () => {
 
   it('viewing an old version locks the fields; Dismiss still collapses the entry', async () => {
     storeMod.useStore.setState({
-      autos: [{
+      automations: [{
         ...AUTO, version: 2,
-        versions: [{ v: 1, when: 'Jul 1', note: null, spec: AUTO.spec, steps: AUTO.steps, instr: '', notes: '', params: [], packages: [] }],
-      } as unknown as Auto],
+        versions: [{ version: 1, when: 'Jul 1', note: null, spec: AUTO.spec, steps: AUTO.steps, instructions: '', notes: '', params: [], packages: [] }],
+      } as unknown as Automation],
     })
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce(BLOCKED_SYNC)
     render(<CreateFlow />)
@@ -389,7 +389,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
 
   it('create steps blockers keep the landed spec out of sync with the steps explainer', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
-    const spec = [{ k: 'h1', text: 'Folder watcher' }, { k: 'p', text: 'Watches things.' }]
+    const spec = [{ kind: 'h1', text: 'Folder watcher' }, { kind: 'p', text: 'Watches things.' }]
     // call 1 lands the spec mid-job (building tick), then the steps call blocks
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
@@ -428,7 +428,7 @@ describe('CreateFlow chat response application (§11)', () => {
 
   it('answer renders before the spec rewrite, which dirties the draft and toasts', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
-      spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Now with weekends.' }],
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Now with weekends.' }],
       answer: 'Sure — done.',
     }))
     render(<CreateFlow />)
@@ -459,7 +459,7 @@ describe('CreateFlow chat response application (§11)', () => {
 
   it('actions.sync chains a sync job right after the rewrite lands', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
-      spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Synced spec.' }],
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Synced spec.' }],
       answer: 'Rewrote it.', actions: { sync: true },
     }))
     render(<CreateFlow />)
@@ -475,7 +475,7 @@ describe('CreateFlow chat response application (§11)', () => {
   it('actions.test is dropped with the system chip when the chained sync blocks', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(done({
-        spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Test me.' }],
+        spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Test me.' }],
         actions: { test: true },
       }))
       .mockResolvedValue(BLOCKED_SYNC)
@@ -505,8 +505,8 @@ describe('CreateFlow draft undo (§11)', () => {
 
   it('one Undo reverts everything one response rewrote — spec, instructions, and notes', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
-      spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Rewritten body.' }],
-      instr: '- be bold',
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten body.' }],
+      instructions: '- be bold',
       notes: '- Learned a quirk',
     }))
     render(<CreateFlow />)
@@ -532,7 +532,7 @@ describe('CreateFlow draft undo (§11)', () => {
 
   it('an instructions-only response renders the undo row beneath its system chip', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
-      spec: null, instr: '- be bold',
+      spec: null, instructions: '- be bold',
     }))
     render(<CreateFlow />)
     send('Toughen the rules')
@@ -566,13 +566,13 @@ describe('CreateFlow draft undo (§11)', () => {
   it('undo after a chained sync restores the pre-request steps too', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(done({
-        spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Synced body.' }],
+        spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Synced body.' }],
         actions: { sync: true },
       }))
       .mockResolvedValue({
         id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'sync',
         draft: {
-          steps: [{ file: '01-new.py', name: 'Fetch feeds', desc: '', code: 'log("new")' }],
+          steps: [{ file: '01-new.py', name: 'Fetch feeds', description: '', code: 'log("new")' }],
           params: [], packages: [], triggers: [],
         },
       })
@@ -596,7 +596,7 @@ describe('CreateFlow draft undo (§11)', () => {
   it('the agent triggers the restore via the §8 undo action; a repeat finds nothing', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce(done({
-        spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Rewritten body.' }],
+        spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten body.' }],
       }))
       .mockResolvedValue(done({ answer: 'Rolling the draft back.', actions: { undo: true } }))
     render(<CreateFlow />)
@@ -619,7 +619,7 @@ describe('CreateFlow draft undo (§11)', () => {
 
   it('a manual spec Save clears the snapshot — no Undo over newer manual work', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
-      spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Rewritten body.' }],
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten body.' }],
     }))
     render(<CreateFlow />)
     send('Change it')
@@ -669,7 +669,7 @@ describe('CreateFlow footer action block + input lock (§11)', () => {
     storeMod.useStore.setState({ createFrom: 'app' })
     const building = (stage: string, detail: string | null) => ({
       id: 'j1', status: 'building', stage, detail, error: null, mode: 'create',
-      draft: { spec: [{ k: 'h1', text: 'Folder watcher' }] },
+      draft: { spec: [{ kind: 'h1', text: 'Folder watcher' }] },
     })
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(
       building('Generating the steps', 'Writing step 1 of 2'))
@@ -690,11 +690,11 @@ describe('CreateFlow footer action block + input lock (§11)', () => {
 
   it('a live test disables the input with the wait placeholder', () => {
     storeMod.useStore.setState({
-      test: { execId: 'e9' },
-      execs: [{
-        id: 'e9', autoId: 'a1', autoName: 'My auto', autoDeleted: false, ver: 'v1',
+      test: { executionId: 'e9' },
+      executions: [{
+        id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'v1',
         status: 'executing', trigger: 'Test', triggerSender: null, test: true,
-        dur: '', started: '', startedMs: 1, endedMs: 0, queuedMs: 0, note: null, error: null,
+        duration: '', started: '', startedMs: 1, endedMs: 0, queuedMs: 0, note: null, error: null,
       }] as never,
     })
     render(<CreateFlow />)
@@ -709,10 +709,10 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
 
   it('agents and secrets cards default collapsed with counts; warnings force them open', () => {
     storeMod.useStore.setState({
-      autos: [{
+      automations: [{
         ...AUTO,
-        steps: [{ file: '01-a.py', name: 'Judge', desc: '', code: 'x = secrets.CRM_API_KEY', agent: true, why: 'w', agents: ['Fast local'] }],
-      } as unknown as Auto],
+        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'x = secrets.CRM_API_KEY', agent: true, why: 'w', agents: ['Fast local'] }],
+      } as unknown as Automation],
     })
     render(<CreateFlow />)
     expect(screen.getByText('2 of 2 enabled')).toBeTruthy()
@@ -736,7 +736,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
 
   it('NOTES card: collapsed by default, view/edit works, and never marks the workflow out of sync', () => {
     storeMod.useStore.setState({
-      autos: [{ ...AUTO, notes: '- Site rate-limits at 10 rpm' } as unknown as Auto],
+      automations: [{ ...AUTO, notes: '- Site rate-limits at 10 rpm' } as unknown as Automation],
     })
     render(<CreateFlow />)
     const body = bodyLi('Site rate-limits at 10 rpm')
@@ -756,13 +756,13 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
 
   it('Analyze the failure posts the canned chat message with the run id', async () => {
     const failed = {
-      id: 'e9', autoId: 'a1', autoName: 'My auto', autoDeleted: false, ver: 'v1',
+      id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'v1',
       status: 'failed', trigger: 'Test', triggerSender: null, test: true,
-      dur: '1s', started: '', startedMs: 1, endedMs: 2, queuedMs: 0, note: null,
+      duration: '1s', started: '', startedMs: 1, endedMs: 2, queuedMs: 0, note: null,
       error: { step: 'Fetch pages', message: 'boom', reason: null }, steps: [],
     }
     storeMod.useStore.setState({
-      test: { execId: 'e9' }, execs: [failed] as never, execFull: { e9: failed } as never,
+      test: { executionId: 'e9' }, executions: [failed] as never, executionFull: { e9: failed } as never,
     })
     render(<CreateFlow />)
     expect(screen.getByText('Test failed.')).toBeTruthy()

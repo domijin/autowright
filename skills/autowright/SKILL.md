@@ -59,9 +59,9 @@ unique substring works) or id; executions and snapshots by id prefix.
    - `manifest.yaml`:
      ```yaml
      name: Manga updates
-     desc: Checks followed manga for new chapters
+     description: Checks followed manga for new chapters
      triggers:                    # omit if the automation needs no trigger
-       - cron: "0 8 * * *"        # optional tz: Asia/Tokyo
+       - cron: "0 8 * * *"        # optional timezone: Asia/Tokyo
        # also: { imessage: "+15551234567" } / { discord: "<channel>", secret: NAME }
        # (details from the spec only; optional pattern) / app_start: true
        # one-shot `time` triggers: never here — use `trigger add --at`
@@ -70,9 +70,9 @@ unique substring works) or id; executions and snapshots by id prefix.
            validate: true, default: [] }
      packages: []                 # beyond-curated pip packages: {pip, import} — see below
      steps:                       # files NN-name.py, two-digit, gapless order
-       - { file: 01-fetch.py, name: Fetch pages, desc: Download each source,
+       - { file: 01-fetch.py, name: Fetch pages, description: Download each source,
            timeout: 60, secrets: [] }
-       - { file: 02-report.py, name: Write report, desc: Diff against memory, timeout: 60 }
+       - { file: 02-report.py, name: Write report, description: Diff against memory, timeout: 60 }
      ```
    - `NN-name.py` — one file per step. Steps small and single-purpose; deterministic code
      over AI; fail loudly naming what was expected vs found. An `agent: true` step (requires
@@ -134,7 +134,7 @@ autowright automation param set <name> sources='["https://…"]' notify=on retri
     # toggle: on|off · number: int · text: string · list: JSON array or a,b,c ·
     # kv: JSON object or k=v,k=v
 autowright automation trigger list <name>
-autowright automation trigger add <name> "0 8 * * *" [--tz Asia/Tokyo]
+autowright automation trigger add <name> "0 8 * * *" [--timezone Asia/Tokyo]
 autowright automation trigger add <name> --at 2026-08-01T09:00     # one-shot
 autowright automation trigger add <name> --app-start
 autowright automation trigger on|off|remove <name> <index>
@@ -151,4 +151,4 @@ autowright agent list · agent check <name>        # AI agents available to agen
 - `automation export <name> [file.autowright]` / `automation import <file>` share
   automations as archives (secrets travel as names only, never values; imported triggers
   arrive off).
-- `settings show` / `settings set days=30 notif=all devMode=on dataPath=/path`.
+- `settings show` / `settings set days=30 notifications=all developerMode=on dataPath=/path`.

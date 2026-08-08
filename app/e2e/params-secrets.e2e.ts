@@ -9,14 +9,14 @@ const PARAMS = [
   { name: 'limit', kind: 'number', label: 'Limit', help: 'Minimum is five.', min: 5, default: 9 },
   { name: 'party', kind: 'toggle', label: 'Party mode', help: 'Just a flag.', default: false },
   { name: 'links', kind: 'list', label: 'Links', help: 'One link per line.', validate: true, default: ['https://example.com'] },
-  { name: 'names', kind: 'kv', label: 'Nicknames', help: 'Long to short.', default: [{ k: 'long', v: 'short' }] },
+  { name: 'names', kind: 'kv', label: 'Nicknames', help: 'Long to short.', default: [{ key: 'long', value: 'short' }] },
 ]
 const PARAM_STEP = {
-  file: '01-use-params.py', name: 'Use params', desc: 'logs param values',
+  file: '01-use-params.py', name: 'Use params', description: 'logs param values',
   code: 'from autowright import log, params, result\nlog(f"greeting={params[\'greeting\']}")\nlog(f"limit={params[\'limit\']}")\nresult.status("ok")\nresult.chip("Params")\n',
 }
 const SECRET_STEP = {
-  file: '01-secret.py', name: 'Use secret', desc: 'references a secret',
+  file: '01-secret.py', name: 'Use secret', description: 'references a secret',
   code: 'from autowright import log, result, secrets\nlog(secrets.MY_TOKEN)\nresult.status("ok")\n',
 }
 

@@ -27,7 +27,7 @@ def _payload(sender, text="hi"):
 
 
 def _discord_trig():
-    return {"id": "t1", "kind": "discord", "off": False, "secret": "BOT",
+    return {"id": "t1", "kind": "discord", "enabled": True, "secret": "BOT",
             "channel": "c1", "mention": False, "pattern": None}
 
 
@@ -40,7 +40,7 @@ def test_queue_stress_no_races(store, monkeypatch):
     monkeypatch.setattr(li_mod, "notify_busy", lambda p: None)
 
     ver = make_version()
-    ver["steps"] = [{"file": "01-quick.py", "name": "Quick", "desc": "",
+    ver["steps"] = [{"file": "01-quick.py", "name": "Quick", "description": "",
                      "code": "import time, random\ntime.sleep(random.uniform(0.02, 0.15))\n"}]
     ver["params"] = []
 
@@ -129,7 +129,7 @@ def test_queue_stress_no_races(store, monkeypatch):
                 assert h["note"], "skipped record with no note"
             # a record that ran carries dur_ms
             if h["status"] in ("succeeded", "failed"):
-                assert h["dur_ms"] is not None
+                assert h["duration_ms"] is not None
         # sanity: the storm actually exercised both paths
         assert statuses.get("succeeded", 0) > 0
         assert statuses.get("skipped", 0) > 0

@@ -214,7 +214,7 @@ def test_line_writer_splits_lines_and_suppresses_blanks(ctrl):
     events = ctrl()
     # blank and whitespace-only lines are suppressed; leading spaces survive
     assert [e["text"] for e in events] == ["a", "b", "partial-rest", " x"]
-    assert all(e["op"] == "log" and e["k"] == "out" for e in events)
+    assert all(e["op"] == "log" and e["kind"] == "out" for e in events)
     assert w.buf == ""
 
 
@@ -237,7 +237,7 @@ def test_line_writer_flush_emits_partial_line(ctrl):
     w.write("tail no newline")
     assert ctrl() == []
     w.flush()
-    assert ctrl() == [{"op": "log", "k": "err", "text": "tail no newline"}]
+    assert ctrl() == [{"op": "log", "kind": "err", "text": "tail no newline"}]
     w.flush()  # empty buffer: nothing new
     assert len(ctrl()) == 1
     w.write("   ")
@@ -278,11 +278,11 @@ def test_memory_save_failed_replace_removes_tmp_keeps_old_value(tmp_path, monkey
 def test_emit_control_line_roundtrip(ctrl):
     from autowright import executor
 
-    executor.emit("log", k="out", text="héllo @@AD@@ world")
+    executor.emit("log", kind="out", text="héllo @@AD@@ world")
     executor.emit("notify", text="done")
     assert executor.CTRL == "@@AD@@"
     assert ctrl() == [
-        {"op": "log", "k": "out", "text": "héllo @@AD@@ world"},
+        {"op": "log", "kind": "out", "text": "héllo @@AD@@ world"},
         {"op": "notify", "text": "done"},
     ]
 
@@ -292,7 +292,7 @@ def test_emit_keeps_unicode_unescaped(monkeypatch):
 
     buf = io.StringIO()
     monkeypatch.setattr(executor, "_real_stdout", buf)
-    executor.emit("log", k="out", text="héllo")
+    executor.emit("log", kind="out", text="héllo")
     line = buf.getvalue()
     assert line.startswith(executor.CTRL) and line.endswith("\n")
     assert "héllo" in line  # ensure_ascii=False: no é escaping

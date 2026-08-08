@@ -192,12 +192,12 @@ export function Spinner({ size = 16, color, style }: {
   )
 }
 
-/** §14 the one progress bar — `pct: null` renders the indeterminate sliding bar. */
-export function ProgressBar({ pct }: { pct: number | null }) {
+/** §14 the one progress bar — `percent: null` renders the indeterminate sliding bar. */
+export function ProgressBar({ percent }: { percent: number | null }) {
   return (
     <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
-      {pct !== null ? (
-        <div style={{ height: '100%', background: 'var(--accent)', width: `${Math.round(pct)}%`, transition: 'width var(--t-enter) var(--ease-enter)' }} />
+      {percent !== null ? (
+        <div style={{ height: '100%', background: 'var(--accent)', width: `${Math.round(percent)}%`, transition: 'width var(--t-enter) var(--ease-enter)' }} />
       ) : (
         <div style={{ height: '100%', width: '30%', background: 'var(--accent)', animation: 'adBarSlide 1.2s ease-in-out infinite' }} />
       )}

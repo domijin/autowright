@@ -68,12 +68,12 @@ export default function SecretsPage() {
                   <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>
                 )}
               </div>
-              {s.desc && (
+              {s.description && (
                 <div style={{
                   fontSize: 11.5, color: 'var(--text-muted)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
-                  {s.desc}
+                  {s.description}
                 </div>
               )}
             </div>
@@ -88,7 +88,7 @@ export default function SecretsPage() {
             <div style={{ display: 'flex', gap: 4, justifySelf: 'end', alignItems: 'center' }}>
               <button
                 className="ad-btn-icon"
-                onClick={() => setModal({ mode: 'edit', name: s.name, desc: s.desc, usedBy: s.usedBy })}
+                onClick={() => setModal({ mode: 'edit', name: s.name, description: s.description, usedBy: s.usedBy })}
                 title="Edit"
                 aria-label="Edit secret"
               >

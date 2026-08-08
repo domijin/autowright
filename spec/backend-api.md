@@ -5,8 +5,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 ## 19. Backend API (decided)
 
 Localhost JSON over HTTP + one WebSocket, both authenticated with the bearer token from
-`backend.json` (§3). Entity JSON uses the §4 field names verbatim (`autos`-shaped automations,
-`execs`-shaped executions) so UI state mirrors the model. UI and CLI use only this API (§3 parity).
+`backend.json` (§3). Entity JSON uses the §4 field names verbatim (`automations`-shaped automations,
+`executions`-shaped executions) so UI state mirrors the model. UI and CLI use only this API (§3 parity).
 
 The server binds `127.0.0.1` only. Token comparisons (HTTP bearer and the WebSocket `token`
 query param) use `secrets.compare_digest`. The interactive docs surfaces FastAPI would mount by
@@ -31,17 +31,17 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   invisible to the UI forever). If a thread somehow survives the wait, the directory is
   removed anyway (the step group is already hard-killed by then)
 - `PATCH /automations/{id}` — user-owned fields only: name (a blank or missing name is
-  ignored — a rename can never clear the name), desc (blank clears it — the description is
+  ignored — a rename can never clear the name), description (blank clears it — the description is
   optional, §4.1), triggers (the §4.3 list, replaced
   whole; entries keep their `id`, new entries get one assigned;
   cron/time/app_start/discord/imessage
-  kinds — a reserved kind (pubsub), an invalid cron expression, an unknown `tz`, a
-  past `time`, a `time` whose `at` carries a UTC offset (the zone belongs in `tz`; naive
+  kinds — a reserved kind (pubsub), an invalid cron expression, an unknown `timezone`, a
+  past `time`, a `time` whose `at` carries a UTC offset (the zone belongs in `timezone`; naive
   local ISO only), a second `app_start`, or a discord/imessage entry failing the §4.3 field
   rules
   answers 422 and nothing is stored; serialized discord and imessage triggers carry the
   derived §4.3
-  `conn` state), param
+  `connection` state), param
   values, agentId, stepAgents, allowedSecrets, snapshotSettings (the §6.3 automatic-snapshot
   toggles — partial object, sent keys merged over the stored ones), maxParallel (int ≥ 1) and
   maxQueued (int ≥ 0) — the §6 concurrency settings; a non-integer or out-of-range value
@@ -51,7 +51,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   not eviction (§6).
 - `POST /automations/{id}/execute` `{ version?: "vN" | "draft" (case-insensitive),
   trigger?: "manual" | "menubar" (§4.5 kind, default "manual"; anything else answers 422) }` →
-  `{ execId }` (409 when every §6 `maxParallel` slot is taken — a manual start is refused, never
+  `{ executionId }` (409 when every §6 `maxParallel` slot is taken — a manual start is refused, never
   queued; a version label that doesn't resolve answers 404)
 - `POST /automations/{id}/queue/clear` → `{ cancelled }` — cancels every §6 firing-queue entry
   waiting on this automation (each finishes `skipped`, §4.6, and its sender is told). Running
@@ -97,7 +97,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
 - `POST /draft/open` — §4.4: make the pending slot's container (`draft/` with an empty
   `memory/`) exist, never touching contents already there; the create flow calls it on
   open so the slot exists before any drafting or test
-- `POST /automations/{id}/restore` `{ v }` — copy vX to vN+1 (§5)
+- `POST /automations/{id}/restore` `{ version }` — copy vX to vN+1 (§5)
 - `GET /automations/{id}/export?values=0|1` — the §5.1 transfer archive as `application/zip`
   (`Content-Disposition` filename `<name>.autowright`, name sanitized for the filesystem);
   `values=0` omits `param_values` from the manifest (default `1`)
@@ -110,9 +110,9 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   decompressed (422) — a crafted archive can't balloon into memory
 - `POST /automations/import/preview` — raw archive body exactly like `/automations/import`
   (same caps) → `{ token, preview }`: validates fully, writes nothing, parks the bytes under
-  the one-time `token` (§5.2 — 15-minute expiry). `preview` is `{ name, desc, steps: [{name,
-  desc, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
-  model, reused}], secrets: [{name, desc, exists}] }` — `reused`/`exists` are the §5.1 match
+  the one-time `token` (§5.2 — 15-minute expiry). `preview` is `{ name, description, steps: [{name,
+  description, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
+  model, reused}], secrets: [{name, description, exists}] }` — `reused`/`exists` are the §5.1 match
   rules run dry
 - `POST /automations/import/url` `{ url }` → same `{ token, preview }` shape plus
   `preview.sourceUrl` (as given) and `preview.resolvedUrl` (after §5.2 GitHub resolution;
@@ -127,15 +127,15 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   `{ name }` — rename; null/"" clears · `POST /automations/{id}/memory/snapshots/{sid}/restore`
   — §6.3 restore (409 while live) · `DELETE /automations/{id}/memory/snapshots/{sid}` —
   delete the snapshot; unknown `sid` answers 404
-- `POST /tests` `{ autoId?, draft, enabledAgents?, allowedSecrets?, paramValues?, triggerMock? }`
-  → `{ execId }` — the §11 Test: starts a §4.5 **test execution record** of the sent draft's
+- `POST /tests` `{ automationId?, draft, enabledAgents?, allowedSecrets?, paramValues?, triggerMock? }`
+  → `{ executionId }` — the §11 Test: starts a §4.5 **test execution record** of the sent draft's
   steps (§4.5 kind `test`, trigger kind `test` — serialized as `test: true`, `ver: "Test"`,
-  `trigger: "Test"`; a stale `autoId` answers 404; 409
+  `trigger: "Test"`; a stale `automationId` answers 404; 409
   while a test for the same draft container is executing; starting a test deletes the
-  container's previous test record). Scratch memory is copied to a temp dir — when `autoId`
+  container's previous test record). Scratch memory is copied to a temp dir — when `automationId`
   is given, from its `draft/memory/` if present else its memory dir, else from the pending
   slot's `memory/` if present else empty — and discarded at test end. Grant arrays as in
-  `/drafts`; param resolution uses the automation's stored values when `autoId` is given
+  `/drafts`; param resolution uses the automation's stored values when `automationId` is given
   (else the draft's defaults), with `paramValues` (name → value, §5 matching rules) overriding
   on top for this test only — never stored; the resolved values are snapshotted on the
   record. `triggerMock` is the §11 mocked trigger message:
@@ -155,7 +155,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   the run's error and log tails (the §11 canned analyze messages; Fix-with-AI names the
   execution via the `/drafts` `runId` field). A finished test writes the §11 last-test summary
   (`test.yaml`, §5) into the draft container; it rides the draft payload as `test`
-  ({ status: succeeded | failed, when, execId }) on the automation's `draft` object and on
+  ({ status: succeeded | failed, when, executionId }) on the automation's `draft` object and on
   `GET /draft`.
 - `POST /packages/check` `{ packages: [{ pip, import }] }` → `{ packages: [{ pip, import,
   status: installed | missing, version? }] }` — the fast §6.2 installed-check, never runs
@@ -171,16 +171,16 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   import, status: installed | failed, version?, error? }] }` — `pip install --upgrade` for
   each named distribution in the shared directory (§6.2: wheels only, serialized); no
   manifest writes; a malformed name → 422
-- `POST /drafts` `{ mode: create|chat|sync, autoId?, text?, spec?, current?, chat?, runId?,
+- `POST /drafts` `{ mode: create|chat|sync, automationId?, text?, spec?, current?, chat?, runId?,
   agentId?, enabledAgents?, allowedSecrets? }` → `{ jobId }` — `chat` requires a nonempty
-  `text` (422 otherwise), takes the in-editor draft as `current` (name + desc + spec +
-  params + steps + instructions + notes; in chat mode with an `autoId`, absent `name`/`desc`
+  `text` (422 otherwise), takes the in-editor draft as `current` (name + description + spec +
+  params + steps + instructions + notes; in chat mode with an `automationId`, absent `name`/`description`
   fall back to the stored automation's for the §8 AUTOMATION section) plus
   `chat` (the recent §11 thread entries for the §8 CONVERSATION section); the backend
   assembles the §8 RECENT RUNS and PACKAGES context itself (`runId`, optional, names an
   execution to include in full detail — the §11 Fix-with-AI entry; unknown ids are
   ignored), and the terminal
-  payload is `draft: { answer?, spec?, instr?, notes?, actions? }` — the §8 chat call's
+  payload is `draft: { answer?, spec?, instructions?, notes?, actions? }` — the §8 chat call's
   response shape decides which keys are present; the grant arrays, when present, override
   the stored automation's for the §8 grants context; when `enabledAgents` / `allowedSecrets`
   is absent and no stored automation exists (create mode), the agents grant defaults to **all**
@@ -201,7 +201,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   `triggerSender`) · `GET /executions/{id}` (steps
   with attempts + params + error + result + `triggerPayload` (§4.5) — logs are lazy, never
   inline) ·
-  `GET /executions/{id}/logs?step=&attempt=` → `{ lines: [{t, k, seq, text}] }` — both params
+  `GET /executions/{id}/logs?step=&attempt=` → `{ lines: [{time, kind, sequence, text}] }` — both params
   select that step attempt's file, neither selects `logs/execution.ndjson`, a missing file
   answers empty lines ·
   `GET /executions/{id}/result/{name}` (raw result-dir file for the §7 file views; plain
@@ -292,7 +292,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   only the description · `DELETE /secrets/{name}` — values go straight to the Keychain, never
   into responses or files
 - `GET /settings` · `PATCH /settings` (validates before storing: `days` coerced to int and
-  clamped ≥ 1, `notif` must be `attention | all` — 422 otherwise, so a bad value can never
+  clamped ≥ 1, `notifications` must be `attention | all` — 422 otherwise, so a bad value can never
   persist and silently break the retention sweep; flipping `keepAwake` starts/stops the §3
   permanent power assertion immediately) · `POST /settings/data-path` `{ path }` (sets the
   execution-data location; creates the dir, reloads from it, moves nothing; answers 409 while
@@ -305,7 +305,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   §7 executions list and the §9.2 "N waiting" line without a poll; promotion needs no second
   event, it publishes the ordinary `exec.started` for the same id), `exec.step`
   (status change; carries the full step incl. its attempts), `exec.log` (one NDJSON line with
-  `stepIndex`/`attempt` — null for execution-level lines — and the per-file `seq` for
+  `stepIndex`/`attempt` — null for execution-level lines — and the per-file `sequence` for
   fetch-vs-stream dedupe), `exec.finished`, `auto.changed`, `agents.changed`,
   `secrets.changed`, `settings.changed`, `draft.changed` (the §4.4 pending slot was kept
   or discarded — clients re-`GET /state`; §11 test executions stream over the

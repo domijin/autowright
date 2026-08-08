@@ -51,16 +51,16 @@ def start(provider_id: str, publish) -> bool:
     with _lock:
         if _jobs.get(provider_id, {}).get("state") == "running":
             return False
-        _jobs[provider_id] = {"state": "running", "line": "", "pct": None}
+        _jobs[provider_id] = {"state": "running", "line": "", "percent": None}
 
-    def emit(line: str | None = None, pct: int | None = None) -> None:
+    def emit(line: str | None = None, percent: int | None = None) -> None:
         with _lock:
             snap = _jobs[provider_id]
             if line is not None:
                 snap["line"] = line
-            if pct is not None:
-                snap["pct"] = pct
-        publish(line=line, pct=pct, done=False)
+            if percent is not None:
+                snap["percent"] = percent
+        publish(line=line, percent=percent, done=False)
 
     def run() -> None:
         try:
@@ -172,10 +172,10 @@ def _download(url: str, dest: str, emit, label: str) -> None:
             f.write(chunk)
             got += len(chunk)
             if total:
-                pct = int(got * 100 / total)
-                if pct != last:
-                    last = pct
-                    emit(line=f"{label} — {pct}%", pct=pct)
+                percent = int(got * 100 / total)
+                if percent != last:
+                    last = percent
+                    emit(line=f"{label} — {percent}%", percent=percent)
 
 
 def _install_tarball(url: str, binprefix: str, dest_name: str, emit, label: str) -> None:

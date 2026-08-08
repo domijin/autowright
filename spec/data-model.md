@@ -13,8 +13,8 @@ Single central model drives everything. Top-level:
 ```
 surface: onboard | app | create | menubar
 page: automations | automation | executions | execution | agents | agentNew | secrets | settings | about
-autoId, execId: current selections
-autos[], execs[], agents[], secrets[], settings, onboarding state, create state, transient UI state
+automationId, executionId: current selections
+automations[], executions[], agents[], secrets[], settings, onboarding state, create state, transient UI state
 ```
 
 The on-disk representation of these entities is §5.
@@ -23,12 +23,12 @@ The on-disk representation of these entities is §5.
 
 ```
 id: uuid
-name, desc: strings — both are user-owned identity (§5: top-level automation.yaml, never
+name, description: strings — both are user-owned identity (§5: top-level automation.yaml, never
   versioned): the §8 create manifest seeds them, and after create they change only through
-  the user — name via click-to-edit on the §11 Review title, desc via click-to-edit on the
+  the user — name via click-to-edit on the §11 Review title, description via click-to-edit on the
   §11 Review lede line; both also via §19 PATCH. Sync ignores the
-  manifest's name and desc. Edits never mark the workflow out of sync. A blank name is
-  ignored (never cleared); a blank desc clears it (desc is optional).
+  manifest's name and description. Edits never mark the workflow out of sync. A blank name is
+  ignored (never cleared); a blank description clears it (description is optional).
 version: int (current)
 triggers: ordered trigger list (§4.3) — user-owned, never versioned; the draft's spec-derived
   triggers are merged in when an edit is saved (§4.3 trigger merge)
@@ -36,12 +36,12 @@ triggerChip: derived chip string (§4.3): one trigger → its short label, sever
   empty → "No triggers"
 triggersOff: bool — derived: the list is nonempty and every trigger is off (drives the OFF tag)
 nextAt: epoch ms of the next enabled occurrence across all triggers (§4.3) | null
-instr: optional multiline free-text user instructions to the agent
+instructions: optional multiline free-text user instructions to the agent
 notes: agent-owned working-knowledge document (markdown string, may be empty) — selectors and
   short HTML excerpts, API endpoints and quirks, approaches that failed and why, environment
   facts the drafting agent discovered while building and testing. Written only by §8 agent
   responses (a chat or call-2 `notes.md` block — the agent keeps it a terse cheat sheet);
-  user-readable and prunable in the §11 NOTES card. Versioned like spec/instr, and sent back
+  user-readable and prunable in the §11 NOTES card. Versioned like spec/instructions, and sent back
   to the agent on every §8 chat and steps call so later syncs don't retry dead ends. A notes
   change never marks the workflow out of sync (§11): notes are advisory input to the next
   sync, not a contract the steps must match
@@ -60,7 +60,7 @@ resultChip: short summary chip ("2 new chapters") | null — the chip is optiona
 resultStatus: changes | ok | attention | null — tints resultChip with the §7 chip colors
   everywhere it appears (list rows included); null whenever resultChip is null; "attention" for
   failed automations
-lastExecLabel: shared time label (below) | "executing…"
+lastExecutionLabel: shared time label (below) | "executing…"
   Every relative time label in the app uses one shared scheme: "Today" | "Yesterday" | full
   weekday name ("Thursday", 2–6 days back) | the date in the user's locale format (year,
   month, day — e.g. "7/18/2026"). Labels that carry a clock time append it: "Today, 8:00 AM".
@@ -76,7 +76,7 @@ snapshots: [{ id, name, reason, when, version, size, files }] — the §6.3 memo
   the version about to execute), size = humanized byte label, files = file count
 snapshotSettings: { preVersion, preClear, preRestore } — booleans, the §6.3 automatic-snapshot
   toggles (all default true)
-steps: [{ name, file, desc, code, agent?, why?, agents?, secrets?, timeout?, noTimeout?,
+steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, timeout?, noTimeout?,
   retries?, infiniteRetries? }] — file is the version-folder script filename (§5 NN-name.py);
   code is
   human-readable script; agent
@@ -100,11 +100,11 @@ steps: [{ name, file, desc, code, agent?, why?, agents?, secrets?, timeout?, noT
   pair, both are written by the drafting agent per the §8 retry rule. On disk and in the §8
   manifest the keys are spelled `no_timeout`, `infinite_retries` (§5 yaml is snake_case); the
   API serialization is `noTimeout`, `infiniteRetries`
-spec: block list [{ k: h1|h2|p|li, text }] — the human-readable spec
+spec: block list [{ kind: h1|h2|p|li, text }] — the human-readable spec
 specMeta: "v3 · updated Yesterday" (shared time label)
 packages: [{ pip, import }] — the current version's §6.2 declared packages ([] when none);
   versioned like spec/steps — each version entry below carries its own list
-versions: [{ v, when, note, spec, steps, instr, notes, params, packages }] — prior-version
+versions: [{ version, when, note, spec, steps, instructions, notes, params, packages }] — prior-version
   history, newest-first (the current version is not repeated in this list)
 draft: unsaved edit snapshot (create-flow shape) | null
 agentId: agent that writes/edits this automation
@@ -117,7 +117,7 @@ stepAgents, allowedSecrets: string[] — per-automation enablement (set on save)
 |---|---|---|---|
 | `toggle` | label, help, on | "On"/"Off" | switch |
 | `list` | label, help, validate, lines[] | validate → "N links" (valid-URL count), else "N entries" | one input per line, add/remove; per-line URL validation (red border plus a red "NOT A VALID LINK" tag on an invalid non-empty line when validate — detail page and editor alike); info line "N lines · G valid links[ · B needs attention]" |
-| `kv` | label, help, rows[{k,v}] | "N entries" | key/value pairs, add/remove |
+| `kv` | label, help, rows[{key,value}] | "N entries" | key/value pairs, add/remove |
 | `number` | label, help, value, min | value | digits-only; empty/below-min clamps to min |
 | `text` | label, help, value, placeholder? | value or "Not set" | plain input |
 
@@ -146,8 +146,8 @@ never mints a version and never involves the AI. The list additionally follows t
 the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-derived triggers
 (§8 rule 9) into the stored list:
 
-- **Crons replace the cron subset**: a drafted cron matching a stored one on (`expr`, `tz`)
-  keeps that trigger's `id` and `off` state; other drafted crons arrive enabled with fresh
+- **Crons replace the cron subset**: a drafted cron matching a stored one on (`expression`, `timezone`)
+  keeps that trigger's `id` and `enabled` state; other drafted crons arrive enabled with fresh
   ids; stored crons the draft no longer derives are dropped.
 - **Message and app-start entries are additive**: a drafted `discord`/`imessage`/`app_start`
   entry matching a stored trigger of the same kind on its identity fields (discord:
@@ -160,23 +160,23 @@ the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-d
 Manual starts (Execute now, the menu bar, CLI) are
 not triggers in this list — they always work, whatever the list holds.
 
-Trigger shape: `{ id: uuid, kind, off: bool, …kind fields }` plus the backend-derived display
+Trigger shape: `{ id: uuid, kind, enabled: bool, …kind fields }` plus the backend-derived display
 strings `label` and `short`. The backend assigns `id` to entries that arrive without one. Kinds:
 
 | kind | fields | fires | label / short |
 |---|---|---|---|
-| `cron` | `expr`: 5-field cron expression · optional `tz` | at every match | humanized when simple (below), else the raw expression in mono |
-| `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `tz` | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
+| `cron` | `expression`: 5-field cron expression · optional `timezone` | at every match | humanized when simple (below), else the raw expression in mono |
+| `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `timezone` | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
 | `app_start` | — | at every desktop-app launch (§6 firing path) | "On app start" / "App start" |
 | `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: name of the §4.8 secret holding the bot token · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a list of Discord user ids (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
 | `imessage` | `from`: sender handle (E.164 phone or email) · optional `pattern`: text filter | at every matching iMessage on this Mac (rules below) | "iMessage · `<from>`" (+ " · “`<pattern>`”" when set) / "iMessage" |
 | `pubsub` | — | future message trigger | — |
 
-**Timezone (`tz`)** — optional IANA zone name (e.g. `Asia/Tokyo`) on `cron` and `time`
-triggers. Absent → the machine's local time (labels unchanged). Present → `expr` matches and
+**Timezone (`timezone`)** — optional IANA zone name (e.g. `Asia/Tokyo`) on `cron` and `time`
+triggers. Absent → the machine's local time (labels unchanged). Present → `expression` matches and
 `at` reads as wall clock **in that zone** (DST rules below apply in that zone); occurrences
 convert to local time for `nextAt`, countdowns, and the scheduler. An unknown zone name is
-rejected at the API (422), never stored. When `tz` is set, both display strings append the
+rejected at the API (422), never stored. When `timezone` is set, both display strings append the
 zone's city — the last `/` segment of the IANA name, `_` → space — in parentheses:
 "Daily at 8:00 (Tokyo)" / "Daily 8:00 (Tokyo)"; the raw-expression fallback and one-shot
 labels get the same suffix.
@@ -211,12 +211,12 @@ A firing starts an execution with trigger label "Discord" and the §4.5 `trigger
 list whose only enabled triggers are message triggers shows the listening status line below.
 Validation (§19, 422 otherwise): `channel` a nonempty ASCII-digit string, `secret` a valid
 §4.8 secret name (the Secrets-API rule, `[A-Z][A-Z0-9_]*`; it need not exist yet — a
-missing/valueless secret surfaces as a `conn` error, not a 422), `pattern` when present a
+missing/valueless secret surfaces as a `connection` error, not a 422), `pattern` when present a
 nonempty string, `mention` a bool, `author` when present a nonempty list of nonempty
 ASCII-digit strings (Discord user ids, like `channel`); its entries are trimmed, deduped,
 and sorted at save, so element order never distinguishes two triggers — the trigger-merge
 identity compares the normalized list. The serialized trigger of
-kind `discord` additionally carries **`conn`** — derived, never stored: the listener
+kind `discord` additionally carries **`connection`** — derived, never stored: the listener
 manager's connection state for the trigger's token,
 `{ state: connected | connecting | error, error? }` (`error` is the plain-word failure, e.g.
 "secret DISCORD_BOT_TOKEN has no value yet" or Discord's close reason).
@@ -250,7 +250,7 @@ phone** — `+` then 3–15 digits, matching the form Messages stores; obvious p
 (spaces, dashes, dots, parentheses) is stripped at save, so `+1 (555) 123-4567` stores as
 `+15551234567`, but a number without the leading `+`/country code is rejected — it could
 never match a stored handle, and a trigger that silently never fires is the worst failure
-mode. `pattern` when present a nonempty string. Serialized `imessage` triggers carry the same derived **`conn`** field as Discord —
+mode. `pattern` when present a nonempty string. Serialized `imessage` triggers carry the same derived **`connection`** field as Discord —
 all of them share the one §6 watcher, so they all report its state; the plain-word errors
 name permissions where relevant (e.g. "needs Full Disk Access — grant it in System Settings →
 Privacy & Security → Full Disk Access").
@@ -260,7 +260,7 @@ fields — minute, hour, day-of-month, month, day-of-week (0–6, Sun = 0) — e
 list of numbers, ranges (`a-b`), and steps (`*/n`, `a-b/n`). Numbers only: no month/day names,
 no `@daily` macros, no seconds field. Standard Vixie rule: when day-of-month and day-of-week are
 both restricted, a date matching either one fires. Times are wall clock in the trigger's zone
-(`tz`, default local); an occurrence erased by DST (spring forward) still fires, shifted
+(`timezone`, default local); an occurrence erased by DST (spring forward) still fires, shifted
 forward by the gap width (a "2:30" on the day the clock jumps 2:00→3:00 fires at 3:30 — the
 erased wall time read with the pre-transition offset; backend `schedule.py`, renderer
 `cron.ts`, and the shared parity fixture all implement this same rule), and one repeated by
@@ -277,18 +277,18 @@ whitespace. The backend (`schedule.cron_display`) and the renderer (`cronLabels`
 this rule identically; the shared parity fixture (§15) locks them together.
 
 **One-shot semantics** (`time`): `at` must be strictly in the future when saved (422 otherwise;
-the check reads `at` in the trigger's `tz`).
+the check reads `at` in the trigger's `timezone`).
 The trigger is consumed — removed from the list — when it fires, and equally when its moment is
 skipped (backend down when it passed, or superseded mid-execution, §6). It never lingers spent.
 
 **App-start semantics** (`app_start`): fires when the desktop app launches — the Electron
-process starting (§6 firing path), not a window reopening from the tray. No fields, no `tz`.
+process starting (§6 firing path), not a window reopening from the tray. No fields, no `timezone`.
 An automation holds at most one: a list carrying a second `app_start` answers 422 and nothing
 is stored. It has no computable next occurrence — it never contributes to `nextAt` — and it
 survives an edit save (the §4.3 trigger merge never drops it — a drafted `app_start` merely
 matches the stored one).
 
-**Next occurrence:** each enabled (`off: false`) trigger computes its own next time — cron: the
+**Next occurrence:** each enabled (`enabled: true`) trigger computes its own next time — cron: the
 next expression match strictly after now; time: `at`. The automation's `nextAt` is the minimum
 across them, null when no enabled trigger has one. The countdown renders "next in Xd Xh" /
 "Xh Xm" and refreshes every 30 s.
@@ -321,7 +321,7 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
 ### 4.4 Versions and drafts
 
 - Saving an edit creates version N+1 (on disk: a fresh `versions/vN+1/` folder, then the
-  `current_version` pointer flip, per §5), applies spec/steps/instr/stepAgents/allowedSecrets/
+  `current_version` pointer flip, per §5), applies spec/steps/instructions/stepAgents/allowedSecrets/
   agentId, merges the draft's trigger list into the automation's (§4.3 trigger merge —
   triggers themselves stay unversioned), sets `specMeta` to "vN · updated Today".
   Prior versions are untouched.
@@ -369,7 +369,7 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   flow after a draft has landed (spec or steps present) keeps the full
   working state there — the same serialization as an edit-mode draft (the agent and secret
   grant selections ride the same draft-only `step_agents` / `allowed_secrets` keys), plus
-  the identity fields no automation record exists to hold yet (name, desc, chosen agent,
+  the identity fields no automation record exists to hold yet (name, description, chosen agent,
   triggers). Opening the create flow while the slot exists resumes it straight on the
   Review page (toast: "Resumed your unsaved draft — Start over discards it."); the §9.1
   list header surfaces the slot as a Resume draft button, and its New automation button
@@ -404,12 +404,12 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
 ### 4.5 Execution (the stored record of one occurrence of an automation)
 
 ```
-id: uuid, autoId: uuid | null (null on a create-mode test — no automation record exists yet),
-autoName: automation name — serialized live from the automation while it exists, else the §5
+id: uuid, automationId: uuid | null (null on a create-mode test — no automation record exists yet),
+automationName: automation name — serialized live from the automation while it exists, else the §5
   execution-time snapshot (a deleted automation's executions keep rendering their historical
   name),
-autoDeleted: bool — derived: autoId names an automation that no longer exists (false when
-  autoId is null — a create-mode test never had one to lose),
+automationDeleted: bool — derived: automationId names an automation that no longer exists (false when
+  automationId is null — a create-mode test never had one to lose),
 kind: version | draft | test — what was executed (§11 test executions are kind `test`), status,
 version: int | null — the executed version number; null unless kind is `version`. The API
   serialization derives the display pair from these two: `ver` ("v3", "Draft", "Test") and
@@ -450,29 +450,29 @@ triggerSender: string | null — the payload's `sender`, lifted onto every execu
   (list JSON carries no payload; the full payload is full-record-only). Lets the §7 and
   §9.2 trigger columns read "Discord · Dave · v3" without fetching the full record;
   null on non-message executions. Persisted in the §5 header index so it survives restart
-dur, started ("Today, 8:00 AM"), startedMs, endedMs (0 while live and on rows whose
-  `finished_at` was never set, e.g. §3 interrupted) — dur accumulates across in-place retry
+duration, started ("Today, 8:00 AM"), startedMs, endedMs (0 while live and on rows whose
+  `finished_at` was never set, e.g. §3 interrupted) — duration accumulates across in-place retry
   passes (§7); started never changes on retry
 queuedMs: epoch ms of `queuedAt`, 0 on every execution that never waited — what the §7
   executions list ticks its WAITING FOR column from
-steps: [{ name, file, status, dur, attempts: [{ n, status, dur, startedMs }] }] — file is the
+steps: [{ name, file, status, duration, attempts: [{ number, status, duration, startedMs }] }] — file is the
   version-folder script filename (keys the per-attempt log files, §5). `file` is
-  record-only: the API's full-record serialization emits only name/status/dur/attempts, and
+  record-only: the API's full-record serialization emits only name/status/duration/attempts, and
   the §19 log endpoint addresses attempt files by step index, which is how the renderer keys
   them. A step's status equals
   its latest attempt's status, or queued when it has no attempts yet; attempt statuses use the
-  step vocabulary (§4.6); dur is the latest attempt's duration. `n` is monotonic per step,
+  step vocabulary (§4.6); duration is the latest attempt's duration. `number` is monotonic per step,
   never re-derived from list length: only the latest 20 attempts are retained — appending an
   attempt past that prunes the oldest entry and its log file (§5) — so an `infiniteRetries`
   step (§4.1) can't grow the record without bound; the true attempt count is the latest
-  attempt's `n`, which is what the §7 ×N chip and attempt control read. On disk each step also stores
+  attempt's `number`, which is what the §7 ×N chip and attempt control read. On disk each step also stores
   `agent` (bool — the §4.1 agent-step flag, snapshotted at execution start) and
   `sha`, a short hash of the script as executed — the §7 Draft-retry drift check compares it,
   since a re-saved draft can change a step's code without changing its name or file
 result: result object | null
 workspace: string — full-record-only: absolute path of the execution's `workspace/` dir (§5),
   backing the §7 workspace link ("Show workspace in Finder", §4.9 Show-in-Finder rule)
-redact: secret names redacted in logs (a list) | null when none — display surfaces join it
+redactedSecrets: secret names redacted in logs (a list) | null when none — display surfaces join it
 note: optional note ("previous execution still in progress", "the queue was full (N waiting)",
   "Mac went to sleep") | null
 error: { step | null, message, reason | null } | null — failed executions only: the failing
@@ -542,10 +542,10 @@ carries to decide this by.
 ### 4.7 Agent
 
 ```
-{ id: uuid, name, desc, harness: Claude Code | Gemini CLI | Codex | OpenCode,
+{ id: uuid, name, description, harness: Claude Code | Gemini CLI | Codex | OpenCode,
   mode: default | ollama | custom, model }
 ```
-`desc` is an optional free-text description ("What this agent is for — shown on the Agents
+`description` is an optional free-text description ("What this agent is for — shown on the Agents
 page and given to the drafting agent"), rendered as the detail line on the agent card and
 carried into the §8 grants yaml so the drafting agent knows what each enabled agent is for.
 `model` is null when `mode` is `default` and required otherwise. Mode `custom` is valid with
@@ -569,11 +569,11 @@ local-model mode) and help the user sign in when the harness needs an account (�
 
 ### 4.8 Secret
 
-`{ name, desc, set, usedBy }` — the value itself is never part of the entity (Keychain-only,
+`{ name, description, set, usedBy }` — the value itself is never part of the entity (Keychain-only,
 below). `usedBy` is the list of automation names whose current
 version uses the secret (the UI joins it; empty list renders "Not used yet"). Names uppercase, `[A-Z][A-Z0-9_]*` — sanitization (uppercase,
 invalid chars → `_`) is UI input behavior; the backend validates strictly and rejects nonconforming
-names with HTTP 422. `desc` is an optional free-text description ("What this secret is for — shown
+names with HTTP 422. `description` is an optional free-text description ("What this secret is for — shown
 on the Secrets page and given to the drafting agent"), stored next to the name in `secrets.yaml`
 (never in the Keychain) and carried into the §8 grants yaml so the drafting agent knows which
 secret to use. Values are arbitrary strings and may be multi-line (e.g. a PEM key). Values stored
@@ -598,14 +598,14 @@ working."
 
 ```
 login: bool        — "Launch at login" ("Autowright starts quietly in the menu bar.")
-mbIcon: bool       — "Show in the menu bar" ("The quickest way to execute an automation.")
+menuBarIcon: bool       — "Show in the menu bar" ("The quickest way to execute an automation.")
 keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac from sleeping so
   schedules and message triggers keep firing. The display can still sleep.") — while on, the
   backend holds a permanent idle-sleep power assertion (§3 sleep bullet); applied live on
   settings change, no restart. Row sits in the GENERAL card below "Show in the menu bar".
-notif: attention | all — "Only when something needs attention" / "After every execution"
+notifications: attention | all — "Only when something needs attention" / "After every execution"
 days: int ≥ 1 (default 90) — history retention; keepForever: bool disables cleanup
-devMode: bool (default false) — "Developer mode" ("Logs every backend request and every AI
+developerMode: bool (default false) — "Developer mode" ("Logs every backend request and every AI
   request — including the full prompt — to the backend log. Press `` ` `` to show the logs
   panel.") — gates request logging, the per-request log files under `<logs>/requests/` (§5),
   the §5 build-failure records under `<logs>/build-failures/`, and the `` ` ``-key log
@@ -626,6 +626,6 @@ The "Keep executions for" days row is hidden (not just disabled) while "Keep exe
 on. One **ON THIS MAC** card holds two rows: **"Automations & settings"** (the fixed path
 `~/Library/Application Support/Autowright` with its own Show in Finder button — this location
 is not changeable) above the **Execution data** row. A **DEVELOPER** card sits last on the page with
-the single **Developer mode** toggle row (devMode above). Version, updates,
+the single **Developer mode** toggle row (developerMode above). Version, updates,
 GitHub links, licenses, and the disclaimer live on the About page (§9.4), not here.
 

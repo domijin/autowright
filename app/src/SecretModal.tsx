@@ -13,7 +13,7 @@ const inputStyle: React.CSSProperties = {
   font: `400 12.5px var(--mono)`, padding: '9px 11px',
 }
 
-export type SecretModalState = { mode: 'add' } | { mode: 'edit'; name: string; desc: string; usedBy: string[] }
+export type SecretModalState = { mode: 'add' } | { mode: 'edit'; name: string; description: string; usedBy: string[] }
 
 export function SecretModal({ modal, onClose, onSaved }: {
   modal: SecretModalState
@@ -23,7 +23,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
   const { showToast, secrets } = useStore()
   const isAdd = modal.mode === 'add'
   const [name, setName] = useState(isAdd ? '' : modal.name)
-  const [desc, setDesc] = useState(isAdd ? '' : modal.desc)
+  const [description, setDesc] = useState(isAdd ? '' : modal.description)
   const [value, setValue] = useState('')
   const [show, setShow] = useState(false)
 
@@ -44,7 +44,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
           try {
             // §4.8: a blank value on edit keeps the stored one (description-only
             // update); a blank value on add creates a placeholder (set: false).
-            await api.putSecret(name, value, desc)
+            await api.putSecret(name, value, description)
             close()
             showToast(isAdd
               ? (value ? 'Saved to your Keychain.' : 'Saved — add the value before an automation needs it.')
@@ -103,7 +103,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
             <Eyebrow style={{ margin: '16px 0 6px' }}>DESCRIPTION · OPTIONAL</Eyebrow>
             <input
               className="ad-input"
-              value={desc}
+              value={description}
               onChange={(e) => setDesc(e.target.value)}
               onKeyDown={onKeyDown}
               spellCheck={false}

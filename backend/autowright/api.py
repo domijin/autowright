@@ -62,7 +62,7 @@ app.add_middleware(
 
 
 class _RequestLogMiddleware:
-    """§5 request-log files: while devMode is on, every served HTTP request
+    """§5 request-log files: while developerMode is on, every served HTTP request
     (never the /ws WebSocket) lands as one file under <logs>/requests. Pure
     ASGI — taps the receive/send streams, so bodies are captured without
     disturbing them; only the first BODY_CAP bytes of each are kept."""
@@ -110,8 +110,8 @@ class _RequestLogMiddleware:
 app.add_middleware(_RequestLogMiddleware)
 
 
-def _auto_or_404(auto_id: str) -> dict:
-    a = store.autos.get(auto_id)
+def _auto_or_404(automation_id: str) -> dict:
+    a = store.autos.get(automation_id)
     if not a:
         raise HTTPException(404, "automation not found")
     return a
@@ -171,7 +171,7 @@ def _settings_json() -> dict:
 
 
 def _secrets_json() -> list[dict]:
-    return [{"name": s["name"], "desc": s.get("desc") or "",
+    return [{"name": s["name"], "description": s.get("description") or "",
              "set": bool(s.get("set", True)),
              "usedBy": store.secret_used_by(s["name"])}
             for s in sorted(store.secrets, key=lambda s: s["name"])]
@@ -181,8 +181,8 @@ def _agent_grant(g: dict) -> dict:
     """§8 grants yaml entry: name, description, harness, model — the fields the
     drafting agent weighs when deciding which agents to use; ids stay internal."""
     e = {"name": harness.grant_name(g)}
-    if g.get("desc"):
-        e["description"] = g["desc"]
+    if g.get("description"):
+        e["description"] = g["description"]
     e["harness"] = g.get("harness", "")
     e["model"] = g.get("model") or "harness default"
     return e
@@ -191,9 +191,9 @@ def _agent_grant(g: dict) -> dict:
 def _secret_grant(name: str) -> dict:
     """§8 grants yaml entry: name + description (omitted when empty)."""
     e = {"name": name}
-    desc = next((s.get("desc") for s in store.secrets if s["name"] == name), "")
-    if desc:
-        e["description"] = desc
+    description = next((s.get("description") for s in store.secrets if s["name"] == name), "")
+    if description:
+        e["description"] = description
     return e
 
 
@@ -217,8 +217,8 @@ def state() -> dict:
     with store.lock:
         return {
             "version": __version__,
-            "autos": [store.auto_json(a) for a in store.autos.values()],
-            "execs": sorted((store.exec_json(h) for h in store.execs.values()),
+            "automations": [store.auto_json(a) for a in store.autos.values()],
+            "executions": sorted((store.exec_json(h) for h in store.execs.values()),
                             key=lambda e: e["startedMs"], reverse=True),
             "agents": _agents_json(),
             "secrets": _secrets_json(),
@@ -234,14 +234,14 @@ def list_autos() -> list[dict]:
         return [store.auto_json(a) for a in store.autos.values()]
 
 
-@app.get("/automations/{auto_id}", dependencies=[Depends(auth)])
-def get_auto(auto_id: str) -> dict:
-    return _auto_json_locked(_auto_or_404(auto_id))
+@app.get("/automations/{automation_id}", dependencies=[Depends(auth)])
+def get_auto(automation_id: str) -> dict:
+    return _auto_json_locked(_auto_or_404(automation_id))
 
 
-@app.patch("/automations/{auto_id}", dependencies=[Depends(auth)])
-def patch_auto(auto_id: str, patch: dict) -> dict:
-    a = _auto_or_404(auto_id)
+@app.patch("/automations/{automation_id}", dependencies=[Depends(auth)])
+def patch_auto(automation_id: str, patch: dict) -> dict:
+    a = _auto_or_404(automation_id)
     if "triggers" in patch:
         # §19: whole-list replace; message kinds / bad expressions / past times → 422.
         norm, err = schedule.normalize_triggers(patch["triggers"])
@@ -261,36 +261,36 @@ def patch_auto(auto_id: str, patch: dict) -> dict:
         # §6: a waiting entry whose trigger was just turned off or removed is
         # cancelled — it could never be re-admitted, and promoting it would
         # execute a firing the user just switched off.
-        cancel_unmatched_queue(store, engine, auto_id)
-    hub.publish("auto.changed", autoId=auto_id)
+        cancel_unmatched_queue(store, engine, automation_id)
+    hub.publish("automation.changed", automationId=automation_id)
     # A raised maxParallel may have just opened a slot for a waiting firing (§6).
-    drain_queue(store, engine, auto_id)
+    drain_queue(store, engine, automation_id)
     return _auto_json_locked(a)
 
 
-@app.post("/automations/{auto_id}/queue/clear", dependencies=[Depends(auth)])
-def clear_queue(auto_id: str) -> dict:
+@app.post("/automations/{automation_id}/queue/clear", dependencies=[Depends(auth)])
+def clear_queue(automation_id: str) -> dict:
     """§19: cancel every §6 firing-queue entry waiting on this automation.
     Running executions are untouched — an empty queue answers 0, not 404."""
-    _auto_or_404(auto_id)
+    _auto_or_404(automation_id)
     n = 0
-    for h in store.queued_execs(auto_id):
+    for h in store.queued_execs(automation_id):
         if engine.cancel(h["id"]):
             n += 1
     if n:
-        hub.publish("auto.changed", autoId=auto_id)
+        hub.publish("automation.changed", automationId=automation_id)
     return {"cancelled": n}
 
 
-@app.delete("/automations/{auto_id}", dependencies=[Depends(auth)])
-def delete_auto(auto_id: str) -> dict:
-    a = _auto_or_404(auto_id)
+@app.delete("/automations/{automation_id}", dependencies=[Depends(auth)])
+def delete_auto(automation_id: str) -> dict:
+    a = _auto_or_404(automation_id)
     live = list(a.get("_live") or ())
     for eid in live:
         engine.cancel(eid)
     # §6: waiting firings go with it — their sender is told rather than left
     # waiting on an automation that no longer exists.
-    for h in store.queued_execs(auto_id):
+    for h in store.queued_execs(automation_id):
         engine.cancel(h["id"])
     # §19: a cancelled step gets a SIGTERM grace window (§7) — wait for the
     # engine threads to actually finish before the rmtree, or a step writing
@@ -298,9 +298,9 @@ def delete_auto(auto_id: str) -> dict:
     # leaving a ghost tree the UI can never see.
     if live and not engine.wait_finished(live):
         logging.getLogger(__name__).warning(
-            "delete %s: an execution thread outlived the kill grace — removing anyway", auto_id)
+            "delete %s: an execution thread outlived the kill grace — removing anyway", automation_id)
     store.delete_automation(a)
-    hub.publish("auto.changed")
+    hub.publish("automation.changed")
     return {"ok": True}
 
 
@@ -321,10 +321,10 @@ def _norm_steps(steps: list | None) -> list:
 
 
 def _draft_to_version(d: dict) -> dict:
-    return {"desc": d.get("desc", ""), "note": d.get("note", ""),
+    return {"description": d.get("description", ""), "note": d.get("note", ""),
             "params": d.get("params", []), "packages": d.get("packages", []),
             "steps": _norm_steps(d.get("steps")),
-            "spec": d.get("spec") or [], "instr": d.get("instr"),
+            "spec": d.get("spec") or [], "instructions": d.get("instructions"),
             "notes": d.get("notes") or ""}
 
 
@@ -348,13 +348,13 @@ def create_auto(body: dict) -> dict:
     # never resurrected.
     store.delete_pending_draft()
     hub.publish("draft.changed")
-    hub.publish("auto.changed", autoId=a["id"])
+    hub.publish("automation.changed", automationId=a["id"])
     return _auto_json_locked(a)
 
 
-@app.post("/automations/{auto_id}/versions", dependencies=[Depends(auth)])
-def save_version(auto_id: str, body: dict) -> dict:
-    a = _auto_or_404(auto_id)
+@app.post("/automations/{automation_id}/versions", dependencies=[Depends(auth)])
+def save_version(automation_id: str, body: dict) -> dict:
+    a = _auto_or_404(automation_id)
     d = body.get("draft") or {}
     if not d.get("steps"):
         raise HTTPException(422, "draft has no steps")
@@ -379,9 +379,9 @@ def save_version(auto_id: str, body: dict) -> dict:
     if triggers is not None:
         # §6: same rule as the PATCH — the saved version's trigger list may have
         # dropped or disabled the trigger some waiting entry came from.
-        cancel_unmatched_queue(store, engine, auto_id)
-    hub.publish("auto.changed", autoId=auto_id)
-    return {"version": n, "auto": _auto_json_locked(a)}
+        cancel_unmatched_queue(store, engine, automation_id)
+    hub.publish("automation.changed", automationId=automation_id)
+    return {"version": n, "automation": _auto_json_locked(a)}
 
 
 def _reject_live_draft_exec(a: dict) -> None:
@@ -394,9 +394,9 @@ def _reject_live_draft_exec(a: dict) -> None:
             raise HTTPException(409, "a draft execution is in progress")
 
 
-@app.put("/automations/{auto_id}/draft", dependencies=[Depends(auth)])
-def put_draft(auto_id: str, body: dict) -> dict:
-    a = _auto_or_404(auto_id)
+@app.put("/automations/{automation_id}/draft", dependencies=[Depends(auth)])
+def put_draft(automation_id: str, body: dict) -> dict:
+    a = _auto_or_404(automation_id)
     d = body.get("draft") or {}
     # §4.4: the draft snapshot carries the editor's grant selections and trigger
     # list as draft-only keys — never applied to the automation until saved.
@@ -407,17 +407,17 @@ def put_draft(auto_id: str, body: dict) -> dict:
     with store.lock:
         _reject_live_draft_exec(a)
         store.save_draft(a, ver, chat=d.get("chat"))
-    hub.publish("auto.changed", autoId=auto_id)
+    hub.publish("automation.changed", automationId=automation_id)
     return {"ok": True}
 
 
-@app.delete("/automations/{auto_id}/draft", dependencies=[Depends(auth)])
-def del_draft(auto_id: str) -> dict:
-    a = _auto_or_404(auto_id)
+@app.delete("/automations/{automation_id}/draft", dependencies=[Depends(auth)])
+def del_draft(automation_id: str) -> dict:
+    a = _auto_or_404(automation_id)
     with store.lock:
         _reject_live_draft_exec(a)
         store.delete_draft(a)
-    hub.publish("auto.changed", autoId=auto_id)
+    hub.publish("automation.changed", automationId=automation_id)
     return {"ok": True}
 
 
@@ -454,9 +454,9 @@ def del_pending_draft() -> dict:
 
 
 # ---------- transfer archives (§5.1) ----------
-@app.get("/automations/{auto_id}/export", dependencies=[Depends(auth)])
-def export_auto(auto_id: str, values: int = 1):
-    a = _auto_or_404(auto_id)
+@app.get("/automations/{automation_id}/export", dependencies=[Depends(auth)])
+def export_auto(automation_id: str, values: int = 1):
+    a = _auto_or_404(automation_id)
     data = transfer.export_automation(store, a, include_values=bool(values))
     from urllib.parse import quote
 
@@ -493,8 +493,8 @@ def _land_import(data: bytes) -> dict:
         hub.publish("secrets.changed")
     if summary["agentsCreated"]:
         hub.publish("agents.changed")
-    hub.publish("auto.changed", autoId=a["id"])
-    return {"auto": _auto_json_locked(a), "summary": summary}
+    hub.publish("automation.changed", automationId=a["id"])
+    return {"automation": _auto_json_locked(a), "summary": summary}
 
 
 @app.post("/automations/import", dependencies=[Depends(auth)])
@@ -554,23 +554,23 @@ def import_confirm(body: dict) -> dict:
     return _land_import(slot[1])
 
 
-@app.post("/automations/{auto_id}/restore", dependencies=[Depends(auth)])
-def restore(auto_id: str, body: dict) -> dict:
-    a = _auto_or_404(auto_id)
+@app.post("/automations/{automation_id}/restore", dependencies=[Depends(auth)])
+def restore(automation_id: str, body: dict) -> dict:
+    a = _auto_or_404(automation_id)
     try:
-        v = int(body.get("v", 0))
+        v = int(body.get("version", 0))
     except (TypeError, ValueError):
         raise HTTPException(422, "v must be an integer") from None
     if v not in a["versions"]:
         raise HTTPException(404, f"v{v} not found")
     n = store.restore_version(a, v)
-    hub.publish("auto.changed", autoId=auto_id)
-    return {"version": n, "auto": _auto_json_locked(a)}
+    hub.publish("automation.changed", automationId=automation_id)
+    return {"version": n, "automation": _auto_json_locked(a)}
 
 
-@app.post("/automations/{auto_id}/execute", dependencies=[Depends(auth)])
-def execute_auto(auto_id: str, body: dict | None = None) -> dict:
-    a = _auto_or_404(auto_id)
+@app.post("/automations/{automation_id}/execute", dependencies=[Depends(auth)])
+def execute_auto(automation_id: str, body: dict | None = None) -> dict:
+    a = _auto_or_404(automation_id)
     body = body or {}
     version = body.get("version")
     if version is not None and not isinstance(version, str):
@@ -586,7 +586,7 @@ def execute_auto(auto_id: str, body: dict | None = None) -> dict:
         raise HTTPException(404, str(e)) from e
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
-    return {"execId": h["id"]}
+    return {"executionId": h["id"]}
 
 
 _served_launches: set[str] = set()
@@ -609,7 +609,7 @@ def app_started(body: dict | None = None) -> dict:
     fired = 0
     for a in autos:
         t = next((t for t in a["triggers"]
-                  if t["kind"] == "app_start" and not t["off"]), None)
+                  if t["kind"] == "app_start" and t["enabled"]), None)
         if not t:
             continue
         # One automation that can't start (a disk error creating its record)
@@ -672,11 +672,11 @@ def post_test(body: dict) -> dict:
     d = {**d, "steps": _norm_steps(d.get("steps"))}
     payload = _mock_payload(body["triggerMock"]) if body.get("triggerMock") else None
     auto = None
-    if body.get("autoId"):
-        # A stale/unknown autoId must 404 — falling through to create mode
+    if body.get("automationId"):
+        # A stale/unknown automationId must 404 — falling through to create mode
         # would delete the unrelated pending slot's test record.
-        auto = _auto_or_404(body["autoId"])
-    # §19: grant arrays as in /drafts — create mode (no autoId) defaults to
+        auto = _auto_or_404(body["automationId"])
+    # §19: grant arrays as in /drafts — create mode (no automationId) defaults to
     # ALL agents/secrets when the arrays are absent, edit mode to the
     # automation's grants.
     enabled = body.get("enabledAgents")
@@ -686,11 +686,11 @@ def post_test(body: dict) -> dict:
     if allowed is None:
         allowed = auto["allowed_secrets"] if auto else [s["name"] for s in store.secrets]
     try:
-        exec_id = testexec.start(engine, d, auto, enabled, allowed,
+        execution_id = testexec.start(engine, d, auto, enabled, allowed,
                                  body.get("paramValues") or {}, trigger_payload=payload)
     except RuntimeError as e:  # §19: one live test per draft container
         raise HTTPException(409, str(e)) from e
-    return {"execId": exec_id}
+    return {"executionId": execution_id}
 
 
 # ---------- declared packages (§6.2 — §19 /packages/*) ----------
@@ -723,20 +723,20 @@ def packages_update(body: dict) -> dict:
     return {"packages": pkglib.upgrade(entries)}
 
 
-@app.post("/automations/{auto_id}/memory/clear", dependencies=[Depends(auth)])
-def clear_memory(auto_id: str) -> dict:
+@app.post("/automations/{automation_id}/memory/clear", dependencies=[Depends(auth)])
+def clear_memory(automation_id: str) -> dict:
     # §9.2 MEMORY card: "Clear memory" — next execution starts fresh.
-    a = _auto_or_404(auto_id)
+    a = _auto_or_404(automation_id)
     store.snapshot_memory(a, "pre-clear")  # §6.3 — silently skipped when memory is empty or the toggle is off
     store.clear_memory(a)
-    hub.publish("auto.changed", autoId=auto_id)
+    hub.publish("automation.changed", automationId=automation_id)
     return {"ok": True}
 
 
-@app.post("/automations/{auto_id}/memory/snapshots", dependencies=[Depends(auth)])
-def create_snapshot(auto_id: str, body: dict | None = None) -> dict:
+@app.post("/automations/{automation_id}/memory/snapshots", dependencies=[Depends(auth)])
+def create_snapshot(automation_id: str, body: dict | None = None) -> dict:
     # §6.3 manual snapshot — 409 while live, 422 when memory is empty.
-    a = _auto_or_404(auto_id)
+    a = _auto_or_404(automation_id)
     # One lock span for check + copy: engine.start flips `_live` under
     # store.lock, so this can't race a trigger into copying half-written memory.
     with store.lock:
@@ -745,39 +745,39 @@ def create_snapshot(auto_id: str, body: dict | None = None) -> dict:
         meta = store.snapshot_memory(a, "manual", name=((body or {}).get("name") or "").strip() or None)
     if meta is None:
         raise HTTPException(422, "memory is empty")
-    hub.publish("auto.changed", autoId=auto_id)
+    hub.publish("automation.changed", automationId=automation_id)
     return {"snapshot": store.snapshot_json(meta)}
 
 
-@app.patch("/automations/{auto_id}/memory/snapshots/{sid}", dependencies=[Depends(auth)])
-def rename_snapshot(auto_id: str, sid: str, body: dict | None = None) -> dict:
-    a = _auto_or_404(auto_id)
+@app.patch("/automations/{automation_id}/memory/snapshots/{sid}", dependencies=[Depends(auth)])
+def rename_snapshot(automation_id: str, sid: str, body: dict | None = None) -> dict:
+    a = _auto_or_404(automation_id)
     meta = store.rename_snapshot(a, sid, (body or {}).get("name"))
     if meta is None:
         raise HTTPException(404, "snapshot not found")
-    hub.publish("auto.changed", autoId=auto_id)
+    hub.publish("automation.changed", automationId=automation_id)
     return {"snapshot": store.snapshot_json(meta)}
 
 
-@app.post("/automations/{auto_id}/memory/snapshots/{sid}/restore", dependencies=[Depends(auth)])
-def restore_snapshot(auto_id: str, sid: str) -> dict:
-    a = _auto_or_404(auto_id)
+@app.post("/automations/{automation_id}/memory/snapshots/{sid}/restore", dependencies=[Depends(auth)])
+def restore_snapshot(automation_id: str, sid: str) -> dict:
+    a = _auto_or_404(automation_id)
     # Same lock span as create_snapshot: no execution may start mid-restore.
     with store.lock:
         if a.get("_live"):
             raise HTTPException(409, "an execution is in progress")
         if store.restore_snapshot(a, sid) is None:
             raise HTTPException(404, "snapshot not found")
-    hub.publish("auto.changed", autoId=auto_id)
+    hub.publish("automation.changed", automationId=automation_id)
     return {"ok": True}
 
 
-@app.delete("/automations/{auto_id}/memory/snapshots/{sid}", dependencies=[Depends(auth)])
-def delete_snapshot(auto_id: str, sid: str) -> dict:
-    a = _auto_or_404(auto_id)
+@app.delete("/automations/{automation_id}/memory/snapshots/{sid}", dependencies=[Depends(auth)])
+def delete_snapshot(automation_id: str, sid: str) -> dict:
+    a = _auto_or_404(automation_id)
     if not store.delete_snapshot(a, sid):
         raise HTTPException(404, "snapshot not found")
-    hub.publish("auto.changed", autoId=auto_id)
+    hub.publish("automation.changed", automationId=automation_id)
     return {"ok": True}
 
 
@@ -791,7 +791,7 @@ def post_draft(body: dict) -> dict:
         raise HTTPException(422, "chat mode needs a nonempty text")
     agent = _agent_or_404(body.get("agentId") or store.default_agent_id
                           or (store.agents[0]["id"] if store.agents else ""))
-    auto = store.autos.get(body.get("autoId", "")) if body.get("autoId") else None
+    auto = store.autos.get(body.get("automationId", "")) if body.get("automationId") else None
     current = body.get("current")
     if auto and current is None:
         current = auto["versions"][auto["current_version"]]
@@ -802,12 +802,12 @@ def post_draft(body: dict) -> dict:
         current = dict(current or {})
         current["triggers"] = auto["triggers"]
     if auto and mode == "chat":
-        # §8 AUTOMATION section: name/desc are §4.1 top-level identity, not
+        # §8 AUTOMATION section: name/description are §4.1 top-level identity, not
         # versioned content — attach the stored values when the body's
         # `current` carries none (the editor's win).
         current = dict(current or {})
         current.setdefault("name", auto["name"])
-        current.setdefault("desc", auto.get("desc", ""))
+        current.setdefault("description", auto.get("description", ""))
     # §19: an explicit `spec` in the body wins — sync/edit regenerate against the
     # PROVIDED spec (§8), e.g. the in-editor draft, not the stored version's spec.
     if body.get("spec") is not None:
@@ -818,11 +818,11 @@ def post_draft(body: dict) -> dict:
         # the API's camelCase step flags.
         current = dict(current or {})
         current["steps"] = _norm_steps(current["steps"])
-    if mode == "create" and not (current or {}).get("instr"):
+    if mode == "create" and not (current or {}).get("instructions"):
         # §8: new automations draft against the default best-practice build
         # instructions; the draft payload carries them back to pre-fill Review.
         current = dict(current or {})
-        current["instr"] = drafting.DEFAULT_INSTRUCTIONS
+        current["instructions"] = drafting.DEFAULT_INSTRUCTIONS
     # §8/§19: in-editor grant arrays in the body win over the stored automation's —
     # the editor's live toggles are the truth while a draft is being worked on.
     enabled_ids = body.get("enabledAgents")
@@ -874,37 +874,37 @@ def list_execs(auto: str | None = None, status: str | None = None) -> list[dict]
     with store.lock:
         hs = list(store.execs.values())
         if auto:
-            hs = [h for h in hs if h["auto_id"] == auto]
+            hs = [h for h in hs if h["automation_id"] == auto]
         if status:
             hs = [h for h in hs if h["status"] == status]
         return sorted((store.exec_json(h) for h in hs), key=lambda e: e["startedMs"], reverse=True)
 
 
-@app.get("/executions/{exec_id}", dependencies=[Depends(auth)])
-def get_exec(exec_id: str) -> dict:
+@app.get("/executions/{execution_id}", dependencies=[Depends(auth)])
+def get_exec(execution_id: str) -> dict:
     with store.lock:
-        h = store.exec_full(exec_id)
+        h = store.exec_full(execution_id)
         if not h:
             raise HTTPException(404, "execution not found")
         return store.exec_json(h, full=True)
 
 
-@app.get("/executions/{exec_id}/logs", dependencies=[Depends(auth)])
-def get_exec_logs(exec_id: str, step: int | None = None, attempt: int | None = None) -> dict:
+@app.get("/executions/{execution_id}/logs", dependencies=[Depends(auth)])
+def get_exec_logs(execution_id: str, step: int | None = None, attempt: int | None = None) -> dict:
     """§19: lazy per-step-attempt log — no params selects the execution log."""
-    if exec_id not in store.execs:
+    if execution_id not in store.execs:
         raise HTTPException(404, "execution not found")
-    lines = store.read_log(exec_id, step, attempt)
-    return {"lines": [{"t": l.get("t", ""), "k": l.get("k", "out"),
-                       "seq": l.get("seq", 0), "text": l.get("text", "")} for l in lines]}
+    lines = store.read_log(execution_id, step, attempt)
+    return {"lines": [{"time": l.get("time", ""), "kind": l.get("kind", "out"),
+                       "sequence": l.get("sequence", 0), "text": l.get("text", "")} for l in lines]}
 
 
-@app.get("/executions/{exec_id}/result/{name}", dependencies=[Depends(auth)])
-def get_result_file(exec_id: str, name: str):
+@app.get("/executions/{execution_id}/result/{name}", dependencies=[Depends(auth)])
+def get_result_file(execution_id: str, name: str):
     """§4.5: raw result-dir file (result.md, result.html, images) for the §7 file views."""
-    if exec_id not in store.execs:
+    if execution_id not in store.execs:
         raise HTTPException(404, "execution not found")
-    d = (store.exec_dir(exec_id) / "result").resolve()
+    d = (store.exec_dir(execution_id) / "result").resolve()
     f = (d / name).resolve()
     if f.parent != d or not f.is_file():
         raise HTTPException(404, "file not found")
@@ -913,34 +913,34 @@ def get_result_file(exec_id: str, name: str):
     return FileResponse(f)
 
 
-@app.post("/executions/{exec_id}/cancel", dependencies=[Depends(auth)])
-def cancel_exec(exec_id: str) -> dict:
-    return {"ok": engine.cancel(exec_id)}
+@app.post("/executions/{execution_id}/cancel", dependencies=[Depends(auth)])
+def cancel_exec(execution_id: str) -> dict:
+    return {"ok": engine.cancel(execution_id)}
 
 
-@app.post("/executions/{exec_id}/retry", dependencies=[Depends(auth)])
-def retry_exec(exec_id: str) -> dict:
-    h = store.execs.get(exec_id)
+@app.post("/executions/{execution_id}/retry", dependencies=[Depends(auth)])
+def retry_exec(execution_id: str) -> dict:
+    h = store.execs.get(execution_id)
     if not h:
         raise HTTPException(404, "execution not found")
-    a = _auto_or_404(h["auto_id"])
+    a = _auto_or_404(h["automation_id"])
     try:
         h2 = engine.retry(a, h)
     except (RuntimeError, LookupError) as e:
         # §7: retry answers 409 while live, when the version no longer
         # resolves, or when a re-saved draft's steps drifted from the record.
         raise HTTPException(409, str(e)) from e
-    return {"execId": h2["id"]}
+    return {"executionId": h2["id"]}
 
 
-@app.post("/executions/{exec_id}/skip-step", dependencies=[Depends(auth)])
-def skip_step(exec_id: str, body: dict) -> dict:
-    if exec_id not in store.execs:
+@app.post("/executions/{execution_id}/skip-step", dependencies=[Depends(auth)])
+def skip_step(execution_id: str, body: dict) -> dict:
+    if execution_id not in store.execs:
         raise HTTPException(404, "execution not found")
     index = body.get("index")
     if not isinstance(index, int):
         raise HTTPException(422, "index required")
-    if not engine.skip_step(exec_id, index):
+    if not engine.skip_step(execution_id, index):
         raise HTTPException(409, "that step isn't executing right now")
     return {"ok": True}
 
@@ -977,7 +977,7 @@ def add_agent(body: dict) -> dict:
     import uuid
 
     with store.lock:
-        ag = {"id": str(uuid.uuid4()), "name": body.get("name") or None, "desc": body.get("desc") or "",
+        ag = {"id": str(uuid.uuid4()), "name": body.get("name") or None, "description": body.get("description") or "",
               "harness": harness_name, "mode": mode, "model": model}
         store.agents.append(ag)
         if store.default_agent_id is None:
@@ -1010,7 +1010,7 @@ def patch_agent(agent_id: str, body: dict) -> dict:
             store.default_agent_id = agent_id  # §4.7: single pointer
         if "harness" in body:
             ag["harness"] = body["harness"]
-        for k in ("name", "model", "mode", "desc"):
+        for k in ("name", "model", "mode", "description"):
             if k in body:
                 ag[k] = body[k]
         if ag.get("mode", "default") == "default":
@@ -1040,7 +1040,7 @@ def delete_agent(agent_id: str) -> dict:
                 store.patch_automation(a, {})
         store.save_agents()
     hub.publish("agents.changed")
-    hub.publish("auto.changed")
+    hub.publish("automation.changed")
     return {"ok": True}
 
 
@@ -1172,12 +1172,12 @@ def put_secret(name: str, body: dict) -> dict:
         existing = next((s for s in store.secrets if s["name"] == name), None)
         if existing is None:
             # §4.8: a blank value on a new name creates a placeholder (set: False).
-            existing = {"name": name, "desc": "", "set": False}
+            existing = {"name": name, "description": "", "set": False}
             store.secrets.append(existing)
         if value:
             existing["set"] = True
-        if "desc" in body:
-            existing["desc"] = body.get("desc") or ""
+        if "description" in body:
+            existing["description"] = body.get("description") or ""
         store.save_secrets()
     hub.publish("secrets.changed")
     return {"ok": True}
@@ -1208,10 +1208,10 @@ def patch_settings(body: dict) -> dict:
             body["days"] = max(1, int(body["days"]))  # §4.9: int ≥ 1
         except (TypeError, ValueError):
             raise HTTPException(422, "days must be a number ≥ 1") from None
-    if "notif" in body and body["notif"] not in ("attention", "all"):
-        raise HTTPException(422, "notif must be attention | all")
+    if "notifications" in body and body["notifications"] not in ("attention", "all"):
+        raise HTTPException(422, "notifications must be attention | all")
     with store.lock:
-        for k in ("login", "mbIcon", "keepAwake", "notif", "days", "keepForever", "devMode"):
+        for k in ("login", "menuBarIcon", "keepAwake", "notifications", "days", "keepForever", "developerMode"):
             if k in body:
                 store.settings[k] = body[k]
         store.save_settings()
@@ -1254,7 +1254,7 @@ def set_data_path(body: dict) -> dict:
         _repair_stale_executing()
     _data_size_cache = None
     hub.publish("settings.changed")
-    hub.publish("auto.changed")
+    hub.publish("automation.changed")
     return _settings_json()
 
 
@@ -1305,16 +1305,16 @@ def _repair_stale_executing() -> None:
     with store.lock:
         for h in list(store.execs.values()):
             if h["status"] == "queued":
-                full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted": [], "params": []}
+                full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []}
                 full["status"] = "skipped"
                 full["note"] = "backend restarted before this ran"
-                full["dur_ms"] = 0
+                full["duration_ms"] = 0
                 full["finished_at"] = full["started_at"]
                 store.execs[full["id"]] = full
                 store.update_execution(full)
                 continue
             if h["status"] == "executing" and not engine.is_live(h["id"]):
-                full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted": [], "params": []}
+                full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []}
                 # §3: the previous backend's step group may still be running —
                 # kill it before freeing the slot, or the next cron tick starts
                 # a second copy writing the same memory/ dir.
@@ -1338,7 +1338,7 @@ def _repair_stale_executing() -> None:
 async def _bind_loop() -> None:
     hub.bind_loop(asyncio.get_running_loop())
     _repair_stale_executing()
-    hub.publish("auto.changed")
+    hub.publish("automation.changed")
 
 
 @app.on_event("shutdown")

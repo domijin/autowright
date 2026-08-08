@@ -7,7 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from './api'
 import { Caret, Collapse, EmptyNotice, Eyebrow, resultChipColors, Spinner } from './ui'
-import type { ResultFile, ExecResult, SpecBlock } from './types'
+import type { ResultFile, ExecutionResult, SpecBlock } from './types'
 
 const MD_EXT = ['md', 'markdown']
 const HTML_EXT = ['html', 'htm']
@@ -106,9 +106,9 @@ export function Markdown({ text }: { text: string }) {
 // by the same shared component as every other markdown surface.
 export function SpecMarkdown({ blocks }: { blocks: SpecBlock[] }) {
   const md = blocks.map((b, i) => {
-    const line = b.k === 'h1' ? '# ' + b.text : b.k === 'h2' ? '## ' + b.text : b.k === 'li' ? '- ' + b.text : b.text
+    const line = b.kind === 'h1' ? '# ' + b.text : b.kind === 'h2' ? '## ' + b.text : b.kind === 'li' ? '- ' + b.text : b.text
     // adjacent li stay one list; everything else separates into its own block
-    return (i === 0 ? '' : b.k === 'li' && blocks[i - 1].k === 'li' ? '\n' : '\n\n') + line
+    return (i === 0 ? '' : b.kind === 'li' && blocks[i - 1].kind === 'li' ? '\n' : '\n\n') + line
   }).join('')
   return <Markdown text={md} />
 }
@@ -186,8 +186,8 @@ function TextView({ text }: { text: string }) {
 // The one loader behind both surfaces: a top-level file view and an expanded
 // FILES row render the exact same body. Mounted only once its card is open, so
 // a collapsed row costs no request (§7).
-function FileBody({ execId, file, kind, stamp }: {
-  execId: string; file: ResultFile; kind: 'md' | 'html' | 'img' | 'text'; stamp?: string
+function FileBody({ executionId, file, kind, stamp }: {
+  executionId: string; file: ResultFile; kind: 'md' | 'html' | 'img' | 'text'; stamp?: string
 }) {
   const [text, setText] = useState<string | null>(null)
   const [imgUrl, setImgUrl] = useState<string | null>(null)
@@ -195,7 +195,7 @@ function FileBody({ execId, file, kind, stamp }: {
   useEffect(() => {
     let dead = false
     let url: string | null = null
-    void api.resultFile(execId, file.name)
+    void api.resultFile(executionId, file.name)
       .then(async (r) => (kind === 'img' ? URL.createObjectURL(await r.blob()) : r.text()))
       .then((v) => {
         if (dead) { if (kind === 'img') URL.revokeObjectURL(v as string); return }
@@ -203,10 +203,10 @@ function FileBody({ execId, file, kind, stamp }: {
       })
       .catch((e: Error) => { if (!dead) setErr(e.message) })
     return () => { dead = true; if (url) URL.revokeObjectURL(url) }
-    // `stamp`/size in the deps: a §7 in-place retry reuses the same execId and
+    // `stamp`/size in the deps: a §7 in-place retry reuses the same executionId and
     // result dir, and a mid-run mount can catch a half-written file — the view
     // must refetch when the execution settles, not keep the stale bytes.
-  }, [execId, file.name, file.size, stamp])
+  }, [executionId, file.name, file.size, stamp])
   if (err) {
     return (
       <div style={{ padding: '0 18px 14px', fontSize: 12.5, color: 'var(--text-faint)' }}>
@@ -225,11 +225,11 @@ function FileBody({ execId, file, kind, stamp }: {
   return <HtmlView html={text} />
 }
 
-function FileView({ execId, file, stamp }: { execId: string; file: ResultFile; stamp?: string }) {
+function FileView({ executionId, file, stamp }: { executionId: string; file: ResultFile; stamp?: string }) {
   const kind = fileKind(file.name)!
   return (
     <ViewCard title={file.name} kind={KIND_LABEL[kind]} meta={file.size}>
-      <FileBody execId={execId} file={file} kind={kind} stamp={stamp} />
+      <FileBody executionId={executionId} file={file} kind={kind} stamp={stamp} />
     </ViewCard>
   )
 }
@@ -239,8 +239,8 @@ function FileView({ execId, file, stamp }: { execId: string; file: ResultFile; s
 // One file row. A previewable file's row is a chevron button that renders the
 // same body as a top-level view; its bytes are fetched on first open only, so a
 // collapsed footer (§9.2) issues no requests at all.
-function FileRow({ execId, file, stamp, last }: {
-  execId: string; file: ResultFile; stamp?: string; last: boolean
+function FileRow({ executionId, file, stamp, last }: {
+  executionId: string; file: ResultFile; stamp?: string; last: boolean
 }) {
   const kind = previewKind(file.name)
   const [open, setOpen] = useState(false)
@@ -277,7 +277,7 @@ function FileRow({ execId, file, stamp, last }: {
       <Collapse open={open}>
         {opened && (
           <div style={{ margin: '0 -18px' }}>
-            <FileBody execId={execId} file={file} kind={kind} stamp={stamp} />
+            <FileBody executionId={executionId} file={file} kind={kind} stamp={stamp} />
           </div>
         )}
       </Collapse>
@@ -285,8 +285,8 @@ function FileRow({ execId, file, stamp, last }: {
   )
 }
 
-function FilesFooter({ files, path, execId, stamp, defaultOpen = true }: {
-  files: ResultFile[]; path?: string; execId: string; stamp?: string; defaultOpen?: boolean
+function FilesFooter({ files, path, executionId, stamp, defaultOpen = true }: {
+  files: ResultFile[]; path?: string; executionId: string; stamp?: string; defaultOpen?: boolean
 }) {
   return (
     <ViewCard title={`FILES · ${files.length}`} mono defaultOpen={defaultOpen}>
@@ -312,7 +312,7 @@ function FilesFooter({ files, path, execId, stamp, defaultOpen = true }: {
           )}
         </div>
         {files.map((f, i) => (
-          <FileRow key={f.name} execId={execId} file={f} stamp={stamp} last={i === files.length - 1} />
+          <FileRow key={f.name} executionId={executionId} file={f} stamp={stamp} last={i === files.length - 1} />
         ))}
         {files.length === 0 && (
           <div style={{ padding: '9px 0', fontSize: 12, color: 'var(--text-faint)' }}>No files.</div>
@@ -324,8 +324,8 @@ function FilesFooter({ files, path, execId, stamp, defaultOpen = true }: {
 
 // ---------- the section ----------
 
-export function ResultSection({ label, result, execId, stamp, compact }: {
-  label: string; result: ExecResult & { when?: string }; execId: string
+export function ResultSection({ label, result, executionId, stamp, compact }: {
+  label: string; result: ExecutionResult & { when?: string }; executionId: string
   stamp?: string  // freshness key — changes when the execution settles (see FileBody)
   // §9.2 LATEST RESULT: only `result.md` gets a view, and the FILES footer
   // carries everything else — collapsed, unless there is no `result.md` to show.
@@ -366,9 +366,9 @@ export function ResultSection({ label, result, execId, stamp, compact }: {
           <EmptyNotice body="The latest execution didn’t produce any result files." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {views.map((f) => <FileView key={f.name} execId={execId} file={f} stamp={stamp} />)}
+            {views.map((f) => <FileView key={f.name} executionId={executionId} file={f} stamp={stamp} />)}
             <FilesFooter
-              files={files} path={result.path} execId={execId} stamp={stamp}
+              files={files} path={result.path} executionId={executionId} stamp={stamp}
               defaultOpen={!compact || !primary}
             />
           </div>

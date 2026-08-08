@@ -16,14 +16,14 @@ import {
 } from '../src/pages/CreateFlow'
 
 const step = (over: Partial<Step> = {}): Step =>
-  ({ name: 's', desc: '', code: '', ...over })
+  ({ name: 's', description: '', code: '', ...over })
 
 describe('specToText / textToSpec', () => {
   const blocks: SpecBlock[] = [
-    { k: 'h1', text: 'Title' },
-    { k: 'h2', text: 'Section' },
-    { k: 'li', text: 'item' },
-    { k: 'p', text: 'paragraph' },
+    { kind: 'h1', text: 'Title' },
+    { kind: 'h2', text: 'Section' },
+    { kind: 'li', text: 'item' },
+    { kind: 'p', text: 'paragraph' },
   ]
 
   it('serializes with "# ", "## ", "- " prefixes and plain paragraphs', () => {
@@ -34,14 +34,14 @@ describe('specToText / textToSpec', () => {
   })
   it('drops blank lines and trims', () => {
     expect(textToSpec('a\n\n   \nb')).toEqual([
-      { k: 'p', text: 'a' }, { k: 'p', text: 'b' },
+      { kind: 'p', text: 'a' }, { kind: 'p', text: 'b' },
     ])
   })
   it('"## " beats "# "; a hash without a space is a paragraph', () => {
-    expect(textToSpec('## X')).toEqual([{ k: 'h2', text: 'X' }])
-    expect(textToSpec('# X')).toEqual([{ k: 'h1', text: 'X' }])
-    expect(textToSpec('- X')).toEqual([{ k: 'li', text: 'X' }])
-    expect(textToSpec('#X')).toEqual([{ k: 'p', text: '#X' }])
+    expect(textToSpec('## X')).toEqual([{ kind: 'h2', text: 'X' }])
+    expect(textToSpec('# X')).toEqual([{ kind: 'h1', text: 'X' }])
+    expect(textToSpec('- X')).toEqual([{ kind: 'li', text: 'X' }])
+    expect(textToSpec('#X')).toEqual([{ kind: 'p', text: '#X' }])
   })
 })
 
@@ -128,25 +128,25 @@ describe('amendSpec', () => {
     { reason: 'Rate limited', fix: 'Retry with backoff' },
   ]
   const lines: SpecBlock[] = [
-    { k: 'li', text: 'Site needs login — Use the saved cookie' },
-    { k: 'li', text: 'Rate limited — Retry with backoff' },
+    { kind: 'li', text: 'Site needs login — Use the saved cookie' },
+    { kind: 'li', text: 'Rate limited — Retry with backoff' },
   ]
 
   it('appends the section when missing', () => {
-    const spec: SpecBlock[] = [{ k: 'h1', text: 'T' }, { k: 'p', text: 'body' }]
+    const spec: SpecBlock[] = [{ kind: 'h1', text: 'T' }, { kind: 'p', text: 'body' }]
     expect(amendSpec(spec, blockers)).toEqual([
       ...spec,
-      { k: 'h2', text: 'Constraints & resolutions' },
+      { kind: 'h2', text: 'Constraints & resolutions' },
       ...lines,
     ])
   })
   it('inserts at the end of an existing mid-document section, before the next heading', () => {
     const spec: SpecBlock[] = [
-      { k: 'h1', text: 'T' },
-      { k: 'h2', text: 'constraints & RESOLUTIONS' }, // case-insensitive match
-      { k: 'li', text: 'old — resolution' },
-      { k: 'h2', text: 'Next section' },
-      { k: 'p', text: 'tail' },
+      { kind: 'h1', text: 'T' },
+      { kind: 'h2', text: 'constraints & RESOLUTIONS' }, // case-insensitive match
+      { kind: 'li', text: 'old — resolution' },
+      { kind: 'h2', text: 'Next section' },
+      { kind: 'p', text: 'tail' },
     ]
     expect(amendSpec(spec, blockers)).toEqual([
       spec[0], spec[1], spec[2],
@@ -156,9 +156,9 @@ describe('amendSpec', () => {
   })
   it('section at the end of the document gets the lines appended', () => {
     const spec: SpecBlock[] = [
-      { k: 'h1', text: 'T' },
-      { k: 'h2', text: 'Constraints & resolutions' },
-      { k: 'li', text: 'old — resolution' },
+      { kind: 'h1', text: 'T' },
+      { kind: 'h2', text: 'Constraints & resolutions' },
+      { kind: 'li', text: 'old — resolution' },
     ]
     expect(amendSpec(spec, blockers)).toEqual([...spec, ...lines])
   })
@@ -166,48 +166,48 @@ describe('amendSpec', () => {
 
 describe('mergeDraftTriggers', () => {
   const cron = (over: Partial<DraftTrigger>): DraftTrigger =>
-    ({ kind: 'cron', off: false, ...over })
+    ({ kind: 'cron', enabled: true, ...over })
 
-  it('drafted cron matching an existing expr+tz keeps the existing entry (id and off)', () => {
+  it('drafted cron matching an existing expression+timezone keeps the existing entry (id and enabled)', () => {
     const cur: DraftTrigger[] = [
-      cron({ id: 'c1', expr: '0 8 * * *', tz: 'UTC', off: true }),
-      { id: 't1', kind: 'time', off: false, at: '2026-01-01T00:00' },
+      cron({ id: 'c1', expression: '0 8 * * *', timezone: 'UTC', enabled: false }),
+      { id: 't1', kind: 'time', enabled: true, at: '2026-01-01T00:00' },
     ]
-    const drafted: DraftTrigger[] = [cron({ expr: '0 8 * * *', tz: 'UTC' })]
+    const drafted: DraftTrigger[] = [cron({ expression: '0 8 * * *', timezone: 'UTC' })]
     expect(mergeDraftTriggers(cur, drafted)).toEqual([
-      cur[0],       // id c1 and off:true preserved
+      cur[0],       // id c1 and enabled:false preserved
       cur[1],       // non-cron passes through unchanged
     ])
   })
 
-  it('tz must match too — undefined tz equals absent, not a different zone', () => {
-    const cur: DraftTrigger[] = [cron({ id: 'c1', expr: '0 8 * * *', tz: 'UTC' })]
-    const merged = mergeDraftTriggers(cur, [cron({ expr: '0 8 * * *' })]) // no tz → no match
-    expect(merged).toEqual([{ kind: 'cron', off: false, expr: '0 8 * * *' }])
+  it('timezone must match too — undefined timezone equals absent, not a different zone', () => {
+    const cur: DraftTrigger[] = [cron({ id: 'c1', expression: '0 8 * * *', timezone: 'UTC' })]
+    const merged = mergeDraftTriggers(cur, [cron({ expression: '0 8 * * *' })]) // no timezone → no match
+    expect(merged).toEqual([{ kind: 'cron', enabled: true, expression: '0 8 * * *' }])
   })
 
   it('duplicate identical exprs consume distinct existing entries once each', () => {
     const cur: DraftTrigger[] = [
-      cron({ id: 'c1', expr: '0 8 * * *', off: true }),
-      cron({ id: 'c2', expr: '0 8 * * *', off: false }),
+      cron({ id: 'c1', expression: '0 8 * * *', enabled: false }),
+      cron({ id: 'c2', expression: '0 8 * * *', enabled: true }),
     ]
     const drafted: DraftTrigger[] = [
-      cron({ expr: '0 8 * * *' }),
-      cron({ expr: '0 8 * * *' }),
+      cron({ expression: '0 8 * * *' }),
+      cron({ expression: '0 8 * * *' }),
     ]
     const merged = mergeDraftTriggers(cur, drafted)
     expect(merged.map((t) => t.id)).toEqual(['c1', 'c2'])
   })
 
-  it('unmatched drafted cron becomes a new entry with off:false', () => {
+  it('unmatched drafted cron becomes a new entry with enabled:true', () => {
     const cur: DraftTrigger[] = [
-      cron({ id: 'c1', expr: '0 8 * * *' }),
-      { id: 'a1', kind: 'app_start', off: false },
+      cron({ id: 'c1', expression: '0 8 * * *' }),
+      { id: 'a1', kind: 'app_start', enabled: true },
     ]
-    const drafted: DraftTrigger[] = [cron({ expr: '30 9 * * 1', off: true })]
+    const drafted: DraftTrigger[] = [cron({ expression: '30 9 * * 1', enabled: false })]
     const merged = mergeDraftTriggers(cur, drafted)
     expect(merged).toEqual([
-      { kind: 'cron', off: false, expr: '30 9 * * 1' }, // off forced to false
+      { kind: 'cron', enabled: true, expression: '30 9 * * 1' }, // enabled forced to true
       cur[1],                                            // app_start survives
     ])
     // the unmatched existing cron is replaced by the drafted schedule
@@ -217,22 +217,22 @@ describe('mergeDraftTriggers', () => {
 
 describe('mergeDraftTriggers — non-cron drafted entries', () => {
   const disc = (over: Partial<DraftTrigger> = {}): DraftTrigger =>
-    ({ kind: 'discord', off: false, channel: '123', secret: 'BOT_TOKEN', ...over })
+    ({ kind: 'discord', enabled: true, channel: '123', secret: 'BOT_TOKEN', ...over })
   const imsg = (over: Partial<DraftTrigger> = {}): DraftTrigger =>
-    ({ kind: 'imessage', off: false, from: '+15550123', ...over })
+    ({ kind: 'imessage', enabled: true, from: '+15550123', ...over })
 
-  it('drafted discord/imessage with no matching existing entry are appended with off:false', () => {
+  it('drafted discord/imessage with no matching existing entry are appended with enabled:true', () => {
     const cur: DraftTrigger[] = [
-      { id: 'c1', kind: 'cron', off: false, expr: '0 8 * * *' },
+      { id: 'c1', kind: 'cron', enabled: true, expression: '0 8 * * *' },
     ]
     const drafted: DraftTrigger[] = [
-      { id: 'c1', kind: 'cron', off: false, expr: '0 8 * * *' },
-      disc({ off: true }),          // off forced back to false on add
+      { id: 'c1', kind: 'cron', enabled: true, expression: '0 8 * * *' },
+      disc({ enabled: false }),          // enabled forced back to true on add
       imsg({ pattern: 'report' }),
     ]
     expect(mergeDraftTriggers(cur, drafted)).toEqual([
       cur[0],
-      disc(),                        // off:false despite the drafted off:true
+      disc(),                        // enabled:true despite the drafted enabled:false
       imsg({ pattern: 'report' }),
     ])
   })
@@ -266,10 +266,10 @@ describe('mergeDraftTriggers — non-cron drafted entries', () => {
 
   it('drafted time entries are dropped entirely — only crons are mapped', () => {
     const cur: DraftTrigger[] = [
-      { id: 't1', kind: 'time', off: false, at: '2026-01-01T00:00' },
+      { id: 't1', kind: 'time', enabled: true, at: '2026-01-01T00:00' },
     ]
     const drafted: DraftTrigger[] = [
-      { kind: 'time', off: false, at: '2027-06-01T09:00' }, // dropped, not added
+      { kind: 'time', enabled: true, at: '2027-06-01T09:00' }, // dropped, not added
     ]
     expect(mergeDraftTriggers(cur, drafted)).toEqual([cur[0]])
   })
@@ -279,7 +279,7 @@ describe('mergeDraftTriggers — non-cron drafted entries', () => {
 import {
   seedDrafting, seedFromPayload, seedFromAuto, serializeDraft,
 } from '../src/pages/CreateFlow'
-import type { Agent, Auto, DraftPayload } from '../src/types'
+import type { Agent, Automation, DraftPayload } from '../src/types'
 
 const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, name: id, harness: 'Claude Code', mode: 'default', model: null, ...over,
@@ -312,22 +312,22 @@ describe('grant seeds (§11 Review checkboxes)', () => {
     const r = seedFromPayload(d, AGENTS, SECRETS)
     expect(r.enabledAgents).toEqual(['g1'])
     const a = seedFromAuto({
-      name: 'A', desc: '', spec: [{ k: 'h1', text: 'T' }], steps: [], instr: '',
+      name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
       triggers: [], stepAgents: ['g2', 'gone'], allowedSecrets: ['MAIL_PASSWORD', 'DELETED_KEY'],
       agentId: null, draft: null,
-    } as unknown as Auto, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRETS)
     expect(a.enabledAgents).toEqual(['g2'])
     expect(a.allowedSecrets).toEqual(['MAIL_PASSWORD'])
   })
 
   it('edit mode prefers the draft snapshot grants over the saved automation ones', () => {
     const a = seedFromAuto({
-      name: 'A', desc: '', spec: [{ k: 'h1', text: 'T' }], steps: [], instr: '',
+      name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
       triggers: [], stepAgents: ['g1'], allowedSecrets: ['MAIL_PASSWORD'],
       agentId: null,
-      draft: { spec: [{ k: 'h1', text: 'T' }], steps: [], instr: '', note: '',
+      draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '',
                stepAgents: ['g2'], allowedSecrets: ['CRM_API_KEY'] },
-    } as unknown as Auto, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRETS)
     expect(a.enabledAgents).toEqual(['g2'])
     expect(a.allowedSecrets).toEqual(['CRM_API_KEY'])
   })
@@ -391,9 +391,9 @@ describe('applyTestValues', () => {
     expect(applyTestValues([P({ kind: 'list' })], { p: 'solo' })[0].lines).toEqual(['solo'])
   })
   it('kv takes row arrays as-is, maps objects to rows, ignores scalars', () => {
-    const rows = [{ k: 'a', v: '1' }]
+    const rows = [{ key: 'a', value: '1' }]
     expect(applyTestValues([P({ kind: 'kv' })], { p: rows })[0].rows).toEqual(rows)
-    expect(applyTestValues([P({ kind: 'kv' })], { p: { a: 1 } })[0].rows).toEqual([{ k: 'a', v: '1' }])
+    expect(applyTestValues([P({ kind: 'kv' })], { p: { a: 1 } })[0].rows).toEqual([{ key: 'a', value: '1' }])
     const scalar = P({ kind: 'kv', rows: [] })
     expect(applyTestValues([scalar], { p: 'nope' })[0]).toEqual(scalar)
   })

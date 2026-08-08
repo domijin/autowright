@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, closeApp, launchApp, shot, type AppHandle } from './harness'
 
 const MEMORY_STEP = {
-  file: '01-remember.py', name: 'Remember', desc: 'writes memory and logs',
+  file: '01-remember.py', name: 'Remember', description: 'writes memory and logs',
   code: 'from autowright import log, memory, result\nmemory.save("seen", {"count": 7})\nlog("edit-draft distinctive log line")\nresult.status("ok")\nresult.chip("Remembered")\n',
 }
 
@@ -68,10 +68,10 @@ describe('edit draft e2e', () => {
     const memAfter = await readFile(memFile, 'utf-8')
     expect(memAfter).toBe(memBefore)
     const auto = await backend.api('GET', `/automations/${id}`) as {
-      version: number; lastStatus: string; latest: { execId: string } | null
+      version: number; lastStatus: string; latest: { executionId: string } | null
     }
     expect(auto.lastStatus).toBe('succeeded')
-    expect(auto.latest?.execId).toBe(realExec.id)
+    expect(auto.latest?.executionId).toBe(realExec.id)
 
     // Back to the automation → editor again: exercise the spec's editable
     // surface (Edit → textarea → Save). The Build-instructions card defaults

@@ -130,17 +130,17 @@ def build_wheel(dest: Path, name: str = "tinypkg", version: str = "1.0.0") -> Pa
 def make_draft(**over) -> dict:
     """POST /automations draft payload — mirrors tests/conftest.make_version."""
     d = {
-        "desc": "Integration automation",
+        "description": "Integration automation",
         "note": "Created",
         "params": [],
         "steps": [
-            {"file": "01-say.py", "name": "Say", "desc": "prints",
+            {"file": "01-say.py", "name": "Say", "description": "prints",
              "code": 'from autowright import log\nlog("integration says hi")\n'},
-            {"file": "02-finish.py", "name": "Finish", "desc": "result",
+            {"file": "02-finish.py", "name": "Finish", "description": "result",
              "code": 'from autowright import result\nresult.status("ok")\nresult.chip("All good")\n'},
         ],
-        "spec": [{"k": "h1", "text": "Integration automation"}, {"k": "p", "text": "It integrates."}],
-        "instr": None,
+        "spec": [{"kind": "h1", "text": "Integration automation"}, {"kind": "p", "text": "It integrates."}],
+        "instructions": None,
     }
     d.update(over)
     return d
@@ -152,12 +152,12 @@ def create_auto(client: httpx.Client, name: str = "Integration", **over) -> dict
     return r.json()
 
 
-def wait_status(client: httpx.Client, exec_id: str, timeout: float = 60) -> dict:
+def wait_status(client: httpx.Client, execution_id: str, timeout: float = 60) -> dict:
     def settled():
-        e = client.get(f"/executions/{exec_id}").json()
+        e = client.get(f"/executions/{execution_id}").json()
         return e if e["status"] not in ("executing", "queued") else None
 
-    return wait_for(settled, timeout, f"execution {exec_id} to settle")
+    return wait_for(settled, timeout, f"execution {execution_id} to settle")
 
 
 def run_cli(home: Path, *args: str) -> subprocess.CompletedProcess:

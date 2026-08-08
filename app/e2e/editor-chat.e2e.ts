@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, closeApp, launchApp, shot, type AppHandle } from './harness'
 
 const BOOM_STEP = {
-  file: '01-boom.py', name: 'Boom', desc: 'always fails',
+  file: '01-boom.py', name: 'Boom', description: 'always fails',
   code: 'assert False, "distinct boom message e2e"\n',
 }
 
@@ -25,7 +25,7 @@ describe('editor chat e2e', () => {
   })
 
   /** Seed an automation with a drafting agent and open its editor. */
-  async function openEditor(name: string, steps?: Array<{ file: string; name: string; desc: string; code: string }>) {
+  async function openEditor(name: string, steps?: Array<{ file: string; name: string; description: string; code: string }>) {
     backend = await new Backend().start()
     const agent = await backend.createAgent('Chat Agent')
     const { id } = await backend.createAutomation(name, steps, { agentId: agent.id })

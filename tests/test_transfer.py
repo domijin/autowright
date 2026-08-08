@@ -10,7 +10,7 @@ from autowright.storage import Store, new_id
 
 
 def _agent(name, harness="Claude Code", mode="default", model=None):
-    return {"id": new_id(), "name": name, "desc": "", "harness": harness,
+    return {"id": new_id(), "name": name, "description": "", "harness": harness,
             "mode": mode, "model": model}
 
 
@@ -21,31 +21,31 @@ def _build(store: Store):
                     _agent("Coder", harness="OpenCode", mode="custom", model="anthropic/x")]
     store.default_agent_id = store.agents[0]["id"]  # §4.7 single pointer
     store.save_agents()
-    store.secrets = [{"name": "API_KEY", "desc": "service key", "set": True},
-                     {"name": "BOT_TOKEN", "desc": "discord bot", "set": True},
-                     {"name": "MAIL_PASS", "desc": "mail", "set": True}]
+    store.secrets = [{"name": "API_KEY", "description": "service key", "set": True},
+                     {"name": "BOT_TOKEN", "description": "discord bot", "set": True},
+                     {"name": "MAIL_PASS", "description": "mail", "set": True}]
     store.save_secrets()
     ver = {
-        "desc": "Watches things",
+        "description": "Watches things",
         "params": [{"name": "count", "kind": "number", "label": "Count", "help": "", "default": 3}],
         "packages": [{"pip": "pandas", "import": "pandas"}],
         "steps": [
-            {"name": "Fetch", "desc": "", "code": "from autowright import secrets\nx = secrets.API_KEY\n",
+            {"name": "Fetch", "description": "", "code": "from autowright import secrets\nx = secrets.API_KEY\n",
              "secrets": ["MAIL_PASS"]},
-            {"name": "Summarize", "desc": "", "code": "print('hi')\n",
+            {"name": "Summarize", "description": "", "code": "print('hi')\n",
              "agent": True, "why": "judgment", "agents": ["Coder"]},
         ],
-        "spec": [{"k": "h1", "text": "Watch"}, {"k": "p", "text": "Body."}],
-        "instr": "Keep it short.",
+        "spec": [{"kind": "h1", "text": "Watch"}, {"kind": "p", "text": "Body."}],
+        "instructions": "Keep it short.",
     }
     a = store.create_automation(
         ver, name="Watcher", agent_id=store.agents[0]["id"],
-        triggers=[{"id": new_id(), "kind": "cron", "off": False, "expr": "0 8 * * *", "tz": "America/New_York"},
-                  {"id": new_id(), "kind": "app_start", "off": False},
-                  {"id": new_id(), "kind": "time", "off": False, "at": "2999-01-01T09:00"},
-                  {"id": new_id(), "kind": "discord", "off": False, "channel": "42",
+        triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 8 * * *", "timezone": "America/New_York"},
+                  {"id": new_id(), "kind": "app_start", "enabled": True},
+                  {"id": new_id(), "kind": "time", "enabled": True, "at": "2999-01-01T09:00"},
+                  {"id": new_id(), "kind": "discord", "enabled": True, "channel": "42",
                    "secret": "BOT_TOKEN", "pattern": "go", "author": ["111", "777"]},
-                  {"id": new_id(), "kind": "imessage", "off": False,
+                  {"id": new_id(), "kind": "imessage", "enabled": True,
                    "from": "+15551234567", "pattern": "run"}],
         enabled_agents=[g["id"] for g in store.agents],
         allowed_secrets=["API_KEY", "MAIL_PASS"])
@@ -77,7 +77,7 @@ def test_export_layout_and_sanitization(store):
     assert manifest["agent"] == "Researcher"
     # cron + app_start + discord + imessage, no ids/off; the one-shot time
     # trigger never travels
-    assert manifest["triggers"] == [{"kind": "cron", "expr": "0 8 * * *", "tz": "America/New_York"},
+    assert manifest["triggers"] == [{"kind": "cron", "expression": "0 8 * * *", "timezone": "America/New_York"},
                                     {"kind": "app_start"},
                                     {"kind": "discord", "channel": "42",
                                      "secret": "BOT_TOKEN", "pattern": "go",
@@ -94,9 +94,9 @@ def test_export_layout_and_sanitization(store):
     assert all("id" not in g for g in agents)
     # declared + code-referenced + trigger-token secrets, names and descs only
     secrets = yaml.safe_load(z.read("secrets.yaml"))["secrets"]
-    assert secrets == [{"name": "API_KEY", "desc": "service key"},
-                       {"name": "BOT_TOKEN", "desc": "discord bot"},
-                       {"name": "MAIL_PASS", "desc": "mail"}]
+    assert secrets == [{"name": "API_KEY", "description": "service key"},
+                       {"name": "BOT_TOKEN", "description": "discord bot"},
+                       {"name": "MAIL_PASS", "description": "mail"}]
     raw = data.decode("latin-1")
     assert "mail-app" not in raw  # no values anywhere
 
@@ -119,10 +119,10 @@ def test_import_on_fresh_machine(store, monkeypatch, tmp_path_factory):
     assert b["versions"][1]["spec"] == a["versions"][1]["spec"]
     assert [s["code"] for s in b["versions"][1]["steps"]] == \
         [s["code"] for s in a["versions"][1]["steps"]]
-    assert b["versions"][1]["instr"] == "Keep it short."
+    assert b["versions"][1]["instructions"] == "Keep it short."
     assert b["param_values"] == {"count": 7}
     # every trigger lands off, with fresh ids — message triggers keep their fields
-    assert all(t["off"] for t in b["triggers"])
+    assert all(not t["enabled"] for t in b["triggers"])
     assert {t["kind"] for t in b["triggers"]} == {"cron", "app_start", "discord", "imessage"}
     d = next(t for t in b["triggers"] if t["kind"] == "discord")
     assert (d["channel"], d["secret"], d["pattern"], d["author"]) == \
@@ -150,15 +150,15 @@ def test_step_limits_retry_pair_and_handle_normalization(store, monkeypatch, tmp
     listener must not become single-attempt on another Mac. A hand-edited
     archive's formatted iMessage handle normalizes on import (stored verbatim
     it would never match chat.db's E.164 handles and silently never fire)."""
-    ver = {"desc": "", "params": [], "packages": [],
-           "steps": [{"name": "Long", "desc": "", "code": "print('x')\n",
+    ver = {"description": "", "params": [], "packages": [],
+           "steps": [{"name": "Long", "description": "", "code": "print('x')\n",
                       "timeout": 900, "retries": 4},
-                     {"name": "Listen", "desc": "", "code": "print('y')\n",
+                     {"name": "Listen", "description": "", "code": "print('y')\n",
                       "no_timeout": True, "infinite_retries": True}],
-           "spec": [{"k": "h1", "text": "T"}], "instr": ""}
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": ""}
     a = store.create_automation(
         ver, name="Limits", agent_id=None,
-        triggers=[{"id": new_id(), "kind": "imessage", "off": False,
+        triggers=[{"id": new_id(), "kind": "imessage", "enabled": True,
                    "from": "+15551234567"}])
     data = transfer.export_automation(store, a)
     zin = zipfile.ZipFile(io.BytesIO(data))
@@ -270,9 +270,9 @@ def test_import_without_manifest_agent_uses_default_pointer(store):
     # fallback would give the wrong answer
     store.default_agent_id = store.agents[1]["id"]
     store.save_agents()
-    ver = {"desc": "", "params": [], "packages": [],
-           "steps": [{"name": "Only", "desc": "", "code": "print('x')\n"}],
-           "spec": [{"k": "h1", "text": "T"}], "instr": ""}
+    ver = {"description": "", "params": [], "packages": [],
+           "steps": [{"name": "Only", "description": "", "code": "print('x')\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": ""}
     a = store.create_automation(ver, name="Agentless", agent_id=None)
     data = transfer.export_automation(store, a)
     b, _summary = transfer.import_automation(store, data)
@@ -467,7 +467,7 @@ def test_preview_archive_dry_match(store, monkeypatch, tmp_path_factory):
     before = (len(store.autos), len(store.secrets), len(store.agents))
     p = transfer.preview_archive(store, data)
     assert (len(store.autos), len(store.secrets), len(store.agents)) == before
-    assert p["name"] == "Watcher" and p["desc"] == "Watches things"
+    assert p["name"] == "Watcher" and p["description"] == "Watches things"
     assert [s["name"] for s in p["steps"]] == ["Fetch", "Summarize"]
     assert [s["agent"] for s in p["steps"]] == [False, True]
     assert p["params"] == [{"name": "count", "kind": "number"}]

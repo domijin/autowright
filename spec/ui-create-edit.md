@@ -92,7 +92,7 @@ applies unchanged; the chat pane never collapses.
     updated.");
   - a **notes rewrite** replaces the §4.1 notes document (never dirties the workflow) and
     appends a system entry ("Notes updated.");
-  - **actions** (§8 `actions.yaml`) run after the rewrites land: `name`/`desc` apply like
+  - **actions** (§8 `actions.yaml`) run after the rewrites land: `name`/`description` apply like
     the pencil edits (create: the draft's fields; edit: the immediate §19 PATCH) with a
     system entry; `sync: true` starts the §8 sync at once — exactly as if the user pressed
     Sync now — unless syncing is gated (a running draft test, viewing an old version), in
@@ -249,20 +249,20 @@ drafting/sync/agent-rewrite job is in flight and, in edit mode, while viewing an
 the draft in the Version menu (Restore never renames). In create mode the usual
 provisional-name flow (spec `#` title, then the manifest name) still runs — renaming becomes
 available once drafting has finished.
-Lede line, under the title: the automation's `desc` (§4.1). (The drafting-agent picker
-lives in the chat pane composer, not here.) The desc is editable in place with the same
+Lede line, under the title: the automation's `description` (§4.1). (The drafting-agent picker
+lives in the chat pane composer, not here.) The description is editable in place with the same
 pattern as the name (always-visible pencil as the only click target, single-line input,
 Enter/blur commits, Esc cancels) and the same gating (hidden while a job runs or while
 viewing an old version). The lede row is height-stable: the rendered text and the in-place
-input live in one fixed-height row, so entering or leaving desc edit never shifts the page
+input live in one fixed-height row, so entering or leaving description edit never shifts the page
 below. A
 blank commit clears the description (it is optional); with no description the line shows the
 muted empty state "No description yet — press the pencil to add one." Create mode: until drafting has
 finished, the lede instead reads the static drafting lede "Read what your AI wrote. Change
 anything — nothing executes until you create it."; once drafting settles it becomes the
-editable description. Edit mode: a desc edit applies immediately through the §19 PATCH (like
-the name — independent of the draft); create mode: it updates the draft's `desc`, persists
-with the §4.4 pending slot, and lands on Create. Sync never touches name or desc (§8: both
+editable description. Edit mode: a description edit applies immediately through the §19 PATCH (like
+the name — independent of the draft); create mode: it updates the draft's `description`, persists
+with the §4.4 pending slot, and lands on Create. Sync never touches name or description (§8: both
 are create-only manifest keys). When an execution is live during an edit, a cyan pulsing banner
 shows: "An execution is happening right now on vN. Saving won't interrupt it — that execution finishes on vN.
 vN+1 takes over from the next execution (`<short label of the next trigger>`)." Sections (left column: spec, notes,
@@ -337,7 +337,7 @@ editors enter with
   response changes the draft, the editor first stashes the draft **whole** — spec, steps,
   parameter definitions, packages, triggers, build instructions, notes, and the dirty flag
   of that moment (an answer-only response leaves the existing snapshot untouched; grants
-  and name/desc are user-owned, never agent-rewritten, and stay out). One ghost **Undo**
+  and name/description are user-owned, never agent-rewritten, and stay out). One ghost **Undo**
   restores it all, so the draft looks **exactly as it did before that request** — including
   steps a chained `sync: true` action rewrote, which is why a completed sync does **not**
   clear the snapshot. The Undo is a **standalone thread row** — a quiet centered ghost
@@ -368,7 +368,7 @@ editors enter with
   durable rollback is the version menu.
 - **BUILD INSTRUCTIONS** — collapsible card sitting second-last in the left column, directly
   above the Framework-instructions card (the two standing-rules documents close the column
-  together); holds the §4.1 `instr` free text, with view/edit
+  together); holds the §4.1 `instructions` free text, with view/edit
   states; defaults collapsed in create and edit mode alike (standing rules are rarely touched);
   collapsed with content it shows the first-rule preview (status-aware rule above); empty, the
   explainer: "Standing rules your AI follows every time it writes or edits this automation."; the view state renders the text as markdown (same renderer as the Spec and
@@ -697,7 +697,7 @@ editors enter with
     prefills send the same values a closed section would use — the automation's stored
     values (edit) or the draft defaults (create), exactly like executing the draft.
   - When the editor's trigger list (the TRIGGERS card list) holds a message trigger
-    (§4.3 discord/imessage, `off` state irrelevant): the `TRIGGER MESSAGE · THIS TEST
+    (§4.3 discord/imessage, `enabled` state irrelevant): the `TRIGGER MESSAGE · THIS TEST
     ONLY` eyebrow, a trigger picker when the list holds several message triggers (the
     §4.3 long labels; single-trigger lists skip the picker), a **From** field (prefilled
     with the trigger's `from` for iMessage, "Test" for Discord; switching the picked
@@ -738,7 +738,7 @@ editors enter with
   finished test writes the last-test summary `test.yaml` (§5 — status succeeded | failed,
   finished-at, and the test execution's id) into the draft container, wiped at the next test
   start and deleted with the draft. It rides the draft payload as `test` ({ status, when:
-  §4.1 started-label, execId }) — on the automation's `draft` object and on `GET /draft` —
+  §4.1 started-label, executionId }) — on the automation's `draft` object and on `GET /draft` —
   and a resumed draft's panel renders it in place of the never-tested row: a status line
   ("Last test succeeded — <when>" green / "Last test failed — <when>" amber); the setup
   section's run row shows View run while the record still exists (retention may outlive

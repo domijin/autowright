@@ -78,7 +78,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   Add trigger), `.ad-btn-danger-ghost` (red-tinted confirm), `.ad-btn-text.danger` (red text
   button), `.ad-btn-link` (accent link-styled button), `.ad-chip-btn`, `.ad-menu-row`.
   Surfaces: `.ad-hover-row` (clickable list/table rows), `.ad-card-click` (clickable cards),
-  `.ad-link-title` (clickable titles), `.ad-title-rename` (click-to-edit automation title/desc
+  `.ad-link-title` (clickable titles), `.ad-title-rename` (click-to-edit automation title/description
   on the §11 Review page — the pencil is the only click target (the text itself is inert);
   the `.always` modifier keeps the pencil visible), `.ad-nav-row` (sidebar nav). Text fields use `.ad-input`
   (border + accent focus ring, also on `:focus-within` so grouped multi-field inputs like the

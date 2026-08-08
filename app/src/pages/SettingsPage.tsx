@@ -85,7 +85,7 @@ export default function SettingsPage() {
               <div style={rowTitle}>Show in the menu bar</div>
               <div style={rowSub}>The quickest way to execute an automation.</div>
             </div>
-            <Toggle on={settings.mbIcon} onChange={(v) => patch({ mbIcon: v })} />
+            <Toggle on={settings.menuBarIcon} onChange={(v) => patch({ menuBarIcon: v })} />
           </div>
           <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20, borderBottom: '1px solid var(--hairline-dim)' }}>
             <div style={{ flex: 1 }}>
@@ -98,17 +98,17 @@ export default function SettingsPage() {
             <div style={rowTitle}>Notify me</div>
             <div role="radiogroup" aria-label="Notify me" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 11 }}>
               {([
-                { v: 'attention' as const, label: 'Only when something needs attention' },
-                { v: 'all' as const, label: 'After every execution' },
+                { value: 'attention' as const, label: 'Only when something needs attention' },
+                { value: 'all' as const, label: 'After every execution' },
               ]).map((o) => {
-                const on = settings.notif === o.v
+                const on = settings.notifications === o.value
                 return (
                   <button
-                    key={o.v}
+                    key={o.value}
                     className="ad-btn-bare"
                     role="radio"
                     aria-checked={on}
-                    onClick={() => patch({ notif: o.v })}
+                    onClick={() => patch({ notifications: o.value })}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
                       transition: 'background var(--t-hover) var(--ease-enter)',
@@ -216,7 +216,7 @@ export default function SettingsPage() {
                 Logs every backend request and every AI request — including the full prompt — to the backend log. Press ` to show the logs panel.
               </div>
             </div>
-            <Toggle on={settings.devMode} onChange={(v) => patch({ devMode: v })} />
+            <Toggle on={settings.developerMode} onChange={(v) => patch({ developerMode: v })} />
           </div>
         </div>
       </div>

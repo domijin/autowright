@@ -5,7 +5,7 @@ from __future__ import annotations
 def blocks_to_md(blocks: list[dict]) -> str:
     out: list[str] = []
     for b in blocks or []:
-        k, text = b.get("k"), (b.get("text") or "").rstrip()
+        k, text = b.get("kind"), (b.get("text") or "").rstrip()
         if k == "h1":
             out.append(f"# {text}")
         elif k == "h2":
@@ -29,7 +29,7 @@ def md_to_blocks(md: str) -> list[dict]:
 
     def flush() -> None:
         if para:
-            blocks.append({"k": "p", "text": " ".join(para)})
+            blocks.append({"kind": "p", "text": " ".join(para)})
             para.clear()
 
     for raw in (md or "").splitlines():
@@ -38,13 +38,13 @@ def md_to_blocks(md: str) -> list[dict]:
             flush()
         elif ln.startswith("# "):
             flush()
-            blocks.append({"k": "h1", "text": ln[2:].strip()})
+            blocks.append({"kind": "h1", "text": ln[2:].strip()})
         elif ln.startswith("## "):
             flush()
-            blocks.append({"k": "h2", "text": ln[3:].strip()})
+            blocks.append({"kind": "h2", "text": ln[3:].strip()})
         elif ln.lstrip().startswith("- "):
             flush()
-            blocks.append({"k": "li", "text": ln.lstrip()[2:].strip()})
+            blocks.append({"kind": "li", "text": ln.lstrip()[2:].strip()})
         else:
             para.append(ln.strip())
     flush()

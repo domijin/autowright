@@ -10,7 +10,7 @@ import { BtnPrimary, ConfirmModal, EmptyState, Eyebrow, LoadingRow, MenuRow, Min
 function AgentCard({ ag, check, onDelete }: {
   ag: Agent; check: AgentCheck | undefined; onDelete: (ag: Agent) => void
 }) {
-  const { autos, go, showToast, runAgentCheck } = useStore()
+  const { automations, go, showToast, runAgentCheck } = useStore()
   const [menuOpen, setMenuOpen, menuRef] = usePopover()
   const checking = check === 'checking' || check === undefined
   const connecting = check === 'connecting'
@@ -93,21 +93,21 @@ function AgentCard({ ag, check, onDelete }: {
       <div style={{ font: `500 11px var(--mono)`, color: 'var(--text-faint)', marginTop: -5 }}>
         {ag.harness} · {dispModel(ag)}
       </div>
-      {/* Detail line = the §4.7 desc (drafting input) — never generated copy. */}
-      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: ag.desc?.trim() ? 'var(--text-muted)' : 'var(--text-faint)' }}>
-        {ag.desc?.trim() ? ag.desc : 'No description yet — add one in Edit to tell the drafting AI what this agent is for.'}
+      {/* Detail line = the §4.7 description (drafting input) — never generated copy. */}
+      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: ag.description?.trim() ? 'var(--text-muted)' : 'var(--text-faint)' }}>
+        {ag.description?.trim() ? ag.description : 'No description yet — add one in Edit to tell the drafting AI what this agent is for.'}
       </p>
       {uses.length > 0 ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Eyebrow>USED BY</Eyebrow>
           {uses.map((u) => {
-            const auto = autos.find((a) => a.name === u)
+            const auto = automations.find((a) => a.name === u)
             // No matching automation → inert chip: plain span, base chip look, no hover/cursor.
             return auto ? (
               <button
                 key={u}
                 className="ad-chip-btn"
-                onClick={(e) => { e.stopPropagation(); go('automation', { autoId: auto.id }) }}
+                onClick={(e) => { e.stopPropagation(); go('automation', { automationId: auto.id }) }}
                 style={{ cursor: 'pointer' }}
               >
                 {u}

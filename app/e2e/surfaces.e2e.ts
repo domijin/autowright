@@ -6,11 +6,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, clickNav, closeApp, launchApp, shot, waitFor, type AppHandle } from './harness'
 
 const SLOW_STEP = {
-  file: '01-warm.py', name: 'Warm up', desc: 'sleeps briefly',
+  file: '01-warm.py', name: 'Warm up', description: 'sleeps briefly',
   code: 'from autowright import log\nimport time\nlog("warming")\ntime.sleep(2)\n',
 }
 const FINISH_STEP = {
-  file: '02-finish.py', name: 'Finish', desc: 'result',
+  file: '02-finish.py', name: 'Finish', description: 'result',
   code: 'from autowright import result\nresult.status("ok")\nresult.chip("All good")\n',
 }
 
@@ -50,18 +50,18 @@ describe('surfaces e2e', () => {
 
   it('lists §11 test records in the executions list and persists settings', async () => {
     backend = await new Backend().start()
-    const { id } = await backend.createAutomation('Exec list e2e')
+    const { id } = await backend.createAutomation('Execution list e2e')
     const real = await backend.executeAndWait(id)
     expect(real.status).toBe('succeeded')
     // A §11 draft-test record over the same steps — lists like any execution (§7).
-    const { execId: testId } = await backend.api('POST', '/tests', {
+    const { executionId: testId } = await backend.api('POST', '/tests', {
       draft: {
-        name: 'Exec list e2e', desc: 'test', note: null, params: [],
+        name: 'Execution list e2e', description: 'test', note: null, params: [],
         steps: [FINISH_STEP],
-        spec: [{ k: 'h1', text: 'Exec list e2e' }], instr: null,
+        spec: [{ kind: 'h1', text: 'Execution list e2e' }], instructions: null,
       },
       enabledAgents: [], allowedSecrets: [],
-    }) as { execId: string }
+    }) as { executionId: string }
     await waitFor(async () => {
       const e = await backend!.api('GET', `/executions/${testId}`) as { status: string }
       return e.status !== 'queued' && e.status !== 'executing' ? e : null
@@ -74,9 +74,9 @@ describe('surfaces e2e', () => {
     // Executions list: TWO rows — the real one and the §11 test record (§7).
     // The test row's trigger column prints "Test" once, never "Test · Test".
     await clickNav(page, 'Executions')
-    await page.getByText('Exec list e2e').first().waitFor({ timeout: 10_000 })
+    await page.getByText('Execution list e2e').first().waitFor({ timeout: 10_000 })
     expect(await page.locator('.ad-hover-row').count()).toBe(2)
-    expect(await page.getByText('Exec list e2e').count()).toBe(2)
+    expect(await page.getByText('Execution list e2e').count()).toBe(2)
     expect(await page.getByText('Test', { exact: true }).count()).toBe(1)
     expect(await page.getByText('Test · Test').count()).toBe(0)
     await page.locator('.ad-hover-row', { hasText: 'Manual' }).click()
@@ -94,8 +94,8 @@ describe('surfaces e2e', () => {
     await page.keyboard.press('Tab')
     await page.getByText('After every execution').click()
     await waitFor(async () => {
-      const s = (await backend!.api('GET', '/state') as { settings: { days: number; notif: string } }).settings
-      return s.days === 45 && s.notif === 'all'
+      const s = (await backend!.api('GET', '/state') as { settings: { days: number; notifications: string } }).settings
+      return s.days === 45 && s.notifications === 'all'
     }, 10_000, 'settings to persist')
 
     // Reload — boot lands on the automations list; the persisted values come

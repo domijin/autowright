@@ -31,9 +31,9 @@ def start(engine: Engine, draft: dict, auto: dict | None,
           trigger_payload: dict | None = None) -> str:
     """Create and launch the test execution record; returns its exec id.
     Raises RuntimeError while the container already has a live test (§19 409)."""
-    container_id = auto["id"] if auto else None  # §4.5: null autoId on create-mode tests
+    container_id = auto["id"] if auto else None  # §4.5: null automationId on create-mode tests
     with store.lock:
-        if any(is_test(h) and h["auto_id"] == container_id
+        if any(is_test(h) and h["automation_id"] == container_id
                and h["status"] == "executing" for h in store.execs.values()):
             raise RuntimeError("a test is already executing — cancel it or wait for it to finish")
         # §11 keep-latest: one test record per draft container.
@@ -61,7 +61,7 @@ def start(engine: Engine, draft: dict, auto: dict | None,
         }
         rec_steps = [{"name": s.get("name", ""), "file": s["file"],
                       "agent": bool(s.get("agent")), "sha": _step_sha(s),
-                      "status": "queued", "dur_ms": None, "attempts": []}
+                      "status": "queued", "duration_ms": None, "attempts": []}
                      for s in steps]
         # §19 triggerMock: the mocked §4.5 payload rides the record like a real
         # firing's — the trigger kind stays `test`, so labels still say "Test".
@@ -100,8 +100,8 @@ def start(engine: Engine, draft: dict, auto: dict | None,
         state = {"proc": None, "cancel": False}
         with engine._lock:
             engine._live[h["id"]] = state
-        hub.publish("exec.started", execId=h["id"], autoId=container_id,
-                    exec_json=store.exec_json(h))
+        hub.publish("execution.started", executionId=h["id"], automationId=container_id,
+                    execution_json=store.exec_json(h))
         t = threading.Thread(target=_run, args=(engine, shadow, ver, h, state, dbase, scratch),
                              daemon=True)
         t.start()
@@ -128,7 +128,7 @@ def _run(engine: Engine, shadow: dict, ver: dict, h: dict, state: dict,
         save_yaml(dbase / "test.yaml", {
             "status": h["status"],
             "when": timefmt.now_iso(),
-            "exec_id": h["id"],
+            "execution_id": h["id"],
         })
 
 
@@ -136,7 +136,7 @@ def _log_tail(h: dict, idx: int) -> list[str]:
     # §4.5: attempt numbers are monotonic and old attempts prune — the latest
     # attempt's `n` names the newest log file, never the list length.
     atts = h["steps"][idx].get("attempts") or []
-    attempt = atts[-1]["n"] if atts else 1
+    attempt = atts[-1]["number"] if atts else 1
     lines = store.read_log(h["id"], idx, attempt)
     return [l.get("text", "") for l in lines][-LOG_TAIL:]
 
@@ -153,13 +153,13 @@ def runs_context(auto: dict | None, current_steps: list[dict],
     container_id = auto["id"] if auto else None
     with store.lock:
         hs = [h for h in store.execs.values()
-              if h["auto_id"] == container_id
+              if h["automation_id"] == container_id
               and h["status"] not in ("executing", "queued")]
         hs.sort(key=lambda h: h.get("started_at") or "", reverse=True)
         picked = hs[:RUNS_CAP]
         if run_id and all(h["id"] != run_id for h in picked):
             f = store.execs.get(run_id)
-            if (f and f["auto_id"] == container_id
+            if (f and f["automation_id"] == container_id
                     and f["status"] not in ("executing", "queued")):
                 picked.append(f)
     if not picked:
@@ -190,7 +190,7 @@ def _run_block(h: dict, cur_shas: list[str], detail: bool) -> str:
             lines.append(f"failed at step {err.get('step')}: {err['message']}")
         return "\n".join(lines)
     for i, s in enumerate(steps, 1):
-        dur = f" · {s['dur_ms'] // 1000}s" if s.get("dur_ms") else ""
+        dur = f" · {s['duration_ms'] // 1000}s" if s.get("duration_ms") else ""
         lines.append(f"step {i}: {s.get('name')} — {s.get('status')}{dur}")
     if err.get("message"):
         lines.append(f"error at step {err.get('step')}: {err['message']}"

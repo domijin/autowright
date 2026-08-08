@@ -9,7 +9,7 @@ from typing import Any
 # Sentinel a stalled subscriber's queue gets when it overflows — the WS
 # handler closes that socket so the client reconnects and re-syncs (§19: a
 # silent drop of e.g. exec.finished would wedge the UI "executing" forever).
-OVERFLOW: dict = {"ev": "__overflow__"}
+OVERFLOW: dict = {"event": "__overflow__"}
 
 
 class EventHub:
@@ -33,7 +33,7 @@ class EventHub:
 
     def publish(self, ev: str, **payload: Any) -> None:
         """Callable from any thread (engine worker threads publish log lines)."""
-        msg = {"ev": ev, **payload}
+        msg = {"event": ev, **payload}
         loop = self._loop
         if loop is None:
             return

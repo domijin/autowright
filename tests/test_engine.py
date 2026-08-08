@@ -3,9 +3,9 @@ import time
 from conftest import make_version, read_all_logs
 
 
-def wait_done(engine, exec_id, timeout=30):
+def wait_done(engine, execution_id, timeout=30):
     t0 = time.time()
-    while engine.is_live(exec_id):
+    while engine.is_live(execution_id):
         assert time.time() - t0 < timeout, "execution didn't finish in time"
         time.sleep(0.1)
 
@@ -35,7 +35,7 @@ def test_chip_is_optional(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-quiet.py", "name": "Quiet", "desc": "",
+        {"file": "01-quiet.py", "name": "Quiet", "description": "",
          "code": 'from autowright import result\n(result.path / "result.md").write_text("done, no chip")\n'},
     ]
     a = store.create_automation(ver, "Chipless", None)
@@ -107,7 +107,7 @@ def test_placeholder_secret_without_value_stops_before_step_one(store):
     from autowright.engine import Engine
 
     engine = Engine(store)
-    store.secrets.append({"name": "PENDING", "desc": "", "set": False})
+    store.secrets.append({"name": "PENDING", "description": "", "set": False})
     ver = make_version()
     ver["steps"][0]["code"] = "from autowright import secrets\nx = secrets.PENDING\n"
     a = store.create_automation(ver, "Placeholder", None)
@@ -171,7 +171,7 @@ def test_missing_step_script_fails_execution(store):
     att = h["steps"][0]["attempts"][0]
     assert att["status"] == "failed"
     assert att["error"]["message"] == "step script 01-say.py is missing"
-    assert any("is missing" in l["text"] and l["k"] == "err"
+    assert any("is missing" in l["text"] and l["kind"] == "err"
                for l in read_all_logs(store, h["id"]))
 
 
@@ -212,7 +212,7 @@ def test_secret_redacted_from_logs(store):
     from autowright.engine import Engine
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "desc": ""})
+    store.secrets.append({"name": "API_KEY", "description": ""})
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = 'from autowright import log, secrets\nk = secrets.API_KEY\nlog(f"using {k} now")\n'
@@ -224,7 +224,7 @@ def test_secret_redacted_from_logs(store):
     logs = read_all_logs(store, h["id"])
     assert not any("super-secret-value-123" in l["text"] for l in logs)
     assert any("•••" in l["text"] for l in logs)
-    assert "API_KEY" in h["redacted"]
+    assert "API_KEY" in h["redacted_secrets"]
 
 
 def test_multiline_secret_lines_redacted_from_logs(store):
@@ -233,7 +233,7 @@ def test_multiline_secret_lines_redacted_from_logs(store):
 
     pem = "-----BEGIN KEY-----\nabc123line\n-----END KEY-----"
     keychain.set_secret("PEM_KEY", pem)
-    store.secrets.append({"name": "PEM_KEY", "desc": ""})
+    store.secrets.append({"name": "PEM_KEY", "description": ""})
     engine = Engine(store)
     ver = make_version()
     # Each log() call is a separate log line, so the whole value never
@@ -251,7 +251,7 @@ def test_multiline_secret_lines_redacted_from_logs(store):
     logs = read_all_logs(store, h["id"])
     assert not any("abc123line" in l["text"] for l in logs)
     assert not any("BEGIN KEY" in l["text"] for l in logs)
-    assert "PEM_KEY" in h["redacted"]
+    assert "PEM_KEY" in h["redacted_secrets"]
 
 
 def test_retry_in_place_from_failed_step(store):
@@ -262,9 +262,9 @@ def test_retry_in_place_from_failed_step(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-ok.py", "name": "OK step", "desc": "",
+        {"file": "01-ok.py", "name": "OK step", "description": "",
          "code": 'from autowright import log\nopen("state.txt", "w").write("from pass one")\nlog("fine")\n'},
-        {"file": "02-flaky.py", "name": "Flaky step", "desc": "",
+        {"file": "02-flaky.py", "name": "Flaky step", "description": "",
          "code": 'from autowright import log\nimport os\nassert os.path.exists("flag"), "flaky"\n'
                  'log(open("state.txt").read())\n'},
     ]
@@ -273,7 +273,7 @@ def test_retry_in_place_from_failed_step(store):
     wait_done(engine, h1["id"])
     assert h1["status"] == "failed" and h1["steps"][1]["status"] == "failed"
     assert h1["error"]["step"] == "Flaky step"
-    first_dur = h1["dur_ms"]
+    first_dur = h1["duration_ms"]
     (store.exec_dir(h1["id"]) / "workspace" / "flag").write_text("ok")
     h2 = engine.retry(a, h1)
     assert h2["id"] == h1["id"]  # same execution record
@@ -283,7 +283,7 @@ def test_retry_in_place_from_failed_step(store):
     assert h2["steps"][0]["status"] == "succeeded"
     assert len(h2["steps"][0]["attempts"]) == 1  # never re-executed
     assert [x["status"] for x in h2["steps"][1]["attempts"]] == ["failed", "succeeded"]
-    assert h2["dur_ms"] > first_dur  # accumulated across passes
+    assert h2["duration_ms"] > first_dur  # accumulated across passes
     # attempt 1 kept its error; attempt 2 has none
     assert h2["steps"][1]["attempts"][0]["error"]["message"].startswith("AssertionError")
     assert "error" not in h2["steps"][1]["attempts"][1]
@@ -306,7 +306,7 @@ COUNTER_STEP = (  # fails until the workspace counter reaches the threshold
 
 
 def _counter_step(threshold, **fields):
-    return {"file": "01-flaky.py", "name": "Flaky", "desc": "",
+    return {"file": "01-flaky.py", "name": "Flaky", "description": "",
             "code": COUNTER_STEP.replace("THRESHOLD", str(threshold)), **fields}
 
 
@@ -318,7 +318,7 @@ def test_step_retry_succeeds_within_budget(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [_counter_step(3, retries=5),
-                    {"file": "02-after.py", "name": "After", "desc": "",
+                    {"file": "02-after.py", "name": "After", "description": "",
                      "code": 'from autowright import log\nlog("after ran")\n'}]
     a = store.create_automation(ver, "StepRetry", None)
     h = engine.start(a, "manual")
@@ -326,7 +326,7 @@ def test_step_retry_succeeds_within_budget(store):
     assert h["status"] == "succeeded"
     assert h["error"] is None
     assert [x["status"] for x in h["steps"][0]["attempts"]] == ["failed", "failed", "succeeded"]
-    assert [x["n"] for x in h["steps"][0]["attempts"]] == [1, 2, 3]
+    assert [x["number"] for x in h["steps"][0]["attempts"]] == [1, 2, 3]
     assert h["steps"][1]["status"] == "succeeded"
     # the failed attempts kept their errors; retry markers landed in the logs
     assert h["steps"][0]["attempts"][0]["error"]["message"].startswith("AssertionError")
@@ -343,7 +343,7 @@ def test_step_retry_budget_spent_fails_execution(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [_counter_step(99, retries=2),
-                    {"file": "02-after.py", "name": "After", "desc": "",
+                    {"file": "02-after.py", "name": "After", "description": "",
                      "code": 'from autowright import log\nlog("never")\n'}]
     a = store.create_automation(ver, "SpentBudget", None)
     h = engine.start(a, "manual")
@@ -366,11 +366,11 @@ def test_manual_retry_pass_gets_fresh_step_budget(store):
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "failed"  # attempts 1+2, budget 1 spent
-    assert [x["n"] for x in h["steps"][0]["attempts"]] == [1, 2]
+    assert [x["number"] for x in h["steps"][0]["attempts"]] == [1, 2]
     h2 = engine.retry(a, h)
     wait_done(engine, h2["id"])
     assert h2["status"] == "succeeded"  # attempt 3 (manual pass) + auto attempt 4
-    assert [x["n"] for x in h2["steps"][0]["attempts"]] == [1, 2, 3, 4]
+    assert [x["number"] for x in h2["steps"][0]["attempts"]] == [1, 2, 3, 4]
     assert h2["steps"][0]["attempts"][-1]["status"] == "succeeded"
 
 
@@ -391,7 +391,7 @@ def test_infinite_retries_until_success_and_attempt_prune(store, monkeypatch):
     assert h["status"] == "succeeded"
     atts = h["steps"][0]["attempts"]
     assert len(atts) == 20  # pruned to the newest 20
-    assert atts[-1]["n"] == 22 and atts[0]["n"] == 3  # monotonic numbering kept
+    assert atts[-1]["number"] == 22 and atts[0]["number"] == 3  # monotonic numbering kept
     logs_dir = store.exec_dir(h["id"]) / "logs"
     assert not (logs_dir / "01-flaky.a1.ndjson").exists()  # pruned with its entry
     assert (logs_dir / "01-flaky.a22.ndjson").exists()
@@ -411,7 +411,7 @@ def test_infinite_retries_cancel_wins(store, monkeypatch):
     a = store.create_automation(ver, "CancelForever", None)
     h = engine.start(a, "manual")
     t0 = time.time()
-    while not h["steps"][0]["attempts"] or h["steps"][0]["attempts"][-1]["n"] < 3:
+    while not h["steps"][0]["attempts"] or h["steps"][0]["attempts"][-1]["number"] < 3:
         assert time.time() - t0 < 30
         time.sleep(0.1)
     assert engine.cancel(h["id"]) is True
@@ -431,12 +431,12 @@ def test_infinite_retries_skip_wins(store, monkeypatch):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [_counter_step(10_000, infinite_retries=True),
-                    {"file": "02-after.py", "name": "After", "desc": "",
+                    {"file": "02-after.py", "name": "After", "description": "",
                      "code": 'from autowright import log\nlog("after ran")\n'}]
     a = store.create_automation(ver, "SkipForever", None)
     h = engine.start(a, "manual")
     t0 = time.time()
-    while not h["steps"][0]["attempts"] or h["steps"][0]["attempts"][-1]["n"] < 3:
+    while not h["steps"][0]["attempts"] or h["steps"][0]["attempts"][-1]["number"] < 3:
         assert time.time() - t0 < 30
         time.sleep(0.1)
     while not engine.skip_step(h["id"], 0):  # may land between attempts — retry
@@ -475,7 +475,7 @@ def test_retry_rejected_while_at_capacity(store):
     ver = make_version()
     # first execution fails fast; the second reaches the sleep and stays live
     ver["steps"] = [
-        {"file": "01-gate.py", "name": "Gate", "desc": "",
+        {"file": "01-gate.py", "name": "Gate", "description": "",
          "code": ("from autowright import memory\nimport time\n"
                   "n = memory.load('n', 0) + 1\nmemory.save('n', n)\n"
                   "if n == 1:\n    raise RuntimeError('first pass fails')\n"
@@ -522,9 +522,9 @@ def test_skip_live_step_continues_execution(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-slow.py", "name": "Slow step", "desc": "",
+        {"file": "01-slow.py", "name": "Slow step", "description": "",
          "code": 'from autowright import log\nlog("started")\nimport time\ntime.sleep(30)\n'},
-        {"file": "02-after.py", "name": "After step", "desc": "",
+        {"file": "02-after.py", "name": "After step", "description": "",
          "code": 'from autowright import log\nlog("still ran")\n'},
     ]
     a = store.create_automation(ver, "Skipper", None)
@@ -570,7 +570,7 @@ def test_memory_persists_between_executions(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-count.py", "name": "Count", "desc": "",
+        {"file": "01-count.py", "name": "Count", "description": "",
          "code": 'from autowright import log, memory, result\nn = memory.load("n", 0) + 1\nmemory.save("n", n)\nlog(f"execution number {n}")\n'
                  'result.status("ok")\nresult.chip(str(n))\n'},
     ]
@@ -588,7 +588,7 @@ def test_execution_metadata_and_env_vars(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-meta.py", "name": "Meta", "desc": "",
+        {"file": "01-meta.py", "name": "Meta", "description": "",
          "code": (
              "from autowright import execution, log\nimport os, subprocess, sys\n"
              'log(f"meta={execution.automation_name}/{execution.step_index}/{execution.step_name}/{execution.trigger}")\n'
@@ -621,9 +621,9 @@ def test_workspace_shared_between_steps(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-write.py", "name": "Write", "desc": "",
+        {"file": "01-write.py", "name": "Write", "description": "",
          "code": 'import json\njson.dump({"x": 42}, open("data.json", "w"))\n'},
-        {"file": "02-read.py", "name": "Read", "desc": "",
+        {"file": "02-read.py", "name": "Read", "description": "",
          "code": 'from autowright import result\nimport json\nd = json.load(open("data.json"))\n'
                  'result.status("ok")\nresult.chip(str(d["x"]))\n'},
     ]
@@ -643,7 +643,7 @@ def test_agent_step_query_only(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-ask.py", "name": "Ask", "desc": "", "agent": True, "why": "judgment",
+        {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
          "code": 'from autowright import agent, log, result\nans = agent.ask("question: anything new?")\nlog(f"agent said: {ans}")\n'
                  'result.status("ok")\n'},
     ]
@@ -674,7 +674,7 @@ def test_per_step_timeout_field_kills_the_step(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-hang.py", "name": "Hang", "desc": "", "timeout": 1,
+        {"file": "01-hang.py", "name": "Hang", "description": "", "timeout": 1,
          "code": "import time\ntime.sleep(30)\n"},
     ]
     a = store.create_automation(ver, "FieldHanger", None)
@@ -684,7 +684,7 @@ def test_per_step_timeout_field_kills_the_step(store):
     assert time.time() - t0 < 15
     assert h["status"] == "failed"
     logs = read_all_logs(store, h["id"])
-    assert any(l["k"] == "err" and "timed out after 1s" in l["text"] for l in logs)
+    assert any(l["kind"] == "err" and "timed out after 1s" in l["text"] for l in logs)
 
 
 def test_step_timeout_applies_to_silent_hang(store, monkeypatch):
@@ -695,7 +695,7 @@ def test_step_timeout_applies_to_silent_hang(store, monkeypatch):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-hang.py", "name": "Hang", "desc": "",
+        {"file": "01-hang.py", "name": "Hang", "description": "",
          "code": "import time\ntime.sleep(30)\n"},  # zero output
     ]
     a = store.create_automation(ver, "Hanger", None)
@@ -706,7 +706,7 @@ def test_step_timeout_applies_to_silent_hang(store, monkeypatch):
     assert h["status"] == "failed"
     assert h["steps"][0]["status"] == "failed"
     logs = read_all_logs(store, h["id"])
-    assert any(l["k"] == "err" and "timed out" in l["text"] for l in logs)
+    assert any(l["kind"] == "err" and "timed out" in l["text"] for l in logs)
 
 
 def test_run_draft_version_lowercase_label(store):
@@ -717,7 +717,7 @@ def test_run_draft_version_lowercase_label(store):
     a = store.create_automation(make_version(), "Drafty", None)
     dver = make_version()
     dver["steps"] = [
-        {"file": "01-say.py", "name": "Draft step", "desc": "",
+        {"file": "01-say.py", "name": "Draft step", "description": "",
          "code": 'from autowright import log\nlog("from the draft")\n'},
     ]
     store.save_draft(a, dver)
@@ -742,7 +742,7 @@ def test_draft_execution_uses_draft_memory(store):
 
     dver = make_version()
     dver["steps"] = [
-        {"file": "01-bump.py", "name": "Bump", "desc": "",
+        {"file": "01-bump.py", "name": "Bump", "description": "",
          "code": ('from autowright import log, memory\nn = (memory.load("seen") or {}).get("count", 0)\n'
                   'log(f"count was {n}")\n'
                   'memory.save("seen", {"count": n + 1})\n')},
@@ -776,7 +776,7 @@ def test_runtime_import_allowlist_revalidated(store):
     wait_done(engine, h["id"])
     assert h["status"] == "failed"
     logs = read_all_logs(store, h["id"])
-    assert any(l["k"] == "err" and "django" in l["text"] and "isn't allowed" in l["text"] for l in logs)
+    assert any(l["kind"] == "err" and "django" in l["text"] and "isn't allowed" in l["text"] for l in logs)
     assert not any("never executes" in l["text"] for l in logs)
 
 
@@ -813,7 +813,7 @@ def test_agent_audit_logs_full_prompt(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-ask.py", "name": "Ask", "desc": "", "agent": True, "why": "judgment",
+        {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
          "code": 'from autowright import agent, result\nans = agent.ask("question: anything new?", data="x" * 6000)\n'
                  'result.status("ok")\n'},
     ]
@@ -834,16 +834,16 @@ def test_secrets_scoped_per_step(store):
 
     keychain.set_secret("API_ONE", "value-one")
     keychain.set_secret("API_TWO", "value-two")
-    store.secrets += [{"name": "API_ONE", "desc": ""}, {"name": "API_TWO", "desc": ""}]
+    store.secrets += [{"name": "API_ONE", "description": ""}, {"name": "API_TWO", "description": ""}]
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
         # references only API_ONE in source; sneaks at API_TWO via getattr
-        {"file": "01-sneak.py", "name": "Sneak", "desc": "",
+        {"file": "01-sneak.py", "name": "Sneak", "description": "",
          "code": 'from autowright import log, secrets\nok = secrets.API_ONE\nlog("got one")\n'
                  'x = getattr(secrets, "API_TWO")\nlog("got two")\n'},
         # makes API_TWO a known reference so the engine pre-check fetches it
-        {"file": "02-legit.py", "name": "Legit", "desc": "",
+        {"file": "02-legit.py", "name": "Legit", "description": "",
          "code": "from autowright import secrets\ny = secrets.API_TWO\n"},
     ]
     a = store.create_automation(ver, "Scoped", None)
@@ -862,7 +862,7 @@ def test_secrets_scoped_per_step(store):
 
 def test_log_files_per_step_attempt(store):
     """§5 logs/ layout: one NDJSON file per (step, attempt) named
-    <stem>.a<n>.ndjson; stored lines are {ts, k, seq, text} with a per-file
+    <stem>.a<n>.ndjson; stored lines are {timestamp, kind, sequence, text} with a per-file
     seq — read_log derives the local `t` label at serialization, which is
     what the shape assertion below sees."""
     from autowright.engine import Engine
@@ -876,15 +876,15 @@ def test_log_files_per_step_attempt(store):
     assert (logs_dir / "02-finish.a1.ndjson").exists()
     step1 = store.read_log(h["id"], 0, 1)
     for l in step1:
-        assert set(l) == {"ts", "t", "k", "seq", "text"}
-    assert [l["seq"] for l in step1] == list(range(1, len(step1) + 1))
+        assert set(l) == {"timestamp", "time", "kind", "sequence", "text"}
+    assert [l["sequence"] for l in step1] == list(range(1, len(step1) + 1))
     texts = [l["text"] for l in step1]
     assert "▸ Step 1 — Say hello" in texts and "hello x3" in texts
     assert any("▸ Step 2 — Finish" in l["text"] for l in store.read_log(h["id"], 1, 1))
     # the full exec payload carries steps+attempts but never inline logs (§19)
     served = store.exec_json(h, full=True)
     assert "logs" not in served
-    assert [s["attempts"][0]["n"] for s in served["steps"]] == [1, 1]
+    assert [s["attempts"][0]["number"] for s in served["steps"]] == [1, 1]
 
 
 def test_execution_level_lines_go_to_execution_log(store):
@@ -934,7 +934,7 @@ def test_agent_step_without_enabled_agent_fails(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-ask.py", "name": "Ask", "desc": "", "agent": True, "why": "judgment",
+        {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
          "code": 'from autowright import agent\nagent.ask("hi")\n'},
     ]
     a = store.create_automation(ver, "Agentless", None, enabled_agents=[])
@@ -999,7 +999,7 @@ def test_failure_error_message_redacted(store):
     from autowright.engine import Engine
 
     keychain.set_secret("API_KEY", "sekret-42")
-    store.secrets.append({"name": "API_KEY", "desc": ""})
+    store.secrets.append({"name": "API_KEY", "description": ""})
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = 'from autowright import secrets\nk = secrets.API_KEY\nraise RuntimeError(f"bad key {k}")\n'
@@ -1019,7 +1019,7 @@ def test_failure_reason_timeout(store, monkeypatch):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-hang.py", "name": "Hang", "desc": "",
+        {"file": "01-hang.py", "name": "Hang", "description": "",
          "code": "import time\ntime.sleep(30)\n"},
     ]
     a = store.create_automation(ver, "Slow", None)
@@ -1120,7 +1120,7 @@ def test_draft_test_is_a_test_execution_record(store, monkeypatch):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [{
-        "file": "01-make.py", "name": "Make", "desc": "",
+        "file": "01-make.py", "name": "Make", "description": "",
         "code": ('from autowright import result\nopen("scratch.txt", "w").write("wip")\n'  # cwd = workspace
                  '(result / "out.md").write_text("# hi")\n'
                  'result.chip("Made it")\n'),
@@ -1155,7 +1155,7 @@ def test_draft_test_is_a_test_execution_record(store, monkeypatch):
     dj = j["draft"]
     assert dj["test"]["status"] == "succeeded"
     assert dj["test"]["when"]
-    assert dj["test"]["execId"] == eid
+    assert dj["test"]["executionId"] == eid
 
     # §11 keep-latest: the next test deletes the previous record …
     eid2 = tr.start(engine, ver, a, [], [], {})
@@ -1169,7 +1169,7 @@ def test_draft_test_is_a_test_execution_record(store, monkeypatch):
 
 
 def test_create_mode_test_records_without_automation(store, monkeypatch):
-    """§11 create mode: no automation yet — the record carries auto_id None
+    """§11 create mode: no automation yet — the record carries automation_id None
     and the summary lands in the §4.4 pending slot."""
     from autowright import paths
     from autowright import testexec as tr
@@ -1180,7 +1180,7 @@ def test_create_mode_test_records_without_automation(store, monkeypatch):
     ver = make_version()
     ver["name"] = "Pending Tester"
     ver["steps"] = [{
-        "file": "01-make.py", "name": "Make", "desc": "",
+        "file": "01-make.py", "name": "Make", "description": "",
         "code": ('from autowright import result\n(result / "out.md").write_text("# hi")\n'
                  'result.status("ok")\n'),
     }]
@@ -1191,7 +1191,7 @@ def test_create_mode_test_records_without_automation(store, monkeypatch):
     wait_test_summary(slot)
 
     h = store.execs[eid]
-    assert h["kind"] == "test" and h["auto_id"] is None and h["auto_name"] == "Pending Tester"
+    assert h["kind"] == "test" and h["automation_id"] is None and h["automation_name"] == "Pending Tester"
     assert h["status"] == "succeeded"
     res = store.result_json(h)
     assert {f["name"] for f in res["files"]} == {"out.md"}
@@ -1200,7 +1200,7 @@ def test_create_mode_test_records_without_automation(store, monkeypatch):
     store.save_pending_draft(ver, "Pending Tester", None, None)
     pj = store.pending_draft_json()
     assert pj["draft"]["test"]["status"] == "succeeded"
-    assert pj["draft"]["test"]["execId"] == eid
+    assert pj["draft"]["test"]["executionId"] == eid
 
     # Settling the slot deletes its test records too.
     store.delete_pending_draft()
@@ -1220,7 +1220,7 @@ def test_agent_step_multiple_agents_pick_by_name(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-ask.py", "name": "Ask", "desc": "", "agent": True, "why": "judgment",
+        {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
          "agents": ["Slow", "Fast"],
          "code": 'from autowright import agent, result\na = agent.ask("question: one")\n'
                  'b = agent.ask("question: two", agent="Fast")\n'
@@ -1245,7 +1245,7 @@ def test_declared_step_secrets_injected(store):
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-use.py", "name": "Use", "desc": "", "secrets": ["MY_TOKEN"],
+        {"file": "01-use.py", "name": "Use", "description": "", "secrets": ["MY_TOKEN"],
          "code": 'from autowright import log, result, secrets\nv = getattr(secrets, "MY" + "_TOKEN")\n'
                  'log(f"got {len(v)} chars")\nresult.status("ok")\n'},
     ]
@@ -1317,7 +1317,7 @@ def test_notification_gating_attention_setting(store, monkeypatch):
     from autowright.engine import Engine
 
     calls = _notify_recorder(monkeypatch)
-    assert store.settings.get("notif", "attention") == "attention"
+    assert store.settings.get("notifications", "attention") == "attention"
     engine = Engine(store)
     a = store.create_automation(make_version(), "Quiet Auto", None)
     h = engine.start(a, "manual")
@@ -1339,7 +1339,7 @@ def test_notification_all_setting_and_body_precedence(store, monkeypatch):
     from autowright.engine import Engine
 
     calls = _notify_recorder(monkeypatch)
-    store.settings["notif"] = "all"
+    store.settings["notifications"] = "all"
     engine = Engine(store)
     a = store.create_automation(make_version(), "Chatty", None)
     h = engine.start(a, "manual")
@@ -1444,7 +1444,7 @@ def test_chip_and_notification_are_redacted(store, monkeypatch):
     monkeypatch.setattr(notify, "post", lambda title, body: posted.append((title, body)))
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "desc": ""})
+    store.secrets.append({"name": "API_KEY", "description": ""})
     engine = Engine(store)
     ver = make_version()
     # the last step owns the chip (the fixture's step 2 would overwrite it)
@@ -1463,7 +1463,7 @@ def test_chip_and_notification_are_redacted(store, monkeypatch):
 
     assert "super-secret-value-123" not in h["chip"]
     assert "•••" in h["chip"]
-    assert "API_KEY" in h["redacted"]
+    assert "API_KEY" in h["redacted_secrets"]
     # and the same value never reaches the OS notification
     assert posted, "expected a notification"
     assert not any("super-secret-value-123" in body for _, body in posted)
@@ -1480,7 +1480,7 @@ def test_reply_carrying_a_secret_is_never_sent(store, monkeypatch):
                         lambda payload, text: sent.append(text) or None)
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "desc": ""})
+    store.secrets.append({"name": "API_KEY", "description": ""})
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (
@@ -1510,7 +1510,7 @@ def test_engine_side_reply_gate_blocks_raw_control_line(store, monkeypatch):
                         lambda payload, text: sent.append(text) or None)
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "desc": ""})
+    store.secrets.append({"name": "API_KEY", "description": ""})
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (

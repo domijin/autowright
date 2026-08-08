@@ -76,8 +76,8 @@ def test_same_moment_triggers_coalesce_into_one_fire(store, monkeypatch):
     clock = _Clock(datetime(2026, 7, 10, 7, 59))
     engine, sched = _mk_clocked(store, clock)
     fires = _record_fires(monkeypatch)
-    trigs = [{"id": "t1", "kind": "cron", "off": False, "expr": "0 8 * * *"},
-             {"id": "t2", "kind": "cron", "off": False, "expr": "0 8 * * *"}]
+    trigs = [{"id": "t1", "kind": "cron", "enabled": True, "expression": "0 8 * * *"},
+             {"id": "t2", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}]
     store.create_automation(make_version(), "Coalesce", None, triggers=trigs)
     sched._tick()  # establishes baselines at 7:59
     assert fires == []
@@ -96,7 +96,7 @@ def test_at_most_one_catch_up_per_wake(store, monkeypatch):
     engine, sched = _mk_clocked(store, clock)
     fires = _record_fires(monkeypatch)
     a = store.create_automation(make_version(), "Catchup", None, triggers=[
-        {"id": "t1", "kind": "cron", "off": False, "expr": "0 * * * *"}])
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 * * * *"}])
     sched._tick()  # baseline 10:30
     clock.now = datetime(2026, 7, 10, 13, 31)  # slept through 11:00, 12:00, 13:00
     sched._tick()
@@ -117,12 +117,12 @@ def test_occurrence_missed_while_off_never_fires(store, monkeypatch):
     engine, sched = _mk_clocked(store, clock)
     fires = _record_fires(monkeypatch)
     a = store.create_automation(make_version(), "OffMiss", None, triggers=[
-        {"id": "t1", "kind": "cron", "off": True, "expr": "0 8 * * *"}])
+        {"id": "t1", "kind": "cron", "enabled": False, "expression": "0 8 * * *"}])
     sched._tick()
     clock.now = datetime(2026, 7, 10, 8, 5)  # 8:00 passes while off
     sched._tick()
     assert fires == []
-    a["triggers"][0]["off"] = False  # re-enable after the occurrence
+    a["triggers"][0]["enabled"] = True  # re-enable after the occurrence
     clock.now = datetime(2026, 7, 10, 8, 6)
     sched._tick()
     assert fires == []  # the missed 8:00 never fires
@@ -139,7 +139,7 @@ def test_one_shot_time_trigger_consumed_after_fire(store, monkeypatch):
     engine, sched = _mk_clocked(store, clock)
     fires = _record_fires(monkeypatch)
     a = store.create_automation(make_version(), "OneShot", None, triggers=[
-        {"id": "tt", "kind": "time", "off": False, "at": "2026-07-10T08:00"}])
+        {"id": "tt", "kind": "time", "enabled": True, "at": "2026-07-10T08:00"}])
     sched._tick()
     clock.now = datetime(2026, 7, 10, 8, 1)
     sched._tick()
@@ -157,19 +157,19 @@ def test_fire_trigger_mid_execution_writes_skipped_record(store):
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Busy", None)
     a["_live"] = {"some-live-exec"}
-    t = {"id": "t1", "kind": "cron", "off": False, "expr": "0 8 * * *"}
+    t = {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}
     assert fire_trigger(store, engine, a, t) is False
-    recs = [h for h in store.execs.values() if h["auto_id"] == a["id"]]
+    recs = [h for h in store.execs.values() if h["automation_id"] == a["id"]]
     assert len(recs) == 1
     h = recs[0]
     assert h["status"] == "skipped"
     assert h["note"] == "previous execution still in progress"
     assert h["trigger"] == "cron"  # stored kind; the label is derived (§4.5)
-    assert h["dur_ms"] == 0 and h["finished_at"] == h["started_at"]
+    assert h["duration_ms"] == 0 and h["finished_at"] == h["started_at"]
 
 
 def _discord_trig():
-    return {"id": "t1", "kind": "discord", "off": False, "secret": "TOKEN",
+    return {"id": "t1", "kind": "discord", "enabled": True, "secret": "TOKEN",
             "channel": "42"}
 
 
@@ -201,7 +201,7 @@ def test_fire_trigger_answers_a_refused_message_firing(store, monkeypatch):
     # note whether or not the firing could have queued.
     assert [h["note"] for h in store.execs.values()] == ["previous execution still in progress"]
 
-    cron = {"id": "t2", "kind": "cron", "off": False, "expr": "0 8 * * *"}
+    cron = {"id": "t2", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}
     assert fire_trigger(store, engine, a, cron) is False
     assert notified == [payload]  # unchanged — no sender to answer
     assert {h["note"] for h in store.execs.values()} == {"previous execution still in progress"}
@@ -243,11 +243,11 @@ def test_admission_publishes_exec_queued(store, monkeypatch):
     a["_live"] = {"some-live-exec"}
 
     assert fire_trigger(store, engine, a, _discord_trig(), payload=_payload()) is False
-    assert [ev for ev, _ in events] == ["exec.queued"]
+    assert [ev for ev, _ in events] == ["execution.queued"]
     kw = events[0][1]
-    assert kw["execId"] == store.queued_execs(a["id"])[0]["id"]
-    assert kw["exec_json"]["status"] == "queued"
-    assert kw["exec_json"]["queuedMs"] > 0
+    assert kw["executionId"] == store.queued_execs(a["id"])[0]["id"]
+    assert kw["execution_json"]["status"] == "queued"
+    assert kw["execution_json"]["queuedMs"] > 0
 
 
 def test_queue_admits_every_firing_and_caps_at_max_queued(store, monkeypatch):
@@ -428,7 +428,7 @@ def test_trigger_off_cancels_its_waiting_entries(store, monkeypatch):
     cancel_unmatched_queue(store, engine, a["id"])
     assert len(store.queued_execs(a["id"])) == 2
 
-    a["triggers"][0]["off"] = True
+    a["triggers"][0]["enabled"] = False
     cancel_unmatched_queue(store, engine, a["id"])
     assert store.queued_execs(a["id"]) == []
     notes = [h["note"] for h in store.execs.values() if h["status"] == "skipped"]
@@ -445,7 +445,7 @@ def test_trigger_off_keeps_entries_of_other_enabled_triggers(store):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
-    other = {"id": "t2", "kind": "discord", "off": False, "secret": "TOKEN",
+    other = {"id": "t2", "kind": "discord", "enabled": True, "secret": "TOKEN",
              "channel": "99"}
     a["triggers"] = [_discord_trig(), other]
     a["_live"] = {"blocking"}
@@ -454,7 +454,7 @@ def test_trigger_off_keeps_entries_of_other_enabled_triggers(store):
     fire_trigger(store, engine, a, other, payload=p2)
     assert len(store.queued_execs(a["id"])) == 2
 
-    a["triggers"][0]["off"] = True
+    a["triggers"][0]["enabled"] = False
     cancel_unmatched_queue(store, engine, a["id"])
     q = store.queued_execs(a["id"])
     assert len(q) == 1
@@ -477,9 +477,9 @@ def test_each_admission_publishes_its_own_exec_queued(store, monkeypatch):
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave", "one"))
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave", "two"))
 
-    queued_events = [kw for ev, kw in events if ev == "exec.queued"]
+    queued_events = [kw for ev, kw in events if ev == "execution.queued"]
     assert len(queued_events) == 2  # one admission event per firing
-    assert queued_events[0]["execId"] != queued_events[1]["execId"]  # distinct records
+    assert queued_events[0]["executionId"] != queued_events[1]["executionId"]  # distinct records
     assert len(store.queued_execs(a["id"])) == 2
 
 
@@ -500,7 +500,7 @@ def test_dst_fall_back_hour_fires_once(store, monkeypatch):
     sched = Scheduler(store, Engine(store), clock=local, utc_clock=utc)
     fires = _record_fires(monkeypatch)
     store.create_automation(make_version(), "Nightly", None, triggers=[
-        {"id": "t1", "kind": "cron", "off": False, "expr": "30 1 * * *"}])
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "30 1 * * *"}])
 
     # walk local time through the repeated hour; UTC only ever moves forward
     for local_now in [datetime(2026, 11, 1, 0, 55),   # baseline, EDT
@@ -530,7 +530,7 @@ def test_backward_clock_step_still_recovers(store, monkeypatch):
     sched = Scheduler(store, Engine(store), clock=local, utc_clock=utc)
     fires = _record_fires(monkeypatch)
     store.create_automation(make_version(), "Hourly", None, triggers=[
-        {"id": "t1", "kind": "cron", "off": False, "expr": "0 * * * *"}])
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 * * * *"}])
 
     sched._tick()  # baseline at 09:55
     # NTP yanks the clock back an hour — both readings move back together

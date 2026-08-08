@@ -12,7 +12,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   queued." when `maxQueued > 0`, else "A trigger firing now would be skipped." The §6 firing queue applies to message triggers only —
   a manual start is never queued, it is refused (409) so the user can decide what to do.
 - Start: execution record created with all steps queued; automation gets live id, lastStatus
-  executing, lastExecLabel "executing…"; the execution appears at top of Executions; sidebar counts
+  executing, lastExecutionLabel "executing…"; the execution appears at top of Executions; sidebar counts
   and menu-bar rows update live.
 - Before step 1 the engine ensures the version's declared packages (§6.2): the fast
   installed-check costs milliseconds when everything is present; anything missing installs with
@@ -24,7 +24,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   "▸ Step N — `<name>`", the step's own output, and its timeout/cancel/skip lines all land
   there; execution-level lines (package installs, secret failures, retry markers, the final
   failure line) go to `logs/execution.ndjson`. Then the execution gets its final status,
-  duration, result object; automation gets latest/resultChip/lastExecLabel "Today"; toast
+  duration, result object; automation gets latest/resultChip/lastExecutionLabel "Today"; toast
   summarizes. An execution whose steps include `skipped` ones but no failures finishes
   `succeeded`.
 - Cancel: kills timers/processes; execution cancelled, the executing attempt and its step
@@ -93,7 +93,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   re-executed and keep their attempts. Each executed step appends the next attempt. Same
   workspace (earlier steps' outputs are already there — nothing is copied), same result dir
   (a failed pass's stale result files may remain until steps overwrite them), accumulated
-  duration (`dur_ms` sums the passes; `started_at` never changes). `exec.finished` fires
+  duration (`duration_ms` sums the passes; `started_at` never changes). `exec.finished` fires
   again per pass, so the end-of-execution toast repeats — intended. Retry is allowed only on
   terminal `failed` executions and answers 409 while the automation is live, when the
   version no longer resolves, or — for a Draft execution — when the draft's steps changed
@@ -176,7 +176,7 @@ one-line summary value ("Values as used by this execution."). At the rail's bott
 per the §4.9 Show-in-Finder rule; deliberately low-key so it never competes with the RESULT
 card's Show in Finder, which is the user-facing output. The STEPS rail's rows are **selectable**: each row shows the status dot (pulsing
 while executing), name, a right-aligned attempt-count chip ("×2", mono, faint — only when the
-step has more than one attempt; the count is the latest attempt's `n`, which survives the
+step has more than one attempt; the count is the latest attempt's `number`, which survives the
 §4.5 prune) and the latest attempt's duration — rows carry no actions;
 skipping lives in the header's Skip-step button. Above step 1 sits a **"Setup log"**
 pseudo-row (terminal icon in place of a status dot) selecting the execution-scoped log.
@@ -198,10 +198,10 @@ Test executions never show it — draft iteration already lives in the editor.
 The LOGS pane shows the selected step's log (header: step name, or "Setup log" for the
 pseudo-row, plus the redaction note "secrets redacted: `<name>`"); when the selected step has
 more than one attempt, a segmented **attempt control** sits in the header — one status-tinted
-pill per retained attempt ("Attempt 2 · Failed · 3s", pills labeled by attempt `n` — after the
+pill per retained attempt ("Attempt 2 · Failed · 3s", pills labeled by attempt `number` — after the
 §4.5 prune the earliest pills are simply gone), latest selected by default. The pane is the
 color-coded log view (kinds sys/out/wrn/err); logs load lazily per selected step/attempt
-(§19) and live lines stream in over WS (deduped by `seq`), with live auto-scroll and the
+(§19) and live lines stream in over WS (deduped by `sequence`), with live auto-scroll and the
 blinking cursor on the live attempt. Empty states: "No logs — this execution never
 started." when the execution has no steps; an empty Setup log shows "No setup events —
 installs, retries, and failures would appear here."; an empty step attempt shows "No log
@@ -231,7 +231,7 @@ Deleted-automation handling: historical name, marked deleted.
 
 **Executions list:** all executions across automations, §4.5 `test` executions included — a
 Build & test run lands here like any other (the §11 panel's View-run button stays as a
-shortcut). A test row reads like any row: `autoName` is the §11 shadow record's name (the
+shortcut). A test row reads like any row: `automationName` is the §11 shadow record's name (the
 automation's; in create mode the draft's name, "New automation" fallback), never marked
 "(deleted)" (a create-mode test has no automation by design), and its trigger column prints
 "Test" **once** — the §4.5 trigger and ver labels are both "Test", and the row never prints

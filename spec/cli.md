@@ -59,14 +59,14 @@ into a directory; `automation push <ref> [dir] [--note] [--grant-agent NAME]…
 [--agent] [--grant-agent NAME]… [--grant-secret NAME]…` validates and creates v1. Files:
 
 - `spec.md` — the spec as markdown (§4.1 blocks ↔ markdown via `specmd`).
-- `manifest.yaml` — the §8 call-2 manifest shape verbatim: `name`, `desc`, `note`, `triggers`
+- `manifest.yaml` — the §8 call-2 manifest shape verbatim: `name`, `description`, `note`, `triggers`
   (the §8 rule-9 dialect — cron / imessage / discord / app_start entries; `pull` writes the
   stored crons only), `params` (full §4.2 definitions with
   defaults, **value fields stripped** — values are user-owned operational state, set via
-  `param set`, never round-tripped through versions), `packages`, `steps` (file, name, desc,
+  `param set`, never round-tripped through versions), `packages`, `steps` (file, name, description,
   `agent`/`why`/`agents`, `secrets`, `timeout`/`no_timeout`).
 - `NN-name.py` — one file per step, matching `steps[].file`.
-- `instructions.md` — the version's build instructions (`instr`), when present.
+- `instructions.md` — the version's build instructions (`instructions`), when present.
 - `notes.md` — the version's §4.1 notes document, when nonempty; push saves it verbatim.
 
 Push/create run the **same §8 validators the drafting pipeline uses**
@@ -98,7 +98,7 @@ learns about an install failure at build time, not when a trigger fires.
   `--grant-secret` flags. Stored grants never shrink on push (they are user-owned state, like
   param values); the UI edit page remains the place to revoke.
 - After validation, the CLI computes the names the workdir actually needs — per-step `agents`,
-  per-step `secrets`, plus the code-referenced `secretRefs` — and any needed name outside the
+  per-step `secrets`, plus the code-referenced `secretReferences` — and any needed name outside the
   saved grants exits 1 listing the exact flags to add, nothing written. Agent comparison
   happens at grant-name level: stored `stepAgents` ids map back to their §8 grant names before
   the needed-vs-granted check. An `agent: true` step with no `agents:` list runs on the first
@@ -120,7 +120,7 @@ package ensure.
 
 **Trigger semantics on push** — the §4.3 trigger merge, performed client-side exactly
 like the editor: the manifest's cron entries are matched against the stored list on
-(`expr`, `tz`) — matches keep their `id` and `off` state, new entries arrive enabled, stored
+(`expression`, `timezone`) — matches keep their `id` and `enabled` state, new entries arrive enabled, stored
 crons the manifest no longer lists are dropped; the manifest's `discord`/`imessage`/
 `app_start` entries add only when no stored trigger matches their §4.3 identity fields; and
 stored non-cron triggers always survive untouched. `pull` writes the stored crons into the

@@ -136,7 +136,7 @@ def test_open_db_errors(tmp_path, monkeypatch):
 
 
 def test_message_matches_rules():
-    t = {"kind": "imessage", "off": False, "from": "+15551234567"}
+    t = {"kind": "imessage", "enabled": True, "from": "+15551234567"}
     m = {"text": "please Deploy now", "sender": "+15551234567", "chat": "c",
          "group": False, "from_me": False, "tapback": False}
     assert message_matches(t, m)

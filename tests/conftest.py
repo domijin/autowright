@@ -81,11 +81,11 @@ def client(home):
 
 @pytest.fixture()
 def devmode(home):
-    """devMode on, persisted — reqlog reads the live setting from settings.yaml."""
+    """developerMode on, persisted — reqlog reads the live setting from settings.yaml."""
     from autowright import paths, reqlog
     from autowright.yamlio import save_yaml
 
-    save_yaml(paths.settings_file(), {"devMode": True})
+    save_yaml(paths.settings_file(), {"developerMode": True})
     reqlog._dev_cache["t"] = 0.0  # drop the 1 s cache so the write is seen now
     yield
     reqlog._dev_cache["t"] = 0.0
@@ -100,12 +100,12 @@ def store(home):
     return s
 
 
-def read_all_logs(store, exec_id):
+def read_all_logs(store, execution_id):
     """Test convenience: every log line of an execution, merged across the
     per-step-attempt files plus the execution log (§5 logs/ layout)."""
     import json
 
-    d = store.exec_dir(exec_id) / "logs"
+    d = store.exec_dir(execution_id) / "logs"
     out = []
     if d.exists():
         for p in sorted(d.iterdir()):
@@ -119,22 +119,22 @@ def read_all_logs(store, exec_id):
 
 def make_version(**over):
     ver = {
-        "desc": "Test automation",
+        "description": "Test automation",
         "note": "Created",
         "params": [
             {"name": "greeting", "kind": "text", "label": "Greeting", "help": "", "default": "hello"},
             {"name": "count", "kind": "number", "label": "Count", "help": "", "min": 1, "default": 3},
         ],
         "steps": [
-            {"file": "01-say.py", "name": "Say hello", "desc": "prints",
+            {"file": "01-say.py", "name": "Say hello", "description": "prints",
              "code": 'from autowright import log, params\n'
                      'log(f"{params[\'greeting\']} x{params[\'count\']}")\n'},
-            {"file": "02-finish.py", "name": "Finish", "desc": "result",
+            {"file": "02-finish.py", "name": "Finish", "description": "result",
              "code": 'from autowright import result\n'
                      'result.status("ok")\nresult.chip("All good")\n'},
         ],
-        "spec": [{"k": "h1", "text": "Test automation"}, {"k": "p", "text": "It tests."}],
-        "instr": None,
+        "spec": [{"kind": "h1", "text": "Test automation"}, {"kind": "p", "text": "It tests."}],
+        "instructions": None,
     }
     ver.update(over)
     return ver

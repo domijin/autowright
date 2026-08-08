@@ -49,7 +49,7 @@ describe('req (via api.state / api.executeNow)', () => {
   it('a body adds Content-Type and JSON-serializes', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ execId: 'e1' }),
+      json: async () => ({ executionId: 'e1' }),
     }) as unknown as Response)
     vi.stubGlobal('fetch', fetchMock)
     await api.executeNow('a1')
@@ -155,12 +155,12 @@ describe('agent/harness/ollama/draft request shapes', () => {
     // §19: an explicit [] means "unchecked" and must reach the backend as [],
     // never dropped from the JSON (absent would fall back to all-on defaults).
     await api.postDraftJob({
-      mode: 'sync', autoId: 'a1', agentId: 'g1',
+      mode: 'sync', automationId: 'a1', agentId: 'g1',
       enabledAgents: [], allowedSecrets: [],
     })
     expect(call()[0]).toBe('http://127.0.0.1:4242/drafts')
     expect(call()[1].body).toBe(JSON.stringify({
-      mode: 'sync', autoId: 'a1', agentId: 'g1',
+      mode: 'sync', automationId: 'a1', agentId: 'g1',
       enabledAgents: [], allowedSecrets: [],
     }))
   })
@@ -173,11 +173,11 @@ describe('agent/harness/ollama/draft request shapes', () => {
     expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe('DELETE')
   })
 
-  it('putSecret sends desc only when given (§4.8: absent desc edits nothing)', async () => {
+  it('putSecret sends description only when given (§4.8: absent description edits nothing)', async () => {
     await api.putSecret('MY_TOKEN', 'v')
     expect(call()[1].body).toBe(JSON.stringify({ value: 'v' }))
     await api.putSecret('MY_TOKEN', 'v', 'what it is for')
     expect((fetchMock.mock.calls[1][1] as RequestInit).body)
-      .toBe(JSON.stringify({ value: 'v', desc: 'what it is for' }))
+      .toBe(JSON.stringify({ value: 'v', description: 'what it is for' }))
   })
 })

@@ -1,5 +1,5 @@
-// §9.3 developer log overlay: `-key toggled bottom log panel, devMode-gated.
-// Inert (no listener, never renders) while devMode is off; polls over IPC
+// §9.3 developer log overlay: `-key toggled bottom log panel, developerMode-gated.
+// Inert (no listener, never renders) while developerMode is off; polls over IPC
 // every 1 s only while open. First tab (default) is the §5 request-log
 // browser; the rest tail the four log files.
 import React, { useEffect, useRef, useState } from 'react'
@@ -86,7 +86,7 @@ function RequestsPane() {
 }
 
 export default function DevLogOverlay() {
-  const devMode = useStore((s) => s.settings?.devMode) ?? false
+  const developerMode = useStore((s) => s.settings?.developerMode) ?? false
   const [open, setOpen] = useState(false)
   const [tails, setTails] = useState<Tail[] | null>(null)
   const [tab, setTab] = useState<string | null>(null)
@@ -94,10 +94,10 @@ export default function DevLogOverlay() {
   const followRef = useRef(true)
 
   // Turning the setting off closes an open overlay.
-  useEffect(() => { if (!devMode) setOpen(false) }, [devMode])
+  useEffect(() => { if (!developerMode) setOpen(false) }, [developerMode])
 
   useEffect(() => {
-    if (!devMode) return
+    if (!developerMode) return
     const onKey = (e: KeyboardEvent) => {
       // e.code, not e.key: §9.3 names the physical Backquote key — on many
       // non-US layouts that key emits another glyph (or is a dead key), which
@@ -111,7 +111,7 @@ export default function DevLogOverlay() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [devMode])
+  }, [developerMode])
 
   useEffect(() => {
     if (!open) { setTails(null); setTab(null); followRef.current = true; return }
@@ -129,13 +129,13 @@ export default function DevLogOverlay() {
   const active = tab && (tab === REQUESTS || tails?.some((t) => t.name === tab)) ? tab : REQUESTS
   const text = tails?.find((t) => t.name === active)?.text ?? ''
 
-  // Auto-follow the tail while scrolled to the bottom; scrolling up pauses it.
+  // Automation-follow the tail while scrolled to the bottom; scrolling up pauses it.
   useEffect(() => {
     const el = bodyRef.current
     if (el && followRef.current) el.scrollTop = el.scrollHeight
   }, [text, active])
 
-  if (!devMode || !open) return null
+  if (!developerMode || !open) return null
   return (
     <div className="ad-anim-fade" style={{
       position: 'fixed', inset: 0, zIndex: 200,

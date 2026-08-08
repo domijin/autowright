@@ -132,7 +132,7 @@ main-process IPC, filtered to `.autowright`). Footer: quiet Cancel / accent **Im
 `/automations/import/url`; a chosen file's bytes to `/automations/import/preview`; while in
 flight the buttons disable. A 422 shows inline in red — under the field for URL failures,
 under the dashed button for file failures — never as a toast. Success swaps the modal to
-the **preview step**: the automation's name + desc, a source row (inset box — link or
+the **preview step**: the automation's name + description, a source row (inset box — link or
 file-zipper icon, mono text: the resolved URL, or the chosen file's name), then only the
 sections that apply — TRIGGERS as §4.3 `triggerLabel` chips, STEPS as numbered rows (faint
 mono index, step name, accent AGENT mini-badge where `agent`), SECRETS (amber NOT SET
@@ -156,7 +156,7 @@ and execution pages), and
 a square accent-filled **inline execute button** per card (rounded square, solid accent/orange
 background with a dark play icon — same fill treatment as the primary button; hover brightens;
 while that automation is executing it swaps to a spinner, dims, and is disabled — tooltip
-explains why). The card carries no last-execution label — `lastExecLabel` appears on the detail page and in the
+explains why). The card carries no last-execution label — `lastExecutionLabel` appears on the detail page and in the
 menu bar. The card name stays on one line — ellipsized with the full name as a `title`
 tooltip (same treatment as the detail-page title), so long names never wrap and desync card
 heights across a grid row. Empty state (dashed card):
@@ -167,10 +167,10 @@ and Autowright executes them on your schedule." with accent CTA "Create your fir
 
 Back link ("‹ Automations"), title row: name (single line, shrinks with ellipsis, full name in
 its tooltip — the row never wraps; read-only here — renaming lives on the §11 edit page).
-Under the title row, a lede row: the automation's `desc` (§4.1) as a muted single-line lede
+Under the title row, a lede row: the automation's `description` (§4.1) as a muted single-line lede
 (ellipsis on overflow, full text in its tooltip); read-only — editing lives on the §11 edit
 page — and beside it, on the same row, the §4.3 detail-page trigger status chip (never
-shrinks; the desc ellipsizes first). When the description is empty the desc text is omitted
+shrinks; the description ellipsizes first). When the description is empty the description text is omitted
 and the chip stands alone on the row.
 Then the version chip dropdown (§4.4 Execute once + footer
 explainer), status badge, then the §9 header-action cluster: Edit (ghost), Execute now (accent
@@ -240,14 +240,14 @@ Sections top to bottom:
   input — just the preview line "On app start — executes when you launch the app", and its
   picker chip renders disabled (title "Already added") while the list holds one. A discord or
   imessage
-  trigger row whose §4.3 `conn` state is `error` shows the error as a red mono line under the
+  trigger row whose §4.3 `connection` state is `error` shows the error as a red mono line under the
   row; state `connecting` shows a muted "connecting…" line; `connected` shows nothing. The
   **Discord editor**: a channel-id input (ASCII digits; red border otherwise), then a secret
   row — a **secret picker** for the bot token (the app's standard popover pattern: an
   `ad-btn-pill` trigger button — fa-key icon, the selected secret's mono name or the muted
   placeholder "Choose the bot-token secret…", fa-caret-down — opening a `PopMenu` with one
   row per stored secret: accent check column for the selected one, mono name with the §12
-  amber NOT SET badge when the secret is a placeholder, the secret's `desc` as a muted
+  amber NOT SET badge when the secret is a placeholder, the secret's `description` as a muted
   sub-line when present; picking closes the menu; always rendered, even when no secrets
   exist — the empty menu shows the muted note "No secrets yet — press New secret.") with a
   quiet **New secret** button directly beside it (the row hugs left — the pill and the button
@@ -317,7 +317,7 @@ Sections top to bottom:
     Automation row); unknown → muted dot, "Not asked yet — Autowright sends replies through
     Messages" and a **Grant** button calling §19 `POST /imessage/permissions/automation-probe`
     (spinner while it blocks on the macOS prompt; the row re-renders from the result).
-  Neither state blocks Add — a trigger saved without permissions parks in the §4.3 `conn`
+  Neither state blocks Add — a trigger saved without permissions parks in the §4.3 `connection`
   error state and heals when granted. Then the editor
   inputs: a **sender input** (placeholder "Sender — +15551234567 or an email"; §4.3 `from`;
   red border while invalid per the §4.3 rule — email, or `+`-prefixed phone after
@@ -331,11 +331,11 @@ Sections top to bottom:
   trigger button: fa-globe icon, the chosen zone's mono name or the muted default "Local
   time", fa-caret-down — opening a `PopMenu`): a filter input at the top (placeholder "Filter
   timezones…", auto-focused, cleared on every open) narrows the list by case-insensitive
-  substring; below it a scrollable list — "Local time" first (the default; stores no `tz`;
+  substring; below it a scrollable list — "Local time" first (the default; stores no `timezone`;
   shown only while the filter is empty), then every IANA zone
   (`Intl.supportedValuesOf('timeZone')`), the current choice marked active; picking closes
   the menu. A non-local choice is
-  stored as the trigger's §4.3 `tz`, and the preview line (labels and "next:") reflects it,
+  stored as the trigger's §4.3 `timezone`, and the preview line (labels and "next:") reflects it,
   with "next:" always shown in local time. Empty list renders a
   dashed "No triggers" row. Trigger edits apply immediately (§19 PATCH) — no version, no AI.
   No Execute-now button here — manual execution lives in the title row and the menu bar.
@@ -404,7 +404,7 @@ Sections top to bottom:
   - "Before restoring a snapshot" — "Saves a copy of the current memory right before a
     restore replaces it, so a restore can be undone." (pre-restore)
   Edits apply immediately (§19 PATCH `snapshotSettings`) — no version, no AI.
-- **STEPS** card — read-only step rows (number, name, desc; the whole row is a click-to-expand
+- **STEPS** card — read-only step rows (number, name, description; the whole row is a click-to-expand
   disclosure whose only right-edge affordance is a caret — no "view script" text label, so
   narrow windows don't crush the row's middle column; the caret carries a "View script" /
   "Hide script" `title` tooltip; expanding shows the script with §11 `PyCode`
@@ -435,10 +435,10 @@ the execution, then deletes). Buttons Cancel / red "Delete automation".
 
 ### 9.3 Developer log overlay
 
-A low-priority debug surface, ComfyUI-style: with the §4.9 `devMode` setting on, pressing
+A low-priority debug surface, ComfyUI-style: with the §4.9 `developerMode` setting on, pressing
 `` ` `` (Backquote) in the main window toggles a bottom log panel; Escape also closes it. The
 key is ignored while focus is in an editable element (input, textarea, contenteditable) and the
-whole feature is inert — no listener effect, overlay never renders — while `devMode` is off
+whole feature is inert — no listener effect, overlay never renders — while `developerMode` is off
 (turning the setting off closes an open overlay). Main-window surfaces only, never the menu-bar
 panel.
 
@@ -709,8 +709,8 @@ checked once, staggered, on the first Agents page visit that sees it (new agents
 the next visit); later visits render the cached badge with no re-check. The cache entry for an
 agent updates when its edit form saves ("Connecting" until the fresh result lands, §4.7 check
 re-run right after the save) and when the reconnect flow's check answers (§12 form banner).
-Each card shows the agent's `desc` detail line — the real §4.7 desc only, never
-generated marketing copy (the desc is drafting input, §8 grants yaml); when the desc is empty
+Each card shows the agent's `description` detail line — the real §4.7 description only, never
+generated marketing copy (the description is drafting input, §8 grants yaml); when the description is empty
 the line reads "No description yet — add one in Edit to tell the drafting AI what this agent
 is for." —
 and a **USED BY** row of clickable automation chips (fallback "Not used by any automation yet.").
@@ -796,7 +796,7 @@ pull input: link "Browse more models on Ollama ↗" (opens https://ollama.com/li
 
 **Secrets.** List with add/edit modal, masked values, delete confirm (§4.8 — the confirm
 modal is titled "Delete this secret?" with the danger action "Delete secret"). The list's NAME
-cell shows the secret's `desc` as a muted sub-line when present, and an amber **NOT SET** tag
+cell shows the secret's `description` as a muted sub-line when present, and an amber **NOT SET** tag
 (same tag style as §9.2's NOT SET param tag) when the secret is a §4.8 placeholder — the tag
 clears once a value is saved, and the placeholder's VALUE cell shows a faint "—" instead of
 the mask. The name field is a

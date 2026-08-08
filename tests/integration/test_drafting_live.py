@@ -23,7 +23,7 @@ def test_draft_create_over_live_backend_honors_unchecked_grants(backend, client)
     ag = client.post("/agents", json={"harness": "Claude Code", "mode": "default",
                                       "name": "Mock writer"}).json()
     assert client.put("/secrets/LIVE_KEY",
-                      json={"value": "", "desc": "placeholder only"}).status_code == 200
+                      json={"value": "", "description": "placeholder only"}).status_code == 200
 
     r = client.post("/drafts", json={"mode": "create",
                                      "text": "Watch a page for changes",
@@ -49,7 +49,7 @@ def test_draft_create_defaults_grant_everything(backend, client):
     # same all-on seed the Review page starts from.
     ag = client.post("/agents", json={"harness": "Claude Code", "mode": "default",
                                       "name": "Mock writer"}).json()
-    client.put("/secrets/GRANTED_KEY", json={"value": "", "desc": "placeholder"})
+    client.put("/secrets/GRANTED_KEY", json={"value": "", "description": "placeholder"})
 
     r = client.post("/drafts", json={"mode": "create", "text": "Watch the weather",
                                      "agentId": ag["id"]})

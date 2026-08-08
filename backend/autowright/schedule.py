@@ -105,7 +105,7 @@ def cron_next(expr: str, after: datetime | None = None) -> datetime | None:
 
 def zone_of(t: dict) -> ZoneInfo | None:
     """The trigger's zone, None when local. Assumes a validated `tz`."""
-    return ZoneInfo(t["tz"]) if t.get("tz") else None
+    return ZoneInfo(t["timezone"]) if t.get("timezone") else None
 
 
 def _to_wall(local: datetime, tz: ZoneInfo) -> datetime:
@@ -239,15 +239,15 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             return "the iMessage message pattern must be a nonempty text"
         return None
     if kind == "cron":
-        if err := tz_error(t.get("tz")):
+        if err := tz_error(t.get("timezone")):
             return err
         try:
-            parse_cron(t.get("expr") or "")
+            parse_cron(t.get("expression") or "")
         except CronError as e:
             return str(e)
         return None
     if kind == "time":
-        if err := tz_error(t.get("tz")):
+        if err := tz_error(t.get("timezone")):
             return err
         try:
             at = datetime.fromisoformat(t.get("at") or "")
@@ -277,9 +277,9 @@ def normalize_triggers(raw: list) -> tuple[list[dict], str | None]:
         if err:
             return [], err
         n: dict = {"id": t.get("id") or str(uuid.uuid4()),
-                   "kind": t["kind"], "off": bool(t.get("off", False))}
+                   "kind": t["kind"], "enabled": bool(t.get("enabled", True))}
         if t["kind"] == "cron":
-            n["expr"] = t["expr"].strip()
+            n["expression"] = t["expression"].strip()
         elif t["kind"] == "time":
             n["at"] = t["at"]
         elif t["kind"] == "discord":
@@ -298,8 +298,8 @@ def normalize_triggers(raw: list) -> tuple[list[dict], str | None]:
         else:  # app_start — no fields, at most one per automation (§4.3)
             if any(x["kind"] == "app_start" for x in out):
                 return [], "only one app-start trigger per automation"
-        if t["kind"] != "app_start" and t.get("tz"):
-            n["tz"] = t["tz"]
+        if t["kind"] != "app_start" and t.get("timezone"):
+            n["timezone"] = t["timezone"]
         out.append(n)
     return out, None
 
@@ -334,7 +334,7 @@ def time_display(at: str, tz: str | None = None) -> tuple[str, str]:
 
 def trigger_display(t: dict) -> tuple[str, str]:
     if t["kind"] == "cron":
-        return cron_display(t["expr"], t.get("tz"))
+        return cron_display(t["expression"], t.get("timezone"))
     if t["kind"] == "app_start":
         return "On app start", "App start"
     if t["kind"] == "discord":
@@ -347,7 +347,7 @@ def trigger_display(t: dict) -> tuple[str, str]:
         if t.get("pattern"):
             label += f" · “{t['pattern']}”"
         return label, "iMessage"
-    return time_display(t["at"], t.get("tz"))
+    return time_display(t["at"], t.get("timezone"))
 
 
 def trigger_next(t: dict, after: datetime | None = None) -> datetime | None:
@@ -359,19 +359,19 @@ def trigger_next(t: dict, after: datetime | None = None) -> datetime | None:
     base = after or datetime.now()
     if t["kind"] == "cron":
         if not tz:
-            return cron_next(t["expr"], base)
+            return cron_next(t["expression"], base)
         # The wall→local map is non-monotonic around DST transitions; keep
         # advancing until a reading lands strictly after `base` — the
         # scheduler's contract (occurrences at or before the baseline never
         # fire) depends on it.
-        nxt = cron_next(t["expr"], _to_wall(base, tz))
+        nxt = cron_next(t["expression"], _to_wall(base, tz))
         for _ in range(1000):
             if nxt is None:
                 return None
             loc = _wall_to_local(nxt, tz, base)
             if loc is not None:
                 return loc
-            nxt = cron_next(t["expr"], nxt)
+            nxt = cron_next(t["expression"], nxt)
         return None
     at = datetime.fromisoformat(t["at"])
     if tz:
@@ -396,7 +396,7 @@ def time_elapsed(t: dict, now: datetime | None = None) -> bool:
 
 def next_at(triggers: list[dict], after: datetime | None = None) -> datetime | None:
     """§4.3 nextAt: minimum over enabled triggers, None when nothing is coming."""
-    nxts = [n for t in triggers if not t["off"] if (n := trigger_next(t, after))]
+    nxts = [n for t in triggers if t["enabled"] if (n := trigger_next(t, after))]
     return min(nxts) if nxts else None
 
 

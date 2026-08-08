@@ -63,14 +63,14 @@ def test_labels():
 
 
 def test_trigger_chip_and_next_at():
-    t1 = {"id": "1", "kind": "cron", "off": False, "expr": "0 8 * * *"}
-    t2 = {"id": "2", "kind": "cron", "off": False, "expr": "0 2 * * *"}
+    t1 = {"id": "1", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}
+    t2 = {"id": "2", "kind": "cron", "enabled": True, "expression": "0 2 * * *"}
     assert trigger_chip([]) == "No triggers"
     assert trigger_chip([t1]) == "Daily 8:00"
     assert trigger_chip([t1, t2]) == "2 triggers"
     now = datetime(2026, 7, 10, 9, 0)
     assert next_at([t1, t2], after=now) == datetime(2026, 7, 11, 2, 0)
-    assert next_at([{**t1, "off": True}, {**t2, "off": True}], after=now) is None
+    assert next_at([{**t1, "enabled": False}, {**t2, "enabled": False}], after=now) is None
 
 
 def test_time_trigger_validation_and_next():
@@ -79,26 +79,26 @@ def test_time_trigger_validation_and_next():
     assert validate_trigger({"kind": "time", "at": future}) is None
     assert "future" in validate_trigger({"kind": "time", "at": past})
     assert "timestamp" in validate_trigger({"kind": "time", "at": "not-a-time"})
-    t = {"id": "1", "kind": "time", "off": False, "at": future}
+    t = {"id": "1", "kind": "time", "enabled": True, "at": future}
     assert trigger_next(t) == datetime.fromisoformat(future)
     assert trigger_next(t, after=datetime.fromisoformat(future)) is None  # spent
 
 
 def test_tz_validation():
-    assert validate_trigger({"kind": "cron", "expr": "0 8 * * *", "tz": "Asia/Tokyo"}) is None
-    assert "unknown timezone" in validate_trigger({"kind": "cron", "expr": "0 8 * * *", "tz": "Mars/Olympus"})
-    assert "unknown timezone" in validate_trigger({"kind": "time", "at": "2099-01-01T00:00", "tz": 5})
-    norm, err = normalize_triggers([{"kind": "cron", "expr": "0 8 * * *", "tz": "UTC"}])
-    assert err is None and norm[0]["tz"] == "UTC"
-    norm, err = normalize_triggers([{"kind": "cron", "expr": "0 8 * * *"}])
-    assert err is None and "tz" not in norm[0]
+    assert validate_trigger({"kind": "cron", "expression": "0 8 * * *", "timezone": "Asia/Tokyo"}) is None
+    assert "unknown timezone" in validate_trigger({"kind": "cron", "expression": "0 8 * * *", "timezone": "Mars/Olympus"})
+    assert "unknown timezone" in validate_trigger({"kind": "time", "at": "2099-01-01T00:00", "timezone": 5})
+    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *", "timezone": "UTC"}])
+    assert err is None and norm[0]["timezone"] == "UTC"
+    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *"}])
+    assert err is None and "timezone" not in norm[0]
 
 
 def test_tz_cron_next_is_zone_wall_clock():
     from datetime import timezone
     now = datetime(2026, 7, 10, 9, 0)
     # "0 8 * * *" in UTC: next 08:00 UTC after `now` (local), expressed in local naive time.
-    got = trigger_next({"id": "1", "kind": "cron", "off": False, "expr": "0 8 * * *", "tz": "UTC"}, after=now)
+    got = trigger_next({"id": "1", "kind": "cron", "enabled": True, "expression": "0 8 * * *", "timezone": "UTC"}, after=now)
     now_utc = now.astimezone(timezone.utc).replace(tzinfo=None)
     nxt_utc = now_utc.replace(hour=8, minute=0, second=0, microsecond=0)
     if nxt_utc <= now_utc:
@@ -110,13 +110,13 @@ def test_tz_time_trigger():
     from datetime import timezone
     wall = datetime.now(timezone.utc) + timedelta(hours=2)
     at = wall.replace(tzinfo=None).isoformat(timespec="minutes")
-    t = {"id": "1", "kind": "time", "off": False, "at": at, "tz": "UTC"}
+    t = {"id": "1", "kind": "time", "enabled": True, "at": at, "timezone": "UTC"}
     assert validate_trigger(t) is None
     got = trigger_next(t)
     expect = datetime.fromisoformat(at).replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
     assert got == expect
     past = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(tzinfo=None).isoformat(timespec="minutes")
-    assert "future" in validate_trigger({"kind": "time", "at": past, "tz": "UTC"})
+    assert "future" in validate_trigger({"kind": "time", "at": past, "timezone": "UTC"})
 
 
 def test_tz_labels():
@@ -131,14 +131,14 @@ def test_app_start_trigger():
     from autowright.schedule import trigger_display
 
     assert validate_trigger({"kind": "app_start"}) is None
-    norm, err = normalize_triggers([{"kind": "app_start", "off": True, "tz": "UTC"}])
+    norm, err = normalize_triggers([{"kind": "app_start", "enabled": False, "timezone": "UTC"}])
     assert err is None
-    assert norm[0]["kind"] == "app_start" and norm[0]["off"] is True and norm[0]["id"]
-    assert "tz" not in norm[0] and "expr" not in norm[0] and "at" not in norm[0]
+    assert norm[0]["kind"] == "app_start" and norm[0]["enabled"] is False and norm[0]["id"]
+    assert "timezone" not in norm[0] and "expression" not in norm[0] and "at" not in norm[0]
     # §4.3: at most one per automation
     _, err = normalize_triggers([{"kind": "app_start"}, {"kind": "app_start"}])
     assert "one app-start" in err
-    t = {"id": "1", "kind": "app_start", "off": False}
+    t = {"id": "1", "kind": "app_start", "enabled": True}
     assert trigger_next(t) is None  # no computable next occurrence
     assert next_at([t]) is None
     assert trigger_display(t) == ("On app start", "App start")
@@ -150,8 +150,8 @@ def test_reserved_and_unknown_kinds_rejected():
     assert "unknown" in validate_trigger({"kind": "webhook"})
     _, err = normalize_triggers([{"kind": "imessage"}])  # no `from` → invalid
     assert err
-    norm, err = normalize_triggers([{"kind": "cron", "expr": "0 8 * * *", "off": True}])
-    assert err is None and norm[0]["off"] is True and norm[0]["id"]
+    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *", "enabled": False}])
+    assert err is None and norm[0]["enabled"] is False and norm[0]["id"]
 
 
 def test_imessage_trigger_validation_and_normalization():
@@ -216,19 +216,19 @@ def test_discord_trigger_normalize_and_display():
     assert trigger_display(plain[0]) == ("Discord · 42", "Discord")
     # no computable next occurrence (§4.3) — nextAt ignores discord
     assert trigger_next(plain[0]) is None
-    assert next_at([{**plain[0], "off": False}]) is None
+    assert next_at([{**plain[0], "enabled": True}]) is None
 
 
 def test_specmd_roundtrip():
     from autowright.specmd import blocks_to_md, md_to_blocks
 
     blocks = [
-        {"k": "h1", "text": "Title"},
-        {"k": "p", "text": "A paragraph of text."},
-        {"k": "h2", "text": "Section"},
-        {"k": "li", "text": "first"},
-        {"k": "li", "text": "second"},
-        {"k": "p", "text": "Closing."},
+        {"kind": "h1", "text": "Title"},
+        {"kind": "p", "text": "A paragraph of text."},
+        {"kind": "h2", "text": "Section"},
+        {"kind": "li", "text": "first"},
+        {"kind": "li", "text": "second"},
+        {"kind": "p", "text": "Closing."},
     ]
     assert md_to_blocks(blocks_to_md(blocks)) == blocks
 
@@ -257,7 +257,7 @@ def _local_naive_to_utc_str(dt):
 
 def test_cron_parity_fixture_next_occurrences():
     for e in _fixture()["next"]:
-        trig = {"kind": "cron", "expr": e["expr"], "tz": e["tz"], "off": False, "id": "x"}
+        trig = {"kind": "cron", "expression": e["expression"], "timezone": e["timezone"], "enabled": True, "id": "x"}
         got = trigger_next(trig, after=_utc_str_to_local_naive(e["after_utc"]))
         if e["next_utc"] is None:
             assert got is None, e
@@ -268,15 +268,15 @@ def test_cron_parity_fixture_next_occurrences():
 
 def test_cron_parity_fixture_labels():
     for e in _fixture()["labels"]:
-        assert cron_display(e["expr"], e["tz"]) == (e["label"], e["short"]), e
+        assert cron_display(e["expression"], e["timezone"]) == (e["label"], e["short"]), e
 
 
 def test_dst_spring_forward_gap_shifts_by_gap_width():
     """§4.3: 2:30 AM is erased on 2027-03-14 in Los Angeles — the trigger
     still fires, shifted forward by the gap width: the erased wall time read
     with the pre-transition offset lands at 3:30 local (10:30 UTC)."""
-    trig = {"kind": "cron", "expr": "30 2 * * *", "tz": "America/Los_Angeles",
-            "off": False, "id": "x"}
+    trig = {"kind": "cron", "expression": "30 2 * * *", "timezone": "America/Los_Angeles",
+            "enabled": True, "id": "x"}
     after = _utc_str_to_local_naive("2027-03-13T18:00:00Z")
     got = trigger_next(trig, after=after)
     assert got == _utc_str_to_local_naive("2027-03-14T10:30:00Z")
@@ -285,8 +285,8 @@ def test_dst_spring_forward_gap_shifts_by_gap_width():
 def test_dst_fall_back_ambiguity_fires_once_at_earlier_instant():
     """§4.3: 1:30 AM happens twice on 2026-11-01 in Los Angeles — one firing,
     at the earlier instant (08:30 UTC, PDT side)."""
-    trig = {"kind": "cron", "expr": "30 1 * * *", "tz": "America/Los_Angeles",
-            "off": False, "id": "x"}
+    trig = {"kind": "cron", "expression": "30 1 * * *", "timezone": "America/Los_Angeles",
+            "enabled": True, "id": "x"}
     after = _utc_str_to_local_naive("2026-10-31T18:00:00Z")
     got = trigger_next(trig, after=after)
     assert got == _utc_str_to_local_naive("2026-11-01T08:30:00Z")
@@ -299,8 +299,8 @@ def test_dst_fall_back_is_monotonic_against_baseline():
     before `after`. The naive fold=0 conversion broke this inside a foreign
     zone's repeated hour (baseline mid-window → the same occurrence re-fired
     every tick, measured 120 executions in 30 minutes)."""
-    trig = {"kind": "cron", "expr": "30 1 * * *", "tz": "America/New_York",
-            "off": False, "id": "x"}
+    trig = {"kind": "cron", "expression": "30 1 * * *", "timezone": "America/New_York",
+            "enabled": True, "id": "x"}
     # 06:15 UTC = 01:15 EST — inside the second pass of NY's repeated hour.
     after = _utc_str_to_local_naive("2026-11-01T06:15:00Z")
     got = trigger_next(trig, after=after)

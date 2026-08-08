@@ -3,12 +3,12 @@
 
 def make_header(**over):
     h = {
-        "id": "e-1", "auto_id": "a-1", "auto_name": "Job",
+        "id": "e-1", "automation_id": "a-1", "automation_name": "Job",
         "kind": "version", "version": 1,
         "status": "executing", "trigger": "manual",
         "queued_at": None,
         "started_at": "2026-07-20T08:30:00+00:00", "finished_at": None,
-        "dur_ms": None, "note": None, "chip": None, "chip_status": None,
+        "duration_ms": None, "note": None, "chip": None, "chip_status": None,
         "error": None,
     }
     h.update(over)
@@ -51,8 +51,8 @@ def test_upsert_updates_mutable_fields_and_roundtrips_error(home):
     db = execdb.ExecDB(_db_path(home))
     db.upsert(make_header())
     db.upsert(make_header(
-        auto_name="Job Renamed", status="failed",
-        finished_at="2026-07-20T08:31:05+00:00", dur_ms=65_000,
+        automation_name="Job Renamed", status="failed",
+        finished_at="2026-07-20T08:31:05+00:00", duration_ms=65_000,
         note="boom note", chip="2 issues", chip_status="attention",
         error={"step": "01-say.py", "message": "boom", "reason": "crash"},
         # started_at IS mutable on conflict — a §6 queue promotion re-stamps it
@@ -61,10 +61,10 @@ def test_upsert_updates_mutable_fields_and_roundtrips_error(home):
         # immutable-on-conflict columns: changed values must NOT stick
         kind="draft", version=9, trigger="cron"))
     h = db.load_all()["e-1"]
-    assert h["auto_name"] == "Job Renamed"
+    assert h["automation_name"] == "Job Renamed"
     assert h["status"] == "failed"
     assert h["finished_at"] == "2026-07-20T08:31:05+00:00"
-    assert h["dur_ms"] == 65_000
+    assert h["duration_ms"] == 65_000
     assert h["note"] == "boom note"
     assert h["chip"] == "2 issues" and h["chip_status"] == "attention"
     # the error dict flattens to columns and reconstructs on load

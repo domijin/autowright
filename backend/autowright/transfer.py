@@ -63,7 +63,7 @@ def _referenced_agents(store: Store, a: dict, ver: dict) -> list[dict]:
             g = by_grant.get(n)
             if g:
                 by_id.setdefault(g["id"], g)
-    return [{"name": harness.grant_name(g), "desc": g.get("desc") or "",
+    return [{"name": harness.grant_name(g), "description": g.get("description") or "",
              "harness": g.get("harness"), "mode": g.get("mode", "default"),
              "model": g.get("model")} for g in by_id.values()]
 
@@ -82,14 +82,14 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
         if drafting:
             manifest["agent"] = harness.grant_name(drafting)
         # §5.1: cron, app_start, discord, and imessage — one-shot `time`
-        # triggers are moments in time; no ids, no off state. A discord
+        # triggers are moments in time; no ids, no enabled state. A discord
         # trigger travels as its stored fields: the token secret's *name*
         # only, never the value.
         triggers = []
         for t in a["triggers"]:
             if t["kind"] == "cron":
-                triggers.append({"kind": "cron", "expr": t["expr"],
-                                 **({"tz": t["tz"]} if t.get("tz") else {})})
+                triggers.append({"kind": "cron", "expression": t["expression"],
+                                 **({"timezone": t["timezone"]} if t.get("timezone") else {})})
             elif t["kind"] == "app_start":
                 triggers.append({"kind": "app_start"})
             elif t["kind"] == "discord":
@@ -106,14 +106,14 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
             manifest["param_values"] = {
                 k: v for k, v in a["param_values"].items()
                 if any(p.get("name") == k for p in ver.get("params", []))}
-        meta: dict = {"desc": a.get("desc", ""), "params": ver.get("params", [])}
+        meta: dict = {"description": a.get("description", ""), "params": ver.get("params", [])}
         pkgs = [{"pip": p.get("pip"), "import": p.get("import")}
                 for p in ver.get("packages", []) or []]
         if pkgs:
             meta["packages"] = pkgs
         steps = []
         for s in ver["steps"]:
-            entry = {"file": s["file"], "name": s.get("name", ""), "desc": s.get("desc", "")}
+            entry = {"file": s["file"], "name": s.get("name", ""), "description": s.get("description", "")}
             if s.get("agent"):
                 entry["agent"] = True
                 entry["why"] = s.get("why", "")
@@ -137,16 +137,16 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
             steps.append(entry)
         meta["steps"] = steps
         agents = _referenced_agents(store, a, ver)
-        secret_desc = {s["name"]: s.get("desc") or "" for s in store.secrets}
-        secrets = [{"name": n, "desc": secret_desc.get(n, "")}
+        secret_desc = {s["name"]: s.get("description") or "" for s in store.secrets}
+        secrets = [{"name": n, "description": secret_desc.get(n, "")}
                    for n in _referenced_secrets(ver, a["triggers"])]
         files: list[tuple[str, str]] = [
             ("manifest.yaml", yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True)),
             ("automation/automation.yaml", yaml.safe_dump(meta, sort_keys=False, allow_unicode=True)),
             ("automation/spec.md", blocks_to_md(ver.get("spec", []))),
         ]
-        if ver.get("instr"):
-            files.append(("automation/instructions.md", ver["instr"].strip() + "\n"))
+        if ver.get("instructions"):
+            files.append(("automation/instructions.md", ver["instructions"].strip() + "\n"))
         if (ver.get("notes") or "").strip():
             files.append(("automation/notes.md", ver["notes"].strip() + "\n"))
         for s in ver["steps"]:
@@ -236,12 +236,12 @@ def _validate(z: zipfile.ZipFile) -> dict:
                  else {"kind": "imessage", "from": t.get("from"),
                        "pattern": t.get("pattern")}
                  if t["kind"] == "imessage"
-                 else {"kind": t["kind"], "expr": t.get("expr"), "tz": t.get("tz")})
+                 else {"kind": t["kind"], "expression": t.get("expression"), "timezone": t.get("timezone")})
         if err := schedule.validate_trigger(probe):
             raise TransferError(f"invalid trigger in the archive: {err}")
         triggers.append({"kind": t["kind"],
-                         **({"expr": t["expr"]} if t["kind"] == "cron" else {}),
-                         **({"tz": t["tz"]} if t.get("tz") and t["kind"] == "cron" else {}),
+                         **({"expression": t["expression"]} if t["kind"] == "cron" else {}),
+                         **({"timezone": t["timezone"]} if t.get("timezone") and t["kind"] == "cron" else {}),
                          **({"channel": t["channel"].strip(), "secret": t["secret"].strip(),
                              **({"pattern": t["pattern"].strip()} if t.get("pattern") else {}),
                              **({"mention": True} if t.get("mention") else {}),
@@ -289,7 +289,7 @@ def _validate(z: zipfile.ZipFile) -> dict:
             raise TransferError(f"duplicate step filename: {s['file']!r}")
         seen_files.add(s["file"])
         code = _text(z, f"automation/{s['file']}")
-        entry = {"file": s["file"], "name": s["name"], "desc": s.get("desc", ""),
+        entry = {"file": s["file"], "name": s["name"], "description": s.get("description", ""),
                  "code": code}
         if s.get("agent"):
             entry["agent"] = True
@@ -342,8 +342,8 @@ def _validate(z: zipfile.ZipFile) -> dict:
     notes = _text(z, "automation/notes.md", required=False)
     return {"name": name.strip(), "agent": agent_name,
             "triggers": triggers, "param_values": values,
-            "desc": meta.get("desc", ""), "params": params, "packages": packages,
-            "steps": steps, "spec": md_to_blocks(spec_md), "instr": (instr or "").strip() or None,
+            "description": meta.get("description", ""), "params": params, "packages": packages,
+            "steps": steps, "spec": md_to_blocks(spec_md), "instructions": (instr or "").strip() or None,
             "notes": (notes or "").strip(),
             "agents": agents, "secrets": secrets}
 
@@ -372,7 +372,7 @@ def preview_archive(store: Store, data: bytes) -> dict:
     with _open_archive(data) as z:
         arch = _validate(z)
     with store.lock:
-        secrets = [{"name": s["name"], "desc": s.get("desc") or "",
+        secrets = [{"name": s["name"], "description": s.get("description") or "",
                     "exists": any(x["name"] == s["name"] for x in store.secrets)}
                    for s in arch["secrets"]]
         agents = [{"name": g["name"], "harness": g["harness"],
@@ -380,8 +380,8 @@ def preview_archive(store: Store, data: bytes) -> dict:
                    "model": g.get("model") if g.get("mode", "default") != "default" else None,
                    "reused": _agent_match(store, g) is not None}
                   for g in arch["agents"]]
-    return {"name": arch["name"], "desc": arch["desc"],
-            "steps": [{"name": s["name"], "desc": s.get("desc", ""),
+    return {"name": arch["name"], "description": arch["description"],
+            "steps": [{"name": s["name"], "description": s.get("description", ""),
                        "agent": bool(s.get("agent"))} for s in arch["steps"]],
             "params": [{"name": p["name"], "kind": p["kind"]} for p in arch["params"]],
             "triggers": arch["triggers"], "packages": arch["packages"],
@@ -400,7 +400,7 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
             if any(x["name"] == s["name"] for x in store.secrets):
                 existing_secrets.append(s["name"])
             else:
-                store.secrets.append({"name": s["name"], "desc": s.get("desc") or "",
+                store.secrets.append({"name": s["name"], "description": s.get("description") or "",
                                       "set": False})
                 created_secrets.append(s["name"])
         if created_secrets:
@@ -417,7 +417,7 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                 matched[g["name"]] = local
                 reused_agents.append(g["name"])
             else:
-                rec = {"id": new_id(), "name": g["name"], "desc": g.get("desc") or "",
+                rec = {"id": new_id(), "name": g["name"], "description": g.get("description") or "",
                        "harness": g["harness"], "mode": g.get("mode", "default"),
                        "model": model}
                 store.agents.append(rec)
@@ -433,10 +433,10 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
         if drafting is None:
             drafting = next((x for x in store.agents
                              if x["id"] == store.default_agent_id), None)
-        ver = {"desc": arch["desc"], "note": "Imported", "params": arch["params"],
+        ver = {"description": arch["description"], "note": "Imported", "params": arch["params"],
                "packages": arch["packages"], "steps": arch["steps"],
-               "spec": arch["spec"], "instr": arch["instr"], "notes": arch["notes"]}
-        triggers = [{"id": new_id(), "off": True, **t} for t in arch["triggers"]]
+               "spec": arch["spec"], "instructions": arch["instructions"], "notes": arch["notes"]}
+        triggers = [{"id": new_id(), "enabled": False, **t} for t in arch["triggers"]]
         a = store.create_automation(ver, name=arch["name"],
                                     agent_id=drafting["id"] if drafting else None,
                                     triggers=triggers)

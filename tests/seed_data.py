@@ -15,8 +15,8 @@ from autowright.storage import Store, new_id
 
 
 def _mk_ver(desc, params, steps, spec, instr=None, note=None):
-    return {"desc": desc, "params": params, "steps": steps, "spec": spec,
-            "instr": instr, "note": note}
+    return {"description": desc, "params": params, "steps": steps, "spec": spec,
+            "instructions": instr, "note": note}
 
 
 def seed(store: Store) -> None:
@@ -31,7 +31,7 @@ def seed(store: Store) -> None:
             ("VAULT_DRIVE_KEY", "bk-2f91-aa07-51d3", "Encryption key for the backup drive")]:
         keychain.set_secret(name, value)
         if not any(s["name"] == name for s in store.secrets):
-            store.secrets.append({"name": name, "desc": desc})
+            store.secrets.append({"name": name, "description": desc})
     store.save_secrets()
 
     # ---------- agents ----------
@@ -58,7 +58,7 @@ def seed(store: Store) -> None:
     ]
     manga_steps = [
         {"file": "01-read-your-manga-list.py", "name": "Read your manga list",
-         "desc": "Loads the list, checks each line is a real link, and skips ones that aren't.",
+         "description": "Loads the list, checks each line is a real link, and skips ones that aren't.",
          "code": 'import json\n\nfrom autowright import log, params\n\n'
                  'lines = [l.strip() for l in params["manga_list"] if l.strip()]\n'
                  'links = [l for l in lines if l.startswith("http")]\n'
@@ -66,7 +66,7 @@ def seed(store: Store) -> None:
                  'if skipped:\n    log.warn(f"{len(skipped)} line(s) skipped — not links")\n'
                  'json.dump(links, open("links.json", "w"))  # workspace hands step 2 the list\n'},
         {"file": "02-check-each-site-for-new-chapters.py", "name": "Check each site for new chapters",
-         "desc": "Visits each manga's page and has an agent read off the newest chapter number and title.",
+         "description": "Visits each manga's page and has an agent read off the newest chapter number and title.",
          "agent": True,
          "why": "Manga sites all lay out their pages differently — plain code can't reliably find the newest chapter in arbitrary HTML. The agent reads each page and returns just the chapter info.",
          "code": 'import json\n\nfrom autowright import agent, fetch_page\n\n'
@@ -77,7 +77,7 @@ def seed(store: Store) -> None:
                  '    found.append({"url": url, "latest": latest})\n'
                  'json.dump(found, open("found.json", "w"))\n'},
         {"file": "03-compare-with-memory.py", "name": "Compare with memory",
-         "desc": "Looks at the last chapter seen for each manga to decide what counts as new.",
+         "description": "Looks at the last chapter seen for each manga to decide what counts as new.",
          "code": 'import json\n\nfrom autowright import memory\n\n'
                  'found = json.load(open("found.json"))\n'
                  'last_seen = memory.load("last_seen", {})\nfor f in found:\n'
@@ -87,7 +87,7 @@ def seed(store: Store) -> None:
                  'memory.save("last_seen", last_seen)\n'
                  'json.dump(found, open("found.json", "w"))\n'},
         {"file": "04-notify-and-build-the-result.py", "name": "Notify and build the result",
-         "desc": "Sends the notification (only on changes) and builds the morning table.",
+         "description": "Sends the notification (only on changes) and builds the morning table.",
          "code": 'import json\n\nfrom autowright import notify, params, result\n\n'
                  'found = json.load(open("found.json"))\n'
                  'fresh = [f for f in found if f["is_new"]]\n'
@@ -99,36 +99,36 @@ def seed(store: Store) -> None:
                  '(result.path / "result.md").write_text("| Manga | Latest chapter | New |\\n|---|---|---|\\n" + rows)\n'},
     ]
     manga_spec = [
-        {"k": "h1", "text": "Track manga chapters"},
-        {"k": "p", "text": "Checks each manga in your list every morning and tells you when new chapters are out."},
-        {"k": "h2", "text": "Schedule"},
-        {"k": "p", "text": "Every day at 8:00."},
-        {"k": "h2", "text": "What it does"},
-        {"k": "li", "text": "Reads your manga list and skips lines that aren't links."},
-        {"k": "li", "text": "Visits each manga's page and finds the newest chapter."},
-        {"k": "li", "text": "Compares with the last chapter it saw for each manga."},
-        {"k": "li", "text": "Notifies you and builds a table of what's new."},
-        {"k": "h2", "text": "Settings"},
-        {"k": "li", "text": "Manga list — the pages to watch, one per line."},
-        {"k": "li", "text": "Notify only on changes — skip the notification when nothing is new."},
-        {"k": "h2", "text": "Change (v3)"},
-        {"k": "p", "text": "Added display names so long titles stay readable in the table."},
+        {"kind": "h1", "text": "Track manga chapters"},
+        {"kind": "p", "text": "Checks each manga in your list every morning and tells you when new chapters are out."},
+        {"kind": "h2", "text": "Schedule"},
+        {"kind": "p", "text": "Every day at 8:00."},
+        {"kind": "h2", "text": "What it does"},
+        {"kind": "li", "text": "Reads your manga list and skips lines that aren't links."},
+        {"kind": "li", "text": "Visits each manga's page and finds the newest chapter."},
+        {"kind": "li", "text": "Compares with the last chapter it saw for each manga."},
+        {"kind": "li", "text": "Notifies you and builds a table of what's new."},
+        {"kind": "h2", "text": "Settings"},
+        {"kind": "li", "text": "Manga list — the pages to watch, one per line."},
+        {"kind": "li", "text": "Notify only on changes — skip the notification when nothing is new."},
+        {"kind": "h2", "text": "Change (v3)"},
+        {"kind": "p", "text": "Added display names so long titles stay readable in the table."},
     ]
     manga_instr = ("Prefer Python for scripts.\nNever delete anything — move files to the Trash instead.\n"
                    "Never pass a secret as the input for an agent.\nKeep it to one notification per execution.")
     manga = store.create_automation(
         _mk_ver("Checks the manga you follow every morning and tells you when new chapters are out.",
                 manga_params, manga_steps, manga_spec, instr=manga_instr, note="Created"),
-        "Track manga chapters", agent_id, triggers=[{"id": new_id(), "kind": "cron", "off": False, "expr": "0 8 * * *"}])
+        "Track manga chapters", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 8 * * *"}])
     # older versions v2 (v1 base), then current becomes v3
-    v2_spec = [b for b in manga_spec if not (b["k"] == "h2" and b["text"].startswith("Change"))
+    v2_spec = [b for b in manga_spec if not (b["kind"] == "h2" and b["text"].startswith("Change"))
                and b["text"] != "Added display names so long titles stay readable in the table."]
-    store.save_new_version(manga, _mk_ver(manga["desc"], manga_params, manga_steps,
-                                          v2_spec + [{"k": "h2", "text": "Change (v2)"},
-                                                     {"k": "p", "text": "The table now links straight to the newest chapter."}],
+    store.save_new_version(manga, _mk_ver(manga["description"], manga_params, manga_steps,
+                                          v2_spec + [{"kind": "h2", "text": "Change (v2)"},
+                                                     {"kind": "p", "text": "The table now links straight to the newest chapter."}],
                                           instr=manga_instr,
                                           note="Skip list lines that aren't links instead of failing."))
-    store.save_new_version(manga, _mk_ver(manga["desc"], manga_params, manga_steps,
+    store.save_new_version(manga, _mk_ver(manga["description"], manga_params, manga_steps,
                                           manga_spec, instr=manga_instr,
                                           note="Added display names so long titles stay readable in the table."))
     store.patch_automation(manga, {"paramValues": {
@@ -142,8 +142,8 @@ def seed(store: Store) -> None:
         "notify_only_on_changes": True,
         "chapters_kept_in_history": 5,
         "notification_title": "",
-        "display_names": [{"k": "mangadex.org/title/frieren", "v": "Frieren"},
-                          {"k": "comikey.com/comics/kagurabachi", "v": "Kagurabachi"}],
+        "display_names": [{"key": "mangadex.org/title/frieren", "value": "Frieren"},
+                          {"key": "comikey.com/comics/kagurabachi", "value": "Kagurabachi"}],
     }})
     (store.auto_dir(manga) / "memory").mkdir(exist_ok=True)
     (store.auto_dir(manga) / "memory" / "last_seen.yaml").write_text(
@@ -152,7 +152,7 @@ def seed(store: Store) -> None:
     # ---------- Nightly folder backup ----------
     backup_steps = [
         {"file": "01-find-files-changed-since-last-night.py", "name": "Find files changed since last night",
-         "desc": "Compares file dates against the last execution.",
+         "description": "Compares file dates against the last execution.",
          "code": 'import json, os\n\nfrom autowright import log, memory, params\n\n'
                  'last = memory.load("last_run_at", 0)\nchanged = []\n'
                  'for root, _, files in os.walk(os.path.expanduser(params["folder_to_back_up"])):\n'
@@ -162,7 +162,7 @@ def seed(store: Store) -> None:
                  'log(f"{len(changed)} files changed")\n'
                  'json.dump(changed, open("changed.json", "w"))\n'},
         {"file": "02-copy-them-to-the-backup-drive.py", "name": "Copy them to the backup drive",
-         "desc": "Unlocks the Vault drive with its key from the Keychain, then copies with checksums so a bad copy is caught immediately.",
+         "description": "Unlocks the Vault drive with its key from the Keychain, then copies with checksums so a bad copy is caught immediately.",
          "code": 'import json, os, shutil\n\nfrom autowright import log, params, secrets\n\n'
                  'changed = json.load(open("changed.json"))\n'
                  'key = secrets.VAULT_DRIVE_KEY  # never logged\n'
@@ -173,7 +173,7 @@ def seed(store: Store) -> None:
                  '    shutil.copy2(f, os.path.join(dest, os.path.basename(f)))\n'
                  'log(f"{len(changed)} of {len(changed)} copied · checksums ok")\n'},
         {"file": "03-prune-old-copies.py", "name": "Prune old copies",
-         "desc": "Keeps the newest N nightly copies and removes the rest.",
+         "description": "Keeps the newest N nightly copies and removes the rest.",
          "code": 'import time\n\nfrom autowright import log, memory, params, result\n\n'
                  'keep = params["copies_to_keep"]\nlog(f"keeping the newest {keep} copies")\n'
                  'memory.save("last_run_at", time.time())\n'
@@ -191,29 +191,29 @@ def seed(store: Store) -> None:
          "help": "Saves a lot of space if you write code.", "default": True},
     ]
     backup_spec = [
-        {"k": "h1", "text": "Nightly folder backup"},
-        {"k": "p", "text": "Copies changed files from Projects to the Vault drive every night at 2:00, keeping the last 7 copies."},
-        {"k": "h2", "text": "Change (v2)"},
-        {"k": "p", "text": "Copies are now verified with checksums."},
+        {"kind": "h1", "text": "Nightly folder backup"},
+        {"kind": "p", "text": "Copies changed files from Projects to the Vault drive every night at 2:00, keeping the last 7 copies."},
+        {"kind": "h2", "text": "Change (v2)"},
+        {"kind": "p", "text": "Copies are now verified with checksums."},
     ]
     backup = store.create_automation(
         _mk_ver("Copies changed files from Projects to the backup drive every night.",
                 backup_params, backup_steps, backup_spec[:2]),
-        "Nightly folder backup", agent_id, triggers=[{"id": new_id(), "kind": "cron", "off": False, "expr": "0 2 * * *"}])
-    store.save_new_version(backup, _mk_ver(backup["desc"], backup_params, backup_steps,
+        "Nightly folder backup", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 2 * * *"}])
+    store.save_new_version(backup, _mk_ver(backup["description"], backup_params, backup_steps,
                                            backup_spec, note="Copies are now verified with checksums."))
     store.patch_automation(backup, {"allowedSecrets": ["VAULT_DRIVE_KEY"]})
 
     # ---------- Weekly report email ----------
     report_steps = [
         {"file": "01-gather-the-weeks-numbers.py", "name": "Gather the week's numbers",
-         "desc": "Reads the four tracking sheets.",
+         "description": "Reads the four tracking sheets.",
          "code": 'import json\n\nfrom autowright import log, memory\n\n'
                  'rows = memory.load("sources", [])  # 4 sources\n'
                  'log(f"{len(rows) or 4} sources read · 28 rows")\n'
                  'json.dump(rows, open("rows.json", "w"))\n'},
         {"file": "02-write-the-summary.py", "name": "Write the summary",
-         "desc": "Has an agent turn the numbers into a short readable summary.",
+         "description": "Has an agent turn the numbers into a short readable summary.",
          "agent": True,
          "why": "Writing readable prose from raw numbers is judgment, not rules — the agent drafts the summary from the week's rows. The gathering and sending around it stay plain code.",
          "code": 'import json\n\nfrom autowright import agent\n\n'
@@ -221,7 +221,7 @@ def seed(store: Store) -> None:
                  'summary = agent.write(rows,\n    "3–4 sentences — what changed this week and why it matters")\n'
                  'open("summary.txt", "w").write(summary)\n'},
         {"file": "03-send-the-email.py", "name": "Send the email",
-         "desc": "Sends via your mail account. The password comes from the Keychain.",
+         "description": "Sends via your mail account. The password comes from the Keychain.",
          "code": 'import smtplib\n\nfrom autowright import log, result, secrets\n\n'
                  'summary = open("summary.txt").read()\n'
                  'password = secrets.SMTP_PASSWORD  # never logged\n'
@@ -230,7 +230,7 @@ def seed(store: Store) -> None:
                  '    s.starttls()\n    s.login("me", password)\n'
                  'result.status("ok")\nresult.chip("Email sent")\n'},
         {"file": "04-record-the-send.py", "name": "Record the send",
-         "desc": "Notes what was sent, for next week's comparison.",
+         "description": "Notes what was sent, for next week's comparison.",
          "code": 'import json, time\n\nfrom autowright import memory\n\n'
                  'rows = json.load(open("rows.json"))\n'
                  'memory.save("last_sent", {"at": time.time(), "rows": len(rows)})\n'},
@@ -244,20 +244,20 @@ def seed(store: Store) -> None:
          "help": "Includes the raw numbers as a file.", "default": True},
     ]
     report_spec = [
-        {"k": "h1", "text": "Weekly report email"},
-        {"k": "p", "text": "Every Monday at 9:00, gathers the week's numbers, writes a short summary and emails it to the team."},
-        {"k": "h2", "text": "Change (v5)"},
-        {"k": "p", "text": "The spreadsheet attachment is now optional."},
+        {"kind": "h1", "text": "Weekly report email"},
+        {"kind": "p", "text": "Every Monday at 9:00, gathers the week's numbers, writes a short summary and emails it to the team."},
+        {"kind": "h2", "text": "Change (v5)"},
+        {"kind": "p", "text": "The spreadsheet attachment is now optional."},
     ]
     report = store.create_automation(
         _mk_ver("Gathers the week's numbers and emails the summary every Monday morning.",
                 report_params, report_steps, report_spec[:2]),
-        "Weekly report email", agent_id, triggers=[{"id": new_id(), "kind": "cron", "off": False, "expr": "0 9 * * 1"}])
+        "Weekly report email", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 9 * * 1"}])
     for note in ["Summary capped at roughly 200 words.",
                  "Added week-over-week comparison to the summary.",
                  "Send to the team alias instead of individual addresses.",
                  "The spreadsheet attachment is now optional."]:
-        store.save_new_version(report, _mk_ver(report["desc"], report_params,
+        store.save_new_version(report, _mk_ver(report["description"], report_params,
                                                report_steps, report_spec, note=note))
     store.patch_automation(report, {
         "allowedSecrets": ["SMTP_PASSWORD"],
@@ -268,14 +268,14 @@ def seed(store: Store) -> None:
     # ---------- Clean screenshots folder ----------
     shots_steps = [
         {"file": "01-find-screenshots-on-the-desktop.py", "name": "Find screenshots on the Desktop",
-         "desc": "Matches the files macOS names “Screenshot …”.",
+         "description": "Matches the files macOS names “Screenshot …”.",
          "code": 'import json, os, re\n\nfrom autowright import log\n\n'
                  'desktop = os.path.expanduser("~/Desktop")\n'
                  'shots = [f for f in os.listdir(desktop) if re.match(r"^Screenshot ", f)]\n'
                  'log(f"{len(shots)} screenshots found")\n'
                  'json.dump(shots, open("shots.json", "w"))\n'},
         {"file": "02-file-them-into-monthly-folders.py", "name": "File them into monthly folders",
-         "desc": "Creates a folder per month and moves them in.",
+         "description": "Creates a folder per month and moves them in.",
          "code": 'import json, os, shutil, datetime\n\nfrom autowright import result\n\n'
                  'desktop = os.path.expanduser("~/Desktop")\n'
                  'shots = json.load(open("shots.json"))\nfor s in shots:\n'
@@ -292,9 +292,9 @@ def seed(store: Store) -> None:
                   "label": "Also clean the Downloads folder",
                   "help": "Files loose screenshots from Downloads too.", "default": False}],
                 shots_steps,
-                [{"k": "h1", "text": "Clean screenshots folder"},
-                 {"k": "p", "text": "Every Sunday night, files desktop screenshots into monthly folders."}]),
-        "Clean screenshots folder", agent_id, triggers=[{"id": new_id(), "kind": "cron", "off": False, "expr": "0 21 * * 0"}])
+                [{"kind": "h1", "text": "Clean screenshots folder"},
+                 {"kind": "p", "text": "Every Sunday night, files desktop screenshots into monthly folders."}]),
+        "Clean screenshots folder", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 21 * * 0"}])
 
     # ---------- executions (12, every terminal status incl. skipped) ----------
     manga_result = {"status": "changes", "chip": "2 new chapters"}
@@ -343,9 +343,9 @@ def seed(store: Store) -> None:
             att_spec = entry[3] if len(entry) > 3 else ([(st, d)] if st != "queued" else [])
             step_dicts.append({
                 "name": name, "file": _step_file(i, name), "agent": False,
-                "status": st, "dur_ms": d,
-                "attempts": [{"n": j + 1, "status": a_st, "started_at": started_iso,
-                              "dur_ms": a_d} for j, (a_st, a_d) in enumerate(att_spec)]})
+                "status": st, "duration_ms": d,
+                "attempts": [{"number": j + 1, "status": a_st, "started_at": started_iso,
+                              "duration_ms": a_d} for j, (a_st, a_d) in enumerate(att_spec)]})
         label2kind = {"Manual": "manual", "Menu bar": "menubar", "Cron": "cron",
                       "Once": "time", "App start": "app_start", "Discord": "discord",
                       "iMessage": "imessage", "Test": "test"}
@@ -354,8 +354,8 @@ def seed(store: Store) -> None:
                                    note=note, status="executing")
         h["started_at"] = started_iso
         h["status"] = status
-        h["dur_ms"] = dur_ms
-        h["redacted"] = redacted or []
+        h["duration_ms"] = dur_ms
+        h["redacted_secrets"] = redacted or []
         if status in ("succeeded", "failed", "cancelled", "interrupted", "skipped"):
             h["finished_at"] = (started + timedelta(milliseconds=dur_ms or 0)).astimezone(timezone.utc).isoformat()
         # Log lines route by file (§5 logs/): a "▸ Step N — name" sys marker
@@ -373,8 +373,8 @@ def seed(store: Store) -> None:
             name = cur or store.EXEC_LOG
             seqs[name] = seqs.get(name, 0) + 1
             # §5: stored lines are {ts, k, seq, text} — `t` is derived at read.
-            store.append_log_line(h["id"], name, {"ts": started_iso, "k": k,
-                                                  "seq": seqs[name], "text": text})
+            store.append_log_line(h["id"], name, {"timestamp": started_iso, "kind": k,
+                                                  "sequence": seqs[name], "text": text})
         if result:
             # chip + status live on the execution header
             h["chip"] = result.get("chip")

@@ -21,18 +21,18 @@ const mdOf = (blocks: SpecBlock[]): string => {
 describe('SpecMarkdown block → markdown', () => {
   it('prefixes h1/h2/li and separates blocks with blank lines', () => {
     expect(mdOf([
-      { k: 'h1', text: 'Title' },
-      { k: 'p', text: 'para' },
-      { k: 'h2', text: 'Sec' },
+      { kind: 'h1', text: 'Title' },
+      { kind: 'p', text: 'para' },
+      { kind: 'h2', text: 'Sec' },
     ])).toBe('# Title\n\npara\n\n## Sec')
   })
   it('adjacent li stay one list (single newline), non-adjacent separate', () => {
     expect(mdOf([
-      { k: 'h1', text: 'T' },
-      { k: 'li', text: 'a' },
-      { k: 'li', text: 'b' },
-      { k: 'p', text: 'x' },
-      { k: 'li', text: 'c' },
+      { kind: 'h1', text: 'T' },
+      { kind: 'li', text: 'a' },
+      { kind: 'li', text: 'b' },
+      { kind: 'p', text: 'x' },
+      { kind: 'li', text: 'c' },
     ])).toBe('# T\n\n- a\n- b\n\nx\n\n- c')
   })
 })

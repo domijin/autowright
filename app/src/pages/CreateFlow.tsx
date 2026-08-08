@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import type { Agent, Auto, Blocker, ChatEntry, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, VersionInfo } from '../types'
+import type { Agent, Automation, Blocker, ChatEntry, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, VersionInfo } from '../types'
 import { BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, Eyebrow, GreenCheck, HeaderActions, MiniBadge, PULSE, PopMenu, ProgressBar, PyCode, ScrollArea, Spinner, Tag, Toggle, agName, dispModel, paramSummary, stepTimeoutLabel, stepTimeoutTitle, useOverlayThumb, usePopover, validUrl } from '../ui'
 import { nextTriggerShort, triggerLabel } from '../cron'
 import { SecretModal } from '../SecretModal'
@@ -17,14 +17,14 @@ import { Markdown, SpecMarkdown } from '../result'
 
 // markdown-ish text ↔ SpecBlock[] ('# ', '## ', '- ', plain lines)
 export function specToText(blocks: SpecBlock[]): string {
-  return blocks.map((b) => (b.k === 'h1' ? '# ' + b.text : b.k === 'h2' ? '## ' + b.text : b.k === 'li' ? '- ' + b.text : b.text)).join('\n')
+  return blocks.map((b) => (b.kind === 'h1' ? '# ' + b.text : b.kind === 'h2' ? '## ' + b.text : b.kind === 'li' ? '- ' + b.text : b.text)).join('\n')
 }
 export function textToSpec(text: string): SpecBlock[] {
   return text.split('\n').map((s) => s.trim()).filter(Boolean).map((s): SpecBlock =>
-    s.startsWith('## ') ? { k: 'h2', text: s.slice(3) }
-      : s.startsWith('# ') ? { k: 'h1', text: s.slice(2) }
-        : s.startsWith('- ') ? { k: 'li', text: s.slice(2) }
-          : { k: 'p', text: s })
+    s.startsWith('## ') ? { kind: 'h2', text: s.slice(3) }
+      : s.startsWith('# ') ? { kind: 'h1', text: s.slice(2) }
+        : s.startsWith('- ') ? { kind: 'li', text: s.slice(2) }
+          : { kind: 'p', text: s })
 }
 
 // §11 Blocker panel: each blocker's reason + edited fix lands in the spec under
@@ -32,11 +32,11 @@ export function textToSpec(text: string): SpecBlock[] {
 // itself, so it survives later edits and syncs and versions like any spec text.
 const CONSTRAINTS_TITLE = 'Constraints & resolutions'
 export function amendSpec(spec: SpecBlock[], blockers: Blocker[]): SpecBlock[] {
-  const items: SpecBlock[] = blockers.map((b) => ({ k: 'li', text: `${b.reason.trim()} — ${b.fix.trim()}` }))
-  const at = spec.findIndex((b) => b.k === 'h2' && b.text.trim().toLowerCase() === CONSTRAINTS_TITLE.toLowerCase())
-  if (at < 0) return [...spec, { k: 'h2', text: CONSTRAINTS_TITLE }, ...items]
+  const items: SpecBlock[] = blockers.map((b) => ({ kind: 'li', text: `${b.reason.trim()} — ${b.fix.trim()}` }))
+  const at = spec.findIndex((b) => b.kind === 'h2' && b.text.trim().toLowerCase() === CONSTRAINTS_TITLE.toLowerCase())
+  if (at < 0) return [...spec, { kind: 'h2', text: CONSTRAINTS_TITLE }, ...items]
   let end = at + 1
-  while (end < spec.length && spec[end].k !== 'h2' && spec[end].k !== 'h1') end++
+  while (end < spec.length && spec[end].kind !== 'h2' && spec[end].kind !== 'h1') end++
   return [...spec.slice(0, end), ...items, ...spec.slice(end)]
 }
 
@@ -314,14 +314,14 @@ function AgentPick({ agents, selected, onPick, disabled }: {
 
 interface Rev {
   name: string
-  desc: string
+  description: string
   note: string
   spec: SpecBlock[]
   steps: Step[]
   params: NonNullable<DraftPayload['params']>
   packages: PackageDep[]    // §6.2 declared packages — display-only, the pipeline owns the list
   triggers: DraftTrigger[]  // §11 TRIGGERS card preview — what saving stores (§4.3 cron-subset replace)
-  instr: string
+  instructions: string
   notes: string             // §4.1 agent-owned working knowledge — never marks out of sync
   enabledAgents: string[]
   allowedSecrets: string[]
@@ -338,7 +338,7 @@ interface Rev {
   // editor-state only, never serialized into the draft.
   undo: {
     spec: SpecBlock[]; steps: Step[]; params: Rev['params']; packages: PackageDep[]
-    triggers: DraftTrigger[]; instr: string; notes: string; dirty: boolean; entryId: string
+    triggers: DraftTrigger[]; instructions: string; notes: string; dirty: boolean; entryId: string
   } | null
   instrEdit: boolean
   instrDraft: string | null
@@ -410,10 +410,10 @@ const revDefaults = {
 export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
   return {
     ...revDefaults,
-    name: 'New automation', desc: '', note: '',
+    name: 'New automation', description: '', note: '',
     spec: [], steps: [], params: [], packages: [],
     triggers: [],
-    instr: defaultBuildCache,
+    instructions: defaultBuildCache,
     notes: '',
     enabledAgents: agents.map((g) => g.id),
     allowedSecrets: secretNames,
@@ -430,11 +430,11 @@ export function seedDrafting(agents: Agent[], secretNames: string[]): Rev {
 export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: string[]): Rev {
   return {
     ...revDefaults,
-    name: d.name || 'New automation', desc: d.desc || '', note: d.note || '',
+    name: d.name || 'New automation', description: d.description || '', note: d.note || '',
     spec: d.spec ?? [], steps: d.steps ?? [], params: d.params ?? [],
     packages: d.packages ?? [],
     triggers: d.triggers ?? [],
-    instr: d.instr ?? defaultBuildCache, // backend seeds instr from default-build-instructions.md
+    instructions: d.instructions ?? defaultBuildCache, // backend seeds instructions from default-build-instructions.md
     notes: d.notes ?? '',
     // §4.4: a resumed pending draft carries its grant selections; a fresh
     // drafting-job payload has none — default to everything enabled/allowed.
@@ -447,22 +447,22 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
   }
 }
 
-export function seedFromAuto(a: Auto, agents: Agent[], secretNames: string[]): Rev {
-  const src: Pick<VersionInfo, 'spec' | 'steps' | 'instr' | 'notes'> & { params?: VersionInfo['params']; packages?: VersionInfo['packages'] } =
+export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string[]): Rev {
+  const src: Pick<VersionInfo, 'spec' | 'steps' | 'instructions' | 'notes'> & { params?: VersionInfo['params']; packages?: VersionInfo['packages'] } =
     a.draft ?? {
-      spec: a.spec ?? [], steps: a.steps ?? [], instr: a.instr || '', notes: a.notes || '',
+      spec: a.spec ?? [], steps: a.steps ?? [], instructions: a.instructions || '', notes: a.notes || '',
       params: a.params,
       packages: a.packages,
     }
   return {
     ...revDefaults,
-    name: a.name, desc: a.desc, note: '',
+    name: a.name, description: a.description, note: '',
     spec: (src.spec ?? []).map((b) => ({ ...b })),
     steps: (src.steps ?? []).map((s) => ({ ...s })),
     params: (src.params ?? a.params ?? []).map((p) => ({ ...p })),
     packages: (src.packages ?? []).map((p) => ({ ...p })),
     triggers: (a.draft?.triggers ?? a.triggers).map(stripTrigger),
-    instr: src.instr || '',
+    instructions: src.instructions || '',
     notes: src.notes || '',
     // §4.4: a draft carries its own grant selections — resume restores them
     enabledAgents: (a.draft?.stepAgents ?? a.stepAgents).filter((id) => agents.some((x) => x.id === id)),
@@ -473,14 +473,14 @@ export function seedFromAuto(a: Auto, agents: Agent[], secretNames: string[]): R
   }
 }
 
-function loadVersionInto(r: Rev, snap: { spec: SpecBlock[]; steps: Step[]; instr: string; notes?: string; params?: VersionInfo['params']; packages?: VersionInfo['packages'] }, viewing: Rev['viewing']): Rev {
+function loadVersionInto(r: Rev, snap: { spec: SpecBlock[]; steps: Step[]; instructions: string; notes?: string; params?: VersionInfo['params']; packages?: VersionInfo['packages'] }, viewing: Rev['viewing']): Rev {
   return {
     ...r,
     spec: (snap.spec ?? []).map((b) => ({ ...b })),
     steps: (snap.steps ?? []).map((s) => ({ ...s })),
     params: snap.params ? snap.params.map((p) => ({ ...p })) : r.params,
     packages: (snap.packages ?? []).map((p) => ({ ...p })),
-    instr: snap.instr || '',
+    instructions: snap.instructions || '',
     notes: snap.notes || '',
     specEdit: false, specText: '', specTextOrig: '', undo: null, instrEdit: false, instrDraft: null,
     notesEdit: false, notesDraft: null, pendingSync: false, pendingTest: null,
@@ -498,22 +498,22 @@ function loadVersionInto(r: Rev, snap: { spec: SpecBlock[]; steps: Step[]; instr
 // draft re-persists even untouched) or the current version's view when
 // actually touched (§11: only old versions are read-only; untouched browsing
 // must not clobber a real draft with the version's own content).
-function holdsDraftEdits(r: Rev, a: Auto): boolean {
+function holdsDraftEdits(r: Rev, a: Automation): boolean {
   if (r.viewing === 'draft') return r.touched || !!a.draft
   return r.viewing === a.version && r.touched
 }
 
 // §4.3 trigger merge: a sync's drafted crons take over the cron subset — an
-// entry matching an existing cron on (expr, tz) keeps its id and off state.
+// entry matching an existing cron on (expression, timezone) keeps its id and enabled state.
 // Drafted message/app-start entries add only when no existing trigger matches
 // their identity fields; existing non-cron triggers always survive.
-// The §4.3 stored fields only — a stored Trigger's derived label/short/conn
+// The §4.3 stored fields only — a stored Trigger's derived label/short/connection
 // must not leak into a draft snapshot (§4.4 draft-only `triggers` key).
 export function stripTrigger(t: Trigger | DraftTrigger): DraftTrigger {
-  const base = { ...(t.id ? { id: t.id } : {}), off: t.off }
+  const base = { ...(t.id ? { id: t.id } : {}), enabled: t.enabled }
   switch (t.kind) {
-    case 'cron': return { ...base, kind: 'cron', expr: t.expr, ...(t.tz ? { tz: t.tz } : {}) }
-    case 'time': return { ...base, kind: 'time', at: t.at, ...(t.tz ? { tz: t.tz } : {}) }
+    case 'cron': return { ...base, kind: 'cron', expression: t.expression, ...(t.timezone ? { timezone: t.timezone } : {}) }
+    case 'time': return { ...base, kind: 'time', at: t.at, ...(t.timezone ? { timezone: t.timezone } : {}) }
     case 'app_start': return { ...base, kind: 'app_start' }
     case 'discord': return {
       ...base, kind: 'discord', channel: t.channel, secret: t.secret,
@@ -543,24 +543,24 @@ export function mergeDraftTriggers(cur: DraftTrigger[], drafted: DraftTrigger[])
   const crons = cur.filter(isCron)
   const used = new Set<number>()
   const next = drafted.filter(isCron).map((d) => {
-    const i = crons.findIndex((c, j) => !used.has(j) && c.expr === d.expr && (c.tz ?? '') === (d.tz ?? ''))
-    if (i < 0) return { ...d, off: false }
+    const i = crons.findIndex((c, j) => !used.has(j) && c.expression === d.expression && (c.timezone ?? '') === (d.timezone ?? ''))
+    if (i < 0) return { ...d, enabled: true }
     used.add(i)
     return crons[i]
   })
   const added = drafted.filter((d) =>
     d.kind !== 'cron' && d.kind !== 'time' && !cur.some((c) => sameNonCron(c, d)))
-  return [...next, ...cur.filter((t) => t.kind !== 'cron'), ...added.map((d) => ({ ...d, off: false }))]
+  return [...next, ...cur.filter((t) => t.kind !== 'cron'), ...added.map((d) => ({ ...d, enabled: true }))]
 }
 
 export function serializeDraft(r: Rev): DraftPayload {
   return {
-    name: r.name, desc: r.desc, note: r.note,
+    name: r.name, description: r.description, note: r.note,
     params: r.params,
     packages: r.packages.map(({ pip, import: imp }) => ({ pip, import: imp })),
     steps: r.steps,
     spec: r.spec,
-    instr: r.instr,
+    instructions: r.instructions,
     notes: r.notes,
     triggers: r.triggers,
     stepAgents: r.enabledAgents,
@@ -578,8 +578,8 @@ export function applyTestValues(ps: ParamDef[], vals: Record<string, unknown>): 
     if (p.kind === 'toggle') return { ...p, on: !!v }
     if (p.kind === 'list') return { ...p, lines: Array.isArray(v) ? v.map(String) : [String(v)] }
     if (p.kind === 'kv') {
-      if (Array.isArray(v)) return { ...p, rows: v as { k: string; v: string }[] }
-      if (v && typeof v === 'object') return { ...p, rows: Object.entries(v as Record<string, unknown>).map(([k, val]) => ({ k, v: String(val) })) }
+      if (Array.isArray(v)) return { ...p, rows: v as { key: string; value: string }[] }
+      if (v && typeof v === 'object') return { ...p, rows: Object.entries(v as Record<string, unknown>).map(([key, val]) => ({ key, value: String(val) })) }
       return p
     }
     if (p.kind === 'number') return { ...p, value: typeof v === 'number' ? v : Number(v) || (p.min ?? 0) }
@@ -661,7 +661,7 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
               {stepTimeoutLabel(step)}
             </Tag>
           </div>
-          <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{step.desc}</div>
+          <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{step.description}</div>
         </div>
         <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
           <Caret open={open} openDeg={0} closedDeg={90} style={{ fontSize: 12 }} />
@@ -839,7 +839,7 @@ function ParamEditor({ p, upd }: { p: ParamDef; upd: (patch: Record<string, unkn
   }
   if (p.kind === 'kv') {
     const rows = p.rows ?? []
-    const setRows = (next: { k: string; v: string }[]) => upd({ rows: next, default: next })
+    const setRows = (next: { key: string; value: string }[]) => upd({ rows: next, default: next })
     return (
       <div style={{ padding: '14px 20px 15px', borderBottom: '1px solid var(--hairline-dim)' }}>
         <div style={{ font: "600 13px var(--sans)" }}>{p.label}</div>
@@ -849,14 +849,14 @@ function ParamEditor({ p, upd }: { p: ParamDef; upd: (patch: Record<string, unkn
             <div key={ri} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
                 className="ad-input"
-                value={r.k} placeholder="Key"
-                onChange={(e) => setRows(rows.map((z, j) => (j === ri ? { ...z, k: e.target.value } : z)))}
+                value={r.key} placeholder="Key"
+                onChange={(e) => setRows(rows.map((z, j) => (j === ri ? { ...z, key: e.target.value } : z)))}
                 style={{ ...inputStyle, flex: '0 1 38%' }}
               />
               <input
                 className="ad-input"
-                value={r.v} placeholder="Value"
-                onChange={(e) => setRows(rows.map((z, j) => (j === ri ? { ...z, v: e.target.value } : z)))}
+                value={r.value} placeholder="Value"
+                onChange={(e) => setRows(rows.map((z, j) => (j === ri ? { ...z, value: e.target.value } : z)))}
                 style={inputStyle}
               />
               <button className="ad-btn-x" onClick={() => setRows(rows.filter((_, j) => j !== ri))}>
@@ -864,7 +864,7 @@ function ParamEditor({ p, upd }: { p: ParamDef; upd: (patch: Record<string, unkn
               </button>
             </div>
           ))}
-          <button className="ad-btn-dashed" onClick={() => setRows([...rows, { k: '', v: '' }])}>
+          <button className="ad-btn-dashed" onClick={() => setRows([...rows, { key: '', value: '' }])}>
             + Add pair
           </button>
         </div>
@@ -914,9 +914,9 @@ function ParamEditor({ p, upd }: { p: ParamDef; upd: (patch: Record<string, unkn
 
 export default function CreateFlow() {
   const store = useStore()
-  const { agents, secrets, autos, execs, execFull, createFrom, autoId, go, setSurface, showToast, loadAuto, test, beginTest, clearTest } = store
+  const { agents, secrets, automations, executions, executionFull, createFrom, automationId, go, setSurface, showToast, loadAuto, test, beginTest, clearTest } = store
   const isEdit = createFrom === 'edit'
-  const auto = isEdit ? autos.find((a) => a.id === autoId) ?? null : null
+  const auto = isEdit ? automations.find((a) => a.id === automationId) ?? null : null
 
   const [agentId, setAgentId] = useState<string | null>(() =>
     isEdit ? (auto?.agentId ?? null) : ((agents.find((g) => g.default) ?? agents[0])?.id ?? null))
@@ -1123,7 +1123,7 @@ export default function CreateFlow() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (isEdit && autoId) void loadAuto(autoId)
+    if (isEdit && automationId) void loadAuto(automationId)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- instruction files (§8) — fetched once per app session ----
@@ -1178,7 +1178,7 @@ export default function CreateFlow() {
           chat: [...(r?.chat ?? []), newEntry({ kind: 'system', text: 'Draft generated — review the spec and steps, then create it.' })],
           resolved: r?.resolved ?? [],
           // §11 title: the manifest name replaces the spec-title provisional
-          name: d.name || (d.spec ?? []).find((b) => b.k === 'h1')?.text || 'New automation',
+          name: d.name || (d.spec ?? []).find((b) => b.kind === 'h1')?.text || 'New automation',
         })),
         (msg, detail) => setRev((r) => r && (r.specBusy
           ? {
@@ -1203,7 +1203,7 @@ export default function CreateFlow() {
           })),
         (spec) => setRev((r) => r && ({
           ...r, specBusy: false, stepsBusy: true, spec,
-          name: spec.find((b) => b.k === 'h1')?.text || r.name,
+          name: spec.find((b) => b.kind === 'h1')?.text || r.name,
         })),
       )
     } catch (e) {
@@ -1329,9 +1329,9 @@ export default function CreateFlow() {
   // §11: one agent job at a time — the chat input and every job starter gate on this.
   const anyJobBusy = !!rev && (rev.specBusy || rev.stepsBusy || rev.syncBusy || rev.chatBusy)
   // §11: the tracked test is an ordinary execution record — steps/status render
-  // off it (execFull carries the body; the header list covers the gap before
-  // loadExec lands).
-  const testExec = test ? execFull[test.execId] ?? execs.find((e) => e.id === test.execId) : undefined
+  // off it (executionFull carries the body; the header list covers the gap before
+  // loadExecution lands).
+  const testExec = test ? executionFull[test.executionId] ?? executions.find((e) => e.id === test.executionId) : undefined
   const testLive = testExec?.status === 'executing'
   // Sync panel: the button disables (never hides) while any §8 job runs, while
   // drafting, while viewing an old version, while a draft test is executing
@@ -1349,8 +1349,8 @@ export default function CreateFlow() {
   const canRename = !!rev && !drafting && !busyRewrite && (!isEdit || rev.viewing === 'draft')
   // Create mode: the spec `#` title stands in until the manifest name lands (§11)
   const draftName = !rev ? ''
-    : !isEdit && rev.name === 'New automation' && rev.spec.find((b) => b.k === 'h1')?.text
-      ? rev.spec.find((b) => b.k === 'h1')!.text
+    : !isEdit && rev.name === 'New automation' && rev.spec.find((b) => b.kind === 'h1')?.text
+      ? rev.spec.find((b) => b.kind === 'h1')!.text
       : rev.name
   const titleText = !rev ? ''
     : !isEdit && rev.specBusy ? 'New automation…' : draftName
@@ -1361,16 +1361,16 @@ export default function CreateFlow() {
     up({ name })
     // Edit mode: name is user-owned identity (§4.1) — it applies immediately
     // via PATCH, never rides the draft or waits for Save.
-    if (isEdit && auto) void api.patchAuto(auto.id, { name }).catch((e) => showToast((e as Error).message))
+    if (isEdit && auto) void api.patchAutomation(auto.id, { name }).catch((e) => showToast((e as Error).message))
   }
-  // §11 lede: the automation's desc — same identity rules as the name, but a
-  // blank commit clears it (desc is optional, §4.1).
+  // §11 lede: the automation's description — same identity rules as the name, but a
+  // blank commit clears it (description is optional, §4.1).
   const commitDescEdit = () => {
-    const desc = (descEdit ?? '').trim()
+    const description = (descEdit ?? '').trim()
     setDescEdit(null)
-    if (!rev || desc === rev.desc) return
-    up({ desc })
-    if (isEdit && auto) void api.patchAuto(auto.id, { desc }).catch((e) => showToast((e as Error).message))
+    if (!rev || description === rev.description) return
+    up({ description })
+    if (isEdit && auto) void api.patchAutomation(auto.id, { description }).catch((e) => showToast((e as Error).message))
   }
   // Build & test panel stage label — §11 drafting stages
   const installingPkgs = rev?.genStage === 'Installing the packages'
@@ -1412,7 +1412,7 @@ export default function CreateFlow() {
     const gen = cancelGenRef.current
     try {
       const { jobId } = await api.postDraftJob({
-        mode: 'chat', text: request, ...(isEdit && auto ? { autoId: auto.id } : {}),
+        mode: 'chat', text: request, ...(isEdit && auto ? { automationId: auto.id } : {}),
         ...(runId ? { runId } : {}),
         agentId, current, chat: history,
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
@@ -1422,7 +1422,7 @@ export default function CreateFlow() {
         jobId,
         (d) => {
           const actions = d.actions ?? {}
-          const rewrote = !!d.spec || d.instr != null || d.notes != null
+          const rewrote = !!d.spec || d.instructions != null || d.notes != null
           const empty = !d.answer && !rewrote && !d.actions
           setRev((r) => {
             if (!r) return r
@@ -1438,7 +1438,7 @@ export default function CreateFlow() {
                 next = {
                   ...next,
                   spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-                  triggers: snap.triggers, instr: snap.instr, notes: snap.notes,
+                  triggers: snap.triggers, instructions: snap.instructions, notes: snap.notes,
                   dirty: snap.dirty, undo: null,
                 }
                 chat.push(newEntry({ kind: 'system', text: 'Last change undone — the rewrites above no longer apply.' }))
@@ -1457,11 +1457,11 @@ export default function CreateFlow() {
               next = { ...next, spec: d.spec, dirty: true }
               chat.push(entry)
             }
-            if (d.instr != null && d.instr !== r.instr) {
+            if (d.instructions != null && d.instructions !== r.instructions) {
               const entry = newEntry({ kind: 'system', text: 'Build instructions updated.' })
               anchorId = entry.id
               // like a manual Build-instructions save — same dirty gating (§11)
-              next = { ...next, instr: d.instr, dirty: true }
+              next = { ...next, instructions: d.instructions, dirty: true }
               chat.push(entry)
             }
             if (d.notes != null && d.notes !== r.notes) {
@@ -1477,10 +1477,10 @@ export default function CreateFlow() {
               next = { ...next, name: actions.name }
               chat.push(entry)
             }
-            if (actions.desc && actions.desc !== r.desc) {
+            if (actions.description && actions.description !== r.description) {
               const entry = newEntry({ kind: 'system', text: 'Description updated.' })
               if (anchorId) anchorId = entry.id
-              next = { ...next, desc: actions.desc }
+              next = { ...next, description: actions.description }
               chat.push(entry)
             }
             // an answer-only response leaves the existing snapshot untouched
@@ -1489,7 +1489,7 @@ export default function CreateFlow() {
                 ...next,
                 undo: {
                   spec: r.spec, steps: r.steps, params: r.params, packages: r.packages,
-                  triggers: r.triggers, instr: r.instr, notes: r.notes,
+                  triggers: r.triggers, instructions: r.instructions, notes: r.notes,
                   dirty: r.dirty, entryId: anchorId,
                 },
               }
@@ -1501,12 +1501,12 @@ export default function CreateFlow() {
             if (actions.test) next = { ...next, pendingTest: { values: actions.testValues ?? null } }
             return { ...next, chat, touched: true }
           })
-          // §4.1: name/desc are user-owned identity — edit mode applies them
+          // §4.1: name/description are user-owned identity — edit mode applies them
           // immediately via PATCH, exactly like the pencil edits.
-          if (isEdit && auto && (actions.name || actions.desc)) {
-            void api.patchAuto(auto.id, {
+          if (isEdit && auto && (actions.name || actions.description)) {
+            void api.patchAutomation(auto.id, {
               ...(actions.name ? { name: actions.name } : {}),
-              ...(actions.desc ? { desc: actions.desc } : {}),
+              ...(actions.description ? { description: actions.description } : {}),
             }).catch((e) => showToast((e as Error).message))
           }
           if (d.spec && !actions.sync && !actions.test) {
@@ -1559,7 +1559,7 @@ export default function CreateFlow() {
       return {
         ...r,
         spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-        triggers: snap.triggers, instr: snap.instr, notes: snap.notes,
+        triggers: snap.triggers, instructions: snap.instructions, notes: snap.notes,
         dirty: snap.dirty, undo: null, touched: true,
         // §11: the thread records the rollback — persisted, so the agent's §8
         // CONVERSATION context never assumes the undone rewrites still stand
@@ -1587,7 +1587,7 @@ export default function CreateFlow() {
     const gen = cancelGenRef.current
     try {
       const { jobId } = await api.postDraftJob({
-        mode: 'sync', ...(isEdit && auto ? { autoId: auto.id } : {}),
+        mode: 'sync', ...(isEdit && auto ? { automationId: auto.id } : {}),
         agentId, current: { ...serializeDraft(rev), spec: specOverride ?? rev.spec },
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
       })
@@ -1601,7 +1601,7 @@ export default function CreateFlow() {
             const syncedEntry = newEntry({ kind: 'system', text: 'Steps synced with the spec.' })
             const notesEntry = d.notes != null && d.notes !== r.notes
               ? newEntry({ kind: 'system' as const, text: 'Notes updated.' }) : null
-            // §8: the manifest's name/desc are create-only — a sync never
+            // §8: the manifest's name/description are create-only — a sync never
             // touches them (both are user-owned identity, §4.1).
             return {
               // §11 draft undo: a completed sync keeps the snapshot — Undo
@@ -1858,7 +1858,7 @@ export default function CreateFlow() {
     if (!fx) return
     fixConsumed.current = true
     useStore.setState({ fixExec: null })
-    const ex = execFull[fx] ?? execs.find((e) => e.id === fx)
+    const ex = executionFull[fx] ?? executions.find((e) => e.id === fx)
     const failure = ex?.error
       ? `Execution failed at step ${ex.error.step ?? '?'} — ${ex.error.message}`
       : 'The execution failed.'
@@ -1876,8 +1876,8 @@ export default function CreateFlow() {
     if (!isEdit || !rev || draftRunSeeded.current) return
     draftRunSeeded.current = true
     const lastAt = rev.chat.length ? Date.parse(rev.chat[rev.chat.length - 1].at ?? '') || 0 : 0
-    const dr = execs
-      .filter((e) => e.autoId === autoId && e.ver === 'Draft'
+    const dr = executions
+      .filter((e) => e.automationId === automationId && e.ver === 'Draft'
         && (e.status === 'failed' || e.status === 'succeeded'))
       .sort((a, b) => b.startedMs - a.startedMs)[0]
     if (!dr || Math.max(dr.endedMs, dr.startedMs) <= lastAt) return
@@ -1902,11 +1902,11 @@ export default function CreateFlow() {
     if (key === 'draft') {
       if (draftSnap.current) setRev({ ...draftSnap.current, viewing: 'draft' })
       else if (auto.draft) setRev(seedFromAuto(auto, agents, secrets.map((s) => s.name)))
-      else setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instr: auto.instr, notes: auto.notes, params: auto.params, packages: auto.packages }, 'draft'))
+      else setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instructions: auto.instructions, notes: auto.notes, params: auto.params, packages: auto.packages }, 'draft'))
     } else if (key === auto.version) {
-      setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instr: auto.instr, notes: auto.notes, params: auto.params, packages: auto.packages }, key))
+      setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instructions: auto.instructions, notes: auto.notes, params: auto.params, packages: auto.packages }, key))
     } else {
-      const s = (auto.versions ?? []).find((v) => v.v === key)
+      const s = (auto.versions ?? []).find((v) => v.version === key)
       if (s) setRev((r) => r && loadVersionInto(r, s, key))
     }
   }
@@ -1975,7 +1975,7 @@ export default function CreateFlow() {
             : `Version ${version} saved — earlier versions are in the Version menu when you edit.`, 3200)
         }
       } else {
-        const created = await api.createAuto({
+        const created = await api.createAutomation({
           draft: serializeDraft(rev), name: rev.name, agentId,
           stepAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
         })
@@ -1983,7 +1983,7 @@ export default function CreateFlow() {
         // knows the new automation before navigating (WS refresh may lag).
         await useStore.getState().loadAuto(created.id)
         setSurface('app')
-        go('automation', { autoId: created.id })
+        go('automation', { automationId: created.id })
         showToast('Created — nothing has executed yet. Press Execute now when you’re ready.', 3600)
       }
     } catch (e) {
@@ -2000,7 +2000,7 @@ export default function CreateFlow() {
     const cur = (auto?.params ?? []).find((p) => p.name === d.name && p.kind === d.kind)
     if (d.kind === 'toggle') return { ...d, on: cur ? !!cur.on : !!d.default }
     if (d.kind === 'list') return { ...d, lines: cur?.lines ?? (Array.isArray(d.default) ? d.default as string[] : []) }
-    if (d.kind === 'kv') return { ...d, rows: cur?.rows ?? (Array.isArray(d.default) ? d.default as { k: string; v: string }[] : []) }
+    if (d.kind === 'kv') return { ...d, rows: cur?.rows ?? (Array.isArray(d.default) ? d.default as { key: string; value: string }[] : []) }
     return { ...d, value: cur?.value ?? (d.default as string | number | undefined) }
   })
   // A synced/reloaded draft may rename or retype params — collapse the setup
@@ -2027,7 +2027,7 @@ export default function CreateFlow() {
     : p.kind === 'number' ? (typeof p.value === 'number' ? p.value : (p.min ?? 0))
     : String(p.value ?? ''),
   ]))
-  const testSteps = (test && execFull[test.execId]?.steps) ?? []
+  const testSteps = (test && executionFull[test.executionId]?.steps) ?? []
   const testDone = testSteps.filter((s) => s.status !== 'queued' && s.status !== 'executing').length
   const testLiveIdx = testSteps.findIndex((s) => s.status === 'executing')
   // §11 panel buttons: compact borderless text buttons (the card-header
@@ -2068,10 +2068,10 @@ export default function CreateFlow() {
   // A live test survives leaving the editor — re-attach the card on entry.
   useEffect(() => {
     if (test) return
-    const live = execs.find((e) => e.test && e.status === 'executing'
-      && (isEdit ? e.autoId === (auto?.id ?? '') : e.autoId === ''))
+    const live = executions.find((e) => e.test && e.status === 'executing'
+      && (isEdit ? e.automationId === (auto?.id ?? '') : e.automationId === ''))
     if (live) beginTest(live.id)
-  }, [execs]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [executions]) // eslint-disable-line react-hooks/exhaustive-deps
   const runTest = async (valuesOverride?: Record<string, unknown>) => {
     // §11 Build & test panel: a test always runs steps that match the spec —
     // never stale ones (out of sync) and never mid-build.
@@ -2080,21 +2080,21 @@ export default function CreateFlow() {
     try {
       const values = valuesOverride ?? (testParams ? testParamValues(testParams) : undefined)
       const mock = testMock ? testTriggerMock(testMock) : undefined
-      const { execId } = await api.postTest({
+      const { executionId } = await api.postTest({
         draft: serializeDraft(rev),
-        ...(isEdit && auto ? { autoId: auto.id } : {}), // edit: scratch memory copies the automation's
+        ...(isEdit && auto ? { automationId: auto.id } : {}), // edit: scratch memory copies the automation's
         ...(values ? { paramValues: values } : {}), // §11 test-only values
         ...(mock ? { triggerMock: mock } : {}), // §11 test trigger message — only when text is nonempty
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
       })
-      beginTest(execId)
+      beginTest(executionId)
       setTestOpen(false) // §11: starting a test collapses the setup section — its inputs were snapshotted
     } catch (e) {
       showToast((e as Error).message)
     }
   }
   const cancelTest = () => {
-    if (test && testLive) void api.cancelExec(test.execId).catch(() => { /* already done */ })
+    if (test && testLive) void api.cancelExecution(test.executionId).catch(() => { /* already done */ })
   }
   // §11: analysis runs only when asked, as the canned analyze chat message —
   // an ordinary §8 chat job reading the failing run's RECENT RUNS context.
@@ -2103,7 +2103,7 @@ export default function CreateFlow() {
     const stepName = testExec?.error?.step
     void sendChat(
       `The test failed${stepName ? ` at step ${stepName}` : ''} — figure out why and change the automation so it won’t happen again.`,
-      test.execId)
+      test.executionId)
   }
 
   // §11 chat-action chaining (§8 actions.yaml): pendingSync fires as soon as
@@ -2509,7 +2509,7 @@ export default function CreateFlow() {
                           sub: 'current · ' + (((auto.specMeta || '').split('·')[1] || '').trim()),
                         },
                         ...(auto.versions ?? []).map((v) => ({
-                          key: v.v, label: `v${v.v}`, sub: v.when + (v.note ? ' · ' + v.note : ''),
+                          key: v.version, label: `v${v.version}`, sub: v.when + (v.note ? ' · ' + v.note : ''),
                         })),
                       ]).map((it) => {
                         const sel = rev.viewing === it.key
@@ -2565,7 +2565,7 @@ export default function CreateFlow() {
                 </BtnPrimary>
               </HeaderActions>
             </div>
-            {/* lede: the automation's desc (§4.1) — editable like the name; create mode
+            {/* lede: the automation's description (§4.1) — editable like the name; create mode
                 shows the static drafting lede until drafting settles. The row is
                 height-stable: every state shares one fixed-height box. The drafting-agent
                 picker lives in the chat pane composer, not here. */}
@@ -2599,12 +2599,12 @@ export default function CreateFlow() {
                   <p style={{
                     font: "400 13.5px/1.6 var(--sans)", margin: 0, minWidth: 0,
                     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    color: rev.desc ? 'var(--text-muted)' : 'var(--text-faint)',
+                    color: rev.description ? 'var(--text-muted)' : 'var(--text-faint)',
                   }}>
-                    {rev.desc || (canRename ? 'No description yet — press the pencil to add one.' : 'No description yet.')}
+                    {rev.description || (canRename ? 'No description yet — press the pencil to add one.' : 'No description yet.')}
                   </p>
                   {canRename && (
-                    <button className="pencil" title="Edit the description" onClick={() => setDescEdit(rev.desc)}>
+                    <button className="pencil" title="Edit the description" onClick={() => setDescEdit(rev.description)}>
                       <i className="fa-solid fa-pencil" />
                     </button>
                   )}
@@ -2992,7 +2992,7 @@ export default function CreateFlow() {
                   inert={rev.instrEdit}
                   onToggle={(o) => up({ instrSecOpen: o })}
                   hint="Standing rules your AI follows every time it writes or edits this automation."
-                  preview={rev.instr.trim() ? docPreview(rev.instr) : null}
+                  preview={rev.instructions.trim() ? docPreview(rev.instructions) : null}
                   right={<>
                     {instrOpenEff && !rev.instrEdit && (
                       <button
@@ -3004,7 +3004,7 @@ export default function CreateFlow() {
                           const genCancelled = cancelStepsGen() // §11: instruction edits cancel an in-flight steps call
                           up({
                             specEdit: false, specText: '', specTextOrig: '', notesDraft: null, notesEdit: false,
-                            instrDraft: rev.instr, instrEdit: true, instrSecOpen: true,
+                            instrDraft: rev.instructions, instrEdit: true, instrSecOpen: true,
                             ...(genCancelled ? { stepsBusy: false, dirty: true } : {}),
                           })
                           if (genCancelled) showToast('Step generation stopped — sync the steps when you finish editing.', 4200)
@@ -3018,7 +3018,7 @@ export default function CreateFlow() {
                       <span style={{ display: 'flex', gap: 9, alignItems: 'center', flex: 'none' }}>
                         <button
                           className="ad-btn-text dim small ad-focus-inset"
-                          disabled={!defaultBuildCache || (rev.instrDraft ?? rev.instr) === defaultBuildCache}
+                          disabled={!defaultBuildCache || (rev.instrDraft ?? rev.instructions) === defaultBuildCache}
                           onClick={(e) => { e.stopPropagation(); up({ instrDraft: defaultBuildCache }) }}
                         >
                           Reset to default
@@ -3030,12 +3030,12 @@ export default function CreateFlow() {
                         </button>
                         <button
                           className="ad-btn-link small ad-focus-inset"
-                          disabled={rev.instrDraft == null || rev.instrDraft === rev.instr}
+                          disabled={rev.instrDraft == null || rev.instrDraft === rev.instructions}
                           onClick={(e) => {
                             e.stopPropagation()
-                            if (rev.instrDraft == null || rev.instrDraft === rev.instr) return
+                            if (rev.instrDraft == null || rev.instrDraft === rev.instructions) return
                             // §11 draft undo: a manual Save under the snapshot clears it
-                            up({ instr: rev.instrDraft, instrDraft: null, instrEdit: false, touched: true, dirty: true, undo: null })
+                            up({ instructions: rev.instrDraft, instrDraft: null, instrEdit: false, touched: true, dirty: true, undo: null })
                             showToast('Instructions saved — the workflow is out of sync. Sync the steps before saving.', 5800)
                           }}                        >
                           Save
@@ -3045,9 +3045,9 @@ export default function CreateFlow() {
                   </>}
                 >
                   {!rev.instrEdit && (
-                    rev.instr.trim() ? (
+                    rev.instructions.trim() ? (
                       <CardMarkdown>
-                        <Markdown text={instrToMd(rev.instr)} />
+                        <Markdown text={instrToMd(rev.instructions)} />
                       </CardMarkdown>
                     ) : (
                       <CardEmpty>No instructions yet — press Edit to add standing rules.</CardEmpty>
@@ -3056,7 +3056,7 @@ export default function CreateFlow() {
                   {rev.instrEdit && (
                     <div className="ad-scrollwrap" style={{ position: 'relative' }}>
                       <textarea
-                        value={rev.instrDraft ?? rev.instr} rows={1}
+                        value={rev.instrDraft ?? rev.instructions} rows={1}
                         ref={(el) => { instrThumb.attach(el); if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
                         onChange={(e) => up({ instrDraft: e.target.value })}
                         onScroll={instrThumb.onScroll}
@@ -3210,7 +3210,7 @@ export default function CreateFlow() {
                                 )}
                                 {testLive && testSteps.length > 0 && (
                                   <div style={{ margin: '11px 0 3px' }}>
-                                    <ProgressBar pct={(testDone / testSteps.length) * 100} />
+                                    <ProgressBar percent={(testDone / testSteps.length) * 100} />
                                   </div>
                                 )}
                                 <div style={{ ...panelRowStyle, marginTop: 8 }}>
@@ -3226,7 +3226,7 @@ export default function CreateFlow() {
                                       {syncGhostBtn}
                                       <button
                                         className="ad-btn-text dim"
-                                        onClick={() => go('execution', { execId: test.execId })}
+                                        onClick={() => go('execution', { executionId: test.executionId })}
                                         style={panelBtnStyle}
                                       >
                                         <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
@@ -3366,10 +3366,10 @@ export default function CreateFlow() {
                             >
                               <i className="fa-solid fa-play" style={{ fontSize: 10 }} /> Run test
                             </button>
-                            {(test || (!!rev.lastTest?.execId && execs.some((e) => e.id === rev.lastTest!.execId))) && (
+                            {(test || (!!rev.lastTest?.executionId && executions.some((e) => e.id === rev.lastTest!.executionId))) && (
                               <button
                                 className="ad-btn-text dim"
-                                onClick={() => go('execution', { execId: test ? test.execId : rev.lastTest!.execId! })}
+                                onClick={() => go('execution', { executionId: test ? test.executionId : rev.lastTest!.executionId! })}
                                 style={panelBtnStyle}
                               >
                                 <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run

@@ -4,7 +4,7 @@ from conftest import make_version
 def test_create_and_reload_roundtrip(store, home):
     from autowright.storage import Store
 
-    trig = {"id": "t-1", "kind": "cron", "off": False, "expr": "30 7 * * *"}
+    trig = {"id": "t-1", "kind": "cron", "enabled": True, "expression": "30 7 * * *"}
     a = store.create_automation(make_version(), "My Test Job", "agent-1", triggers=[trig])
     assert (home / "automations" / a["id"] / "versions" / "v1" / "01-say.py").exists()
     assert (home / "automations" / a["id"] / "versions" / "v1" / "spec.md").exists()
@@ -18,7 +18,7 @@ def test_create_and_reload_roundtrip(store, home):
     ver = b["versions"][1]
     assert ver["steps"][0]["name"] == "Say hello"
     assert "params['greeting']" in ver["steps"][0]["code"]
-    assert ver["spec"][0] == {"k": "h1", "text": "Test automation"}
+    assert ver["spec"][0] == {"kind": "h1", "text": "Test automation"}
 
 
 def test_no_triggers_roundtrip(store, home):
@@ -45,8 +45,8 @@ def test_step_timeout_roundtrip(store, home):
     # normalized any client `noTimeout` before storage sees it.
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-a.py", "name": "A", "desc": "", "code": "from autowright import log\nlog('a')\n", "timeout": 60},
-        {"file": "02-b.py", "name": "B", "desc": "", "code": "from autowright import log\nlog('b')\n", "no_timeout": True},
+        {"file": "01-a.py", "name": "A", "description": "", "code": "from autowright import log\nlog('a')\n", "timeout": 60},
+        {"file": "02-b.py", "name": "B", "description": "", "code": "from autowright import log\nlog('b')\n", "no_timeout": True},
     ]
     a = store.create_automation(ver, "Timed", None)
 
@@ -62,7 +62,7 @@ def test_step_timeout_roundtrip(store, home):
 
 def test_versioning_and_restore(store):
     a = store.create_automation(make_version(), "Versioned", None)
-    n = store.save_new_version(a, make_version(desc="v2 desc", note="Second"))
+    n = store.save_new_version(a, make_version(description="v2 desc", note="Second"))
     assert n == 2 and a["current_version"] == 2
     # restore v1 → becomes v3; v1/v2 untouched
     n = store.restore_version(a, 1)
@@ -289,7 +289,7 @@ def test_pending_draft_slot_roundtrip(store):
     ver["step_agents"] = ["ag1"]
     ver["allowed_secrets"] = ["TOKEN"]
     store.save_pending_draft(ver, name="Pending One", agent_id="ag1",
-                             triggers=[{"kind": "cron", "expr": "0 9 * * *"}])
+                             triggers=[{"kind": "cron", "expression": "0 9 * * *"}])
     assert (paths.pending_draft_dir() / "automation" / "automation.yaml").exists()
 
     j = store.pending_draft_json()
@@ -297,7 +297,7 @@ def test_pending_draft_slot_roundtrip(store):
     d = j["draft"]
     assert d["name"] == "Pending One"
     assert d["stepAgents"] == ["ag1"] and d["allowedSecrets"] == ["TOKEN"]
-    assert d["triggers"] == [{"kind": "cron", "expr": "0 9 * * *"}]
+    assert d["triggers"] == [{"kind": "cron", "expression": "0 9 * * *"}]
     assert [s["name"] for s in d["steps"]] == [s["name"] for s in ver["steps"]]
     assert d["steps"][0]["code"] == ver["steps"][0]["code"]
 
@@ -393,7 +393,7 @@ def test_reconcile_exec_index_restores_missing_row(store, caplog):
     assert h["id"] in s2.execs
     r = s2.execs[h["id"]]
     assert r["status"] == "succeeded"
-    assert r["auto_id"] == a["id"] and r["auto_name"] == "Indexed"
+    assert r["automation_id"] == a["id"] and r["automation_name"] == "Indexed"
     assert r["started_at"] == h["started_at"]
     assert any("restored from its execution.yaml" in rec.message for rec in caplog.records)
 
@@ -422,15 +422,15 @@ def test_load_triggers_consumes_past_oneshot_and_dedupes_app_start(store, caplog
     from autowright.storage import Store
     from autowright.yamlio import load_yaml, save_yaml
 
-    trig = {"id": "keep", "kind": "cron", "off": False, "expr": "0 8 * * *"}
+    trig = {"id": "keep", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}
     a = store.create_automation(make_version(), "Triggered", None, triggers=[trig])
     top = store.auto_dir(a) / "automation.yaml"
     data = load_yaml(top)
     data["triggers"] = [
         trig,
-        {"id": "gone", "kind": "time", "off": False, "at": "2020-01-01T08:00"},
-        {"id": "as1", "kind": "app_start", "off": False},
-        {"id": "as2", "kind": "app_start", "off": False},
+        {"id": "gone", "kind": "time", "enabled": True, "at": "2020-01-01T08:00"},
+        {"id": "as1", "kind": "app_start", "enabled": True},
+        {"id": "as2", "kind": "app_start", "enabled": True},
     ]
     save_yaml(top, data)
 
@@ -449,7 +449,7 @@ def test_load_triggers_consumes_past_oneshot_and_dedupes_app_start(store, caplog
 def test_load_triggers_discord_roundtrip(store):
     from autowright.storage import Store
 
-    trig = {"id": "d1", "kind": "discord", "off": False, "channel": "42",
+    trig = {"id": "d1", "kind": "discord", "enabled": True, "channel": "42",
             "secret": "BOT_TOKEN", "pattern": "go", "mention": True}
     a = store.create_automation(make_version(), "Chatty", None, triggers=[trig])
     s2 = Store()
@@ -463,10 +463,10 @@ def test_read_log_bounds_and_bad_lines(store):
     steps = [{"name": "Say hello", "file": "01-say.py"}]
     h = store.create_execution(a, "version", 1, "manual", steps, status="succeeded")
     name = store.log_name("01-say.py", 0, 1)
-    store.append_log_line(h["id"], name, {"ts": "x", "t": "0:00", "k": "out", "seq": 1, "text": "one"})
+    store.append_log_line(h["id"], name, {"ts": "x", "t": "0:00", "k": "out", "sequence": 1, "text": "one"})
     with open(store.log_file(h["id"], name), "a", encoding="utf-8") as f:
         f.write("this line is not json\n")
-    store.append_log_line(h["id"], name, {"ts": "x", "t": "0:01", "k": "out", "seq": 2, "text": "two"})
+    store.append_log_line(h["id"], name, {"ts": "x", "t": "0:01", "k": "out", "sequence": 2, "text": "two"})
 
     # interleaved non-JSON line skipped, the rest returned in order
     assert [l["text"] for l in store.read_log(h["id"], 0, 1)] == ["one", "two"]
@@ -560,7 +560,7 @@ def test_step_file_named_notes_md_gets_renamed(store):
     assert safe_step_filename("notes.md", 1, "Sneaky", {"notes.md"}) == "01-sneaky.py"
 
     ver = make_version(notes="real notes")
-    ver["steps"] = [{"file": "notes.md", "name": "Sneaky", "desc": "",
+    ver["steps"] = [{"file": "notes.md", "name": "Sneaky", "description": "",
                      "code": "print('s')\n"}]
     a = store.create_automation(ver, "Sneak", None)
     vd = store.auto_dir(a) / "versions" / "v1"
@@ -570,7 +570,7 @@ def test_step_file_named_notes_md_gets_renamed(store):
     assert (vd / "01-sneaky.py").read_text(encoding="utf-8") == "print('s')\n"
 
 
-def test_read_log_derives_t_from_ts(store):
+def test_read_log_derives_time_from_timestamp(store):
     """§5: stored lines carry only the UTC `ts` — the local `t` label is
     derived at serialization; an unparsable `ts` serves `t == ""`."""
     from autowright import timefmt
@@ -580,13 +580,13 @@ def test_read_log_derives_t_from_ts(store):
     h = store.create_execution(a, "version", 1, "manual", steps, status="succeeded")
     name = store.log_name("01-say.py", 0, 1)
     ts = "2026-07-01T12:00:00.000000+00:00"
-    store.append_log_line(h["id"], name, {"ts": ts, "k": "out", "seq": 1, "text": "one"})
-    store.append_log_line(h["id"], name, {"ts": "not-a-timestamp", "k": "out",
-                                          "seq": 2, "text": "two"})
+    store.append_log_line(h["id"], name, {"timestamp": ts, "kind": "out", "sequence": 1, "text": "one"})
+    store.append_log_line(h["id"], name, {"timestamp": "not-a-timestamp", "kind": "out",
+                                          "sequence": 2, "text": "two"})
     lines = store.read_log(h["id"], 0, 1)
     assert [l["text"] for l in lines] == ["one", "two"]
-    assert lines[0]["t"] == timefmt.parse_local(ts).strftime("%H:%M:%S")
-    assert lines[1]["t"] == ""  # bad ts → empty label, line still served
+    assert lines[0]["time"] == timefmt.parse_local(ts).strftime("%H:%M:%S")
+    assert lines[1]["time"] == ""  # bad timestamp → empty label, line still served
 
 
 def test_chat_json_skips_bad_lines_and_unreadable_file(tmp_path):
@@ -624,9 +624,9 @@ def test_default_agent_pointer_self_heals_on_load(home):
     from autowright.storage import Store
     from autowright.yamlio import save_yaml
 
-    agents = [{"id": "a1", "name": "One", "desc": "", "harness": "Claude Code",
+    agents = [{"id": "a1", "name": "One", "description": "", "harness": "Claude Code",
                "mode": "default", "model": None},
-              {"id": "a2", "name": "Two", "desc": "", "harness": "Claude Code",
+              {"id": "a2", "name": "Two", "description": "", "harness": "Claude Code",
                "mode": "default", "model": None}]
     save_yaml(paths.agents_file(), {"agents": agents, "default_agent": "ghost"})
     s = Store()

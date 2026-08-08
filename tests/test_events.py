@@ -30,7 +30,7 @@ def test_publish_reaches_subscriber(loop):
     hub.bind_loop(loop)
     q = hub.subscribe()
     hub.publish("exec_update", id="e-1", status="running")
-    assert _get(loop, q) == {"ev": "exec_update", "id": "e-1", "status": "running"}
+    assert _get(loop, q) == {"event": "exec_update", "id": "e-1", "status": "running"}
 
 
 def test_publish_without_loop_is_silent_noop():
@@ -49,18 +49,18 @@ def test_full_queue_drops_but_others_still_receive(loop):
     hub.bind_loop(loop)
     full = hub.subscribe()
     for i in range(full.maxsize):  # slow consumer: queue at capacity
-        full.put_nowait({"ev": "old", "i": i})
+        full.put_nowait({"event": "old", "i": i})
     healthy = hub.subscribe()
 
     hub.publish("tick", n=1)
     # _fanout delivers to every subscriber in one loop callback, so once the
     # healthy queue has the message the drop on the full one already happened.
-    assert _get(loop, healthy) == {"ev": "tick", "n": 1}
+    assert _get(loop, healthy) == {"event": "tick", "n": 1}
     assert full.qsize() == full.maxsize  # dropped silently, nothing raised
 
     # hub keeps working afterwards for further publishes
     hub.publish("tick", n=2)
-    assert _get(loop, healthy) == {"ev": "tick", "n": 2}
+    assert _get(loop, healthy) == {"event": "tick", "n": 2}
 
 
 def test_unsubscribe_stops_delivery(loop):
@@ -73,10 +73,10 @@ def test_unsubscribe_stops_delivery(loop):
     hub.unsubscribe(gone)
 
     hub.publish("tick", n=1)
-    assert _get(loop, kept) == {"ev": "tick", "n": 1}
+    assert _get(loop, kept) == {"event": "tick", "n": 1}
     assert gone.qsize() == 0
 
     # unsubscribing an unknown/already-removed queue is a no-op
     hub.unsubscribe(gone)
     hub.publish("tick", n=2)
-    assert _get(loop, kept) == {"ev": "tick", "n": 2}
+    assert _get(loop, kept) == {"event": "tick", "n": 2}

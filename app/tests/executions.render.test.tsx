@@ -5,14 +5,14 @@
 // api module mocked.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { Exec } from '../src/types'
+import type { Execution } from '../src/types'
 
 vi.mock('../src/api', () => ({
   connectInfo: vi.fn(async () => false),
   openWs: vi.fn(() => () => {}),
   api: {
     state: vi.fn(() => Promise.reject(new Error('offline'))),
-    getExec: vi.fn(() => Promise.reject(new Error('offline'))),
+    getExecution: vi.fn(() => Promise.reject(new Error('offline'))),
   },
 }))
 
@@ -30,26 +30,26 @@ beforeAll(async () => {
 
 const NOW = 1_700_000_000_000
 
-const ex = (id: string, over: Partial<Exec> = {}): Exec => ({
-  id, autoId: 'a1', autoName: 'Auto', autoDeleted: false, ver: 'v1',
-  status: 'succeeded', trigger: 'Manual', test: false, dur: '1.0s',
+const ex = (id: string, over: Partial<Execution> = {}): Execution => ({
+  id, automationId: 'a1', automationName: 'Automation', automationDeleted: false, ver: 'v1',
+  status: 'succeeded', trigger: 'Manual', test: false, duration: '1.0s',
   started: 'Today, 8:00 AM', startedMs: NOW, endedMs: NOW, queuedMs: 0,
   note: null, error: null, ...over,
 })
 
-const seed = (execs: Exec[]) => storeMod.useStore.setState({ page: 'executions', execs })
+const seed = (executions: Execution[]) => storeMod.useStore.setState({ page: 'executions', executions })
 
 beforeEach(() => {
   vi.spyOn(Date, 'now').mockReturnValue(NOW)
-  storeMod.useStore.setState({ page: 'executions', execs: [], autos: [], toast: null })
+  storeMod.useStore.setState({ page: 'executions', executions: [], automations: [], toast: null })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('executions list sections (§7)', () => {
   it('splits queued firings out of Running into their own Waiting section', () => {
     seed([
-      ex('e-run', { status: 'executing', dur: '', endedMs: 0 }),
-      ex('e-wait', { status: 'queued', dur: '', endedMs: 0, queuedMs: NOW - 5_000, trigger: 'Discord' }),
+      ex('e-run', { status: 'executing', duration: '', endedMs: 0 }),
+      ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 5_000, trigger: 'Discord' }),
       ex('e-done'),
     ])
     const { container } = render(<ExecutionsList />)
@@ -66,7 +66,7 @@ describe('executions list sections (§7)', () => {
   })
 
   it('gives the Waiting table its own columns — a queued row has no duration and never started', () => {
-    seed([ex('e-wait', { status: 'queued', dur: '', endedMs: 0, queuedMs: NOW - 65_000 })])
+    seed([ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 65_000 })])
     render(<ExecutionsList />)
 
     expect(screen.getByText('WAITING FOR')).toBeTruthy()
@@ -79,8 +79,8 @@ describe('executions list sections (§7)', () => {
 
   it('orders Waiting oldest-first — the §6 drain order, so the next to run reads top', () => {
     seed([
-      ex('e-new', { status: 'queued', dur: '', endedMs: 0, queuedMs: NOW - 2_000 }),
-      ex('e-old', { status: 'queued', dur: '', endedMs: 0, queuedMs: NOW - 30_000 }),
+      ex('e-new', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 2_000 }),
+      ex('e-old', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 30_000 }),
     ])
     const { container } = render(<ExecutionsList />)
 
@@ -99,7 +99,7 @@ describe('executions list sections (§7)', () => {
   })
 
   it('lists §11 test executions like any run, printing "Test" once in the trigger column', () => {
-    seed([ex('e-test', { test: true, trigger: 'Test', ver: 'Test', autoName: 'New automation' })])
+    seed([ex('e-test', { test: true, trigger: 'Test', ver: 'Test', automationName: 'New automation' })])
     const { container } = render(<ExecutionsList />)
 
     expect(screen.getByText('e-test')).toBeTruthy()
@@ -110,7 +110,7 @@ describe('executions list sections (§7)', () => {
 
   it('keeps waiting rows visible under a filter that only applies to finished rows', () => {
     seed([
-      ex('e-wait', { status: 'queued', dur: '', endedMs: 0, queuedMs: NOW - 1_000 }),
+      ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 1_000 }),
       ex('e-done', { status: 'failed' }),
     ])
     render(<ExecutionsList />)

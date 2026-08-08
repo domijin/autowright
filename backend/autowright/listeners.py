@@ -371,10 +371,10 @@ class Listeners:
         with self.store.lock:
             secrets = {t["secret"] for a in self.store.autos.values()
                        for t in a["triggers"]
-                       if t["kind"] == "discord" and not t["off"]}
+                       if t["kind"] == "discord" and t["enabled"]}
             senders = {t["from"] for a in self.store.autos.values()
                        for t in a["triggers"]
-                       if t["kind"] == "imessage" and not t["off"]}
+                       if t["kind"] == "imessage" and t["enabled"]}
         return secrets, senders
 
     def _reconcile(self) -> None:
@@ -413,8 +413,8 @@ class Listeners:
                         if any((t["kind"] == "imessage" if key == IMSG_KEY
                                 else t["kind"] == "discord" and t.get("secret") == key)
                                for t in a["triggers"])]
-        for auto_id in affected:
-            hub.publish("auto.changed", autoId=auto_id)
+        for automation_id in affected:
+            hub.publish("automation.changed", automationId=automation_id)
 
     def dispatch(self, secret: str, d: dict, bot_id: str | None,
                  bot_roles: set[str] | None = None,
@@ -428,7 +428,7 @@ class Listeners:
             hits = []
             for a in self.store.autos.values():
                 t = next((t for t in a["triggers"]
-                          if t["kind"] == "discord" and not t["off"]
+                          if t["kind"] == "discord" and t["enabled"]
                           and t.get("secret") == secret
                           and message_matches(t, d, bot_id, bot_roles)), None)
                 if t:
@@ -449,7 +449,7 @@ class Listeners:
             hits = []
             for a in self.store.autos.values():
                 t = next((t for t in a["triggers"]
-                          if t["kind"] == "imessage" and not t["off"]
+                          if t["kind"] == "imessage" and t["enabled"]
                           and imessage.message_matches(t, m)), None)
                 if t:
                     hits.append((a, t))

@@ -47,7 +47,7 @@ def trim_logs() -> None:
 
 
 class _DevModeFilter(logging.Filter):
-    """§4.9 devMode: INFO request logs pass only while the setting is on.
+    """§4.9 developerMode: INFO request logs pass only while the setting is on.
     Also scrubs the auth token from logged request lines — the WS handshake
     carries it in the query string, and the access log would otherwise copy
     the sole credential into backend.out.log (not 0600 like backend.json)."""
@@ -59,7 +59,7 @@ class _DevModeFilter(logging.Filter):
             record.args = tuple(
                 self._TOKEN.sub("token=***", a) if isinstance(a, str) else a
                 for a in record.args)
-        return record.levelno >= logging.WARNING or bool(store.settings.get("devMode"))
+        return record.levelno >= logging.WARNING or bool(store.settings.get("developerMode"))
 
 
 def republish_if_lost(payload: str) -> bool:
@@ -110,7 +110,7 @@ def main() -> None:
     listeners = Listeners(store, api.engine)  # §6 message-trigger listener manager
     listeners.start()
     awake.reconcile(bool(store.settings.get("keepAwake")))  # §3/§4.9 permanent assertion
-    # §4.9 devMode: request logging (every HTTP request via the uvicorn access
+    # §4.9 developerMode: request logging (every HTTP request via the uvicorn access
     # log, every agent request via autowright.harness) prints only while the
     # Settings toggle is on. The filter reads the live setting, so flipping the
     # toggle applies immediately — no restart. WARNING+ always prints.

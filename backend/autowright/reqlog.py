@@ -1,4 +1,4 @@
-"""§5 request-log files: one file per request under <logs>/requests, devMode-gated.
+"""§5 request-log files: one file per request under <logs>/requests, developerMode-gated.
 
 HTTP requests (API middleware) and agent requests (harness.invoke) land in the
 same directory, named <YYYYMMDD-HHMMSS-mmm>_<TAG>_<detail>.log so lexicographic
@@ -28,7 +28,7 @@ _SAFE = re.compile(r"[^A-Za-z0-9._-]+")
 _TOKEN = re.compile(r"token=[^&\s\"']+")
 _lock = threading.Lock()
 
-# devMode is read straight from settings.yaml (1 s cache) rather than from the
+# developerMode is read straight from settings.yaml (1 s cache) rather than from the
 # in-memory store: harness.invoke also runs inside the executor subprocess,
 # whose Store is never loaded — the file is the one truth both processes see,
 # and the toggle stays live without a restart.
@@ -40,7 +40,7 @@ def enabled() -> bool:
     if now - _dev_cache["t"] > 1.0:
         _dev_cache["t"] = now
         try:
-            _dev_cache["on"] = bool((load_yaml(paths.settings_file()) or {}).get("devMode"))
+            _dev_cache["on"] = bool((load_yaml(paths.settings_file()) or {}).get("developerMode"))
         except Exception:  # noqa: BLE001 — unreadable settings ≙ feature off
             _dev_cache["on"] = False
     return _dev_cache["on"]

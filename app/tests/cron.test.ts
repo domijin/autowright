@@ -69,7 +69,7 @@ describe('cronNext', () => {
   })
 })
 
-describe('cronNext without tz (local-zone path)', () => {
+describe('cronNext without timezone (local-zone path)', () => {
   // Mid-July and mid-January at mid-day sit far from any plausible host zone's
   // DST transition (those cluster around Mar/Apr and Sep–Nov, near midnight),
   // so these local-wall-clock assertions hold in any host zone.
@@ -92,8 +92,8 @@ describe('cronNext without tz (local-zone path)', () => {
 describe('parity with the Python backend (tests/fixtures/cron_parity.json)', () => {
   describe('next', () => {
     for (const c of fixture.next) {
-      it(`${c.expr} · ${c.tz} · after ${c.after_utc}`, () => {
-        const d = cronNext(c.expr, new Date(c.after_utc), c.tz)
+      it(`${c.expression} · ${c.timezone} · after ${c.after_utc}`, () => {
+        const d = cronNext(c.expression, new Date(c.after_utc), c.timezone)
         if (c.next_utc === null) expect(d).toBeNull()
         else expect(d && iso(d)).toBe(c.next_utc)
       })
@@ -101,8 +101,8 @@ describe('parity with the Python backend (tests/fixtures/cron_parity.json)', () 
   })
   describe('labels', () => {
     for (const c of fixture.labels) {
-      it(`${JSON.stringify(c.expr)} · ${c.tz ?? 'local'}`, () => {
-        const got = cronLabels(c.expr, c.tz ?? undefined)
+      it(`${JSON.stringify(c.expression)} · ${c.timezone ?? 'local'}`, () => {
+        const got = cronLabels(c.expression, c.timezone ?? undefined)
         expect(got.label).toBe(c.label)
         expect(got.short).toBe(c.short)
       })
@@ -111,7 +111,7 @@ describe('parity with the Python backend (tests/fixtures/cron_parity.json)', () 
 })
 
 describe('timeAt', () => {
-  it('no tz reads the wall clock as local time', () => {
+  it('no timezone reads the wall clock as local time', () => {
     const d = timeAt('2026-07-20T09:30')
     expect(d.getFullYear()).toBe(2026)
     expect(d.getMonth()).toBe(6)
@@ -119,7 +119,7 @@ describe('timeAt', () => {
     expect(d.getHours()).toBe(9)
     expect(d.getMinutes()).toBe(30)
   })
-  it('tz reads the wall clock in that zone', () => {
+  it('timezone reads the wall clock in that zone', () => {
     const d = timeAt('2026-07-20T09:30', 'Asia/Tokyo')
     expect(iso(d)).toBe('2026-07-20T00:30:00Z')
   })
@@ -129,7 +129,7 @@ describe('timeAt', () => {
     expect(iso(a)).toBe('2026-07-20T09:30:00Z')
     expect(iso(b)).toBe('2026-07-20T09:30:00Z')
   })
-  it('invalid string → NaN Date, with and without tz', () => {
+  it('invalid string → NaN Date, with and without timezone', () => {
     expect(Number.isNaN(timeAt('not a date').getTime())).toBe(true)
     expect(Number.isNaN(timeAt('not a date', 'UTC').getTime())).toBe(true)
   })
@@ -153,7 +153,7 @@ describe('fmtMoment / timeLabels', () => {
   it('minutes are zero-padded', () => {
     expect(fmtMoment(new Date(2026, 6, 20, 15, 7))).toBe('Jul 20, 3:07 PM')
   })
-  it('timeLabels renders the wall clock as written, with tz suffix', () => {
+  it('timeLabels renders the wall clock as written, with timezone suffix', () => {
     const { label, short } = timeLabels('2026-07-20T15:00', 'Asia/Tokyo')
     expect(label).toBe('Once at Jul 20, 3:00 PM (Tokyo)')
     expect(short).toBe('Once Jul 20 15:00 (Tokyo)')
@@ -201,12 +201,12 @@ describe('nextTriggerShort', () => {
     vi.setSystemTime(new Date(isoNow))
   }
 
-  it('off triggers, app_start, past, and invalid times are all skipped', () => {
+  it('disabled triggers, app_start, past, and invalid times are all skipped', () => {
     pin('2026-07-20T00:00:00Z')
     const triggers: TriggerLike[] = [
-      { kind: 'cron', expr: '0 12 * * *', tz: 'UTC', off: true },
+      { kind: 'cron', expression: '0 12 * * *', timezone: 'UTC', enabled: false },
       { kind: 'app_start' },
-      { kind: 'time', at: '2020-01-01T00:00', tz: 'UTC' },
+      { kind: 'time', at: '2020-01-01T00:00', timezone: 'UTC' },
       { kind: 'time', at: 'garbage' },
     ]
     expect(nextTriggerShort(triggers)).toBeNull()
@@ -216,8 +216,8 @@ describe('nextTriggerShort', () => {
   it('earliest enabled occurrence wins (one-shot before cron)', () => {
     pin('2026-07-20T00:00:00Z')
     const triggers: TriggerLike[] = [
-      { kind: 'cron', expr: '0 12 * * *', tz: 'UTC' },          // 12:00Z today
-      { kind: 'time', at: '2026-07-20T06:00', tz: 'UTC' },      // 06:00Z today
+      { kind: 'cron', expression: '0 12 * * *', timezone: 'UTC' },          // 12:00Z today
+      { kind: 'time', at: '2026-07-20T06:00', timezone: 'UTC' },      // 06:00Z today
       { kind: 'app_start' },
     ]
     expect(nextTriggerShort(triggers)).toBe('Once Jul 20 6:00 (UTC)')
@@ -226,8 +226,8 @@ describe('nextTriggerShort', () => {
   it('cron wins when the one-shot is later', () => {
     pin('2026-07-20T00:00:00Z')
     const triggers: TriggerLike[] = [
-      { kind: 'cron', expr: '0 12 * * *', tz: 'UTC' },          // 12:00Z today
-      { kind: 'time', at: '2026-07-21T06:00', tz: 'UTC' },      // tomorrow
+      { kind: 'cron', expression: '0 12 * * *', timezone: 'UTC' },          // 12:00Z today
+      { kind: 'time', at: '2026-07-21T06:00', timezone: 'UTC' },      // tomorrow
     ]
     expect(nextTriggerShort(triggers)).toBe('Daily 12:00 (UTC)')
   })

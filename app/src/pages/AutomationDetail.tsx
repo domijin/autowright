@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { SecretModal } from '../SecretModal'
 import { useStore } from '../store'
-import type { Auto, ParamDef, SecretMeta, SnapshotSettings, Step, Trigger, DraftTrigger, TriggerKindFields } from '../types'
+import type { Automation, ParamDef, SecretMeta, SnapshotSettings, Step, Trigger, DraftTrigger, TriggerKindFields } from '../types'
 import {
   BackLink, Badge, BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, EmptyNotice, executingToast,
   Eyebrow, FailureNotice, HeaderActions, MenuRow, MiniBadge, Modal, PULSE, PopMenu, PyCode, ScrollArea, Tag, Toggle,
@@ -30,7 +30,7 @@ const SNAP_SETTINGS: Array<{ key: keyof SnapshotSettings; label: string; help: s
   },
 ]
 
-// ---------- §9.2 Add-trigger editor (kind picker → cron expr / one-shot time) ----------
+// ---------- §9.2 Add-trigger editor (kind picker → cron expression / one-shot time) ----------
 
 const pickChipStyle = (active: boolean): React.CSSProperties => ({
   fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
@@ -154,7 +154,7 @@ function GuideToggle({ label, open, onToggle, children }: {
 }
 
 /** §9.2 segmented 24-hour time entry — one `ad-input` box, three two-digit
- *  fields (HH:MM:SS). Auto-advance on a completed pair, ↑/↓ stepping with
+ *  fields (HH:MM:SS). Automation-advance on a completed pair, ↑/↓ stepping with
  *  wrap, Backspace-when-empty jumps back, paste distributes digit pairs. */
 const TIME_MAXES = [23, 59, 59]
 
@@ -231,7 +231,7 @@ function TimeParts({ parts, invalid, onChange }: {
 }
 
 /** Timezone picker — the app's standard popover pattern, filterable (§9.2). */
-function TzPick({ tz, onPick }: { tz: string; onPick: (z: string) => void }) {
+function TzPick({ timezone, onPick }: { timezone: string; onPick: (z: string) => void }) {
   const [open, setOpen, ref] = usePopover()
   const [q, setQ] = useState('')
   const needle = q.trim().toLowerCase()
@@ -244,7 +244,7 @@ function TzPick({ tz, onPick }: { tz: string; onPick: (z: string) => void }) {
         title="Timezone the trigger's times read in"
       >
         <i className="fa-solid fa-globe" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
-        <span style={tz ? {} : { fontWeight: 400, color: 'var(--text-muted)' }}>{tz || 'Local time'}</span>
+        <span style={timezone ? {} : { fontWeight: 400, color: 'var(--text-muted)' }}>{timezone || 'Local time'}</span>
         <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
       </button>
       <PopMenu show={open} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 280 }}>
@@ -261,10 +261,10 @@ function TzPick({ tz, onPick }: { tz: string; onPick: (z: string) => void }) {
         )}
         <ScrollArea style={{ maxHeight: 240 }}>
           {!needle && (
-            <MenuRow active={!tz} onClick={() => { setOpen(false); onPick('') }}>Local time</MenuRow>
+            <MenuRow active={!timezone} onClick={() => { setOpen(false); onPick('') }}>Local time</MenuRow>
           )}
           {zones.map((z) => (
-            <MenuRow key={z} active={z === tz} onClick={() => { setOpen(false); onPick(z) }}>{z}</MenuRow>
+            <MenuRow key={z} active={z === timezone} onClick={() => { setOpen(false); onPick(z) }}>{z}</MenuRow>
           ))}
           {needle && zones.length === 0 && (
             <div style={{ padding: '9px 11px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-muted)' }}>
@@ -325,12 +325,12 @@ function SecretPick({ secrets, selected, onPick }: {
                   <span style={{ font: `500 12px var(--mono)`, color: sel ? 'var(--text)' : 'var(--text-2)' }}>{s.name}</span>
                   {!s.set && <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>}
                 </div>
-                {s.desc && (
+                {s.description && (
                   <div style={{
                     font: '400 11.5px/1.45 var(--sans)', color: 'var(--text-muted)', marginTop: 1,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
-                    {s.desc}
+                    {s.description}
                   </div>
                 )}
               </div>
@@ -346,7 +346,7 @@ function SecretPick({ secrets, selected, onPick }: {
 // caller adds id/off. A flat field bag exists only inside the editor's state.
 type TriggerDraft = TriggerKindFields
 type TriggerFieldBag = {
-  kind?: AddableKind; expr?: string; at?: string; tz?: string
+  kind?: AddableKind; expression?: string; at?: string; timezone?: string
   channel?: string; secret?: string; pattern?: string; mention?: boolean; author?: string[]
   from?: string
 }
@@ -360,7 +360,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const secrets = useStore((s) => s.secrets)
   const init: TriggerFieldBag = initial ?? {}
   const [kind, setKind] = useState<AddableKind>(init.kind ?? 'cron')
-  const [expr, setExpr] = useState(init.expr ?? '')
+  const [expression, setExpr] = useState(init.expression ?? '')
   // §9.2 One time: date and segmented 24-hour time entered apart, combined
   // into `at`; seconds pre-fill 00 so only hour + minute need typing
   const [date, setDate] = useState(init.at ? init.at.slice(0, 10) : '')
@@ -369,7 +369,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       ? [init.at.slice(11, 13), init.at.slice(14, 16), init.at.slice(17, 19) || '00']
       : ['', '', '00'],
   )
-  const [tz, setTz] = useState(init.tz ?? '') // '' → local time, no tz stored (§4.3)
+  const [timezone, setTz] = useState(init.timezone ?? '') // '' → local time, no timezone stored (§4.3)
   const [channel, setChannel] = useState(init.channel ?? '')
   const [secret, setSecret] = useState(init.secret ?? '')
   const [pattern, setPattern] = useState(init.pattern ?? '')
@@ -379,14 +379,14 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const [from, setFrom] = useState(init.from ?? '')
   const [guide, setGuide] = useState(false)
   const [secretModal, setSecretModal] = useState(false)
-  const exprOk = cronValid(expr)
+  const exprOk = cronValid(expression)
   const [hh, mm, ss] = tparts
   const timeEntered = hh !== '' || mm !== ''
   const timeOk = hh !== '' && mm !== '' && ss !== '' && +hh <= 23 && +mm <= 59 && +ss <= 59
   const at = date && timeOk
     ? `${date}T${tparts.map((p) => p.padStart(2, '0')).join(':')}`
     : ''
-  const atDate = at ? timeAt(at, tz || undefined) : null
+  const atDate = at ? timeAt(at, timezone || undefined) : null
   const atOk = !!atDate && !Number.isNaN(atDate.getTime()) && atDate > new Date()
   const channelOk = /^[0-9]+$/.test(channel)
   // §4.3: optional sender filter — comma-separated numeric user ids
@@ -402,11 +402,11 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const canAdd = kind === 'cron' ? exprOk : kind === 'time' ? atOk
     : kind === 'discord' ? channelOk && !!secret && authorOk
     : kind === 'imessage' ? fromOk : true
-  const nxt = kind === 'cron' && exprOk ? cronNext(expr, undefined, tz || undefined) : null
+  const nxt = kind === 'cron' && exprOk ? cronNext(expression, undefined, timezone || undefined) : null
   const preview = kind === 'cron'
-    ? (exprOk ? `${cronLabels(expr, tz || undefined).label}${nxt ? ` · next: ${fmtMoment(nxt)}` : ''}` : (expr ? 'Not a valid cron expression' : ''))
+    ? (exprOk ? `${cronLabels(expression, timezone || undefined).label}${nxt ? ` · next: ${fmtMoment(nxt)}` : ''}` : (expression ? 'Not a valid cron expression' : ''))
     : kind === 'time'
-    ? (atOk ? `Once at ${fmtMoment(new Date(at))}${tzSuffix(tz || undefined)}`
+    ? (atOk ? `Once at ${fmtMoment(new Date(at))}${tzSuffix(timezone || undefined)}`
       : timeEntered && !timeOk ? 'Hours go 0–23, minutes and seconds 0–59'
       : at ? 'Pick a time in the future' : '')
     : kind === 'discord'
@@ -472,8 +472,8 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       )}
       {kind === 'cron' ? (
         <input
-          className={`ad-input${expr && !exprOk ? ' invalid' : ''}`}
-          value={expr}
+          className={`ad-input${expression && !exprOk ? ' invalid' : ''}`}
+          value={expression}
           onChange={(e) => setExpr(e.target.value)}
           placeholder="0 8 * * *   (minute hour day month weekday, Sun = 0)"
           spellCheck={false}
@@ -569,7 +569,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
           />
         </div>
       ) : null}
-      {(kind === 'cron' || kind === 'time') && <TzPick tz={tz} onPick={setTz} />}
+      {(kind === 'cron' || kind === 'time') && <TzPick timezone={timezone} onPick={setTz} />}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>
         <span style={{
           flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11,
@@ -591,7 +591,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
                   kind, from: fromNorm,
                   ...(pattern.trim() ? { pattern: pattern.trim() } : {}),
                 }
-              : { ...(kind === 'cron' ? { kind, expr: expr.trim() } : { kind, at }), ...(tz ? { tz } : {}) })
+              : { ...(kind === 'cron' ? { kind, expression: expression.trim() } : { kind, at }), ...(timezone ? { timezone } : {}) })
           }}
           disabled={!canAdd}
           style={{ flex: 'none' }}
@@ -629,9 +629,9 @@ function AddTrigger({ hasAppStart, onAdd }: { hasAppStart: boolean; onAdd: (t: T
 /** §6 concurrency settings + the live queue. One `number` row per setting, using
  *  the same §9.2 compact-row layout as ParamRow, and PATCHing on the same
  *  no-version/no-AI path. */
-function ConcurrencyCard({ auto, showToast }: { auto: Auto; showToast: (m: string, ms?: number) => void }) {
+function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToast: (m: string, ms?: number) => void }) {
   const loadAuto = useStore((s) => s.loadAuto)
-  const execs = useStore((s) => s.execs)
+  const executions = useStore((s) => s.executions)
   const [confirmClear, setConfirmClear] = useState(false)
 
   // §9.2: the waiting count is the automation's own `queued` records — the same
@@ -639,12 +639,12 @@ function ConcurrencyCard({ auto, showToast }: { auto: Auto; showToast: (m: strin
   // ride a /state snapshot, and two refreshes racing (the finish and the
   // promotion it drains into) can land out of order and leave a promoted entry
   // counted as waiting; a record's status flips with `exec.started` and can't.
-  const waiting = execs.filter((e) => e.autoId === auto.id && e.status === 'queued' && !e.test).length
+  const waiting = executions.filter((e) => e.automationId === auto.id && e.status === 'queued' && !e.test).length
 
   const patch = (key: 'maxParallel' | 'maxQueued', v: number) => {
     void (async () => {
       try {
-        await api.patchAuto(auto.id, { [key]: v })
+        await api.patchAutomation(auto.id, { [key]: v })
         void loadAuto(auto.id)
       } catch (err) {
         showToast((err as Error).message)
@@ -770,11 +770,11 @@ function NumberSettingRow(
   )
 }
 
-function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: boolean }) {
+function ParamRow({ automationId, p, last }: { automationId: string; p: ParamDef; last: boolean }) {
   const showToast = useStore((s) => s.showToast)
   const loadAuto = useStore((s) => s.loadAuto)
   const [lines, setLines] = useState<string[]>(() => [...(p.lines ?? [])])
-  const [rows, setRows] = useState<{ k: string; v: string }[]>(() => (p.rows ?? []).map((r) => ({ ...r })))
+  const [rows, setRows] = useState<{ key: string; value: string }[]>(() => (p.rows ?? []).map((r) => ({ ...r })))
   const [text, setText] = useState<string | null>(null)
   const [num, setNum] = useState<string | null>(null)
   const [tog, setTog] = useState<boolean | null>(null) // optimistic toggle — a double-click must not compute twice from stale props
@@ -801,8 +801,8 @@ function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: bool
     pending.current = undefined
     void (async () => {
       try {
-        await api.patchAuto(autoId, { paramValues: { [p.name]: value } })
-        void loadAuto(autoId)
+        await api.patchAutomation(automationId, { paramValues: { [p.name]: value } })
+        void loadAuto(automationId)
       } catch (err) {
         showToast((err as Error).message)
       }
@@ -818,7 +818,7 @@ function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: bool
   useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); commit(pending.current) } }, [])
 
   const setLinesSaved = (next: string[], now = false) => { setLines(next); now ? commit(next) : commitSoon(next) }
-  const setRowsSaved = (next: { k: string; v: string }[], now = false) => { setRows(next); now ? commit(next) : commitSoon(next) }
+  const setRowsSaved = (next: { key: string; value: string }[], now = false) => { setRows(next); now ? commit(next) : commitSoon(next) }
 
   let good = 0
   let bad = 0
@@ -858,8 +858,8 @@ function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: bool
               setTog(v)
               void (async () => {
                 try {
-                  await api.patchAuto(autoId, { paramValues: { [p.name]: v } })
-                  void loadAuto(autoId)
+                  await api.patchAutomation(automationId, { paramValues: { [p.name]: v } })
+                  void loadAuto(automationId)
                 } catch (err) {
                   setTog(null) // roll the optimistic value back — the server still holds the old one
                   showToast((err as Error).message)
@@ -950,8 +950,8 @@ function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: bool
               <div key={j} style={{ display: 'flex', gap: 6 }}>
                 <input
                   className="ad-input"
-                  value={r.k}
-                  onChange={(e) => setRowsSaved(rows.map((x, i) => (i === j ? { ...x, k: e.target.value } : x)))}
+                  value={r.key}
+                  onChange={(e) => setRowsSaved(rows.map((x, i) => (i === j ? { ...x, key: e.target.value } : x)))}
                   onBlur={flush}
                   style={{
                     flex: 1.3, minWidth: 0, color: 'var(--text-muted)',
@@ -960,8 +960,8 @@ function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: bool
                 />
                 <input
                   className="ad-input"
-                  value={r.v}
-                  onChange={(e) => setRowsSaved(rows.map((x, i) => (i === j ? { ...x, v: e.target.value } : x)))}
+                  value={r.value}
+                  onChange={(e) => setRowsSaved(rows.map((x, i) => (i === j ? { ...x, value: e.target.value } : x)))}
                   onBlur={flush}
                   style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '7px 10px' }}
                 />
@@ -970,7 +970,7 @@ function ParamRow({ autoId, p, last }: { autoId: string; p: ParamDef; last: bool
                 </button>
               </div>
             ))}
-            <button className="ad-btn-dashed" onClick={() => setRowsSaved([...rows, { k: '', v: '' }])}>
+            <button className="ad-btn-dashed" onClick={() => setRowsSaved([...rows, { key: '', value: '' }])}>
               + Add row
             </button>
           </div>
@@ -1023,7 +1023,7 @@ function StepRow({ s, n, open, onToggle, last, agentNames }: {
               {stepTimeoutLabel(s)}
             </Tag>
           </div>
-          <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>{s.desc}</div>
+          <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>{s.description}</div>
         </div>
         <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
           <Caret open={open} openDeg={180} closedDeg={0} style={{ fontSize: 12 }} />
@@ -1083,8 +1083,8 @@ function StepList({ steps, fallbackAgent }: { steps: Step[]; fallbackAgent: stri
 // ---------- page ----------
 
 export default function AutomationDetail() {
-  const { autoId, autos, agents, execs, go, setSurface, showToast, loadAuto } = useStore()
-  const auto: Auto | undefined = autos.find((a) => a.id === autoId)
+  const { automationId, automations, agents, executions, go, setSurface, showToast, loadAuto } = useStore()
+  const auto: Automation | undefined = automations.find((a) => a.id === automationId)
 
   const [verOpen, setVerOpen, verRef] = usePopover()
   const [actOpen, setActOpen, actRef] = usePopover()
@@ -1101,14 +1101,14 @@ export default function AutomationDetail() {
 
   // Full record (params/steps/latest) only comes from the full fetch.
   useEffect(() => {
-    if (autoId) { void loadAuto(autoId); setConfirmClear(false); setSnapAsk(false); setSnapRow(null) }
-  }, [autoId])
+    if (automationId) { void loadAuto(automationId); setConfirmClear(false); setSnapAsk(false); setSnapRow(null) }
+  }, [automationId])
   // §4.3: refresh the countdown every 30 s.
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 30000)
     return () => clearInterval(t)
   }, [])
-  // autoId may point at a deleted automation.
+  // automationId may point at a deleted automation.
   useEffect(() => { if (!auto) go('automations') }, [auto, go])
 
   if (!auto) return null
@@ -1125,11 +1125,11 @@ export default function AutomationDetail() {
   const countdown = auto.nextAt == null ? '' : nextIn(auto)
   const nextShort = nextTriggerShort(trigs)
   // §4.3: enabled app_start/message triggers have no computable next — nextAt stays null.
-  const discordOn = trigs.some((t) => t.kind === 'discord' && !t.off)
-  const imsgOn = trigs.some((t) => t.kind === 'imessage' && !t.off)
+  const discordOn = trigs.some((t) => t.kind === 'discord' && t.enabled)
+  const imsgOn = trigs.some((t) => t.kind === 'imessage' && t.enabled)
   const msgListening = auto.nextAt == null && (discordOn || imsgOn)
   const listenWhat = discordOn && imsgOn ? 'messages' : discordOn ? 'Discord messages' : 'iMessages'
-  const appStartOnly = auto.nextAt == null && !msgListening && trigs.some((t) => t.kind === 'app_start' && !t.off)
+  const appStartOnly = auto.nextAt == null && !msgListening && trigs.some((t) => t.kind === 'app_start' && t.enabled)
   // nextAt can be null with an enabled non-app_start trigger too (e.g. an
   // elapsed one-shot not yet consumed) — never render a dangling "next in ".
   const noNext = auto.nextAt == null
@@ -1167,7 +1167,7 @@ export default function AutomationDetail() {
   const putTriggers = (next: Array<Trigger | DraftTrigger>, toastMsg: string) => {
     void (async () => {
       try {
-        await api.patchAuto(auto.id, { triggers: next })
+        await api.patchAutomation(auto.id, { triggers: next })
         showToast(toastMsg)
         void loadAuto(auto.id)
       } catch (err) {
@@ -1179,8 +1179,8 @@ export default function AutomationDetail() {
   const [removeTrig, setRemoveTrig] = useState<Trigger | null>(null) // §9.2: trigger awaiting remove confirmation
   const toggleTrigger = (t: Trigger) => {
     putTriggers(
-      trigs.map((x) => (x.id === t.id ? { ...x, off: !x.off } : x)),
-      t.off ? `Trigger turned on — ${t.short}.` : `Trigger turned off — ${t.short}. Execute now still works.`,
+      trigs.map((x) => (x.id === t.id ? { ...x, enabled: !x.enabled } : x)),
+      t.enabled ? `Trigger turned off — ${t.short}. Execute now still works.` : `Trigger turned on — ${t.short}.`,
     )
   }
   const removeTrigger = (t: Trigger) => {
@@ -1192,7 +1192,7 @@ export default function AutomationDetail() {
     const nm = auto.name
     void (async () => {
       try {
-        await api.deleteAuto(auto.id)
+        await api.deleteAutomation(auto.id)
         go('automations')
         showToast(`“${nm}” deleted — its past results stay in Executions.`)
       } catch (err) {
@@ -1264,7 +1264,7 @@ export default function AutomationDetail() {
   const setSnapSetting = (key: keyof SnapshotSettings, on: boolean) => {
     void (async () => {
       try {
-        await api.patchAuto(auto.id, { snapshotSettings: { [key]: on } })
+        await api.patchAutomation(auto.id, { snapshotSettings: { [key]: on } })
         void loadAuto(auto.id)
       } catch (err) {
         showToast((err as Error).message)
@@ -1301,15 +1301,15 @@ export default function AutomationDetail() {
   // §9.2 failure notice: latest execution (§4.1: skipped AND queued records
   // never count as latest — a waiting firing must not hide a failure notice)
   // failed → its §4.5 error leads the LATEST RESULT card.
-  const latestExec = execs.find((e) =>
-    e.autoId === auto.id && e.status !== 'skipped' && e.status !== 'queued' && !e.test)
+  const latestExec = executions.find((e) =>
+    e.automationId === auto.id && e.status !== 'skipped' && e.status !== 'queued' && !e.test)
   const failedExec = latestExec?.status === 'failed' && latestExec.error ? latestExec : null
   const params = auto.params ?? []
   const steps = auto.steps ?? []
   const spec = auto.spec ?? []
-  const olderVersions = (auto.versions ?? []).filter((v) => v.v !== auto.version)
+  const olderVersions = (auto.versions ?? []).filter((v) => v.version !== auto.version)
   // §11 test executions are draft-scoped — never listed among real executions
-  const recentExecs = execs.filter((e) => e.autoId === auto.id && !e.test).slice(0, 6)
+  const recentExecs = executions.filter((e) => e.automationId === auto.id && !e.test).slice(0, 6)
 
   return (
     <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 30px 70px' }}>
@@ -1350,12 +1350,12 @@ export default function AutomationDetail() {
               </div>
               <ScrollArea style={{ maxHeight: '60vh' }}>
               {olderVersions.map((v) => (
-                <div key={v.v} style={{
+                <div key={v.version} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
                   borderBottom: '1px solid var(--hairline-dim)',
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 12.5, color: 'var(--text-2)' }}>v{v.v}</div>
+                    <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 12.5, color: 'var(--text-2)' }}>v{v.version}</div>
                     <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>
                       {(v.note ? `${v.note} — ` : '') + v.when}
                     </div>
@@ -1364,7 +1364,7 @@ export default function AutomationDetail() {
                     className="ad-btn-accent-ghost small"
                     onClick={() => {
                       setVerOpen(false)
-                      doExecute(`v${v.v}`, `Executing v${v.v} once — triggers and Execute now stay on v${auto.version}.`)
+                      doExecute(`v${v.version}`, `Executing v${v.version} once — triggers and Execute now stay on v${auto.version}.`)
                     }}
                     style={{ flex: 'none' }}
                   >
@@ -1415,19 +1415,19 @@ export default function AutomationDetail() {
         </HeaderActions>
       </div>
 
-      {/* §9.2 lede row: the automation's desc (read-only — editing lives on the edit page)
-          with the §4.3 trigger status chip beside it; chip stands alone when desc is empty */}
+      {/* §9.2 lede row: the automation's description (read-only — editing lives on the edit page)
+          with the §4.3 trigger status chip beside it; chip stands alone when description is empty */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 24px' }}>
-        {auto.desc && (
+        {auto.description && (
           <p
-            title={auto.desc}
+            title={auto.description}
             style={{
               font: "400 13.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: 0,
               flex: '0 1 auto', minWidth: 0,
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}
           >
-            {auto.desc}
+            {auto.description}
           </p>
         )}
         <span style={{
@@ -1475,7 +1475,7 @@ export default function AutomationDetail() {
           {failedExec && (
             <FailureNotice
               error={failedExec.error!}
-              onView={() => go('execution', { execId: failedExec.id })}
+              onView={() => go('execution', { executionId: failedExec.id })}
               // §7/§9.2 Fix with AI: open the editor seeded with this failure
               onFix={() => {
                 useStore.setState({ fixExec: failedExec.id })
@@ -1486,8 +1486,8 @@ export default function AutomationDetail() {
           )}
           {lr && (
             <ResultSection
-              label="LATEST RESULT" result={lr} execId={lr.execId} compact
-              stamp={latestExec ? `${latestExec.status}:${latestExec.dur}` : undefined}
+              label="LATEST RESULT" result={lr} executionId={lr.executionId} compact
+              stamp={latestExec ? `${latestExec.status}:${latestExec.duration}` : undefined}
             />
           )}
         </div>
@@ -1514,7 +1514,7 @@ export default function AutomationDetail() {
                   onSave={(nt) => {
                     setEditTrig(null)
                     putTriggers(
-                      trigs.map((x) => (x.id === t.id ? { ...nt, id: t.id, off: t.off } : x)),
+                      trigs.map((x) => (x.id === t.id ? { ...nt, id: t.id, enabled: t.enabled } : x)),
                       `Trigger updated — ${triggerShort(nt)}.`,
                     )
                   }}
@@ -1526,8 +1526,8 @@ export default function AutomationDetail() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <span style={{
                     width: 28, height: 28, borderRadius: 7,
-                    background: t.off ? 'var(--hairline-dim)' : 'var(--accent-chip-bg)',
-                    color: t.off ? 'var(--text-faint)' : 'var(--accent)',
+                    background: t.enabled ? 'var(--accent-chip-bg)' : 'var(--hairline-dim)',
+                    color: t.enabled ? 'var(--accent)' : 'var(--text-faint)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none',
                     transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
                   }}>
@@ -1536,7 +1536,7 @@ export default function AutomationDetail() {
                   <span
                     style={{
                       flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12,
-                      color: t.off ? 'var(--text-faint)' : 'var(--text-2)',
+                      color: t.enabled ? 'var(--text-2)' : 'var(--text-faint)',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}
                   >
@@ -1552,18 +1552,18 @@ export default function AutomationDetail() {
                       <i className="fa-solid fa-pen" style={{ fontSize: 11 }} />
                     </button>
                   )}
-                  <Toggle on={!t.off} onChange={() => toggleTrigger(t)} title={t.off ? 'Turn this trigger on' : 'Turn this trigger off'} />
+                  <Toggle on={t.enabled} onChange={() => toggleTrigger(t)} title={t.enabled ? 'Turn this trigger off' : 'Turn this trigger on'} />
                   <button className="ad-btn-x" onClick={() => setRemoveTrig(t)} title="Remove trigger" aria-label="Remove trigger">
                     <i className="fa-solid fa-xmark" />
                   </button>
                 </div>
                 {/* §9.2: a message trigger's listener state — errors in red, connecting muted, connected silent */}
-                {(t.kind === 'discord' || t.kind === 'imessage') && !t.off && t.conn && t.conn.state !== 'connected' && (
+                {(t.kind === 'discord' || t.kind === 'imessage') && t.enabled && t.connection && t.connection.state !== 'connected' && (
                   <div className="ad-anim-item" style={{
                     marginLeft: 40, marginTop: 2, fontFamily: 'var(--mono)', fontSize: 11,
-                    color: t.conn.state === 'error' ? 'var(--red-text)' : 'var(--text-faint)',
+                    color: t.connection.state === 'error' ? 'var(--red-text)' : 'var(--text-faint)',
                   }}>
-                    {t.conn.state === 'error' ? t.conn.error ?? 'connection error' : 'connecting…'}
+                    {t.connection.state === 'error' ? t.connection.error ?? 'connection error' : 'connecting…'}
                   </div>
                 )}
               </div>
@@ -1579,7 +1579,7 @@ export default function AutomationDetail() {
             <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 8 }}>{trigStatusText}</div>
             <AddTrigger
               hasAppStart={trigs.some((t) => t.kind === 'app_start')}
-              onAdd={(t) => putTriggers([...trigs, { ...t, off: false }], `Trigger added — ${triggerShort(t)}.`)}
+              onAdd={(t) => putTriggers([...trigs, { ...t, enabled: true }], `Trigger added — ${triggerShort(t)}.`)}
             />
           </div>
         </div>
@@ -1596,7 +1596,7 @@ export default function AutomationDetail() {
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
             {params.map((p, i) => (
-              <ParamRow key={p.name} autoId={auto.id} p={p} last={i === params.length - 1} />
+              <ParamRow key={p.name} automationId={auto.id} p={p} last={i === params.length - 1} />
             ))}
           </div>
         </div>
@@ -1621,7 +1621,7 @@ export default function AutomationDetail() {
               <button
                 className="ad-btn-bare ad-hover-row ad-focus-inset"
                 key={e.id}
-                onClick={() => go('execution', { execId: e.id })}
+                onClick={() => go('execution', { executionId: e.id })}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 14, padding: '11px 18px',
                   borderBottom: i === recentExecs.length - 1 ? 'none' : '1px solid var(--hairline-dim)',
@@ -1642,7 +1642,7 @@ export default function AutomationDetail() {
                 </span>
                 {e.note && <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)' }}>{e.note}</span>}
                 <div style={{ flex: 1 }} />
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>{e.dur}</span>
+                <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>{e.duration}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-faint)', width: 130, textAlign: 'right', flex: 'none' }}>{e.started}</span>
                 <span style={{ color: 'var(--text-deco)' }}><i className="fa-solid fa-chevron-right" style={{ fontSize: 10 }} /></span>
               </button>
@@ -1891,7 +1891,7 @@ export default function AutomationDetail() {
             // §5.1/§9.2: fetch the archive, then hand it to the native save dialog.
             const doExport = async () => {
               try {
-                const data = await api.exportAuto(auto.id, exportValues)
+                const data = await api.exportAutomation(auto.id, exportValues)
                 close()
                 const safe = auto.name.replace(/[/\\:*?"<>|]+/g, ' ').trim() || 'automation'
                 const path = await window.autowright?.saveFile(`${safe}.autowright`, data)

@@ -9,22 +9,22 @@ oklch/rgba values where no token fits.
 ## Data + state
 
 - `useStore()` from `src/store.ts` — the central model:
-  - data: `autos: Auto[]`, `execs: Exec[]`, `agents: Agent[]`, `secrets: SecretMeta[]`,
+  - data: `autos: Auto[]`, `execs: Execution[]`, `agents: Agent[]`, `secrets: SecretMeta[]`,
     `settings: Settings | null`, `version`
-  - nav: `surface`, `page`, `autoId`, `execId`, `createFrom`; navigate with
-    `go(page, {autoId?, execId?})` and `setSurface(surface, from?)`
+  - nav: `surface`, `page`, `automationId`, `executionId`, `createFrom`; navigate with
+    `go(page, {automationId?, executionId?})` and `setSurface(surface, from?)`
   - `showToast(msg, ms?)`; `toast` is rendered by App — never render your own toast container.
-  - `execFull: Record<execId, Exec>` — full execution (logs/result) cache; call
+  - `executionFull: Record<executionId, Execution>` — full execution (logs/result) cache; call
     `loadExec(id)` to (re)fetch; live `exec.log` / `exec.step` WS events are merged in
-    automatically while the record is in `execFull`.
+    automatically while the record is in `executionFull`.
   - `loadAuto(id)` refetches one automation into `autos`.
-  - `test: { execId, analyzing, issue } | null` + `beginTest(execId)` / `clearTest()` —
+  - `test: { executionId, analyzing, issue } | null` + `beginTest(executionId)` / `clearTest()` —
     the §11 tracked test (issue analysis lands over WS `test.issue`; test progress streams
     over the ordinary `exec.*` events).
 - `api` from `src/api.ts` — typed §19 client (`api.executeNow`, `api.patchAuto`, `api.putSecret`, …).
   All mutations trigger WS `*.changed` events which refresh the store — after calling a mutation
   you usually only `showToast(...)`.
-- Types in `src/types.ts` (`Auto`, `Exec`, `Step`, `ParamDef`, `SpecBlock`, `ExecResult`, …).
+- Types in `src/types.ts` (`Auto`, `Execution`, `Step`, `ParamDef`, `SpecBlock`, `ExecResult`, …).
 
 ## Shared primitives (`src/ui.tsx`) — use these, don't reinvent
 
@@ -34,7 +34,7 @@ oklch/rgba values where no token fits.
 `<div ref={ref} style={{position:'relative'}}>`), `menuStyle`, `MenuRow`,
 `paramSummary(p)`, `validUrl(s)`, `nextIn(auto)` (countdown; re-render every 30 s with a
 `useEffect` interval), `ConfirmModal`, `PageTitle`, `CountPill`. App renders `Toast` globally.
-Result rendering lives in `src/result.tsx`: `ResultSection label=… result=… execId=…`.
+Result rendering lives in `src/result.tsx`: `ResultSection label=… result=… executionId=…`.
 
 ## Behaviors that must match the spec
 

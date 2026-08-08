@@ -6,15 +6,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, closeApp, launchApp, shot, waitFor, type AppHandle } from './harness'
 
 const FLAKY_STEP = {
-  file: '01-flaky.py', name: 'Flaky', desc: 'fails once, then succeeds',
+  file: '01-flaky.py', name: 'Flaky', description: 'fails once, then succeeds',
   code: 'from autowright import log, memory, result\nn = memory.load("attempt", 0) + 1\nmemory.save("attempt", n)\nassert n > 1, "first attempt fails"\nresult.status("ok")\nresult.chip("Recovered")\n',
 }
 const SLEEP_STEP = {
-  file: '01-sleep.py', name: 'Sleep', desc: 'sleeps',
+  file: '01-sleep.py', name: 'Sleep', description: 'sleeps',
   code: 'from autowright import log, result\nimport time\nlog("sleeping")\ntime.sleep(60)\nresult.status("ok")\n',
 }
 const QUICK_STEP = {
-  file: '02-quick.py', name: 'Quick', desc: 'finishes',
+  file: '02-quick.py', name: 'Quick', description: 'finishes',
   code: 'from autowright import result\nresult.status("ok")\nresult.chip("Made it")\n',
 }
 
@@ -88,7 +88,7 @@ describe('failure and retry e2e', () => {
     const { page } = handle
     await page.getByText('Skip e2e').waitFor({ timeout: 20_000 })
 
-    const execId = await backend.execute(id)
+    const executionId = await backend.execute(id)
     await page.getByText('Skip e2e').click()
     await page.getByText('Manual · v1').first().waitFor({ timeout: 10_000 })
     await page.getByText('Manual · v1').first().click()
@@ -100,7 +100,7 @@ describe('failure and retry e2e', () => {
     await page.getByText('Made it').first().waitFor()
     await shot(page, 'skip-step.png')
 
-    const e = await backend.api('GET', `/executions/${execId}`) as { steps: Array<{ status: string }> }
+    const e = await backend.api('GET', `/executions/${executionId}`) as { steps: Array<{ status: string }> }
     expect(e.steps[0].status).toBe('skipped')
     expect(e.steps[1].status).toBe('succeeded')
   }, 120_000)

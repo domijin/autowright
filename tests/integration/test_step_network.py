@@ -15,22 +15,22 @@ def test_fetch_page_respects_local_robots(backend, client, web_server):
     (docroot / "private" / "x.html").write_text("secret")
 
     a = create_auto(client, name="Fetcher", steps=[
-        {"file": "01-fetch.py", "name": "Fetch", "desc": "allowed",
+        {"file": "01-fetch.py", "name": "Fetch", "description": "allowed",
          "code": f'from autowright import fetch_page, log\nlog(fetch_page("{base}/page.html").strip())\n'},
     ])
-    exec_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["execId"]
-    e = wait_status(client, exec_id)
+    execution_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    e = wait_status(client, execution_id)
     assert e["status"] == "succeeded"
-    lines = client.get(f"/executions/{exec_id}/logs",
+    lines = client.get(f"/executions/{execution_id}/logs",
                        params={"step": 0, "attempt": 1}).json()["lines"]
     assert any("hello-from-web" in ln["text"] for ln in lines)
 
     blocked = create_auto(client, name="Blocked fetcher", steps=[
-        {"file": "01-fetch.py", "name": "Fetch", "desc": "disallowed",
+        {"file": "01-fetch.py", "name": "Fetch", "description": "disallowed",
          "code": f'from autowright import fetch_page\nfetch_page("{base}/private/x.html")\n'},
     ])
-    exec_id = client.post(f"/automations/{blocked['id']}/execute", json={}).json()["execId"]
-    e = wait_status(client, exec_id)
+    execution_id = client.post(f"/automations/{blocked['id']}/execute", json={}).json()["executionId"]
+    e = wait_status(client, execution_id)
     assert e["status"] == "failed"
     assert "robots.txt disallows" in e["error"]["message"]
 
@@ -44,12 +44,12 @@ def test_declared_package_installs_from_local_wheel(backend_factory, tmp_path):
     with b.client() as client:
         a = create_auto(client, name="Wheeled",
                         packages=[{"pip": "tinypkg", "import": "tinypkg"}],
-                        steps=[{"file": "01-use.py", "name": "Use", "desc": "imports",
+                        steps=[{"file": "01-use.py", "name": "Use", "description": "imports",
                                 "code": 'from autowright import log\nimport tinypkg\nlog(tinypkg.MARKER)\n'}])
-        exec_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["execId"]
-        e = wait_status(client, exec_id, timeout=120)
+        execution_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+        e = wait_status(client, execution_id, timeout=120)
         assert e["status"] == "succeeded", e.get("error")
         assert (b.home / "site-packages" / "tinypkg" / "__init__.py").exists()
-        lines = client.get(f"/executions/{exec_id}/logs",
+        lines = client.get(f"/executions/{execution_id}/logs",
                            params={"step": 0, "attempt": 1}).json()["lines"]
         assert any("tinypkg-1.0.0" in ln["text"] for ln in lines)

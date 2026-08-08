@@ -57,7 +57,7 @@ def test_imessage_trigger_fires_and_replies(backend_factory, tmp_path):
     })
     with b.client() as c:
         a = create_auto(c, name="Messaged", steps=[
-            {"file": "01-reply.py", "name": "Reply", "desc": "acks",
+            {"file": "01-reply.py", "name": "Reply", "description": "acks",
              "code": 'from autowright import log, reply\n'
                      'log("message fired me")\nreply("integration reply done")\n'},
         ])

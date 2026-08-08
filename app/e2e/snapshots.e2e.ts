@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, closeApp, launchApp, shot, type AppHandle } from './harness'
 
 const MEMORY_STEP = {
-  file: '01-remember.py', name: 'Remember', desc: 'writes memory',
+  file: '01-remember.py', name: 'Remember', description: 'writes memory',
   code: 'from autowright import memory, result\nmemory.save("seen", {"count": 1})\nresult.status("ok")\nresult.chip("Remembered")\n',
 }
 

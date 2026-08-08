@@ -10,11 +10,11 @@ import { BackLink, BtnPrimary, Eyebrow, GreenCheck, LoadingRow, MiniBadge, P, Pr
 type HarnessId = 'claude' | 'gemini' | 'codex' | 'opencode'
 
 
-const HARNESSES: { id: HarnessId; name: string; desc: string }[] = [
-  { id: 'claude', name: 'Claude Code', desc: 'Uses your Claude account. The most capable option — nothing extra to pay.' },
-  { id: 'gemini', name: 'Gemini CLI', desc: 'Uses your Google account. Generous free tier.' },
-  { id: 'codex', name: 'Codex', desc: 'Uses your ChatGPT account.' },
-  { id: 'opencode', name: 'OpenCode', desc: 'Open-source — works with any provider you’ve already set up, or a local model.' },
+const HARNESSES: { id: HarnessId; name: string; description: string }[] = [
+  { id: 'claude', name: 'Claude Code', description: 'Uses your Claude account. The most capable option — nothing extra to pay.' },
+  { id: 'gemini', name: 'Gemini CLI', description: 'Uses your Google account. Generous free tier.' },
+  { id: 'codex', name: 'Codex', description: 'Uses your ChatGPT account.' },
+  { id: 'opencode', name: 'OpenCode', description: 'Open-source — works with any provider you’ve already set up, or a local model.' },
 ]
 
 const HARNESS_NAME: Record<HarnessId, string> = {
@@ -83,7 +83,7 @@ export default function AgentNewPage() {
     editAgent ? editAgent.mode : null)
   const [model, setModel] = useState<string | null>(editAgent?.model ?? null)
   const [name, setName] = useState(editAgent ? (editAgent.name || editAgent.harness) : '')
-  const [desc, setDesc] = useState(editAgent?.desc ?? '')
+  const [description, setDesc] = useState(editAgent?.description ?? '')
   const [nameErr, setNameErr] = useState(false)
   const [fix, setFix] = useState<'needs' | 'busy' | 'done'>(
     () => (editAgent && agentChecks[editAgent.id] === 'needs' ? 'needs' : 'done'))
@@ -122,7 +122,7 @@ export default function AgentNewPage() {
     const evt = harnessInstall.ollama
     if (!evt || inst !== 'installing') return
     if (!evt.done) {
-      if (evt.pct !== undefined) setInstPct(evt.pct)
+      if (evt.percent !== undefined) setInstPct(evt.percent)
     } else if (evt.ok) {
       setInst('idle')
       // Done — re-poll status so the Ollama-gated options ungate.
@@ -180,7 +180,7 @@ export default function AgentNewPage() {
     const evt = harnessInstall[harness]
     if (!evt) return
     if (!evt.done) {
-      if (evt.pct !== undefined) setHPct(evt.pct)
+      if (evt.percent !== undefined) setHPct(evt.percent)
     } else if (evt.ok) {
       // Installed — sign-in help only when it's needed (§12).
       const h = harness
@@ -212,7 +212,7 @@ export default function AgentNewPage() {
   useEffect(() => {
     if (!harness || !det || det[harness]?.installed !== false) return
     void api.installStatus(harness).then((s) => {
-      if (s.state === 'running') { setHInst('installing'); setHPct(s.pct ?? null) }
+      if (s.state === 'running') { setHInst('installing'); setHPct(s.percent ?? null) }
     }).catch(() => { /* no install to reattach */ })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [harness, det])
@@ -300,7 +300,7 @@ export default function AgentNewPage() {
       mode,
       model: mode === 'default' ? null : (model?.trim() ?? null),
       name: name.trim(),
-      desc: desc.trim(),
+      description: description.trim(),
     }
     try {
       if (editAgent) {
@@ -376,7 +376,7 @@ export default function AgentNewPage() {
       <Eyebrow style={{ margin: '0 0 10px' }}>DESCRIPTION <span style={{ color: 'var(--text-faint)' }}>· OPTIONAL</span></Eyebrow>
       <textarea
         className="ad-input"
-        value={desc}
+        value={description}
         onChange={(e) => setDesc(e.target.value)}
         placeholder="What this agent is for — shown on the Agents page and given to the drafting agent"
         rows={2}
@@ -413,7 +413,7 @@ export default function AgentNewPage() {
                   <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT INSTALLED</MiniBadge>
                 )}
               </div>
-              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{h.desc}</p>
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{h.description}</p>
             </button>
           )
         })}
@@ -433,7 +433,7 @@ export default function AgentNewPage() {
                 <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-muted)' }}>{Math.round(hPct)}%</span>
               )}
             </div>
-            <ProgressBar pct={hPct} />
+            <ProgressBar percent={hPct} />
           </div>
         ) : hInst === 'signin' ? (
           <AmberNotice
@@ -520,7 +520,7 @@ export default function AgentNewPage() {
                     <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-muted)' }}>{Math.round(instPct)}%</span>
                   )}
                 </div>
-                <ProgressBar pct={instPct} />
+                <ProgressBar percent={instPct} />
               </div>
             ) : (
               <AmberNotice
@@ -607,7 +607,7 @@ export default function AgentNewPage() {
                       </span>
                     )}
                   </div>
-                  <ProgressBar pct={pullPct} />
+                  <ProgressBar percent={pullPct} />
                 </div>
               )}
 

@@ -1,6 +1,6 @@
 // §15 e2e: config-only agent add (no install, no login — the fake `claude`
 // answers the real readiness check) and a §4.8 placeholder secret's full
-// lifecycle (blank value → NO Keychain write; add → edit desc → delete).
+// lifecycle (blank value → NO Keychain write; add → edit description → delete).
 import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, clickNav, closeApp, launchApp, shot, type AppHandle } from './harness'
 

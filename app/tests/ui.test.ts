@@ -55,8 +55,8 @@ describe('paramSummary', () => {
     expect(paramSummary(p({ kind: 'list', default: ['a', 'b'] }))).toBe('2 entries')
   })
   it('kv counts rows, with default fallback', () => {
-    expect(paramSummary(p({ kind: 'kv', rows: [{ k: 'a', v: '1' }, { k: 'b', v: '2' }, { k: 'c', v: '3' }] }))).toBe('3 entries')
-    expect(paramSummary(p({ kind: 'kv', default: [{ k: 'a', v: '1' }] }))).toBe('1 entries')
+    expect(paramSummary(p({ kind: 'kv', rows: [{ key: 'a', value: '1' }, { key: 'b', value: '2' }, { key: 'c', value: '3' }] }))).toBe('3 entries')
+    expect(paramSummary(p({ kind: 'kv', default: [{ key: 'a', value: '1' }] }))).toBe('1 entries')
     expect(paramSummary(p({ kind: 'kv' }))).toBe('0 entries')
   })
   it('number: value → default → min → 0 chain', () => {
@@ -129,7 +129,7 @@ describe('executingToast (§7 409 no-free-slot copy)', () => {
 })
 
 describe('stepTimeoutLabel (§9.2 clock tag)', () => {
-  const s = (over: Partial<Step> = {}): Step => ({ name: 's', desc: '', code: '', ...over } as Step)
+  const s = (over: Partial<Step> = {}): Step => ({ name: 's', description: '', code: '', ...over } as Step)
 
   it('noTimeout → "no limit"', () => {
     expect(stepTimeoutLabel(s({ noTimeout: true }))).toBe('no limit')

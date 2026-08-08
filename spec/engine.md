@@ -29,7 +29,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   connections open, close, and re-resolve their token as triggers are added, removed, toggled,
   or re-pointed. A dropped connection reconnects with exponential backoff (1 s doubling to a
   60 s cap); an authentication failure (bad token) or a missing/valueless secret parks the
-  connection in the `conn` error state (§4.3) and re-tries at the backoff cap, so fixing the
+  connection in the `connection` error state (§4.3) and re-tries at the backoff cap, so fixing the
   secret heals it without a restart; `auto.changed` fires for affected automations on every
   state change. Each connection learns the bot's user id from `READY` and the bot's
   managed-role ids from `GUILD_CREATE` payloads (roles whose `tags.bot_id` is the bot's user
@@ -67,7 +67,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   cannot fire (§4.3). A row passing the §4.3 rules starts one execution per matching trigger
   with label "iMessage" and the §4.5 payload. Failure handling mirrors Discord: a db that
   cannot be opened — no Full Disk Access, or no `chat.db` at all (Messages never signed in) —
-  parks the watcher in the `conn` error state shared by every `imessage` trigger (§4.3),
+  parks the watcher in the `connection` error state shared by every `imessage` trigger (§4.3),
   re-probed each tick, so granting the permission heals it without a restart;
   `auto.changed` fires on every state change. **A skipped message
   firing answers its sender** — a dropped message would otherwise leave a person waiting on a

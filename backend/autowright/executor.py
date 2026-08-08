@@ -143,16 +143,16 @@ class Execution:
 
 class Log:
     def __call__(self, text: str) -> None:
-        emit("log", k="out", text=str(text))
+        emit("log", kind="out", text=str(text))
 
     def info(self, text: str) -> None:
-        emit("log", k="out", text=str(text))
+        emit("log", kind="out", text=str(text))
 
     def warn(self, text: str) -> None:
-        emit("log", k="wrn", text=str(text))
+        emit("log", kind="wrn", text=str(text))
 
     def error(self, text: str) -> None:
-        emit("log", k="err", text=str(text))
+        emit("log", kind="err", text=str(text))
 
 
 class Result:
@@ -233,7 +233,7 @@ class Agent:
         # own: a value written to workspace/memory by an earlier step must be
         # caught too.
         scan_outbound(full, "prompt", self._scan)
-        emit("log", k="sys",
+        emit("log", kind="sys",
              text=f"agent query → {_harness.grant_name(cfg)} ({cfg.get('harness')}, {len(full)} chars)")
         if len(full) > 200_000:
             raise RuntimeError("agent prompt too large (200k char cap)")
@@ -312,15 +312,15 @@ class _LineWriter(io.TextIOBase):
         while "\n" in self.buf:
             line, self.buf = self.buf.split("\n", 1)
             if line.strip():
-                emit("log", k=self.kind, text=line)
+                emit("log", kind=self.kind, text=line)
         if len(self.buf) > self.MAX_LINE:
-            emit("log", k=self.kind, text=self.buf)
+            emit("log", kind=self.kind, text=self.buf)
             self.buf = ""
         return len(s)
 
     def flush(self) -> None:
         if self.buf.strip():
-            emit("log", k=self.kind, text=self.buf)
+            emit("log", kind=self.kind, text=self.buf)
         self.buf = ""
 
 
@@ -414,7 +414,7 @@ def main() -> int:
                    f"the Python stdlib, the curated packages, and this automation's "
                    f"declared packages (§6.2)")
             emit("error", type="DisallowedImport", message=msg)
-            emit("log", k="err", text=msg)
+            emit("log", kind="err", text=msg)
             return 4
         code = compile(source, script, "exec")
         exec(code, g)  # noqa: S102 — this is the engine's job
@@ -427,7 +427,7 @@ def main() -> int:
         sys.stdout.flush()
         sys.stderr.flush()
         emit("error", type="MissingSecret", message=str(e))
-        emit("log", k="err", text=str(e))
+        emit("log", kind="err", text=str(e))
         return 3
     except SystemExit as e:
         # A step calling sys.exit() / sys.exit(0) is an ordinary early exit,
@@ -444,7 +444,7 @@ def main() -> int:
             msg = f"SystemExit: {e.code}"
             rc = 1
         emit("error", type="SystemExit", message=msg)
-        emit("log", k="err", text=msg)
+        emit("log", kind="err", text=msg)
         return rc
     except BaseException as e:  # noqa: BLE001
         # §7 failure diagnostics: the engine stores this structured event as the
@@ -457,7 +457,7 @@ def main() -> int:
         emit("error", type=type(e).__name__,
              message=f"{type(e).__name__}: {e}" if str(e) else type(e).__name__)
         for ln in traceback.format_exc().strip().splitlines():
-            emit("log", k="err", text=ln)
+            emit("log", kind="err", text=ln)
         return 1
 
 

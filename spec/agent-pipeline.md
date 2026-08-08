@@ -85,8 +85,8 @@ also served to the create/edit page via §19 `GET /instructions`):
   with durable state in `memory/` — the §8 rule-8 retry policy, and keep the automation's
   name and description accurate — update them via the chat actions when a change makes them
   stale). In `create` mode, when
-  the user gave none, the backend seeds `instr` from this file; the validated create draft
-  carries `instr` back so the Review card arrives pre-filled — the user edits or deletes the
+  the user gave none, the backend seeds `instructions` from this file; the validated create draft
+  carries `instructions` back so the Review card arrives pre-filled — the user edits or deletes the
   rules freely, and they version like any instructions.
 
 **Modes:** `create` (both calls, from the user's description) · `chat` (one call — a §11 chat
@@ -106,7 +106,7 @@ around the name, plain words). Sections in order:
 
 1. `framework-instructions.md` (verbatim).
 2. **Available agents** — the enabled agents as a yaml list, one entry per agent with `name`
-   (falling back to the harness name), `description` (the §4.7 desc, omitted when empty),
+   (falling back to the harness name), `description` (the §4.7 description, omitted when empty),
    `harness`, and `model` (the literal `harness default` when the §4.7 model is null). An empty
    list renders the literal `none`. The header states its intent for the spec call: these
    agents can power judgment steps when the automation is later built — the spec must not
@@ -114,7 +114,7 @@ around the name, plain words). Sections in order:
    named in the spec or build instructions win; otherwise the drafting agent's own judgment).
    The same yaml rendering applies to the call-2 grants context.
 3. **Available secrets** — the allowed secrets as a yaml list, one entry per secret with
-   `name` and `description` (the §4.8 desc, omitted when empty) — never values, memory
+   `name` and `description` (the §4.8 description, omitted when empty) — never values, memory
    contents, or execution logs; empty list renders `none`. The header states the same
    selection rule for secrets. For both grant lists the
    §19 body's grant arrays (the in-editor toggles) win over the stored automation's; absent
@@ -149,7 +149,7 @@ later chats — context only, so a follow-up request reads naturally), **RECENT 
 draft declares §6.2 packages: the fast §6.2 installed-check's per-package status and version
 as a yaml list, so install trouble is answerable, **AUTOMATION** — the automation's current
 name and one-line description as yaml (§4.1 user-owned identity; the §19 `current` body's
-`name`/`desc`, and in edit mode the backend attaches the stored automation's when the body
+`name`/`description`, and in edit mode the backend attaches the stored automation's when the body
 carries none — like triggers), headed with the rule that renaming or redescribing happens
 only through `actions.yaml`, so the agent edits what is really there, the in-editor spec
 (as markdown), **CURRENT parameters** — the §4.2 param definitions with their in-editor
@@ -198,7 +198,7 @@ sync: true                  # rebuild the steps from the (possibly just-rewritte
 test: true                  # start a §11 draft test once the workflow is in sync
 test_values: { url: "…" }   # §19 paramValues for that test only (param name → value)
 name: New automation name   # rename — §4.1 user-owned identity, applied like the pencil
-desc: One-line description  # ditto for the description
+description: One-line description  # ditto for the description
 undo: true                  # run the §11 draft-undo restore — back to before the last request
 ===END===
 ```
@@ -215,7 +215,7 @@ response neither rewrites the spec nor requests `sync` (i.e. the test runs again
 steps), its keys must each name a current param, and an unknown name is a validation error
 that feeds the repair round instead of silently testing with defaults (a response that
 rebuilds the steps may name params the rebuild will create, so the check is skipped there);
-`name`/`desc` nonempty strings. `test: true` implies the sync whenever the workflow is out
+`name`/`description` nonempty strings. `test: true` implies the sync whenever the workflow is out
 of sync once the rewrites land (§11). Grants are **not** actions: the agent may suggest
 enabling an agent or secret in prose but can never do it, and there is no save/create
 action — the final commit stays the user's (§11 hard boundaries).
@@ -243,7 +243,7 @@ rules; the allowed block names are exactly `spec.md`, `instructions.md`, `notes.
 validates like call 1; `actions.yaml` must parse as a yaml mapping matching the schema
 above; prose before the first marker becomes the payload's `answer`. The truncation rule
 and the one repair round (then build diagnosis) apply. Terminal payload:
-`draft: { answer?, spec?, instr?, notes?, actions? }` — `spec` as §5 blocks, `instr` and
+`draft: { answer?, spec?, instructions?, notes?, actions? }` — `spec` as §5 blocks, `instructions` and
 `notes` as markdown strings, `actions` the validated mapping with the §4.1 camelCase
 serialization (`testValues`). Stage label: "Working on the request"; the streamed `detail`
 line is `Thinking…` until text arrives, then per the last streamed marker `Writing the
@@ -266,11 +266,11 @@ editor applies the whole outcome (§11).
    ```
    ===FILE: manifest.yaml===
    name: Suggested automation name   # create only (ignored on sync)
-   desc: One-line description        # create only (ignored on sync) — user-owned after create (§4.1)
+   description: One-line description        # create only (ignored on sync) — user-owned after create (§4.1)
    note: Version note for the history menu (§4.4)
    triggers:                         # rule-9 dialect; omit the whole key when the automation
      - cron: "0 8 * * *"             # needs no trigger (manual/menu bar only)
-     - { cron: "0 9 * * 1", tz: Asia/Tokyo }   # tz optional — only when the spec names a zone
+     - { cron: "0 9 * * 1", timezone: Asia/Tokyo }   # timezone optional — only when the spec names a zone
      - { imessage: "+15551234567", pattern: check }     # details from the spec only
      - { discord: "1234567890", secret: DISCORD_BOT }   # ditto; + optional pattern/mention/author
    params:                           # full definitions per §4.2, each with a default
@@ -286,8 +286,8 @@ editor applies the whole outcome (§11).
                                      # secrets: granted secret names the step uses (optional);
                                      # agents: granted agent names an agent step may call,
                                      # first = agent.ask default (optional)
-     - { file: 01-fetch.py, name: Fetch pages, desc: ..., timeout: 60, secrets: [API_TOKEN] }
-     - { file: 02-classify.py, name: Classify updates, desc: ..., timeout: 180, agent: true,
+     - { file: 01-fetch.py, name: Fetch pages, description: ..., timeout: 60, secrets: [API_TOKEN] }
+     - { file: 02-classify.py, name: Classify updates, description: ..., timeout: 180, agent: true,
          why: needs judgment on chapter titles, agents: [Fast local] }
    ===FILE: 01-fetch.py===
    ...python source...
@@ -371,8 +371,8 @@ notes rewrite (§11).
    persist state to `memory/` because every retry re-runs the script from the top — is a
    `default-build-instructions.md` bullet the user can rewrite.
 9. `triggers` is optional. The drafted dialect, one entry per trigger:
-   - `{ cron: expr }` / `{ cron: expr, tz: zone }` — expression valid per the §4.3 dialect,
-     `tz` a known IANA zone included only when the spec names one.
+   - `{ cron: expression }` / `{ cron: expression, timezone: zone }` — expression valid per the §4.3 dialect,
+     `timezone` a known IANA zone included only when the spec names one.
    - `{ imessage: handle }` (+ optional `pattern`) — `handle` a §4.3-valid sender (E.164
      phone or email), mapped to the stored `from` field.
    - `{ discord: channel-id, secret: NAME }` (+ optional `pattern`, `mention`, `author`) —
@@ -389,9 +389,9 @@ notes rewrite (§11).
    `execution.trigger_payload` as before (the user adds the trigger on the automation page,
    §9.2). One-shot `time` triggers are never drafted. The key is omitted when the automation
    needs no trigger (executes only via Execute now / menu bar). Applied when creating (v1's
-   triggers, each `off: false`, shown on Review) and, via the **§4.3 trigger merge**, when a
+   triggers, each `enabled: true`, shown on Review) and, via the **§4.3 trigger merge**, when a
    synced edit is saved as vN+1: drafted crons replace the cron subset (matched entries keep
-   `id`/`off`), drafted message/app-start entries add only when no stored trigger matches
+   `id`/`enabled`), drafted message/app-start entries add only when no stored trigger matches
    their identity fields, and stored non-cron triggers always survive. Between saves the
    stored triggers stay user-owned (§5).
 
@@ -440,7 +440,7 @@ refusal. A validation double-failure therefore never ends `failed` — `failed` 
 harness errors (after the retry above) and unexpected crashes. Repair and diagnosis prompts
 embed the previous raw response **clipped** to ~80k characters (head and tail kept, an
 omission marker between); the §5 app-log framing always logs it whole. While the §4.9
-`devMode` setting is on, every call whose response failed validation — including one the
+`developerMode` setting is on, every call whose response failed validation — including one the
 repair round then fixed — also writes one §5 build-failure record under
 `<logs>/build-failures/` (rounds' validation errors + raw responses, diagnosis blockers,
 the prompt) when the call settles, so failures can later feed instruction improvements. Per-call timeout
@@ -475,7 +475,7 @@ second; marker changes update immediately. `detail` rides the job (§19 `GET /dr
 that buffers its whole output simply yields no `detail` — the coarse stage labels remain.
 
 Beside the mutable `detail` line the job carries `events` — an append-only activity feed of
-discrete milestones, each entry `{t, text}` (`t` epoch seconds), capped to the newest 200.
+discrete milestones, each entry `{time, text}` (`time` epoch seconds), capped to the newest 200.
 Appended: every marker change from the streams above (the `detail` message without its
 ` · N lines` count — never the throttled line-count growth, and never the initial
 `Thinking…`), every tool use on a Claude Code agent (the stream-json `assistant` messages'

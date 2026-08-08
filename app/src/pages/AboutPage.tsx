@@ -34,7 +34,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 type UpdateCheck =
   | { state: 'idle' | 'checking' | 'current' | 'error' }
   | { state: 'available'; version: string }
-  | { state: 'downloading'; version: string; pct: number | null }
+  | { state: 'downloading'; version: string; percent: number | null }
   | { state: 'downloaded'; version: string; busy?: boolean }
   | { state: 'failed'; error: string }
 
@@ -72,13 +72,13 @@ export default function AboutPage() {
   // The main process streams the zip itself (§3) and pushes percent over
   // update-progress events; the bar holds 100% while Squirrel stages the zip.
   useEffect(() => {
-    window.autowright?.onUpdateProgress?.((pct) => {
-      setUpd((u) => (u.state === 'downloading' ? { ...u, pct } : u))
+    window.autowright?.onUpdateProgress?.((percent) => {
+      setUpd((u) => (u.state === 'downloading' ? { ...u, percent } : u))
     })
   }, [])
 
   const downloadUpdate = async (v: string) => {
-    setUpd({ state: 'downloading', version: v, pct: null })
+    setUpd({ state: 'downloading', version: v, percent: null })
     const r = await window.autowright?.updateDownload()
     if (r && 'ok' in r) setUpd({ state: 'downloaded', version: v })
     else setUpd({ state: 'failed', error: r && 'error' in r ? r.error : 'updater unavailable' })
@@ -167,7 +167,7 @@ export default function AboutPage() {
             <div style={rowSub}>{updSub}</div>
             {upd.state === 'downloading' && (
               <div className="ad-anim-fade" style={{ marginTop: 10, marginBottom: 2 }}>
-                <ProgressBar pct={upd.pct} />
+                <ProgressBar percent={upd.percent} />
               </div>
             )}
           </div>

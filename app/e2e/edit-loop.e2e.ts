@@ -64,6 +64,6 @@ describe('edit loop e2e', () => {
     // The "Restored from v1" note lands on v3's record; the API only lists
     // notes for non-current versions, so it's checked indirectly via the
     // restore toast above. v1/v2 remain in history:
-    expect(auto.versions.map((v) => v.v).sort()).toEqual([1, 2])
+    expect(auto.versions.map((v) => v.version).sort()).toEqual([1, 2])
   }, 120_000)
 })

@@ -33,11 +33,11 @@ class Recorder:
         self.lines: list[str] = []
         self.pcts: list[int] = []
 
-    def __call__(self, line=None, pct=None):
+    def __call__(self, line=None, percent=None, **kw):
         if line is not None:
             self.lines.append(line)
-        if pct is not None:
-            self.pcts.append(pct)
+        if percent is not None:
+            self.pcts.append(percent)
 
 
 @contextlib.contextmanager
@@ -249,7 +249,7 @@ def test_start_running_guard_is_per_provider(monkeypatch):
     gate, started = threading.Event(), threading.Event()
 
     def blocking(emit):
-        emit(line="working", pct=3)
+        emit(line="working", percent=3)
         started.set()
         assert gate.wait(10), "test never released the gate"
 
@@ -261,7 +261,7 @@ def test_start_running_guard_is_per_provider(monkeypatch):
     assert started.wait(5)
     snap = installer.status("claude")
     assert snap["state"] == "running"
-    assert snap["line"] == "working" and snap["pct"] == 3
+    assert snap["line"] == "working" and snap["percent"] == 3
 
     # second start for the same provider: refused, job untouched
     assert installer.start("claude", lambda **kw: pubs.append(kw)) is False

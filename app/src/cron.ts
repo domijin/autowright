@@ -4,20 +4,20 @@
 
 export interface TriggerLike {
   kind: 'cron' | 'time' | 'app_start' | 'discord' | 'imessage'
-  expr?: string
+  expression?: string
   at?: string
-  tz?: string
-  off?: boolean
+  timezone?: string
+  enabled?: boolean
   channel?: string  // discord: numeric channel id
   from?: string     // imessage: sender handle
   pattern?: string  // discord/imessage: message filter
 }
 
-// ---------- §4.3 `tz`: wall clock in the trigger's zone ----------
+// ---------- §4.3 `timezone`: wall clock in the trigger's zone ----------
 
 /** §4.3 label suffix — the zone's city: last IANA segment, _ → space. */
-export function tzSuffix(tz?: string): string {
-  return tz ? ` (${tz.split('/').pop()!.replace(/_/g, ' ')})` : ''
+export function tzSuffix(timezone?: string): string {
+  return timezone ? ` (${timezone.split('/').pop()!.replace(/_/g, ' ')})` : ''
 }
 
 // Wall clocks are carried as "wall ms": the wall-clock fields UTC-encoded via
@@ -27,10 +27,10 @@ export function tzSuffix(tz?: string): string {
 // a local Date) silently normalizes DST-nonexistent times and corrupts the
 // wall clock, even for other zones' triggers on a *local* transition day.
 
-/** Wall clock of instant `d` in `tz`, as wall ms. */
-function wallMsInZone(d: Date, tz: string): number {
+/** Wall clock of instant `d` in `timezone`, as wall ms. */
+function wallMsInZone(d: Date, timezone: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
   }).formatToParts(d)
   const g = (t: string) => Number(parts.find((p) => p.type === t)!.value)
@@ -42,21 +42,21 @@ function wallMsLocal(d: Date): number {
   return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds())
 }
 
-/** Wall ms → the real instant (two-pass offset fixpoint for `tz`), matching the
+/** Wall ms → the real instant (two-pass offset fixpoint for `timezone`), matching the
  * backend's fold=0 `_to_local`: ambiguous fall-back wall times resolve to the
  * earlier instant; wall times erased by spring-forward resolve with the
  * pre-transition offset, landing just past the gap (§4.3 "next valid minute"). */
-function wallMsToDate(wallMs: number, tz?: string): Date {
+function wallMsToDate(wallMs: number, timezone?: string): Date {
   const w = new Date(wallMs)
-  if (!tz) return new Date(w.getUTCFullYear(), w.getUTCMonth(), w.getUTCDate(), w.getUTCHours(), w.getUTCMinutes())
-  const g1 = 2 * wallMs - wallMsInZone(new Date(wallMs), tz)
-  const g2 = g1 + wallMs - wallMsInZone(new Date(g1), tz)
-  if (wallMsInZone(new Date(g2), tz) !== wallMs) {
+  if (!timezone) return new Date(w.getUTCFullYear(), w.getUTCMonth(), w.getUTCDate(), w.getUTCHours(), w.getUTCMinutes())
+  const g1 = 2 * wallMs - wallMsInZone(new Date(wallMs), timezone)
+  const g2 = g1 + wallMs - wallMsInZone(new Date(g1), timezone)
+  if (wallMsInZone(new Date(g2), timezone) !== wallMs) {
     // Nonexistent wall time: in a gap the pre-transition offset is the smaller
     // one, so it yields the later UTC candidate.
     return new Date(Math.max(g1, g2))
   }
-  return new Date(wallMsInZone(new Date(g2 - 3600000), tz) === wallMs ? g2 - 3600000 : g2)
+  return new Date(wallMsInZone(new Date(g2 - 3600000), timezone) === wallMs ? g2 - 3600000 : g2)
 }
 
 /** Wall ms → the earliest reading strictly after `afterMs`, or null when every
@@ -65,24 +65,24 @@ function wallMsToDate(wallMs: number, tz?: string): Date {
  * fall-back wall time reads as the earlier instant, which can land before the
  * baseline), so a baseline inside the repeated hour must advance to the later
  * reading instead of going backwards. */
-function wallMsToDateAfter(wallMs: number, tz: string | undefined, afterMs: number): Date | null {
-  const d = wallMsToDate(wallMs, tz)
+function wallMsToDateAfter(wallMs: number, timezone: string | undefined, afterMs: number): Date | null {
+  const d = wallMsToDate(wallMs, timezone)
   if (d.getTime() > afterMs) return d
-  if (tz) {
+  if (timezone) {
     const later = new Date(d.getTime() + 3600000)
-    if (wallMsInZone(later, tz) === wallMs && later.getTime() > afterMs) return later
+    if (wallMsInZone(later, timezone) === wallMs && later.getTime() > afterMs) return later
   }
   return null
 }
 
-/** A one-shot's real moment: `at`'s wall clock read in `tz` (local when absent). */
-export function timeAt(at: string, tz?: string): Date {
+/** A one-shot's real moment: `at`'s wall clock read in `timezone` (local when absent). */
+export function timeAt(at: string, timezone?: string): Date {
   const wall = new Date(at)
-  if (!tz || Number.isNaN(wall.getTime())) return wall
+  if (!timezone || Number.isNaN(wall.getTime())) return wall
   // Read the wall fields from the string itself — parsing through a local
   // Date would normalize an `at` that is DST-nonexistent locally.
   const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(at)
-  return wallMsToDate(m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], m[6] ? +m[6] : 0) : wallMsLocal(wall), tz)
+  return wallMsToDate(m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], m[6] ? +m[6] : 0) : wallMsLocal(wall), timezone)
 }
 
 const DOW_LONG = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays']
@@ -121,8 +121,8 @@ function parseField(text: string, lo: number, hi: number): Field | null {
   return { vals, star: text === '*' }
 }
 
-function parseCron(expr: string): Field[] | null {
-  const parts = (expr ?? '').trim().split(/\s+/)
+function parseCron(expression: string): Field[] | null {
+  const parts = (expression ?? '').trim().split(/\s+/)
   if (parts.length !== 5 || parts[0] === '') return null
   const out: Field[] = []
   for (let i = 0; i < 5; i++) {
@@ -133,18 +133,18 @@ function parseCron(expr: string): Field[] | null {
   return out
 }
 
-export function cronValid(expr: string): boolean {
-  return parseCron(expr) !== null
+export function cronValid(expression: string): boolean {
+  return parseCron(expression) !== null
 }
 
 /** Next match strictly after `after` (default now), as a real local-time Date;
- * with `tz` the expression reads as the zone's wall clock. Null if invalid/unsatisfiable. */
-export function cronNext(expr: string, after?: Date, tz?: string): Date | null {
-  const f = parseCron(expr)
+ * with `timezone` the expression reads as the zone's wall clock. Null if invalid/unsatisfiable. */
+export function cronNext(expression: string, after?: Date, timezone?: string): Date | null {
+  const f = parseCron(expression)
   if (!f) return null
   const [mins, hours, doms, months, dows] = f
   const now = after ?? new Date()
-  let t = tz ? wallMsInZone(now, tz) : wallMsLocal(now)
+  let t = timezone ? wallMsInZone(now, timezone) : wallMsLocal(now)
   t -= t % 60000
   t += 60000 // strictly after
   const hhmm: [number, number][] = []
@@ -167,7 +167,7 @@ export function cronNext(expr: string, after?: Date, tz?: string): Date | null {
         for (const [hh, mm] of hhmm) {
           const cand = day + (hh * 60 + mm) * 60000
           if (cand >= t) {
-            const inst = wallMsToDateAfter(cand, tz, now.getTime())
+            const inst = wallMsToDateAfter(cand, timezone, now.getTime())
             if (inst) return inst
           }
         }
@@ -181,9 +181,9 @@ export function cronNext(expr: string, after?: Date, tz?: string): Date | null {
 const hm = (h: number, m: number) => `${h}:${String(m).padStart(2, '0')}`
 
 /** §4.3 humanized labels — exactly two simple shapes get words. */
-export function cronLabels(expr: string, tz?: string): { label: string; short: string } {
-  const sfx = tzSuffix(tz)
-  const p = expr.trim().split(/\s+/)
+export function cronLabels(expression: string, timezone?: string): { label: string; short: string } {
+  const sfx = tzSuffix(timezone)
+  const p = expression.trim().split(/\s+/)
   if (p.length === 5 && /^\d+$/.test(p[0]) && /^\d+$/.test(p[1]) && p[2] === '*' && p[3] === '*') {
     const t = hm(Number(p[1]), Number(p[0]))
     if (p[4] === '*') return { label: `Daily at ${t}${sfx}`, short: `Daily ${t}${sfx}` }
@@ -192,7 +192,7 @@ export function cronLabels(expr: string, tz?: string): { label: string; short: s
       return { label: `${DOW_LONG[d]} at ${t}${sfx}`, short: `${DOW_SHORT[d]} ${t}${sfx}` }
     }
   }
-  return { label: expr.trim() + sfx, short: expr.trim() + sfx }
+  return { label: expression.trim() + sfx, short: expression.trim() + sfx }
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -206,8 +206,8 @@ export function fmtMoment(d: Date): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${ampm}`
 }
 
-export function timeLabels(at: string, tz?: string): { label: string; short: string } {
-  const sfx = tzSuffix(tz)
+export function timeLabels(at: string, timezone?: string): { label: string; short: string } {
+  const sfx = tzSuffix(timezone)
   // Wall fields straight from the string (like timeAt): `new Date(at)` would
   // normalize an `at` that is DST-nonexistent in the LOCAL zone, shifting the
   // label an hour off the backend's (§4.3: the two label implementations
@@ -232,7 +232,7 @@ export function triggerShort(t: TriggerLike): string {
   if (t.kind === 'app_start') return 'App start'
   if (t.kind === 'discord') return 'Discord'
   if (t.kind === 'imessage') return 'iMessage'
-  return t.kind === 'cron' ? cronLabels(t.expr ?? '', t.tz).short : timeLabels(t.at ?? '', t.tz).short
+  return t.kind === 'cron' ? cronLabels(t.expression ?? '', t.timezone).short : timeLabels(t.at ?? '', t.timezone).short
 }
 
 /** §4.3 long label — mirrors the backend's trigger_display label: message
@@ -244,15 +244,15 @@ export function triggerLabel(t: TriggerLike): string {
     const detail = (t.kind === 'discord' ? t.channel : t.from) || 'missing'
     return `${name} · ${detail}${t.pattern ? ` · “${t.pattern}”` : ''}`
   }
-  return t.kind === 'cron' ? cronLabels(t.expr ?? '', t.tz).label : timeLabels(t.at ?? '', t.tz).label
+  return t.kind === 'cron' ? cronLabels(t.expression ?? '', t.timezone).label : timeLabels(t.at ?? '', t.timezone).label
 }
 
 /** Short label of the soonest enabled trigger (§4.3 nextAt's trigger), null when none. */
 export function nextTriggerShort(triggers: TriggerLike[]): string | null {
   let best: { at: Date; t: TriggerLike } | null = null
   for (const t of triggers) {
-    if (t.off || t.kind === 'app_start' || t.kind === 'discord' || t.kind === 'imessage') continue // §4.3: no computable next occurrence
-    const at = t.kind === 'cron' ? cronNext(t.expr ?? '', undefined, t.tz) : timeAt(t.at ?? '', t.tz)
+    if (t.enabled === false || t.kind === 'app_start' || t.kind === 'discord' || t.kind === 'imessage') continue // §4.3: no computable next occurrence
+    const at = t.kind === 'cron' ? cronNext(t.expression ?? '', undefined, t.timezone) : timeAt(t.at ?? '', t.timezone)
     if (!at || Number.isNaN(at.getTime()) || at <= new Date()) continue
     if (!best || at < best.at) best = { at, t }
   }

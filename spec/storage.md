@@ -42,7 +42,7 @@ draft/                         # THE pending create-mode draft (§4.4) — a sin
                                # deleted when Create or Start over settles it; same
                                # container shape as automations/<uuid>/draft/ below, plus
                                # create-only identity keys in its automation/automation.yaml
-                               # (name, desc, agent_id, triggers, created_at, updated_at —
+                               # (name, description, agent_id, triggers, created_at, updated_at —
                                # no automation record exists yet to hold them); the grant
                                # selections ride the same draft-only step_agents /
                                # allowed_secrets keys as the edit-mode container below —
@@ -53,12 +53,12 @@ draft/                         # THE pending create-mode draft (§4.4) — a sin
   chat.jsonl                   #   §11 chat thread — same shape as the edit-mode one
 automations/<uuid>/
   automation.yaml              # unversioned, mutable — user/operational state: id, name,
-                               # desc (§4.1: seeded from the create manifest, user-owned
+                               # description (§4.1: seeded from the create manifest, user-owned
                                # thereafter),
                                # current_version (pointer: current = versions/v<N>/),
-                               # triggers [{id, kind, off, expr | at | channel+secret…}]
+                               # triggers [{id, kind, off, expression | at | channel+secret…}]
                                # (§4.3 stored fields per kind; never the derived
-                               # label/short/conn), agent_id,
+                               # label/short/connection), agent_id,
                                # enabled_agents, allowed_secrets,
                                # memory_snapshots {pre_version, pre_clear, pre_restore} —
                                # §6.3 automatic-snapshot toggles (absent keys default true),
@@ -110,14 +110,14 @@ automations/<uuid>/
   versions/vN/                 # one folder per version — immutable once written
     automation.yaml            # when, note, param definitions (§4.2: name, kind,
                                # label, help, default, …) + ordered steps manifest:
-                               # steps: [{file, name, desc, agent?, why?, agents?, secrets?,
+                               # steps: [{file, name, description, agent?, why?, agents?, secrets?,
                                #          timeout?, no_timeout?, retries?, infinite_retries?}]
                                #          (§4.1 per-step time limits and retry pair — both
                                #          also travel in §5.1 archives)
                                # + declared packages (§6.2, absent when none):
                                # packages: [{pip: pandas, import: pandas}]
     spec.md                    # the version's spec as plain markdown (h1/h2/li/p blocks)
-    instructions.md            # user's free-text instructions to the agent (§4.1 instr),
+    instructions.md            # user's free-text instructions to the agent (§4.1 instructions),
                                # plain markdown; absent when none were given
     notes.md                   # the §4.1 agent-owned notes document, plain markdown;
                                # absent when empty
@@ -150,7 +150,7 @@ when concurrent requests interleave. Timestamps are US Pacific time (`America/Lo
 so `PST`/`PDT` per season). The framing lives in `harness.invoke()` itself so no call site
 can miss it.
 
-**Request logging (behind the §4.9 `devMode` setting):** while Developer mode is on, the
+**Request logging (behind the §4.9 `developerMode` setting):** while Developer mode is on, the
 backend logs to its console every HTTP request it serves (uvicorn access log at `info` level —
 stdout, so `backend.out.log` under launchd) and every agent request — one `autowright.harness`
 INFO line per `harness.invoke()` with the harness, the model (agent's, else the literal
@@ -163,7 +163,7 @@ which is not 0600 like `backend.json`). The filter rides in on uvicorn's `log_co
 dictConfig would wipe a filter attached to its loggers beforehand) and on the root handler for
 `autowright.*` logs.
 
-**Request-log files (behind the same `devMode` setting):** while Developer mode is on, the
+**Request-log files (behind the same `developerMode` setting):** while Developer mode is on, the
 backend also writes **one file per request** under `<logs dir>/requests/` — both HTTP requests
 served by the API and agent requests (`harness.invoke()`), interleaved in one directory. File
 name: `<YYYYMMDD-HHMMSS-mmm>_<TAG>_<detail>.log` — Pacific-time stamp (millisecond precision;
@@ -190,13 +190,13 @@ lexicographic order ≙ chronological order), then the tag and detail:
 The file name stem is capped at 96 characters (long URLs truncate); a name collision appends
 `_2`, `_3`, …. The directory keeps the **newest 500 files** — each write prunes older ones —
 so polling endpoints can't grow it without bound. Writes are best-effort (an `OSError` never
-fails the request) and the whole feature is inert while `devMode` is off. The gate reads
-`devMode` straight from `settings.yaml` (cached 1 s) rather than from the in-memory store:
+fails the request) and the whole feature is inert while `developerMode` is off. The gate reads
+`developerMode` straight from `settings.yaml` (cached 1 s) rather than from the in-memory store:
 `harness.invoke()` also runs inside the executor subprocess, whose store is never loaded — the
 file is the truth both processes see, and the toggle stays live without a restart. The §9.3
 developer log overlay's Requests tab lists and renders these files.
 
-**Build-failure records (behind the same `devMode` setting):** while Developer mode is on,
+**Build-failure records (behind the same `developerMode` setting):** while Developer mode is on,
 every §8 drafting call (spec or steps) whose response fails validation writes **one file per
 call**, when the call settles, under `<logs dir>/build-failures/` — the raw material for later
 improving the §8 agent instructions. File name: `<stamp>_<mode>-<call>_<outcome>.log` (same
@@ -208,13 +208,13 @@ line (mode, call, harness, model, outcome), then each invalid round's **full** v
 error list and **full** raw response (never truncated, never clipped), the diagnosis blockers
 when present, and finally the call's original prompt — self-contained, no cross-referencing
 the request-log files. The directory keeps the **newest 200 files**; writes are best-effort
-with the same live `devMode` gate as the request-log files above. A validation failure the
+with the same live `developerMode` gate as the request-log files above. A validation failure the
 user never sees (the repair round fixed it) still records — near-misses are exactly the
 instruction-tuning signal.
 
 A version folder holds **what the agent wrote** (spec, instructions, steps + scripts, param
 definitions); the top-level `automation.yaml` holds **what the user owns and operates**
-(identity — name and desc, triggers, param values, agent choice, permission grants). Two consequences:
+(identity — name and description, triggers, param values, agent choice, permission grants). Two consequences:
 
 - **Permissions are never versioned.** `enabled_agents` and `allowed_secrets` are grants; they
   live only in the top-level file. Restoring or executing an old version must never silently
@@ -252,7 +252,7 @@ executions/
                                #     trigger_sender (§4.5 — NULL unless message-triggered),
                                #     queued_at, started_at /
                                #     finished_at (epoch ms; finished_at NULL while executing),
-                               #     dur_ms, note, chip / chip_status (§4.5 — NULL when the
+                               #     duration_ms, note, chip / chip_status (§4.5 — NULL when the
                                #     execution set no chip), error_step / error_message /
                                #     error_reason (§4.5 — NULL unless failed; denormalized
                                #     mirrors so list surfaces render without a yaml read)
@@ -264,7 +264,7 @@ executions/
                                # version, trigger kind) plus params (snapshot),
                                # redacted_secrets, error,
                                # note, and steps[] with per-step attempts[] ({n, status,
-                               # started_at, dur_ms, error? on failed attempts}); rewritten
+                               # started_at, duration_ms, error? on failed attempts}); rewritten
                                # atomically (temp+rename) on every transition
     steps/                     # §11 test executions only: the sent draft's step scripts as
                                # executed — a real version folder serves that role for
@@ -274,9 +274,9 @@ executions/
                                # failures, retry markers, the final failure line
       <stem>.a<n>.ndjson       # one log file per (step, attempt) — <stem> is the step's
                                # script file stem ("01-fetch-pages"), n the attempt number;
-                               # line shape {ts, k: sys|out|wrn|err, seq, text} — ts the §5
-                               # UTC timestamp; the serialized line adds a derived local
-                               # clock label `t` (never stored). seq is
+                               # line shape {timestamp, kind: sys|out|wrn|err, sequence, text} — ts the §5
+                               # UTC timestamp (`timestamp`); the serialized line adds a derived local
+                               # clock label `time` (never stored). sequence is
                                # a per-file monotonic counter (renderer dedupe, §19); the
                                # file for (step, attempt) is derived by convention from
                                # execution.yaml — no index anywhere. §4.5 attempt prune:
@@ -309,7 +309,7 @@ list row, detail page, or menu bar report about real executions.
 
 Executions load **headers-eagerly, bodies-lazily**: startup reads every header row from the
 `executions.db` index into an in-memory `executions` table — one header per execution with
-`id, automation_id, status, trigger, kind, version, started_at, finished_at, dur_ms`, plus the
+`id, automation_id, status, trigger, kind, version, started_at, finished_at, duration_ms`, plus the
 light display fields (`automation_name`, `note`, `chip`/`chip_status`, `trigger_sender` — the
 §4.5 `triggerPayload` sender lifted out for list rows — the §4.5 `error`
 fields) — kept queryable by `trigger`, `status`, `automation_id`, and `started_at`; paths
@@ -371,7 +371,7 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              # exported_at, app_version (diagnostics only), name,
                              # agent: the drafting agent's name (absent when none) — names
                              #   the agents.yaml entry the imported agent_id maps to,
-                             # triggers: [{kind, expr? | tz? | channel+secret… | from…}] —
+                             # triggers: [{kind, expression? | timezone? | channel+secret… | from…}] —
                              #   cron, app_start, discord, and imessage (§4.3 stored
                              #   fields; the token itself never travels — only the
                              #   secret's name); no ids,
@@ -380,7 +380,7 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              # param_values: {name: value} — only when "Include parameter
                              #   values" was checked at export
 automation/                  # exactly the §5 version-folder shape; import copies it
-  automation.yaml            #   desc, param definitions, steps manifest, packages —
+  automation.yaml            #   description, param definitions, steps manifest, packages —
                              #   no when/note (import stamps v1 fresh), never the
                              #   draft-only step_agents/allowed_secrets/triggers keys
   spec.md                    #   verbatim
@@ -389,10 +389,10 @@ automation/                  # exactly the §5 version-folder shape; import copi
   NN-name.py                 #   every step script, verbatim
 agents.yaml                  # configs of referenced agents (the automation's drafting
                              # agent + every grant name in any step's agents: list):
-                             # [{name, desc, harness, mode, model}] — no ids, no credentials
+                             # [{name, description, harness, mode, model}] — no ids, no credentials
 secrets.yaml                 # referenced secret names (union of every step's secrets:
                              # list and the secrets.NAME references in step code):
-                             # [{name, desc}] — never values
+                             # [{name, description}] — never values
 ```
 
 **Identity across machines.** Uuids are meaningless on another Mac, so none travel and import
@@ -414,7 +414,7 @@ answers 422 and writes nothing):
 - `param_values` from the manifest seed the top-level file (§5 name+kind matching applies at
   execution time as usual); absent values fall back to definition defaults.
 - **Secrets:** a referenced name that doesn't exist locally is created as a §4.8 placeholder
-  (`set: false`, desc from the archive). An existing name is the same secret by definition —
+  (`set: false`, description from the archive). An existing name is the same secret by definition —
   left completely untouched.
 - **Agents:** an archive agent matching a local record exactly (name + harness + mode + model)
   reuses it; otherwise a new record is created with the archive's config — same name even when
@@ -464,7 +464,7 @@ that will land (no re-download between review and import):
   archive bytes — the file path through the same review step) validate the archive fully,
   write nothing, and park the bytes in backend memory under a one-time **token** (15-minute
   expiry; a handful of slots, oldest evicted). The response carries the token plus a
-  **preview**: name, desc, steps (name/desc/agent flag), param definitions, triggers,
+  **preview**: name, description, steps (name/description/agent flag), param definitions, triggers,
   declared packages, and the §5.1 match rules run dry — each referenced secret with
   `exists`, each agent with `reused`; URL fetches add `sourceUrl` (as pasted) and
   `resolvedUrl` (after GitHub resolution; equal for direct links).

@@ -33,9 +33,9 @@ const BOTTOM_NAV: typeof NAV = [
 function Sidebar() {
   const page = useStore((s) => s.page)
   const go = useStore((s) => s.go)
-  const nAutos = useStore((s) => s.autos.length)
+  const nAutos = useStore((s) => s.automations.length)
   // §11 test executions never appear in the Executions list — don't count them
-  const nExecs = useStore((s) => s.execs.filter((e) => !e.test).length)
+  const nExecs = useStore((s) => s.executions.filter((e) => !e.test).length)
   const nAgents = useStore((s) => s.agents.length)
   const nSecrets = useStore((s) => s.secrets.length)
   const activeRoot = page === 'automation' ? 'automations' : page === 'execution' ? 'executions' : page === 'agentNew' ? 'agents' : page
@@ -72,7 +72,7 @@ function Sidebar() {
                 <button
                   key={n.page}
                   className={'ad-nav-row' + (active ? ' active' : '')}
-                  onClick={() => go(n.page as never, { autoId: null, execId: null })}
+                  onClick={() => go(n.page as never, { automationId: null, executionId: null })}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
                     borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',

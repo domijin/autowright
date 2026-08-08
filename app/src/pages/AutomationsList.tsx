@@ -2,14 +2,14 @@
 import React, { useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import type { Auto, ImportPreview, ImportSummary } from '../types'
+import type { Automation, ImportPreview, ImportSummary } from '../types'
 import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
 import { triggerLabel } from '../cron'
 
 // §5.1/§9.1 import summary modal — only the sections that apply render.
-function ImportSummaryModal({ name, autoId, summary, onClose }: {
+function ImportSummaryModal({ name, automationId, summary, onClose }: {
   name: string
-  autoId: string
+  automationId: string
   summary: ImportSummary
   onClose: () => void
 }) {
@@ -64,7 +64,7 @@ function ImportSummaryModal({ name, autoId, summary, onClose }: {
           )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
             <BtnGhost onClick={close}>Close</BtnGhost>
-            <BtnPrimary onClick={() => { close(); go('automation', { autoId }) }}>
+            <BtnPrimary onClick={() => { close(); go('automation', { automationId }) }}>
               Open automation
             </BtnPrimary>
           </div>
@@ -78,7 +78,7 @@ function ImportSummaryModal({ name, autoId, summary, onClose }: {
 // §5.2/§9.1 import modal — input step (URL field or file picker), then the
 // preview step; Import confirms the parked token and hands off to the summary.
 function ImportModal({ onDone, onClose }: {
-  onDone: (r: { name: string; autoId: string; summary: ImportSummary }) => void
+  onDone: (r: { name: string; automationId: string; summary: ImportSummary }) => void
   onClose: () => void
 }) {
   const [url, setUrl] = useState('')
@@ -137,7 +137,7 @@ function ImportModal({ onDone, onClose }: {
           try {
             const r = await api.importConfirm(pv.token)
             close()
-            onDone({ name: r.auto.name, autoId: r.auto.id, summary: r.summary })
+            onDone({ name: r.automation.name, automationId: r.automation.id, summary: r.summary })
           } catch (e) { setError({ msg: (e as Error).message, src: pv.srcKind }); setBusy(false) }
         }
         return pv === null ? (
@@ -201,9 +201,9 @@ function ImportModal({ onDone, onClose }: {
             <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text)' }}>
               {pv.preview.name}
             </h2>
-            {pv.preview.desc && (
+            {pv.preview.description && (
               <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '6px 0 0' }}>
-                {pv.preview.desc}
+                {pv.preview.description}
               </p>
             )}
             <div style={{
@@ -281,7 +281,7 @@ function ImportModal({ onDone, onClose }: {
 }
 
 
-function AutoCard({ a }: { a: Auto }) {
+function AutoCard({ a }: { a: Automation }) {
   const go = useStore((s) => s.go)
   const showToast = useStore((s) => s.showToast)
   const executing = a.live.length > 0
@@ -304,12 +304,12 @@ function AutoCard({ a }: { a: Auto }) {
       className="ad-card-click"
       role="button"
       tabIndex={0}
-      onClick={() => go('automation', { autoId: a.id })}
+      onClick={() => go('automation', { automationId: a.id })}
       onKeyDown={(e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return
         if ((e.target as HTMLElement).closest('button')) return
         e.preventDefault()
-        go('automation', { autoId: a.id })
+        go('automation', { automationId: a.id })
       }}
       style={{
         borderRadius: 12, padding: '18px 20px',
@@ -339,7 +339,7 @@ function AutoCard({ a }: { a: Auto }) {
           />
         </button>
       </div>
-      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-muted)', minHeight: 39 }}>{a.desc}</p>
+      <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-muted)', minHeight: 39 }}>{a.description}</p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
         <span style={{
           fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
@@ -373,13 +373,13 @@ function AutoCard({ a }: { a: Auto }) {
 }
 
 export default function AutomationsList() {
-  const autos = useStore((s) => s.autos)
+  const automations = useStore((s) => s.automations)
   const setSurface = useStore((s) => s.setSurface)
   const pendingDraft = useStore((s) => s.pendingDraft)
   const refresh = useStore((s) => s.refresh)
   const [confirmFresh, setConfirmFresh] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
-  const [imported, setImported] = useState<{ name: string; autoId: string; summary: ImportSummary } | null>(null)
+  const [imported, setImported] = useState<{ name: string; automationId: string; summary: ImportSummary } | null>(null)
 
   // §4.4/§9.1: with a kept pending draft, New automation starts fresh —
   // confirm, delete the slot, then open the create flow empty.
@@ -390,7 +390,7 @@ export default function AutomationsList() {
   }
 
   // §5.2/§9.1 import: the modal previews (URL or file), confirm lands it.
-  const importDone = async (r: { name: string; autoId: string; summary: ImportSummary }) => {
+  const importDone = async (r: { name: string; automationId: string; summary: ImportSummary }) => {
     setImportOpen(false)
     await refresh()
     setImported(r)
@@ -428,7 +428,7 @@ export default function AutomationsList() {
       {imported && (
         <ImportSummaryModal
           name={imported.name}
-          autoId={imported.autoId}
+          automationId={imported.automationId}
           summary={imported.summary}
           onClose={() => setImported(null)}
         />
@@ -444,9 +444,9 @@ export default function AutomationsList() {
         />
       )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(310px,1fr))', gap: 14 }}>
-        {autos.map((a) => <AutoCard key={a.id} a={a} />)}
+        {automations.map((a) => <AutoCard key={a.id} a={a} />)}
       </div>
-      {autos.length === 0 && (
+      {automations.length === 0 && (
         <EmptyState
           text="No automations yet. Describe a job in plain words — your AI writes it as scripts you can read, and Autowright executes them on your schedule."
           cta={<BtnPrimary onClick={() => setSurface('create', 'app')}>Create your first automation</BtnPrimary>}

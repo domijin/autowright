@@ -87,7 +87,7 @@ def test_cron_trailing_slash_rejected():
 
 def test_settings_days_validation(client):
     assert client.patch("/settings", json={"days": "ninety"}).status_code == 422
-    assert client.patch("/settings", json={"notif": "sometimes"}).status_code == 422
+    assert client.patch("/settings", json={"notifications": "sometimes"}).status_code == 422
     r = client.patch("/settings", json={"days": "14"})
     assert r.status_code == 200
     from autowright.storage import store as live_store
@@ -110,20 +110,20 @@ def test_draft_endpoints_409_while_draft_execution_live(client):
 
     r = client.post("/automations", json={"draft": make_version(), "name": "Busy",
                                           "agentId": "mock"})
-    auto_id = r.json()["id"]
-    a = live_store.autos[auto_id]
+    automation_id = r.json()["id"]
+    a = live_store.autos[automation_id]
     live_store.save_draft(a, make_version())
     h = live_store.create_execution(a, "draft", None, "manual",
                                     [{"name": "s", "file": "01-say.py", "agent": False,
-                                      "status": "executing", "dur_ms": None, "attempts": []}])
+                                      "status": "executing", "duration_ms": None, "attempts": []}])
     a["_live"] = {h["id"]}
     try:
-        assert client.put(f"/automations/{auto_id}/draft",
+        assert client.put(f"/automations/{automation_id}/draft",
                           json={"draft": make_version()}).status_code == 409
-        assert client.delete(f"/automations/{auto_id}/draft").status_code == 409
+        assert client.delete(f"/automations/{automation_id}/draft").status_code == 409
     finally:
         a["_live"] = set()
-    assert client.put(f"/automations/{auto_id}/draft",
+    assert client.put(f"/automations/{automation_id}/draft",
                       json={"draft": make_version()}).status_code == 200
 
 
@@ -204,7 +204,7 @@ def test_app_started_is_idempotent_per_launch(client, monkeypatch):
     r = client.post("/automations", json={"draft": make_version(), "name": "On launch",
                                           "agentId": "mock"})
     a = live_store.autos[r.json()["id"]]
-    a["triggers"] = [{"id": "t1", "kind": "app_start", "off": False}]
+    a["triggers"] = [{"id": "t1", "kind": "app_start", "enabled": True}]
 
     # Count firings without starting real executions: a live engine thread would
     # outlive this test and publish into the next one's event recorder.

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Backend, closeApp, launchApp, shot, type AppHandle } from './harness'
 
 const REPORT_STEP = {
-  file: '01-report.py', name: 'Write report', desc: 'writes result.md',
+  file: '01-report.py', name: 'Write report', description: 'writes result.md',
   code: [
     'from autowright import result',
     'md = "# E2E report\\n\\n| Item | State |\\n| --- | --- |\\n| Alpha | fresh |\\n\\nDistinctive e2e markdown body.\\n"',

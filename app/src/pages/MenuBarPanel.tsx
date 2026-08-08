@@ -7,13 +7,13 @@ import { badgeOf, Eyebrow, PULSE, ScrollArea } from '../ui'
 const dotColor = (s: string) => badgeOf(s).c
 
 export default function MenuBarPanel() {
-  const { autos, version, showToast } = useStore()
+  const { automations, version, showToast } = useStore()
   const ref = useRef<HTMLDivElement>(null)
 
-  const failed = autos.filter((a) => a.lastStatus === 'failed').length
+  const failed = automations.filter((a) => a.lastStatus === 'failed').length
   const aggregate = failed > 0
     ? `${failed} need${failed === 1 ? 's' : ''} attention`
-    : `All good · ${autos.length} automation${autos.length === 1 ? '' : 's'}`
+    : `All good · ${automations.length} automation${automations.length === 1 ? '' : 's'}`
 
   useEffect(() => {
     const el = ref.current
@@ -44,7 +44,7 @@ export default function MenuBarPanel() {
         <div style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 500, color: failed ? 'var(--red-text)' : 'var(--text-faint)' }}>{aggregate}</div>
       </div>
       <ScrollArea wrapStyle={{ minHeight: 0 }}>
-        {autos.map((a) => {
+        {automations.map((a) => {
           const live = a.live.length > 0
           const subColor = a.live.length
             ? 'var(--cyan)'
@@ -85,7 +85,7 @@ export default function MenuBarPanel() {
                 </div>
               </div>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', width: 56, textAlign: 'right', flex: 'none' }}>
-                {a.live.length ? '' : a.lastExecLabel}
+                {a.live.length ? '' : a.lastExecutionLabel}
               </span>
               <button
                 className="ad-btn-exec"
@@ -105,7 +105,7 @@ export default function MenuBarPanel() {
             </div>
           )
         })}
-        {autos.length === 0 && (
+        {automations.length === 0 && (
           <div style={{ padding: '14px 12px', fontSize: 12, color: 'var(--text-faint)' }}>
             No automations yet — open Autowright to create one.
           </div>

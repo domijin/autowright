@@ -84,13 +84,13 @@ def clamp_max_queued(v: Any) -> int:
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "login": True,
-    "mbIcon": True,
+    "menuBarIcon": True,
     "keepAwake": True,  # §4.9: permanent idle-sleep assertion while on (§3, awake.py)
-    "notif": "attention",
+    "notifications": "attention",
     "days": 90,
     "keepForever": False,
     "dataPath": None,  # None → paths.default_data_path()
-    "devMode": False,  # §4.9: request logging on/off, read live by the log filter
+    "developerMode": False,  # §4.9: request logging on/off, read live by the log filter
 }
 
 
@@ -213,8 +213,8 @@ class Store:
     def auto_dir(self, a: dict) -> Path:
         return paths.automations_dir() / a["id"]
 
-    def exec_dir(self, exec_id: str) -> Path:
-        return self.executions_dir() / exec_id
+    def exec_dir(self, execution_id: str) -> Path:
+        return self.executions_dir() / execution_id
 
     # ---------- startup walk (§5 load model) ----------
     def load_all(self) -> None:
@@ -227,7 +227,7 @@ class Store:
             default = self._load_toplevel_mapping(paths.agents_file()).get("default_agent")
             self.default_agent_id = (default if any(a.get("id") == default for a in self.agents)
                                      else (self.agents[0]["id"] if self.agents else None))
-            self.secrets = [{"name": s["name"], "desc": s.get("desc") or "",
+            self.secrets = [{"name": s["name"], "description": s.get("description") or "",
                              "set": bool(s.get("set", True))}
                             for s in self._load_toplevel_list(paths.secrets_file(), "secrets")
                             if s.get("name")]
@@ -305,9 +305,9 @@ class Store:
                 y = self.read_exec_yaml(ed.name)
                 if not y or y.get("id") != ed.name or not y.get("started_at"):
                     continue
-                h = {k: y[k] for k in ("id", "auto_id", "auto_name", "kind", "version", "status",
+                h = {k: y[k] for k in ("id", "automation_id", "automation_name", "kind", "version", "status",
                                        "trigger", "queued_at", "started_at", "finished_at",
-                                       "dur_ms", "note", "chip", "chip_status", "error")}
+                                       "duration_ms", "note", "chip", "chip_status", "error")}
                 h["trigger_sender"] = (y.get("trigger_payload") or {}).get("sender")
                 self.execdb.upsert(h)
             except Exception as e:  # noqa: BLE001
@@ -344,7 +344,7 @@ class Store:
         a: dict = {
             "id": top["id"],
             "name": top.get("name", d.name),
-            "desc": top.get("desc", ""),
+            "description": top.get("description", ""),
             "current_version": int(top.get("current_version", 1)),
             "triggers": self._load_triggers(top.get("triggers", []) or []),
             "agent_id": top.get("agent_id"),
@@ -400,8 +400,8 @@ class Store:
                 log.warning("dropping duplicate app-start trigger %r", t)  # §4.3: at most one
             elif isinstance(t, dict) and _valid(t):
                 out.append({"id": t.get("id") or new_id(), "kind": t["kind"],
-                            "off": bool(t.get("off", False)),
-                            **({"expr": t["expr"]} if t["kind"] == "cron" else
+                            "enabled": bool(t.get("enabled", True)),
+                            **({"expression": t["expression"]} if t["kind"] == "cron" else
                                {"at": t["at"]} if t["kind"] == "time" else
                                {"channel": t["channel"], "secret": t["secret"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {}),
@@ -412,7 +412,7 @@ class Store:
                                {"from": t["from"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {})}
                                if t["kind"] == "imessage" else {}),
-                            **({"tz": t["tz"]} if t.get("tz") and t["kind"] in ("cron", "time") else {})})
+                            **({"timezone": t["timezone"]} if t.get("timezone") and t["kind"] in ("cron", "time") else {})})
             elif isinstance(t, dict) and t.get("kind") == "time":
                 # A past one-shot found on disk was missed while the backend was
                 # down — consumed (§4.3), never loaded.
@@ -433,9 +433,9 @@ class Store:
             if s.get("file") and f.is_file():
                 code = f.read_text(encoding="utf-8")
             steps.append({**s, "code": code})
-        instr = None
+        instructions = None
         if (vd / "instructions.md").exists():
-            instr = (vd / "instructions.md").read_text(encoding="utf-8").strip()
+            instructions = (vd / "instructions.md").read_text(encoding="utf-8").strip()
         notes = ""
         if (vd / "notes.md").exists():
             notes = (vd / "notes.md").read_text(encoding="utf-8").strip()
@@ -447,7 +447,7 @@ class Store:
             "packages": meta.get("packages", []) or [],
             "steps": steps,
             "spec": md_to_blocks(spec_md),
-            "instr": instr,
+            "instructions": instructions,
             "notes": notes,
             "step_agents": meta.get("step_agents"),
             "allowed_secrets": meta.get("allowed_secrets"),
@@ -464,7 +464,7 @@ class Store:
             # §4.1 `live` is every in-progress execution, not just the newest —
             # maxParallel may allow several, and the startup sweep needs them all.
             if h["status"] == "executing" and not is_test(h):
-                live.setdefault(h["auto_id"], set()).add(h["id"])
+                live.setdefault(h["automation_id"], set()).add(h["id"])
         for a in self.autos.values():
             latest = self._latest_exec(a["id"])
             a["_latest"] = latest
@@ -482,17 +482,17 @@ class Store:
         back from the index, which carries no steps to inspect."""
         return h["status"] in ("skipped", "queued")
 
-    def _latest_exec(self, auto_id: str) -> dict | None:
+    def _latest_exec(self, automation_id: str) -> dict | None:
         # Test records (§4.5) are draft-scoped and never count either.
         hs = [h for h in self.execs.values()
-              if h["auto_id"] == auto_id and not self.never_ran(h) and not is_test(h)]
+              if h["automation_id"] == automation_id and not self.never_ran(h) and not is_test(h)]
         return max(hs, key=lambda h: h["started_at"] or "") if hs else None
 
-    def queued_execs(self, auto_id: str) -> list[dict]:
+    def queued_execs(self, automation_id: str) -> list[dict]:
         """§6 firing queue, oldest first — the queue *is* the automation's
         `queued` records, so there is no second structure to keep in sync."""
         q = [h for h in self.execs.values()
-             if h["auto_id"] == auto_id and h["status"] == "queued"]
+             if h["automation_id"] == automation_id and h["status"] == "queued"]
         q.sort(key=lambda h: h.get("queued_at") or h["started_at"] or "")
         return q
 
@@ -501,7 +501,7 @@ class Store:
         save_yaml(self.auto_dir(a) / "automation.yaml", {
             "id": a["id"],
             "name": a["name"],
-            "desc": a.get("desc", ""),
+            "description": a.get("description", ""),
             "current_version": a["current_version"],
             "triggers": a["triggers"],
             "agent_id": a["agent_id"],
@@ -530,7 +530,7 @@ class Store:
         manifest_steps = []
         for i, s in enumerate(ver["steps"], 1):
             fname = safe_step_filename(s.get("file"), i, s.get("name"), keep)
-            entry: dict[str, Any] = {"file": fname, "name": s["name"], "desc": s.get("desc", "")}
+            entry: dict[str, Any] = {"file": fname, "name": s["name"], "description": s.get("description", "")}
             if s.get("agent"):
                 entry["agent"] = True
                 entry["why"] = s.get("why", "")
@@ -553,8 +553,8 @@ class Store:
             keep.add(fname)
             atomic_write_text(vd / fname, s.get("code", ""))
         atomic_write_text(vd / "spec.md", blocks_to_md(ver.get("spec", [])))
-        if ver.get("instr"):
-            atomic_write_text(vd / "instructions.md", ver["instr"].strip() + "\n")
+        if ver.get("instructions"):
+            atomic_write_text(vd / "instructions.md", ver["instructions"].strip() + "\n")
         elif (vd / "instructions.md").exists():
             (vd / "instructions.md").unlink()
         # §4.1 notes — the agent-owned working-knowledge doc; absent when empty
@@ -587,11 +587,11 @@ class Store:
                           enabled_agents: list[str] | None = None,
                           allowed_secrets: list[str] | None = None) -> dict:
         with self.lock:
-            auto_id = new_id()
+            automation_id = new_id()
             now = timefmt.now_iso()
             a = {
                 # §4.1: the create manifest seeds desc; user-owned from here on
-                "id": auto_id, "name": name, "desc": ver.get("desc", ""), "current_version": 1,
+                "id": automation_id, "name": name, "description": ver.get("description", ""), "current_version": 1,
                 "triggers": triggers or [],
                 "agent_id": agent_id,
                 # §4.1: an explicit empty list is a real choice ("no step
@@ -611,7 +611,7 @@ class Store:
             (self.auto_dir(a) / "memory").mkdir(parents=True, exist_ok=True)
             a["versions"][1] = self._load_version_folder(self.auto_dir(a) / "versions" / "v1")
             self._write_toplevel(a)
-            self.autos[auto_id] = a
+            self.autos[automation_id] = a
             return a
 
     def save_new_version(self, a: dict, ver: dict) -> int:
@@ -719,7 +719,7 @@ class Store:
             prev = load_yaml(dd / "automation.yaml", {}) or {}
             now = timefmt.now_iso()
             self._write_version_folder(dd, ver, extra={
-                "name": name, "desc": ver.get("desc", ""), "agent_id": agent_id,
+                "name": name, "description": ver.get("description", ""), "agent_id": agent_id,
                 "triggers": triggers or [],
                 "created_at": prev.get("created_at") or now, "updated_at": now,
             })
@@ -733,7 +733,7 @@ class Store:
                 return None
             meta = load_yaml(dd / "automation.yaml", {}) or {}
             return {**self._load_version_folder(dd),
-                    "name": meta.get("name"), "desc": meta.get("desc", ""),
+                    "name": meta.get("name"), "description": meta.get("description", ""),
                     "agent_id": meta.get("agent_id"),
                     "triggers": meta.get("triggers", []) or []}
 
@@ -741,7 +741,7 @@ class Store:
         """Settles the slot (Create consumed it, or Start over discarded it)."""
         with self.lock:
             shutil.rmtree(paths.pending_draft_dir(), ignore_errors=True)
-            self.delete_test_execs(None)  # §11: create-mode test records (autoId null)
+            self.delete_test_execs(None)  # §11: create-mode test records (automationId null)
 
     def pending_draft_summary(self) -> dict | None:
         """§19 GET /state `pendingDraft`: the slot's identity summary — backs
@@ -760,9 +760,9 @@ class Store:
             return {"draft": None, "agentId": None}
         steps = [self.step_json(s) for s in d.get("steps", [])]
         return {"draft": {
-            "name": d.get("name"), "desc": d.get("desc", ""), "note": d.get("note"),
+            "name": d.get("name"), "description": d.get("description", ""), "note": d.get("note"),
             "params": d.get("params", []), "packages": d.get("packages", []),
-            "steps": steps, "spec": d.get("spec", []), "instr": d.get("instr"),
+            "steps": steps, "spec": d.get("spec", []), "instructions": d.get("instructions"),
             "notes": d.get("notes", ""),
             "triggers": d.get("triggers", []),
             **({"stepAgents": d["step_agents"]} if d.get("step_agents") is not None else {}),
@@ -785,9 +785,9 @@ class Store:
             if "name" in patch and patch["name"] and patch["name"] != a["name"]:
                 # §5: directories are named by id — a rename touches only the name field.
                 a["name"] = patch["name"]
-            if "desc" in patch:
+            if "description" in patch:
                 # §4.1: desc is optional — blank clears it.
-                a["desc"] = patch["desc"] or ""
+                a["description"] = patch["description"] or ""
             for k_api, k_int in [("agentId", "agent_id"),
                                  ("stepAgents", "enabled_agents"), ("allowedSecrets", "allowed_secrets")]:
                 if k_api in patch:
@@ -825,11 +825,11 @@ class Store:
         if t["kind"] == "discord":
             # §4.3 `conn` — the listener manager's state for the trigger's
             # token secret; derived at serialization time, never stored.
-            out["conn"] = self.listener_status.get(
+            out["connection"] = self.listener_status.get(
                 t["secret"], {"state": "connecting"})
         elif t["kind"] == "imessage":
             # §4.3: every imessage trigger shares the one §6 watcher's state.
-            out["conn"] = self.listener_status.get(
+            out["connection"] = self.listener_status.get(
                 "imessage", {"state": "connecting"})
         return out
 
@@ -837,7 +837,7 @@ class Store:
         with self.lock:
             shutil.rmtree(self.auto_dir(a), ignore_errors=True)
             self.autos.pop(a["id"], None)
-            self.delete_test_execs(a["id"])  # §11 — real records stay (autoDeleted)
+            self.delete_test_execs(a["id"])  # §11 — real records stay (automationDeleted)
 
     # ---------- executions ----------
     def create_execution(self, auto: dict, kind: str, version: int | None, trigger: str,
@@ -849,7 +849,7 @@ class Store:
         with self.lock:
             now = timefmt.now_iso()
             h = {
-                "id": new_id(), "auto_id": auto["id"], "auto_name": auto["name"],
+                "id": new_id(), "automation_id": auto["id"], "automation_name": auto["name"],
                 "kind": kind, "version": version, "status": status, "trigger": trigger,
                 "trigger_payload": trigger_payload,
                 # §4.5: set only for a §6 queue entry; kept after promotion so the
@@ -858,13 +858,13 @@ class Store:
                 "params": params or [],
                 "started_at": now,
                 "finished_at": None,
-                "dur_ms": None, "note": note, "chip": None, "chip_status": None,
-                "error": None, "redacted": [],
+                "duration_ms": None, "note": note, "chip": None, "chip_status": None,
+                "error": None, "redacted_secrets": [],
                 "steps": [{"name": s["name"], "file": s.get("file"),
                            "agent": bool(s.get("agent")),
                            **({"sha": s["sha"]} if s.get("sha") else {}),
                            "status": s.get("status", "queued"),
-                           "dur_ms": s.get("dur_ms"),
+                           "duration_ms": s.get("duration_ms"),
                            "attempts": s.get("attempts", [])} for s in steps],
             }
             d = self.exec_dir(h["id"])
@@ -899,7 +899,7 @@ class Store:
                            "agent": bool(s.get("agent")),
                            **({"sha": s["sha"]} if s.get("sha") else {}),
                            "status": s.get("status", "queued"),
-                           "dur_ms": s.get("dur_ms"),
+                           "duration_ms": s.get("duration_ms"),
                            "attempts": s.get("attempts", [])} for s in steps]
             self.update_execution(h)  # writes yaml + db and re-derives live/latest
             return h
@@ -910,7 +910,7 @@ class Store:
             self.execdb.upsert(h)
             if is_test(h):
                 return  # §4.5: derived display state ignores test executions
-            a = self.autos.get(h["auto_id"])
+            a = self.autos.get(h["automation_id"])
             if h["status"] == "executing":
                 # in-place retry flips a terminal record back to executing (§7),
                 # as does a §6 queue promotion
@@ -930,14 +930,14 @@ class Store:
                         a["_last_exec_at"] = latest["started_at"]
 
     # ---------- execution record yaml (§5 execution.yaml) ----------
-    def exec_yaml_path(self, exec_id: str) -> Path:
-        return self.exec_dir(exec_id) / "execution.yaml"
+    def exec_yaml_path(self, execution_id: str) -> Path:
+        return self.exec_dir(execution_id) / "execution.yaml"
 
     def write_exec_yaml(self, h: dict) -> None:
         save_yaml(self.exec_yaml_path(h["id"]), {
             "id": h["id"],
-            "automation_id": h["auto_id"],
-            "automation_name": h["auto_name"],
+            "automation_id": h["automation_id"],
+            "automation_name": h["automation_name"],
             "kind": h["kind"],
             "version": h.get("version"),
             "status": h["status"],
@@ -946,12 +946,12 @@ class Store:
             "queued_at": h.get("queued_at"),
             "started_at": h["started_at"],
             "finished_at": h["finished_at"],
-            "dur_ms": h["dur_ms"],
+            "duration_ms": h["duration_ms"],
             "note": h["note"],
             "chip": h.get("chip"),
             "chip_status": h.get("chip_status"),
             "error": h.get("error"),
-            "redacted_secrets": h["redacted"],
+            "redacted_secrets": h["redacted_secrets"],
             "params": h.get("params", []),
             "steps": h["steps"],
             # §4.5 pgid: on-disk only — startup recovery kills the orphaned
@@ -959,36 +959,36 @@ class Store:
             "pgid": h.get("pgid"),
         })
 
-    def read_exec_yaml(self, exec_id: str) -> dict | None:
-        y = load_yaml(self.exec_yaml_path(exec_id))
+    def read_exec_yaml(self, execution_id: str) -> dict | None:
+        y = load_yaml(self.exec_yaml_path(execution_id))
         if not y or not isinstance(y, dict):
             return None
         return {
-            "id": y.get("id", exec_id), "auto_id": y.get("automation_id"),
-            "auto_name": y.get("automation_name"),
+            "id": y.get("id", execution_id), "automation_id": y.get("automation_id"),
+            "automation_name": y.get("automation_name"),
             "kind": y.get("kind"), "version": y.get("version"),
             "status": y.get("status"), "trigger": y.get("trigger"),
             "trigger_payload": y.get("trigger_payload"),
             "queued_at": y.get("queued_at"),
             "started_at": y.get("started_at"), "finished_at": y.get("finished_at"),
-            "dur_ms": y.get("dur_ms"), "note": y.get("note"),
+            "duration_ms": y.get("duration_ms"), "note": y.get("note"),
             "chip": y.get("chip"), "chip_status": y.get("chip_status"),
-            "error": y.get("error"), "redacted": y.get("redacted_secrets") or [],
+            "error": y.get("error"), "redacted_secrets": y.get("redacted_secrets") or [],
             "params": y.get("params") or [], "steps": y.get("steps") or [],
             "pgid": y.get("pgid"),
         }
 
-    def exec_full(self, exec_id: str) -> dict | None:
+    def exec_full(self, execution_id: str) -> dict | None:
         """Full record: the live/in-memory record when it already has a body,
         else the header merged with `execution.yaml` (§5 bodies-lazily)."""
         with self.lock:
-            h = self.execs.get(exec_id)
+            h = self.execs.get(execution_id)
             if h is None:
                 return None
             if "steps" in h:
                 return h
-            body = self.read_exec_yaml(exec_id)
-            return {**h, **body} if body else {**h, "steps": [], "redacted": [], "params": []}
+            body = self.read_exec_yaml(execution_id)
+            return {**h, **body} if body else {**h, "steps": [], "redacted_secrets": [], "params": []}
 
     # ---------- logs (§5 logs/, one file per step attempt) ----------
     EXEC_LOG = "execution.ndjson"
@@ -998,30 +998,30 @@ class Store:
         stem = Path(step_file).stem if step_file else f"{index + 1:02d}-step"
         return f"{stem}.a{attempt}.ndjson"
 
-    def log_file(self, exec_id: str, name: str) -> Path:
-        return self.exec_dir(exec_id) / "logs" / name
+    def log_file(self, execution_id: str, name: str) -> Path:
+        return self.exec_dir(execution_id) / "logs" / name
 
-    def append_log_line(self, exec_id: str, name: str, line: dict) -> None:
+    def append_log_line(self, execution_id: str, name: str, line: dict) -> None:
         import json
 
-        p = self.log_file(exec_id, name)
+        p = self.log_file(execution_id, name)
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
 
-    def read_log(self, exec_id: str, step_idx: int | None = None,
+    def read_log(self, execution_id: str, step_idx: int | None = None,
                  attempt: int | None = None) -> list[dict]:
         import json
 
         if step_idx is None:
             name = self.EXEC_LOG
         else:
-            full = self.exec_full(exec_id)
+            full = self.exec_full(execution_id)
             steps = (full or {}).get("steps") or []
             if step_idx < 0 or step_idx >= len(steps):
                 return []
             name = self.log_name(steps[step_idx].get("file"), step_idx, attempt or 1)
-        p = self.log_file(exec_id, name)
+        p = self.log_file(execution_id, name)
         if not p.exists():
             return []
         out = []
@@ -1030,19 +1030,19 @@ class Store:
                 line = json.loads(ln)
             except ValueError:
                 continue
-            # §5: the stored line carries only the UTC `ts`; the local clock
-            # label `t` is derived here, at serialization.
-            if line.get("ts") and not line.get("t"):
+            # §5: the stored line carries only the UTC `timestamp`; the local clock
+            # label `time` is derived here, at serialization.
+            if line.get("timestamp") and not line.get("time"):
                 try:
-                    line["t"] = timefmt.parse_local(line["ts"]).strftime("%H:%M:%S")
+                    line["time"] = timefmt.parse_local(line["timestamp"]).strftime("%H:%M:%S")
                 except ValueError:
-                    line["t"] = ""
+                    line["time"] = ""
             out.append(line)
         return out
 
-    def result_files(self, exec_id: str) -> list[dict]:
+    def result_files(self, execution_id: str) -> list[dict]:
         """§4.5: the file list IS the directory listing."""
-        d = self.exec_dir(exec_id) / "result"
+        d = self.exec_dir(execution_id) / "result"
         if not d.exists():
             return []
         out = []
@@ -1067,30 +1067,30 @@ class Store:
             out["chipStatus"] = h.get("chip_status") or "ok"
         return out
 
-    def delete_execution(self, exec_id: str) -> None:
+    def delete_execution(self, execution_id: str) -> None:
         with self.lock:
-            h = self.execs.pop(exec_id, None)
-            shutil.rmtree(self.exec_dir(exec_id), ignore_errors=True)
-            self.execdb.delete(exec_id)
+            h = self.execs.pop(execution_id, None)
+            shutil.rmtree(self.exec_dir(execution_id), ignore_errors=True)
+            self.execdb.delete(execution_id)
             # Keep `_latest` honest inside the mutator — no caller should have
             # to remember to recompute after deleting.
             if h:
-                a = self.autos.get(h["auto_id"])
-                if a and (a.get("_latest") or {}).get("id") == exec_id:
+                a = self.autos.get(h["automation_id"])
+                if a and (a.get("_latest") or {}).get("id") == execution_id:
                     latest = self._latest_exec(a["id"])
                     a["_latest"] = latest
                     a["_last_status"] = latest["status"] if latest else "none"
                     a["_last_exec_at"] = latest["started_at"] if latest else None
 
-    def delete_test_execs(self, auto_id: str | None) -> None:
+    def delete_test_execs(self, automation_id: str | None) -> None:
         """§11: test executions live only as long as their draft container —
         called when a draft settles, when a new test starts (keep-latest), and
-        when the automation is deleted. `auto_id` None targets create-mode test
-        records (§4.5 null autoId). Live records are skipped (the §19 409
+        when the automation is deleted. `automation_id` None targets create-mode test
+        records (§4.5 null automationId). Live records are skipped (the §19 409
         keeps one from existing at draft-settle time in practice)."""
         with self.lock:
             for h in list(self.execs.values()):
-                if is_test(h) and h["auto_id"] == auto_id and h["status"] != "executing":
+                if is_test(h) and h["automation_id"] == automation_id and h["status"] != "executing":
                     self.delete_execution(h["id"])
 
     def retention_cleanup(self) -> int:
@@ -1286,7 +1286,7 @@ class Store:
             elif kind == "list":
                 p["lines"] = list(v)
             elif kind == "kv":
-                p["rows"] = [{"k": r.get("k", ""), "v": r.get("v", "")} for r in v]
+                p["rows"] = [{"key": r.get("key", ""), "value": r.get("value", "")} for r in v]
             else:
                 p["value"] = v
             out.append(p)
@@ -1299,8 +1299,8 @@ class Store:
             dt = timefmt.parse_local(when)
             # Year always included — "created Jul 18" is ambiguous a year later.
             when_label = ("created" if n == 1 else "updated") + f" {dt.strftime('%b')} {dt.day}, {dt.year}"
-        return {"v": n, "when": when_label, "note": ver.get("note"),
-                "spec": ver.get("spec", []), "instr": ver.get("instr") or "",
+        return {"version": n, "when": when_label, "note": ver.get("note"),
+                "spec": ver.get("spec", []), "instructions": ver.get("instructions") or "",
                 "notes": ver.get("notes") or "",
                 "steps": [self.step_json(s) for s in ver.get("steps", [])],
                 "params": ver.get("params", []),
@@ -1311,7 +1311,7 @@ class Store:
 
     def step_json(self, s: dict) -> dict:
         """One step-serialization for versions, drafts, and the pending slot."""
-        out = {"name": s.get("name", ""), "desc": s.get("desc", ""), "code": s.get("code", ""), "file": s.get("file")}
+        out = {"name": s.get("name", ""), "description": s.get("description", ""), "code": s.get("code", ""), "file": s.get("file")}
         if s.get("secrets"):
             out["secrets"] = list(s["secrets"])
         if s.get("agent"):
@@ -1349,16 +1349,16 @@ class Store:
         when = ""
         if t.get("when"):
             when = timefmt.started_label(timefmt.parse_local(t["when"]))
-        return {"status": t["status"], "when": when, "execId": t.get("exec_id")}
+        return {"status": t["status"], "when": when, "executionId": t.get("execution_id")}
 
     def latest_result_json(self, a: dict) -> dict | None:
         hs = [h for h in self.execs.values()
-              if h["auto_id"] == a["id"] and h["status"] != "executing" and not is_test(h)]
+              if h["automation_id"] == a["id"] and h["status"] != "executing" and not is_test(h)]
         for h in sorted(hs, key=lambda x: x["started_at"] or "", reverse=True):
             r = self.result_json(h)
             if r:
                 dt = timefmt.parse_local(h["started_at"])
-                return {**r, "execId": h["id"], "when": f"from {timefmt.started_label(dt)}"}
+                return {**r, "executionId": h["id"], "when": f"from {timefmt.started_label(dt)}"}
         return None
 
     def auto_json(self, a: dict, full: bool = True) -> dict:
@@ -1387,13 +1387,13 @@ class Store:
         out: dict[str, Any] = {
             "id": a["id"],
             "name": a["name"],
-            "desc": a.get("desc", ""),
+            "description": a.get("description", ""),
             "version": a["current_version"],
             "triggers": [self.trigger_json(t) for t in a["triggers"]],
             "triggerChip": schedule.trigger_chip(a["triggers"]),
-            "triggersOff": bool(a["triggers"]) and all(t["off"] for t in a["triggers"]),
+            "triggersOff": bool(a["triggers"]) and all(not t["enabled"] for t in a["triggers"]),
             "nextAt": int(nxt.timestamp() * 1000) if nxt else None,
-            "instr": cur.get("instr") or "",
+            "instructions": cur.get("instructions") or "",
             "notes": cur.get("notes") or "",
             "lastStatus": a.get("_last_status", "none"),
             "live": live_ids,
@@ -1401,7 +1401,7 @@ class Store:
             "maxQueued": a.get("max_queued", DEFAULT_MAX_QUEUED),
             "resultChip": chip,
             "resultStatus": chip_status,
-            "lastExecLabel": "executing…" if live_ids else (timefmt.date_label(last_dt) if last_dt else ""),
+            "lastExecutionLabel": "executing…" if live_ids else (timefmt.date_label(last_dt) if last_dt else ""),
             "agentId": a["agent_id"],
             "stepAgents": a["enabled_agents"],
             "allowedSecrets": a["allowed_secrets"],
@@ -1430,8 +1430,8 @@ class Store:
         out = []
         for a in s.get("attempts", []):
             adt = timefmt.parse_local(a["started_at"]) if a.get("started_at") else None
-            out.append({"n": a["n"], "status": a["status"],
-                        "dur": timefmt.dur_label(a["dur_ms"]) if a.get("dur_ms") else "",
+            out.append({"number": a["number"], "status": a["status"],
+                        "duration": timefmt.dur_label(a["duration_ms"]) if a.get("duration_ms") else "",
                         "startedMs": int(adt.timestamp() * 1000) if adt else 0})
         return out
 
@@ -1439,10 +1439,10 @@ class Store:
         dt = timefmt.parse_local(h["started_at"]) if h["started_at"] else None
         fin = timefmt.parse_local(h["finished_at"]) if h.get("finished_at") else None
         out: dict[str, Any] = {
-            "id": h["id"], "autoId": h["auto_id"],
-            "autoName": (self.autos.get(h["auto_id"], {}) or {}).get("name") or h["auto_name"],
-            # §4.5: create-mode tests (null autoId) never had an automation to lose.
-            "autoDeleted": h["auto_id"] is not None and h["auto_id"] not in self.autos,
+            "id": h["id"], "automationId": h["automation_id"],
+            "automationName": (self.autos.get(h["automation_id"], {}) or {}).get("name") or h["automation_name"],
+            # §4.5: create-mode tests (null automationId) never had an automation to lose.
+            "automationDeleted": h["automation_id"] is not None and h["automation_id"] not in self.autos,
             # §4.5 derived display pair + trigger label — the stored fields are
             # kind/version and the trigger's machine kind.
             "ver": exec_ver_label(h), "status": h["status"],
@@ -1453,7 +1453,7 @@ class Store:
             "triggerSender": (h.get("trigger_payload") or {}).get("sender")
                              or h.get("trigger_sender"),
             "test": is_test(h),
-            "dur": timefmt.dur_label(h["dur_ms"]),
+            "duration": timefmt.dur_label(h["duration_ms"]),
             "started": timefmt.started_label(dt) if dt else "",
             "startedMs": int(dt.timestamp() * 1000) if dt else 0,
             "endedMs": int(fin.timestamp() * 1000) if fin else 0,
@@ -1464,16 +1464,16 @@ class Store:
             "error": h.get("error"),
         }
         if full:
-            f = h if "steps" in h else (self.exec_full(h["id"]) or {**h, "steps": [], "redacted": [], "params": []})
+            f = h if "steps" in h else (self.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []})
             out["steps"] = [{"name": s["name"], "status": s["status"],
-                             "dur": timefmt.dur_label(s["dur_ms"]) if s.get("dur_ms") else "",
+                             "duration": timefmt.dur_label(s["duration_ms"]) if s.get("duration_ms") else "",
                              "attempts": self.step_attempts_json(s)}
                             for s in f["steps"]]
             out["result"] = self.result_json(h)
             # §4.5: full-record-only — backs the §7 "Show workspace in Finder" link
             out["workspace"] = str(self.exec_dir(h["id"]) / "workspace")
             # §4.5: a list — display surfaces join it themselves.
-            out["redact"] = f["redacted"] or None
+            out["redactedSecrets"] = f["redacted_secrets"] or None
             out["params"] = f.get("params", [])
             out["triggerPayload"] = f.get("trigger_payload")
         return out

@@ -11,7 +11,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 DDL = """
 CREATE TABLE IF NOT EXISTS executions (
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS executions (
   queued_at        INTEGER,
   started_at       INTEGER NOT NULL,
   finished_at      INTEGER,
-  dur_ms           INTEGER,
+  duration_ms           INTEGER,
   note             TEXT,
   chip             TEXT,
   chip_status      TEXT,
@@ -34,9 +34,9 @@ CREATE TABLE IF NOT EXISTS executions (
   error_message    TEXT,
   error_reason     TEXT
 );
-CREATE INDEX IF NOT EXISTS ix_exec_page   ON executions (started_at DESC, id);
-CREATE INDEX IF NOT EXISTS ix_exec_auto   ON executions (automation_id, started_at DESC);
-CREATE INDEX IF NOT EXISTS ix_exec_status ON executions (status, started_at DESC);
+CREATE INDEX IF NOT EXISTS index_executions_page   ON executions (started_at DESC, id);
+CREATE INDEX IF NOT EXISTS index_executions_automation   ON executions (automation_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS index_executions_status ON executions (status, started_at DESC);
 """
 
 
@@ -85,7 +85,7 @@ class ExecDB:
         with self.conn:
             self.conn.execute(
                 'INSERT INTO executions (id, automation_id, automation_name, kind, version, status,'
-                ' "trigger", trigger_sender, queued_at, started_at, finished_at, dur_ms, note, chip, chip_status,'
+                ' "trigger", trigger_sender, queued_at, started_at, finished_at, duration_ms, note, chip, chip_status,'
                 " error_step, error_message, error_reason)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 " ON CONFLICT(id) DO UPDATE SET"
@@ -94,13 +94,13 @@ class ExecDB:
                 # measuring the wait and starts measuring the execution), so the
                 # index has to follow or the list sorts on a stale timestamp.
                 " started_at=excluded.started_at,"
-                " finished_at=excluded.finished_at, dur_ms=excluded.dur_ms, note=excluded.note,"
+                " finished_at=excluded.finished_at, duration_ms=excluded.duration_ms, note=excluded.note,"
                 " chip=excluded.chip, chip_status=excluded.chip_status,"
                 " error_step=excluded.error_step, error_message=excluded.error_message,"
                 " error_reason=excluded.error_reason",
-                (h["id"], h["auto_id"], h["auto_name"], h["kind"], h.get("version"), h["status"],
+                (h["id"], h["automation_id"], h["automation_name"], h["kind"], h.get("version"), h["status"],
                  h["trigger"], sender, _ms(h.get("queued_at")),
-                 _ms(h["started_at"]), _ms(h.get("finished_at")), h["dur_ms"], h["note"],
+                 _ms(h["started_at"]), _ms(h.get("finished_at")), h["duration_ms"], h["note"],
                  h.get("chip"), h.get("chip_status"),
                  err.get("step"), err.get("message"), err.get("reason")))
 
@@ -108,24 +108,24 @@ class ExecDB:
         out: dict[str, dict] = {}
         for row in self.conn.execute(
                 'SELECT id, automation_id, automation_name, kind, version, status, "trigger",'
-                " trigger_sender, queued_at, started_at, finished_at, dur_ms, note, chip, chip_status,"
+                " trigger_sender, queued_at, started_at, finished_at, duration_ms, note, chip, chip_status,"
                 " error_step, error_message, error_reason FROM executions"):
-            (eid, auto_id, auto_name, kind, version, status, trigger, trigger_sender,
-             queued, started, finished, dur_ms, note, chip, chip_status,
+            (eid, automation_id, automation_name, kind, version, status, trigger, trigger_sender,
+             queued, started, finished, duration_ms, note, chip, chip_status,
              err_step, err_message, err_reason) = row
             out[eid] = {
-                "id": eid, "auto_id": auto_id, "auto_name": auto_name,
+                "id": eid, "automation_id": automation_id, "automation_name": automation_name,
                 "kind": kind, "version": version,
                 "status": status, "trigger": trigger, "trigger_sender": trigger_sender,
                 "queued_at": _iso(queued),
                 "started_at": _iso(started), "finished_at": _iso(finished),
-                "dur_ms": dur_ms, "note": note,
+                "duration_ms": duration_ms, "note": note,
                 "chip": chip, "chip_status": chip_status,
                 "error": {"step": err_step, "message": err_message, "reason": err_reason}
                          if err_message else None,
             }
         return out
 
-    def delete(self, exec_id: str) -> None:
+    def delete(self, execution_id: str) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM executions WHERE id=?", (exec_id,))
+            self.conn.execute("DELETE FROM executions WHERE id=?", (execution_id,))

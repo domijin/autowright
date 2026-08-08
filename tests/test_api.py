@@ -13,7 +13,7 @@ def test_auth_required(client):
 
 def test_state_shape(client):
     r = client.get("/state").json()
-    assert set(r) >= {"autos", "execs", "agents", "secrets", "settings", "version"}
+    assert set(r) >= {"automations", "executions", "agents", "secrets", "settings", "version"}
 
 
 def test_instructions_endpoint(client):
@@ -36,7 +36,7 @@ def test_secret_crud_and_usedby(client):
     # §4.8 usedBy: automation names whose current version references the secret —
     # via a step's secrets list or a `secrets.NAME` reference in step code.
     store.create_automation(make_version(steps=[
-        {"file": "01-use.py", "name": "Use", "desc": "",
+        {"file": "01-use.py", "name": "Use", "description": "",
          "code": "from autowright import log, secrets\nlog(secrets.MY_TOKEN)\n"}]),
         "Token user", "mock")
     by_name = {s["name"]: s["usedBy"] for s in client.get("/secrets").json()}
@@ -47,13 +47,13 @@ def test_secret_crud_and_usedby(client):
 
 def test_secret_placeholder_lifecycle(client):
     # §4.8: blank value on a new name → placeholder (set: false)
-    assert client.put("/secrets/LATER", json={"value": "", "desc": "fill me"}).status_code == 200
+    assert client.put("/secrets/LATER", json={"value": "", "description": "fill me"}).status_code == 200
     s = next(x for x in client.get("/secrets").json() if x["name"] == "LATER")
-    assert s["set"] is False and s["desc"] == "fill me"
+    assert s["set"] is False and s["description"] == "fill me"
     # blank on the existing placeholder edits only the desc — still unset
-    client.put("/secrets/LATER", json={"value": "", "desc": "still later"})
+    client.put("/secrets/LATER", json={"value": "", "description": "still later"})
     s = next(x for x in client.get("/secrets").json() if x["name"] == "LATER")
-    assert s["set"] is False and s["desc"] == "still later"
+    assert s["set"] is False and s["description"] == "still later"
     # a real value flips it
     client.put("/secrets/LATER", json={"value": "v1"})
     s = next(x for x in client.get("/secrets").json() if x["name"] == "LATER")
@@ -63,11 +63,11 @@ def test_secret_placeholder_lifecycle(client):
 def test_export_import_endpoints(client):
     from autowright.storage import new_id, store
 
-    ver = {"desc": "", "params": [], "steps": [{"name": "Go", "desc": "", "code": "print(1)\n"}],
-           "spec": [{"k": "h1", "text": "T"}], "instr": None}
+    ver = {"description": "", "params": [], "steps": [{"name": "Go", "description": "", "code": "print(1)\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": None}
     a = store.create_automation(ver, name="Port me", agent_id="mock",
-                                triggers=[{"id": new_id(), "kind": "cron", "off": False,
-                                           "expr": "0 9 * * *"}])
+                                triggers=[{"id": new_id(), "kind": "cron", "enabled": True,
+                                           "expression": "0 9 * * *"}])
     r = client.get(f"/automations/{a['id']}/export")
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/zip"
@@ -76,9 +76,9 @@ def test_export_import_endpoints(client):
                      headers={"Content-Type": "application/octet-stream"})
     assert r2.status_code == 200
     body = r2.json()
-    assert body["auto"]["name"] == "Port me"
-    assert body["auto"]["id"] != a["id"]
-    assert body["auto"]["triggersOff"] is True
+    assert body["automation"]["name"] == "Port me"
+    assert body["automation"]["id"] != a["id"]
+    assert body["automation"]["triggersOff"] is True
     assert set(body["summary"]) == {"secretsCreated", "secretsExisting",
                                     "agentsCreated", "agentsReused", "packages"}
     assert client.post("/automations/import", content=b"junk",
@@ -90,12 +90,12 @@ def test_export_import_endpoints(client):
 def test_import_preview_confirm_flow(client):
     from autowright.storage import new_id, store
 
-    ver = {"desc": "Web thing", "params": [],
-           "steps": [{"name": "Go", "desc": "", "code": "print(1)\n"}],
-           "spec": [{"k": "h1", "text": "T"}], "instr": None}
+    ver = {"description": "Web thing", "params": [],
+           "steps": [{"name": "Go", "description": "", "code": "print(1)\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": None}
     a = store.create_automation(ver, name="Previewed", agent_id="mock",
-                                triggers=[{"id": new_id(), "kind": "cron", "off": False,
-                                           "expr": "0 9 * * *"}])
+                                triggers=[{"id": new_id(), "kind": "cron", "enabled": True,
+                                           "expression": "0 9 * * *"}])
     data = client.get(f"/automations/{a['id']}/export").content
     n_before = len(store.autos)
 
@@ -107,12 +107,12 @@ def test_import_preview_confirm_flow(client):
     assert len(store.autos) == n_before
     assert body["preview"]["name"] == "Previewed"
     assert [s["name"] for s in body["preview"]["steps"]] == ["Go"]
-    assert body["preview"]["triggers"] == [{"kind": "cron", "expr": "0 9 * * *"}]
+    assert body["preview"]["triggers"] == [{"kind": "cron", "expression": "0 9 * * *"}]
 
     r2 = client.post("/automations/import/confirm", json={"token": body["token"]})
     assert r2.status_code == 200
-    assert r2.json()["auto"]["name"] == "Previewed"
-    assert r2.json()["auto"]["triggersOff"] is True
+    assert r2.json()["automation"]["name"] == "Previewed"
+    assert r2.json()["automation"]["triggersOff"] is True
     assert len(store.autos) == n_before + 1
 
     # the token is one-time; unknown tokens 404 too
@@ -127,9 +127,9 @@ def test_import_url_endpoint(client, monkeypatch):
     from autowright import transfer
     from autowright.storage import new_id, store
 
-    ver = {"desc": "", "params": [],
-           "steps": [{"name": "Go", "desc": "", "code": "print(1)\n"}],
-           "spec": [{"k": "h1", "text": "T"}], "instr": None}
+    ver = {"description": "", "params": [],
+           "steps": [{"name": "Go", "description": "", "code": "print(1)\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": None}
     a = store.create_automation(ver, name="From web", agent_id="mock", triggers=[])
     data = client.get(f"/automations/{a['id']}/export").content
 
@@ -164,13 +164,13 @@ def test_draft_job_and_create_flow(client):
     assert draft["steps"] and draft["spec"]
     # §8: create drafts carry the seeded default build instructions back to Review
     from autowright.drafting import DEFAULT_INSTRUCTIONS
-    assert draft["instr"] == DEFAULT_INSTRUCTIONS
+    assert draft["instructions"] == DEFAULT_INSTRUCTIONS
     r = client.post("/automations", json={"draft": draft, "agentId": "mock"})
     assert r.status_code == 200
     auto = r.json()
     assert auto["version"] == 1 and auto["lastStatus"] == "none"
     # §11 create toast state: nothing has executed yet
-    assert auto["lastExecLabel"] == ""
+    assert auto["lastExecutionLabel"] == ""
 
 
 def _wait_job(client, job_id):
@@ -229,7 +229,7 @@ def test_sync_blocked_has_no_draft(client):
 
     # sync: the caller already holds the spec — the blocked payload carries none
     a = store.create_automation(make_version(), "Sync blocked", "mock")
-    r = client.post("/drafts", json={"mode": "sync", "autoId": a["id"], "agentId": "mock",
+    r = client.post("/drafts", json={"mode": "sync", "automationId": a["id"], "agentId": "mock",
                                      "spec": "# blocked-steps title\n\nBody."})
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "blocked", j
@@ -243,7 +243,7 @@ def test_sync_uses_provided_spec(client):
 
     a = store.create_automation(make_version(), "Sync target", "mock")
     marker = "The provided spec wins over the stored one."
-    r = client.post("/drafts", json={"mode": "sync", "autoId": a["id"], "agentId": "mock",
+    r = client.post("/drafts", json={"mode": "sync", "automationId": a["id"], "agentId": "mock",
                                      "spec": f"# Synced title\n\n{marker}"})
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
@@ -258,10 +258,10 @@ def test_sync_current_still_supported(client):
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Sync current", "mock")
-    cur = make_version(spec=[{"k": "h1", "text": "Edited"},
-                             {"k": "h2", "text": "Change (draft)"},
-                             {"k": "p", "text": "In-editor draft spec text."}])
-    r = client.post("/drafts", json={"mode": "sync", "autoId": a["id"], "agentId": "mock",
+    cur = make_version(spec=[{"kind": "h1", "text": "Edited"},
+                             {"kind": "h2", "text": "Change (draft)"},
+                             {"kind": "p", "text": "In-editor draft spec text."}])
+    r = client.post("/drafts", json={"mode": "sync", "automationId": a["id"], "agentId": "mock",
                                      "current": cur})
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
@@ -276,7 +276,7 @@ def test_draft_chat_honors_in_editor_grants(client):
     # saved grants: no agents enabled, no secrets allowed
     a = store.create_automation(make_version(), "Ask target", "mock", enabled_agents=[])
     r = client.post("/drafts", json={
-        "mode": "chat", "autoId": a["id"], "agentId": "mock",
+        "mode": "chat", "automationId": a["id"], "agentId": "mock",
         "text": "Also check on weekends",
         "enabledAgents": ["mock"], "allowedSecrets": ["MY_SECRET"],  # in-editor grants win
     })
@@ -299,7 +299,7 @@ def test_draft_chat_question_returns_answer(client):
 
     a = store.create_automation(make_version(), "Q target", "mock")
     r = client.post("/drafts", json={
-        "mode": "chat", "autoId": a["id"], "agentId": "mock",
+        "mode": "chat", "automationId": a["id"], "agentId": "mock",
         "text": "What does this workflow do?",
         "chat": [{"kind": "user", "text": "earlier message"}],
     })
@@ -315,15 +315,15 @@ def test_draft_chat_attaches_stored_name_and_desc(client):
     from autowright import paths
     from autowright.storage import store
 
-    a = store.create_automation(make_version(desc="Watches the things."), "Ident target", "mock")
+    a = store.create_automation(make_version(description="Watches the things."), "Ident target", "mock")
     r = client.post("/drafts", json={
-        "mode": "chat", "autoId": a["id"], "agentId": "mock", "text": "Rename this better",
+        "mode": "chat", "automationId": a["id"], "agentId": "mock", "text": "Rename this better",
     })
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
     logged = paths.app_log().read_text(encoding="utf-8")
     assert "=== AUTOMATION" in logged
-    assert "name: Ident target" in logged and "desc: Watches the things." in logged
+    assert "name: Ident target" in logged and "description: Watches the things." in logged
 
 
 def test_draft_chat_requires_text(client):
@@ -339,12 +339,12 @@ def test_execution_and_execution_pages(client):
     a = store.create_automation(make_version(), "API Exec", "mock")
     r = client.post(f"/automations/{a['id']}/execute", json={})
     assert r.status_code == 200
-    exec_id = r.json()["execId"]
+    execution_id = r.json()["executionId"]
     # §7: starting while live → 409
     r2 = client.post(f"/automations/{a['id']}/execute", json={})
     assert r2.status_code == 409
     for _ in range(100):
-        e = client.get(f"/executions/{exec_id}").json()
+        e = client.get(f"/executions/{execution_id}").json()
         if e["status"] != "executing":
             break
         time.sleep(0.1)
@@ -355,11 +355,11 @@ def test_execution_and_execution_pages(client):
     assert [s["status"] for s in e["steps"]] == ["succeeded", "succeeded"]
     assert all(len(s["attempts"]) == 1 for s in e["steps"])
     # §19 lazy log endpoint: per step attempt, and the execution log
-    step_log = client.get(f"/executions/{exec_id}/logs", params={"step": 0, "attempt": 1}).json()
-    assert any(l["k"] == "sys" for l in step_log["lines"])
-    assert all({"t", "k", "seq", "text"} == set(l) for l in step_log["lines"])
-    assert client.get(f"/executions/{exec_id}/logs").json()["lines"] == []
-    assert client.get(f"/executions/{exec_id}/logs", params={"step": 9, "attempt": 1}).json()["lines"] == []
+    step_log = client.get(f"/executions/{execution_id}/logs", params={"step": 0, "attempt": 1}).json()
+    assert any(l["kind"] == "sys" for l in step_log["lines"])
+    assert all({"time", "kind", "sequence", "text"} == set(l) for l in step_log["lines"])
+    assert client.get(f"/executions/{execution_id}/logs").json()["lines"] == []
+    assert client.get(f"/executions/{execution_id}/logs", params={"step": 9, "attempt": 1}).json()["lines"] == []
     autos = client.get("/automations").json()
     me = next(x for x in autos if x["id"] == a["id"])
     assert me["lastStatus"] == "succeeded"
@@ -372,11 +372,11 @@ def test_execution_and_execution_pages(client):
 def _echo_draft(**over):
     d = {
         "name": "Param echo",
-        "spec": [{"k": "h1", "text": "Param echo"}],
+        "spec": [{"kind": "h1", "text": "Param echo"}],
         "params": [
             {"name": "greeting", "kind": "text", "label": "Greeting", "help": "", "default": "hello"},
         ],
-        "steps": [{"file": "01-echo.py", "name": "Echo", "desc": "",
+        "steps": [{"file": "01-echo.py", "name": "Echo", "description": "",
                    "code": "from autowright import log, params, result\nlog(f\"greeting={params['greeting']}\")\n"
                            "result.status('ok')\nresult.chip(params['greeting'])\n"}],
         "triggers": [],
@@ -402,10 +402,10 @@ def _until(events, ev, timeout=30):
     raise AssertionError(f"{ev} never arrived (got {[e['ev'] for e in events]})")
 
 
-def _until_finished(events, exec_id, timeout=30):
+def _until_finished(events, execution_id, timeout=30):
     t0 = time.time()
     while time.time() - t0 < timeout:
-        e = next((e for e in events if e["ev"] == "exec.finished" and e["execId"] == exec_id), None)
+        e = next((e for e in events if e["ev"] == "execution.finished" and e["executionId"] == execution_id), None)
         if e:
             return e
         time.sleep(0.05)
@@ -418,12 +418,12 @@ def test_test_param_values_override(client, monkeypatch):
     events = _capture_events(monkeypatch)
     r = client.post("/tests", json={"draft": _echo_draft(), "paramValues": {"greeting": "bonjour"}})
     assert r.status_code == 200
-    eid = r.json()["execId"]
-    assert _until_finished(events, eid)["exec_json"]["status"] == "succeeded"
+    eid = r.json()["executionId"]
+    assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
     full = client.get(f"/executions/{eid}").json()
     assert full["test"] is True and full["ver"] == "Test" and full["trigger"] == "Test"
     assert full["result"]["chip"] == "bonjour"
-    logs = [e["line"]["text"] for e in events if e["ev"] == "exec.log"]
+    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
     assert any("greeting=bonjour" in t for t in logs)
 
 
@@ -432,7 +432,7 @@ def test_test_trigger_mock_imessage_payload(client, monkeypatch):
     # (unsuppliable fields null), reaches the step via execution.trigger_payload,
     # and the trigger label still says "Test".
     events = _capture_events(monkeypatch)
-    d = _echo_draft(steps=[{"file": "01-see.py", "name": "See", "desc": "",
+    d = _echo_draft(steps=[{"file": "01-see.py", "name": "See", "description": "",
                             "code": "from autowright import execution, log, result\n"
                                     "p = execution.trigger_payload\n"
                                     "log(f\"mock={p['kind']}:{p['sender']}:{p['text']}\")\n"
@@ -442,9 +442,9 @@ def test_test_trigger_mock_imessage_payload(client, monkeypatch):
         "triggerMock": {"kind": "imessage", "text": "new chapter?", "sender": "+15551234567"},
     })
     assert r.status_code == 200
-    eid = r.json()["execId"]
-    assert _until_finished(events, eid)["exec_json"]["status"] == "succeeded"
-    logs = [e["line"]["text"] for e in events if e["ev"] == "exec.log"]
+    eid = r.json()["executionId"]
+    assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
+    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
     assert any("mock=imessage:+15551234567:new chapter?" in t for t in logs)
     full = client.get(f"/executions/{eid}").json()
     assert full["test"] is True and full["trigger"] == "Test"
@@ -467,7 +467,7 @@ def test_test_trigger_mock_discord_shape_and_validation(client, monkeypatch):
     from autowright.storage import store
 
     events = _capture_events(monkeypatch)
-    eid = client.post("/tests", json={"draft": _echo_draft(), "triggerMock": ok}).json()["execId"]
+    eid = client.post("/tests", json={"draft": _echo_draft(), "triggerMock": ok}).json()["executionId"]
     p = store.execs[eid]["trigger_payload"]
     assert p["channel"] == "123456" and p["secret"] == "BOT_TOKEN"
     assert p["channelName"] is None and p["guildId"] is None and p["messageId"] is None
@@ -475,7 +475,7 @@ def test_test_trigger_mock_discord_shape_and_validation(client, monkeypatch):
 
 
 def test_test_stored_values_and_flagged_record(client, monkeypatch):
-    # §19: with autoId (edit mode) the stored values are the base; the record is
+    # §19: with automationId (edit mode) the stored values are the base; the record is
     # flagged test and never touches the automation's derived display state.
     from autowright.storage import store
 
@@ -483,11 +483,11 @@ def test_test_stored_values_and_flagged_record(client, monkeypatch):
     auto = client.post("/automations", json={"draft": _echo_draft()}).json()
     client.patch(f"/automations/{auto['id']}", json={"paramValues": {"greeting": "stored-hi"}})
     events.clear()
-    r = client.post("/tests", json={"draft": _echo_draft(), "autoId": auto["id"]})
+    r = client.post("/tests", json={"draft": _echo_draft(), "automationId": auto["id"]})
     assert r.status_code == 200
-    eid = r.json()["execId"]
+    eid = r.json()["executionId"]
     _until_finished(events, eid)
-    logs = [e["line"]["text"] for e in events if e["ev"] == "exec.log"]
+    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
     assert any("greeting=stored-hi" in t for t in logs)
     assert store.execs[eid]["kind"] == "test"
     aj = client.get(f"/automations/{auto['id']}").json()
@@ -504,11 +504,11 @@ def test_test_resolves_default_after_editor_roundtrip(client, monkeypatch):
     assert aj["params"][0]["default"] == "hello"
     events.clear()
     r = client.post("/tests", json={"draft": _echo_draft(params=aj["params"]),
-                                    "autoId": auto["id"]})
+                                    "automationId": auto["id"]})
     assert r.status_code == 200
-    eid = r.json()["execId"]
-    assert _until_finished(events, eid)["exec_json"]["status"] == "succeeded"
-    logs = [e["line"]["text"] for e in events if e["ev"] == "exec.log"]
+    eid = r.json()["executionId"]
+    assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
+    logs = [e["line"]["text"] for e in events if e["ev"] == "execution.log"]
     assert any("greeting=hello" in t for t in logs)
 
 
@@ -528,12 +528,12 @@ def test_test_failure_never_analyzes_by_itself(client, monkeypatch):
         return real_invoke(*a, **kw)
 
     monkeypatch.setattr(harness, "invoke", recording_invoke)
-    d = _echo_draft(steps=[{"file": "01-boom.py", "name": "Boom", "desc": "",
+    d = _echo_draft(steps=[{"file": "01-boom.py", "name": "Boom", "description": "",
                             "code": "raise KeyError('missing')\n"}])
     r = client.post("/tests", json={"draft": d})
     assert r.status_code == 200
-    eid = r.json()["execId"]
-    assert _until_finished(events, eid)["exec_json"]["status"] == "failed"
+    eid = r.json()["executionId"]
+    assert _until_finished(events, eid)["execution_json"]["status"] == "failed"
     assert calls == []  # nothing analyzed by itself
 
 
@@ -543,9 +543,9 @@ def test_failed_run_rides_chat_runs_context(client, monkeypatch):
     from autowright import testexec
 
     events = _capture_events(monkeypatch)
-    d = _echo_draft(steps=[{"file": "01-boom.py", "name": "Boom", "desc": "",
+    d = _echo_draft(steps=[{"file": "01-boom.py", "name": "Boom", "description": "",
                             "code": "raise KeyError('missing')\n"}])
-    eid = client.post("/tests", json={"draft": d}).json()["execId"]
+    eid = client.post("/tests", json={"draft": d}).json()["executionId"]
     _until_finished(events, eid)
     runs = testexec.runs_context(None, d["steps"], None)
     assert runs is not None
@@ -560,29 +560,29 @@ def test_failed_run_rides_chat_runs_context(client, monkeypatch):
 def test_test_cancel(client, monkeypatch):
     # §19: cancel goes through the ordinary execution cancel.
     events = _capture_events(monkeypatch)
-    d = _echo_draft(steps=[{"file": "01-slow.py", "name": "Slow", "desc": "",
+    d = _echo_draft(steps=[{"file": "01-slow.py", "name": "Slow", "description": "",
                             "code": "from autowright import log\nimport time\nlog('sleeping')\ntime.sleep(60)\n"}])
-    eid = client.post("/tests", json={"draft": d}).json()["execId"]
+    eid = client.post("/tests", json={"draft": d}).json()["executionId"]
     t0 = time.time()
     while time.time() - t0 < 10:  # wait until the step subprocess is live
-        if any(e["ev"] == "exec.log" and e["line"]["text"] == "sleeping" for e in events):
+        if any(e["ev"] == "execution.log" and e["line"]["text"] == "sleeping" for e in events):
             break
         time.sleep(0.05)
     assert client.post(f"/executions/{eid}/cancel").json()["ok"]
-    assert _until_finished(events, eid)["exec_json"]["status"] == "cancelled"
+    assert _until_finished(events, eid)["execution_json"]["status"] == "cancelled"
 
 
 def test_test_409_while_live(client, monkeypatch):
     # §19: one live test per draft container.
     events = _capture_events(monkeypatch)
-    d = _echo_draft(steps=[{"file": "01-slow.py", "name": "Slow", "desc": "",
+    d = _echo_draft(steps=[{"file": "01-slow.py", "name": "Slow", "description": "",
                             "code": "from autowright import log\nimport time\nlog('sleeping')\ntime.sleep(60)\n"}])
-    eid = client.post("/tests", json={"draft": d}).json()["execId"]
+    eid = client.post("/tests", json={"draft": d}).json()["executionId"]
     assert client.post("/tests", json={"draft": d}).status_code == 409
     # cancel only once the step subprocess is provably live — a cancel landing
     # during pre-flight can miss the not-yet-spawned sleeper, which then runs
     # its full 60 s and outlives the event wait below
-    _until(events, "exec.log")
+    _until(events, "execution.log")
     client.post(f"/executions/{eid}/cancel")
     _until_finished(events, eid)
 
@@ -592,7 +592,7 @@ def test_patch_automation_triggers_and_grants(client):
 
     a = store.create_automation(make_version(), "Patchable", "mock")
     r = client.patch(f"/automations/{a['id']}", json={
-        "triggers": [{"kind": "cron", "expr": "15 6 * * 3", "off": True}],
+        "triggers": [{"kind": "cron", "expression": "15 6 * * 3", "enabled": False}],
         "allowedSecrets": ["X_TOKEN"], "paramValues": {"greeting": "yo"},
     })
     j = r.json()
@@ -606,7 +606,7 @@ def test_patch_automation_triggers_and_grants(client):
     # whole-list replace: ids survive, additions get fresh ids
     tid = j["triggers"][0]["id"]
     r = client.patch(f"/automations/{a['id']}", json={
-        "triggers": [{**j["triggers"][0], "off": False}, {"kind": "cron", "expr": "0 2 * * *", "off": False}],
+        "triggers": [{**j["triggers"][0], "enabled": True}, {"kind": "cron", "expression": "0 2 * * *", "enabled": True}],
     })
     j = r.json()
     assert j["triggers"][0]["id"] == tid
@@ -623,19 +623,19 @@ def test_app_started_fires_enabled_app_start_triggers(client, monkeypatch):
     a = store.create_automation(make_version(), "On start", "mock")
     b = store.create_automation(make_version(), "On start (off)", "mock")
     assert client.patch(f"/automations/{a['id']}",
-                        json={"triggers": [{"kind": "app_start", "off": False}]}).status_code == 200
+                        json={"triggers": [{"kind": "app_start", "enabled": True}]}).status_code == 200
     assert client.patch(f"/automations/{b['id']}",
-                        json={"triggers": [{"kind": "app_start", "off": True}]}).status_code == 200
+                        json={"triggers": [{"kind": "app_start", "enabled": False}]}).status_code == 200
     # a second app_start in one list → 422 (§4.3)
     r = client.patch(f"/automations/{a['id']}", json={
-        "triggers": [{"kind": "app_start", "off": False}, {"kind": "app_start", "off": False}]})
+        "triggers": [{"kind": "app_start", "enabled": True}, {"kind": "app_start", "enabled": True}]})
     assert r.status_code == 422
 
     assert client.post("/app-started").json() == {"fired": 1}
-    _until(events, "exec.finished")
+    _until(events, "execution.finished")
     execs = client.get("/executions").json()
-    assert [e["trigger"] for e in execs if e["autoId"] == a["id"]] == ["App start"]
-    assert [e for e in execs if e["autoId"] == b["id"]] == []
+    assert [e["trigger"] for e in execs if e["automationId"] == a["id"]] == ["App start"]
+    assert [e for e in execs if e["automationId"] == b["id"]] == []
     # §4.3 derived display: app_start contributes no nextAt
     j = client.get(f"/automations/{a['id']}").json()
     assert j["nextAt"] is None
@@ -649,12 +649,12 @@ def test_patch_automation_discord_trigger(client):
     a = store.create_automation(make_version(), "Discordant", "mock")
     r = client.patch(f"/automations/{a['id']}", json={"triggers": [
         {"kind": "discord", "channel": "123", "secret": "BOT_TOKEN",
-         "pattern": "go", "off": False}]})
+         "pattern": "go", "enabled": True}]})
     assert r.status_code == 200
     j = r.json()
     t = j["triggers"][0]
     assert (t["label"], t["short"]) == ("Discord · 123 · “go”", "Discord")
-    assert t["conn"] == {"state": "connecting"}  # §4.3: derived, no listener state yet
+    assert t["connection"] == {"state": "connecting"}  # §4.3: derived, no listener state yet
     assert j["nextAt"] is None  # no computable next occurrence
     assert j["triggerChip"] == "Discord"
 
@@ -664,12 +664,12 @@ def test_patch_automation_imessage_trigger(client):
 
     a = store.create_automation(make_version(), "Texter", "mock")
     r = client.patch(f"/automations/{a['id']}", json={"triggers": [
-        {"kind": "imessage", "from": "+15551234567", "pattern": "go", "off": False}]})
+        {"kind": "imessage", "from": "+15551234567", "pattern": "go", "enabled": True}]})
     assert r.status_code == 200
     j = r.json()
     t = j["triggers"][0]
     assert (t["label"], t["short"]) == ("iMessage · +15551234567 · “go”", "iMessage")
-    assert t["conn"] == {"state": "connecting"}  # §4.3: shared watcher state, derived
+    assert t["connection"] == {"state": "connecting"}  # §4.3: shared watcher state, derived
     assert j["nextAt"] is None  # no computable next occurrence
     assert j["triggerChip"] == "iMessage"
     # §4.3: `from` must be nonempty without whitespace
@@ -696,7 +696,7 @@ def test_patch_automation_triggers_422(client):
     for bad in ([{"kind": "imessage"}],
                 [{"kind": "discord"}],  # no channel/secret
                 [{"kind": "discord", "channel": "general", "secret": "TOKEN"}],
-                [{"kind": "cron", "expr": "not cron"}],
+                [{"kind": "cron", "expression": "not cron"}],
                 [{"kind": "time", "at": "2020-01-01T00:00"}]):
         r = client.patch(f"/automations/{a['id']}", json={"triggers": bad})
         assert r.status_code == 422
@@ -708,37 +708,37 @@ def test_save_version_and_restore(client):
 
     a = store.create_automation(make_version(), "Versioner", "mock")
     r = client.post(f"/automations/{a['id']}/versions",
-                    json={"draft": make_version(desc="second", note="Change")})
+                    json={"draft": make_version(description="second", note="Change")})
     assert r.json()["version"] == 2
-    r = client.post(f"/automations/{a['id']}/restore", json={"v": 1})
+    r = client.post(f"/automations/{a['id']}/restore", json={"version": 1})
     assert r.json()["version"] == 3
     j = client.get(f"/automations/{a['id']}").json()
-    assert [v["v"] for v in j["versions"]] == [2, 1]
+    assert [v["version"] for v in j["versions"]] == [2, 1]
 
 
 def test_save_version_applies_draft_triggers(client):
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Scheduled", "mock",
-                                triggers=[{"id": "t1", "kind": "cron", "expr": "0 8 * * *", "off": True},
-                                          {"id": "t2", "kind": "time", "at": "2999-01-01T00:00", "off": False}])
+                                triggers=[{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False},
+                                          {"id": "t2", "kind": "time", "at": "2999-01-01T00:00", "enabled": True}])
     # §4.3 cron-subset replace: sent list (the editor's merge) replaces whole;
     # sent ids survive, new entries get one assigned
     r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
-        **make_version(desc="second"),
-        "triggers": [{"id": "t1", "kind": "cron", "expr": "0 8 * * *", "off": True},
-                     {"kind": "cron", "expr": "30 9 * * 1", "off": False},
-                     {"id": "t2", "kind": "time", "at": "2999-01-01T00:00", "off": False}],
+        **make_version(description="second"),
+        "triggers": [{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False},
+                     {"kind": "cron", "expression": "30 9 * * 1", "enabled": True},
+                     {"id": "t2", "kind": "time", "at": "2999-01-01T00:00", "enabled": True}],
     }})
     assert r.status_code == 200
-    trigs = r.json()["auto"]["triggers"]
-    assert [t.get("id") for t in trigs][0] == "t1" and trigs[0]["off"] is True
-    assert trigs[1]["expr"] == "30 9 * * 1" and trigs[1]["id"]
+    trigs = r.json()["automation"]["triggers"]
+    assert [t.get("id") for t in trigs][0] == "t1" and trigs[0]["enabled"] is False
+    assert trigs[1]["expression"] == "30 9 * * 1" and trigs[1]["id"]
     assert trigs[2]["id"] == "t2"
 
     # invalid trigger → 422 and no version minted
     r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
-        **make_version(), "triggers": [{"kind": "cron", "expr": "junk"}],
+        **make_version(), "triggers": [{"kind": "cron", "expression": "junk"}],
     }})
     assert r.status_code == 422
     assert store.autos[a["id"]]["current_version"] == 2
@@ -746,7 +746,7 @@ def test_save_version_applies_draft_triggers(client):
     # no triggers key → the stored list is untouched
     r = client.post(f"/automations/{a['id']}/versions", json={"draft": make_version()})
     assert r.status_code == 200
-    assert [t["id"] for t in r.json()["auto"]["triggers"]] == ["t1", trigs[1]["id"], "t2"]
+    assert [t["id"] for t in r.json()["automation"]["triggers"]] == ["t1", trigs[1]["id"], "t2"]
 
 
 def test_edit_draft_snapshot_carries_triggers(client):
@@ -754,11 +754,11 @@ def test_edit_draft_snapshot_carries_triggers(client):
 
     a = store.create_automation(make_version(), "Drafted", "mock")
     r = client.put(f"/automations/{a['id']}/draft", json={"draft": {
-        **make_version(), "triggers": [{"kind": "cron", "expr": "15 7 * * *", "off": False}],
+        **make_version(), "triggers": [{"kind": "cron", "expression": "15 7 * * *", "enabled": True}],
     }})
     assert r.status_code == 200
     d = client.get(f"/automations/{a['id']}").json()["draft"]
-    assert d["triggers"] == [{"kind": "cron", "expr": "15 7 * * *", "off": False}]
+    assert d["triggers"] == [{"kind": "cron", "expression": "15 7 * * *", "enabled": True}]
     # the automation's live triggers stay untouched until the draft is saved
     assert store.autos[a["id"]]["triggers"] == []
 
@@ -820,13 +820,13 @@ def test_runs_context_covers_real_executions_and_run_id(client, monkeypatch):
     from autowright.storage import store
 
     events = _capture_events(monkeypatch)
-    ver = make_version(steps=[{"file": "01-boom.py", "name": "Boom", "desc": "",
+    ver = make_version(steps=[{"file": "01-boom.py", "name": "Boom", "description": "",
                                "code": "raise KeyError('missing page')\n"}],
-                       spec=[{"k": "h1", "text": "Real spec title"},
-                             {"k": "p", "text": "Body."}])
+                       spec=[{"kind": "h1", "text": "Real spec title"},
+                             {"kind": "p", "text": "Body."}])
     a = store.create_automation(ver, "Real fail", "mock")
-    eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["execId"]
-    assert _until_finished(events, eid)["exec_json"]["status"] == "failed"
+    eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    assert _until_finished(events, eid)["execution_json"]["status"] == "failed"
     runs = testexec.runs_context(a, ver["steps"], eid)
     assert runs is not None
     assert "v1 run · failed" in runs
@@ -853,20 +853,20 @@ def test_seed_then_state(client, home):
 
     seed(store)
     r = client.get("/state").json()
-    names = {a["name"] for a in r["autos"]}
+    names = {a["name"] for a in r["automations"]}
     assert names == {"Track manga chapters", "Nightly folder backup",
                      "Weekly report email", "Clean screenshots folder"}
-    assert len(r["execs"]) == 12  # the §16 twelve
-    statuses = {e["status"] for e in r["execs"]}
+    assert len(r["executions"]) == 12  # the §16 twelve
+    statuses = {e["status"] for e in r["executions"]}
     assert {"succeeded", "failed", "cancelled", "interrupted", "skipped"} <= statuses
-    manga = next(a for a in r["autos"] if a["name"] == "Track manga chapters")
+    manga = next(a for a in r["automations"] if a["name"] == "Track manga chapters")
     assert manga["version"] == 3
     assert manga["latest"]["chip"] == "2 new chapters"
     assert manga["triggerChip"] == "Daily 8:00"
     assert len(manga["versions"]) == 2  # v2, v1 in history
     secrets = {s["name"] for s in r["secrets"]}
     assert secrets == {"SMTP_PASSWORD", "VAULT_DRIVE_KEY"}
-    report = next(a for a in r["autos"] if a["name"] == "Weekly report email")
+    report = next(a for a in r["automations"] if a["name"] == "Weekly report email")
     assert "SMTP_PASSWORD" in report["allowedSecrets"]
 
     # terminal seeded executions carry finished_at (started + duration)
@@ -876,7 +876,7 @@ def test_seed_then_state(client, home):
 
     # §4.5 manga result: the table as a result.md markdown file, files
     # listing = the dir listing, path for Show in Finder
-    manga_execs = [e for e in r["execs"] if e["autoName"] == "Track manga chapters"]
+    manga_execs = [e for e in r["executions"] if e["automationName"] == "Track manga chapters"]
     fulls = [client.get(f"/executions/{e['id']}").json() for e in manga_execs]
     tabled = next(f for f in fulls if f.get("result") and f["result"].get("chip") == "2 new chapters")
     assert [f["name"] for f in tabled["result"]["files"]] == ["result.md"]
@@ -887,21 +887,21 @@ def test_seed_then_state(client, home):
 
     # §5 logs/ layout: per-step-attempt files, lines {ts, t, k, seq, text}
     step1 = store.read_log(tabled["id"], 0, 1)
-    assert step1 and all(set(l) == {"ts", "t", "k", "seq", "text"} for l in step1)
+    assert step1 and all(set(l) == {"timestamp", "time", "kind", "sequence", "text"} for l in step1)
     assert step1[0]["text"].startswith("▸ Step 1")
     step2 = store.read_log(tabled["id"], 1, 1)
     assert any(l["text"].startswith("▸ Step 2") for l in step2)
     # a line before any step marker is execution-level → execution.ndjson
-    shots_int = next(e for e in r["execs"] if e["status"] == "interrupted")
+    shots_int = next(e for e in r["executions"] if e["status"] == "interrupted")
     int_logs = store.read_log(shots_int["id"])
     assert int_logs and "went to sleep" in int_logs[0]["text"]
     # §16: the retried report execution's failing step carries two attempts
     retried = next(f for f in (client.get(f"/executions/{e['id']}").json()
-                               for e in r["execs"] if e["trigger"] == "Manual"
-                               and e["autoName"] == "Weekly report email")
+                               for e in r["executions"] if e["trigger"] == "Manual"
+                               and e["automationName"] == "Weekly report email")
                    if any(len(s["attempts"]) == 2 for s in f["steps"]))
     send = next(s for s in retried["steps"] if s["name"] == "Send the email")
-    assert [x["n"] for x in send["attempts"]] == [1, 2]
+    assert [x["number"] for x in send["attempts"]] == [1, 2]
 
 
 def test_settings_devmode_gates_request_logging(client):
@@ -910,7 +910,7 @@ def test_settings_devmode_gates_request_logging(client):
     from autowright.main import _DevModeFilter
 
     # §4.9: default off; PATCH persists it
-    assert client.get("/settings").json()["devMode"] is False
+    assert client.get("/settings").json()["developerMode"] is False
     flt = _DevModeFilter()
     info = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1,
                              "GET /state", None, None)
@@ -919,7 +919,7 @@ def test_settings_devmode_gates_request_logging(client):
     # §5: off → warnings only
     assert not flt.filter(info)
     assert flt.filter(warn)
-    assert client.patch("/settings", json={"devMode": True}).json()["devMode"] is True
+    assert client.patch("/settings", json={"developerMode": True}).json()["developerMode"] is True
     # §5: the filter reads the live setting — no restart needed
     assert flt.filter(info)
 
@@ -954,7 +954,7 @@ def test_settings_keep_awake_holds_assertion(client, monkeypatch):
     assert client.patch("/settings", json={"keepAwake": True}).json()["keepAwake"] is True
     assert calls == [["caffeinate", "-i", "-w", str(os.getpid())]]
     # unrelated PATCH while on: idempotent — no second caffeinate
-    client.patch("/settings", json={"devMode": True})
+    client.patch("/settings", json={"developerMode": True})
     assert len(calls) == 1
     proc = awake._proc
     # off → the subprocess is terminated and reaped
@@ -1145,8 +1145,8 @@ def test_repair_stale_executing_flips_to_interrupted(client):
 
     a = store.create_automation(make_version(), "Stale", "mock")
     steps = [{"name": "Say hello", "file": "01-say.py", "status": "executing",
-              "attempts": [{"n": 1, "status": "executing",
-                            "started_at": None, "dur_ms": None}]}]
+              "attempts": [{"number": 1, "status": "executing",
+                            "started_at": None, "duration_ms": None}]}]
     h = store.create_execution(a, "version", 1, "manual", steps)    # status: executing
     assert not api.engine.is_live(h["id"])                  # no engine thread owns it
     # §6: a leftover queue entry is swept in the same pass — the in-memory queue
@@ -1180,8 +1180,8 @@ def test_repair_kills_orphaned_step_group(client, monkeypatch):
 
     a = store.create_automation(make_version(), "Orphaned", "mock")
     steps = [{"name": "Say hello", "file": "01-say.py", "status": "executing",
-              "attempts": [{"n": 1, "status": "executing",
-                            "started_at": None, "dur_ms": None}]}]
+              "attempts": [{"number": 1, "status": "executing",
+                            "started_at": None, "duration_ms": None}]}]
     h = store.create_execution(a, "version", 1, "manual", steps)
     h["pgid"] = 54321
     store.update_execution(h)
@@ -1364,9 +1364,9 @@ def test_delete_automation_removes_test_exec_records(client):
     assert a["id"] not in store.autos
     # the §11 test record and its on-disk directory are gone
     assert t["id"] not in store.execs and not tdir.exists()
-    # real records stay, flagged autoDeleted
+    # real records stay, flagged automationDeleted
     assert real["id"] in store.execs
-    assert client.get(f"/executions/{real['id']}").json()["autoDeleted"] is True
+    assert client.get(f"/executions/{real['id']}").json()["automationDeleted"] is True
 
 
 # ---------- §8/§19 grant propagation — the editor's agent/secret checkboxes ----------
@@ -1441,7 +1441,7 @@ def test_create_draft_grants_all_secrets_by_default(client, monkeypatch):
     # §19: no allowedSecrets + no stored automation → every stored secret is
     # granted (the all-on seed the Review page starts from). Names only — the
     # grant entries never carry values.
-    client.put("/secrets/A_KEY", json={"value": "a", "desc": "first"})
+    client.put("/secrets/A_KEY", json={"value": "a", "description": "first"})
     client.put("/secrets/B_KEY", json={"value": "b"})
     captured = _capture_draft_grants(monkeypatch)
     client.post("/drafts", json={"mode": "create", "text": "x", "agentId": "mock"})
@@ -1462,7 +1462,7 @@ def test_chat_draft_falls_back_to_stored_grants(client, monkeypatch):
                                 enabled_agents=["second"],
                                 allowed_secrets=["STORED_KEY"])
     captured = _capture_draft_grants(monkeypatch)
-    client.post("/drafts", json={"mode": "chat", "autoId": a["id"], "agentId": "mock",
+    client.post("/drafts", json={"mode": "chat", "automationId": a["id"], "agentId": "mock",
                                  "text": "change something"})
     assert [g["name"] for g in captured["grants"]["agents"]] == ["Fast local"]
     assert [s["name"] for s in captured["grants"]["secrets"]] == ["STORED_KEY"]
@@ -1471,7 +1471,7 @@ def test_chat_draft_falls_back_to_stored_grants(client, monkeypatch):
 def test_test_grant_arrays_propagate(client, monkeypatch):
     # §19 POST /tests: grant arrays as in /drafts — explicit [] wins, absent
     # falls back to the stored automation's grants, and create mode (no
-    # autoId) defaults to ALL configured agents / ALL stored secrets (the
+    # automationId) defaults to ALL configured agents / ALL stored secrets (the
     # all-on seeds the Review page starts from).
     from autowright import api
 
@@ -1486,12 +1486,12 @@ def test_test_grant_arrays_propagate(client, monkeypatch):
     auto = client.post("/automations", json={"draft": d, "stepAgents": ["mock"],
                                              "allowedSecrets": ["X_KEY"]}).json()
 
-    r = client.post("/tests", json={"draft": d, "autoId": auto["id"],
+    r = client.post("/tests", json={"draft": d, "automationId": auto["id"],
                                     "enabledAgents": [], "allowedSecrets": []})
     assert r.status_code == 200
     assert (captured["enabled"], captured["allowed"]) == ([], [])
 
-    client.post("/tests", json={"draft": d, "autoId": auto["id"]})
+    client.post("/tests", json={"draft": d, "automationId": auto["id"]})
     assert (captured["enabled"], captured["allowed"]) == (["mock"], ["X_KEY"])
 
     client.post("/tests", json={"draft": d})
@@ -1660,7 +1660,7 @@ def test_queue_clear_endpoint(client, monkeypatch):
     assert client.post(f"/automations/{aid}/queue/clear").json() == {"cancelled": 0}
 
     a["_live"] = {"blocking"}
-    trig = {"id": "t1", "kind": "discord", "off": False, "secret": "TOKEN", "channel": "42"}
+    trig = {"id": "t1", "kind": "discord", "enabled": True, "secret": "TOKEN", "channel": "42"}
     for sender in ("Dave", "Ana"):
         fire_trigger(store, api_mod.engine, a, trig,
                      payload={"kind": "discord", "channel": "42", "secret": "TOKEN",
@@ -1678,7 +1678,7 @@ def test_queue_clear_endpoint(client, monkeypatch):
 # ---------- §4.1 step-flag spelling boundary (api._norm_steps) ----------
 
 def _flagged_steps():
-    return [{"file": "01-s.py", "name": "S", "desc": "",
+    return [{"file": "01-s.py", "name": "S", "description": "",
              "code": "from autowright import log\nlog('x')\n",
              "noTimeout": True, "infiniteRetries": True}]
 
@@ -1757,7 +1757,7 @@ def test_execute_trigger_menubar_and_validation(client, monkeypatch):
                        json={"trigger": "cron"}).status_code == 422
     r = client.post(f"/automations/{a['id']}/execute", json={"trigger": "menubar"})
     assert r.status_code == 200
-    eid = r.json()["execId"]
+    eid = r.json()["executionId"]
     _until_finished(events, eid)
     # §4.5: the record stores the machine kind; the label derives at serialization
     assert store.execs[eid]["trigger"] == "menubar"
@@ -1791,14 +1791,14 @@ def test_draft_endpoints_409_while_draft_execution_live(client):
         a["_live"].discard(h2["id"])
 
 
-# ---------- §4.5 exec_json full record: workspace + redact list ----------
+# ---------- §4.5 execution_json full record: workspace + redact list ----------
 
 def test_exec_full_workspace_path_and_redact_list(client):
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Redacted", "mock")
     h = store.create_execution(a, "version", 1, "manual", [], status="succeeded")
-    h["redacted"] = ["MY_TOKEN", "OTHER_KEY"]
+    h["redacted_secrets"] = ["MY_TOKEN", "OTHER_KEY"]
     store.update_execution(h)
 
     full = client.get(f"/executions/{h['id']}").json()
@@ -1807,12 +1807,12 @@ def test_exec_full_workspace_path_and_redact_list(client):
     import os
     assert os.path.isabs(full["workspace"])
     # §4.5: redact is a LIST — display surfaces join it themselves
-    assert full["redact"] == ["MY_TOKEN", "OTHER_KEY"]
+    assert full["redactedSecrets"] == ["MY_TOKEN", "OTHER_KEY"]
 
     h2 = store.create_execution(a, "version", 1, "manual", [], status="succeeded")
     store.update_execution(h2)
     full2 = client.get(f"/executions/{h2['id']}").json()
-    assert full2["redact"] is None  # nothing redacted → null, never ""
+    assert full2["redactedSecrets"] is None  # nothing redacted → null, never ""
 
 
 # ---------- §4.7 agent default pointer branches ----------
@@ -1854,24 +1854,24 @@ def test_chat_assembles_recent_runs_and_run_id_forces_detail(client, monkeypatch
     from autowright.storage import store
 
     events = _capture_events(monkeypatch)
-    old_steps = [{"file": "01-boom.py", "name": "Boom", "desc": "",
+    old_steps = [{"file": "01-boom.py", "name": "Boom", "description": "",
                   "code": "from autowright import log\nlog('OLD-TAIL-MARK')\n"
                           "raise KeyError('old boom')\n"}]
     a = store.create_automation(make_version(steps=old_steps), "Chat runs", "mock")
-    old_eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["execId"]
-    assert _until_finished(events, old_eid)["exec_json"]["status"] == "failed"
+    old_eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    assert _until_finished(events, old_eid)["execution_json"]["status"] == "failed"
 
-    new_steps = [{"file": "01-boom.py", "name": "Boom", "desc": "",
+    new_steps = [{"file": "01-boom.py", "name": "Boom", "description": "",
                   "code": "from autowright import log\nlog('NEW-TAIL-MARK')\n"
                           "raise KeyError('new boom')\n"}]
     assert client.post(f"/automations/{a['id']}/versions",
                        json={"draft": {**make_version(), "steps": new_steps}}).status_code == 200
     events.clear()
-    new_eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["execId"]
-    assert _until_finished(events, new_eid)["exec_json"]["status"] == "failed"
+    new_eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    assert _until_finished(events, new_eid)["execution_json"]["status"] == "failed"
 
     # without runId: the newest run alone carries its log tail
-    r = client.post("/drafts", json={"mode": "chat", "autoId": a["id"], "agentId": "mock",
+    r = client.post("/drafts", json={"mode": "chat", "automationId": a["id"], "agentId": "mock",
                                      "text": "Why did the last run fail?"})
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
@@ -1882,7 +1882,7 @@ def test_chat_assembles_recent_runs_and_run_id_forces_detail(client, monkeypatch
     assert "OLD-TAIL-MARK" not in logged   # older run stays summary-only
 
     # runId (the §11 Fix-with-AI entry) forces the old run in, in full detail
-    r = client.post("/drafts", json={"mode": "chat", "autoId": a["id"], "agentId": "mock",
+    r = client.post("/drafts", json={"mode": "chat", "automationId": a["id"], "agentId": "mock",
                                      "text": "Why did that older run fail?",
                                      "runId": old_eid})
     j = _wait_job(client, r.json()["jobId"])

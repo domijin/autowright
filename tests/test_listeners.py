@@ -21,7 +21,7 @@ def _msg(**over):
 
 
 def _trig(**over):
-    t = {"id": "t1", "kind": "discord", "off": False,
+    t = {"id": "t1", "kind": "discord", "enabled": True,
          "channel": "42", "secret": "TOKEN"}
     t.update(over)
     return t
@@ -186,7 +186,7 @@ def test_dispatch_fires_matching_triggers_with_payload(store):
     a = store.create_automation(make_version(), "Chat", None)
     a["triggers"] = [_trig()]
     b = store.create_automation(make_version(), "Other", None)
-    b["triggers"] = [_trig(channel="99"), _trig(id="t2", off=True)]
+    b["triggers"] = [_trig(channel="99"), _trig(id="t2", enabled=False)]
     li = Listeners(store, FakeEngine())
     li.dispatch("TOKEN", _msg(), bot_id="bot9",
                 chan_names={"42": "deploys"}, guild_names={"g1": "Ops"})
@@ -204,20 +204,20 @@ def test_dispatch_fires_matching_triggers_with_payload(store):
 
 def test_desired_secrets_and_status(store):
     a = store.create_automation(make_version(), "Chat", None)
-    a["triggers"] = [_trig(), _trig(id="t2", secret="TOKEN_B", off=True)]
+    a["triggers"] = [_trig(), _trig(id="t2", secret="TOKEN_B", enabled=False)]
     li = Listeners(store, None)
     assert li._desired_secrets() == ({"TOKEN"}, set())  # off triggers don't listen
     li.set_status("TOKEN", "error", "bad token")
     assert store.listener_status["TOKEN"] == {"state": "error", "error": "bad token"}
-    # the §4.3 `conn` rides trigger serialization; unknown secrets read connecting
+    # the §4.3 `connection` rides trigger serialization; unknown secrets read connecting
     t_json = store.trigger_json(a["triggers"][0])
-    assert t_json["conn"] == {"state": "error", "error": "bad token"}
-    assert store.trigger_json(a["triggers"][1])["conn"] == {"state": "connecting"}
+    assert t_json["connection"] == {"state": "error", "error": "bad token"}
+    assert store.trigger_json(a["triggers"][1])["connection"] == {"state": "connecting"}
 
 
-def _wait_done(engine, exec_id, timeout=30):
+def _wait_done(engine, execution_id, timeout=30):
     t0 = time.time()
-    while engine.is_live(exec_id):
+    while engine.is_live(execution_id):
         assert time.time() - t0 < timeout, "execution never finished"
         time.sleep(0.05)
 
@@ -230,7 +230,7 @@ def test_engine_reply_and_payload_end_to_end(store, monkeypatch):
     monkeypatch.setattr(li_mod, "send_reply",
                         lambda payload, text: sent.append((payload, text)) or None)
     ver = make_version()
-    ver["steps"] = [{"file": "01-echo.py", "name": "Echo", "desc": "",
+    ver["steps"] = [{"file": "01-echo.py", "name": "Echo", "description": "",
                      "code": 'from autowright import execution, reply\nreply(f"got: {execution.trigger_payload[\'text\']}")\n'}]
     a = store.create_automation(ver, "Replier", None)
     engine = Engine(store)
@@ -254,7 +254,7 @@ def test_reply_outside_message_trigger_fails_step(store):
     from autowright.engine import Engine
 
     ver = make_version()
-    ver["steps"] = [{"file": "01-nope.py", "name": "Nope", "desc": "",
+    ver["steps"] = [{"file": "01-nope.py", "name": "Nope", "description": "",
                      "code": 'from autowright import reply\nreply("hi")\n'}]
     a = store.create_automation(ver, "NoOrigin", None)
     engine = Engine(store)
@@ -308,14 +308,14 @@ def test_reconcile_starts_and_stops_listeners(store, monkeypatch):
 
     # trigger toggled off → conn stopped AND its status entry removed
     li.set_status("TOKEN", "connected")
-    a["triggers"][0]["off"] = True
+    a["triggers"][0]["enabled"] = False
     events.clear()
     li._reconcile()
     assert events == [("conn-stop", "TOKEN")]
     assert "TOKEN" not in store.listener_status
 
     # imessage trigger appears → the one watcher is created and ticked
-    a["triggers"] = [{"id": "t9", "kind": "imessage", "off": False,
+    a["triggers"] = [{"id": "t9", "kind": "imessage", "enabled": True,
                       "from": "dave@example.com"}]
     events.clear()
     li._reconcile()
@@ -341,7 +341,7 @@ def _imsg(**over):
 
 
 def _imsg_trig(**over):
-    t = {"id": "t1", "kind": "imessage", "off": False, "from": "dave@example.com"}
+    t = {"id": "t1", "kind": "imessage", "enabled": True, "from": "dave@example.com"}
     t.update(over)
     return t
 
@@ -362,7 +362,7 @@ def test_dispatch_imessage_fires_matching_triggers_with_payload(store):
     a["triggers"] = [_imsg_trig()]
     b = store.create_automation(make_version(), "Other", None)
     b["triggers"] = [_imsg_trig(**{"from": "other@example.com"}),
-                     _imsg_trig(id="t2", off=True)]
+                     _imsg_trig(id="t2", enabled=False)]
     li = Listeners(store, FakeEngine())
     li.dispatch_imessage(_imsg())
     assert [f[0] for f in fired] == [a["id"]]  # b: wrong sender / off

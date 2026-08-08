@@ -15,13 +15,13 @@ Does things.
 GOOD_STEPS = """some prose the parser must ignore
 ===FILE: manifest.yaml===
 name: Hello
-desc: Says hello
+description: Says hello
 note: Created
 params:
   - { name: on_off, kind: toggle, label: On, help: h, default: true }
 steps:
-  - { file: 01-a.py, name: A, desc: d }
-  - { file: 02-b.py, name: B, desc: d, agent: true, why: needs judgment }
+  - { file: 01-a.py, name: A, description: d }
+  - { file: 02-b.py, name: B, description: d, agent: true, why: needs judgment }
 ===FILE: 01-a.py===
 from autowright import log
 log("a")
@@ -42,7 +42,7 @@ def test_parse_and_validate_spec_good():
     assert set(files) == {"spec.md"}
     spec, errors = validate_spec(files)
     assert errors == []
-    assert spec["blocks"][0] == {"k": "h1", "text": "Hello"}
+    assert spec["blocks"][0] == {"kind": "h1", "text": "Hello"}
     assert "Does things." in spec["md"]
 
 
@@ -92,7 +92,7 @@ def test_triggers_key_is_parsed():
         "note: Created\n", 'note: Created\ntriggers:\n  - cron: "30 7 * * 2"\n')
     draft, errors = validate_steps(parse_envelope(withtrig))
     assert errors == []
-    assert draft["triggers"] == [{"kind": "cron", "expr": "30 7 * * 2", "off": False}]
+    assert draft["triggers"] == [{"kind": "cron", "expression": "30 7 * * 2", "enabled": True}]
 
 
 def test_triggers_bad_entries_rejected():
@@ -120,17 +120,17 @@ def test_triggers_message_and_app_start_parsed():
     draft, errors = validate_steps(parse_envelope(withtrig))
     assert errors == []
     assert draft["triggers"] == [
-        {"kind": "imessage", "from": "+15551234567", "off": False, "pattern": "go"},
-        {"kind": "discord", "channel": "123456", "secret": "BOT", "off": False,
+        {"kind": "imessage", "from": "+15551234567", "enabled": True, "pattern": "go"},
+        {"kind": "discord", "channel": "123456", "secret": "BOT", "enabled": True,
          "mention": True, "author": ["777"]},   # scalar shorthand → one-element list
-        {"kind": "discord", "channel": "123456", "secret": "BOT", "off": False,
+        {"kind": "discord", "channel": "123456", "secret": "BOT", "enabled": True,
          "author": ["888", "999"]},             # lists normalize sorted
-        {"kind": "app_start", "off": False}]
+        {"kind": "app_start", "enabled": True}]
 
 
 def test_step_timeout_fields_parsed():
     ok = (GOOD_STEPS
-          .replace("name: A, desc: d }", "name: A, desc: d, timeout: 60 }")
+          .replace("name: A, description: d }", "name: A, description: d, timeout: 60 }")
           .replace("agent: true, why: needs judgment }",
                    "agent: true, why: needs judgment, no_timeout: true }"))
     draft, errors = validate_steps(parse_envelope(ok))
@@ -143,22 +143,22 @@ def test_step_timeout_fields_parsed():
 
 def test_step_timeout_must_be_positive_int():
     for bad_val in ("0", "-5", '"60"', "true"):
-        bad = GOOD_STEPS.replace("name: A, desc: d }",
-                                 f"name: A, desc: d, timeout: {bad_val} }}")
+        bad = GOOD_STEPS.replace("name: A, description: d }",
+                                 f"name: A, description: d, timeout: {bad_val} }}")
         _, errors = validate_steps(parse_envelope(bad))
         assert any("timeout must be a positive integer" in e for e in errors), bad_val
 
 
 def test_step_timeout_and_no_timeout_conflict():
-    bad = GOOD_STEPS.replace("name: A, desc: d }",
-                             "name: A, desc: d, timeout: 60, no_timeout: true }")
+    bad = GOOD_STEPS.replace("name: A, description: d }",
+                             "name: A, description: d, timeout: 60, no_timeout: true }")
     _, errors = validate_steps(parse_envelope(bad))
     assert any("can't be combined" in e for e in errors)
 
 
 def test_step_retry_fields_parsed():
     ok = (GOOD_STEPS
-          .replace("name: A, desc: d }", "name: A, desc: d, retries: 3 }")
+          .replace("name: A, description: d }", "name: A, description: d, retries: 3 }")
           .replace("agent: true, why: needs judgment }",
                    "agent: true, why: needs judgment, infinite_retries: true }"))
     draft, errors = validate_steps(parse_envelope(ok))
@@ -171,15 +171,15 @@ def test_step_retry_fields_parsed():
 
 def test_step_retries_must_be_1_to_10():
     for bad_val in ("0", "-2", "11", '"3"', "true"):
-        bad = GOOD_STEPS.replace("name: A, desc: d }",
-                                 f"name: A, desc: d, retries: {bad_val} }}")
+        bad = GOOD_STEPS.replace("name: A, description: d }",
+                                 f"name: A, description: d, retries: {bad_val} }}")
         _, errors = validate_steps(parse_envelope(bad))
         assert any("retries must be an integer from 1 to 10" in e for e in errors), bad_val
 
 
 def test_step_retries_and_infinite_retries_conflict():
-    bad = GOOD_STEPS.replace("name: A, desc: d }",
-                             "name: A, desc: d, retries: 2, infinite_retries: true }")
+    bad = GOOD_STEPS.replace("name: A, description: d }",
+                             "name: A, description: d, retries: 2, infinite_retries: true }")
     _, errors = validate_steps(parse_envelope(bad))
     assert any("retries and infinite_retries can't be combined" in e for e in errors)
 
@@ -323,7 +323,7 @@ def test_prompts_carry_blocker_contract():
 def test_spec_prompt_section_order():
     # §8 call 1 (create): framework, agents, secrets, build instructions,
     # user request, then the TASK ask — role first, task last.
-    cur = {"instr": "Never touch the Documents folder.", "params": [], "steps": []}
+    cur = {"instructions": "Never touch the Documents folder.", "params": [], "steps": []}
     p = build_spec_prompt("watch prices", cur, GRANTS)
     order = [p.index("=== FRAMEWORK INSTRUCTIONS ==="), p.index("=== AVAILABLE AGENTS"),
              p.index("=== AVAILABLE SECRETS"), p.index("=== BUILD INSTRUCTIONS"),
@@ -352,13 +352,13 @@ def test_chat_prompt_section_order_and_content():
     # §8 chat call: framework, grants, build instructions, conversation,
     # automation identity, spec, current parameters, current steps, user
     # request, then the shape-deciding TASK.
-    cur = {"instr": "Never touch the Documents folder.",
-           "name": "Manga watcher", "desc": "Checks my manga list.",
-           "spec": [{"k": "h1", "text": "Title"}, {"k": "p", "text": "Block spec body."}],
+    cur = {"instructions": "Never touch the Documents folder.",
+           "name": "Manga watcher", "description": "Checks my manga list.",
+           "spec": [{"kind": "h1", "text": "Title"}, {"kind": "p", "text": "Block spec body."}],
            "params": [{"name": "sources", "kind": "list", "label": "Manga URLs",
                        "lines": ["https://a.example"]}],
-           "triggers": [{"id": "t1", "kind": "cron", "expr": "0 8 * * *", "off": False},
-                        {"id": "t2", "kind": "imessage", "from": "+15551234567", "off": True}],
+           "triggers": [{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": True},
+                        {"id": "t2", "kind": "imessage", "from": "+15551234567", "enabled": False}],
            "steps": [{"file": "01-a.py", "name": "A", "code": 'from autowright import log\nlog("current")'}]}
     chat = [{"kind": "user", "text": "earlier request"},
             {"kind": "answer", "text": "earlier answer"},
@@ -377,7 +377,7 @@ def test_chat_prompt_section_order_and_content():
     assert "Block spec body." in p
     assert 'log("current")' in p                        # chat DOES see the steps
     # §8 AUTOMATION — current name/desc travel so rename/desc actions edit what's there
-    assert "name: Manga watcher" in p and "desc: Checks my manga list." in p
+    assert "name: Manga watcher" in p and "description: Checks my manga list." in p
     # §8 CURRENT parameters — the names test_values keys must use, values included
     assert "name: sources" in p and "https://a.example" in p
     assert "test_values keys must be these names" in p
@@ -427,9 +427,9 @@ def test_steps_prompt_sync_embeds_current_triggers():
     # rule-9 dialect with off / one-shot entries marked as context only.
     cur = {"params": [], "steps": [],
            "triggers": [
-               {"id": "t1", "kind": "cron", "expr": "0 8 * * *", "off": False},
-               {"id": "t2", "kind": "imessage", "from": "+15551234567", "off": True},
-               {"id": "t3", "kind": "time", "at": "2030-01-01T09:00", "off": False}]}
+               {"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": True},
+               {"id": "t2", "kind": "imessage", "from": "+15551234567", "enabled": False},
+               {"id": "t3", "kind": "time", "at": "2030-01-01T09:00", "enabled": True}]}
     p = build_steps_prompt("sync", "# T\n\nBody.", cur, GRANTS)
     assert "=== CURRENT triggers" in p
     assert "cron: 0 8 * * *" in p
@@ -442,15 +442,15 @@ def test_steps_prompt_sync_embeds_current_triggers():
 def test_spec_as_md_accepts_blocks_and_strings():
     # UI "ask the agent" flow serializes the in-editor draft as §5 blocks; the
     # §19 `spec` body field arrives as a raw markdown string. Both must work.
-    blocks = {"spec": [{"k": "h1", "text": "Title"}, {"k": "h2", "text": "Change (draft)"},
-                       {"k": "p", "text": "Block spec body."}]}
+    blocks = {"spec": [{"kind": "h1", "text": "Title"}, {"kind": "h2", "text": "Change (draft)"},
+                       {"kind": "p", "text": "Block spec body."}]}
     assert "## Change (draft)" in spec_as_md(blocks)
     assert spec_as_md({"spec": "# Raw\n\nString spec body."}) == "# Raw\n\nString spec body."
 
 
 def test_prompts_carry_build_instructions_in_every_mode():
     # §8: build instructions travel with BOTH calls, in every mode.
-    cur = {"instr": "Never touch the Documents folder.", "spec": "# T", "params": [], "steps": []}
+    cur = {"instructions": "Never touch the Documents folder.", "spec": "# T", "params": [], "steps": []}
     for p in (build_spec_prompt("do the thing", cur, GRANTS),
               build_chat_prompt("do the thing", cur, GRANTS)):
         assert "BUILD INSTRUCTIONS" in p and "Never touch the Documents folder." in p
@@ -507,7 +507,7 @@ def test_create_job_payload_carries_spec_mid_job(monkeypatch):
             break
         time.sleep(0.05)
     assert j["status"] == "done", j
-    assert seen["mid"] and seen["mid"]["spec"][0] == {"k": "h1", "text": "Hello"}
+    assert seen["mid"] and seen["mid"]["spec"][0] == {"kind": "h1", "text": "Hello"}
 
 
 import time as _time
@@ -549,7 +549,7 @@ def test_build_failure_record_on_repaired_round(home, devmode, monkeypatch):
     j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "tweak it",
                  {"spec": "# T\n\nbody"}, GRANTS)
     assert j["status"] == "done", j
-    assert j["draft"]["spec"][0] == {"k": "h1", "text": "Hello"}
+    assert j["draft"]["spec"][0] == {"kind": "h1", "text": "Hello"}
     files = sorted((home / "logs" / "build-failures").iterdir())
     assert len(files) == 1
     assert "_chat-chat_repaired" in files[0].name
@@ -613,8 +613,8 @@ def test_progress_detail_from_streamed_markers():
     cb("let me plan this")
     assert job["detail"] == "Thinking…"
     cb("\n===FILE: manifest.yaml===\nname: T\ndesc: d\nsteps:\n"
-       "  - { file: 01-a.py, name: A, desc: a }\n"
-       "  - { file: 02-b.py, name: B, desc: b }\n")
+       "  - { file: 01-a.py, name: A, description: a }\n"
+       "  - { file: 02-b.py, name: B, description: b }\n")
     assert job["detail"] == "Writing the manifest — name, triggers, parameters, step list"
     cb("===FILE: 01-a.py===\nx = 1\ny = 2\n")
     assert job["detail"] == "Writing step 1 of 2 — 01-a.py · 2 lines"
@@ -645,9 +645,9 @@ def test_step_agents_and_secrets_validate_against_grants():
     # §8 rules 6/7: per-step `agents`/`secrets` must name granted entries; both
     # ride the normalized steps.
     files = {
-        "manifest.yaml": ("desc: d\nnote: n\nsteps:\n"
-                          "  - { file: 01-a.py, name: A, desc: x, secrets: [TOKEN] }\n"
-                          "  - { file: 02-b.py, name: B, desc: y, agent: true, why: w, agents: [Fast] }\n"),
+        "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
+                          "  - { file: 01-a.py, name: A, description: x, secrets: [TOKEN] }\n"
+                          "  - { file: 02-b.py, name: B, description: y, agent: true, why: w, agents: [Fast] }\n"),
         "01-a.py": "from autowright import log\nlog('a')\n",
         "02-b.py": "from autowright import log\nlog('b')\n",
     }
@@ -735,7 +735,7 @@ sync: true
 test: true
 test_values: { url: "https://example.com" }
 name: Better hello
-desc: Says hello better
+description: Says hello better
 ===END===
 """
     monkeypatch.setattr(harness, "invoke", lambda agent, prompt, **kw: resp)
@@ -744,12 +744,12 @@ desc: Says hello better
     assert j["status"] == "done", j
     d = j["draft"]
     assert d["answer"] == "Fixed — I also queued a rebuild and a test."
-    assert d["spec"][0] == {"k": "h1", "text": "Hello"}
-    assert d["instr"] == "Prefer Python."
+    assert d["spec"][0] == {"kind": "h1", "text": "Hello"}
+    assert d["instructions"] == "Prefer Python."
     assert "sitemap" in d["notes"]
     assert d["actions"] == {"sync": True, "test": True,
                             "testValues": {"url": "https://example.com"},
-                            "name": "Better hello", "desc": "Says hello better"}
+                            "name": "Better hello", "description": "Says hello better"}
 
 
 def test_chat_response_rejects_step_files(monkeypatch):
@@ -978,13 +978,13 @@ def test_empty_grants_render_literal_none_in_every_prompt():
 PER_BLOCK_END_STEPS = """prose the parser must ignore
 ===FILE: manifest.yaml===
 name: Hello
-desc: Says hello
+description: Says hello
 note: Created
 params:
   - { name: on_off, kind: toggle, label: On, help: h, default: true }
 steps:
-  - { file: 01-a.py, name: A, desc: d }
-  - { file: 02-b.py, name: B, desc: d, agent: true, why: needs judgment }
+  - { file: 01-a.py, name: A, description: d }
+  - { file: 02-b.py, name: B, description: d, agent: true, why: needs judgment }
 ===END===
 some prose between the blocks
 ===FILE: 01-a.py===
@@ -1398,7 +1398,7 @@ def test_prompts_carry_untrusted_input_and_web_policy_sections():
 
 
 def test_default_build_instructions_carry_untrusted_data_bullet():
-    # default-build-instructions.md seeds `instr` for new automations — the
+    # default-build-instructions.md seeds `instructions` for new automations — the
     # outside-text-is-data rule must stay in the packaged default.
     from autowright.drafting import DEFAULT_INSTRUCTIONS
 
@@ -1490,7 +1490,7 @@ def test_runs_context_success_detail_and_result_excerpt(home):
     a = store.create_automation(make_version(), "Runner", None)
     h = _settled_run(store, a, 1, "succeeded", "2026-08-01T08:00:00+00:00",
                      steps=[{"name": "A", "file": "01-a.py", "status": "succeeded",
-                             "dur_ms": 2500}])
+                             "duration_ms": 2500}])
     h["chip"] = "3 new chapters"
     rdir = store.exec_dir(h["id"]) / "result"
     (rdir / "result.md").write_text("# Result\n" + "x" * 3000, encoding="utf-8")

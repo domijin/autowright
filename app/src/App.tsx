@@ -173,7 +173,8 @@ export default function App() {
     return <BootSplash waiting={connected === false} />
   }
 
-  if (surface === 'menubar') return <MenuBarPanel />
+  // §13: the panel renders its own Toast — a failed tray execute is never silent
+  if (surface === 'menubar') return <><MenuBarPanel /><Toast msg={toast} /></>
   if (surface === 'onboard') return <><Onboarding /><Toast msg={toast} /><DevLogOverlay /></>
 
   return (

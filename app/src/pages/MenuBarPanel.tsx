@@ -7,7 +7,7 @@ import { badgeOf, Eyebrow, PULSE, ScrollArea } from '../ui'
 const dotColor = (s: string) => badgeOf(s).c
 
 export default function MenuBarPanel() {
-  const { autos, version } = useStore()
+  const { autos, version, showToast } = useStore()
   const ref = useRef<HTMLDivElement>(null)
 
   const failed = autos.filter((a) => a.lastStatus === 'failed').length
@@ -49,7 +49,15 @@ export default function MenuBarPanel() {
             <div
               key={a.id}
               className="ad-hover-row"
+              role="button"
+              tabIndex={0}
               onClick={() => openAuto(a.id)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                if ((e.target as HTMLElement).closest('button')) return
+                e.preventDefault()
+                openAuto(a.id)
+              }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',
                 cursor: 'pointer',
@@ -75,7 +83,7 @@ export default function MenuBarPanel() {
                 className="ad-btn-exec"
                 onClick={(e) => {
                   e.stopPropagation()
-                  if (!live) void api.executeNow(a.id, undefined, 'menubar').catch(() => undefined)
+                  if (!live) void api.executeNow(a.id, undefined, 'menubar').catch((err: Error) => showToast(err.message))
                 }}
                 disabled={live}
                 title={live ? 'Executing…' : 'Execute now'}
@@ -105,7 +113,7 @@ export default function MenuBarPanel() {
         >
           Open Autowright
         </button>
-        <span style={{ font: '500 11px var(--mono)', color: 'var(--text-deco)' }}>v{version || '0.1.0'}</span>
+        <span style={{ font: '500 11px var(--mono)', color: 'var(--text-faint)' }}>v{version || '0.1.0'}</span>
       </div>
     </div>
   )

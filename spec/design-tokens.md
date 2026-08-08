@@ -98,7 +98,22 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   never wrap (`white-space: nowrap` on all action/text button classes) — a tight flex row must
   yield elsewhere, never by squeezing a button onto two lines. Non-action
   controls keep their own scale: `.ad-btn-pill` (mono metadata pill), `.ad-chip-btn`
-  (example-prompt chip), `.ad-btn-x` (row-remove ✕), `.ad-btn-exec` (square icon button).
+  (example-prompt chip), `.ad-btn-x` (row-remove ✕), `.ad-btn-exec` (square icon button),
+  `.ad-btn-icon` (the 26×26 borderless icon-only row action — secrets edit/delete, trigger
+  edit — `.ad-btn-text` colors in a fixed square box; call sites never rebuild it from
+  `.ad-btn-text` with inline size overrides). `.ad-btn-bare` resets button chrome (no
+  background/border/padding, inherited font/color/text-align, full-width) so clickable
+  cards and rows can be real `<button>`s (§9 keyboard convention) while their surface class
+  (`.ad-card-click`, `.ad-hover-row`) keeps owning the visuals. `.ad-seg` is the segmented
+  filter group (hairline border, radius 8, overflow hidden) of `.ad-seg-btn` segments
+  (13 px, 7 px 14 px, hairline left divider between segments, `--bg-active` wash +
+  `--text` on the active segment via `aria-pressed`, `--t-hover` transition) — the
+  Executions All / Succeeded / Failed control; never hand-rolled from `.ad-btn-text`.
+  `.ad-focus-inset` flips the global focus ring inside the element (outline-offset −2 px)
+  for controls clipped by an `overflow: hidden` card (§9 focus convention). Every pickable
+  control (harness cards, model/radio rows, kind chips, attempt pills, tabs) carries a
+  hover treatment and transitions its state swap at `--t-hover` — no inert pickers, no
+  instant background jumps.
   `.ad-btn-amber` is the amber filled action button (Ollama sign-in/install CTAs): primary
   geometry (600 13 px, 9 px 16 px, radius 8), `--amber` fill, `--on-accent` text,
   hover `oklch(0.84 0.13 85)`. `.ad-btn-primary.looks-disabled` renders the disabled
@@ -110,7 +125,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   borders/headers), `--bg-code` + `--code-text` (script/log wells). Recurring fragments are
   `ui.tsx` primitives: `MiniBadge` (uppercase mono chip; status `Badge` maps onto it),
   `ProgressBar` (`pct: number | null` — null renders the indeterminate `adBarSlide` bar; the
-  only progress bar, never hand-rolled), `GreenCheck`, `Spinner` (optional `color`; inline
+  only progress bar, never hand-rolled; a percent label beside it renders only when `pct`
+  is a number — an indeterminate bar never shows "0%"),
+  `Tag` (the small mono info tag on step rows — radius 6, padding 2 px 8 px, 10 px mono
+  500, `--bg-inset` background, hairline border; optional leading icon; one primitive for
+  the create-flow review, detail-page STEPS, and import-preview step tags alike), `GreenCheck`, `Spinner` (optional `color`; inline
   next-to-label size is 13), `PageTitle`, `Eyebrow`, `EmptyState` (dashed-card empty state
   with CTA — automations/agents/secrets lists), `EmptyNotice` (dashed card, title 13.5/500 +
   12.5 muted body — executions list, execution page, detail page), `LoadingRow` (Spinner 13 +

@@ -10,7 +10,7 @@
 import { useEffect, useReducer, useRef } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import { Eyebrow, LoadingRow, Logo, MiniBadge, ProgressBar, PULSE, ScrollArea, Spinner } from '../ui'
+import { Caret, Eyebrow, LoadingRow, Logo, MiniBadge, ProgressBar, PULSE, ScrollArea, Spinner } from '../ui'
 
 interface Det { id: string; name: string; installed: boolean; signedIn: boolean | null; detail: string }
 
@@ -464,6 +464,8 @@ export default function Onboarding() {
     })()
   }
   const obSkip = () => {
+    if (ob.committing) return
+    up((o) => { o.committing = true })
     void (async () => {
       try {
         await commitOnboardAgents(null)
@@ -657,9 +659,7 @@ export default function Onboarding() {
                     }}
                   >
                     <Eyebrow>OR TRY SOMETHING NEW</Eyebrow>
-                    <svg width="10" height="10" viewBox="0 0 10 10" style={{ color: 'var(--text-faint)', transform: ob.sugOpen ? 'rotate(180deg)' : 'none', transition: 'transform var(--t-hover) var(--ease-enter)' }}>
-                      <path d="M2 3.5 L5 6.5 L8 3.5" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+                    <Caret open={ob.sugOpen} openDeg={180} closedDeg={0} style={{ color: 'var(--text-faint)' }} />
                   </button>
                 )}
                 {(foundList.length === 0 || ob.sugOpen) && (
@@ -674,6 +674,7 @@ export default function Onboarding() {
               <button
                 className="ad-btn-text dim"
                 onClick={obSkip}
+                disabled={ob.committing}
               >
                 Skip for now
               </button>
@@ -751,7 +752,11 @@ export default function Onboarding() {
             disabled={ob.committing}
             style={{ flex: 'none', opacity: ob.committing ? 0.6 : 1 }}
           >
-            {CONTINUE_LABEL}
+            {ob.committing && ob.chosen === f.id ? (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <Spinner size={13} /> Setting up…
+              </span>
+            ) : CONTINUE_LABEL}
           </button>
         )}
       </div>
@@ -822,7 +827,11 @@ export default function Onboarding() {
               disabled={ob.committing}
               style={{ flex: 'none', opacity: ob.committing ? 0.6 : 1 }}
             >
-              {CONTINUE_LABEL}
+              {ob.committing && ob.chosen === p.id ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <Spinner size={13} /> Setting up…
+                </span>
+              ) : CONTINUE_LABEL}
             </button>
           )}
         </div>

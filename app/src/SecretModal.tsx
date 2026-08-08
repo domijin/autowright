@@ -129,12 +129,9 @@ export function SecretModal({ modal, onClose, onSaved }: {
                 } as React.CSSProperties}
               />
               <button
-                className="ad-btn-text"
+                className="ad-btn-text small"
                 onClick={() => setShow(!show)}
-                style={{
-                  position: 'absolute', right: 5, top: 6, borderRadius: 6,
-                  fontWeight: 500, fontSize: 11, padding: '4px 9px',
-                }}
+                style={{ position: 'absolute', right: 9, top: 11, borderRadius: 6 }}
               >
                 {show ? 'Hide' : 'Show'}
               </button>

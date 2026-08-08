@@ -49,6 +49,32 @@ current one and replays the fade-up entrance. Centering must not use `transform`
 animation animates `transform` and would knock the toast off-center while it plays); it uses
 `left/right: 0` + auto margins + fit-content width.
 
+**Interaction conventions** (every page, both windows):
+
+- Anything clickable is a real `<button>` (or an anchor for links) — cards, list/table rows,
+  picker rows, chips, tags. No `div onClick`: every interactive surface is reachable with
+  Tab and activates with Enter/Space. Row/card buttons reset button chrome
+  (`.ad-btn-bare`: no background/border, inherit font/color/text-align, full width) and then
+  carry their surface class (`.ad-card-click`, `.ad-hover-row`, …).
+- Icon-only buttons always carry an `aria-label` (the `title` tooltip stays for sighted
+  users). `Toggle` renders `role="switch"` + `aria-checked`; radio groups (`RadioRing`
+  rows) render `role="radio"`/`aria-checked` inside a `role="radiogroup"`; a segmented
+  filter's buttons carry `aria-pressed`.
+- The §14 focus ring must never be clipped: controls inside an `overflow: hidden` card use
+  the inset variant (`.ad-focus-inset` — outline-offset −2 px) so the ring draws inside the
+  clip instead of being cut.
+- A page whose data hasn't loaded yet renders a centered `LoadingRow` — never a blank pane.
+- One-click destructive actions (delete, remove trigger, clear) always confirm first —
+  `ConfirmModal` or the row's inline confirm swap; never a bare instant delete.
+- Popover menus with unbounded content (the version menus, the timezone picker) cap at
+  60 vh and scroll inside (`ScrollArea`) — rows never render past the window edge.
+- Modal cards cap at 84 vh and scroll inside (`ScrollArea`, built into the `Modal` shell) —
+  content and footer buttons can never render off-screen. (The §9.4 doc modal keeps its
+  tighter 62 vh body.)
+- Buttons that fire a multi-request commit disable **and** show busy feedback (spinner or
+  label swap) while in flight; sibling actions that would double-fire the commit disable
+  with them.
+
 Text selection: all text is selectable by default — any piece of information on screen
 (titles, badges, chips, labels, list rows, logs, paths, parameter values, scripts) can be
 highlighted and copied. The only unselectable elements are buttons and the title-bar drag
@@ -127,7 +153,9 @@ a square accent-filled **inline execute button** per card (rounded square, solid
 background with a dark play icon — same fill treatment as the primary button; hover brightens;
 while that automation is executing it swaps to a spinner, dims, and is disabled — tooltip
 explains why). The card carries no last-execution label — `lastExecLabel` appears on the detail page and in the
-menu bar. Empty state (dashed card):
+menu bar. The card name stays on one line — ellipsized with the full name as a `title`
+tooltip (same treatment as the detail-page title), so long names never wrap and desync card
+heights across a grid row. Empty state (dashed card):
 "No automations yet. Describe a job in plain words — your AI writes it as scripts you can read,
 and Autowright executes them on your schedule." with accent CTA "Create your first automation".
 
@@ -172,7 +200,9 @@ Sections top to bottom:
   fa-comment for imessage;
   §4.3 `label`; a fa-pen **edit** button — every kind except app start, which has nothing to
   edit; per-row on/off toggle;
-  remove ×), the §4.3
+  remove × — removing confirms first (`ConfirmModal`: "Remove this trigger?" /
+  "`<label>` is removed from this automation. Its settings are gone — add it again to get
+  it back." / Cancel / red Remove trigger)), the §4.3
   status line beneath the rows, and an **"+ Add trigger"** button opening an inline editor.
   The editor fades up on entry (`.ad-anim-item`) — both from Add trigger and from a row's
   edit swap; a row's connecting/error status line enters the same way.
@@ -349,7 +379,9 @@ Sections top to bottom:
   confirm "Replaces current memory — the current state is snapshotted first." (pre-restore
   toggle off: "Replaces current memory — automatic snapshots are off, so the current state
   is lost.") (accent
-  Restore / quiet Keep; blocked while an execution is live — the 409 surfaces as a toast);
+  Restore / quiet Keep; while an execution is live the row's Restore action is `disabled`
+  with the tooltip "Blocked while an execution is live" — never a silent no-op click — and
+  a raced 409 still surfaces as a toast);
   Rename swaps to a name input (Save / Cancel; empty clears the name back to "Snapshot");
   Delete swaps to "Delete this snapshot?" (red Delete / quiet Keep). Every inline swap —
   the card's button row and the snapshot rows alike — fades in (`.ad-anim-fade`, a keyed
@@ -449,7 +481,9 @@ Document rows (Privacy policy, Open-source libraries) share one **doc modal**:
 width 680, `h2` title, body caps at 62 vh and scrolls, content
 rendered through the shared §4.5 Markdown renderer, quiet Close in the footer.
 Each document loads through a dynamic `?raw` import so it stays out of the main
-bundle, fetched once on first open.
+bundle, fetched once on first open. A failed load never strands the modal on
+"Loading…": the body swaps to a `--red-text` line ("Couldn't load the document.")
+with a bordered **Retry** button that re-attempts the import.
 
 **APP**
 
@@ -648,7 +682,10 @@ connected/ready cards are committed as agent records — a harness card as
 model, or `qwen3:8b` after a download (a null name always falls
 back to the harness name for display, so agent labels read harness · model, e.g.
 "OpenCode · qwen3:8b" — never the model twice) — and any existing
-automations get the chosen default agent. While committing, all Use-as-default buttons are disabled. "Skip for now" always
+automations get the chosen default agent. While committing, all Use-as-default buttons are disabled
+and the pressed one swaps its label for a `LoadingRow`-style spinner + "Setting up…" (§9
+busy-commit convention), and "Skip for now" disables with them (it fires the same commit —
+an enabled skip would double-fire it). Otherwise "Skip for now" is always
 available (commits any connected providers, goes to the app). Persistent footer: the two
 green-dot promises (§1).
 
@@ -801,7 +838,9 @@ the §9.1 square inline execute button (`ad-btn-exec`, 24 px: solid accent with 
 spinner + disabled while executing, tooltip explains) at the row's right edge — the same run
 button as the Automations list). Row click opens the app on that automation; execute
 button triggers a "Menu bar" execution. Footer: accent "Open Autowright" link + version. Click-outside
-closes. The panel window is not closable, minimizable, or fullscreenable — the default
+closes. The panel renders its own `Toast` (the §9 toast, bottom-center of the panel): an
+execute that fails (e.g. the §7 409 no-free-slot) toasts the error message — a tray
+execute press is never a silent no-op. The panel window is not closable, minimizable, or fullscreenable — the default
 application menu stays active, so Cmd+W/Cmd+M must be no-ops for it (a destroyed or
 minimized panel would otherwise strand the tray toggle on a dead reference). Belt and
 braces: a `closed` handler clears the reference anyway. The panel is visible on all

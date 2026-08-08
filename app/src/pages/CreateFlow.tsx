@@ -10,7 +10,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { api } from '../api'
 import { useStore } from '../store'
 import type { Agent, Auto, Blocker, ChatEntry, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, VersionInfo } from '../types'
-import { BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, Eyebrow, GreenCheck, HeaderActions, MiniBadge, PULSE, PopMenu, ProgressBar, PyCode, ScrollArea, Spinner, Toggle, agName, dispModel, paramSummary, stepTimeoutLabel, stepTimeoutTitle, useOverlayThumb, usePopover, validUrl } from '../ui'
+import { BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, Eyebrow, GreenCheck, HeaderActions, MiniBadge, PULSE, PopMenu, ProgressBar, PyCode, ScrollArea, Spinner, Tag, Toggle, agName, dispModel, paramSummary, stepTimeoutLabel, stepTimeoutTitle, useOverlayThumb, usePopover, validUrl } from '../ui'
 import { nextTriggerShort, triggerLabel } from '../cron'
 import { SecretModal } from '../SecretModal'
 import { Markdown, SpecMarkdown } from '../result'
@@ -135,8 +135,16 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
   return (
     <div style={cardStyle}>
       <div
-        className={inert ? undefined : 'ad-hover-row'}
+        // The header nests action buttons in `right`, so it stays a div with
+        // button semantics (§9: never nest buttons) — Enter/Space toggle it.
+        className={inert ? 'ad-focus-inset' : 'ad-hover-row ad-focus-inset'}
+        role="button"
+        tabIndex={inert ? -1 : 0}
         onClick={() => { if (!inert) onToggle(!open) }}
+        onKeyDown={(e) => {
+          if (inert || e.target !== e.currentTarget) return
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(!open) }
+        }}
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', cursor: inert ? 'default' : 'pointer', userSelect: 'none' }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
@@ -146,15 +154,16 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
         {right}
       </div>
       <Collapse open={!open}>
-        <div
+        <button
+          className="ad-btn-bare ad-focus-inset"
           onClick={() => onToggle(true)}
           style={{
-            padding: '0 20px 13px 43px', font: cardHintFont, color: 'var(--text-deco)', cursor: 'pointer', userSelect: 'none',
+            padding: '0 20px 13px 43px', font: cardHintFont, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none',
             ...(preview != null ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}),
           }}
         >
           {preview ?? hint}
-        </div>
+        </button>
       </Collapse>
       <Collapse open={open}>
         <div style={{ borderTop: '1px solid var(--hairline)' }}>{children}</div>
@@ -166,7 +175,7 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
 // in-card empty state, hint-styled and hint-indented (§11: same left edge as
 // the collapsed line, so an empty card's text stays put when the card opens)
 function CardEmpty({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '10px 20px 16px 43px', font: cardHintFont, color: 'var(--text-deco)' }}>{children}</div>
+  return <div style={{ padding: '10px 20px 16px 43px', font: cardHintFont, color: 'var(--text-muted)' }}>{children}</div>
 }
 
 // §11: the one markdown body every card renders through — same padding, same
@@ -273,13 +282,16 @@ function AgentPick({ agents, selected, onPick, disabled }: {
           {agents.map((g) => {
             const sel = !!selected && g.id === selected.id
             return (
-              <div
+              <button
                 key={g.id}
+                className="ad-btn-bare ad-hover-row"
                 onClick={() => { setOpen(false); onPick(g) }}
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', cursor: 'pointer',
                   borderBottom: '1px solid var(--hairline-dim)',
-                  background: sel ? 'var(--accent-hint-bg)' : 'transparent',
+                  // no inline background when unselected — .ad-hover-row's hover tint must win
+                  ...(sel ? { background: 'var(--accent-hint-bg)' } : {}),
+                  transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
                 }}
               >
                 <span style={{ width: 14, flex: 'none', textAlign: 'center', font: "600 12px var(--mono)", color: 'var(--accent)' }}>{sel ? <i className="fa-solid fa-check" style={{ fontSize: 10 }} /> : ''}</span>
@@ -287,10 +299,10 @@ function AgentPick({ agents, selected, onPick, disabled }: {
                   <div style={{ font: "600 12.5px var(--sans)", color: sel ? 'var(--text)' : 'var(--text-2)' }}>{agName(g)}</div>
                   <div style={{ font: "400 11.5px/1.45 var(--mono)", color: 'var(--text-muted)', marginTop: 1 }}>{dispModel(g)}</div>
                 </div>
-              </div>
+              </button>
             )
           })}
-          <div style={{ padding: '9px 14px', font: "400 11px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
+          <div style={{ padding: '9px 14px', font: "400 11px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
             Writes the spec and generates the steps for this automation. Autowright still executes everything.
           </div>
       </PopMenu>
@@ -572,25 +584,6 @@ export function applyTestValues(ps: ParamDef[], vals: Record<string, unknown>): 
 
 // ---------- step row (read-only agent + secret tags) ----------
 
-// shared shell for the per-step agent / secret / package tags
-function Tag({ title, icon, bg, border, color, children }: {
-  title: string; icon: string; bg: string; border: string; color: string; children: React.ReactNode
-}) {
-  return (
-    <span
-      title={title}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 5,
-        background: bg, border: `1px solid ${border}`,
-        borderRadius: 6, padding: '2px 8px', font: "600 10px var(--mono)",
-        color, whiteSpace: 'nowrap',
-      }}
-    >
-      <i className={`fa-solid ${icon}`} style={{ fontSize: 8.5 }} /> {children}
-    </span>
-  )
-}
-
 function StepRow({ step, i, open, onToggle, availAgents, packages }: {
   step: Step; i: number; open: boolean; onToggle: () => void
   availAgents: Agent[]
@@ -607,8 +600,8 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
   const stepPkgs = packages.filter((p) => new RegExp(`\\b(?:import|from)\\s+${p.import}\\b`).test(step.code || ''))
   return (
     <div style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
-      <div
-        className="ad-hover-row"
+      <button
+        className="ad-btn-bare ad-focus-inset ad-hover-row"
         onClick={onToggle}
         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', cursor: 'pointer' }}
       >
@@ -626,9 +619,11 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
                     ? `${nm} isn’t enabled for steps — this step would fail`
                     : 'No agent is enabled for steps — this step would fail'}
                 icon="fa-microchip"
-                bg={ag ? 'var(--accent-chip-bg)' : 'var(--red-bg)'}
-                border={ag ? 'oklch(0.74 0.155 52 / .3)' : 'oklch(0.7 0.19 25 / .4)'}
-                color={ag ? 'var(--accent-hover)' : 'var(--red-text)'}
+                c={ag ? 'var(--accent-hover)' : 'var(--red-text)'}
+                style={{
+                  background: ag ? 'var(--accent-chip-bg)' : 'var(--red-bg)',
+                  border: `1px solid ${ag ? 'var(--border-card-hover)' : 'oklch(0.7 0.19 25 / .4)'}`,
+                }}
               >
                 {nm ?? 'no agent'}
               </Tag>
@@ -637,7 +632,8 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
               <Tag
                 key={name}
                 title={`This step uses the ${name} secret from your Keychain`}
-                icon="fa-key" bg="var(--hairline-dim)" border="var(--border-btn)" color="var(--text-muted)"
+                icon="fa-key" c="var(--text-muted)"
+                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
               >
                 {name}
               </Tag>
@@ -646,14 +642,16 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
               <Tag
                 key={p.import}
                 title={`This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''} — installed automatically`}
-                icon="fa-cube" bg="var(--hairline-dim)" border="var(--border-btn)" color="var(--text-muted)"
+                icon="fa-cube" c="var(--text-muted)"
+                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
               >
                 {p.import}
               </Tag>
             ))}
             <Tag
               title={stepTimeoutTitle(step)}
-              icon="fa-clock" bg="var(--hairline-dim)" border="var(--border-btn)" color="var(--text-muted)"
+              icon="fa-clock" c="var(--text-muted)"
+              style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
             >
               {stepTimeoutLabel(step)}
             </Tag>
@@ -663,7 +661,7 @@ function StepRow({ step, i, open, onToggle, availAgents, packages }: {
         <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
           <Caret open={open} openDeg={0} closedDeg={90} style={{ fontSize: 12 }} />
         </span>
-      </div>
+      </button>
       <Collapse open={open}>
         {step.agent && (
           <div style={{
@@ -974,6 +972,34 @@ export default function CreateFlow() {
       void api.putPendingDraft(serializeDraft(r), agentIdRef.current).catch(() => { /* backend restarting */ })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // §4.4 continuous persistence: once the draft holds anything worth keeping,
+  // write it with a debounced PUT ~1 s after the last change — quitting the app
+  // mid-edit loses nothing. The unmount save above stays the final flush;
+  // settling (discard / save / create / start over) stops this writer.
+  useEffect(() => {
+    if (!rev || draftSettled.current) return
+    const worthKeeping = isEdit
+      ? !!auto && holdsDraftEdits(rev, auto)
+      : !rev.specBusy && (rev.spec.length > 0 || rev.steps.length > 0)
+    if (!worthKeeping) return
+    const t = setTimeout(() => {
+      if (draftSettled.current) return // settled after the timer armed — never write
+      const r = revRef.current
+      const a = autoRef.current
+      if (!r) return
+      if (isEdit) {
+        if (a && holdsDraftEdits(r, a)) {
+          void api.putDraft(a.id, serializeDraft(r)).catch(() => { /* backend restarting */ })
+        }
+        return
+      }
+      if (!r.specBusy && (r.spec.length || r.steps.length)) {
+        void api.putPendingDraft(serializeDraft(r), agentIdRef.current).catch(() => { /* backend restarting */ })
+      }
+    }, 1000)
+    return () => clearTimeout(t) // each change resets the timer (debounce) and unmount cancels it
+  }, [rev]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11: create mode mounts straight on the empty editor (empty thread,
   // placeholder cards). §4.4: while the pending slot holds a draft it resumes
@@ -1939,10 +1965,9 @@ export default function CreateFlow() {
   const testDone = testSteps.filter((s) => s.status !== 'queued' && s.status !== 'executing').length
   const testLiveIdx = testSteps.findIndex((s) => s.status === 'executing')
   // §11 panel buttons: compact borderless text buttons (the card-header
-  // treatment — never bordered or filled boxes); zero side padding keeps the
-  // rows left-aligned with the panel text, and the rows wrap so a button is
-  // never clipped.
-  const panelBtnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap', padding: '6px 0' }
+  // treatment — never bordered or filled boxes); the class owns the padding,
+  // and the rows wrap so a button is never clipped.
+  const panelBtnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap' }
   const panelRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 18px' }
   // §11 test-setup disclosure: Test the draft never starts a test —
   // it expands the setup section below the action row with every option at once
@@ -2125,12 +2150,12 @@ export default function CreateFlow() {
                       </button>
                     ))}
                   </div>
-                  <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-deco)', marginTop: 14 }}>
+                  <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-muted)', marginTop: 14 }}>
                     Your AI writes the steps — Autowright still executes everything on this Mac.
                   </div>
                 </div>
               ) : (
-                <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-deco)', textAlign: 'center', padding: '26px 12px' }}>
+                <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-muted)', textAlign: 'center', padding: '26px 12px' }}>
                   Ask anything, or describe a change — your AI answers here and rewrites the spec when you ask for changes.
                 </div>
               ))}
@@ -2189,7 +2214,7 @@ export default function CreateFlow() {
                 if (e.kind === 'blockers') {
                   if (e.dismissed) {
                     return (
-                      <div key={e.id} style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)', textAlign: 'center' }}>
+                      <div key={e.id} style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', textAlign: 'center' }}>
                         {(e.blockers ?? []).length} blocker{(e.blockers ?? []).length === 1 ? '' : 's'} — dismissed
                       </div>
                     )
@@ -2394,6 +2419,8 @@ export default function CreateFlow() {
                     <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
                   </button>
                   <PopMenu show={verOpen} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 360 }}>
+                    {/* a long version history scrolls inside the menu instead of past the window */}
+                    <ScrollArea style={{ maxHeight: '60vh' }}>
                       {([
                         {
                           key: 'draft' as const, label: 'Draft',
@@ -2409,13 +2436,16 @@ export default function CreateFlow() {
                       ]).map((it) => {
                         const sel = rev.viewing === it.key
                         return (
-                          <div
+                          <button
                             key={String(it.key)}
+                            className="ad-btn-bare ad-hover-row"
                             onClick={() => pickVersion(it.key)}
                             style={{
                               display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', cursor: 'pointer',
                               borderBottom: '1px solid var(--hairline-dim)',
-                              background: sel ? 'var(--accent-hint-bg)' : 'transparent',
+                              // no inline background when unselected — .ad-hover-row's hover tint must win
+                              ...(sel ? { background: 'var(--accent-hint-bg)' } : {}),
+                              transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
                             }}
                           >
                             <span style={{ width: 14, flex: 'none', textAlign: 'center', font: "600 12px var(--mono)", color: 'var(--accent)' }}>{sel ? <i className="fa-solid fa-check" style={{ fontSize: 10 }} /> : ''}</span>
@@ -2423,9 +2453,10 @@ export default function CreateFlow() {
                               <div style={{ font: "600 12.5px var(--mono)", color: sel ? 'var(--text)' : 'var(--text-2)' }}>{it.label}</div>
                               <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 1 }}>{it.sub}</div>
                             </div>
-                          </div>
+                          </button>
                         )
                       })}
+                    </ScrollArea>
                   </PopMenu>
                 </div>
               )}
@@ -2549,7 +2580,7 @@ export default function CreateFlow() {
                       <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
                       {rev.specUndo && (
                         <button
-                          className="ad-btn-text dim small" disabled={busyRewrite || viewingOld || testLive}
+                          className="ad-btn-text dim small ad-focus-inset" disabled={busyRewrite || viewingOld || testLive}
                           onClick={(e) => { e.stopPropagation(); undoSpec() }}                        >
                           Undo
                         </button>
@@ -2558,7 +2589,7 @@ export default function CreateFlow() {
                         // §11: an old version is browsed read-only — editing
                         // here would mark the draft dirty and lock Restore
                         // behind a disabled sync button.
-                        className="ad-btn-text small" disabled={busyRewrite || viewingOld || testLive}
+                        className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld || testLive}
                         onClick={(e) => {
                           e.stopPropagation()
                           if (busyRewrite || viewingOld || testLive) return
@@ -2580,7 +2611,7 @@ export default function CreateFlow() {
                     ) : (
                       <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
                         <button
-                          className="ad-btn-text dim small"
+                          className="ad-btn-text dim small ad-focus-inset"
                           onClick={(e) => {
                             e.stopPropagation()
                             if (rev.specText !== rev.specTextOrig) { setConfirmSpecCancel(true); return }
@@ -2589,7 +2620,7 @@ export default function CreateFlow() {
                           Cancel
                         </button>
                         <button
-                          className="ad-btn-link small"
+                          className="ad-btn-link small ad-focus-inset"
                           disabled={rev.specText === rev.specTextOrig}
                           onClick={(e) => {
                             e.stopPropagation()
@@ -2611,7 +2642,7 @@ export default function CreateFlow() {
                   {rev.specBusy ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '46px 20px 50px' }}>
                       <span style={{ font: "500 13px var(--sans)", color: 'var(--text-muted)' }}>Writing the spec…</span>
-                      <span style={{ font: "500 11px var(--mono)", color: 'var(--text-deco)' }}>
+                      <span style={{ font: "500 11px var(--mono)", color: 'var(--text-muted)' }}>
                         {selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'No agent'}
                       </span>
                     </div>
@@ -2632,7 +2663,7 @@ export default function CreateFlow() {
                         />
                         {specThumb.node}
                       </div>
-                      <div style={{ padding: '9px 20px', borderTop: '1px solid var(--hairline-dim)', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
+                      <div style={{ padding: '9px 20px', borderTop: '1px solid var(--hairline-dim)', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                         Saving rewrites the steps to match the new spec.
                       </div>
                     </>
@@ -2660,7 +2691,7 @@ export default function CreateFlow() {
                   right={<>
                     {notesOpenEff && !rev.notesEdit && rev.notes.trim() !== '' && (
                       <button
-                        className="ad-btn-text small" disabled={busyRewrite}
+                        className="ad-btn-text small ad-focus-inset" disabled={busyRewrite}
                         onClick={(e) => {
                           e.stopPropagation()
                           if (busyRewrite) return
@@ -2677,13 +2708,13 @@ export default function CreateFlow() {
                     {notesOpenEff && rev.notesEdit && (
                       <span style={{ display: 'flex', gap: 9, alignItems: 'center', flex: 'none' }}>
                         <button
-                          className="ad-btn-text dim small"
+                          className="ad-btn-text dim small ad-focus-inset"
                           onClick={(e) => { e.stopPropagation(); up({ notesDraft: null, notesEdit: false }) }}
                         >
                           Cancel
                         </button>
                         <button
-                          className="ad-btn-link small"
+                          className="ad-btn-link small ad-focus-inset"
                           disabled={rev.notesDraft == null || rev.notesDraft === rev.notes}
                           onClick={(e) => {
                             e.stopPropagation()
@@ -2730,7 +2761,7 @@ export default function CreateFlow() {
                   hint="Which agents steps may call mid-execution. Fewer enabled means more predictable executions."
                   preview={availAgents.length ? availAgents.map(agName).join(' · ') : null}
                   right={
-                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-deco)', whiteSpace: 'nowrap', flex: 'none' }}>
+                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-muted)', whiteSpace: 'nowrap', flex: 'none' }}>
                       {availAgents.length} of {agents.length} enabled
                     </span>
                   }
@@ -2753,7 +2784,7 @@ export default function CreateFlow() {
                           return names.length ? names.includes(agName(g)) : availAgents[0]?.id === g.id
                         })
                         return (
-                          <div
+                          <button
                             key={g.id}
                             onClick={() => {
                               if (busyRewrite) return
@@ -2768,7 +2799,7 @@ export default function CreateFlow() {
                                 showToast(`${agName(g)} is now available to steps — Sync with spec if the steps should be rewritten to use it.`, 3600)
                               }
                             }}
-                            className="ad-hover-row"
+                            className="ad-btn-bare ad-focus-inset ad-hover-row"
                             style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
                           >
                             <CheckBox on={on} />
@@ -2781,10 +2812,10 @@ export default function CreateFlow() {
                                 called by step{used.length > 1 ? 's' : ''} {stepList(used)}
                               </span>
                             )}
-                          </div>
+                          </button>
                         )
                       })}
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
                         Steps marked <i className="fa-solid fa-microchip" style={{ fontSize: 9, color: 'var(--accent-hover)' }} /> call one of these mid-execution — for the parts plain code can’t do, like reading a messy page or writing prose. Fewer enabled means more predictable executions.
                       </div>
                     </div>
@@ -2798,7 +2829,7 @@ export default function CreateFlow() {
                   hint="Only checked secrets are handed to this automation at execution time. Values come from your Keychain."
                   preview={rev.allowedSecrets.length ? rev.allowedSecrets.join(' · ') : null}
                   right={
-                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-deco)', whiteSpace: 'nowrap', flex: 'none' }}>
+                    <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-muted)', whiteSpace: 'nowrap', flex: 'none' }}>
                       {rev.allowedSecrets.length} of {secrets.length} allowed
                     </span>
                   }
@@ -2814,7 +2845,7 @@ export default function CreateFlow() {
                         const ref = secRefs.find((r) => r.name === s.name)
                         const on = rev.allowedSecrets.includes(s.name)
                         return (
-                          <div
+                          <button
                             key={s.name}
                             onClick={() => {
                               if (busyRewrite) return
@@ -2828,7 +2859,7 @@ export default function CreateFlow() {
                                 up({ ...genPatch, allowedSecrets: [...rev.allowedSecrets, s.name], ...(isEdit ? { touched: true } : {}) })
                               }
                             }}
-                            className="ad-hover-row"
+                            className="ad-btn-bare ad-focus-inset ad-hover-row"
                             style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
                           >
                             <CheckBox on={on} />
@@ -2840,7 +2871,7 @@ export default function CreateFlow() {
                                 used by step{ref.steps.length > 1 ? 's' : ''} {stepList(ref.steps)}
                               </span>
                             )}
-                          </div>
+                          </button>
                         )
                       })}
                       {secMissing.map((r) => (
@@ -2853,7 +2884,7 @@ export default function CreateFlow() {
                         </div>
                       ))}
                       {secrets.length === 0 && secRefs.length === 0 && (
-                        <div style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "400 12px var(--sans)", color: 'var(--text-deco)' }}>
+                        <div style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "400 12px var(--sans)", color: 'var(--text-muted)' }}>
                           No secrets in your Keychain yet — press New secret.
                         </div>
                       )}
@@ -2864,7 +2895,7 @@ export default function CreateFlow() {
                           New secret
                         </button>
                       </div>
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
                         Only checked secrets are handed to this automation at execution time — a step that asks for anything else fails. Values come from your Keychain and never appear in scripts or logs.
                       </div>
                     </div>
@@ -2892,7 +2923,7 @@ export default function CreateFlow() {
                   right={<>
                     {instrOpenEff && !rev.instrEdit && (
                       <button
-                        className="ad-btn-text small" disabled={busyRewrite || testLive}
+                        className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || testLive}
                         onClick={(e) => {
                           e.stopPropagation()
                           if (busyRewrite || testLive) return
@@ -2913,19 +2944,19 @@ export default function CreateFlow() {
                     {instrOpenEff && rev.instrEdit && (
                       <span style={{ display: 'flex', gap: 9, alignItems: 'center', flex: 'none' }}>
                         <button
-                          className="ad-btn-text dim small"
+                          className="ad-btn-text dim small ad-focus-inset"
                           disabled={!defaultBuildCache || (rev.instrDraft ?? rev.instr) === defaultBuildCache}
                           onClick={(e) => { e.stopPropagation(); up({ instrDraft: defaultBuildCache }) }}
                         >
                           Reset to default
                         </button>
                         <button
-                          className="ad-btn-text dim small"
+                          className="ad-btn-text dim small ad-focus-inset"
                           onClick={(e) => { e.stopPropagation(); up({ instrDraft: null, instrEdit: false }) }}                        >
                           Cancel
                         </button>
                         <button
-                          className="ad-btn-link small"
+                          className="ad-btn-link small ad-focus-inset"
                           disabled={rev.instrDraft == null || rev.instrDraft === rev.instr}
                           onClick={(e) => {
                             e.stopPropagation()
@@ -2980,7 +3011,7 @@ export default function CreateFlow() {
                         ? <Markdown text={fw} />
                         : <div style={{ font: "400 12px/1.65 var(--mono)", color: 'var(--text-2)' }}>Couldn’t load framework-instructions.md — reopen this page to retry.</div>}
                     </CardMarkdown>
-                    <div style={{ padding: '0 20px 16px', font: cardHintFont, color: 'var(--text-deco)' }}>
+                    <div style={{ padding: '0 20px 16px', font: cardHintFont, color: 'var(--text-muted)' }}>
                       framework-instructions.md — sent to your AI, word for word, with every drafting request. Updates with the app, nothing for you to maintain.
                     </div>
                 </SectionCard>
@@ -3060,7 +3091,7 @@ export default function CreateFlow() {
                           Test the draft
                         </button>
                       )}
-                      <span style={{ minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
+                      <span style={{ minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                         Sync first — a test executes the steps as generated from the spec.
                       </span>
                     </div>
@@ -3170,7 +3201,7 @@ export default function CreateFlow() {
                           <div style={{ ...panelRowStyle, padding: '10px 20px 12px' }}>
                             {syncGhostBtn}
                             {testToggleBtn('Test the draft')}
-                            <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)' }}>
+                            <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                               In sync with the spec. A test executes the real steps on this Mac — emails send, files move; memory is a scratch copy.
                             </span>
                           </div>
@@ -3181,7 +3212,7 @@ export default function CreateFlow() {
                           shows every option at once, then the Run test row */}
                       {testOpen && !testLive && rev.params.length > 0 && testParams !== null && (
                         <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
-                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-deco)' }}>
+                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-muted)' }}>
                             PARAMETER VALUES · THIS TEST ONLY
                           </div>
                           {testParams.map((p) => (
@@ -3196,7 +3227,7 @@ export default function CreateFlow() {
                           setup section */}
                       {testOpen && !testLive && msgTriggers.length > 0 && testMock !== null && (
                         <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
-                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-deco)' }}>
+                          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-muted)' }}>
                             TRIGGER MESSAGE · THIS TEST ONLY
                           </div>
                           <div style={{ padding: '13px 20px 3px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3205,11 +3236,15 @@ export default function CreateFlow() {
                                 {msgTriggers.map((t, i) => (
                                   <button
                                     key={i}
+                                    // .ad-btn-text supplies the resting/hover text colors for the
+                                    // inactive tabs; the active tab pins accent inline
+                                    className="ad-btn-text"
                                     onClick={() => setTestMock({ ...testMock, idx: i, sender: mockSenderSeed(t) })}
                                     style={{
                                       font: "500 12px var(--mono)", borderRadius: 6, padding: '3px 9px', whiteSpace: 'nowrap',
-                                      color: i === testMock.idx ? 'var(--accent)' : 'var(--text-muted)',
+                                      ...(i === testMock.idx ? { color: 'var(--accent)' } : {}),
                                       background: i === testMock.idx ? 'var(--accent-chip-bg)' : 'rgba(255, 255, 255, 0.06)',
+                                      transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
                                     }}
                                   >
                                     {triggerLabel(t)}
@@ -3235,7 +3270,7 @@ export default function CreateFlow() {
                               />
                             </div>
                           </div>
-                          <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
+                          <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
                             Applies to this test only — nothing is saved; leave the message empty to test without one.{' '}
                             {msgTriggers[testMock.idx]?.kind === 'discord'
                               ? 'A step’s reply() posts to the real Discord channel.'
@@ -3268,7 +3303,7 @@ export default function CreateFlow() {
                             )}
                           </div>
                           {(rev.params.length > 0 || msgTriggers.length > 0) && (
-                            <div style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)', paddingBottom: 2 }}>
+                            <div style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)', paddingBottom: 2 }}>
                               {rev.params.length > 0 && msgTriggers.length > 0
                                 ? 'Values and the message apply to this test only — nothing is saved.'
                                 : rev.params.length > 0
@@ -3355,7 +3390,7 @@ export default function CreateFlow() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
                     <Eyebrow>PARAMETERS · YOUR AI ASKED FOR THESE</Eyebrow>
                     {!drafting && rev.params.length > 0 && (
-                      <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-deco)' }}>READ-ONLY HERE</span>
+                      <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-muted)' }}>READ-ONLY HERE</span>
                     )}
                   </div>
                   {drafting || isCreateEmpty ? (
@@ -3382,7 +3417,7 @@ export default function CreateFlow() {
                           </div>
                         )
                       })}
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
                         Values aren’t part of a version — set them on the automation page after saving. For a test, set test-only values in the Build & test panel — or ask your AI, which can change the parameter definitions and set test values when it runs a test.
                       </div>
                     </>
@@ -3392,8 +3427,9 @@ export default function CreateFlow() {
                 {/* PACKAGES · PYTHON LIBRARIES (§6.2) — display-only, right column like
                     Triggers/Parameters: the drafting pipeline owns the list */}
                 <div style={cardStyle}>
-                  <div
-                    className={rev.packages.length > 0 ? 'ad-hover-row' : undefined}
+                  <button
+                    className={`ad-btn-bare ad-focus-inset${rev.packages.length > 0 ? ' ad-hover-row' : ''}`}
+                    disabled={rev.packages.length === 0}
                     onClick={() => rev.packages.length > 0 && up({ pkgSecOpen: !pkgSecOpenEff })}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', cursor: rev.packages.length > 0 ? 'pointer' : 'default', userSelect: 'none' }}
                   >
@@ -3404,13 +3440,13 @@ export default function CreateFlow() {
                       <Eyebrow>PACKAGES · PYTHON LIBRARIES</Eyebrow>
                     </span>
                     {rev.packages.length > 0 && (
-                      <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-deco)', whiteSpace: 'nowrap', flex: 'none' }}>
+                      <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-muted)', whiteSpace: 'nowrap', flex: 'none' }}>
                         {rev.packages.filter((p) => p.status === 'installed').length} of {rev.packages.length} installed
                         {rev.packages.filter((p) => p.latest).length > 0 &&
                           ` · ${rev.packages.filter((p) => p.latest).length} update${rev.packages.filter((p) => p.latest).length === 1 ? '' : 's'}`}
                       </span>
                     )}
-                  </div>
+                  </button>
                   {drafting || isCreateEmpty ? (
                     <div style={{ borderTop: '1px solid var(--hairline)', padding: '14px 20px 16px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>Packages appear here once the build finishes.</div>
                   ) : rev.packages.length === 0 ? (
@@ -3420,9 +3456,9 @@ export default function CreateFlow() {
                   ) : (<>
                     <Collapse open={!pkgSecOpenEff}>
                       {/* §11 status-aware collapsed line — the card only collapses when the list is non-empty */}
-                      <div onClick={() => up({ pkgSecOpen: true })} style={{ padding: '0 20px 13px 43px', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-deco)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <button className="ad-btn-bare ad-focus-inset" onClick={() => up({ pkgSecOpen: true })} style={{ padding: '0 20px 13px 43px', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {rev.packages.map((p) => p.pip).join(' · ')}
-                      </div>
+                      </button>
                     </Collapse>
                     <Collapse open={pkgSecOpenEff}>
                     <div style={{ borderTop: '1px solid var(--hairline)' }}>
@@ -3483,7 +3519,7 @@ export default function CreateFlow() {
                           </button>
                         </div>
                       )}
-                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-deco)' }}>
+                      <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
                         Your AI picked these Python packages for the steps. They install automatically — nothing for you to run.
                       </div>
                     </div>

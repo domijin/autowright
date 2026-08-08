@@ -18,8 +18,8 @@ const headCell: React.CSSProperties = {
 
 function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: boolean }) {
   return (
-    <div
-      className="ad-hover-row"
+    <button
+      className="ad-btn-bare ad-hover-row"
       onClick={onOpen}
       style={{
         display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '11px 18px',
@@ -39,7 +39,8 @@ function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: bo
           fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
-          {e.id}
+          {/* §7: short id — first 8 chars, same as the detail page's RECENT EXECUTIONS rows */}
+          {e.id.slice(0, 8)}
         </div>
       </div>
       <div>
@@ -61,7 +62,7 @@ function Row({ e, onOpen, waiting }: { e: Exec; onOpen: () => void; waiting?: bo
         * a row still in this section was never promoted, so `started` is
         * exactly when it was queued. */}
       <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{e.started}</span>
-    </div>
+    </button>
   )
 }
 
@@ -126,16 +127,13 @@ export default function ExecutionsList() {
     <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
       <PageTitle
         right={
-          <div style={{ display: 'inline-flex', border: '1px solid var(--border-input)', borderRadius: 8, overflow: 'hidden' }}>
+          <div className="ad-seg" role="group" aria-label="Filter executions">
             {FILTERS.map((f) => (
               <button
                 key={f}
-                className="ad-btn-text"
+                className="ad-seg-btn"
+                aria-pressed={filt === f}
                 onClick={() => setFilt(f)}
-                style={{
-                  padding: '6px 14px', fontSize: 12, fontWeight: 500, borderRadius: 0,
-                  ...(filt === f ? { background: 'var(--bg-active)', color: 'var(--text)' } : null),
-                }}
               >
                 {f}
               </button>

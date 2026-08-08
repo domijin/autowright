@@ -75,7 +75,7 @@ function ViewCard({ title, kind, meta, mono = true, defaultOpen = true, children
           </span>
         )}
         <span style={{ flex: 1 }} />
-        {meta && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-deco)' }}>{meta}</span>}
+        {meta && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>{meta}</span>}
       </button>
       <Collapse open={open}>{children}</Collapse>
     </div>
@@ -255,9 +255,9 @@ function FileRow({ execId, file, stamp, last }: {
         {file.name}
       </span>
       {!kind && (
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-deco)', flex: 'none' }}>no preview</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-faint)', flex: 'none' }}>no preview</span>
       )}
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-deco)', flex: 'none' }}>{file.size}</span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)', flex: 'none' }}>{file.size}</span>
     </>
   )
   const rowStyle: React.CSSProperties = {
@@ -296,7 +296,7 @@ function FilesFooter({ files, path, execId, stamp, defaultOpen = true }: {
           borderBottom: '1px solid var(--hairline)',
         }}>
           <span style={{
-            flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-deco)',
+            flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', direction: 'rtl', textAlign: 'left',
           }}>
             {path ?? ''}
@@ -358,7 +358,7 @@ export function ResultSection({ label, result, execId, stamp, compact }: {
           </span>
         )}
         {result.when && (
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-deco)' }}>{result.when}</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)' }}>{result.when}</span>
         )}
       </div>
       <Collapse open={open}>

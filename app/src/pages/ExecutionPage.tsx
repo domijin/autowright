@@ -84,6 +84,32 @@ function latestN(step: ExecStep | undefined): number {
   return atts?.length ? atts[atts.length - 1].n : 1
 }
 
+/** §7 attempt pill — hover feedback over the badge colors needs local state,
+ * so it's its own component; no instant background jumps. */
+function AttemptPill({ a, active, onSelect }: {
+  a: ExecStep['attempts'][number]; active: boolean; onSelect: () => void
+}) {
+  const [hover, setHover] = useState(false)
+  const b = badgeOf(a.status)
+  return (
+    <button
+      className="ad-btn-bare"
+      onClick={onSelect}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        width: 'auto', fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
+        padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
+        color: active ? b.c : hover ? 'var(--text-muted)' : 'var(--text-faint)',
+        background: active ? b.bg : hover ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.04)',
+        transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
+      }}
+    >
+      Attempt {a.n} · {b.label}{a.dur ? ` · ${a.dur}` : ''}
+    </button>
+  )
+}
+
 const bodyCard: React.CSSProperties = {
   background: 'var(--bg-card)', border: '1px solid var(--border-card)',
   borderRadius: 12, padding: 22,
@@ -120,7 +146,7 @@ function TriggerMessage({ payload }: { payload: TriggerPayload }) {
           </a>
         )}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-deco)', marginBottom: 10 }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', marginBottom: 10 }}>
         {new Date(payload.at).toLocaleString()}
       </div>
       <div style={{
@@ -355,21 +381,14 @@ export default function ExecutionPage() {
         />
         <div style={{ flex: 1 }} />
         <HeaderActions>
+          {/* §9 rising prominence: ghosts, then danger-ghost, primary last. */}
           {executing && liveIdx >= 0 && (
             <button
               className="ad-btn-ghost"
               onClick={() => skipStep(liveIdx)}
               title="Skip this step — kills it and continues with the next one"
             >
-              <i className="fa-solid fa-forward-step" style={{ fontSize: 10, marginRight: 6 }} />
               Skip step
-            </button>
-          )}
-          {/* §6: one endpoint covers both — a queued entry leaves the queue and
-            * finishes skipped, a running one is killed. */}
-          {(executing || queued) && (
-            <button className="ad-btn-danger-ghost" onClick={cancelExecution}>
-              Cancel
             </button>
           )}
           {againQuiet && (
@@ -379,6 +398,13 @@ export default function ExecutionPage() {
               title="Executes the automation again from the start"
             >
               Execute again
+            </button>
+          )}
+          {/* §6: one endpoint covers both — a queued entry leaves the queue and
+            * finishes skipped, a running one is killed. */}
+          {(executing || queued) && (
+            <button className="ad-btn-danger-ghost" onClick={cancelExecution}>
+              Cancel
             </button>
           )}
           {retryPrimary && (
@@ -480,11 +506,11 @@ export default function ExecutionPage() {
                   {params.map((p) => (
                     <div key={p.name} style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '7px 0', borderTop: '1px solid var(--hairline-dim)' }}>
                       <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{p.label}</span>
-                      {p.help && <span style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-deco)' }}>{p.help}</span>}
+                      {p.help && <span style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{p.help}</span>}
                       <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-2)' }}>{paramSummary(p)}</span>
                     </div>
                   ))}
-                  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-deco)', paddingTop: 8, borderTop: '1px solid var(--hairline-dim)' }}>
+                  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-muted)', paddingTop: 8, borderTop: '1px solid var(--hairline-dim)' }}>
                     Values as used by this execution.
                   </div>
                 </div>
@@ -517,25 +543,14 @@ export default function ExecutionPage() {
                 {/* §7 attempt control — pills only when the step retried */}
                 {attempts.length > 1 && (
                   <span style={{ display: 'inline-flex', gap: 4 }}>
-                    {attempts.map((a) => {
-                      const active = sel?.attempt === a.n
-                      const b = badgeOf(a.status)
-                      return (
-                        <button
-                          key={a.n}
-                          onClick={() => { manualSel.current = true; setSel({ step: sel!.step, attempt: a.n }) }}
-                          style={{
-                            fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
-                            padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
-                            color: active ? b.c : 'var(--text-faint)',
-                            background: active ? b.bg : 'rgba(255,255,255,.04)',
-                            border: 'none',
-                          }}
-                        >
-                          Attempt {a.n} · {b.label}{a.dur ? ` · ${a.dur}` : ''}
-                        </button>
-                      )
-                    })}
+                    {attempts.map((a) => (
+                      <AttemptPill
+                        key={a.n}
+                        a={a}
+                        active={sel?.attempt === a.n}
+                        onSelect={() => { manualSel.current = true; setSel({ step: sel!.step, attempt: a.n }) }}
+                      />
+                    ))}
                   </span>
                 )}
                 <div style={{ flex: 1 }} />
@@ -566,7 +581,7 @@ export default function ExecutionPage() {
                       </div>
                     ))}
                     {logs.length === 0 && (
-                      <div style={{ color: 'var(--text-deco)' }}>
+                      <div style={{ color: 'var(--text-muted)' }}>
                         {steps.length === 0
                           ? 'No logs — this execution never started.'
                           : sel?.step == null

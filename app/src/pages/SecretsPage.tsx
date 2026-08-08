@@ -87,24 +87,18 @@ export default function SecretsPage() {
             </span>
             <div style={{ display: 'flex', gap: 4, justifySelf: 'end', alignItems: 'center' }}>
               <button
-                className="ad-btn-text"
+                className="ad-btn-icon"
                 onClick={() => setModal({ mode: 'edit', name: s.name, desc: s.desc, usedBy: s.usedBy })}
                 title="Edit"
-                style={{
-                  borderRadius: 6, width: 26, height: 26, display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', padding: 0,
-                }}
+                aria-label="Edit secret"
               >
                 <i className="fa-solid fa-pen" style={{ fontSize: 11 }} />
               </button>
               <button
-                className="ad-btn-text"
+                className="ad-btn-icon danger"
                 onClick={() => setDel(s)}
                 title="Delete"
-                style={{
-                  borderRadius: 6, width: 26, height: 26, display: 'flex',
-                  alignItems: 'center', justifyContent: 'center', padding: 0,
-                }}
+                aria-label="Delete secret"
               >
                 <i className="fa-solid fa-trash-can" style={{ fontSize: 11 }} />
               </button>

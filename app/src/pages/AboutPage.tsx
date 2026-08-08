@@ -58,6 +58,7 @@ export default function AboutPage() {
   const [upd, setUpd] = useState<UpdateCheck>({ state: 'idle' })
   const [doc, setDoc] = useState<DocKey | null>(null)
   const [docTexts, setDocTexts] = useState<Partial<Record<DocKey, string>>>({})
+  const [docErrs, setDocErrs] = useState<Partial<Record<DocKey, boolean>>>({})
 
   // Manual only — the app never checks for updates in the background (§9.4).
   const checkForUpdates = async () => {
@@ -90,11 +91,18 @@ export default function AboutPage() {
     if (r && 'busy' in r) setUpd({ state: 'downloaded', version: v, busy: true })
   }
 
+  // §9.4: a failed chunk load must not strand "Loading…" — record the failure
+  // and offer Retry, which re-attempts the import.
+  const loadDoc = (key: DocKey) => {
+    setDocErrs((e) => ({ ...e, [key]: false }))
+    DOCS[key].load()
+      .then((text) => setDocTexts((t) => ({ ...t, [key]: text })))
+      .catch(() => setDocErrs((e) => ({ ...e, [key]: true })))
+  }
+
   const openDoc = (key: DocKey) => {
     setDoc(key)
-    if (docTexts[key] === undefined) {
-      void DOCS[key].load().then((text) => setDocTexts((t) => ({ ...t, [key]: text })))
-    }
+    if (docTexts[key] === undefined) loadDoc(key)
   }
 
   const updSub = {
@@ -219,9 +227,18 @@ export default function AboutPage() {
                 {DOCS[doc].title}
               </h2>
               <ScrollArea wrapStyle={{ marginTop: 12 }} style={{ maxHeight: '62vh' }}>
-                {docTexts[doc] === undefined
-                  ? <div style={rowSub}>Loading…</div>
-                  : <Markdown text={docTexts[doc]} />}
+                {docTexts[doc] !== undefined
+                  ? <Markdown text={docTexts[doc]} />
+                  : docErrs[doc]
+                    ? (
+                      <div>
+                        <div style={{ fontSize: 12.5, color: 'var(--red-text)' }}>Couldn't load the document.</div>
+                        <button className="ad-btn-ghost" onClick={() => loadDoc(doc)} style={{ marginTop: 10 }}>
+                          Retry
+                        </button>
+                      </div>
+                    )
+                    : <div style={rowSub}>Loading…</div>}
               </ScrollArea>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
                 <BtnGhost onClick={close}>Close</BtnGhost>

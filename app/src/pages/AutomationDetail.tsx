@@ -6,7 +6,7 @@ import { useStore } from '../store'
 import type { Auto, ParamDef, SecretMeta, SnapshotSettings, Step, Trigger, DraftTrigger, TriggerKindFields } from '../types'
 import {
   BackLink, Badge, BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, EmptyNotice, executingToast,
-  Eyebrow, FailureNotice, HeaderActions, MenuRow, MiniBadge, Modal, PULSE, PopMenu, PyCode, ScrollArea, Toggle,
+  Eyebrow, FailureNotice, HeaderActions, MenuRow, MiniBadge, Modal, PULSE, PopMenu, PyCode, ScrollArea, Tag, Toggle,
   nextIn, stepTimeoutLabel, stepTimeoutTitle, usePopover, validUrl,
 } from '../ui'
 import { cronLabels, cronNext, cronValid, fmtMoment, nextTriggerShort, timeAt, triggerShort, tzSuffix } from '../cron'
@@ -37,6 +37,7 @@ const pickChipStyle = (active: boolean): React.CSSProperties => ({
   background: active ? 'var(--accent-chip-bg)' : 'rgba(255,255,255,.04)',
   border: `1px solid ${active ? 'oklch(0.74 0.155 52 / .4)' : 'var(--border-input)'}`,
   color: active ? 'var(--accent)' : 'var(--text-2)', borderRadius: 6, padding: '4px 10px', flex: 'none',
+  transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter)',
 })
 
 const TZ_LIST: string[] = Intl.supportedValuesOf('timeZone')
@@ -266,7 +267,7 @@ function TzPick({ tz, onPick }: { tz: string; onPick: (z: string) => void }) {
             <MenuRow key={z} active={z === tz} onClick={() => { setOpen(false); onPick(z) }}>{z}</MenuRow>
           ))}
           {needle && zones.length === 0 && (
-            <div style={{ padding: '9px 11px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-deco)' }}>
+            <div style={{ padding: '9px 11px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-muted)' }}>
               No timezone matches.
             </div>
           )}
@@ -300,13 +301,14 @@ function SecretPick({ secrets, selected, onPick }: {
       </button>
       <PopMenu show={open} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 240 }}>
         {secrets.length === 0 ? (
-          <div style={{ padding: '9px 14px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-deco)' }}>
+          <div style={{ padding: '9px 14px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-muted)' }}>
             No secrets yet — press New secret.
           </div>
         ) : secrets.map((s) => {
           const sel = s.name === selected
           return (
-            <div
+            <button
+              className="ad-btn-bare"
               key={s.name}
               onClick={() => { setOpen(false); onPick(s.name) }}
               style={{
@@ -332,7 +334,7 @@ function SecretPick({ secrets, selected, onPick }: {
                   </div>
                 )}
               </div>
-            </div>
+            </button>
           )
         })}
       </PopMenu>
@@ -533,7 +535,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             spellCheck={false}
             style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
           />
-          <div style={{ fontSize: 11.5, color: 'var(--text-deco)', lineHeight: 1.5, marginTop: -2 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: -2 }}>
             Fires only on messages from these Discord users — comma-separate several ids.
             A user id is a long number like 234567890123456789 — right-click their name →
             Copy User ID (needs Developer Mode, enabled in step 8).
@@ -660,7 +662,7 @@ function ConcurrencyCard({ auto, showToast }: { auto: Auto; showToast: (m: strin
     <div style={{ marginBottom: 26 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
         <Eyebrow>CONCURRENCY</Eyebrow>
-        <span style={{ fontSize: 11.5, color: 'var(--text-deco)' }}>
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
           Applies to incoming messages — no new version, no AI involved.
         </span>
       </div>
@@ -673,14 +675,18 @@ function ConcurrencyCard({ auto, showToast }: { auto: Auto; showToast: (m: strin
         />
         {memSteps.length > 0 && (
           <div className="ad-anim-item" style={{
-            padding: '10px 18px', borderBottom: '1px solid var(--hairline-dim)',
-            fontSize: 11.5, lineHeight: 1.5, color: 'var(--amber)', background: 'var(--amber-bg)',
+            margin: '12px 18px', background: 'var(--notice-amber-bg)',
+            border: '1px solid var(--notice-amber-border)', borderRadius: 10, padding: '11px 14px',
+            display: 'flex', alignItems: 'flex-start', gap: 10,
+            fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-2)',
           }}>
-            <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: 7 }} />
-            {memSteps.map(n => <code key={n} style={{ fontFamily: 'var(--mono)' }}>{n}</code>)
-              .reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
-            {memSteps.length === 1 ? ' writes' : ' write'} to memory. Parallel executions share one
-            memory directory, so two runs updating the same value can lose one of the updates.
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)', flex: 'none', marginTop: 5 }} />
+            <span>
+              {memSteps.map(n => <code key={n} style={{ fontFamily: 'var(--mono)' }}>{n}</code>)
+                .reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
+              {memSteps.length === 1 ? ' writes' : ' write'} to memory. Parallel executions share one
+              memory directory, so two runs updating the same value can lose one of the updates.
+            </span>
           </div>
         )}
         <NumberSettingRow
@@ -983,58 +989,46 @@ function StepRow({ s, n, open, onToggle, last, agentNames }: {
     ...[...(s.code || '').matchAll(/\bsecrets\.([A-Z][A-Z0-9_]*)/g)].map((m) => m[1])])]
   return (
     <div style={{ borderBottom: last ? 'none' : '1px solid var(--hairline-dim)' }}>
-      <div className="ad-hover-row" onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
+      <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
         <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)', width: 14, flex: 'none' }}>{n}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
             {s.agent && agentNames.map((nm) => (
-              <span
+              <Tag
                 key={nm}
+                icon="fa-microchip"
+                c="var(--accent)"
                 title={s.why || `This step calls the ${nm} AI agent.`}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  color: 'var(--accent)', background: 'var(--accent-chip-bg)',
-                  border: '1px solid oklch(0.74 0.155 52 / 0.3)',
-                  borderRadius: 6, padding: '2px 8px', fontFamily: 'var(--mono)', fontWeight: 600,
-                  fontSize: 10, whiteSpace: 'nowrap',
-                }}
+                style={{ background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' }}
               >
-                <i className="fa-solid fa-microchip" style={{ fontSize: 8.5 }} /> {nm}
-              </span>
+                {nm}
+              </Tag>
             ))}
             {stepSecrets.map((name) => (
-              <span
+              <Tag
                 key={name}
+                icon="fa-key"
                 title={`This step uses the ${name} secret from your Keychain`}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)',
-                  borderRadius: 6, padding: '2px 8px', fontFamily: 'var(--mono)', fontWeight: 600,
-                  fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap',
-                }}
+                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
               >
-                <i className="fa-solid fa-key" style={{ fontSize: 8.5 }} /> {name}
-              </span>
+                {name}
+              </Tag>
             ))}
-            <span
+            <Tag
+              icon="fa-clock"
               title={stepTimeoutTitle(s)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 5,
-                background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)',
-                borderRadius: 6, padding: '2px 8px', fontFamily: 'var(--mono)', fontWeight: 600,
-                fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap',
-              }}
+              style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
             >
-              <i className="fa-solid fa-clock" style={{ fontSize: 8.5 }} /> {stepTimeoutLabel(s)}
-            </span>
+              {stepTimeoutLabel(s)}
+            </Tag>
           </div>
           <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>{s.desc}</div>
         </div>
         <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
           <Caret open={open} openDeg={180} closedDeg={0} style={{ fontSize: 12 }} />
         </span>
-      </div>
+      </button>
       <Collapse open={open}>
         {s.agent && s.why && (
           <div style={{
@@ -1182,6 +1176,7 @@ export default function AutomationDetail() {
     })()
   }
   const [editTrig, setEditTrig] = useState<string | null>(null) // §9.2: id of the row swapped for the inline editor
+  const [removeTrig, setRemoveTrig] = useState<Trigger | null>(null) // §9.2: trigger awaiting remove confirmation
   const toggleTrigger = (t: Trigger) => {
     putTriggers(
       trigs.map((x) => (x.id === t.id ? { ...x, off: !x.off } : x)),
@@ -1353,6 +1348,7 @@ export default function AutomationDetail() {
                   </div>
                 </div>
               </div>
+              <ScrollArea style={{ maxHeight: '60vh' }}>
               {olderVersions.map((v) => (
                 <div key={v.v} style={{
                   display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
@@ -1376,6 +1372,7 @@ export default function AutomationDetail() {
                   </button>
                 </div>
               ))}
+              </ScrollArea>
               <div style={{
                 padding: '10px 14px', fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)',
                 background: 'var(--bg-card)',
@@ -1547,19 +1544,16 @@ export default function AutomationDetail() {
                   </span>
                   {t.kind !== 'app_start' && (
                     <button
-                      className="ad-btn-text"
+                      className="ad-btn-icon"
                       onClick={() => setEditTrig(t.id)}
                       title="Edit trigger"
-                      style={{
-                        borderRadius: 6, width: 26, height: 26, display: 'flex',
-                        alignItems: 'center', justifyContent: 'center', padding: 0, flex: 'none',
-                      }}
+                      aria-label="Edit trigger"
                     >
                       <i className="fa-solid fa-pen" style={{ fontSize: 11 }} />
                     </button>
                   )}
                   <Toggle on={!t.off} onChange={() => toggleTrigger(t)} title={t.off ? 'Turn this trigger on' : 'Turn this trigger off'} />
-                  <button className="ad-btn-x" onClick={() => removeTrigger(t)} title="Remove trigger">
+                  <button className="ad-btn-x" onClick={() => setRemoveTrig(t)} title="Remove trigger" aria-label="Remove trigger">
                     <i className="fa-solid fa-xmark" />
                   </button>
                 </div>
@@ -1596,7 +1590,7 @@ export default function AutomationDetail() {
         <div style={{ marginBottom: 26 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <Eyebrow>PARAMETERS</Eyebrow>
-            <span style={{ fontSize: 11.5, color: 'var(--text-deco)' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
               Changes apply on the next execution — no new version, no AI involved.
             </span>
           </div>
@@ -1624,8 +1618,8 @@ export default function AutomationDetail() {
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
             {recentExecs.map((e, i) => (
-              <div
-                className="ad-hover-row"
+              <button
+                className="ad-btn-bare ad-hover-row ad-focus-inset"
                 key={e.id}
                 onClick={() => go('execution', { execId: e.id })}
                 style={{
@@ -1651,7 +1645,7 @@ export default function AutomationDetail() {
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>{e.dur}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-faint)', width: 130, textAlign: 'right', flex: 'none' }}>{e.started}</span>
                 <span style={{ color: 'var(--text-deco)' }}><i className="fa-solid fa-chevron-right" style={{ fontSize: 10 }} /></span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -1750,10 +1744,12 @@ export default function AutomationDetail() {
                         <div style={{ flex: 1 }} />
                         <button
                           className="ad-btn-soft"
-                          onClick={() => { if (!executing) doRestoreSnap(s.id) }}
+                          onClick={() => doRestoreSnap(s.id)}
+                          disabled={executing}
+                          title={executing ? 'Blocked while an execution is live' : undefined}
                           style={{
                             border: '1px solid oklch(0.74 0.155 52 / .4)',
-                            color: executing ? 'var(--text-deco)' : 'var(--accent)', fontWeight: 600,
+                            color: 'var(--accent)', fontWeight: 600,
                           }}
                         >
                           Restore
@@ -1845,7 +1841,7 @@ export default function AutomationDetail() {
         <div style={{ marginBottom: 26 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <Eyebrow>STEPS</Eyebrow>
-            <span style={{ fontSize: 11.5, color: 'var(--text-deco)' }}>Written by your AI — read them anytime.</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Written by your AI — read them anytime.</span>
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
             {/* §9.2: one agent tag per name in a step's agents list; empty →
@@ -1865,22 +1861,22 @@ export default function AutomationDetail() {
       {spec.length > 0 && (
         <div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
-            <div
-              className="ad-hover-row"
+            <button
+              className="ad-btn-bare ad-hover-row ad-focus-inset"
               onClick={() => setSpecOpen(!specOpen)}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 18px', cursor: 'pointer' }}
             >
               <Eyebrow>SPEC</Eyebrow>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>{auto.specMeta}</span>
               <div style={{ flex: 1 }} />
-              <span style={{ color: 'var(--text-deco)', fontSize: 11 }}>
+              <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>
                 <Caret open={specOpen} openDeg={180} closedDeg={0} /> {specOpen ? 'collapse' : 'expand'}
               </span>
-            </div>
+            </button>
             <Collapse open={specOpen}>
               <div style={{ borderTop: '1px solid var(--hairline)', padding: '8px 18px 18px' }}>
                 <SpecMarkdown blocks={spec} />
-                <div style={{ marginTop: 14, fontSize: 11.5, color: 'var(--text-deco)' }}>
+                <div style={{ marginTop: 14, fontSize: 11.5, color: 'var(--text-muted)' }}>
                   The AI regenerates the steps from this document when you edit it. Every change mints a new version — older ones live in the Version menu on the edit page.
                 </div>
               </div>
@@ -1931,6 +1927,21 @@ export default function AutomationDetail() {
             )
           }}
         </Modal>
+      )}
+      {removeTrig && (
+        <ConfirmModal
+          title="Remove this trigger?"
+          body={(
+            <>
+              <span style={{ fontWeight: 500, color: 'var(--text)' }}>{removeTrig.label}</span>
+              {' '}is removed from this automation. Its settings are gone — add it again to get it back.
+            </>
+          )}
+          confirmLabel="Remove trigger"
+          danger
+          onConfirm={() => { const t = removeTrig; setRemoveTrig(null); removeTrigger(t) }}
+          onCancel={() => setRemoveTrig(null)}
+        />
       )}
       {delAsk && (
         <ConfirmModal

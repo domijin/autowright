@@ -373,7 +373,7 @@ export default function AgentNewPage() {
         </div>
       )}
 
-      <Eyebrow style={{ margin: '0 0 10px' }}>DESCRIPTION <span style={{ color: 'var(--text-deco)' }}>· OPTIONAL</span></Eyebrow>
+      <Eyebrow style={{ margin: '0 0 10px' }}>DESCRIPTION <span style={{ color: 'var(--text-faint)' }}>· OPTIONAL</span></Eyebrow>
       <textarea
         className="ad-input"
         value={desc}
@@ -392,16 +392,17 @@ export default function AgentNewPage() {
         {HARNESSES.map((h) => {
           const on = harness === h.id
           return (
-            <div
+            <button
               key={h.id}
+              className="ad-btn-bare ad-card-click"
               onClick={() => {
                 if (harness !== h.id) { setHInst('idle'); setHPct(null); setHErr(null) }
                 setHarness(h.id); setMode('default'); setModel(null)
               }}
               style={{
-                background: on ? 'var(--bg-card-sel)' : 'var(--bg-card)',
-                border: `1px solid ${on ? 'var(--accent-sel)' : 'var(--border-card)'}`,
-                borderRadius: 12, padding: '16px 18px', cursor: 'pointer',
+                // Selected chrome overrides .ad-card-click's base + hover.
+                ...(on ? { background: 'var(--bg-card-sel)', borderColor: 'var(--accent-sel)' } : {}),
+                borderRadius: 12, padding: '16px 18px',
                 display: 'flex', flexDirection: 'column', gap: 7,
               }}
             >
@@ -413,7 +414,7 @@ export default function AgentNewPage() {
                 )}
               </div>
               <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{h.desc}</p>
-            </div>
+            </button>
           )
         })}
       </div>
@@ -468,15 +469,17 @@ export default function AgentNewPage() {
               ...(harness === 'opencode'
                 ? [{ id: 'ollama' as const, name: 'A local model', note: 'Pick a model served on this Mac through Ollama — best for simple steps' }]
                 : []),
-            ]).map((md) => {
+            ]).map((md, i, arr) => {
               const on = mode === md.id
               return (
                 <button
                   key={md.id}
+                  className="ad-btn-bare ad-hover-row ad-focus-inset"
                   onClick={() => { setMode(md.id); setModel(null) }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px',
-                    borderBottom: '1px solid var(--hairline-dim)', width: '100%', textAlign: 'left',
+                    borderBottom: i === arr.length - 1 ? 'none' : '1px solid var(--hairline-dim)',
+                    width: '100%', textAlign: 'left', cursor: 'pointer',
                   }}
                 >
                   <RadioRing selected={on} />
@@ -542,22 +545,24 @@ export default function AgentNewPage() {
                   background: 'var(--bg-card)', border: '1px solid var(--border-card)',
                   borderRadius: 12, overflow: 'hidden', marginBottom: 14,
                 }}>
-                  {models.map((n) => {
+                  {models.map((n, i) => {
                     const on = model === n
                     const sug = SUGGESTED.find((s) => s.id === n)
                     return (
-                      <div
+                      <button
                         key={n}
+                        className="ad-btn-bare ad-hover-row ad-focus-inset"
                         onClick={() => setModel(n)}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px',
-                          borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer',
+                          borderBottom: i === models.length - 1 ? 'none' : '1px solid var(--hairline-dim)',
+                          cursor: 'pointer',
                         }}
                       >
                         <RadioRing selected={on} />
-                        <span style={{ flex: 1, font: `500 13px var(--mono)`, color: on ? 'var(--text)' : 'var(--text-2)' }}>{n}</span>
+                        <span style={{ flex: 1, font: `500 13px var(--mono)`, color: on ? 'var(--text)' : 'var(--text-2)', textAlign: 'left' }}>{n}</span>
                         <span style={{ font: `400 11px var(--mono)`, color: 'var(--text-faint)' }}>{sug?.meta ?? ''}</span>
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
@@ -596,9 +601,11 @@ export default function AgentNewPage() {
                     <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)' }}>
                       Downloading <span style={{ font: `500 12px var(--mono)`, color: 'var(--text)' }}>{pulling}</span>…
                     </span>
-                    <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-muted)' }}>
-                      {pullPct ?? 0}%
-                    </span>
+                    {pullPct !== null && (
+                      <span style={{ font: `500 12px var(--mono)`, color: 'var(--text-muted)' }}>
+                        {pullPct}%
+                      </span>
+                    )}
                   </div>
                   <ProgressBar pct={pullPct} />
                 </div>

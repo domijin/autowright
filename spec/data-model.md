@@ -348,6 +348,13 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   Resuming restores the grant checkboxes from the draft; the automation's live
   stepAgents/allowedSecrets stay untouched until the draft is saved as vN+1. A Draft
   execution honors the draft's grants when present, not the live ones.
+- Draft persistence is **continuous, not exit-only**: once a draft holds anything worth
+  keeping (touched edit-mode changes; a landed create-mode spec or steps), the editor
+  writes it with a debounced PUT (~1 s after the last change) as the state evolves, and the
+  exit paths write one final time. A quit, force-quit, or crash therefore loses at most the
+  debounce window — never the draft (unmount cleanup alone doesn't run when the app
+  quits). Settling (discard, save, Create, Start over) stops the debounced writer before
+  deleting, so a trailing write can't resurrect a settled draft.
 - **Create-mode drafts persist too**, in the single pending slot `<root>/draft/` (§5).
   Opening the create flow creates the slot's container first — `draft/` with an empty
   `memory/` (`POST /draft/open`, §19) — before any drafting; §11 create-mode tests execute

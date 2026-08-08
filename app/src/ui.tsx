@@ -62,6 +62,25 @@ export function Badge({ status, style }: { status: Status | string; style?: Reac
   return <MiniBadge c={b.c} bg={b.bg} style={style}>{b.label}</MiniBadge>
 }
 
+/** §14 step-row info tag (agent / secret / timeout tags) — one geometry for the
+ * create-flow review, detail-page STEPS card, and import preview alike. */
+export function Tag({ icon, children, c, title, style }: {
+  icon?: string; children: React.ReactNode; c?: string; title?: string; style?: React.CSSProperties
+}) {
+  return (
+    <span title={title} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 500,
+      color: c ?? 'var(--text-muted)', background: 'var(--bg-inset)',
+      border: '1px solid var(--hairline)', borderRadius: 6, padding: '2px 8px',
+      whiteSpace: 'nowrap', ...style,
+    }}>
+      {icon && <i className={`fa-solid ${icon}`} style={{ fontSize: 9 }} />}
+      {children}
+    </span>
+  )
+}
+
 export function Logo({ size = 26 }: { size?: number }) {
   // icon.svg's mark spans 824 of its 1024 canvas — oversize and clip so it renders full-bleed.
   const over = size * (1024 / 824)
@@ -254,6 +273,10 @@ export function Toggle({ on, onChange, disabled, title }: {
     <button
       onClick={() => !disabled && onChange(!on)}
       title={title}
+      role="switch"
+      aria-checked={on}
+      aria-label={typeof title === 'string' ? title : undefined}
+      disabled={disabled}
       style={{
         width: 36, height: 21, borderRadius: 11, position: 'relative', flex: 'none',
         border: '1px solid rgba(255,255,255,.08)',
@@ -374,9 +397,9 @@ export function MenuRow({ children, onClick, danger, active }: {
   children: React.ReactNode; onClick?: () => void; danger?: boolean; active?: boolean
 }) {
   return (
-    <div className={`ad-menu-row${danger ? ' danger' : ''}${active ? ' active' : ''}`} onClick={onClick}>
+    <button className={`ad-btn-bare ad-menu-row${danger ? ' danger' : ''}${active ? ' active' : ''}`} onClick={onClick}>
       {children}
-    </div>
+    </button>
   )
 }
 
@@ -589,9 +612,14 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, children }: {
         background: 'var(--bg-menu)', border: '1px solid var(--border-input)', borderRadius: 12,
         boxShadow: '0 24px 60px rgba(0,0,0,.5)', width,
         animation: closing ? EXIT_DOWN : ENTER_UP,
+        // §9: modal cards cap at 84vh and scroll inside — footer buttons can
+        // never render off-screen on a small window.
+        maxHeight: '84vh', display: 'flex', flexDirection: 'column',
         ...cardStyle,
       }}>
-        {children(() => setClosing(true))}
+        <ScrollArea wrapStyle={{ minHeight: 0 }} style={{ maxHeight: '100%' }}>
+          {children(() => setClosing(true))}
+        </ScrollArea>
       </div>
     </div>,
     document.body,

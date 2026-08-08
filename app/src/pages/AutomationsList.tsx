@@ -82,7 +82,7 @@ function ImportModal({ onDone, onClose }: {
   onClose: () => void
 }) {
   const [url, setUrl] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<false | 'url' | 'file' | 'confirm'>(false)
   const [error, setError] = useState<{ msg: string; src: 'url' | 'file' } | null>(null)
   const [pv, setPv] = useState<{
     token: string; preview: ImportPreview; source: string; srcKind: 'url' | 'file'
@@ -90,7 +90,7 @@ function ImportModal({ onDone, onClose }: {
 
   const fetchUrl = async () => {
     if (!url.trim() || busy) return
-    setBusy(true); setError(null)
+    setBusy('url'); setError(null)
     try {
       const r = await api.importFromUrl(url.trim())
       setPv({ token: r.token, preview: r.preview,
@@ -102,7 +102,7 @@ function ImportModal({ onDone, onClose }: {
     if (busy) return
     const f = await window.autowright?.openArchive()
     if (!f) return
-    setBusy(true); setError(null)
+    setBusy('file'); setError(null)
     try {
       const r = await api.importPreview(f.data)
       setPv({ token: r.token, preview: r.preview, source: f.name, srcKind: 'file' })
@@ -111,7 +111,7 @@ function ImportModal({ onDone, onClose }: {
   }
 
   const errLine = (msg: string) => (
-    <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--red)', margin: '8px 0 0' }}>
+    <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--red-text)', margin: '8px 0 0' }}>
       {msg}
     </p>
   )
@@ -133,7 +133,7 @@ function ImportModal({ onDone, onClose }: {
       {(close) => {
         const confirm = async () => {
           if (!pv || busy) return
-          setBusy(true); setError(null)
+          setBusy('confirm'); setError(null)
           try {
             const r = await api.importConfirm(pv.token)
             close()
@@ -179,20 +179,20 @@ function ImportModal({ onDone, onClose }: {
             <button
               className="ad-btn-dashed"
               onClick={() => { void chooseFile() }}
-              disabled={busy}
+              disabled={!!busy}
               style={{
                 alignSelf: 'stretch', width: '100%', padding: '12px 15px', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
               }}
             >
               <i className="fa-solid fa-file-import" style={{ fontSize: 12, color: 'var(--text-faint)' }} />
-              Choose an .autowright file on this Mac…
+              {busy === 'file' ? 'Reading…' : 'Choose an .autowright file on this Mac…'}
             </button>
             {error?.src === 'file' && errLine(error.msg)}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-              <BtnGhost onClick={close} disabled={busy}>Cancel</BtnGhost>
-              <BtnPrimary onClick={() => { void fetchUrl() }} disabled={!url.trim() || busy}>
-                {busy ? 'Fetching…' : 'Import'}
+              <BtnGhost onClick={close} disabled={!!busy}>Cancel</BtnGhost>
+              <BtnPrimary onClick={() => { void fetchUrl() }} disabled={!url.trim() || !!busy}>
+                {busy === 'url' ? 'Fetching…' : 'Import'}
               </BtnPrimary>
             </div>
           </>
@@ -268,8 +268,8 @@ function ImportModal({ onDone, onClose }: {
             </div>
             {error && errLine(error.msg)}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
-              <BtnGhost onClick={() => { setPv(null); setError(null) }} disabled={busy}>Back</BtnGhost>
-              <BtnPrimary onClick={() => { void confirm() }} disabled={busy}>
+              <BtnGhost onClick={() => { setPv(null); setError(null) }} disabled={!!busy}>Back</BtnGhost>
+              <BtnPrimary onClick={() => { void confirm() }} disabled={!!busy}>
                 {busy ? 'Importing…' : 'Import'}
               </BtnPrimary>
             </div>
@@ -302,14 +302,30 @@ function AutoCard({ a }: { a: Auto }) {
   return (
     <div
       className="ad-card-click"
+      role="button"
+      tabIndex={0}
       onClick={() => go('automation', { autoId: a.id })}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        if ((e.target as HTMLElement).closest('button')) return
+        e.preventDefault()
+        go('automation', { autoId: a.id })
+      }}
       style={{
         borderRadius: 12, padding: '18px 20px',
         display: 'flex', flexDirection: 'column', gap: 10,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, fontSize: 15, fontWeight: 600, minWidth: 0 }}>{a.name}</div>
+        <div
+          title={a.name}
+          style={{
+            flex: 1, fontSize: 15, fontWeight: 600, minWidth: 0,
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}
+        >
+          {a.name}
+        </div>
         <button
           className="ad-btn-exec"
           onClick={execute}

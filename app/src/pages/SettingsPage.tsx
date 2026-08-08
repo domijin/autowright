@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import { Eyebrow, PageTitle, RadioRing, Toggle } from '../ui'
+import { Eyebrow, LoadingRow, PageTitle, RadioRing, Toggle } from '../ui'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }
@@ -25,7 +25,18 @@ export default function SettingsPage() {
     if (settings) setDays(String(settings.days))
   }, [settings?.days])
 
-  if (!settings) return null
+  // §9: settings arrive over the first store fetch — show the shared busy row,
+  // not a blank pane, while they load.
+  if (!settings) {
+    return (
+      <div className="ad-anim-page" style={{ maxWidth: 640, margin: '0 auto', padding: '26px 30px 70px' }}>
+        <PageTitle style={{ marginBottom: 0 }}>Settings</PageTitle>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
+          <LoadingRow label="Loading…" />
+        </div>
+      </div>
+    )
+  }
 
   const patch = (p: Record<string, unknown>) => {
     api.patchSettings(p).catch((e: Error) => showToast(e.message))
@@ -85,7 +96,7 @@ export default function SettingsPage() {
           </div>
           <div style={{ padding: '15px 20px' }}>
             <div style={rowTitle}>Notify me</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 11 }}>
+            <div role="radiogroup" aria-label="Notify me" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 11 }}>
               {([
                 { v: 'attention' as const, label: 'Only when something needs attention' },
                 { v: 'all' as const, label: 'After every execution' },
@@ -94,10 +105,13 @@ export default function SettingsPage() {
                 return (
                   <button
                     key={o.v}
+                    className="ad-btn-bare"
+                    role="radio"
+                    aria-checked={on}
                     onClick={() => patch({ notif: o.v })}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 10, background: 'none',
-                      border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left',
+                      display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                      transition: 'background var(--t-hover) var(--ease-enter)',
                     }}
                   >
                     <RadioRing selected={on} size={15} />

@@ -162,6 +162,7 @@ export default function DevLogOverlay() {
           className="ad-nav-row"
           onClick={() => setOpen(false)}
           title="Close"
+          aria-label="Close log overlay"
           style={{ width: 22, height: 22, borderRadius: 6, color: 'var(--text-faint)' }}
         >
           <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />

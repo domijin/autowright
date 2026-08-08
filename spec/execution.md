@@ -260,7 +260,9 @@ rows only — running and waiting rows stay visible under every filter. The Wait
 the last two columns for **WAITING FOR** (elapsed since §4.5 `queuedMs`, ticking every second)
 and **QUEUED AT**; a queued row has no duration and has not started, so showing either would be
 a lie. Each row shows the automation name with
-the full execution id (mono) on a second line beneath it, status badge, a trigger column combining trigger and version
+the short execution id (mono, first 8 characters — the same short form the detail page's
+RECENT EXECUTIONS rows use; the full id lives on the execution page's metadata line) on a
+second line beneath it, status badge, a trigger column combining trigger and version
 ("Manual · v3"; a message-triggered row puts the §4.5 `triggerSender` between them —
 "Discord · Dave · v3"), timestamps, durations. Rows carry no note
 text — skipped/cancelled notes appear on the detail page's RECENT EXECUTIONS rows and on the

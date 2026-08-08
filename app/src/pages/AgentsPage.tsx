@@ -45,7 +45,15 @@ function AgentCard({ ag, check, onDelete }: {
     // §12: whole card opens the edit form — needs-setup opens with the reconnect banner.
     <div
       className="ad-card-click"
+      role="button"
+      tabIndex={0}
       onClick={() => go('agentNew', { agentEditId: ag.id })}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        if ((e.target as HTMLElement).closest('button')) return
+        e.preventDefault()
+        go('agentNew', { agentEditId: ag.id })
+      }}
       style={{ borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -57,6 +65,7 @@ function AgentCard({ ag, check, onDelete }: {
             className="ad-btn-ghost"
             onClick={() => setMenuOpen(!menuOpen)}
             title="More actions"
+            aria-label="Agent actions"
             style={{ padding: '8px 11px' }}
           >
             <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
@@ -93,15 +102,28 @@ function AgentCard({ ag, check, onDelete }: {
           <Eyebrow>USED BY</Eyebrow>
           {uses.map((u) => {
             const auto = autos.find((a) => a.name === u)
-            return (
+            // No matching automation → inert chip: plain span, base chip look, no hover/cursor.
+            return auto ? (
               <button
                 key={u}
                 className="ad-chip-btn"
-                onClick={(e) => { e.stopPropagation(); if (auto) go('automation', { autoId: auto.id }) }}
-                style={{ cursor: auto ? 'pointer' : 'default' }}
+                onClick={(e) => { e.stopPropagation(); go('automation', { autoId: auto.id }) }}
+                style={{ cursor: 'pointer' }}
               >
                 {u}
               </button>
+            ) : (
+              <span
+                key={u}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 7,
+                  background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.09)',
+                  borderRadius: 16, color: 'var(--text-muted)', font: `500 12px var(--sans)`,
+                  padding: '6px 13px',
+                }}
+              >
+                {u}
+              </span>
             )
           })}
         </div>

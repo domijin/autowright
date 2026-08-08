@@ -212,6 +212,45 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-btn-x { color: var(--text-deco); width: 24px; flex: none; font: 500 14px var(--sans); transition: color var(--t-hover) var(--ease-enter); }
 .ad-btn-x:hover:not(:disabled) { color: var(--red-hover); }
 
+/* 26×26 borderless icon-only row action (§14 — secrets edit/delete, trigger edit);
+   .ad-btn-text colors in a fixed square box, no inline size overrides at call sites */
+.ad-btn-icon {
+  width: 26px; height: 26px; padding: 0; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 12px; border-radius: 6px;
+  transition: color var(--t-hover) var(--ease-enter);
+}
+.ad-btn-icon:hover:not(:disabled) { color: var(--text); }
+.ad-btn-icon.danger { color: var(--text-muted); }
+.ad-btn-icon.danger:hover:not(:disabled) { color: var(--red-hover); }
+.ad-btn-icon:disabled { opacity: .45; cursor: default; }
+
+/* button-chrome reset (§9 keyboard convention) — clickable cards/rows render as
+   real <button>s; the surface class (.ad-card-click, .ad-hover-row) owns visuals */
+.ad-btn-bare {
+  display: block; width: 100%; background: none; border: none; padding: 0;
+  font: inherit; color: inherit; text-align: left;
+}
+
+/* segmented filter group (§14 — Executions All / Succeeded / Failed) */
+.ad-seg {
+  display: inline-flex; align-items: stretch;
+  border: 1px solid var(--border-btn); border-radius: 8px; overflow: hidden;
+}
+.ad-seg-btn {
+  font: 500 13px var(--sans); color: var(--text-muted); padding: 7px 14px;
+  background: none; white-space: nowrap;
+  transition: color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter);
+}
+.ad-seg-btn + .ad-seg-btn { border-left: 1px solid var(--hairline); }
+.ad-seg-btn:hover:not(:disabled) { color: var(--text); }
+.ad-seg-btn[aria-pressed='true'] { color: var(--text); background: var(--bg-active); }
+/* the group clips its segments — keep the focus ring inside the clip */
+.ad-seg-btn:focus-visible { outline-offset: -2px; }
+
+/* inset focus ring for controls clipped by an overflow:hidden card (§9) */
+.ad-focus-inset:focus-visible { outline-offset: -2px; }
+
 /* accent-tinted ghost (Execute once / Add trigger / agent chips) */
 .ad-btn-accent-ghost {
   background: oklch(0.74 0.155 52 / 0.1); border: 1px solid oklch(0.74 0.155 52 / 0.3);

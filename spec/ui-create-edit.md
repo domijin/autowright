@@ -47,8 +47,8 @@ applies unchanged; the chat pane never collapses.
   - **system** — a quiet one-line status chip ("Steps synced with the spec.", "Sync
     stopped — the workflow is still out of sync.", the §7 Fix-with-AI failure seed, the
     run-settled entries below, "Build instructions updated.", "Notes updated.",
-    "Renamed to `<name>`.", "Description updated.", the Draft-undo entry "Last change
-    undone — the rewrites above no longer apply.").
+    "Renamed to `<name>`.", "Description updated.", the Draft-undo entries "Last change
+    undone — the rewrites above no longer apply." and "Nothing to undo.").
   - **error** — a red-tinted failure entry (a failed §8 job's message, the Failures
     paragraph below). Persisted like the other kinds (§4.4), so it survives a reload and
     reaches the agent's CONVERSATION context.
@@ -103,7 +103,11 @@ applies unchanged; the chat pane never collapses.
     test's §19 `paramValues` (they also pre-fill the panel's expanded test-value editors);
     the pending test is dropped, with the system entry "Test skipped — the steps aren't in
     sync with the spec.", when the sync fails, blocks, or is
-    cancelled, or when anything else rewrites the workflow first. Grants and Save/Create
+    cancelled, or when anything else rewrites the workflow first. `undo: true` (§8:
+    always alone — no rewrites or other actions beside it) runs the Draft-undo restore
+    exactly like the undo row's button — same full restore, rollback chip, and toast;
+    when no snapshot exists the system chip "Nothing to undo." lands instead. Grants and
+    Save/Create
     are never agent actions (§8): the chat can walk the draft all the way to green, but
     permissions and the final commit stay user clicks;
   - a **blocked** job appends a blockers entry (source: chat).
@@ -347,6 +351,9 @@ editors enter with
   "Spec updated" entry: the restore covers the whole draft, not just the spec. The row is
   the page's only undo affordance; it renders only while the snapshot exists and hides
   while any §8 job is in flight, while viewing an old version, and while a test executes.
+  The restore is also agent-reachable: a chat response may carry the §8 `undo: true`
+  action ("undo that" typed at the composer), which the editor executes identically —
+  "Nothing to undo." when no snapshot exists.
   Restoring puts every
   snapshotted field back, clears the snapshot, toasts "Last change undone.", and appends
   the system entry "Last change undone — the rewrites above no longer apply." — the thread

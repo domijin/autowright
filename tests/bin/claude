@@ -75,6 +75,10 @@ def respond(prompt: str) -> str:
         user = (m.group(1) if m else "").strip()
         if "blocked-chat" in user.lower():
             return BLOCKED_ENVELOPE
+        if "undo" in user.lower():
+            # §8 undo action — always alone (no rewrites, no other actions)
+            return ("Rolling the draft back.\n"
+                    "===FILE: actions.yaml===\nundo: true\n===END===\n")
         if "fix-and-test" in user.lower():
             spec = SPEC_ENVELOPE.format(title="Fixed automation",
                                         desc="Fixed by the mock agent.").split("===END===")[0]

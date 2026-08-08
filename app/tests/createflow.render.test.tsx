@@ -593,6 +593,30 @@ describe('CreateFlow draft undo (§11)', () => {
     expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
   })
 
+  it('the agent triggers the restore via the §8 undo action; a repeat finds nothing', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(done({
+        spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Rewritten body.' }],
+      }))
+      .mockResolvedValue(done({ answer: 'Rolling the draft back.', actions: { undo: true } }))
+    render(<CreateFlow />)
+    send('Change it')
+    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('Rewritten body.')).toBeTruthy()
+    send('undo that')
+    await waitFor(
+      () => expect(screen.getByText('Last change undone — the rewrites above no longer apply.')).toBeTruthy(),
+      { timeout: 3000 },
+    )
+    // same restore as the button: draft back, snapshot consumed, row gone
+    expect(screen.getByText('Does things.')).toBeTruthy()
+    expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
+    expect(screen.queryByText('Undo this change')).toBeNull()
+    expect(storeMod.useStore.getState().toast).toBe('Last change undone.')
+    send('undo that again')
+    await waitFor(() => expect(screen.getByText('Nothing to undo.')).toBeTruthy(), { timeout: 3000 })
+  })
+
   it('a manual spec Save clears the snapshot — no Undo over newer manual work', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
       spec: [{ k: 'h1', text: 'My auto' }, { k: 'p', text: 'Rewritten body.' }],

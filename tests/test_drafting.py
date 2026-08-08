@@ -781,6 +781,34 @@ def test_validate_actions_shapes():
     assert any("mapping" in e for e in errs)
 
 
+def test_validate_actions_undo_exclusive():
+    # §8: undo is literal-true and always alone — no other action keys, and
+    # (validate_chat) no rewrite blocks in the same response.
+    ok, errs = validate_actions("undo: true\n")
+    assert errs == [] and ok == {"undo": True}
+    _, errs = validate_actions("undo: false\n")
+    assert any("must be true" in e for e in errs)
+    _, errs = validate_actions("undo: true\nsync: true\n")
+    assert any("only key" in e for e in errs)
+    _, errs = validate_actions("undo: true\nname: X\n")
+    assert any("only key" in e for e in errs)
+
+
+def test_validate_chat_undo_rejects_rewrites():
+    # §8: undoing and rewriting in one response is contradictory.
+    files = {"actions.yaml": "undo: true\n",
+             "spec.md": "# T\n\nbody"}
+    _, errs = validate_chat("===FILE: ...", files)
+    assert any("cannot be combined" in e for e in errs)
+    files = {"actions.yaml": "undo: true\n", "notes.md": "- n"}
+    _, errs = validate_chat("===FILE: ...", files)
+    assert any("cannot be combined" in e for e in errs)
+    # alone (answer prose aside) it validates
+    raw = "Rolling back.\n===FILE: actions.yaml===\nundo: true\n===END==="
+    ok, errs = validate_chat(raw, {"actions.yaml": "undo: true\n"})
+    assert errs == [] and ok["actions"] == {"undo": True} and ok["answer"] == "Rolling back."
+
+
 def test_validate_actions_checks_test_value_names():
     # §8: test_values keys must name current params — unless the response also
     # rebuilds the steps (sync requested / spec rewritten), when the rebuild

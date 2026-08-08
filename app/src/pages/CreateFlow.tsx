@@ -1395,6 +1395,9 @@ export default function CreateFlow() {
     if (textArg === undefined) setChatText('')
     const entry = newEntry({ kind: 'user', text: request })
     chatReqRef.current = { text: request, entryId: entry.id }
+    // §8 undo action: inputs lock while the job runs, so the snapshot at send
+    // time is the snapshot at apply time — decides the restore toast below
+    const hadSnap = !!rev.undo
     const history = persistChat(rev.chat) // the thread BEFORE this message
     const current = currentSerialized()
     const genCancelled = cancelStepsGen()
@@ -1426,6 +1429,23 @@ export default function CreateFlow() {
             let next: Rev = { ...r, chatBusy: false }
             const chat = [...r.chat]
             if (d.answer) chat.push(newEntry({ kind: 'answer', text: d.answer }))
+            // §8 undo action: arrives alone (validation) — run the §11
+            // restore exactly like the undo row's button, or say there is
+            // nothing left to undo
+            if (actions.undo) {
+              const snap = r.undo
+              if (snap) {
+                next = {
+                  ...next,
+                  spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
+                  triggers: snap.triggers, instr: snap.instr, notes: snap.notes,
+                  dirty: snap.dirty, undo: null,
+                }
+                chat.push(newEntry({ kind: 'system', text: 'Last change undone — the rewrites above no longer apply.' }))
+              } else {
+                chat.push(newEntry({ kind: 'system', text: 'Nothing to undo.' }))
+              }
+            }
             // §11 draft undo: a draft-changing response stashes the full
             // pre-request draft as one snapshot, anchored to the LAST
             // document entry it appends — the standalone undo row renders
@@ -1492,6 +1512,7 @@ export default function CreateFlow() {
           if (d.spec && !actions.sync && !actions.test) {
             showToast('Spec updated — the workflow is out of sync. Sync the steps before saving.', 5800)
           }
+          if (actions.undo && hadSnap) showToast('Last change undone.', 3200)
         },
         (msg) => setRev((r) => r && ({
           ...r, chatBusy: false,

@@ -287,6 +287,7 @@ export interface ChatActions {
   testValues?: Record<string, unknown>
   name?: string
   desc?: string
+  undo?: boolean // §8: always alone — runs the §11 draft-undo restore
 }
 
 // §8: `chat` jobs return any subset of { answer, spec, instr, notes, actions };

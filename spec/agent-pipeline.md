@@ -199,9 +199,17 @@ test: true                  # start a §11 draft test once the workflow is in sy
 test_values: { url: "…" }   # §19 paramValues for that test only (param name → value)
 name: New automation name   # rename — §4.1 user-owned identity, applied like the pencil
 desc: One-line description  # ditto for the description
+undo: true                  # run the §11 draft-undo restore — back to before the last request
 ===END===
 ```
 
+`undo` must be literal `true` and **alone**: a response carrying it may not carry any other
+action key or any rewrite block (spec.md / instructions.md / notes.md) — undoing and
+rewriting in one response is contradictory, so the combination is a validation error
+feeding the repair round; an accompanying prose answer is fine. The editor executes it
+exactly like the §11 undo row's button — same full restore, rollback chip, and toast; when
+no snapshot exists (nothing to undo, or it was cleared) the editor lands the system chip
+"Nothing to undo." instead — the agent requests, the editor decides.
 `sync` and `test` must be literal `true` when present; `test_values` a mapping — when the
 response neither rewrites the spec nor requests `sync` (i.e. the test runs against today's
 steps), its keys must each name a current param, and an unknown name is a validation error
@@ -221,7 +229,9 @@ build is never invisible: the §11 out-of-sync state, the rewrite entry's inline
 now action, and the panel's Sync now button all remain. Request `test: true` only when
 the user asks for a test or the change fixes a failed run and needs verifying — never
 speculatively. Stacked spec-only rewrites then build once at the end, instead of one
-steps build per message.
+steps build per message. Request `undo: true` only when the user explicitly asks to
+undo or revert the last change ("undo that", "put it back") — never hand-rewrite the
+documents back from memory when the exact restore is available.
 
 Chat-call validation, by response shape: a valid blocker envelope settles the job `blocked`
 (`blockedAt: chat`); a response with no `===FILE:` marker is an **answer** — the raw

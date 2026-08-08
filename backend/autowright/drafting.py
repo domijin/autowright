@@ -132,9 +132,10 @@ test: true                  # run a draft test once the steps match the spec (im
 test_values: { url: "…" }   # parameter values for that test only (name → value, names from CURRENT parameters)
 name: New automation name   # rename the automation (current name under AUTOMATION above)
 desc: One-line description  # rewrite its one-line description
+undo: true                  # restore the draft to before the last request — exact revert, one level
 ===END===
 
-Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work", prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
+Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work", prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
 Use the blocker envelope only when a requested change is genuinely impossible."""
 
@@ -509,9 +510,14 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
     errors: list[str] = []
     out: dict = {}
     for k in data:
-        if k not in ("sync", "test", "test_values", "name", "desc"):
+        if k not in ("sync", "test", "test_values", "name", "desc", "undo"):
             errors.append(f"actions.yaml: unknown key {k!r}")
-    for k in ("sync", "test"):
+    # §8: undo is exclusive — undoing and acting/rewriting in one response is
+    # contradictory (the rewrite-block half is enforced in validate_chat)
+    if "undo" in data and len(data) > 1:
+        errors.append("actions.yaml: undo must be the only key — it cannot be "
+                      "combined with other actions")
+    for k in ("sync", "test", "undo"):
         if k in data:
             if data[k] is not True:
                 errors.append(f"actions.yaml: {k} must be true when present")
@@ -568,6 +574,11 @@ def validate_chat(raw: str, files: dict[str, str],
         actions, errs = validate_actions(files["actions.yaml"],
                                          None if "spec.md" in files else param_names)
         errors += errs
+        # §8: undo is exclusive of rewrites too — restoring the draft and
+        # rewriting it in one response is contradictory.
+        if actions.get("undo") and any(f in files for f in ("spec.md", "instructions.md", "notes.md")):
+            errors.append("actions.yaml: undo cannot be combined with spec.md, "
+                          "instructions.md, or notes.md rewrites")
         if not errs:
             payload["actions"] = actions
     if errors:

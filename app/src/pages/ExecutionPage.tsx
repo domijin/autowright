@@ -136,7 +136,7 @@ function TriggerMessage({ payload }: { payload: TriggerPayload }) {
           {payload.sender}
           {origin && <span style={{ color: 'var(--text-faint)' }}>{` in ${origin}`}</span>}
         </div>
-        {discord && (
+        {discord && discord.messageId && (
           <a
             href={`https://discord.com/channels/${discord.guildId ?? '@me'}/${discord.channel}/${discord.messageId}`}
             target="_blank" rel="noopener noreferrer"

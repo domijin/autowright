@@ -160,7 +160,8 @@ page shows), one card:
 - right-aligned on the header line, Discord only: an **"Open in Discord"** external link to
   `https://discord.com/channels/<guildId>/<channel>/<messageId>` (`@me` in place of the guild
   id when `guildId` is null — the DM form), so the raw ids earn their keep as a deep link
-  instead of being printed.
+  instead of being printed. Omitted entirely when `messageId` is null — a §4.5 mocked-test
+  payload has no real message to open.
 - below, the **message time** (mono, faint), then the **message text** (mono, wrapped).
 
 The message is the

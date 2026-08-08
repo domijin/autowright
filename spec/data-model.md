@@ -66,15 +66,19 @@ lastExecLabel: shared time label (below) | "executing…"
   month, day — e.g. "7/18/2026"). Labels that carry a clock time append it: "Today, 8:00 AM".
 latest: last execution's result object + when-label, for the detail page
 params: parameter list (§4.2)
-memory: { size, updated } — per-automation memory directory between executions (any files/formats)
+memory: { size, updated, path } — per-automation memory directory between executions (any
+  files/formats): size a humanized byte label ("empty" when nothing is stored), updated the
+  shared time label ("never written" before the first write), path the directory's absolute
+  path — backs the memory card's Show in Finder (§4.9 Show-in-Finder rule)
 snapshots: [{ id, name, reason, when, version, size, files }] — the §6.3 memory snapshots,
   newest-first; name = user label | null, reason ∈ manual | pre-clear | pre-version |
   pre-restore, when = humanized time label, version = "vN" current at capture (pre-version:
   the version about to execute), size = humanized byte label, files = file count
 snapshotSettings: { preVersion, preClear, preRestore } — booleans, the §6.3 automatic-snapshot
   toggles (all default true)
-steps: [{ name, desc, code, agent?, why?, agents?, secrets?, timeout?, noTimeout?, retries?,
-  infiniteRetries? }] — code is
+steps: [{ name, file, desc, code, agent?, why?, agents?, secrets?, timeout?, noTimeout?,
+  retries?, infiniteRetries? }] — file is the version-folder script filename (§5 NN-name.py);
+  code is
   human-readable script; agent
   marks a step that makes query-only runtime model calls (§6) — the script itself still does any
   changes. agents (agent steps only): ordered list of §8 grant names the step may call — the first
@@ -98,8 +102,10 @@ steps: [{ name, desc, code, agent?, why?, agents?, secrets?, timeout?, noTimeout
   API serialization is `noTimeout`, `infiniteRetries`
 spec: block list [{ k: h1|h2|p|li, text }] — the human-readable spec
 specMeta: "v3 · updated Yesterday" (shared time label)
-versions: [{ v, when, note, spec, steps, instr, notes, params }] — prior-version history, newest-first
-  (the current version is not repeated in this list)
+packages: [{ pip, import }] — the current version's §6.2 declared packages ([] when none);
+  versioned like spec/steps — each version entry below carries its own list
+versions: [{ v, when, note, spec, steps, instr, notes, params, packages }] — prior-version
+  history, newest-first (the current version is not repeated in this list)
 draft: unsaved edit snapshot (create-flow shape) | null
 agentId: agent that writes/edits this automation
 stepAgents, allowedSecrets: string[] — per-automation enablement (set on save)
@@ -341,7 +347,8 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   | error, text?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` — `user` a
   message, `answer` the agent's markdown reply,
   `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list
-  (`source`: chat | steps | sync — which call produced it), `system` a
+  (`source`: chat | spec | steps | sync — which call produced it; `spec` is the create-flow
+  spec call, §11 — `error` entries from that call carry the same `source`), `system` a
   quiet status chip, `error` a red failure entry (a failed §8 job's message, §11) — persisted
   so a later chat's CONVERSATION context still names the failure. The §11 footer action block
   (live job progress) is editor state only, never persisted.
@@ -360,8 +367,9 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   `memory/` (`POST /draft/open`, §19) — before any drafting; §11 create-mode tests execute
   as test execution records in the executions tree, not inside the slot. Leaving the create
   flow after a draft has landed (spec or steps present) keeps the full
-  working state there — the same serialization as an edit-mode draft, plus the identity
-  fields no automation record exists to hold yet (name, chosen agent, enabled agents,
+  working state there — the same serialization as an edit-mode draft (the agent and secret
+  grant selections ride the same draft-only `step_agents` / `allowed_secrets` keys), plus
+  the identity fields no automation record exists to hold yet (name, desc, chosen agent,
   triggers). Opening the create flow while the slot exists resumes it straight on the
   Review page (toast: "Resumed your unsaved draft — Start over discards it."); the §9.1
   list header surfaces the slot as a Resume draft button, and its New automation button
@@ -397,6 +405,11 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
 
 ```
 id: uuid, autoId: uuid | null (null on a create-mode test — no automation record exists yet),
+autoName: automation name — serialized live from the automation while it exists, else the §5
+  execution-time snapshot (a deleted automation's executions keep rendering their historical
+  name),
+autoDeleted: bool — derived: autoId names an automation that no longer exists (false when
+  autoId is null — a create-mode test never had one to lose),
 kind: version | draft | test — what was executed (§11 test executions are kind `test`), status,
 version: int | null — the executed version number; null unless kind is `version`. The API
   serialization derives the display pair from these two: `ver` ("v3", "Draft", "Test") and
@@ -408,7 +421,10 @@ trigger: manual | menubar | cron | time | app_start | discord | imessage | test 
   pubsub) — the machine kind of what started the execution; stored as data, never the UI
   copy. The serialized `trigger` is the derived display label (manual → "Manual",
   menubar → "Menu bar", cron → "Cron", time → "Once", app_start → "App start",
-  discord → "Discord", imessage → "iMessage", test → "Test"), and §19 execute requests
+  discord → "Discord", imessage → "iMessage", test → "Test", and the reserved
+  pubsub → "Pub/Sub" — present in the backend label map for §4.3's reserved kind only; the
+  API refuses to store pubsub triggers, so no record ever carries it and the renderer's
+  trigger-label union omits it), and §19 execute requests
   send the kind
 queuedAt: ISO timestamp | null — set when a §6 firing-queue entry is admitted, kept after
   promotion so the record shows how long it waited; null on every execution that started
@@ -440,13 +456,17 @@ dur, started ("Today, 8:00 AM"), startedMs, endedMs (0 while live and on rows wh
 queuedMs: epoch ms of `queuedAt`, 0 on every execution that never waited — what the §7
   executions list ticks its WAITING FOR column from
 steps: [{ name, file, status, dur, attempts: [{ n, status, dur, startedMs }] }] — file is the
-  version-folder script filename (keys the per-attempt log files, §5); a step's status equals
+  version-folder script filename (keys the per-attempt log files, §5). `file` is
+  record-only: the API's full-record serialization emits only name/status/dur/attempts, and
+  the §19 log endpoint addresses attempt files by step index, which is how the renderer keys
+  them. A step's status equals
   its latest attempt's status, or queued when it has no attempts yet; attempt statuses use the
   step vocabulary (§4.6); dur is the latest attempt's duration. `n` is monotonic per step,
   never re-derived from list length: only the latest 20 attempts are retained — appending an
   attempt past that prunes the oldest entry and its log file (§5) — so an `infiniteRetries`
   step (§4.1) can't grow the record without bound; the true attempt count is the latest
   attempt's `n`, which is what the §7 ×N chip and attempt control read. On disk each step also stores
+  `agent` (bool — the §4.1 agent-step flag, snapshotted at execution start) and
   `sha`, a short hash of the script as executed — the §7 Draft-retry drift check compares it,
   since a re-saved draft can change a step's code without changing its name or file
 result: result object | null
@@ -539,7 +559,9 @@ is purely the local-model runtime OpenCode drives (`opencode run --model ollama/
 model it is already configured with. Display shows "Default model" when the model is null. One agent is
 the app default: a single `default_agent` id pointer in `agents.yaml` (§5) — never a
 per-record flag, so "exactly one default" holds structurally; the API serializes each
-agent's derived `default` bool. Deleting the default agent repoints the pointer and warns
+agent's derived `default` bool and its derived `usedBy` — the names of automations that use
+the agent, as their drafting agent or via a current-version step's `agents:` grant list
+(§4.1). Deleting the default agent repoints the pointer and warns
 which automations use it.
 All four harnesses are selectable. The app can install any of them (plus Ollama, for the
 local-model mode) and help the user sign in when the harness needs an account (§10 step 2,
@@ -547,7 +569,8 @@ local-model mode) and help the user sign in when the harness needs an account (�
 
 ### 4.8 Secret
 
-`{ name, desc, set, value, usedBy }` — `usedBy` is the list of automation names whose current
+`{ name, desc, set, usedBy }` — the value itself is never part of the entity (Keychain-only,
+below). `usedBy` is the list of automation names whose current
 version uses the secret (the UI joins it; empty list renders "Not used yet"). Names uppercase, `[A-Z][A-Z0-9_]*` — sanitization (uppercase,
 invalid chars → `_`) is UI input behavior; the backend validates strictly and rejects nonconforming
 names with HTTP 422. `desc` is an optional free-text description ("What this secret is for — shown
@@ -588,6 +611,9 @@ devMode: bool (default false) — "Developer mode" ("Logs every backend request 
   the §5 build-failure records under `<logs>/build-failures/`, and the `` ` ``-key log
   overlay (§9.3)
 dataPath (default ~/Library/Application Support/Autowright/executions), dataSize
+appPath — derived, serialization-only: the fixed automations-and-settings root
+  (~/Library/Application Support/Autowright) — backs the ON THIS MAC card's
+  "Automations & settings" Show in Finder button (below)
 ```
 Show in Finder (everywhere it appears) opens the target directory itself in Finder when the
 path is an existing directory (e.g. Execution data opens the executions dir, not its parent), and

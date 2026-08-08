@@ -89,14 +89,20 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen).
   `brand-electron.cjs` (npm `postinstall`) renames the dev Electron.app bundle to "Autowright"
   (§14). `electron/icon/` holds the checked-in AW app-icon assets (§14: `icon.svg`
-  source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon).
+  source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon); `electron/` also holds
+  the checked-in tray template PNGs (`trayTemplate.png`/`@2x`, `trayAlert.png`/`@2x`),
+  rendered by `scripts/gen_tray_icon.py`.
+  Renderer tests live here too: `app/tests/` (vitest unit/render suites, `vitest.config.ts`)
+  and `app/e2e/` (end-to-end specs driving the real Electron app, shared `harness.ts`,
+  `vitest.e2e.config.ts`). `ds-entry.ts` is the renderer entry point for the `.design-sync/`
+  previews (below).
   `UI-GUIDE.md` records the renderer conventions.
 - `scripts/` — project scripts (`dev.sh`, `build.sh`, `prod.sh`, `build-clean.sh` — §18;
   `uninstall/` — developer-only uninstall scripts for the harness CLIs and Ollama, §18;
   `gen_tray_icon.py` renders the tray template PNGs;
   `gen_icon.cjs` regenerates `app/electron/icon/icon.png` + `icon.icns` from `icon.svg`
   (§14) — invoked from `app/` as `./node_modules/.bin/electron ../scripts/gen_icon.cjs`;
-  `commit` stages all uncommitted changes, generates a commit message via
+  `commit.sh` stages all uncommitted changes, generates a commit message via
   `claude --model claude-opus-5 -p` from the staged diff, and commits;
   `release.sh` sets the app version from the repo-root `VERSION` file, invokes
   `prod.sh` to build the release distributable, publishes the DMG + update zip as a
@@ -112,8 +118,13 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   saving or executing — the full command including `--grant-*` flags (§20 review-promise and
   grant-model rules). Checked in beside the code; users copy or symlink it into their agent's
   skill directory.
-- `tests/` — pytest suite for the backend (storage, drafting, engine, schedule, API), plus the
-  test doubles: `tests/bin/claude` (fake agent CLI) and `tests/seed_data.py` (§16 fixture).
+- `tests/` — pytest suite for the backend (storage, drafting, engine, schedule, API): the fast
+  tiers at the top level (shared `tests/conftest.py`), the live integration tier under
+  `tests/integration/` (§15 — its own `conftest.py` + `it_harness.py`), the test doubles
+  `tests/bin/claude` (fake agent CLI) and `tests/bin/osascript` (fake Messages sender),
+  `tests/fixtures/cron_parity.json` (the §4.3/§15 cron parity fixture shared with the
+  renderer), and `tests/seed_data.py` (§16 fixture). `pytest.ini` at the repo root configures
+  the suite. Renderer tests live under `app/` (above), not here.
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
   single self-contained page + `CNAME` with the custom domain). Dark, matches the §14 visual
   language (IBM Plex Sans/Mono — no 700 weight, per §14 — brand orange accent `#f68b43`, and
@@ -152,6 +163,16 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
   `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to
   build on mismatch.
+- `README.md` — the top-level readme; §2's component list follows it.
+- `pytest.ini` — pytest configuration for the `tests/` suite.
+- `.design-sync/` — DesignSync workspace for UI component iteration: `config.json`,
+  `conventions.md`, `NOTES.md`, and `previews/*.tsx` (one preview per shared UI primitive),
+  rendered through `app/ds-entry.ts`.
+- `.claude/` — Claude Code project config: `CLAUDE.md` (project instructions),
+  `settings.json`, `hooks/` (the guard hooks), and `skills/` (project skills, including the
+  verify skill).
+- `.gitignore` — untracked-file rules (the generated `knowledge.md` / `knowledge-audit.md`
+  among them).
 - `LICENSE` — MIT, copyright David Zhang (also `"license": "MIT"` in `app/package.json`).
 - `PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
   page (raw import into the renderer bundle) and read by GitHub visitors in place.

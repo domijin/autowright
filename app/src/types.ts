@@ -190,11 +190,12 @@ export interface LogLine { t: string; k: 'sys' | 'out' | 'wrn' | 'err'; seq: num
 
 // §4.5: what a message trigger was firing on — discriminated on kind.
 export type TriggerPayload =
-  | { kind: 'discord'; text: string; sender: string; messageId: string; at: string
+  | { kind: 'discord'; text: string; sender: string; messageId: string | null; at: string
       channel: string; channelName: string | null; guildName: string | null
       guildId: string | null; secret: string }
-  | { kind: 'imessage'; text: string; sender: string; messageId: string; at: string
-      chat: string }  // Messages chat guid (reply routing)
+  | { kind: 'imessage'; text: string; sender: string; messageId: string | null; at: string
+      chat: string | null }  // Messages chat guid (reply routing)
+// messageId/chat are null only on §4.5 mocked-test payloads — real firings always carry them.
 
 export interface Exec {
   id: string

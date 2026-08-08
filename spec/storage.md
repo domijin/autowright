@@ -42,8 +42,11 @@ draft/                         # THE pending create-mode draft (§4.4) — a sin
                                # deleted when Create or Start over settles it; same
                                # container shape as automations/<uuid>/draft/ below, plus
                                # create-only identity keys in its automation/automation.yaml
-                               # (name, desc, agent_id, enabled_agents, triggers, created_at,
-                               # updated_at — no automation record exists yet to hold them):
+                               # (name, desc, agent_id, triggers, created_at, updated_at —
+                               # no automation record exists yet to hold them); the grant
+                               # selections ride the same draft-only step_agents /
+                               # allowed_secrets keys as the edit-mode container below —
+                               # there is no enabled_agents key anywhere in the slot:
   automation/                  #   the working copy (version-folder shape)
   memory/                      #   scratch memory copied by §11 tests; starts empty
   test.yaml                    #   §11 last-test summary — same shape as the edit-mode one
@@ -73,6 +76,14 @@ automations/<uuid>/
                                # files) + memory/ (the recursive copy); no index file — the
                                # list is read from disk on demand; a dir without snapshot.yaml
                                # is a crash orphan (skipped, swept at the next creation)
+  .ad-tmp-memory/              # §6.3 restore staging, transient: the snapshot's memory copy
+                               # is staged here, then swapped into memory/ by rename;
+  .ad-old-memory/              # holds the displaced memory/ during that swap. Both are
+                               # deleted at the end of a restore, but a crash mid-swap can
+                               # leave them on disk — the next restore recovers
+                               # .ad-old-memory back to memory/ when memory/ is missing
+                               # (the aside dir is then the sole surviving copy), then
+                               # deletes both before staging again
   draft/                       # unsaved edit state — a container, not a version folder:
     automation/                # the working copy, same shape as a version folder; rewritten
                                # whole on every draft save; its automation.yaml also holds
@@ -91,7 +102,8 @@ automations/<uuid>/
                                # test's workspace/result/logs live on its execution record
                                # (§4.5 test executions), not in this container.
     chat.jsonl                 # §11 chat thread — one JSON object per line, the §4.4 entry
-                               # shape ({id, kind, text?, blockers?, at}); rides the draft
+                               # shape ({id, kind, text?, blockers?, source?, diagnosed?,
+                               # dismissed?, resolved?, at}); rides the draft
                                # payload as `chat`, rewritten whole on every draft save,
                                # deleted with the draft. Transient entries (progress
                                # spinners) are never persisted.
@@ -220,8 +232,11 @@ rewrites `automation.yaml` to flip the pointer (and apply any agent/secret/param
 versions are append-only and never edited in place; only `automation.yaml` and `draft/` are
 mutable. "Restore vX as vN+1" (§4.4) copies the vX folder to vN+1 and flips the pointer.
 
-Executions live under `<dataPath>/executions/` (movable via Settings → Change data location;
-automations stay put):
+Executions live under `<dataPath>/executions/` — unless the configured directory is itself
+named `executions`, in which case it is used directly rather than nested again (the §4.9
+default `…/Autowright/executions` already ends in it; a consequence is that any user-chosen
+folder named `executions` becomes the executions dir itself). Movable via Settings → Change
+data location; automations stay put:
 
 ```
 executions/

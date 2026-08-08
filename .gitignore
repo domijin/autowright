@@ -27,6 +27,7 @@ build/
 .env.local
 *.local.yaml
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # IDE
 .idea/

@@ -44,8 +44,10 @@ OLLAMA_URL = os.environ.get("AUTOWRIGHT_OLLAMA_URL", "http://localhost:11434")
 
 class HarnessError(Exception):
     """A harness call failed. `retryable` marks transient failures (timeout,
-    nonzero exit) the §8 pipeline may retry once; environment problems (CLI not
-    installed, unknown harness) are not."""
+    nonzero exit that looks transient) the §8 pipeline may retry once;
+    environment problems (CLI not installed, unknown harness) and obvious
+    deterministic failures (auth / model-not-found stderr — see
+    `_deterministic_failure`) are not."""
 
     def __init__(self, message: str, retryable: bool = False):
         super().__init__(message)
@@ -166,6 +168,38 @@ def invoke(agent: dict, prompt: str, timeout: int | None = None,
     reqlog.write_agent(ts, harness or "?", model, prompt, out, None,
                        (time.monotonic() - t0) * 1000)
     return out
+
+
+# §8 failure policy: a nonzero exit whose stderr names an obvious
+# DETERMINISTIC failure — authentication/sign-in trouble or a wrong model
+# name — is never retried: a retry can't fix a bad credential or a missing
+# model, so drafting surfaces the error immediately instead of costing a
+# second multi-minute call. Case-insensitive substrings, matched against the
+# stderr tail (the decisive last lines; banners never reach it). Sources:
+# Claude Code "Invalid API key · Please run /login", Codex "401 Unauthorized"
+# / "You must be logged in", Gemini/OpenCode auth and model-not-found lines.
+_DETERMINISTIC_STDERR = (
+    "not logged in",
+    "login",
+    "logged out",
+    "unauthorized",
+    "401",
+    "403",
+    "authentication",
+    "invalid api key",
+    "api key",
+    "model not found",
+    "model_not_found",
+    "unknown model",
+    "no such model",
+)
+
+
+def _deterministic_failure(stderr_tail: str) -> bool:
+    """True when the stderr tail matches an obvious auth / model-not-found
+    pattern — the §8 non-retryable classification."""
+    low = stderr_tail.lower()
+    return any(pat in low for pat in _DETERMINISTIC_STDERR)
 
 
 def _claude_stream_line(line: str) -> tuple[str | None, str | None, list[dict]]:
@@ -339,7 +373,8 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         # The TAIL of stderr, not the head: CLIs print banners first and the
         # decisive ERROR line last (verified with Codex).
         tail = "\n".join(err.strip().splitlines()[-3:])
-        raise HarnessError(f"{harness} failed: {tail[-400:]}", retryable=True)
+        raise HarnessError(f"{harness} failed: {tail[-400:]}",
+                           retryable=not _deterministic_failure(tail))
     if harness == "Claude Code":
         # The result event is authoritative; joined deltas cover a CLI that
         # streamed but never sent one; raw stdout covers non-stream output.
@@ -509,16 +544,37 @@ def signed_in(provider_id: str) -> bool | None:
         binpath = resolve_bin("codex")
         return bool(binpath) and _status_ok([binpath, "login", "status"], "codex")
     if provider_id == "gemini":
-        return (os.path.exists(os.path.expanduser("~/.gemini/oauth_creds.json"))
-                or bool(os.environ.get("GEMINI_API_KEY")))
+        # §19: an API key alone counts as signed in; otherwise oauth_creds.json
+        # must parse as JSON carrying a refresh token — file existence never
+        # counts (a stale/empty/garbage file must not fake a working sign-in).
+        if os.environ.get("GEMINI_API_KEY"):
+            return True
+        try:
+            with open(os.path.expanduser("~/.gemini/oauth_creds.json"),
+                      encoding="utf-8") as f:
+                creds = json.load(f)
+        except (OSError, ValueError):
+            return False
+        return isinstance(creds, dict) and bool(str(creds.get("refresh_token") or "").strip())
     if provider_id == "opencode":
+        # §19: auth.json maps provider id → credential entry. The OpenCode CLI
+        # writes { type: api, key } / { type: oauth, access, refresh, expires }
+        # / { type: wellknown, key, token } shapes — signed in means at least
+        # one entry is a dict carrying a non-empty token-like field (key /
+        # token / access / refresh); a credential-less or unparseable file
+        # reads signed out.
         try:
             with open(os.path.expanduser("~/.local/share/opencode/auth.json"),
                       encoding="utf-8") as f:
                 creds = json.load(f)
-            return isinstance(creds, dict) and len(creds) > 0
         except (OSError, ValueError):
             return False
+        if not isinstance(creds, dict):
+            return False
+        return any(isinstance(entry, dict)
+                   and any(str(entry.get(k) or "").strip()
+                           for k in ("key", "token", "access", "refresh"))
+                   for entry in creds.values())
     return False
 
 

@@ -4,7 +4,7 @@ import { api } from '../api'
 import { useStore } from '../store'
 import type { Automation, ImportPreview, ImportSummary } from '../types'
 import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
-import { triggerLabel } from '../cron'
+import { useTriggerPreview } from '../triggers'
 
 // §5.1/§9.1 import summary modal — only the sections that apply render.
 function ImportSummaryModal({ name, automationId, summary, onClose }: {
@@ -87,6 +87,9 @@ function ImportModal({ onDone, onClose }: {
   const [pv, setPv] = useState<{
     token: string; preview: ImportPreview; source: string; srcKind: 'url' | 'file'
   } | null>(null)
+  // §19: the preview's trigger chips label through POST /triggers/preview —
+  // the renderer keeps no local trigger-math mirror (§4.3)
+  const trigPreviews = useTriggerPreview(pv?.preview.triggers ?? [])
 
   const fetchUrl = async () => {
     if (!url.trim() || busy) return
@@ -224,13 +227,13 @@ function ImportModal({ onDone, onClose }: {
             </div>
             {pv.preview.triggers.length > 0 && section('TRIGGERS', (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {pv.preview.triggers.map((t, i) => (
+                {pv.preview.triggers.map((_, i) => trigPreviews[i] && (
                   <span key={i} style={{
                     fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
                     color: 'var(--text-muted)', background: 'var(--hairline-dim)',
                     borderRadius: 6, padding: '3px 8px',
                   }}>
-                    {triggerLabel(t)}
+                    {trigPreviews[i].label}
                   </span>
                 ))}
               </div>
@@ -385,7 +388,7 @@ export default function AutomationsList() {
   // confirm, delete the slot, then open the create flow empty.
   const startFresh = async () => {
     setConfirmFresh(false)
-    try { await api.deletePendingDraft() } catch { /* backend restarting */ }
+    try { await api.deleteDraft('pending') } catch { /* backend restarting */ }
     setSurface('create', 'app')
   }
 

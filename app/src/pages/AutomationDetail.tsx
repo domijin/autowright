@@ -6,10 +6,11 @@ import { useStore } from '../store'
 import type { Automation, ParamDef, SecretMeta, SnapshotSettings, Step, Trigger, DraftTrigger, TriggerKindFields } from '../types'
 import {
   BackLink, Badge, BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, EmptyNotice, executingToast,
-  Eyebrow, FailureNotice, HeaderActions, MenuRow, MiniBadge, Modal, PULSE, PopMenu, PyCode, ScrollArea, Tag, Toggle,
-  nextIn, stepTimeoutLabel, stepTimeoutTitle, usePopover, validUrl,
+  Eyebrow, FailureNotice, HeaderActions, MenuRow, MiniBadge, Modal, PULSE, PopMenu, ScrollArea, Toggle,
+  nextIn, usePopover,
 } from '../ui'
-import { cronLabels, cronNext, cronValid, fmtMoment, nextTriggerShort, timeAt, triggerShort, tzSuffix } from '../cron'
+import { ParamValueEditor, StepList } from '../steps'
+import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import { ResultSection, SpecMarkdown } from '../result'
 
 const badgeAnim = (s: string) => (s === 'executing' ? PULSE : 'none')
@@ -379,15 +380,25 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const [from, setFrom] = useState(init.from ?? '')
   const [guide, setGuide] = useState(false)
   const [secretModal, setSecretModal] = useState(false)
-  const exprOk = cronValid(expression)
   const [hh, mm, ss] = tparts
   const timeEntered = hh !== '' || mm !== ''
   const timeOk = hh !== '' && mm !== '' && ss !== '' && +hh <= 23 && +mm <= 59 && +ss <= 59
   const at = date && timeOk
     ? `${date}T${tparts.map((p) => p.padStart(2, '0')).join(':')}`
     : ''
-  const atDate = at ? timeAt(at, timezone || undefined) : null
-  const atOk = !!atDate && !Number.isNaN(atDate.getTime()) && atDate > new Date()
+  // §19: the live preview reads from POST /triggers/preview — no local trigger
+  // math. Half-typed entries go to the endpoint as-is (an invalid one is a
+  // `valid: false` result with a plain-word error, never a 422).
+  const previewEntry: object[] = kind === 'cron'
+    ? (expression.trim() ? [{ kind, expression, ...(timezone ? { timezone } : {}) }] : [])
+    : kind === 'time'
+    ? (at ? [{ kind, at, ...(timezone ? { timezone } : {}) }] : [])
+    : []
+  const [pv] = useTriggerPreview(previewEntry)
+  const exprOk = kind === 'cron' && !!expression.trim() && !!pv?.valid
+  const exprBad = kind === 'cron' && !!expression.trim() && !!pv && !pv.valid
+  const atOk = kind === 'time' && !!at && !!pv?.valid
+  const atBad = kind === 'time' && !!at && !!pv && !pv.valid
   const channelOk = /^[0-9]+$/.test(channel)
   // §4.3: optional sender filter — comma-separated numeric user ids
   const authorIds = author.split(',').map((s) => s.trim()).filter(Boolean)
@@ -402,13 +413,15 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   const canAdd = kind === 'cron' ? exprOk : kind === 'time' ? atOk
     : kind === 'discord' ? channelOk && !!secret && authorOk
     : kind === 'imessage' ? fromOk : true
-  const nxt = kind === 'cron' && exprOk ? cronNext(expression, undefined, timezone || undefined) : null
   const preview = kind === 'cron'
-    ? (exprOk ? `${cronLabels(expression, timezone || undefined).label}${nxt ? ` · next: ${fmtMoment(nxt)}` : ''}` : (expression ? 'Not a valid cron expression' : ''))
+    ? (!expression.trim() || !pv ? ''
+      : pv.valid ? `${pv.label}${pv.nextLabel ? ` · next: ${pv.nextLabel}` : ''}`
+      : pv.error ?? '')
     : kind === 'time'
-    ? (atOk ? `Once at ${fmtMoment(new Date(at))}${tzSuffix(timezone || undefined)}`
-      : timeEntered && !timeOk ? 'Hours go 0–23, minutes and seconds 0–59'
-      : at ? 'Pick a time in the future' : '')
+    ? (timeEntered && !timeOk ? 'Hours go 0–23, minutes and seconds 0–59'
+      : !at || !pv ? ''
+      : pv.valid ? pv.label
+      : pv.error ?? '')
     : kind === 'discord'
     ? (channelOk ? `On Discord message in ${channel}` : (channel ? 'The channel id is numbers only' : ''))
     : kind === 'imessage'
@@ -472,7 +485,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       )}
       {kind === 'cron' ? (
         <input
-          className={`ad-input${expression && !exprOk ? ' invalid' : ''}`}
+          className={`ad-input${exprBad ? ' invalid' : ''}`}
           value={expression}
           onChange={(e) => setExpr(e.target.value)}
           placeholder="0 8 * * *   (minute hour day month weekday, Sun = 0)"
@@ -482,7 +495,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       ) : kind === 'time' ? (
         <div style={{ display: 'flex', gap: 8 }}>
           <input
-            className={`ad-input${at && !atOk ? ' invalid' : ''}`}
+            className={`ad-input${atBad ? ' invalid' : ''}`}
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
@@ -490,7 +503,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
           />
           <TimeParts
             parts={tparts}
-            invalid={(timeEntered && !timeOk) || !!(at && !atOk)}
+            invalid={(timeEntered && !timeOk) || atBad}
             onChange={setTparts}
           />
         </div>
@@ -820,13 +833,6 @@ function ParamRow({ automationId, p, last }: { automationId: string; p: ParamDef
   const setLinesSaved = (next: string[], now = false) => { setLines(next); now ? commit(next) : commitSoon(next) }
   const setRowsSaved = (next: { key: string; value: string }[], now = false) => { setRows(next); now ? commit(next) : commitSoon(next) }
 
-  let good = 0
-  let bad = 0
-  if (p.kind === 'list' && p.validate) {
-    good = lines.filter((l) => l.trim() && validUrl(l)).length
-    bad = lines.filter((l) => l.trim() && !validUrl(l)).length
-  }
-
   // §9.2 hybrid layout: compact controls (toggle/number) sit on the label's line,
   // wide editors (text/list/kv) stack below the full-width label + help.
   const compact = p.kind === 'toggle' || p.kind === 'number'
@@ -850,239 +856,53 @@ function ParamRow({ automationId, p, last }: { automationId: string; p: ParamDef
     }}>
       {labelBlock}
       <div style={{ minWidth: 0, display: 'flex', flex: 'none' }}>
-        {p.kind === 'toggle' && (
-          <Toggle
-            on={tog ?? !!p.on}
-            onChange={() => {
-              const v = !(tog ?? !!p.on)
-              setTog(v)
-              void (async () => {
-                try {
-                  await api.patchAutomation(automationId, { paramValues: { [p.name]: v } })
-                  void loadAuto(automationId)
-                } catch (err) {
-                  setTog(null) // roll the optimistic value back — the server still holds the old one
-                  showToast((err as Error).message)
-                }
-              })()
-            }}
-          />
-        )}
-        {p.kind === 'number' && (
-          <input
-            value={num ?? String(p.value ?? '')}
-            inputMode="numeric"
-            onChange={(e) => {
-              const s = e.target.value.replace(/[^0-9]/g, '')
-              setNum(s)
-              const min = p.min ?? 0
-              const v = s === '' ? min : Math.max(min, parseInt(s, 10))
-              commitSoon(v)
-            }}
-            onFocus={() => setFoc(true)}
-            onBlur={() => {
-              setFoc(false)
-              flush()
-              setNum(null)
-            }}
-            className="ad-input"
-            style={{
-              width: 70, fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 13,
-              textAlign: 'center', padding: '6px 10px',
-            }}
-          />
-        )}
-        {p.kind === 'text' && (
-          <input
-            value={text ?? String(p.value ?? '')}
-            placeholder={p.placeholder ?? ''}
-            onChange={(e) => { setText(e.target.value); commitSoon(e.target.value) }}
-            onFocus={() => setFoc(true)}
-            onBlur={() => {
-              setFoc(false)
-              flush()
-              setText(null)
-            }}
-            className="ad-input"
-            style={{ width: '100%', maxWidth: 520, fontSize: 12.5, padding: '8px 12px' }}
-          />
-        )}
-        {p.kind === 'list' && (
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {lines.map((l, j) => {
-              const inv = !!p.validate && !!l.trim() && !validUrl(l)
-              return (
-                <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input
-                    className={`ad-input${inv ? ' invalid' : ''}`}
-                    value={l}
-                    onChange={(e) => setLinesSaved(lines.map((x, i) => (i === j ? e.target.value : x)))}
-                    onBlur={flush}
-                    style={{
-                      flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px',
-                      ...(inv ? { color: 'var(--red-text)' } : {}),
-                    }}
-                  />
-                  {inv && (
-                    <MiniBadge c="var(--red-text)" bg="var(--red-bg)" style={{ flex: 'none' }}>
-                      NOT A VALID LINK
-                    </MiniBadge>
-                  )}
-                  <button className="ad-btn-x" onClick={() => setLinesSaved(lines.filter((_, i) => i !== j), true)}>
-                    <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
-                  </button>
-                </div>
-              )
-            })}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <button className="ad-btn-dashed" onClick={() => setLinesSaved([...lines, ''])}>
-                + Add line
-              </button>
-              <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)' }}>
-                {lines.length}{p.validate ? ` lines · ${good} valid links${bad ? ` · ${bad} needs attention` : ''}` : ' entries'}
-              </span>
-            </div>
-          </div>
-        )}
-        {p.kind === 'kv' && (
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {rows.map((r, j) => (
-              <div key={j} style={{ display: 'flex', gap: 6 }}>
-                <input
-                  className="ad-input"
-                  value={r.key}
-                  onChange={(e) => setRowsSaved(rows.map((x, i) => (i === j ? { ...x, key: e.target.value } : x)))}
-                  onBlur={flush}
-                  style={{
-                    flex: 1.3, minWidth: 0, color: 'var(--text-muted)',
-                    fontFamily: 'var(--mono)', fontSize: 11.5, padding: '7px 10px',
-                  }}
-                />
-                <input
-                  className="ad-input"
-                  value={r.value}
-                  onChange={(e) => setRowsSaved(rows.map((x, i) => (i === j ? { ...x, value: e.target.value } : x)))}
-                  onBlur={flush}
-                  style={{ flex: 1, minWidth: 0, fontSize: 12, padding: '7px 10px' }}
-                />
-                <button className="ad-btn-x" onClick={() => setRowsSaved(rows.filter((_, i) => i !== j), true)}>
-                  <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
-                </button>
-              </div>
-            ))}
-            <button className="ad-btn-dashed" onClick={() => setRowsSaved([...rows, { key: '', value: '' }])}>
-              + Add row
-            </button>
-          </div>
-        )}
+        {/* shared presentational controls (../steps) — this row keeps the
+            local drafts and the debounce/PATCH plumbing above */}
+        <ParamValueEditor
+          variant="detail"
+          p={p}
+          on={tog ?? !!p.on}
+          lines={lines}
+          rows={rows}
+          value={p.kind === 'number' ? (num ?? String(p.value ?? '')) : (text ?? String(p.value ?? ''))}
+          setOn={() => {
+            const v = !(tog ?? !!p.on)
+            setTog(v)
+            void (async () => {
+              try {
+                await api.patchAutomation(automationId, { paramValues: { [p.name]: v } })
+                void loadAuto(automationId)
+              } catch (err) {
+                setTog(null) // roll the optimistic value back — the server still holds the old one
+                showToast((err as Error).message)
+              }
+            })()
+          }}
+          setLines={(next, now) => setLinesSaved(next, !!now)}
+          setRows={(next, now) => setRowsSaved(next, !!now)}
+          setText={(v) => { setText(v); commitSoon(v) }}
+          setNumber={(s) => {
+            setNum(s)
+            const min = p.min ?? 0
+            const v = s === '' ? min : Math.max(min, parseInt(s, 10))
+            commitSoon(v)
+          }}
+          onFocus={() => setFoc(true)}
+          onBlur={p.kind === 'number'
+            ? () => { setFoc(false); flush(); setNum(null) }
+            : p.kind === 'text'
+              ? () => { setFoc(false); flush(); setText(null) }
+              : flush}
+        />
       </div>
     </div>
   )
 }
 
 // ---------- steps ----------
-
-function StepRow({ s, n, open, onToggle, last, agentTags }: {
-  s: Step; n: number; open: boolean; onToggle: () => void; last: boolean
-  agentTags: { name: string; why?: string }[]
-}) {
-  // §9.2: declared entries carry the per-use `why`; code-referenced names don't.
-  const stepSecrets = (s.secrets ?? []).map((e) => ({ ...e }))
-  for (const m of (s.code || '').matchAll(/\bsecrets\.([A-Z][A-Z0-9_]*)/g)) {
-    if (!stepSecrets.some((t) => t.name === m[1])) stepSecrets.push({ name: m[1] })
-  }
-  return (
-    <div style={{ borderBottom: last ? 'none' : '1px solid var(--hairline-dim)' }}>
-      <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
-        <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)', width: 14, flex: 'none' }}>{n}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
-            {s.agent && agentTags.map((t) => (
-              <Tag
-                key={t.name}
-                icon="fa-microchip"
-                c="var(--accent)"
-                title={t.why || s.why || `This step calls the ${t.name} AI agent.`}
-                style={{ background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' }}
-              >
-                {t.name}
-              </Tag>
-            ))}
-            {stepSecrets.map((t) => (
-              <Tag
-                key={t.name}
-                icon="fa-key"
-                title={t.why || `This step uses the ${t.name} secret from your Keychain`}
-                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-              >
-                {t.name}
-              </Tag>
-            ))}
-            <Tag
-              icon="fa-clock"
-              title={stepTimeoutTitle(s)}
-              style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-            >
-              {stepTimeoutLabel(s)}
-            </Tag>
-          </div>
-          <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>{s.description}</div>
-        </div>
-        <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
-          <Caret open={open} openDeg={180} closedDeg={0} style={{ fontSize: 12 }} />
-        </span>
-      </button>
-      <Collapse open={open}>
-        {s.agent && s.why && (
-          <div style={{
-            display: 'flex', gap: 9, alignItems: 'flex-start', borderTop: '1px solid var(--hairline-dim)',
-            background: 'var(--accent-hint-bg)', padding: '10px 18px 10px 45px',
-          }}>
-            <i className="fa-solid fa-microchip" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
-            <span style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-muted)' }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-2)' }}>Why an agent: </span>{s.why}
-            </span>
-          </div>
-        )}
-        <PyCode code={s.code} style={{
-          margin: 0, background: 'var(--bg-code)', borderTop: '1px solid var(--hairline-dim)',
-          padding: '14px 18px 14px 45px', fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.75,
-          color: 'var(--code-text)', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', minWidth: 0,
-        }} />
-      </Collapse>
-    </div>
-  )
-}
-
-// Holds the open-step set locally so a toggle re-renders only this list —
-// a page-level re-render blocks paint past the front-loaded half of the
-// §14 collapse transition and the expand reads as a pop. Steps open
-// independently: auto-closing the previous step would run its collapse
-// simultaneously and the two motions cancel into a layout shuffle.
-function StepList({ steps, fallbackAgent }: { steps: Step[]; fallbackAgent: string }) {
-  const [open, setOpen] = useState<ReadonlySet<number>>(new Set())
-  const toggle = (i: number) => setOpen((prev) => {
-    const next = new Set(prev)
-    next.has(i) ? next.delete(i) : next.add(i)
-    return next
-  })
-  return (
-    <>
-      {steps.map((s, i) => (
-        <StepRow
-          key={i}
-          s={s}
-          n={i + 1}
-          open={open.has(i)}
-          onToggle={() => toggle(i)}
-          last={i === steps.length - 1}
-          agentTags={s.agents?.length ? s.agents : [{ name: fallbackAgent }]}
-        />
-      ))}
-    </>
-  )
-}
+// The step rows render through the shared StepList ('detail' variant,
+// ../steps) — one component with the create/edit flow, which also owns the
+// stepSecretTags scan the rows' key tags come from.
 
 // ---------- page ----------
 
@@ -1115,6 +935,10 @@ export default function AutomationDetail() {
   // automationId may point at a deleted automation.
   useEffect(() => { if (!auto) go('automations') }, [auto, go])
 
+  // §19: per-trigger next occurrences come from POST /triggers/preview — the
+  // renderer holds no trigger math (must run before the early return: hooks).
+  const trigPreviews = useTriggerPreview(auto?.triggers ?? [])
+
   if (!auto) return null
 
   // §6: `live` is a list — with maxParallel > 1 several run at once, and only a
@@ -1127,7 +951,7 @@ export default function AutomationDetail() {
   const noTrigs = trigs.length === 0
   const allOff = auto.triggersOff
   const countdown = auto.nextAt == null ? '' : nextIn(auto)
-  const nextShort = nextTriggerShort(trigs)
+  const nextShort = nextTriggerShort(trigs, trigPreviews)
   // §4.3: enabled app_start/message triggers have no computable next — nextAt stays null.
   const discordOn = trigs.some((t) => t.kind === 'discord' && t.enabled)
   const imsgOn = trigs.some((t) => t.kind === 'imessage' && t.enabled)
@@ -1167,12 +991,14 @@ export default function AutomationDetail() {
     })()
   }
 
-  // §4.3 trigger edits are user-owned operational state: whole-list PATCH, no version, no AI.
-  const putTriggers = (next: Array<Trigger | DraftTrigger>, toastMsg: string) => {
+  // §4.3 trigger edits are user-owned operational state: whole-list PATCH, no
+  // version, no AI. A function toast reads the saved automation — the §4.3
+  // display strings live on the serialized triggers, never in the renderer.
+  const putTriggers = (next: Array<Trigger | DraftTrigger>, toastMsg: string | ((saved: Automation) => string)) => {
     void (async () => {
       try {
-        await api.patchAutomation(auto.id, { triggers: next })
-        showToast(toastMsg)
+        const saved = await api.patchAutomation(auto.id, { triggers: next })
+        showToast(typeof toastMsg === 'string' ? toastMsg : toastMsg(saved))
         void loadAuto(auto.id)
       } catch (err) {
         showToast((err as Error).message)
@@ -1519,7 +1345,7 @@ export default function AutomationDetail() {
                     setEditTrig(null)
                     putTriggers(
                       trigs.map((x) => (x.id === t.id ? { ...nt, id: t.id, enabled: t.enabled } : x)),
-                      `Trigger updated — ${triggerShort(nt)}.`,
+                      (saved) => `Trigger updated — ${saved.triggers.find((x) => x.id === t.id)?.short ?? ''}.`,
                     )
                   }}
                   onCancel={() => setEditTrig(null)}
@@ -1583,7 +1409,11 @@ export default function AutomationDetail() {
             <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 8 }}>{trigStatusText}</div>
             <AddTrigger
               hasAppStart={trigs.some((t) => t.kind === 'app_start')}
-              onAdd={(t) => putTriggers([...trigs, { ...t, enabled: true }], `Trigger added — ${triggerShort(t)}.`)}
+              onAdd={(t) => putTriggers(
+                [...trigs, { ...t, enabled: true }],
+                // a whole-list replace keeps order — the added entry is last
+                (saved) => `Trigger added — ${saved.triggers[saved.triggers.length - 1]?.short ?? ''}.`,
+              )}
             />
           </div>
         </div>
@@ -1851,6 +1681,7 @@ export default function AutomationDetail() {
             {/* §9.2: one agent tag per name in a step's agents list; empty →
                 the automation's first enabled agent, fallback "agent". */}
             <StepList
+              variant="detail"
               steps={steps}
               fallbackAgent={(() => {
                 const first = auto.stepAgents.map((id) => agents.find((z) => z.id === id)).find((g) => !!g)

@@ -935,6 +935,131 @@ def test_draft_jobs_cancel_building_and_terminal_noop():
     assert jobs.cancel("never-existed") is False
 
 
+def test_cancel_between_calls_never_starts_next_harness_call(monkeypatch):
+    # §8 cancel semantics: a cancel that lands while call 1's response is in
+    # hand raises Cancelled out of _invoke (post-return check) — call 2 never
+    # spawns, no further events or payload writes happen, the job stays
+    # cancelled with no error.
+    import threading
+
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    in_call = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def fake_invoke(agent, prompt, **kw):
+        calls.append(prompt)
+        in_call.set()
+        assert release.wait(5)  # hold call 1 open until the test cancels
+        return GOOD_SPEC
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    job_id = jobs.start("create", {"harness": "Claude Code"}, "Say hello",
+                        None, GRANTS)
+    assert in_call.wait(5)
+    events_before = len(jobs.jobs[job_id]["events"])
+    assert jobs.cancel(job_id) is True
+    release.set()
+
+    # the worker thread must wind down without a second harness call
+    deadline = _time.monotonic() + 5
+    while _time.monotonic() < deadline and len(calls) < 2:
+        _real_sleep(0.05)
+        j = jobs.get(job_id)
+        if j["status"] == "cancelled" and len(calls) == 1:
+            break
+    _real_sleep(0.2)  # a beat for any (wrong) second call to appear
+    j = jobs.get(job_id)
+    assert j["status"] == "cancelled"
+    assert j["error"] is None
+    assert len(calls) == 1                       # call 2 never started
+    assert j["draft"] is None                    # no payload write after cancel
+    assert j["stage"] == "Writing the spec"      # never advanced to call 2
+    assert len(j["events"]) == events_before     # no events after cancel
+
+
+def test_cancel_before_first_spawn(monkeypatch):
+    # §8: a cancel that wins the race before the first spawn means NO harness
+    # call ever starts — _invoke's pre-spawn check raises Cancelled.
+    import threading
+
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    calls = []
+    monkeypatch.setattr(harness, "invoke",
+                        lambda agent, prompt, **kw: calls.append(prompt) or GOOD_SPEC)
+    # hold the worker at the very start so the cancel lands before _invoke
+    gate = threading.Event()
+    real_pipeline = DraftJobs._pipeline
+
+    def gated_pipeline(self, job, *a, **kw):
+        assert gate.wait(5)
+        return real_pipeline(self, job, *a, **kw)
+
+    monkeypatch.setattr(DraftJobs, "_pipeline", gated_pipeline)
+    job_id = jobs.start("create", {"harness": "Claude Code"}, "Say hello",
+                        None, GRANTS)
+    assert jobs.cancel(job_id) is True
+    gate.set()
+    _real_sleep(0.3)  # let the worker thread hit the pre-spawn check
+    j = jobs.get(job_id)
+    assert j["status"] == "cancelled"
+    assert calls == []  # no harness call may start after cancel
+    assert j["error"] is None
+
+
+def test_cancel_mid_call_kills_harness_and_never_retries(monkeypatch, tmp_path, home):
+    # §8: cancelling mid-call kills the harness process group; the resulting
+    # nonzero-exit HarnessError surfaces as Cancelled — never a retry, never
+    # a failed status. Real Popen against a sleeping fake CLI, no mocks.
+    import time as _t
+
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    script = tmp_path / "claude"
+    script.write_text("#!/bin/sh\nsleep 60\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    monkeypatch.setattr(_t, "sleep", lambda s: None)  # a (wrong) retry would fire instantly
+    real_invoke = harness.invoke
+    calls = []
+
+    def counting_invoke(agent, prompt, **kw):
+        calls.append(prompt)
+        return real_invoke(agent, prompt, **kw)
+
+    monkeypatch.setattr(harness, "invoke", counting_invoke)
+    jobs = DraftJobs()
+    t0 = _time.monotonic()
+    job_id = jobs.start("sync", {"harness": "Claude Code"}, None,
+                        {"spec": "# T\n\nBody."}, GRANTS)
+    deadline = _time.monotonic() + 5
+    while _time.monotonic() < deadline:  # wait for the child to exist
+        if jobs.jobs[job_id]["_proc"].get("proc"):
+            break
+        _real_sleep(0.02)
+    proc = jobs.jobs[job_id]["_proc"]["proc"]
+    assert proc is not None
+    assert jobs.cancel(job_id) is True
+
+    deadline = _time.monotonic() + 8
+    while _time.monotonic() < deadline and proc.poll() is None:
+        _real_sleep(0.05)
+    assert proc.poll() is not None            # the group kill reached the child
+    _real_sleep(0.5)                          # a beat for any (wrong) retry spawn
+    j = jobs.get(job_id)
+    assert j["status"] == "cancelled"         # never flipped to failed
+    assert j["error"] is None
+    assert len(calls) == 1                    # no retry after the cancel kill
+    assert _time.monotonic() - t0 < 10        # no 60 s wait — the kill worked
+
+
 STEPS_WITH_PACKAGES = GOOD_STEPS.replace(
     "note: Created\n",
     "note: Created\npackages:\n  - { pip: leftpad3, import: leftpad3, why: pads the report }\n")

@@ -30,7 +30,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   or re-pointed. A dropped connection reconnects with exponential backoff (1 s doubling to a
   60 s cap); an authentication failure (bad token) or a missing/valueless secret parks the
   connection in the `connection` error state (§4.3) and re-tries at the backoff cap, so fixing the
-  secret heals it without a restart; `auto.changed` fires for affected automations on every
+  secret heals it without a restart; `automation.changed` fires for affected automations on every
   state change. Each connection learns the bot's user id from `READY` and the bot's
   managed-role ids from `GUILD_CREATE` payloads (roles whose `tags.bot_id` is the bot's user
   id), so the §4.3 mention rule matches role mentions too. `GUILD_CREATE` also fills a
@@ -69,7 +69,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   cannot be opened — no Full Disk Access, or no `chat.db` at all (Messages never signed in) —
   parks the watcher in the `connection` error state shared by every `imessage` trigger (§4.3),
   re-probed each tick, so granting the permission heals it without a restart;
-  `auto.changed` fires on every state change. **A skipped message
+  `automation.changed` fires on every state change. **A skipped message
   firing answers its sender** — a dropped message would otherwise leave a person waiting on a
   bot that silently ignored them, so the engine posts a short busy notice ("I'm working on
   something else right now — try again in a moment.") back to the triggering channel. Only
@@ -85,7 +85,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   app-start occurrence that arrives late is worse than one that never ran, so those keep the
   skip. A queued firing is a **real execution record** with status `queued` (§4.6) carrying its
   §4.5 `triggerPayload` — it appears in Executions immediately (admission publishes the §19
-  `exec.queued` event, so the §7 Waiting section and the §9.2 "N waiting" line update live),
+  `execution.queued` event, so the §7 Waiting section and the §9.2 "N waiting" line update live),
   is addressable by
   `POST /executions/{id}/cancel` (§19), and is removed by retention like any other record.
   `queued` records never count as the automation's latest execution (§4.1 `lastStatus`
@@ -133,7 +133,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   not guaranteed to exist after the retention window.
 - **Per-step timeout** — every step runs under a watchdog: the step's own `timeout` (seconds,
   §4.1) when set, else the 900 s default (`AUTOWRIGHT_STEP_TIMEOUT` overrides the **default**
-  only, §15 — a step's own value always wins). `no_timeout: true` disables the watchdog: the
+  only, §15 — a step's own value always wins). The watchdog is **armed before the §6.1
+  context handoff to the executor child** — the deadline runs from process spawn, so a child
+  that wedges before reading its stdin context (an interpreter that hangs on startup, a pipe
+  that never drains) still hits its limit; no step can sit outside the watchdog for any part
+  of its life. `no_timeout: true` disables the watchdog: the
   step may run until it finishes or the user cancels/skips it — holding the automation's
   one-execution-at-a-time slot the whole time (triggers firing meanwhile are skipped, per
   scheduling above). On expiry the step's whole process group is killed (§7 kill semantics)
@@ -166,8 +170,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 - **Agent steps are query-only.** A step's runtime agent call is a pure question → text-answer
   function; only step scripts make changes. A step may name several enabled agents (`agents`,
   §8 grant names) and address each per call (`agent.ask(…, agent="Name")`); the engine resolves
-  the names against the automation's enabled agents at execution time, falling back to the
-  first enabled agent when the step names none. The engine invokes the harness one-shot and
+  the names against the automation's enabled agents at execution time. The first-enabled-agent
+  fallback applies **only when the step names no agents at all**: a step whose named agents
+  all fail to resolve (revoked grants, renamed agents) fails exactly like an agent step with
+  no enabled agent — the §7 engine-level failure ("Step N needs an agent, but none is
+  enabled…"), never a silent hand-off to an agent the step didn't name. The engine invokes the harness one-shot and
   non-interactive with the strongest tool-disabling flags each harness supports: Claude Code
   `claude -p --tools "" --strict-mcp-config --no-session-persistence`, Codex
   `codex exec --sandbox read-only --skip-git-repo-check`; Gemini CLI and OpenCode expose no

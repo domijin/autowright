@@ -13,13 +13,13 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from . import __version__, awake, harness, imessage, installer, keychain, paths
-from . import drafting, packages as pkglib, reqlog, schedule, timefmt, transfer
+from . import __version__, awake, harness, imessage, installer, keychain, models, paths
+from . import drafting, packages as pkglib, reqlog, timefmt, transfer, triggers as triggerlib
 from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
-from .scheduler import cancel_unmatched_queue, drain_queue, fire_trigger
-from .storage import iter_file_stats, size_label, store
+from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger
+from .storage import _kind_ok, iter_file_stats, size_label, store
 from . import testexec
 
 log = logging.getLogger("autowright.api")
@@ -132,6 +132,64 @@ def _agent_or_404(agent_id: str) -> dict:
     raise HTTPException(404, "agent not found")
 
 
+def _check_agent_refs(agent_id: str | None, step_agents: list | None) -> None:
+    """§19 cross-field rule: `agentId` and `stepAgents` entries must reference
+    configured agents. Needs store state, so it lives here as a 422 rather
+    than in the request model."""
+    ids = {g["id"] for g in store.agents}
+    if agent_id is not None and agent_id not in ids:
+        raise HTTPException(422, f"agentId {agent_id!r} isn't a configured agent")
+    for x in step_agents or ():
+        if x not in ids:
+            raise HTTPException(422, f"stepAgents entry {x!r} isn't a configured agent")
+
+
+def _check_param_values(a: dict, values: dict) -> None:
+    """§19 cross-field rule: every paramValues entry must match the
+    automation's param definitions by name AND kind — a typo'd name or a
+    mistyped value is a 422, never a silently-ignored store."""
+    defs = {p["name"]: p.get("kind")
+            for p in a["versions"].get(a["current_version"], {}).get("params") or []}
+    for name, v in values.items():
+        if name not in defs:
+            raise HTTPException(422, f"paramValues names an unknown param {name!r}")
+        if not _kind_ok(defs[name], v):
+            raise HTTPException(
+                422, f"paramValues[{name!r}] doesn't match the param's kind ({defs[name]})")
+
+
+def _validate_draft_steps(d: dict) -> None:
+    """§19 server-side step validation: POST /automations and /versions run
+    the §8 step validators (`drafting.validate_steps` — ast.parse, the §6.2
+    import allowlist, manifest schema and step-file ordering, the
+    timeout/retry rules) on the sent draft and answer 422 with the errors —
+    an invalid draft can never land as a version, whatever client sent it.
+    Grants context mirrors the §20 CLI's existence check: all configured
+    agents + all stored secret names."""
+    import yaml
+
+    files: dict[str, str] = {}
+    man_steps: list[dict] = []
+    for s in d.get("steps") or []:
+        if not isinstance(s, dict):
+            raise HTTPException(422, "each step must be an object")
+        files[str(s.get("file") or "")] = str(s.get("code") or "")
+        # The serialized step shape carries `agents: []` / `secrets: []` /
+        # nulls on steps that have none — the validator's manifest dialect
+        # omits those keys instead, so strip the empties on the way in.
+        man_steps.append({k: v for k, v in s.items()
+                          if k != "code" and v is not None
+                          and not (k in ("agents", "secrets", "why") and not v)})
+    manifest = {"steps": man_steps, "params": d.get("params") or [],
+                "packages": d.get("packages") or []}
+    files["manifest.yaml"] = yaml.safe_dump(manifest, sort_keys=False)
+    grants = {"agents": [{"name": harness.grant_name(g)} for g in store.agents],
+              "secrets": [{"name": s["name"]} for s in store.secrets]}
+    _, errors = drafting.validate_steps(files, grants)
+    if errors:
+        raise HTTPException(422, "the draft doesn't validate: " + "; ".join(errors))
+
+
 # The executions tree can be GBs across thousands of directories; the size
 # label is display-only, so one walk per TTL window is plenty — and it must
 # never run while holding store.lock (it would stall live log streaming).
@@ -241,22 +299,21 @@ def get_auto(automation_id: str) -> dict:
 
 
 @app.patch("/automations/{automation_id}", dependencies=[Depends(auth)])
-def patch_auto(automation_id: str, patch: dict) -> dict:
+def patch_auto(automation_id: str, body: models.AutomationPatch) -> dict:
     a = _auto_or_404(automation_id)
+    # §19: the model checked types/shapes (incl. the §6 concurrency ints with
+    # their floors); the store-state cross-field rules land here.
+    patch = body.model_dump(exclude_unset=True)
+    if "agentId" in patch or "stepAgents" in patch:
+        _check_agent_refs(patch.get("agentId"), patch.get("stepAgents"))
+    if "paramValues" in patch:
+        _check_param_values(a, patch["paramValues"])
     if "triggers" in patch:
         # §19: whole-list replace; message kinds / bad expressions / past times → 422.
-        norm, err = schedule.normalize_triggers(patch["triggers"])
+        norm, err = triggerlib.normalize_triggers(patch["triggers"])
         if err:
             raise HTTPException(422, err)
         patch = {**patch, "triggers": norm}
-    # §19: the §6 concurrency settings are ints with a floor; anything else is a
-    # 422 and nothing is stored (a silently clamped typo would be worse — the
-    # user would never learn the automation isn't set up the way they think).
-    for key, floor in (("maxParallel", 1), ("maxQueued", 0)):
-        if key in patch:
-            v = patch[key]
-            if isinstance(v, bool) or not isinstance(v, int) or v < floor:
-                raise HTTPException(422, f"{key} must be an integer >= {floor}")
     store.patch_automation(a, patch)
     if "triggers" in patch:
         # §6: a waiting entry whose trigger was just turned off or removed is
@@ -283,6 +340,44 @@ def clear_queue(automation_id: str) -> dict:
     return {"cancelled": n}
 
 
+@app.post("/triggers/preview", dependencies=[Depends(auth)])
+def triggers_preview(body: models.TriggersPreview) -> dict:
+    """§19: a pure function endpoint — no state read or written. Validates and
+    labels §4.3-shaped trigger dicts with the same triggers.py code that gates
+    the PATCH, one result per entry in order. An invalid entry is a
+    `valid: false` result, never a 422 (the editors preview half-typed state);
+    only a body that isn't a list of trigger dicts gets the ordinary 422.
+    Trigger math exists once, here on the backend — the renderer keeps no
+    local mirror."""
+    out: list[dict] = []
+    seen_app_start = False
+    for t in body.triggers:
+        norm, err = triggerlib.normalize_triggers([t])
+        if not err and norm[0]["kind"] == "app_start":
+            # §4.3: at most one app_start per list — per-entry validation
+            # can't see the duplicate, the loop can.
+            if seen_app_start:
+                err = "only one app-start trigger per automation"
+            seen_app_start = True
+        if err:
+            entry = {"valid": False, "error": err, "label": "", "short": "", "nextAt": None}
+            try:  # best-effort display for a half-typed entry
+                entry["label"], entry["short"] = triggerlib.trigger_display(t)
+            except Exception:  # noqa: BLE001 — undisplayable is fine, not an error
+                pass
+            out.append(entry)
+            continue
+        n = norm[0]
+        label, short = triggerlib.trigger_display(n)
+        nxt = triggerlib.trigger_next(n)  # None for app_start/message kinds and elapsed one-shots
+        entry = {"valid": True, "label": label, "short": short,
+                 "nextAt": int(nxt.timestamp() * 1000) if nxt else None}
+        if nxt:
+            entry["nextLabel"] = f"{nxt.strftime('%b')} {nxt.day}, {timefmt.clock(nxt)}"
+        out.append(entry)
+    return {"triggers": out}
+
+
 @app.delete("/automations/{automation_id}", dependencies=[Depends(auth)])
 def delete_auto(automation_id: str) -> dict:
     a = _auto_or_404(automation_id)
@@ -305,73 +400,66 @@ def delete_auto(automation_id: str) -> dict:
     return {"ok": True}
 
 
-def _norm_steps(steps: list | None) -> list:
-    """§4.1: the API spelling of the step flags is camelCase (noTimeout,
-    infiniteRetries); disk and the internal shape are snake_case only. This is
-    the one place the client spelling is accepted — nothing past this boundary
-    reads the camel keys."""
-    out = []
-    for s in steps or []:
-        s = dict(s)
-        if s.pop("noTimeout", None):
-            s["no_timeout"] = True
-        if s.pop("infiniteRetries", None):
-            s["infinite_retries"] = True
-        out.append(s)
-    return out
-
-
 def _draft_to_version(d: dict) -> dict:
+    # §4.1 spelling boundary: the request models already normalized the steps'
+    # camelCase flags (noTimeout/infiniteRetries) to snake_case — nothing past
+    # the models reads the camel keys.
     return {"description": d.get("description", ""), "note": d.get("note", ""),
             "params": d.get("params", []), "packages": d.get("packages", []),
-            "steps": _norm_steps(d.get("steps")),
+            "steps": d.get("steps") or [],
             "spec": d.get("spec") or [], "instructions": d.get("instructions"),
             "notes": d.get("notes") or ""}
 
 
 @app.post("/automations", dependencies=[Depends(auth)])
-def create_auto(body: dict) -> dict:
-    d = body.get("draft") or {}
+def create_auto(body: models.AutomationCreate) -> dict:
+    d = body.draft.plain()
     if not d.get("steps"):
         raise HTTPException(422, "draft has no steps")
-    triggers, err = schedule.normalize_triggers(d.get("triggers") or [])
+    _check_agent_refs(body.agentId, body.stepAgents)
+    triggers, err = triggerlib.normalize_triggers(d.get("triggers") or [])
     if err:
         raise HTTPException(422, err)
+    _validate_draft_steps(d)  # §19: the §8 validators run server-side
     a = store.create_automation(
         _draft_to_version(d),
-        name=body.get("name") or d.get("name") or "New automation",
-        agent_id=body.get("agentId"),
+        name=body.name or d.get("name") or "New automation",
+        agent_id=body.agentId,
         triggers=triggers,
-        enabled_agents=body.get("stepAgents"),
-        allowed_secrets=body.get("allowedSecrets"),
+        enabled_agents=body.stepAgents,
+        allowed_secrets=body.allowedSecrets,
     )
     # §4.4: Create consumes the pending create-mode slot — settled drafts are
     # never resurrected.
-    store.delete_pending_draft()
+    store.delete_draft(None)
     hub.publish("draft.changed")
     hub.publish("automation.changed", automationId=a["id"])
     return _auto_json_locked(a)
 
 
 @app.post("/automations/{automation_id}/versions", dependencies=[Depends(auth)])
-def save_version(automation_id: str, body: dict) -> dict:
+def save_version(automation_id: str, body: models.VersionSave) -> dict:
     a = _auto_or_404(automation_id)
-    d = body.get("draft") or {}
+    d = body.draft.plain()
     if not d.get("steps"):
         raise HTTPException(422, "draft has no steps")
+    sent = body.model_dump(exclude_unset=True)
+    if "agentId" in sent or "stepAgents" in sent:
+        _check_agent_refs(sent.get("agentId"), sent.get("stepAgents"))
     # §4.3/§4.4: the draft's trigger list (merged in the editor) replaces the
     # automation's — validated like the PATCH, and before the version lands.
     triggers = None
     if "triggers" in d:
-        triggers, err = schedule.normalize_triggers(d["triggers"])
+        triggers, err = triggerlib.normalize_triggers(d["triggers"])
         if err:
             raise HTTPException(422, err)
+    _validate_draft_steps(d)  # §19: the §8 validators run server-side
     with store.lock:
         # Same guard as PUT/DELETE draft: saving deletes the draft container,
         # and a live Draft execution reads its step scripts lazily mid-run.
         _reject_live_draft_exec(a)
         n = store.save_new_version(a, _draft_to_version(d))
-        patch = {k: body[k] for k in ("agentId", "stepAgents", "allowedSecrets", "name") if k in body}
+        patch = {k: sent[k] for k in ("agentId", "stepAgents", "allowedSecrets", "name") if k in sent}
         if triggers is not None:
             patch["triggers"] = triggers
         if patch:
@@ -395,62 +483,66 @@ def _reject_live_draft_exec(a: dict) -> None:
             raise HTTPException(409, "a draft execution is in progress")
 
 
-@app.put("/automations/{automation_id}/draft", dependencies=[Depends(auth)])
-def put_draft(automation_id: str, body: dict) -> dict:
-    a = _auto_or_404(automation_id)
-    d = body.get("draft") or {}
+# §19: the one draft-container surface — GET/PUT/DELETE /draft/{owner} +
+# POST /draft/{owner}/open, where `owner` is an automation id (its draft/
+# container) or the literal `pending` (the §4.4 create-mode slot <root>/draft/).
+def _draft_owner(owner: str) -> dict | None:
+    """None → the pending slot; an automation owner that doesn't resolve is 404."""
+    if owner == "pending":
+        return None
+    return _auto_or_404(owner)
+
+
+def _publish_draft_changed(a: dict | None) -> None:
+    if a is None:
+        hub.publish("draft.changed")  # §19 GET /state pendingDraft consumers
+    else:
+        hub.publish("automation.changed", automationId=a["id"])
+
+
+@app.get("/draft/{owner}", dependencies=[Depends(auth)])
+def get_draft_container(owner: str) -> dict:
+    return store.draft_container_json(_draft_owner(owner))
+
+
+@app.post("/draft/{owner}/open", dependencies=[Depends(auth)])
+def open_draft_container(owner: str) -> dict:
+    store.open_draft(_draft_owner(owner))
+    return {"ok": True}
+
+
+@app.put("/draft/{owner}", dependencies=[Depends(auth)])
+def put_draft_container(owner: str, body: models.DraftPut) -> dict:
+    a = _draft_owner(owner)
+    d = body.draft.plain()
     # §4.4: the draft snapshot carries the editor's grant selections and trigger
     # list as draft-only keys — never applied to the automation until saved.
+    # Triggers pass through unvalidated — saving (Create / vN+1) normalizes them.
     ver = _draft_to_version(d)
     ver["step_agents"] = d.get("stepAgents")
     ver["allowed_secrets"] = d.get("allowedSecrets")
-    ver["triggers"] = d.get("triggers")
     with store.lock:
-        _reject_live_draft_exec(a)
-        store.save_draft(a, ver, chat=d.get("chat"))
-    hub.publish("automation.changed", automationId=automation_id)
-    return {"ok": True}
-
-
-@app.delete("/automations/{automation_id}/draft", dependencies=[Depends(auth)])
-def del_draft(automation_id: str) -> dict:
-    a = _auto_or_404(automation_id)
-    with store.lock:
-        _reject_live_draft_exec(a)
-        store.delete_draft(a)
-    hub.publish("automation.changed", automationId=automation_id)
-    return {"ok": True}
-
-
-# §4.4 pending create-mode slot (<root>/draft/) — one unsaved new automation.
-@app.get("/draft", dependencies=[Depends(auth)])
-def get_pending_draft() -> dict:
-    return store.pending_draft_json()
-
-
-@app.post("/draft/open", dependencies=[Depends(auth)])
-def open_pending_draft() -> dict:
-    store.open_pending_draft()
-    return {"ok": True}
-
-
-@app.put("/draft", dependencies=[Depends(auth)])
-def put_pending_draft(body: dict) -> dict:
-    d = body.get("draft") or {}
-    ver = _draft_to_version(d)
-    ver["step_agents"] = d.get("stepAgents")
-    ver["allowed_secrets"] = d.get("allowedSecrets")
-    # Triggers pass through unvalidated — Create normalizes them (§19).
-    store.save_pending_draft(ver, name=d.get("name"), agent_id=body.get("agentId"),
+        if a is None:
+            # §19: the pending payload also carries the identity fields no
+            # automation record exists to hold (name, triggers; agentId beside).
+            store.save_draft(None, ver, name=d.get("name"), agent_id=body.agentId,
                              triggers=d.get("triggers") or [], chat=d.get("chat"))
-    hub.publish("draft.changed")
+        else:
+            _reject_live_draft_exec(a)
+            ver["triggers"] = d.get("triggers")
+            store.save_draft(a, ver, chat=d.get("chat"))
+    _publish_draft_changed(a)
     return {"ok": True}
 
 
-@app.delete("/draft", dependencies=[Depends(auth)])
-def del_pending_draft() -> dict:
-    store.delete_pending_draft()
-    hub.publish("draft.changed")
+@app.delete("/draft/{owner}", dependencies=[Depends(auth)])
+def delete_draft_container(owner: str) -> dict:
+    a = _draft_owner(owner)
+    with store.lock:
+        if a is not None:
+            _reject_live_draft_exec(a)
+        store.delete_draft(a)
+    _publish_draft_changed(a)
     return {"ok": True}
 
 
@@ -532,8 +624,8 @@ async def import_preview(request: Request) -> dict:
 
 
 @app.post("/automations/import/url", dependencies=[Depends(auth)])
-def import_url(body: dict) -> dict:
-    url = (body.get("url") or "").strip()
+def import_url(body: models.ImportUrl) -> dict:
+    url = body.url.strip()
     if not url:
         raise HTTPException(422, "no URL given")
     try:
@@ -547,21 +639,17 @@ def import_url(body: dict) -> dict:
 
 
 @app.post("/automations/import/confirm", dependencies=[Depends(auth)])
-def import_confirm(body: dict) -> dict:
-    token = body.get("token")
-    slot = _import_parked.pop(token, None) if isinstance(token, str) else None
+def import_confirm(body: models.ImportConfirm) -> dict:
+    slot = _import_parked.pop(body.token, None)
     if slot is None or time.time() - slot[0] > _IMPORT_TTL:
         raise HTTPException(404, "the import preview expired — fetch it again")
     return _land_import(slot[1])
 
 
 @app.post("/automations/{automation_id}/restore", dependencies=[Depends(auth)])
-def restore(automation_id: str, body: dict) -> dict:
+def restore(automation_id: str, body: models.VersionRestore) -> dict:
     a = _auto_or_404(automation_id)
-    try:
-        v = int(body.get("version", 0))
-    except (TypeError, ValueError):
-        raise HTTPException(422, "v must be an integer") from None
+    v = body.version
     if v not in a["versions"]:
         raise HTTPException(404, f"v{v} not found")
     n = store.restore_version(a, v)
@@ -570,19 +658,14 @@ def restore(automation_id: str, body: dict) -> dict:
 
 
 @app.post("/automations/{automation_id}/execute", dependencies=[Depends(auth)])
-def execute_auto(automation_id: str, body: dict | None = None) -> dict:
+def execute_auto(automation_id: str, body: models.ExecuteBody | None = None) -> dict:
     a = _auto_or_404(automation_id)
-    body = body or {}
-    version = body.get("version")
-    if version is not None and not isinstance(version, str):
-        raise HTTPException(422, 'version must be a string like "v3" or "draft"')
+    body = body or models.ExecuteBody()
     # §4.5/§19: the record stores the trigger's machine kind; manual starts are
-    # `manual` (Execute now, CLI) or `menubar` (the tray panel).
-    trigger = body.get("trigger", "manual")
-    if trigger not in ("manual", "menubar"):
-        raise HTTPException(422, "trigger must be manual | menubar")
+    # `manual` (Execute now, CLI) or `menubar` (the tray panel) — the model
+    # rejects anything else, and a non-string version, with a 422.
     try:
-        h = engine.start(a, trigger, version_label=version)
+        h = engine.start(a, body.trigger, version_label=body.version)
     except LookupError as e:  # unknown version label — not a liveness conflict
         raise HTTPException(404, str(e)) from e
     except RuntimeError as e:
@@ -594,17 +677,16 @@ _served_launches: set[str] = set()
 
 
 @app.post("/app-started", dependencies=[Depends(auth)])
-def app_started(body: dict | None = None) -> dict:
+def app_started(body: models.AppStarted) -> dict:
     """§6 app-start firing: the Electron main process calls this once per app
     launch; every automation holding an enabled `app_start` trigger executes.
-    Idempotent per `launchId` — the caller retries until it gets a response, and
-    a reply lost in flight must not fire everything a second time."""
-    launch_id = (body or {}).get("launchId")
-    if launch_id:
-        with store.lock:
-            if launch_id in _served_launches:
-                return {"fired": 0}
-            _served_launches.add(launch_id)
+    Idempotent per `launchId` (required, §19 — the model rejects a missing or
+    empty one): the caller retries until it gets a response, and a reply lost
+    in flight must not fire everything a second time."""
+    with store.lock:
+        if body.launchId in _served_launches:
+            return {"fired": 0}
+        _served_launches.add(body.launchId)
     with store.lock:
         autos = list(store.autos.values())
     fired = 0
@@ -666,29 +748,28 @@ def _mock_payload(mock: dict) -> dict:
 
 
 @app.post("/tests", dependencies=[Depends(auth)])
-def post_test(body: dict) -> dict:
-    d = body.get("draft")
-    if not d or not d.get("steps"):
+def post_test(body: models.TestStart) -> dict:
+    d = body.draft.plain()
+    if not d.get("steps"):
         raise HTTPException(422, "draft with steps required")
-    d = {**d, "steps": _norm_steps(d.get("steps"))}
-    payload = _mock_payload(body["triggerMock"]) if body.get("triggerMock") else None
+    payload = _mock_payload(body.triggerMock) if body.triggerMock else None
     auto = None
-    if body.get("automationId"):
+    if body.automationId:
         # A stale/unknown automationId must 404 — falling through to create mode
         # would delete the unrelated pending slot's test record.
-        auto = _auto_or_404(body["automationId"])
+        auto = _auto_or_404(body.automationId)
     # §19: grant arrays as in /drafts — create mode (no automationId) defaults to
     # ALL agents/secrets when the arrays are absent, edit mode to the
     # automation's grants.
-    enabled = body.get("enabledAgents")
+    enabled = body.enabledAgents
     if enabled is None:
         enabled = auto["enabled_agents"] if auto else [g["id"] for g in store.agents]
-    allowed = body.get("allowedSecrets")
+    allowed = body.allowedSecrets
     if allowed is None:
         allowed = auto["allowed_secrets"] if auto else [s["name"] for s in store.secrets]
     try:
         execution_id = testexec.start(engine, d, auto, enabled, allowed,
-                                 body.get("paramValues") or {}, trigger_payload=payload)
+                                 body.paramValues or {}, trigger_payload=payload)
     except RuntimeError as e:  # §19: one live test per draft container
         raise HTTPException(409, str(e)) from e
     return {"executionId": execution_id}
@@ -696,31 +777,31 @@ def post_test(body: dict) -> dict:
 
 # ---------- declared packages (§6.2 — §19 /packages/*) ----------
 @app.post("/packages/check", dependencies=[Depends(auth)])
-def packages_check(body: dict) -> dict:
-    return {"packages": pkglib.check(body.get("packages") or [])}
+def packages_check(body: models.PackagesBody) -> dict:
+    return {"packages": pkglib.check([p.plain() for p in body.packages])}
 
 
 @app.post("/packages/install", dependencies=[Depends(auth)])
-def packages_install(body: dict) -> dict:
+def packages_install(body: models.PackagesBody) -> dict:
     # Blocking §6.2 ensure — FastAPI runs sync endpoints on a worker thread,
     # and the module lock serializes concurrent pip runs.
-    return {"packages": pkglib.ensure(body.get("packages") or [])}
+    return {"packages": pkglib.ensure([p.plain() for p in body.packages])}
 
 
 @app.post("/packages/outdated", dependencies=[Depends(auth)])
-def packages_outdated(body: dict) -> dict:
+def packages_outdated(body: models.PackagesBody) -> dict:
     # §6.2 update check — read-only PyPI lookups; failures just omit `latest`.
-    return {"packages": pkglib.outdated(body.get("packages") or [])}
+    return {"packages": pkglib.outdated([p.plain() for p in body.packages])}
 
 
 @app.post("/packages/update", dependencies=[Depends(auth)])
-def packages_update(body: dict) -> dict:
+def packages_update(body: models.PackagesBody) -> dict:
     """§6.2 update: `pip install --upgrade` in the shared directory — no
     manifest writes; manifests carry no version. Blocking like /install."""
-    entries = body.get("packages") or []
+    entries = [p.plain() for p in body.packages]
     for e in entries:
-        if not pkglib.PIP_NAME_RE.match(str(e.get("pip") or "").strip()):
-            raise HTTPException(422, f"not a bare distribution name: {e.get('pip')!r}")
+        if not pkglib.PIP_NAME_RE.match(e["pip"].strip()):
+            raise HTTPException(422, f"not a bare distribution name: {e['pip']!r}")
     return {"packages": pkglib.upgrade(entries)}
 
 
@@ -728,14 +809,19 @@ def packages_update(body: dict) -> dict:
 def clear_memory(automation_id: str) -> dict:
     # §9.2 MEMORY card: "Clear memory" — next execution starts fresh.
     a = _auto_or_404(automation_id)
-    store.snapshot_memory(a, "pre-clear")  # §6.3 — silently skipped when memory is empty or the toggle is off
-    store.clear_memory(a)
+    # §19: same guard (and the same lock span) as manual snapshot and restore —
+    # a mid-execution clear could delete files a step is reading right now.
+    with store.lock:
+        if a.get("_live"):
+            raise HTTPException(409, "an execution is in progress")
+        store.snapshot_memory(a, "pre-clear")  # §6.3 — silently skipped when memory is empty or the toggle is off
+        store.clear_memory(a)
     hub.publish("automation.changed", automationId=automation_id)
     return {"ok": True}
 
 
 @app.post("/automations/{automation_id}/memory/snapshots", dependencies=[Depends(auth)])
-def create_snapshot(automation_id: str, body: dict | None = None) -> dict:
+def create_snapshot(automation_id: str, body: models.SnapshotCreate | None = None) -> dict:
     # §6.3 manual snapshot — 409 while live, 422 when memory is empty.
     a = _auto_or_404(automation_id)
     # One lock span for check + copy: engine.start flips `_live` under
@@ -743,7 +829,8 @@ def create_snapshot(automation_id: str, body: dict | None = None) -> dict:
     with store.lock:
         if a.get("_live"):
             raise HTTPException(409, "an execution is in progress")
-        meta = store.snapshot_memory(a, "manual", name=((body or {}).get("name") or "").strip() or None)
+        meta = store.snapshot_memory(a, "manual",
+                                     name=((body.name if body else None) or "").strip() or None)
     if meta is None:
         raise HTTPException(422, "memory is empty")
     hub.publish("automation.changed", automationId=automation_id)
@@ -751,9 +838,9 @@ def create_snapshot(automation_id: str, body: dict | None = None) -> dict:
 
 
 @app.patch("/automations/{automation_id}/memory/snapshots/{sid}", dependencies=[Depends(auth)])
-def rename_snapshot(automation_id: str, sid: str, body: dict | None = None) -> dict:
+def rename_snapshot(automation_id: str, sid: str, body: models.SnapshotRename | None = None) -> dict:
     a = _auto_or_404(automation_id)
-    meta = store.rename_snapshot(a, sid, (body or {}).get("name"))
+    meta = store.rename_snapshot(a, sid, body.name if body else None)
     if meta is None:
         raise HTTPException(404, "snapshot not found")
     hub.publish("automation.changed", automationId=automation_id)
@@ -784,16 +871,17 @@ def delete_snapshot(automation_id: str, sid: str) -> dict:
 
 # ---------- drafts ----------
 @app.post("/drafts", dependencies=[Depends(auth)])
-def post_draft(body: dict) -> dict:
-    mode = body.get("mode")
-    if mode not in ("create", "chat", "sync"):
-        raise HTTPException(422, "mode must be create | chat | sync")
-    if mode == "chat" and not (body.get("text") or "").strip():
+def post_draft(body: models.DraftJobStart) -> dict:
+    mode = body.mode
+    if mode == "chat" and not (body.text or "").strip():
         raise HTTPException(422, "chat mode needs a nonempty text")
-    agent = _agent_or_404(body.get("agentId") or store.default_agent_id
+    agent = _agent_or_404(body.agentId or store.default_agent_id
                           or (store.agents[0]["id"] if store.agents else ""))
-    auto = store.autos.get(body.get("automationId", "")) if body.get("automationId") else None
-    current = body.get("current")
+    # §19: an automationId that doesn't resolve answers 404 (like the
+    # stale-automationId 404 on /tests) — never a silent fall-back to the
+    # create-mode grant defaults below.
+    auto = _auto_or_404(body.automationId) if body.automationId else None
+    current = body.current.plain() if body.current is not None else None
     if auto and current is None:
         current = auto["versions"][auto["current_version"]]
     if auto and "triggers" not in (current or {}):
@@ -811,14 +899,11 @@ def post_draft(body: dict) -> dict:
         current.setdefault("description", auto.get("description", ""))
     # §19: an explicit `spec` in the body wins — sync/edit regenerate against the
     # PROVIDED spec (§8), e.g. the in-editor draft, not the stored version's spec.
-    if body.get("spec") is not None:
+    if body.spec is not None:
         current = dict(current or {})
-        current["spec"] = body["spec"]
-    if (current or {}).get("steps"):
-        # §4.1 spelling boundary — an in-editor draft sent as `current` carries
-        # the API's camelCase step flags.
-        current = dict(current or {})
-        current["steps"] = _norm_steps(current["steps"])
+        current["spec"] = body.spec
+    # (§4.1 spelling boundary: the request model already normalized `current`'s
+    # camelCase step flags to snake_case.)
     if mode == "create" and not (current or {}).get("instructions"):
         # §8: new automations draft against the default best-practice build
         # instructions; the draft payload carries them back to pre-fill Review.
@@ -826,12 +911,12 @@ def post_draft(body: dict) -> dict:
         current["instructions"] = drafting.DEFAULT_INSTRUCTIONS
     # §8/§19: in-editor grant arrays in the body win over the stored automation's —
     # the editor's live toggles are the truth while a draft is being worked on.
-    enabled_ids = body.get("enabledAgents")
+    enabled_ids = body.enabledAgents
     if enabled_ids is None:
         # §19: edit/sync fall back to the stored grants; create defaults to every
         # configured agent — the same all-enabled seed the Review page starts from.
         enabled_ids = auto["enabled_agents"] if auto else [a["id"] for a in store.agents]
-    allowed = body.get("allowedSecrets")
+    allowed = body.allowedSecrets
     if allowed is None:
         # create defaults to every stored secret — the same all-on seed the
         # Review page's secrets card starts from
@@ -846,12 +931,12 @@ def post_draft(body: dict) -> dict:
         # the editor never sends run output. `runId` (the §11 Fix-with-AI
         # entry) forces that execution into the section in full detail.
         runs = testexec.runs_context(auto, (current or {}).get("steps") or [],
-                                     body.get("runId"))
+                                     body.runId)
         if pkgs := (current or {}).get("packages"):
             pkg_state = pkglib.check([{"pip": p.get("pip"), "import": p.get("import")}
                                       for p in pkgs])
-    job_id = draft_jobs.start(mode, agent, body.get("text"), current, grants,
-                              chat_history=body.get("chat"), runs=runs,
+    job_id = draft_jobs.start(mode, agent, body.text, current, grants,
+                              chat_history=body.chat, runs=runs,
                               pkg_state=pkg_state)
     return {"jobId": job_id}
 
@@ -935,13 +1020,10 @@ def retry_exec(execution_id: str) -> dict:
 
 
 @app.post("/executions/{execution_id}/skip-step", dependencies=[Depends(auth)])
-def skip_step(execution_id: str, body: dict) -> dict:
+def skip_step(execution_id: str, body: models.SkipStep) -> dict:
     if execution_id not in store.execs:
         raise HTTPException(404, "execution not found")
-    index = body.get("index")
-    if not isinstance(index, int):
-        raise HTTPException(422, "index required")
-    if not engine.skip_step(execution_id, index):
+    if not engine.skip_step(execution_id, body.index):
         raise HTTPException(409, "that step isn't executing right now")
     return {"ok": True}
 
@@ -957,20 +1039,18 @@ def list_agents() -> list[dict]:
 
 
 @app.post("/agents", dependencies=[Depends(auth)])
-def add_agent(body: dict) -> dict:
-    harness_name = body.get("harness")
+def add_agent(body: models.AgentAdd) -> dict:
+    harness_name = body.harness
     if harness_name not in HARNESSES:
         raise HTTPException(422, "unknown harness")
-    mode = body.get("mode", "default")
-    if mode not in ("default", "ollama", "custom"):
-        raise HTTPException(422, "mode must be default | ollama | custom")
+    mode = body.mode
     # §4.7: mode ollama is OpenCode driving a local Ollama model; mode custom
     # is a user-typed model string valid with every harness; model is null
     # only in default mode — a null model means the harness uses whatever it
     # is already configured with.
     if mode == "ollama" and harness_name != "OpenCode":
         raise HTTPException(422, "local-model mode needs the OpenCode harness")
-    model = (body.get("model") or None) if mode != "default" else None
+    model = (body.model or None) if mode != "default" else None
     if mode == "ollama" and not model:
         raise HTTPException(422, "local-model mode needs a model")
     if mode == "custom" and not model:
@@ -978,7 +1058,7 @@ def add_agent(body: dict) -> dict:
     import uuid
 
     with store.lock:
-        ag = {"id": str(uuid.uuid4()), "name": body.get("name") or None, "description": body.get("description") or "",
+        ag = {"id": str(uuid.uuid4()), "name": body.name or None, "description": body.description or "",
               "harness": harness_name, "mode": mode, "model": model}
         store.agents.append(ag)
         if store.default_agent_id is None:
@@ -989,13 +1069,12 @@ def add_agent(body: dict) -> dict:
 
 
 @app.patch("/agents/{agent_id}", dependencies=[Depends(auth)])
-def patch_agent(agent_id: str, body: dict) -> dict:
+def patch_agent(agent_id: str, patch: models.AgentPatch) -> dict:
     # Same validation as POST — a PATCH must not be able to create an agent
     # shape POST rejects (e.g. mode ollama with no model, §4.7).
+    body = patch.model_dump(exclude_unset=True)
     if "harness" in body and body["harness"] not in HARNESSES:
         raise HTTPException(422, "unknown harness")
-    if "mode" in body and body["mode"] not in ("default", "ollama", "custom"):
-        raise HTTPException(422, "mode must be default | ollama | custom")
     with store.lock:
         ag = _agent_or_404(agent_id)
         mode = body.get("mode", ag.get("mode", "default"))
@@ -1065,12 +1144,11 @@ def _provider_or_422(provider_id: str | None) -> str:
 
 
 @app.post("/agents/check-harness", dependencies=[Depends(auth)])
-def check_harness(body: dict) -> dict:
+def check_harness(body: models.CheckHarness) -> dict:
     """§19: the §4.7 readiness check before an agent record exists (§10)."""
-    if body.get("harness") not in harness.HARNESS_ID:
+    if body.harness not in harness.HARNESS_ID:
         raise HTTPException(422, "unknown harness")
-    return {"status": "ready" if harness.check_ready(body["harness"], body.get("model"),
-                                                     body.get("mode", "default"))
+    return {"status": "ready" if harness.check_ready(body.harness, body.model, body.mode)
             else "needs-setup"}
 
 
@@ -1080,8 +1158,8 @@ def agents_signin(provider_id: str) -> dict:
 
 
 @app.post("/agents/install", dependencies=[Depends(auth)])
-def agents_install(body: dict) -> dict:
-    pid = _provider_or_422(body.get("id"))
+def agents_install(body: models.ProviderId) -> dict:
+    pid = _provider_or_422(body.id)
 
     def publish(**kw) -> None:
         hub.publish("harness.install", id=pid,
@@ -1098,9 +1176,9 @@ def agents_install_status(provider_id: str) -> dict:
 
 
 @app.post("/agents/login", dependencies=[Depends(auth)])
-def agents_login(body: dict) -> dict:
+def agents_login(body: models.ProviderId) -> dict:
     """§19 sign-in help — only when the provider needs it."""
-    pid = _provider_or_422(body.get("id"))
+    pid = _provider_or_422(body.id)
     if pid == "ollama":
         raise HTTPException(409, "Ollama needs no sign-in")
     st = harness.signin_state(pid)
@@ -1121,12 +1199,12 @@ def ollama_status() -> dict:
 
 
 @app.post("/ollama/pull", dependencies=[Depends(auth)])
-def ollama_pull(body: dict) -> dict:
-    model = body.get("model")
+def ollama_pull(body: models.OllamaPull) -> dict:
+    model = body.model
     if not model:
         raise HTTPException(422, "model required")
     # Never let a model name parse as an option to `ollama pull`.
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", str(model)):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/-]*", model):
         raise HTTPException(422, "invalid model name")
 
     def pull() -> None:
@@ -1154,11 +1232,12 @@ def list_secrets() -> list[dict]:
 
 
 @app.put("/secrets/{name}", dependencies=[Depends(auth)])
-def put_secret(name: str, body: dict) -> dict:
+def put_secret(name: str, body: models.SecretPut) -> dict:
     if not SECRET_NAME_RE.match(name):
         raise HTTPException(422, "secret names must match [A-Z][A-Z0-9_]* — "
                                  "uppercase letters, digits and underscores, starting with a letter")
-    value = body.get("value", "")
+    sent = body.model_dump(exclude_unset=True)
+    value = body.value
     if value:
         # Keychain IPC can block for seconds (locked keychain, consent prompt) —
         # never hold store.lock across it; the engine would stall mid-execution.
@@ -1177,8 +1256,8 @@ def put_secret(name: str, body: dict) -> dict:
             store.secrets.append(existing)
         if value:
             existing["set"] = True
-        if "description" in body:
-            existing["description"] = body.get("description") or ""
+        if "description" in sent:
+            existing["description"] = body.description or ""
         store.save_secrets()
     hub.publish("secrets.changed")
     return {"ok": True}
@@ -1201,20 +1280,17 @@ def get_settings() -> dict:
 
 
 @app.patch("/settings", dependencies=[Depends(auth)])
-def patch_settings(body: dict) -> dict:
-    # Validate before storing: a bad `days` would otherwise persist and make
-    # every hourly retention sweep raise — retention silently off forever.
-    if "days" in body:
-        try:
-            body["days"] = max(1, int(body["days"]))  # §4.9: int ≥ 1
-        except (TypeError, ValueError):
-            raise HTTPException(422, "days must be a number ≥ 1") from None
-    if "notifications" in body and body["notifications"] not in ("attention", "all"):
-        raise HTTPException(422, "notifications must be attention | all")
+def patch_settings(body: models.SettingsPatch) -> dict:
+    # §19: strictly typed by the request model — the §4.9 booleans must be
+    # booleans and `days` a real int (bool/float/string are 422s), so a bad
+    # value can never persist and silently break the retention sweep.
+    patch = body.model_dump(exclude_unset=True)
+    if "days" in patch:
+        patch["days"] = max(1, patch["days"])  # §4.9: floor 1
     with store.lock:
         for k in ("login", "menuBarIcon", "keepAwake", "notifications", "days", "keepForever", "developerMode"):
-            if k in body:
-                store.settings[k] = body[k]
+            if k in patch:
+                store.settings[k] = patch[k]
         store.save_settings()
     awake.reconcile(bool(store.settings.get("keepAwake")))  # §3: applies live, no restart
     hub.publish("settings.changed")
@@ -1222,9 +1298,9 @@ def patch_settings(body: dict) -> dict:
 
 
 @app.post("/settings/data-path", dependencies=[Depends(auth)])
-def set_data_path(body: dict) -> dict:
+def set_data_path(body: models.DataPath) -> dict:
     global _data_size_cache
-    raw = str(body.get("path", "")).strip()
+    raw = body.path.strip()
     if not raw:
         raise HTTPException(422, "path required")
     new_root = Path(raw).expanduser()
@@ -1307,12 +1383,8 @@ def _repair_stale_executing() -> None:
         for h in list(store.execs.values()):
             if h["status"] == "queued":
                 full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []}
-                full["status"] = "skipped"
-                full["note"] = "backend restarted before this ran"
-                full["duration_ms"] = 0
-                full["finished_at"] = full["started_at"]
                 store.execs[full["id"]] = full
-                store.update_execution(full)
+                finish_never_ran(store, full, "backend restarted before this ran")
                 continue
             if h["status"] == "executing" and not engine.is_live(h["id"]):
                 full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []}

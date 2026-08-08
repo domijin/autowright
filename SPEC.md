@@ -64,7 +64,8 @@ Four components (per top-level README):
 
 **Stack (decided):** the Electron renderer is React 18 + TypeScript + Vite (state: one zustand
 store mirroring the §4 model; markdown rendering is react-markdown + remark-gfm — see §4.5). The backend is Python 3.14 + FastAPI/uvicorn (PyYAML, keyring for
-Keychain; request/response bodies are plain dicts — pydantic is not used directly). Transport is localhost HTTP (JSON) plus one WebSocket for live events —
+Keychain; request bodies are validated by pydantic request models — `models.py`, §19 —
+while response bodies remain plain dicts). Transport is localhost HTTP (JSON) plus one WebSocket for live events —
 the full API surface is §19. Packaging is decided — see §3. Storage is decided — see §5.
 
 ## 17. Repository structure
@@ -72,7 +73,12 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
 - `SPEC.md` + `spec/` — the spec: `SPEC.md` is the index (holds §1, §2, §17 and the section map);
   `spec/*.md` hold every other section, grouped by domain.
 - `backend/` — Python package `autowright`: storage, engine (+`executor.py` step SDK,
-  `imports_check.py` shared §6.2 import allowlist), scheduler, `listeners.py` (§6
+  `imports_check.py` shared §6.2 import allowlist), `scheduler.py` (the trigger tick loop
+  only), `firing.py` (the §6 queue/firing operations, moved out of the scheduler:
+  `fire_trigger`, `finish_queued`, `drain_queue`, `cancel_unmatched_queue`, and the shared
+  never-ran finisher), `triggers.py` (pure §4.3 trigger math, validation, and display
+  labels — backs §19 `POST /triggers/preview`), `models.py` (the §19 pydantic request
+  models), `listeners.py` (§6
   message-trigger listener manager — Discord gateway connections, the §6 iMessage chat.db
   watcher, reply sending), `imessage.py` (chat.db reader + ROWID cursor, typedstream
   `attributedBody` decoder, osascript Messages sender, §19 permission probes),
@@ -86,7 +92,12 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   `pyproject.toml` defines the `autowright` / `autowright-backend` entry points.
 - `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
   bridge), Vite + React + TS renderer under `src/` (`store.ts` central model, `api.ts` client,
-  `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen).
+  `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen —
+  except the §11 create/edit flow: `pages/CreateFlow.tsx` is a thin page over the
+  `pages/createflow/` directory (`model.ts` — the pure editor model and helpers,
+  `useDraftJob.ts` — §8 job polling, `ChatPanel.tsx`, `BuildTestPanel.tsx`,
+  `SectionCards.tsx`), and a shared step-list/param-editor module serves both the
+  create/edit flow and the automation detail page).
   `brand-electron.cjs` (npm `postinstall`) renames the dev Electron.app bundle to "Autowright"
   (§14). `electron/icon/` holds the checked-in AW app-icon assets (§14: `icon.svg`
   source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon); `electron/` also holds
@@ -118,12 +129,11 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   saving or executing — the full command including `--grant-*` flags (§20 review-promise and
   grant-model rules). Checked in beside the code; users copy or symlink it into their agent's
   skill directory.
-- `tests/` — pytest suite for the backend (storage, drafting, engine, schedule, API): the fast
+- `tests/` — pytest suite for the backend (storage, drafting, engine, triggers, API): the fast
   tiers at the top level (shared `tests/conftest.py`), the live integration tier under
   `tests/integration/` (§15 — its own `conftest.py` + `it_harness.py`), the test doubles
   `tests/bin/claude` (fake agent CLI) and `tests/bin/osascript` (fake Messages sender),
-  `tests/fixtures/cron_parity.json` (the §4.3/§15 cron parity fixture shared with the
-  renderer), and `tests/seed_data.py` (§16 fixture). `pytest.ini` at the repo root configures
+  and `tests/seed_data.py` (§16 fixture). `pytest.ini` at the repo root configures
   the suite. Renderer tests live under `app/` (above), not here.
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
   single self-contained page + `CNAME` with the custom domain). Dark, matches the §14 visual

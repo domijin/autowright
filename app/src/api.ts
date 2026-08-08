@@ -90,6 +90,10 @@ export const api = {
   getAutomation: (automationId: string) => req<import('./types').Automation>('GET', `/automations/${automationId}`),
   patchAutomation: (automationId: string, patch: Record<string, unknown>) =>
     req<import('./types').Automation>('PATCH', `/automations/${automationId}`, patch),
+  // §19 pure function endpoint: validate + label §4.3-shaped trigger dicts —
+  // the renderer's only source of trigger display strings and next occurrences
+  triggersPreview: (triggers: object[]) =>
+    req<{ triggers: import('./types').TriggerPreview[] }>('POST', '/triggers/preview', { triggers }),
   // §19 iMessage permission checklist (§9.2): status probe + Automation prompt
   imessagePermissions: () =>
     req<{ fullDisk: boolean; automation: 'granted' | 'denied' | 'unknown' }>(
@@ -113,14 +117,15 @@ export const api = {
   createAutomation: (body: Record<string, unknown>) => req<import('./types').Automation>('POST', '/automations', body),
   saveVersion: (automationId: string, body: Record<string, unknown>) =>
     req<{ version: number }>('POST', `/automations/${automationId}/versions`, body),
-  putDraft: (automationId: string, draft: unknown) => req('PUT', `/automations/${automationId}/draft`, { draft }),
-  deleteDraft: (automationId: string) => req('DELETE', `/automations/${automationId}/draft`),
-  // §4.4 pending create-mode slot (<root>/draft/)
-  getPendingDraft: () =>
-    req<{ draft: import('./types').DraftPayload | null; agentId: string | null }>('GET', '/draft'),
-  putPendingDraft: (draft: unknown, agentId: string | null) => req('PUT', '/draft', { draft, agentId }),
-  openPendingDraft: () => req('POST', '/draft/open'),
-  deletePendingDraft: () => req('DELETE', '/draft'),
+  // §19 the one draft-container surface: owner = automation id | 'pending'
+  // (the §4.4 create-mode slot <root>/draft/). agentId rides beside the
+  // pending payload only — the identity no automation record exists to hold.
+  getDraft: (owner: string) =>
+    req<{ draft: import('./types').DraftPayload | null; agentId: string | null }>('GET', `/draft/${owner}`),
+  putDraft: (owner: string, draft: unknown, agentId?: string | null) =>
+    req('PUT', `/draft/${owner}`, { draft, ...(agentId !== undefined ? { agentId } : {}) }),
+  openDraft: (owner: string) => req('POST', `/draft/${owner}/open`),
+  deleteDraft: (owner: string) => req('DELETE', `/draft/${owner}`),
   restore: (automationId: string, v: number) => req<{ version: number }>('POST', `/automations/${automationId}/restore`, { version: v }),
   // §19 test: starts a §4.5 test execution record of the sent draft's steps;
   // progress via the ordinary exec.* events, cancel via POST /executions/{id}/cancel

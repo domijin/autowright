@@ -486,3 +486,36 @@ def test_preview_archive_dry_match(store, monkeypatch, tmp_path_factory):
     # A broken archive rejects with the §5.1 message.
     with pytest.raises(transfer.TransferError, match="not a valid .autowright archive"):
         transfer.preview_archive(store, b"junk")
+
+
+def test_import_grants_ride_the_creation_call(store, monkeypatch, tmp_path_factory):
+    """§5.1: created grants pass directly into create_automation — no
+    post-create grant patch, so no window exists in which the automation is
+    stored with different grants than it ends up with. The only patch left
+    seeds param values, which creation can't take."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    patches = []
+    orig = s2.patch_automation
+    monkeypatch.setattr(s2, "patch_automation",
+                        lambda auto, patch: (patches.append(dict(patch)),
+                                             orig(auto, patch))[1])
+    b, _ = transfer.import_automation(s2, data)
+    assert patches == [{"paramValues": {"count": 7}}]
+    assert set(b["enabled_agents"]) == {g["id"] for g in s2.agents}
+    assert sorted(b["allowed_secrets"]) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
+    # the grants are already in the on-disk top-level yaml (the one write)
+    top = yaml.safe_load((s2.auto_dir(b) / "automation.yaml").read_text())
+    assert sorted(top["allowed_secrets"]) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
+    assert set(top["enabled_agents"]) == set(b["enabled_agents"])
+
+    # an archive without values patches nothing at all; everything referenced
+    # now pre-exists, so the creation call grants the empty lists (not the
+    # drafting-agent fallback)
+    patches.clear()
+    c, _ = transfer.import_automation(
+        s2, transfer.export_automation(store, a, include_values=False))
+    assert patches == []
+    assert c["param_values"] == {}
+    assert c["enabled_agents"] == [] and c["allowed_secrets"] == []

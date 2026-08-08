@@ -631,7 +631,11 @@ def test_app_started_fires_enabled_app_start_triggers(client, monkeypatch):
         "triggers": [{"kind": "app_start", "enabled": True}, {"kind": "app_start", "enabled": True}]})
     assert r.status_code == 422
 
-    assert client.post("/app-started").json() == {"fired": 1}
+    # §19: launchId is required — missing/empty bodies are 422s, never a fire
+    assert client.post("/app-started").status_code == 422
+    assert client.post("/app-started", json={}).status_code == 422
+    assert client.post("/app-started", json={"launchId": ""}).status_code == 422
+    assert client.post("/app-started", json={"launchId": "launch-A"}).json() == {"fired": 1}
     _until(events, "execution.finished")
     execs = client.get("/executions").json()
     assert [e["trigger"] for e in execs if e["automationId"] == a["id"]] == ["App start"]
@@ -753,7 +757,7 @@ def test_edit_draft_snapshot_carries_triggers(client):
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Drafted", "mock")
-    r = client.put(f"/automations/{a['id']}/draft", json={"draft": {
+    r = client.put(f"/draft/{a['id']}", json={"draft": {
         **make_version(), "triggers": [{"kind": "cron", "expression": "15 7 * * *", "enabled": True}],
     }})
     assert r.status_code == 200
@@ -777,7 +781,7 @@ def test_edit_draft_snapshot_carries_chat_thread(client, home):
          "blockers": [{"reason": "r", "fix": "f"}], "resolved": ["r — f"]},
         {"kind": ""},  # no kind → skipped
     ]
-    r = client.put(f"/automations/{a['id']}/draft", json={"draft": {**make_version(), "chat": chat}})
+    r = client.put(f"/draft/{a['id']}", json={"draft": {**make_version(), "chat": chat}})
     assert r.status_code == 200
     f = home / "automations" / a["id"] / "draft" / "chat.jsonl"
     assert f.exists()
@@ -786,31 +790,72 @@ def test_edit_draft_snapshot_carries_chat_thread(client, home):
     assert [e["id"] for e in d["chat"]] == ["e1", "e2", "e3"]
     assert d["chat"][2]["dismissed"] is True
     assert d["chat"][2]["blockers"] == [{"reason": "r", "fix": "f"}]
+    # the container GET echoes the same payload as the automation's draft object
+    assert client.get(f"/draft/{a['id']}").json() == {"draft": d, "agentId": "mock"}
     # a re-save without the key leaves the thread untouched
-    client.put(f"/automations/{a['id']}/draft", json={"draft": make_version()})
+    client.put(f"/draft/{a['id']}", json={"draft": make_version()})
     assert client.get(f"/automations/{a['id']}").json()["draft"]["chat"][0]["id"] == "e1"
     # an empty list clears it
-    client.put(f"/automations/{a['id']}/draft", json={"draft": {**make_version(), "chat": []}})
+    client.put(f"/draft/{a['id']}", json={"draft": {**make_version(), "chat": []}})
     assert not f.exists()
     assert "chat" not in client.get(f"/automations/{a['id']}").json()["draft"]
     # the thread dies with the draft
-    client.put(f"/automations/{a['id']}/draft", json={"draft": {**make_version(), "chat": chat[:1]}})
-    client.delete(f"/automations/{a['id']}/draft")
+    client.put(f"/draft/{a['id']}", json={"draft": {**make_version(), "chat": chat[:1]}})
+    client.delete(f"/draft/{a['id']}")
     assert not f.exists()
 
 
 def test_pending_draft_carries_chat_thread(client):
     # §4.4: the create-mode slot persists the thread the same way.
-    client.post("/draft/open")
-    r = client.put("/draft", json={"draft": {
+    client.post("/draft/pending/open")
+    r = client.put("/draft/pending", json={"draft": {
         **make_version(), "name": "Pending chat",
         "chat": [{"id": "c1", "kind": "user", "text": "hello"}],
     }, "agentId": "mock"})
     assert r.status_code == 200
-    d = client.get("/draft").json()["draft"]
+    d = client.get("/draft/pending").json()["draft"]
     assert d["chat"] == [{"id": "c1", "kind": "user", "text": "hello"}]
-    client.delete("/draft")
-    assert client.get("/draft").json()["draft"] is None
+    client.delete("/draft/pending")
+    assert client.get("/draft/pending").json()["draft"] is None
+
+
+def test_draft_container_surface_uniform_across_owners(client):
+    """§19: ONE /draft/{owner} surface — owner `pending` and an automation id
+    answer the same envelope and container shape; only the §4.4 identity
+    extras (name/description) and the automation-only 409 guard differ."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Owned", "mock")
+    body = {"draft": {**make_version(), "name": "Uniform",
+                      "stepAgents": ["mock"], "allowedSecrets": [],
+                      "triggers": [{"kind": "cron", "expression": "0 9 * * *", "enabled": True}],
+                      "chat": [{"id": "c1", "kind": "user", "text": "hi"}]},
+            "agentId": "mock"}
+    for owner in ("pending", a["id"]):
+        assert client.post(f"/draft/{owner}/open").json() == {"ok": True}
+        assert client.put(f"/draft/{owner}", json=body).status_code == 200
+    pj = client.get("/draft/pending").json()
+    oj = client.get(f"/draft/{a['id']}").json()
+    assert pj["agentId"] == oj["agentId"] == "mock"
+    # Same shape from the shared serializer; the pending payload adds only the
+    # identity fields no automation record exists to hold.
+    assert set(pj["draft"]) - set(oj["draft"]) == {"name", "description"}
+    assert {k: v for k, v in pj["draft"].items()
+            if k not in ("name", "description")} == oj["draft"]
+    # The 409 draft-execution guard applies to the automation owner only —
+    # no execution can hold the pending slot's scripts.
+    h = store.create_execution(a, "draft", None, "manual", [])
+    try:
+        assert client.put(f"/draft/{a['id']}", json=body).status_code == 409
+        assert client.delete(f"/draft/{a['id']}").status_code == 409
+        assert client.put("/draft/pending", json=body).status_code == 200
+    finally:
+        a["_live"].discard(h["id"])
+    # An owner that resolves to nothing is 404 (`pending` is the only literal).
+    assert client.get("/draft/nope").status_code == 404
+    for owner in ("pending", a["id"]):
+        assert client.delete(f"/draft/{owner}").json() == {"ok": True}
+        assert client.get(f"/draft/{owner}").json()["draft"] is None
 
 
 def test_runs_context_covers_real_executions_and_run_id(client, monkeypatch):
@@ -1202,7 +1247,7 @@ def test_create_empty_step_agents_is_kept_empty(client):
     """§4.1: an explicit empty stepAgents list is a real choice — create must
     not silently re-grant the drafting agent the user just unchecked."""
     r = client.post("/automations", json={
-        "name": "No agents", "agentId": "g1", "stepAgents": [],
+        "name": "No agents", "agentId": "mock", "stepAgents": [],
         "allowedSecrets": [],
         "draft": {"steps": [{"name": "S", "file": "01-s.py", "code": "log('x')"}]},
     })
@@ -1210,10 +1255,10 @@ def test_create_empty_step_agents_is_kept_empty(client):
     assert r.json()["stepAgents"] == []
     # absent field still falls back to the drafting agent
     r2 = client.post("/automations", json={
-        "name": "Default agents", "agentId": "g1",
+        "name": "Default agents", "agentId": "mock",
         "draft": {"steps": [{"name": "S", "file": "01-s.py", "code": "log('x')"}]},
     })
-    assert r2.json()["stepAgents"] == ["g1"]
+    assert r2.json()["stepAgents"] == ["mock"]
 
 
 def test_data_path_switch_refused_while_queue_nonempty(client, tmp_path):
@@ -1231,7 +1276,7 @@ def test_data_path_switch_refused_while_queue_nonempty(client, tmp_path):
 def test_finish_queued_reports_promotion_loss(client):
     """§6/§19 cancel race: finish_queued must say whether it won — a promoted
     entry answers False so cancel retries on the live record."""
-    from autowright.scheduler import finish_queued
+    from autowright.firing import finish_queued
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Promoted", "mock")
@@ -1648,7 +1693,7 @@ def test_queue_clear_endpoint(client, monkeypatch):
     """§19: clears every waiting entry, answers 0 on an empty queue (not 404),
     and leaves running executions alone."""
     from autowright import listeners as li_mod
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from autowright.storage import store
     from autowright import api as api_mod
 
@@ -1720,7 +1765,7 @@ def test_norm_steps_camel_boundary_on_draft_put(client):
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Flagged draft", "mock")
-    r = client.put(f"/automations/{a['id']}/draft",
+    r = client.put(f"/draft/{a['id']}",
                    json={"draft": {**make_version(), "steps": _flagged_steps()}})
     assert r.status_code == 200
     _assert_snake_only(a["draft"]["steps"][0])
@@ -1775,8 +1820,8 @@ def test_draft_endpoints_409_while_draft_execution_live(client):
     h = store.create_execution(a, "draft", None, "manual", [])   # status: executing
     assert h["id"] in a["_live"]
     try:
-        for r in (client.put(f"/automations/{a['id']}/draft", json={"draft": make_version()}),
-                  client.delete(f"/automations/{a['id']}/draft"),
+        for r in (client.put(f"/draft/{a['id']}", json={"draft": make_version()}),
+                  client.delete(f"/draft/{a['id']}"),
                   client.post(f"/automations/{a['id']}/versions", json={"draft": make_version()})):
             assert r.status_code == 409
             assert r.json()["detail"] == "a draft execution is in progress"
@@ -1785,7 +1830,7 @@ def test_draft_endpoints_409_while_draft_execution_live(client):
     # a live non-draft execution does not trip the guard
     h2 = store.create_execution(a, "version", 1, "manual", [])
     try:
-        assert client.put(f"/automations/{a['id']}/draft",
+        assert client.put(f"/draft/{a['id']}",
                           json={"draft": make_version()}).status_code == 200
     finally:
         a["_live"].discard(h2["id"])
@@ -1889,6 +1934,238 @@ def test_chat_assembles_recent_runs_and_run_id_forces_detail(client, monkeypatch
     assert j["status"] == "done", j
     logged = paths.app_log().read_text(encoding="utf-8")
     assert "OLD-TAIL-MARK" in logged
+
+
+# ---------- §19 request models: shapes, cross-field checks, strict types ----------
+
+def test_patch_rejects_malformed_bodies(client):
+    """§19: the pydantic request model answers 422 on shape mismatches, and the
+    handler's cross-field checks cover what needs store state."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Strict body", "mock")
+    url = f"/automations/{a['id']}"
+    for bad in ({"paramValues": "greeting=yo"},        # non-dict paramValues
+                {"paramValues": ["greeting"]},
+                {"stepAgents": "mock"},                # string, not a list
+                {"stepAgents": [1, 2]},                # non-string entries
+                {"allowedSecrets": "X_TOKEN"},
+                {"name": 42},                          # name must be a string
+                {"triggers": "cron"},                  # not a list of objects
+                {"triggers": [123]},
+                {"snapshotSettings": {"preClear": "no"}}):
+        assert client.patch(url, json=bad).status_code == 422, bad
+    # cross-field: paramValues names + kinds against the param definitions
+    assert client.patch(url, json={"paramValues": {"ghost": "x"}}).status_code == 422
+    assert client.patch(url, json={"paramValues": {"count": "three"}}).status_code == 422
+    assert client.patch(url, json={"paramValues": {"count": True}}).status_code == 422
+    # cross-field: agent references must name configured agents
+    assert client.patch(url, json={"agentId": "ghost"}).status_code == 422
+    assert client.patch(url, json={"stepAgents": ["ghost"]}).status_code == 422
+    # nothing stored by any of it
+    assert store.autos[a["id"]]["param_values"] == {}
+    assert store.autos[a["id"]]["enabled_agents"] == ["mock"]
+    # the valid shapes still land
+    r = client.patch(url, json={"paramValues": {"count": 5}, "stepAgents": ["mock"]})
+    assert r.status_code == 200
+    assert store.autos[a["id"]]["param_values"] == {"count": 5}
+
+
+def test_create_rejects_unknown_agent_refs(client):
+    d = {"steps": [{"name": "S", "file": "01-s.py", "code": "x = 1\n"}]}
+    assert client.post("/automations", json={"draft": d, "agentId": "ghost"}).status_code == 422
+    assert client.post("/automations",
+                       json={"draft": d, "stepAgents": ["ghost"]}).status_code == 422
+    assert client.post("/automations", json={"draft": d, "name": 42}).status_code == 422
+
+
+def test_settings_patch_strict_types(client):
+    """§19: settings booleans must be booleans, days a real int — bool-as-int,
+    floats, and numeric strings are 422s, never coerced."""
+    for bad in ({"days": True}, {"days": 2.5}, {"days": "14"}, {"days": None},
+                {"login": "yes"}, {"login": 1}, {"menuBarIcon": 0},
+                {"keepAwake": "true"}, {"keepForever": "no"}, {"developerMode": 1},
+                {"notifications": "sometimes"}, {"notifications": True}):
+        assert client.patch("/settings", json=bad).status_code == 422, bad
+    from autowright.storage import store
+
+    assert client.patch("/settings", json={"days": 14}).status_code == 200
+    assert store.settings["days"] == 14
+    assert client.patch("/settings", json={"days": 0}).status_code == 200
+    assert store.settings["days"] == 1  # §4.9 floor
+    assert client.patch("/settings", json={"login": True}).status_code == 200
+
+
+def test_restore_and_skip_step_strict_ints(client):
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Strict ints", "mock")
+    assert client.post(f"/automations/{a['id']}/restore", json={"version": "1"}).status_code == 422
+    assert client.post(f"/automations/{a['id']}/restore", json={"version": True}).status_code == 422
+    assert client.post(f"/automations/{a['id']}/restore", json={"version": 9}).status_code == 404
+    h = store.create_execution(a, "version", 1, "manual", [], status="failed")
+    store.update_execution(h)
+    a["_live"].discard(h["id"])
+    assert client.post(f"/executions/{h['id']}/skip-step", json={"index": "0"}).status_code == 422
+    assert client.post(f"/executions/{h['id']}/skip-step", json={}).status_code == 422
+
+
+def test_packages_body_shape_422(client):
+    for bad in ({"packages": "pandas"},
+                {"packages": [{"pip": "pandas"}]},           # import missing
+                {"packages": [{"import": "pandas"}]},        # pip missing
+                {"packages": [{"pip": 1, "import": "x"}]}):
+        assert client.post("/packages/check", json=bad).status_code == 422, bad
+    assert client.post("/packages/check", json={}).json() == {"packages": []}
+
+
+def test_drafts_stale_automation_id_404(client):
+    """§19: an unresolvable automationId on /drafts is a 404 — never a silent
+    fall-back to the create-mode grant defaults."""
+    r = client.post("/drafts", json={"mode": "chat", "automationId": "nope",
+                                     "agentId": "mock", "text": "why did it fail?"})
+    assert r.status_code == 404
+    assert r.json()["detail"] == "automation not found"
+
+
+def test_memory_clear_409_while_live(client):
+    """§19: clear shares the snapshot/restore live-guard — a mid-execution
+    clear could delete files a step is reading."""
+    from autowright.storage import store
+
+    auto = client.post("/automations", json={"draft": _echo_draft()}).json()
+    a = store.autos[auto["id"]]
+    (store.auto_dir(a) / "memory" / "seen.yaml").write_text("v: 1\n")
+    a["_live"] = {"fake-exec-id"}
+    try:
+        assert client.post(f"/automations/{auto['id']}/memory/clear").status_code == 409
+        assert (store.auto_dir(a) / "memory" / "seen.yaml").exists()  # untouched
+    finally:
+        a["_live"] = set()
+    assert client.post(f"/automations/{auto['id']}/memory/clear").status_code == 200
+    assert not (store.auto_dir(a) / "memory" / "seen.yaml").exists()
+
+
+# ---------- §19 POST /triggers/preview ----------
+
+def test_triggers_preview_happy_and_invalid_entries(client):
+    from autowright.storage import store
+
+    n_autos = len(store.autos)
+    r = client.post("/triggers/preview", json={"triggers": [
+        {"kind": "cron", "expression": "0 9 * * *"},
+        {"kind": "app_start"},
+        {"kind": "cron", "expression": "not cron"},
+        {"kind": "time", "at": "2999-01-01T00:00"},
+        {"kind": "discord", "channel": "123", "secret": "BOT_TOKEN", "pattern": "go"},
+        {"kind": "pubsub"},
+    ]})
+    assert r.status_code == 200
+    ts = r.json()["triggers"]
+    assert len(ts) == 6  # one result per entry, in order
+
+    cron = ts[0]
+    assert cron["valid"] is True and "error" not in cron
+    assert (cron["label"], cron["short"]) == ("Daily at 9:00", "Daily 9:00")
+    assert isinstance(cron["nextAt"], int) and cron["nextAt"] > 0
+    assert cron["nextLabel"]
+
+    start = ts[1]
+    assert start["valid"] is True
+    assert (start["label"], start["short"]) == ("On app start", "App start")
+    assert start["nextAt"] is None and "nextLabel" not in start  # no computable next
+
+    bad = ts[2]
+    assert bad["valid"] is False
+    assert "cron" in bad["error"]
+    assert bad["nextAt"] is None
+
+    once = ts[3]
+    assert once["valid"] is True
+    assert once["label"].startswith("Once at Jan 1")
+    assert once["nextLabel"] == "Jan 1, 12:00 AM"
+
+    disc = ts[4]
+    assert disc["valid"] is True and disc["short"] == "Discord"
+    assert disc["nextAt"] is None  # message triggers have no computable next
+
+    reserved = ts[5]
+    assert reserved["valid"] is False and "coming soon" in reserved["error"]
+
+    # pure function: nothing was stored
+    assert len(store.autos) == n_autos
+
+
+def test_triggers_preview_shape_and_list_rules(client):
+    # only a body that isn't a list of trigger dicts is a 422
+    assert client.post("/triggers/preview", json={}).status_code == 422
+    assert client.post("/triggers/preview", json={"triggers": "cron"}).status_code == 422
+    assert client.post("/triggers/preview", json={"triggers": [123]}).status_code == 422
+    assert client.post("/triggers/preview", json={"triggers": []}).json() == {"triggers": []}
+
+    # an elapsed one-shot with an id revalidates leniently (it would store) but
+    # has no next occurrence; a NEW past one-shot is invalid — same as the PATCH
+    r = client.post("/triggers/preview", json={"triggers": [
+        {"id": "t1", "kind": "time", "at": "2020-01-01T00:00"},
+        {"kind": "time", "at": "2020-01-01T00:00"},
+        {"kind": "app_start"}, {"kind": "app_start"},
+    ]}).json()["triggers"]
+    assert r[0]["valid"] is True and r[0]["nextAt"] is None and "nextLabel" not in r[0]
+    assert r[1]["valid"] is False and "future" in r[1]["error"]
+    # §4.3: at most one app_start per list — the second reports per-entry
+    assert r[2]["valid"] is True
+    assert r[3]["valid"] is False and "app-start" in r[3]["error"]
+
+
+# ---------- §19 server-side step validation on create / save-version ----------
+
+def test_create_rejects_invalid_step_drafts(client):
+    from autowright.storage import store
+
+    n = len(store.autos)
+    good = {"file": "01-ok.py", "name": "Ok", "description": "", "code": "x = 1\n"}
+    for bad_draft, why in (
+        ({"steps": [{**good, "code": "def broken(:\n"}]}, "syntax error"),
+        ({"steps": [{**good, "code": "import numpy\n"}]}, "import numpy isn't allowed"),
+        ({"steps": [{**good, "file": "notes.txt"}]}, "NN-name.py"),
+        ({"steps": [{**good, "file": "02-ok.py"}]}, "out of order"),
+        ({"steps": [good, {**good}]}, "1:1"),  # duplicate file names collapse
+        ({"steps": [{**good, "timeout": -5}]}, "timeout"),
+        ({"steps": [{**good, "retries": 99}]}, "retries"),
+        ({"steps": [{**good, "timeout": 5, "noTimeout": True}]}, "combined"),
+        ({"steps": [good],
+          "params": [{"name": "p", "kind": "shape", "default": "x"}]}, "unknown kind"),
+        ({"steps": [good],
+          "packages": [{"pip": "left-pad==1", "import": "left_pad", "why": "w"}]}, "bare distribution"),
+    ):
+        r = client.post("/automations", json={"draft": bad_draft})
+        assert r.status_code == 422, (why, r.json())
+        assert why in r.json()["detail"], r.json()["detail"]
+    assert len(store.autos) == n  # nothing landed
+
+    # a valid draft still creates
+    assert client.post("/automations", json={"draft": {"steps": [good]}}).status_code == 200
+
+
+def test_save_version_rejects_invalid_step_drafts(client):
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Validated saves", "mock")
+    r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
+        **make_version(), "steps": [{"file": "01-bad.py", "name": "Bad",
+                                     "description": "", "code": "import numpy\n"}],
+    }})
+    assert r.status_code == 422
+    assert "numpy" in r.json()["detail"]
+    assert store.autos[a["id"]]["current_version"] == 1  # no version minted
+    # per-step secret entries must name real stored secrets (the §8 validators)
+    r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
+        **make_version(),
+        "steps": [{"file": "01-s.py", "name": "S", "description": "", "code": "x = 1\n",
+                   "secrets": [{"name": "NOT_A_SECRET", "why": "w"}]}],
+    }})
+    assert r.status_code == 422
+    assert "NOT_A_SECRET" in r.json()["detail"]
 
 
 def test_chat_assembles_pkg_state_section(client):

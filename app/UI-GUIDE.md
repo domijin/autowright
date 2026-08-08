@@ -9,26 +9,37 @@ oklch/rgba values where no token fits.
 ## Data + state
 
 - `useStore()` from `src/store.ts` — the central model:
-  - data: `autos: Auto[]`, `execs: Execution[]`, `agents: Agent[]`, `secrets: SecretMeta[]`,
-    `settings: Settings | null`, `version`
-  - nav: `surface`, `page`, `automationId`, `executionId`, `createFrom`; navigate with
-    `go(page, {automationId?, executionId?})` and `setSurface(surface, from?)`
+  - data: `automations: Automation[]`, `executions: Execution[]` (list headers — no
+    steps/result), `agents: Agent[]`, `secrets: SecretMeta[]`, `settings: Settings | null`,
+    `pendingDraft`, `version`, `connected`
+  - nav: `surface`, `page`, `automationId`, `executionId`, `createFrom`, `agentEditId`;
+    navigate with `go(page, {automationId?, executionId?, agentEditId?})` and
+    `setSurface(surface, from?)`
   - `showToast(msg, ms?)`; `toast` is rendered by App — never render your own toast container.
-  - `executionFull: Record<executionId, Execution>` — full execution (logs/result) cache; call
-    `loadExec(id)` to (re)fetch; live `exec.log` / `exec.step` WS events are merged in
+  - `executionFull: Record<executionId, Execution>` — full execution (steps/result) cache; call
+    `loadExecution(id)` to (re)fetch; live `execution.step` WS events are merged in
     automatically while the record is in `executionFull`.
-  - `loadAuto(id)` refetches one automation into `autos`.
-  - `test: { executionId, analyzing, issue } | null` + `beginTest(executionId)` / `clearTest()` —
-    the §11 tracked test (issue analysis lands over WS `test.issue`; test progress streams
-    over the ordinary `exec.*` events).
-- `api` from `src/api.ts` — typed §19 client (`api.executeNow`, `api.patchAuto`, `api.putSecret`, …).
-  All mutations trigger WS `*.changed` events which refresh the store — after calling a mutation
-  you usually only `showToast(...)`.
-- Types in `src/types.ts` (`Auto`, `Execution`, `Step`, `ParamDef`, `SpecBlock`, `ExecResult`, …).
+  - `execLogs: Record<executionId, Record<logKey, LogLine[]>>` — lazy log buckets; call
+    `loadExecLogs(id, step?, attempt?)` to open+fetch one; live `execution.log` WS events
+    extend open buckets (deduped by `sequence`).
+  - Cache eviction: only the currently viewed execution plus the 5 most recently viewed keep
+    their `executionFull` records and log buckets — older ones are dropped on navigation and
+    refetch on next open, so never assume a record from a past visit is still cached.
+  - `loadAuto(id)` refetches one automation into `automations`.
+  - `test: { executionId } | null` + `beginTest(executionId)` / `clearTest()` — the §11 tracked
+    test. It holds only the tracked id: steps, status, and logs live on the ordinary exec
+    record (`executionFull[executionId]`, kept fresh by the `execution.*` events). There is no
+    `test.issue` WS event and no analysis state on `test`.
+- `api` from `src/api.ts` — typed §19 client (`api.executeNow`, `api.patchAutomation`,
+  `api.putSecret`, …). All mutations trigger WS `*.changed` events which refresh the store —
+  after calling a mutation you usually only `showToast(...)`.
+- Types in `src/types.ts` (`Automation`, `Execution`, `ExecutionStep`, `ParamDef`, `SpecBlock`,
+  `ExecutionResult`, …).
 
 ## Shared primitives (`src/ui.tsx`) — use these, don't reinvent
 
-`P` (palette), `Badge status=…` (§4.6 vocabulary), `Chip`, `resultChipColors(result)`,
+`P` (palette), `Badge status=…` (§4.6 vocabulary), `Chip`, `resultChipColors(resultChip)`
+(takes the automation's `resultChip` status: `'changes' | 'ok' | 'attention'`),
 `Eyebrow`, `Spinner`, `Toggle`, `RadioRing`, `BtnPrimary`, `BtnGhost`,
 `usePopover()` → `[open, setOpen, ref]` (closes on outside mousedown; wrap trigger+menu in
 `<div ref={ref} style={{position:'relative'}}>`), `menuStyle`, `MenuRow`,
@@ -38,8 +49,9 @@ Result rendering lives in `src/result.tsx`: `ResultSection label=… result=… 
 
 ## Behaviors that must match the spec
 
-- Pages animate in with `animation: 'adFadeUp .4s ease'`, max-width 1200 (forms 620–720,
-  settings 640), padding `26px 30px 70px` (detail pages `20px 30px 70px`).
+- Pages animate in with `className="ad-anim-page"` on the page container (never a raw
+  `animation:` style), max-width 1200 (forms 620–720, settings 640), padding
+  `26px 30px 70px` (detail pages `20px 30px 70px`).
 - Icons: Font Awesome classes (`fa-solid fa-…`), already loaded.
 - Status colors/labels only via `Badge`/`badgeOf`. Mono for timestamps/chips/eyebrows/metadata.
 - Toast copy, warning copy, empty-state copy: use the exact strings from SPEC.md.

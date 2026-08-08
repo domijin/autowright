@@ -284,15 +284,15 @@ def test_pending_draft_slot_roundtrip(store):
     from autowright import paths
     from conftest import make_version
 
-    assert store.pending_draft_json() == {"draft": None, "agentId": None}
+    assert store.draft_container_json(None) == {"draft": None, "agentId": None}
     ver = make_version()
     ver["step_agents"] = ["ag1"]
     ver["allowed_secrets"] = ["TOKEN"]
-    store.save_pending_draft(ver, name="Pending One", agent_id="ag1",
-                             triggers=[{"kind": "cron", "expression": "0 9 * * *"}])
+    store.save_draft(None, ver, name="Pending One", agent_id="ag1",
+                     triggers=[{"kind": "cron", "expression": "0 9 * * *"}])
     assert (paths.pending_draft_dir() / "automation" / "automation.yaml").exists()
 
-    j = store.pending_draft_json()
+    j = store.draft_container_json(None)
     assert j["agentId"] == "ag1"
     d = j["draft"]
     assert d["name"] == "Pending One"
@@ -302,32 +302,32 @@ def test_pending_draft_slot_roundtrip(store):
     assert d["steps"][0]["code"] == ver["steps"][0]["code"]
 
     # re-keep preserves created_at, bumps updated_at metadata on disk
-    store.save_pending_draft(ver, name="Pending Two", agent_id=None, triggers=[])
-    assert store.pending_draft_json()["draft"]["name"] == "Pending Two"
+    store.save_draft(None, ver, name="Pending Two", agent_id=None)
+    assert store.draft_container_json(None)["draft"]["name"] == "Pending Two"
 
-    store.delete_pending_draft()
-    assert store.pending_draft_json() == {"draft": None, "agentId": None}
+    store.delete_draft(None)
+    assert store.draft_container_json(None) == {"draft": None, "agentId": None}
     assert not paths.pending_draft_dir().exists()
 
 
-def test_open_pending_draft_makes_container(store):
+def test_open_draft_makes_pending_container(store):
     """§4.4: opening the create flow makes the slot's container (memory/ only —
     §11 tests execute as execution records) exist, without touching contents
     already there."""
     from autowright import paths
     from conftest import make_version
 
-    store.open_pending_draft()
+    store.open_draft(None)
     assert (paths.pending_draft_dir() / "memory").is_dir()
-    assert store.pending_draft_json() == {"draft": None, "agentId": None}
+    assert store.draft_container_json(None) == {"draft": None, "agentId": None}
 
     # re-open never clobbers a kept draft or memory contents
-    store.save_pending_draft(make_version(), name="Kept", agent_id=None, triggers=[])
+    store.save_draft(None, make_version(), name="Kept")
     marker = paths.pending_draft_dir() / "memory" / "notes.txt"
     marker.write_text("kept", encoding="utf-8")
-    store.open_pending_draft()
+    store.open_draft(None)
     assert marker.read_text(encoding="utf-8") == "kept"
-    assert store.pending_draft_json()["draft"]["name"] == "Kept"
+    assert store.draft_container_json(None)["draft"]["name"] == "Kept"
 
 
 def test_pending_draft_summary(store):
@@ -336,14 +336,14 @@ def test_pending_draft_summary(store):
     from conftest import make_version
 
     assert store.pending_draft_summary() is None
-    store.open_pending_draft()
+    store.open_draft(None)
     assert store.pending_draft_summary() is None
 
-    store.save_pending_draft(make_version(), name="Kept One", agent_id=None, triggers=[])
+    store.save_draft(None, make_version(), name="Kept One")
     s = store.pending_draft_summary()
     assert s["name"] == "Kept One" and s["updatedAt"]
 
-    store.delete_pending_draft()
+    store.delete_draft(None)
     assert store.pending_draft_summary() is None
 
 
@@ -666,3 +666,132 @@ def test_binary_corrupt_yaml_falls_back_like_bad_yaml(home, caplog):
         s.load_all()
     assert s.settings == dict(DEFAULT_SETTINGS)
     assert any("unreadable YAML" in rec.message for rec in caplog.records)
+
+
+def test_terminal_transition_demotes_record_to_header(store):
+    """§5 slim-on-finish: on a terminal transition the in-memory record demotes
+    to the DB-index header projection; the body stays lazy behind
+    execution.yaml and full bodies are never pinned for the backend's life."""
+    from autowright import timefmt
+    from autowright.storage import Store
+
+    a = store.create_automation(make_version(), "Slim", None)
+    h = store.create_execution(a, "version", 1, "discord",
+                               [{"name": "Say hello", "file": "01-say.py"}],
+                               trigger_payload={"kind": "discord", "sender": "Dave", "text": "hi"})
+    assert store.execs[h["id"]] is h and "steps" in h  # live record is the full one
+    h["status"] = "succeeded"
+    h["finished_at"] = timefmt.now_iso()
+    h["duration_ms"] = 1234
+    store.update_execution(h)
+    r = store.execs[h["id"]]
+    assert r is not h
+    assert set(r) == set(Store.EXEC_HEADER_KEYS)       # header-only shape
+    assert "steps" not in r and "trigger_payload" not in r
+    assert r["status"] == "succeeded" and r["trigger_sender"] == "Dave"
+    # `_latest` now points at the header — auto_json reads header fields only
+    assert a["_latest"] is r
+    j = store.auto_json(a)
+    assert j["lastStatus"] == "succeeded"
+    # list row serializes off the header; the body re-reads from the yaml
+    assert store.exec_json(r)["triggerSender"] == "Dave"
+    full = store.exec_full(h["id"])
+    assert full["steps"][0]["name"] == "Say hello"
+    assert store.exec_json(r, full=True)["triggerPayload"]["sender"] == "Dave"
+
+
+def test_trigger_sender_stamped_once_at_creation(store):
+    """§5: trigger_sender is stamped onto the record at creation from the
+    trigger payload; every shape (live record, yaml, DB row, reconcile) carries
+    the field itself — no reader lifts it from the payload."""
+    import sqlite3
+
+    import yaml as pyyaml
+
+    from autowright.storage import Store
+
+    a = store.create_automation(make_version(), "Sender", None)
+    h = store.create_execution(a, "version", 1, "imessage", [], status="succeeded",
+                               trigger_payload={"kind": "imessage", "sender": "+15551234567"})
+    assert h["trigger_sender"] == "+15551234567"
+    assert store.create_execution(a, "version", 1, "manual", [],
+                                  status="succeeded")["trigger_sender"] is None
+    store.update_execution(h)
+    y = pyyaml.safe_load((store.exec_dir(h["id"]) / "execution.yaml").read_text())
+    assert y["trigger_sender"] == "+15551234567"
+    # reconcile path: delete the DB row — the header rebuilt from the yaml
+    # carries the stamped field (no payload reach-in)
+    db = store.executions_dir() / "executions.db"
+    store.close_exec_db()
+    conn = sqlite3.connect(db)
+    with conn:
+        conn.execute("DELETE FROM executions WHERE id=?", (h["id"],))
+    conn.close()
+    s2 = Store()
+    s2.load_all()
+    assert s2.execs[h["id"]]["trigger_sender"] == "+15551234567"
+    assert s2.exec_json(s2.execs[h["id"]])["triggerSender"] == "+15551234567"
+
+
+def test_restore_writes_through_the_version_writer(store):
+    """§5: restore rebuilds vN+1 from vX's loaded content through
+    _write_version_folder (manifest last as the commit point) — never a tree
+    copy — and the content round-trips exactly, step code included."""
+    import yaml as pyyaml
+
+    a = store.create_automation(make_version(), "Restorable", None)
+    store.save_new_version(a, make_version(description="v2 desc", note="Second"))
+    n = store.restore_version(a, 1)
+    assert n == 3
+    v1 = store.auto_dir(a) / "versions" / "v1"
+    v3 = store.auto_dir(a) / "versions" / "v3"
+    for f in ("01-say.py", "02-finish.py", "spec.md"):
+        assert (v3 / f).read_text() == (v1 / f).read_text()
+    m1 = pyyaml.safe_load((v1 / "automation.yaml").read_text())
+    m3 = pyyaml.safe_load((v3 / "automation.yaml").read_text())
+    assert m3["note"] == "Restored from v1" and m3["when"] != m1["when"]
+    assert {k: v for k, v in m3.items() if k not in ("when", "note")} == \
+        {k: v for k, v in m1.items() if k not in ("when", "note")}
+    assert a["versions"][3]["steps"][0]["code"] == a["versions"][1]["steps"][0]["code"]
+
+
+def test_log_line_cap_marker_then_silence(store, monkeypatch):
+    """§5 line cap: a log file stops at MAX_LOG_LINES appended lines, one final
+    sys marker records the truncation, then nothing more lands — for attempt
+    files and execution.ndjson alike."""
+    import json
+
+    from autowright.storage import Store
+
+    monkeypatch.setattr(Store, "MAX_LOG_LINES", 5)
+    a = store.create_automation(make_version(), "Cappy", None)
+    h = store.create_execution(a, "version", 1, "manual",
+                               [{"name": "Say hello", "file": "01-say.py"}])
+    name = store.log_name("01-say.py", 0, 1)
+    for i in range(1, 10):
+        store.append_log_line(h["id"], name, {"timestamp": "2026-08-08T00:00:00+00:00",
+                                              "kind": "out", "sequence": i, "text": f"line {i}"})
+    lines = [json.loads(ln) for ln in
+             store.log_file(h["id"], name).read_text().splitlines()]
+    assert len(lines) == 6                       # 5 content lines + the marker
+    assert [ln["text"] for ln in lines[:5]] == [f"line {i}" for i in range(1, 6)]
+    marker = lines[-1]
+    assert marker["kind"] == "sys" and "truncated" in marker["text"]
+    assert marker["sequence"] == 6
+    # a restart mid-execution re-seeds the count from disk — still capped, and
+    # no second marker ever lands
+    store._log_counts.clear()
+    store.append_log_line(h["id"], name, {"timestamp": "2026-08-08T00:00:01+00:00",
+                                          "kind": "out", "sequence": 11, "text": "late"})
+    assert len(store.log_file(h["id"], name).read_text().splitlines()) == 6
+    # execution.ndjson has the same cap
+    for i in range(1, 10):
+        store.append_log_line(h["id"], store.EXEC_LOG,
+                              {"timestamp": "2026-08-08T00:00:02+00:00",
+                               "kind": "sys", "sequence": i, "text": f"e{i}"})
+    elines = store.log_file(h["id"], store.EXEC_LOG).read_text().splitlines()
+    assert len(elines) == 6
+    assert "truncated" in json.loads(elines[-1])["text"]
+    # deleting the execution drops the in-memory counters
+    store.delete_execution(h["id"])
+    assert not any(k[0] == h["id"] for k in store._log_counts)

@@ -17,9 +17,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import harness, keychain, notify, packages as pkglib, timefmt
+from . import harness, keychain, listeners, notify, packages as pkglib, timefmt
 from .events import hub
 from .executor import CTRL
+from .firing import finish_queued
 from .storage import (SECRET_REF_RE, Store, clamp_max_parallel, exec_ver_label,
                       resolve_param_value, trigger_label)
 
@@ -133,14 +134,20 @@ def build_redactions(secret_values: dict[str, str]) -> dict[str, str]:
 
 def agents_for_step(agents: dict[str, dict], enabled: list, s: dict) -> list[dict]:
     """§6: the step's named agents (§8 grant names) resolved against the
-    enabled agents, in the step's order; falls back to the first enabled agent
-    when none resolve. Shared by executions and §11 tests."""
+    enabled agents, in the step's order. The first-enabled-agent fallback
+    applies only when the step names no agents at all — named agents that all
+    fail to resolve (revoked grants, renamed agents) return [] so the caller
+    fails the step like an agent step with no enabled agent, never a silent
+    hand-off to an agent the step didn't name. Shared by executions and §11
+    tests."""
     pool = [agents[a] for a in enabled if a in agents]
+    entries = s.get("agents") or []
+    if not entries:
+        return pool[:1]
     by_name: dict[str, dict] = {}
     for g in pool:  # duplicate grant names: the first enabled agent wins
         by_name.setdefault(harness.grant_name(g), g)
-    named = [by_name[e["name"]] for e in s.get("agents") or [] if e.get("name") in by_name]
-    return named or pool[:1]
+    return [by_name[e["name"]] for e in entries if e.get("name") in by_name]
 
 
 def ensure_declared_packages(declared: list, log, should_stop=None) -> str | None:
@@ -223,11 +230,6 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
     # the engine so it lands on the persisted execution record.
     if state.get("on_spawn"):
         state["on_spawn"](proc.pid)
-    try:
-        proc.stdin.write(json.dumps(ctx))
-        proc.stdin.close()
-    except BrokenPipeError:
-        pass
     # Watchdog enforces the per-step timeout even when the step produces no
     # output at all (a bare read loop would block forever on a silent hang).
     # No watchdog at all on a no_timeout step (§6) — cancel/skip still kill it.
@@ -253,12 +255,22 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
         timed_out.set()
         _hard_kill()
 
+    # §6: armed BEFORE the ctx handoff below — the deadline runs from process
+    # spawn, so a child that wedges before ever reading its stdin (interpreter
+    # hung on startup, pipe never drained) still hits its limit. If the timer
+    # fires while we're blocked in stdin.write, _hard_kill SIGKILLs the group
+    # and the write surfaces as BrokenPipeError, caught below.
     watchdog = None
     if timeout_s is not None:
         watchdog = threading.Timer(timeout_s, _on_timeout)
         watchdog.daemon = True
         watchdog.start()
     try:
+        try:
+            proc.stdin.write(json.dumps(ctx))
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass
         try:
             while True:
                 # Size-capped readline: a step (or an inherited-fd child)
@@ -496,8 +508,6 @@ class Engine:
         `finish_queued` reports whether it won the transition, and a loss means
         the entry is executing now (promotion registers `_live` under
         `store.lock` before releasing it), so the loop retries as live."""
-        from .scheduler import finish_queued  # deferred: scheduler imports Engine
-
         while True:
             with self.store.lock:
                 h = self.store.execs.get(execution_id)
@@ -674,7 +684,9 @@ class Engine:
         notify_text: str | None = None
         caffeinate = None
         try:
-            caffeinate = subprocess.Popen(["caffeinate", "-i"],
+            # §3: `-w <backend pid>` ties the assertion to this process — a
+            # crashed backend can never leave an orphan keeping the Mac awake.
+            caffeinate = subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())],
                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:  # noqa: BLE001
             pass
@@ -864,7 +876,14 @@ class Engine:
             h["_cur_step"] = None
             h["_cur"] = None
             h["duration_ms"] = (h["duration_ms"] or 0) + int((time.time() - state["pass_start"]) * 1000)
-            if state["cancel"]:
+            # §7: the cancel flag marks the record cancelled only when it
+            # actually reached a step — at least one cancelled or left
+            # non-terminal. A cancel landing after the last step already
+            # succeeded changes nothing: the status reports what happened to
+            # the steps, not that a button was pressed too late.
+            cancelled = state["cancel"] and any(
+                s["status"] in ("cancelled", "queued", "executing") for s in h["steps"])
+            if cancelled:
                 h["status"] = "cancelled"
             elif failed:
                 h["status"] = "failed"
@@ -873,7 +892,7 @@ class Engine:
                 h["status"] = "succeeded"
             h["finished_at"] = timefmt.now_iso()
             h["pgid"] = None  # §3: no live step group to recover anymore
-            if result_touched and not state["cancel"]:
+            if result_touched and not cancelled:
                 # The chip is optional (§4.5): it lives on the execution header,
                 # tinted by the execution's result status. It is persisted and
                 # published, so it gets the same redaction a log line gets (§5:
@@ -995,8 +1014,6 @@ class Engine:
         def on_reply(text: str) -> None:
             # §6.1: send back through the listener module — a failed send logs
             # an err line and never fails the step.
-            from . import listeners  # function-level: listeners → scheduler → engine
-
             payload = h.get("trigger_payload") or {}
             # §6.1 last gate before the network: the executor already refuses a
             # reply carrying a secret value, but this is the point of no return

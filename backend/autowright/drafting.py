@@ -28,7 +28,7 @@ from pathlib import Path
 
 import yaml
 
-from . import harness, packages as pkglib, reqlog, schedule
+from . import harness, packages as pkglib, reqlog, triggers as triggerlib
 from .imports_check import ALLOWED_IMPORTS, disallowed_imports
 from .specmd import blocks_to_md, md_to_blocks
 from .storage import SECRET_REF_RE
@@ -774,19 +774,19 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                 entry = {"kind": "cron", "expression": str(t["cron"]).strip(), "enabled": True}
                 if "timezone" in t:
                     entry["timezone"] = str(t["timezone"])
-                    if err := schedule.tz_error(entry["timezone"]):
+                    if err := triggerlib.tz_error(entry["timezone"]):
                         errors.append(f"triggers: {err}")
                         continue
                 try:
-                    schedule.parse_cron(entry["expression"])
+                    triggerlib.parse_cron(entry["expression"])
                     norm_trigs.append(entry)
-                except schedule.CronError as e:
+                except triggerlib.CronError as e:
                     errors.append(f"triggers: {e}")
             elif "imessage" in keys and keys <= {"imessage", "pattern"}:
                 entry = {"kind": "imessage",
-                         "from": schedule.normalize_handle(str(t["imessage"])), "enabled": True,
+                         "from": triggerlib.normalize_handle(str(t["imessage"])), "enabled": True,
                          **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {})}
-                if err := schedule.validate_trigger(entry):
+                if err := triggerlib.validate_trigger(entry):
                     errors.append(f"triggers: {err}")
                 else:
                     norm_trigs.append(entry)
@@ -798,8 +798,8 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                          "secret": str(t.get("secret", "")).strip(), "enabled": True,
                          **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {}),
                          **({"mention": True} if t.get("mention") is True else {}),
-                         **({"author": schedule.normalize_authors(au)} if au else {})}
-                if err := schedule.validate_trigger(entry):
+                         **({"author": triggerlib.normalize_authors(au)} if au else {})}
+                if err := triggerlib.validate_trigger(entry):
                     errors.append(f"triggers: {err}")
                 else:
                     norm_trigs.append(entry)
@@ -833,6 +833,12 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
 
 
 # ---------- background jobs ----------
+
+class Cancelled(Exception):
+    """§8: the job was cancelled. Raised out of `_invoke` (checked before every
+    harness spawn and after every return) so cancellation unwinds the whole
+    pipeline in one place — `_run` catches it once. No boolean plumbing."""
+
 
 class DraftJobs:
     """§19 POST /drafts — the two-call pipeline as a background job, one
@@ -908,10 +914,12 @@ class DraftJobs:
              current: dict | None, grants: dict, chat_history: list | None,
              runs: str | None = None, pkg_state: list[dict] | None = None) -> None:
         try:
-            cancelled = self._pipeline(job, mode, agent, user_text, current, grants,
-                                       chat_history, runs, pkg_state)
-            if cancelled:
-                return
+            self._pipeline(job, mode, agent, user_text, current, grants,
+                           chat_history, runs, pkg_state)
+        except Cancelled:
+            # cancel() already made the job terminal under the lock — this
+            # settle is the no-op belt-and-braces (it never overwrites).
+            self._settle(job, "cancelled")
         except harness.HarnessError as e:
             self._settle(job, "failed", error=str(e))
         except Exception as e:  # noqa: BLE001
@@ -923,8 +931,9 @@ class DraftJobs:
     def _pipeline(self, job: dict, mode: str, agent: dict, user_text: str | None,
                   current: dict | None, grants: dict,
                   chat_history: list | None = None, runs: str | None = None,
-                  pkg_state: list[dict] | None = None) -> bool:
-        """Makes the mode's calls; sets job status. Returns True when cancelled mid-flight."""
+                  pkg_state: list[dict] | None = None) -> None:
+        """Makes the mode's calls; sets job status. A cancel raises `Cancelled`
+        out of `_invoke` — caught once in `_run`."""
         if mode == "chat":
             return self._chat_call(job, agent, user_text, current, grants, chat_history,
                                    runs, pkg_state)
@@ -935,8 +944,6 @@ class DraftJobs:
             spec, _errors, blockers, diagnosed = self._call_with_repair(
                 job, agent, build_spec_prompt(user_text, current, grants),
                 validate_spec, "spec")
-            if job["_cancel"]:
-                return True
             if blockers:
                 return self._block(job, "spec", blockers, None, diagnosed=diagnosed)
             spec_md, spec_blocks = spec["md"], spec["blocks"]
@@ -953,8 +960,6 @@ class DraftJobs:
         draft, _errors, blockers, diagnosed = self._call_with_repair(
             job, agent, build_steps_prompt(mode, spec_md, current, grants),
             lambda files: validate_steps(files, grants), "steps")
-        if job["_cancel"]:
-            return True
         if blockers:
             # Hand call 1's spec along (create) so the §11 Blocker panel can
             # amend it and rebuild — on sync the caller already holds the spec.
@@ -962,17 +967,16 @@ class DraftJobs:
                                blockers, {"spec": spec_blocks} if spec_blocks else None,
                                diagnosed=diagnosed)
 
-        if draft.get("packages") and not job["_cancel"]:
+        if draft.get("packages"):
             # §8: ensure the declared packages right after the steps land — the
             # user learns about an install failure on the edit page, not when a
             # trigger fires. A failure never fails the job (§6.2): the statuses
             # ride the draft payload and render in the §11 Packages card.
+            self._check_cancel(job)  # a cancel must never start the install stage
             self._stage(job, "Installing the packages")
             draft["packages"] = pkglib.ensure(
                 draft["packages"],
                 on_progress=lambda spec: self._event(job, f"Installing {spec}…"))
-            if job["_cancel"]:
-                return True
 
         draft["spec"] = spec_blocks  # None on sync — the spec never changes there
         if mode == "create":
@@ -980,27 +984,24 @@ class DraftJobs:
             # Review card arrives pre-filled — agents never return them.
             draft["instructions"] = (current or {}).get("instructions") or ""
         self._settle(job, "done", draft=draft)
-        return False
 
     def _chat_call(self, job: dict, agent: dict, user_text: str | None,
                    current: dict | None, grants: dict,
                    chat_history: list | None, runs: str | None = None,
-                   pkg_state: list[dict] | None = None) -> bool:
+                   pkg_state: list[dict] | None = None) -> None:
         """§8 chat call: one call whose response shape decides the outcome —
         plain prose is an answer, file blocks are rewrites/actions
         (spec.md / instructions.md / notes.md / actions.yaml — validated, one
         repair round, then diagnosis), a blocker envelope blocks
-        (blockedAt: chat). Returns True when cancelled mid-flight."""
+        (blockedAt: chat). A cancel raises `Cancelled` out of `_invoke`."""
         prompt = build_chat_prompt(user_text, current, grants, chat_history,
                                    runs=runs, pkg_state=pkg_state)
         # §8: actions.yaml test_values keys must name the draft's params
         pnames = [str(p.get("name")) for p in (current or {}).get("params") or []
                   if p.get("name")]
         raw = self._invoke(job, agent, prompt, on_chunk=self._chat_cb(job))
-        if job["_cancel"]:
-            return True
         outcome, payload = self._chat_shape(raw, pnames)
-        if outcome == "invalid" and not job["_cancel"]:
+        if outcome == "invalid":
             round1 = {"errors": payload, "response": raw}
             repair = (prompt + "\n\n=== YOUR PREVIOUS RESPONSE ===\n" + clip_response(raw)
                       + "\n\n=== VALIDATION ERRORS — fix these and resend ===\n- "
@@ -1008,26 +1009,20 @@ class DraftJobs:
             self._event(job, "The response didn't validate — asking for a corrected one…")
             raw2 = self._invoke(job, agent, repair,
                                 on_chunk=self._chat_cb(job, prefix="Second try — "))
-            if job["_cancel"]:
-                return True
             outcome, payload = self._chat_shape(raw2, pnames)
-            if outcome == "invalid" and not job["_cancel"]:
+            if outcome == "invalid":
                 diag = self._diagnose(job, agent, prompt, raw2, payload)
                 self._record_failure(job, agent, "chat", "diagnosed", prompt,
                                      [round1, {"errors": payload, "response": raw2}], diag)
                 return self._block(job, "chat", diag, None, diagnosed=True)
-            if not job["_cancel"]:
-                self._record_failure(job, agent, "chat",
-                                     "blocked" if outcome == "blocked" else "repaired",
-                                     prompt, [round1], None)
-        if job["_cancel"]:
-            return True
+            self._record_failure(job, agent, "chat",
+                                 "blocked" if outcome == "blocked" else "repaired",
+                                 prompt, [round1], None)
         if outcome == "blocked":
             return self._block(job, "chat", payload, None)
         if not payload:
             return self._fail(job, "The agent returned an empty answer.", [])
         self._settle(job, "done", draft=payload)
-        return False
 
     @staticmethod
     def _chat_shape(raw: str, param_names: list[str] | None = None):
@@ -1054,29 +1049,43 @@ class DraftJobs:
             return "invalid", errors
         return "done", payload
 
+    @staticmethod
+    def _check_cancel(job: dict) -> None:
+        """Raise `Cancelled` when the job's cancel flag is set (§8)."""
+        if job["_cancel"]:
+            raise Cancelled()
+
     def _invoke(self, job: dict, agent: dict, prompt: str, on_chunk=None) -> str:
         """harness.invoke with the job's proc/cancel wiring and the §8 one-retry
-        policy: a transient failure (timeout, nonzero exit) is retried once
-        after a short pause; a second failure — or a non-retryable one (CLI not
-        installed, unknown harness) — propagates. Drafting calls run
-        web-enabled (§6 web-read tools); runtime agent.ask calls never do."""
+        policy: a transient failure (timeout, nonzero exit that looks transient)
+        is retried once after a short pause; a second failure — or a
+        non-retryable one (CLI not installed, unknown harness, an obvious
+        auth/model-not-found stderr) — propagates. Cancellation raises
+        `Cancelled`: checked before every spawn and after every return, so no
+        harness call starts after a cancel and no cancelled call's output is
+        ever used (a kill-induced nonzero exit after a cancel surfaces as
+        Cancelled, never as a failure). Drafting calls run web-enabled (§6
+        web-read tools); runtime agent.ask calls never do."""
+        self._check_cancel(job)
         try:
-            return harness.invoke(agent, prompt, proc_holder=job["_proc"],
-                                  on_chunk=on_chunk, on_tool=self._tool_cb(job),
-                                  should_abort=lambda: job["_cancel"],
-                                  web=True)
+            out = harness.invoke(agent, prompt, proc_holder=job["_proc"],
+                                 on_chunk=on_chunk, on_tool=self._tool_cb(job),
+                                 should_abort=lambda: job["_cancel"],
+                                 web=True)
         except harness.HarnessError as e:
-            if not getattr(e, "retryable", False) or job["_cancel"]:
+            self._check_cancel(job)
+            if not getattr(e, "retryable", False):
                 raise
             log.warning("agent call failed (%s) — retrying once", e)
             self._event(job, "The agent call failed — retrying once…")
             time.sleep(2)
-            if job["_cancel"]:
-                raise
-            return harness.invoke(agent, prompt, proc_holder=job["_proc"],
-                                  on_chunk=on_chunk, on_tool=self._tool_cb(job),
-                                  should_abort=lambda: job["_cancel"],
-                                  web=True)
+            self._check_cancel(job)
+            out = harness.invoke(agent, prompt, proc_holder=job["_proc"],
+                                 on_chunk=on_chunk, on_tool=self._tool_cb(job),
+                                 should_abort=lambda: job["_cancel"],
+                                 web=True)
+        self._check_cancel(job)
+        return out
 
     def _call_with_repair(self, job: dict, agent: dict, prompt: str,
                           validator, call: str) -> tuple[dict, list[str], list[dict] | None, bool]:
@@ -1084,17 +1093,14 @@ class DraftJobs:
         then — when the repair is still invalid — one §8 build-diagnosis call
         that turns the failure into blockers (returned with diagnosed=True), so
         a validation double-failure never fails the job. A valid §8 blocker
-        envelope is terminal — returned as-is, no repair. `_cancel` is checked
-        before every invoke: a cancel between calls must never let a fresh
-        full-timeout harness call start (nothing would kill it). `call` names
-        the pipeline call ("spec"/"steps") for the §5 build-failure record."""
-        if job["_cancel"]:
-            return {}, [], None, False
+        envelope is terminal — returned as-is, no repair. A cancel raises
+        `Cancelled` out of `_invoke` (checked before every spawn there): a
+        cancel between calls never lets a fresh full-timeout harness call
+        start. `call` names the pipeline call ("spec"/"steps") for the §5
+        build-failure record."""
         raw = self._invoke(job, agent, prompt, on_chunk=self._progress_cb(job))
-        if job["_cancel"]:
-            return {}, [], None, False
         result, errors, blockers = self._parse_validate(raw, validator)
-        if errors and not job["_cancel"]:
+        if errors:
             round1 = {"errors": errors, "response": raw}
             repair = (prompt + "\n\n=== YOUR PREVIOUS RESPONSE ===\n" + clip_response(raw)
                       + "\n\n=== VALIDATION ERRORS — fix these and resend the full envelope ===\n- "
@@ -1102,21 +1108,18 @@ class DraftJobs:
             self._event(job, "The response didn't validate — asking for a corrected one…")
             raw2 = self._invoke(job, agent, repair,
                                 on_chunk=self._progress_cb(job, prefix="Second try — "))
-            if job["_cancel"]:
-                return {}, [], None, False
             result, errors, blockers = self._parse_validate(raw2, validator)
-            if errors and not job["_cancel"]:
+            if errors:
                 diag = self._diagnose(job, agent, prompt, raw2, errors)
                 self._record_failure(job, agent, call, "diagnosed", prompt,
                                      [round1, {"errors": errors, "response": raw2}], diag)
                 return {}, [], diag, True
-            if not job["_cancel"]:
-                # The repair round settled the call — a fixed envelope or a
-                # blocker envelope — but round 1 still failed validation:
-                # exactly the near-miss the record exists for (§5).
-                self._record_failure(job, agent, call,
-                                     "blocked" if blockers else "repaired",
-                                     prompt, [round1], None)
+            # The repair round settled the call — a fixed envelope or a
+            # blocker envelope — but round 1 still failed validation:
+            # exactly the near-miss the record exists for (§5).
+            self._record_failure(job, agent, call,
+                                 "blocked" if blockers else "repaired",
+                                 prompt, [round1], None)
         return result, errors, blockers, False
 
     @staticmethod
@@ -1140,9 +1143,9 @@ class DraftJobs:
                     + "\n\n" + DIAGNOSE_TASK)
         blockers = None
         try:
-            raw3 = self._invoke(job, agent, diagnose)
-            if not job["_cancel"]:
-                blockers = parse_blockers(raw3)
+            # A cancel raises `Cancelled` out of `_invoke` — it is not caught
+            # below, so a cancelled diagnosis never settles a fallback blocker.
+            blockers = parse_blockers(self._invoke(job, agent, diagnose))
         except (harness.HarnessError, ValueError) as e:
             log.warning("build-diagnosis call failed: %s", e)
         if not blockers:
@@ -1313,18 +1316,16 @@ class DraftJobs:
 
         return cb
 
-    def _fail(self, job: dict, msg: str, errors: list[str]) -> bool:
+    def _fail(self, job: dict, msg: str, errors: list[str]) -> None:
         self._settle(job, "failed", error=msg, errorDetail=errors[:8])
-        return False
 
     def _block(self, job: dict, at: str, blockers: list[dict], draft: dict | None,
-               diagnosed: bool = False) -> bool:
+               diagnosed: bool = False) -> None:
         # §8: a valid blocker envelope is its own terminal outcome, not a
         # failure. `diagnosed` marks build-diagnosis blockers (§19) so the UI
         # words the panel as a build failure, not an agent refusal.
         self._settle(job, "blocked", blockedAt=at, blockers=blockers, draft=draft,
                      diagnosed=diagnosed)
-        return False
 
     @staticmethod
     def _parse_validate(raw: str, validator) -> tuple[dict, list[str], list[dict] | None]:

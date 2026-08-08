@@ -78,20 +78,21 @@ def test_cron_trailing_slash_rejected():
     """Backend and renderer cron parsers must agree: "5/" is invalid, not step 1."""
     import pytest as _pytest
 
-    from autowright import schedule
+    from autowright import triggers
 
-    with _pytest.raises(schedule.CronError):
-        schedule.parse_cron("5/ * * * *")
-    schedule.parse_cron("*/5 * * * *")  # real steps still parse
+    with _pytest.raises(triggers.CronError):
+        triggers.parse_cron("5/ * * * *")
+    triggers.parse_cron("*/5 * * * *")  # real steps still parse
 
 
 def test_settings_days_validation(client):
     assert client.patch("/settings", json={"days": "ninety"}).status_code == 422
     assert client.patch("/settings", json={"notifications": "sometimes"}).status_code == 422
-    r = client.patch("/settings", json={"days": "14"})
+    assert client.patch("/settings", json={"days": "14"}).status_code == 422  # strict int
+    r = client.patch("/settings", json={"days": 14})
     assert r.status_code == 200
     from autowright.storage import store as live_store
-    assert live_store.settings["days"] == 14  # coerced to int, retention-safe
+    assert live_store.settings["days"] == 14
 
 
 def test_import_rejects_oversized_member(client):
@@ -118,12 +119,12 @@ def test_draft_endpoints_409_while_draft_execution_live(client):
                                       "status": "executing", "duration_ms": None, "attempts": []}])
     a["_live"] = {h["id"]}
     try:
-        assert client.put(f"/automations/{automation_id}/draft",
+        assert client.put(f"/draft/{automation_id}",
                           json={"draft": make_version()}).status_code == 409
-        assert client.delete(f"/automations/{automation_id}/draft").status_code == 409
+        assert client.delete(f"/draft/{automation_id}").status_code == 409
     finally:
         a["_live"] = set()
-    assert client.put(f"/automations/{automation_id}/draft",
+    assert client.put(f"/draft/{automation_id}",
                       json={"draft": make_version()}).status_code == 200
 
 

@@ -75,7 +75,7 @@ above — `VITE_DEV`/`npm run dev:app` themselves stay gone).
 **Test suite layout.** Backend unit tests are pytest under `tests/` (run
 `python -m pytest tests/` from the repo root; `pytest.ini` runs them parallel via
 pytest-xdist `-n auto`). Renderer unit tests are Vitest under
-`app/tests/` (run `npm test` in `app/`) — pure logic (cron math, label
+`app/tests/` (run `npm test` in `app/`) — pure logic (label
 formatting, store reducers, spec/text round-trips) plus a small happy-dom component tier
 (`*.render.test.tsx`, @testing-library/react). It covers flows the e2e tier cannot reach
 under its safety rules — the original motivation: installer/set-up card flows (e2e must
@@ -159,18 +159,14 @@ real — e2e must never click "Set up" suggestion cards (they install CLIs onto 
 the found-card "Check connection" is read-only and safe. Secret values go to the real macOS
 Keychain in every mode, so e2e only ever creates §4.8 placeholder secrets (blank value —
 name + description, no Keychain write); value-setting is covered by the unit tier's in-memory
-keychain. Two implementations of the same
-behavior are locked together by a shared golden fixture, `tests/fixtures/cron_parity.json`,
-holding two arrays: `next` — occurrence cases `{expression, timezone, after_utc, next_utc|null}`,
-including the DST spring-forward gap, the fall-back single-fire plus its follow-on
-occurrence, and a mid-repeated-hour baseline — and `labels` — humanizing cases
-`{expression, timezone|null, label, short}` including the leading-zero and dow-edge fallbacks. Both
-arrays are executed verbatim, every case and every field, by both `test_schedule.py` and
-the Vitest cron suite, so the Python and TypeScript cron implementations cannot drift
-silently. Testability knobs (configuration only, release
+keychain. Trigger math has **one** implementation (backend `triggers.py`; the editors
+preview through §19 `POST /triggers/preview`), so there is no cross-language parity fixture
+to maintain — the backend pytest suite covers the cron/one-shot cases (DST gap and
+fall-back included) directly. Testability knobs (configuration only, release
 behavior unchanged): `Scheduler` accepts an injectable `clock` callable (defaults to
 `datetime.now`) so tick-loop policies (coalescing, catch-up, one-shot consumption) are
-deterministic under test, and `CreateFlow.tsx` exports its pure helpers
+deterministic under test, and the §17 createflow module (`app/src/pages/createflow/model.ts`)
+exports its pure helpers
 (`specToText`, `textToSpec`, `amendSpec`, `stepSecretNames`, `secretRefsOf`, `instrToMd`,
 `mergeDraftTriggers`, `persistChat`, `applyTestValues`, and the seed/serialization helpers
 `seedDrafting`, `seedFromPayload`, `seedFromAuto`, `serializeDraft`) and `result.tsx`

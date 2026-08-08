@@ -667,7 +667,7 @@ editors enter with
   `test: true`, `ver: "Test"`, `trigger: "Test"`) through the exact engine path a real
   execution takes (there is no simulation mode): the record and its `steps/` (the sent
   draft's scripts), `workspace/`, `result/`, and per-step-attempt logs all live under
-  `executions/<uuid>/`, progress streams over the ordinary `exec.*` WS events, and the
+  `executions/<uuid>/`, progress streams over the ordinary `execution.*` WS events, and the
   result, failure diagnostics, and secret redaction work exactly as in §7. The panel's
   setup toggle always reads **"Test the draft"** — the label never changes once a test
   outcome exists (a live test shows Cancel in its place) — and the setup section's run
@@ -742,7 +742,7 @@ editors enter with
   finished test writes the last-test summary `test.yaml` (§5 — status succeeded | failed,
   finished-at, and the test execution's id) into the draft container, wiped at the next test
   start and deleted with the draft. It rides the draft payload as `test` ({ status, when:
-  §4.1 started-label, executionId }) — on the automation's `draft` object and on `GET /draft` —
+  §4.1 started-label, executionId }) — on the automation's `draft` object and on `GET /draft/pending` —
   and a resumed draft's panel renders it in place of the never-tested row: a status line
   ("Last test succeeded — <when>" green / "Last test failed — <when>" amber); the setup
   section's run row shows View run while the record still exists (retention may outlive

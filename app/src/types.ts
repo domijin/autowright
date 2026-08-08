@@ -87,12 +87,6 @@ export interface VersionInfo {
   steps: Step[]
   params: ParamDef[]
   packages: PackageDep[]
-  // §4.4 draft-only: the editor's grant selections + trigger list; absent on real versions
-  stepAgents?: string[]
-  allowedSecrets?: string[]
-  triggers?: DraftTrigger[]
-  test?: DraftTest  // §11 draft-only: last-test summary
-  chat?: ChatEntry[] // §11 draft-only: the chat thread (§5 chat.jsonl)
 }
 
 // §4.4/§11 chat-thread entry — persisted in the draft container (chat.jsonl).
@@ -134,6 +128,18 @@ export type Trigger = TriggerKindFields & {
 // entries that already exist on the automation (kept through an edit save).
 export type DraftTrigger = TriggerKindFields & { id?: string; enabled: boolean }
 
+// §19 POST /triggers/preview — one result per sent entry, in order. The
+// renderer keeps no local trigger-math mirror: every display string and
+// next-occurrence value comes from these results.
+export interface TriggerPreview {
+  valid: boolean
+  error?: string       // plain-word reason when invalid
+  label: string        // §4.3 long display string (best-effort when invalid)
+  short: string        // §4.3 short display string
+  nextAt: number | null // next-occurrence epoch ms; null when none is computable
+  nextLabel?: string   // "Jul 20, 3:00 PM"-style moment label for nextAt
+}
+
 export interface Automation {
   id: string
   name: string
@@ -165,7 +171,9 @@ export interface Automation {
   spec?: SpecBlock[]
   packages?: PackageDep[]    // §6.2 — the current version's declared packages
   versions?: VersionInfo[]
-  draft?: VersionInfo | null
+  // §4.4/§19: the draft container's payload — the same shape GET /draft/{owner}
+  // answers (the shared serializer); name/description ride only the pending slot's
+  draft?: DraftPayload | null
 }
 
 // §6.3 automatic-snapshot toggles — one per automatic reason, all default true

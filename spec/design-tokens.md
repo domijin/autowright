@@ -124,8 +124,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   (selected-card border), `--hairline-dim` (in-card row dividers; `--hairline` stays for card
   borders/headers), `--bg-code` + `--code-text` (script/log wells). Recurring fragments are
   `ui.tsx` primitives: `MiniBadge` (uppercase mono chip; status `Badge` maps onto it),
-  `ProgressBar` (`pct: number | null` — null renders the indeterminate `adBarSlide` bar; the
-  only progress bar, never hand-rolled; a percent label beside it renders only when `pct`
+  `ProgressBar` (`percent: number | null` — null renders the indeterminate `adBarSlide` bar; the
+  only progress bar, never hand-rolled; a percent label beside it renders only when `percent`
   is a number — an indeterminate bar never shows "0%"),
   `Tag` (the small mono info tag on step rows — radius 6, padding 2 px 8 px, 10 px mono
   500, `--bg-inset` background, hairline border; optional leading icon; one primitive for

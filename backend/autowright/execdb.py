@@ -8,11 +8,14 @@ every call happens under `Store.lock` (check_same_thread=False relies on that).
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
+# §5: timestamps are stored as the canonical UTC ISO-8601 microsecond TEXT —
+# a fixed offset keeps lexicographic order equal to chronological order, so
+# the indexes below keep sorting correctly and the same-second ordering
+# promise survives a restart.
 DDL = """
 CREATE TABLE IF NOT EXISTS executions (
   id               TEXT PRIMARY KEY,
@@ -23,9 +26,9 @@ CREATE TABLE IF NOT EXISTS executions (
   status           TEXT NOT NULL,
   "trigger"        TEXT NOT NULL,
   trigger_sender   TEXT,
-  queued_at        INTEGER,
-  started_at       INTEGER NOT NULL,
-  finished_at      INTEGER,
+  queued_at        TEXT,
+  started_at       TEXT NOT NULL,
+  finished_at      TEXT,
   duration_ms           INTEGER,
   note             TEXT,
   chip             TEXT,
@@ -38,16 +41,6 @@ CREATE INDEX IF NOT EXISTS index_executions_page   ON executions (started_at DES
 CREATE INDEX IF NOT EXISTS index_executions_automation   ON executions (automation_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS index_executions_status ON executions (status, started_at DESC);
 """
-
-
-def _ms(iso: str | None) -> int | None:
-    return int(datetime.fromisoformat(iso).timestamp() * 1000) if iso else None
-
-
-def _iso(ms: int | None) -> str | None:
-    # §5 canonical form: UTC with offset (microseconds from the ms value).
-    return (datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
-            if ms is not None else None)
 
 
 class ExecDB:
@@ -79,9 +72,6 @@ class ExecDB:
     def upsert(self, h: dict) -> None:
         """Write an execution header row (internal shape, ISO timestamps)."""
         err = h.get("error") or {}
-        # §4.5 triggerSender: live records carry the full payload, reloaded
-        # headers only the lifted sender — accept either shape.
-        sender = (h.get("trigger_payload") or {}).get("sender") or h.get("trigger_sender")
         with self.conn:
             self.conn.execute(
                 'INSERT INTO executions (id, automation_id, automation_name, kind, version, status,'
@@ -99,8 +89,10 @@ class ExecDB:
                 " error_step=excluded.error_step, error_message=excluded.error_message,"
                 " error_reason=excluded.error_reason",
                 (h["id"], h["automation_id"], h["automation_name"], h["kind"], h.get("version"), h["status"],
-                 h["trigger"], sender, _ms(h.get("queued_at")),
-                 _ms(h["started_at"]), _ms(h.get("finished_at")), h["duration_ms"], h["note"],
+                 # §4.5 triggerSender: stamped onto the record once at creation —
+                 # every reader takes it from this field alone.
+                 h["trigger"], h.get("trigger_sender"), h.get("queued_at"),
+                 h["started_at"], h.get("finished_at"), h["duration_ms"], h["note"],
                  h.get("chip"), h.get("chip_status"),
                  err.get("step"), err.get("message"), err.get("reason")))
 
@@ -117,8 +109,8 @@ class ExecDB:
                 "id": eid, "automation_id": automation_id, "automation_name": automation_name,
                 "kind": kind, "version": version,
                 "status": status, "trigger": trigger, "trigger_sender": trigger_sender,
-                "queued_at": _iso(queued),
-                "started_at": _iso(started), "finished_at": _iso(finished),
+                "queued_at": queued,
+                "started_at": started, "finished_at": finished,
                 "duration_ms": duration_ms, "note": note,
                 "chip": chip, "chip_status": chip_status,
                 "error": {"step": err_step, "message": err_message, "reason": err_reason}

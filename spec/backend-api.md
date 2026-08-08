@@ -17,6 +17,15 @@ origins accepted are `null` (the packaged `file://` renderer) and `http://localh
 with any port (the §15 renderer-URL dev server), credentials off. One rule in both modes — the
 §15 knob changes where the renderer is served from, never the policy.
 
+**Request validation:** every mutating endpoint's request body is validated by a pydantic
+request model (`backend/autowright/models.py`) — a malformed body (missing or mistyped
+fields, wrong shapes) answers 422 before any handler logic runs. The models carry the
+cross-field checks too: `paramValues` entries are checked against the automation's param
+definitions (names **and** kinds), `stepAgents`/`allowedSecrets` must be lists of strings,
+`agentId` and `stepAgents` entries must reference existing agents, and the settings booleans
+must be booleans with `days` an int. Pydantic shapes **requests only** — response bodies
+remain plain dicts (§2).
+
 - `GET /health` → `{ version, app }` (unauthenticated; used for discovery/liveness)
 - `GET /state` → boot snapshot: automations (full), execution headers, agents, secret names +
   usedBy, settings, app version, `pendingDraft` (`{ name, updatedAt } | null` — the §4.4
@@ -49,6 +58,20 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   the automation simply admits nothing new until it is back under the limit. Lowering
   `maxQueued` below the number already waiting keeps those entries — the cap governs admission,
   not eviction (§6).
+- `POST /triggers/preview` `{ triggers: [trigger, …] }` → `{ triggers: [{ valid, error?,
+  label, short, nextAt, nextLabel? }, …] }` — a **pure function endpoint**: no state read or
+  written. Validates and labels a list of §4.3-shaped trigger dicts (kind plus its stored
+  fields, `timezone` where relevant) with the same `triggers.py` code that gates the PATCH,
+  answering one result per request entry in order. `valid` says whether the entry would
+  store; `error` is the plain-word reason otherwise ("Not a valid cron expression", the
+  §4.3 field rules) — an invalid entry is a `valid: false` result, never a 422 (the editors
+  preview half-typed state); only a body that isn't a list of trigger dicts gets the
+  ordinary 422. `label`/`short` are the §4.3 display strings; `nextAt` the next-occurrence
+  epoch ms (null when the kind has no computable next — app_start and message triggers —
+  or the entry is invalid or elapsed) and `nextLabel` its "Jul 20, 3:00 PM"-style moment
+  label. The renderer keeps **no local trigger-math mirror**: the §9.2 Add-trigger editor's
+  live preview line, the §11 draft-trigger chips, and every "next trigger" label read from
+  this endpoint — trigger math exists once, in `triggers.py`.
 - `POST /automations/{id}/execute` `{ version?: "vN" | "draft" (case-insensitive),
   trigger?: "manual" | "menubar" (§4.5 kind, default "manual"; anything else answers 422) }` →
   `{ executionId }` (409 when every §6 `maxParallel` slot is taken — a manual start is refused, never
@@ -79,30 +102,49 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   show the Automation consent prompt if the user has never answered it (and may launch
   Messages.app); the result updates the remembered `automation` state above. Called by the §9
   checklist's Grant button; blocks until the user answers the prompt
+- `POST /automations` `{ draft, name?, agentId?, stepAgents?, allowedSecrets? }` → the new
+  automation's bare §4 automation JSON — create v1 from the sent draft (the §11 Create
+  button). The draft must hold steps (422 otherwise); its `triggers` list is validated and
+  normalized exactly like the PATCH (422 aborts, nothing written), and the §8 step validators
+  run server-side (rule below). `name` falls back to the draft's name, then "New automation";
+  `stepAgents`/`allowedSecrets` land as the automation's grants exactly as sent (§20 grant
+  model — no all-on seed). Success consumes the §4.4
   pending create-mode slot (`<root>/draft/` is deleted on success)
 - `POST /automations/{id}/versions` `{ draft }` — save edit as vN+1; the draft's `triggers`
   list (when the key is sent) replaces the automation's trigger list whole, validated and
   normalized like the PATCH (422 aborts the save; entries keep their `id`, new ones get one)
-- `PUT /automations/{id}/draft` · `DELETE /automations/{id}/draft` — the §4.4 draft snapshot;
-  the payload's stepAgents/allowedSecrets/triggers are stored as draft-only keys and echoed
-  back on the automation's `draft` object, and its `chat` list (the §11 thread) is stored as
-  the container's `chat.jsonl` (§5) and echoed back the same way; both answer 409 while a
-  Draft-version execution is
-  running (rewriting/pruning the draft's step scripts mid-run would break the per-step sha
-  record)
-- `GET /draft` → `{ draft: payload | null, agentId }` · `PUT /draft` `{ draft, agentId? }` ·
-  `DELETE /draft` — the §4.4 pending create-mode slot (`<root>/draft/`): the same draft
-  payload shape as `PUT /automations/{id}/draft` plus the identity fields (name, triggers
-  ride the payload; agentId beside it); GET returns `draft: null` when the slot is empty
-- `POST /draft/open` — §4.4: make the pending slot's container (`draft/` with an empty
-  `memory/`) exist, never touching contents already there; the create flow calls it on
-  open so the slot exists before any drafting or test
-- `POST /automations/{id}/restore` `{ version }` — copy vX to vN+1 (§5)
+- **Server-side step validation** — `POST /automations` and `POST /automations/{id}/versions`
+  run the §8 step validators (`ast.parse`, the §6.2 import allowlist, manifest schema and
+  step-file ordering, the timeout/retry rules) on the sent draft and answer 422 with the
+  validation errors when it fails — an invalid draft can never land as a version, whatever
+  client sent it. The §20 CLI keeps its own pre-save copy of the same validators only for
+  friendlier errors (one per line, nothing sent); the server check is the enforcement
+- `GET/PUT/DELETE /draft/{owner}` · `POST /draft/{owner}/open` — the one draft-container
+  surface (§4.4): `owner` is an automation id (that automation's `draft/` container) or the
+  literal **`pending`** (the create-mode slot `<root>/draft/`). One container shape and one
+  shared draft serializer for both owners — only the on-disk location differs (§5,
+  unchanged). An automation `owner` that doesn't resolve answers 404. `PUT`
+  `{ draft, agentId? }` stores the §4.4 snapshot: the payload's
+  stepAgents/allowedSecrets/triggers are stored as draft-only keys and echoed back on the
+  automation's `draft` object (or on `GET /draft/pending`), and its `chat` list (the §11
+  thread) is stored as the container's `chat.jsonl` (§5) and echoed back the same way; for
+  the `pending` owner the payload additionally carries the identity fields no automation
+  record exists to hold (name and triggers ride the payload; `agentId` beside it). `GET` →
+  `{ draft: payload | null, agentId }` (`draft: null` when the container is empty or
+  absent). `POST /draft/{owner}/open` makes the container (`draft/` with an empty
+  `memory/`) exist, never touching contents already there — the create flow calls it on
+  open so the pending slot exists before any drafting or test. For an automation owner, PUT
+  and DELETE answer 409 while a Draft-version execution is running (rewriting/pruning the
+  draft's step scripts mid-run would break the per-step sha record). The §8 drafting-job
+  endpoints (`POST /drafts`, below) are a different thing — jobs, not containers — and are
+  unrelated to this surface
+- `POST /automations/{id}/restore` `{ version }` — restore vX as vN+1, written through the
+  §5 version-folder writer (manifest last as the commit point — never a tree copy)
 - `GET /automations/{id}/export?values=0|1` — the §5.1 transfer archive as `application/zip`
   (`Content-Disposition` filename `<name>.autowright`, name sanitized for the filesystem);
   `values=0` omits `param_values` from the manifest (default `1`)
 - `POST /automations/import` — the §5.1 archive as the raw request body
-  (`application/octet-stream`, no multipart) → `{ auto, summary }` where `summary` is
+  (`application/octet-stream`, no multipart) → `{ automation, summary }` where `summary` is
   `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages }` (name lists;
   `packages` the §6.2 declarations). Validates the whole archive first; any failure answers
   422 with the reason and writes nothing. Size caps (untrusted input): the upload itself is
@@ -118,10 +160,12 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   `preview.sourceUrl` (as given) and `preview.resolvedUrl` (after §5.2 GitHub resolution;
   equal for direct links). Any §5.2 URL-rule failure — non-HTTPS, unresolvable page, download
   error, oversized or non-archive download — answers 422 with the reason
-- `POST /automations/import/confirm` `{ token }` → `{ auto, summary }` exactly like
+- `POST /automations/import/confirm` `{ token }` → `{ automation, summary }` exactly like
   `/automations/import`; the token is one-time — spent, expired, or unknown answers 404
-- `POST /automations/{id}/memory/clear` — §6.3 pre-clear snapshot, then empty the §4.1 memory
-  directory (backs §9.2 "Clear memory")
+- `POST /automations/{id}/memory/clear` — 409 while **any** execution of the automation is
+  live, the same guard (and the same lock span) as manual snapshot and restore — a
+  mid-execution clear could delete files a step is reading; then §6.3 pre-clear snapshot,
+  then empty the §4.1 memory directory (backs §9.2 "Clear memory")
 - `POST /automations/{id}/memory/snapshots` `{ name? }` — §6.3 manual snapshot (409 while
   live, 422 when memory is empty) · `PATCH /automations/{id}/memory/snapshots/{sid}`
   `{ name }` — rename; null/"" clears · `POST /automations/{id}/memory/snapshots/{sid}/restore`
@@ -147,7 +191,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   iMessage `chat`/`messageId`; `at` is the test start) and stores it on the record: the
   trigger kind stays `test` (`ver`/`trigger` still serialize "Test"), but `triggerSender`
   and every payload surface fill like a real message execution, and §6.1 `reply()` becomes
-  callable (§6.1 mocked-payload rules). Progress, logs, and the result flow over the ordinary `exec.*` events and
+  callable (§6.1 mocked-payload rules). Progress, logs, and the result flow over the ordinary `execution.*` events and
   `/executions/*` endpoints; cancel and skip-step are `POST /executions/{id}/cancel` and
   `/skip-step` like any execution (retry answers 409 — the draft may have changed). A
   failed execution is **not** analyzed automatically — and there is no analysis endpoint:
@@ -156,7 +200,7 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   execution via the `/drafts` `runId` field). A finished test writes the §11 last-test summary
   (`test.yaml`, §5) into the draft container; it rides the draft payload as `test`
   ({ status: succeeded | failed, when, executionId }) on the automation's `draft` object and on
-  `GET /draft`.
+  `GET /draft/pending`.
 - `POST /packages/check` `{ packages: [{ pip, import }] }` → `{ packages: [{ pip, import,
   status: installed | missing, version? }] }` — the fast §6.2 installed-check, never runs
   pip; `version` is the real installed version, present when installed (backs the §11
@@ -181,9 +225,12 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   execution to include in full detail — the §11 Fix-with-AI entry; unknown ids are
   ignored), and the terminal
   payload is `draft: { answer?, spec?, instructions?, notes?, actions? }` — the §8 chat call's
-  response shape decides which keys are present; the grant arrays, when present, override
+  response shape decides which keys are present; an `automationId` that doesn't resolve
+  answers 404 (like the stale-`automationId` 404 on `/tests`) — never a silent fall-back to
+  the create-mode grant defaults below; the grant arrays, when present, override
   the stored automation's for the §8 grants context; when `enabledAgents` / `allowedSecrets`
-  is absent and no stored automation exists (create mode), the agents grant defaults to **all**
+  is absent and no stored automation exists (create mode — no `automationId` sent), the
+  agents grant defaults to **all**
   configured agents and the secrets grant to **all** stored secrets — matching the all-on
   seeds the Review page starts from; clients track progress by polling
   `GET /drafts/{jobId}` → state (`status`, `stage`, live §8 `detail` line, the §8 `events`
@@ -225,9 +272,12 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   harness to be signed in, by the per-harness rule below.
 - **Sign-in state, per harness** (shared by `check_ready`, detection, and the signin poll):
   Claude Code — `claude auth status` exits 0 · Codex — `codex login status` exits 0 ·
-  Gemini CLI — `~/.gemini/oauth_creds.json` exists (or `GEMINI_API_KEY` is set in the
-  backend's environment) · OpenCode — `~/.local/share/opencode/auth.json` exists and holds a
-  non-empty JSON object. Ollama is not a sign-in provider (no account; `POST /agents/login`
+  Gemini CLI — `~/.gemini/oauth_creds.json` parses as JSON carrying a refresh token (or
+  `GEMINI_API_KEY` is set in the backend's environment — an API key counts as signed in) ·
+  OpenCode — `~/.local/share/opencode/auth.json` parses as a JSON dict holding at least one
+  known provider entry with a non-empty credential. File existence alone never counts: an
+  empty, unparseable, or credential-less file reads signed-out — a stale artifact must not
+  fake a working sign-in. Ollama is not a sign-in provider (no account; `POST /agents/login`
   answers 409 for it).
 - `GET /agents/detect` (§10 detection) → one entry per harness, **all four always present**:
   `{ id, name, installed, signedIn, detail }` — `signedIn` is `true`/`false` by the rule
@@ -236,8 +286,8 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   Free local AI card reads it from `GET /ollama/status`.
 - **Install** — `POST /agents/install` `{ id }` starts a background install of that provider
   (409 while one is already running for the same id) and streams `harness.install` WS events
-  `{ id, line, pct?, done, ok?, error? }` (determinate UI bar only when `pct` is present);
-  `GET /agents/install/{id}` → `{ state: idle | running | done | failed, pct?, line?, error? }`
+  `{ id, line, percent?, done, ok?, error? }` (determinate UI bar only when `percent` is present);
+  `GET /agents/install/{id}` → `{ state: idle | running | done | failed, percent?, line?, error? }`
   lets a remounted UI reattach. A 15-minute wall-clock cap applies to each install phase
   (installer subprocess run and download): on expiry the job fails with a timeout message —
   it can never sit `running` forever and block retries. Channels, per provider — official
@@ -299,17 +349,17 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
   an execution is in progress — it still writes into the old location — **or while a §6
   firing-queue entry is waiting**: the in-memory queue would not survive the reload, so the
   entry would neither execute nor finish `skipped`, and its sender would never be told)
-- `WS /ws?token=` — events, each `{ ev, ... }`: `exec.started` (also re-published when a
-  failed execution retries in place — same execution id, updated record), `exec.queued`
+- `WS /ws?token=` — events, each `{ event, ... }`: `execution.started` (also re-published when a
+  failed execution retries in place — same execution id, updated record), `execution.queued`
   (a §6 firing was admitted to the queue — carries the new `queued` record, so it reaches the
   §7 executions list and the §9.2 "N waiting" line without a poll; promotion needs no second
-  event, it publishes the ordinary `exec.started` for the same id), `exec.step`
-  (status change; carries the full step incl. its attempts), `exec.log` (one NDJSON line with
+  event, it publishes the ordinary `execution.started` for the same id), `execution.step`
+  (status change; carries the full step incl. its attempts), `execution.log` (one NDJSON line with
   `stepIndex`/`attempt` — null for execution-level lines — and the per-file `sequence` for
-  fetch-vs-stream dedupe), `exec.finished`, `auto.changed`, `agents.changed`,
+  fetch-vs-stream dedupe), `execution.finished`, `automation.changed`, `agents.changed`,
   `secrets.changed`, `settings.changed`, `draft.changed` (the §4.4 pending slot was kept
   or discarded — clients re-`GET /state`; §11 test executions stream over the
-  ordinary `exec.*` events),
+  ordinary `execution.*` events),
   `ollama.pull` (model-pull progress). Clients re-`GET /state` on
   reconnect. The handler streams from a hub queue while concurrently watching the socket for
   the client's disconnect, so a dropped client ends the handler immediately — an idle open

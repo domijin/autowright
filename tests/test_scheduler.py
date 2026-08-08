@@ -151,7 +151,7 @@ def test_one_shot_time_trigger_consumed_after_fire(store, monkeypatch):
 
 
 def test_fire_trigger_mid_execution_writes_skipped_record(store):
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     engine, sched = _mk(store)
@@ -182,7 +182,7 @@ def test_fire_trigger_answers_a_refused_message_firing(store, monkeypatch):
     """§6: a message firing refused for lack of queue room replies to its sender;
     a cron firing with no free slot is skipped silently — nobody to answer."""
     from autowright import listeners as li_mod
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     notified = []
@@ -210,7 +210,7 @@ def test_fire_trigger_answers_a_refused_message_firing(store, monkeypatch):
 def test_message_firing_queues_instead_of_being_dropped(store):
     """§6: with room in the queue the firing waits as a `queued` record — not a
     skip, and not something that shadows the automation's real latest status."""
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     engine, sched = _mk(store)
@@ -232,7 +232,7 @@ def test_admission_publishes_exec_queued(store, monkeypatch):
     §7 Waiting section and the §9.2 "N waiting" line update off it, and without
     it a waiting firing stays invisible until something else forces a refetch."""
     from autowright import scheduler as sch
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     events = []
@@ -254,7 +254,7 @@ def test_queue_admits_every_firing_and_caps_at_max_queued(store, monkeypatch):
     """§6: every admitted firing is its own entry — same-sender messages never
     coalesce; past the cap the newest firing is refused, not admitted."""
     from autowright import listeners as li_mod
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     notified = []
@@ -281,7 +281,7 @@ def test_queue_admits_every_firing_and_caps_at_max_queued(store, monkeypatch):
     # §7: a full queue names the cap — the row must say which knob to turn, not
     # read the same as configured skip-on-busy.
     ana = next(h for h in store.execs.values()
-               if (h.get("trigger_payload") or {}).get("sender") == "Ana")
+               if h.get("trigger_sender") == "Ana")
     assert ana["status"] == "skipped"
     assert ana["note"] == "the queue was full (2 waiting)"
 
@@ -292,7 +292,7 @@ def test_queue_drains_into_a_freed_slot_and_promotes_in_place(store):
     finish, carrying its payload and its queued_at."""
     import time
 
-    from autowright.scheduler import drain_queue, fire_trigger
+    from autowright.firing import drain_queue, fire_trigger
     from conftest import make_version
 
     engine, sched = _mk(store)
@@ -312,11 +312,11 @@ def test_queue_drains_into_a_freed_slot_and_promotes_in_place(store):
         assert time.time() - t0 < 30
         time.sleep(0.05)
 
-    h = store.execs[entry_id]
+    h = store.exec_full(entry_id)  # finished records are demoted to headers in memory
     assert store.queued_execs(a["id"]) == []  # left the queue
     assert h["status"] == "succeeded"  # same record, now executed
     assert h["steps"] and h["trigger"] == "discord"
-    assert h["trigger_payload"]["sender"] == "Dave"  # payload survived promotion
+    assert h["trigger_sender"] == "Dave"  # sender survived promotion
     assert h["queued_at"] == queued_at  # the wait is still on the record
     assert h["started_at"] >= queued_at  # …but the duration measures execution
 
@@ -325,14 +325,14 @@ def test_stale_queue_entry_is_answered_not_executed(store, monkeypatch):
     """§6: an entry that reaches the head past the TTL is finished, not run —
     answering a stale question is noise. It ends `skipped`, so it can never
     become the automation's latest (§4.1)."""
+    from autowright import firing as firing_mod
     from autowright import listeners as li_mod
-    from autowright import scheduler as sched_mod
-    from autowright.scheduler import drain_queue, fire_trigger
+    from autowright.firing import drain_queue, fire_trigger
     from conftest import make_version
 
     notified = []
     monkeypatch.setattr(li_mod, "notify_busy", notified.append)
-    monkeypatch.setattr(sched_mod, "QUEUE_TTL_S", -1.0)  # everything is stale
+    monkeypatch.setattr(firing_mod, "QUEUE_TTL_S", -1.0)  # everything is stale
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
@@ -354,7 +354,7 @@ def test_cancelling_a_queued_entry_answers_its_sender(store, monkeypatch):
     """§6/§19: the ordinary cancel endpoint covers a waiting entry. It ends
     `skipped` — it never ran, and §4.6 reserves that status for exactly this."""
     from autowright import listeners as li_mod
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     notified = []
@@ -379,7 +379,7 @@ def test_max_parallel_admits_several_and_then_queues(store):
     taken waits rather than being dropped."""
     import time
 
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     engine, sched = _mk(store)
@@ -401,7 +401,7 @@ def test_max_parallel_admits_several_and_then_queues(store):
         time.sleep(0.1)
     # the queued firing was drained into the slot the first finisher freed
     kim = [h for h in store.execs.values()
-           if (h.get("trigger_payload") or {}).get("sender") == "Kim"]
+           if h.get("trigger_sender") == "Kim"]
     assert len(kim) == 1 and kim[0]["status"] == "succeeded"
 
 
@@ -410,7 +410,7 @@ def test_trigger_off_cancels_its_waiting_entries(store, monkeypatch):
     it admitted — the entry could never be re-admitted, and promoting it would
     execute a firing the user just switched off. Sender is told."""
     from autowright import listeners as li_mod
-    from autowright.scheduler import cancel_unmatched_queue, fire_trigger
+    from autowright.firing import cancel_unmatched_queue, fire_trigger
     from conftest import make_version
 
     notified = []
@@ -440,7 +440,7 @@ def test_trigger_off_cancels_its_waiting_entries(store, monkeypatch):
 def test_trigger_off_keeps_entries_of_other_enabled_triggers(store):
     """§6: with two discord triggers, turning one off cancels only the entries
     whose payload matches it — the other trigger's waiter keeps its place."""
-    from autowright.scheduler import cancel_unmatched_queue, fire_trigger
+    from autowright.firing import cancel_unmatched_queue, fire_trigger
     from conftest import make_version
 
     engine, sched = _mk(store)
@@ -465,7 +465,7 @@ def test_each_admission_publishes_its_own_exec_queued(store, monkeypatch):
     """§6: every admitted firing publishes exec.queued for its own record —
     same-sender messages are distinct entries, so the Waiting list shows both."""
     from autowright import scheduler as sch
-    from autowright.scheduler import fire_trigger
+    from autowright.firing import fire_trigger
     from conftest import make_version
 
     events = []
@@ -550,7 +550,7 @@ def test_deleted_version_queue_entry_finishes_with_note(store, monkeypatch):
     deleted (§7 restore/rollback) can never execute — it finishes `skipped`
     with the version-gone note instead of blocking the queue forever."""
     from autowright import listeners as li_mod
-    from autowright.scheduler import drain_queue, fire_trigger
+    from autowright.firing import drain_queue, fire_trigger
     from conftest import make_version
 
     notified = []

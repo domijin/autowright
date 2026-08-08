@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from autowright.schedule import (
+from autowright.triggers import (
     CronError, cron_display, cron_next, next_at, normalize_triggers,
     parse_cron, time_display, trigger_chip, trigger_next, validate_trigger,
 )
@@ -128,7 +128,7 @@ def test_tz_labels():
 
 
 def test_app_start_trigger():
-    from autowright.schedule import trigger_display
+    from autowright.triggers import trigger_display
 
     assert validate_trigger({"kind": "app_start"}) is None
     norm, err = normalize_triggers([{"kind": "app_start", "enabled": False, "timezone": "UTC"}])
@@ -155,7 +155,7 @@ def test_reserved_and_unknown_kinds_rejected():
 
 
 def test_imessage_trigger_validation_and_normalization():
-    from autowright.schedule import normalize_triggers, validate_trigger
+    from autowright.triggers import normalize_triggers, validate_trigger
 
     # valid: E.164 phone (formatting tolerated) or an email
     assert validate_trigger({"kind": "imessage", "from": "+15551234567"}) is None
@@ -208,7 +208,7 @@ def test_discord_trigger_normalize_and_display():
     # author normalizes trimmed + deduped + sorted (§4.3 merge identity)
     assert (t["channel"], t["secret"], t["pattern"], t["mention"], t["author"]) == \
         ("42", "TOKEN", "go", True, ["111", "777"])
-    from autowright.schedule import trigger_display
+    from autowright.triggers import trigger_display
 
     assert trigger_display(t) == ("Discord · 42 · “go”", "Discord")
     plain, _ = normalize_triggers([{"kind": "discord", "channel": "42", "secret": "TOKEN"}])
@@ -233,42 +233,14 @@ def test_specmd_roundtrip():
     assert md_to_blocks(blocks_to_md(blocks)) == blocks
 
 
-# ---------- §15 cross-runtime parity fixture (shared with the TypeScript suite) ----------
-
-def _fixture():
-    import json
-    from pathlib import Path
-
-    return json.loads((Path(__file__).parent / "fixtures" / "cron_parity.json").read_text())
-
+# ---------- §4.3 DST behavior (triggers.py is the ONE trigger-math
+# implementation — the renderer previews via §19 POST /triggers/preview) ----------
 
 def _utc_str_to_local_naive(s):
     from datetime import timezone
 
     return (datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ")
             .replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None))
-
-
-def _local_naive_to_utc_str(dt):
-    from datetime import timezone
-
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def test_cron_parity_fixture_next_occurrences():
-    for e in _fixture()["next"]:
-        trig = {"kind": "cron", "expression": e["expression"], "timezone": e["timezone"], "enabled": True, "id": "x"}
-        got = trigger_next(trig, after=_utc_str_to_local_naive(e["after_utc"]))
-        if e["next_utc"] is None:
-            assert got is None, e
-        else:
-            assert got is not None, e
-            assert _local_naive_to_utc_str(got) == e["next_utc"], e
-
-
-def test_cron_parity_fixture_labels():
-    for e in _fixture()["labels"]:
-        assert cron_display(e["expression"], e["timezone"]) == (e["label"], e["short"]), e
 
 
 def test_dst_spring_forward_gap_shifts_by_gap_width():

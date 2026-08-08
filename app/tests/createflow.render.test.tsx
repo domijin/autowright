@@ -16,18 +16,24 @@ vi.mock('../src/api', () => ({
     postDraftJob: vi.fn(async () => ({ jobId: 'j1' })),
     getDraftJob: vi.fn(() => new Promise(() => { /* poll never answers in tests */ })),
     cancelDraftJob: vi.fn(async () => ({})),
+    // §19 one draft-container surface (owner = automation id | 'pending')
     putDraft: vi.fn(async () => ({})),
     deleteDraft: vi.fn(async () => ({})),
-    putPendingDraft: vi.fn(async () => ({})),
-    getPendingDraft: vi.fn(async () => ({ draft: null, agentId: null })),
-    openPendingDraft: vi.fn(async () => ({})),
-    deletePendingDraft: vi.fn(async () => ({})),
+    getDraft: vi.fn(async () => ({ draft: null, agentId: null })),
+    openDraft: vi.fn(async () => ({})),
     checkPackages: vi.fn(async () => ({ packages: [] })),
     outdatedPackages: vi.fn(async () => ({ packages: [] })),
     postTest: vi.fn(async () => ({ executionId: 'e1' })),
     analyzeExec: vi.fn(async () => ({})),
     getAutomation: vi.fn(async () => ({})),
     state: vi.fn(async () => ({})),
+    // §19 trigger previews — labels echo enough shape for the chip/tab renders
+    triggersPreview: vi.fn(async (triggers: Array<Record<string, unknown>>) => ({
+      triggers: triggers.map((t) => ({
+        valid: true, label: String(t.expression ?? t.channel ?? t.from ?? t.kind),
+        short: String(t.kind), nextAt: null,
+      })),
+    })),
   },
 }))
 

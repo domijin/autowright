@@ -262,15 +262,16 @@ all of them share the one §6 watcher, so they all report its state; the plain-w
 name permissions where relevant (e.g. "needs Full Disk Access — grant it in System Settings →
 Privacy & Security → Full Disk Access").
 
-**Cron dialect** (implemented in `schedule.py`, no new dependency): five whitespace-separated
+**Cron dialect** (implemented in `triggers.py` — the one trigger-math implementation, no new
+dependency; the renderer has none and previews via §19 `POST /triggers/preview`): five
+whitespace-separated
 fields — minute, hour, day-of-month, month, day-of-week (0–6, Sun = 0) — each `*` or a comma
 list of numbers, ranges (`a-b`), and steps (`*/n`, `a-b/n`). Numbers only: no month/day names,
 no `@daily` macros, no seconds field. Standard Vixie rule: when day-of-month and day-of-week are
 both restricted, a date matching either one fires. Times are wall clock in the trigger's zone
 (`timezone`, default local); an occurrence erased by DST (spring forward) still fires, shifted
 forward by the gap width (a "2:30" on the day the clock jumps 2:00→3:00 fires at 3:30 — the
-erased wall time read with the pre-transition offset; backend `schedule.py`, renderer
-`cron.ts`, and the shared parity fixture all implement this same rule), and one repeated by
+erased wall time read with the pre-transition offset), and one repeated by
 fall-back fires once. Invalid expressions are rejected at the API (422), never stored.
 
 **Humanized cron labels** — exactly two shapes get words; everything else displays the raw
@@ -280,8 +281,9 @@ expression:
 
 The day field only humanizes as a single digit `0`–`6` — anything else (`7`, `07`, `12`) falls
 back to the raw expression. The fallback shows the expression trimmed of surrounding
-whitespace. The backend (`schedule.cron_display`) and the renderer (`cronLabels`) implement
-this rule identically; the shared parity fixture (§15) locks them together.
+whitespace. One implementation: the backend (`triggers.cron_display`) — serialized triggers
+carry the derived `label`/`short`, and the editors label unsaved entries through §19
+`POST /triggers/preview`, so no second implementation exists to drift.
 
 **One-shot semantics** (`time`): `at` must be strictly in the future when saved (422 otherwise;
 the check reads `at` in the trigger's `timezone`).
@@ -371,7 +373,7 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   deleting, so a trailing write can't resurrect a settled draft.
 - **Create-mode drafts persist too**, in the single pending slot `<root>/draft/` (§5).
   Opening the create flow creates the slot's container first — `draft/` with an empty
-  `memory/` (`POST /draft/open`, §19) — before any drafting; §11 create-mode tests execute
+  `memory/` (`POST /draft/pending/open`, §19) — before any drafting; §11 create-mode tests execute
   as test execution records in the executions tree, not inside the slot. Leaving the create
   flow after a draft has landed (spec or steps present) keeps the full
   working state there — the same serialization as an edit-mode draft (the agent and secret

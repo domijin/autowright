@@ -916,13 +916,14 @@ def test_finished_at_persisted_and_reloaded(store):
     assert h["finished_at"]
     datetime.fromisoformat(h["finished_at"])  # ISO 8601, same format as started_at
     db = sqlite3.connect(store.executions_dir() / "executions.db")
-    (finished_ms,) = db.execute("SELECT finished_at FROM executions WHERE id=?", (h["id"],)).fetchone()
+    (finished_db,) = db.execute("SELECT finished_at FROM executions WHERE id=?", (h["id"],)).fetchone()
     db.close()
-    # §5: the yaml keeps microseconds, the index column milliseconds — same instant
-    assert abs(datetime.fromisoformat(h["finished_at"]).timestamp() * 1000 - finished_ms) < 1
+    # §5: the index column stores ISO-8601 TEXT — same instant as the record
+    assert abs(datetime.fromisoformat(finished_db).timestamp()
+               - datetime.fromisoformat(h["finished_at"]).timestamp()) < 0.001
     s2 = Store()
     s2.load_all()
-    # reloaded header comes off the ms-precision index — same instant
+    # reloaded header comes off the index — same instant
     reloaded = s2.execs[h["id"]]["finished_at"]
     assert abs(datetime.fromisoformat(reloaded).timestamp()
                - datetime.fromisoformat(h["finished_at"]).timestamp()) < 0.001
@@ -1197,13 +1198,13 @@ def test_create_mode_test_records_without_automation(store, monkeypatch):
     assert {f["name"] for f in res["files"]} == {"out.md"}
 
     # §11: the summary persists in the slot and rides the pending payload
-    store.save_pending_draft(ver, "Pending Tester", None, None)
-    pj = store.pending_draft_json()
+    store.save_draft(None, ver, name="Pending Tester")
+    pj = store.draft_container_json(None)
     assert pj["draft"]["test"]["status"] == "succeeded"
     assert pj["draft"]["test"]["executionId"] == eid
 
     # Settling the slot deletes its test records too.
-    store.delete_pending_draft()
+    store.delete_draft(None)
     assert eid not in store.execs
 
 
@@ -1375,7 +1376,7 @@ def test_notification_title_param_overrides_automation_name(store, monkeypatch):
 
 def test_agents_for_step_duplicate_grant_names_first_enabled_wins():
     """§6/§8: two enabled agents sharing a grant name — the first enabled one
-    serves the step; unknown names fall back to the first enabled agent."""
+    serves the step."""
     from autowright.engine import agents_for_step
 
     a1 = {"id": "a1", "name": "Shared", "harness": "Claude Code", "model": "x"}
@@ -1383,8 +1384,28 @@ def test_agents_for_step_duplicate_grant_names_first_enabled_wins():
     agents = {"a1": a1, "a2": a2}
     assert agents_for_step(agents, ["a1", "a2"], {"agents": [{"name": "Shared"}]}) == [a1]
     assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"name": "Shared"}]}) == [a2]
-    # no resolvable names → first enabled agent
-    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"name": "Nope"}]}) == [a2]
+
+
+def test_agents_for_step_fallback_only_when_step_names_no_agents():
+    """§6: the first-enabled-agent fallback applies only when the step names no
+    agents at all; named agents that all fail to resolve return [] so the
+    caller fails the step — never a silent hand-off to an unnamed agent."""
+    from autowright.engine import agents_for_step
+
+    a1 = {"id": "a1", "name": "Helper", "harness": "Claude Code", "model": "x"}
+    a2 = {"id": "a2", "name": "Other", "harness": "Codex", "model": "y"}
+    agents = {"a1": a1, "a2": a2}
+    # no named agents (absent or empty list) → first enabled agent
+    assert agents_for_step(agents, ["a2", "a1"], {}) == [a2]
+    assert agents_for_step(agents, ["a2", "a1"], {"agents": []}) == [a2]
+    # named agents that don't resolve (revoked grant, renamed agent) → []
+    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"name": "Nope"}]}) == []
+    # a mix resolves what it can, in the step's order
+    assert agents_for_step(agents, ["a2", "a1"],
+                           {"agents": [{"name": "Nope"}, {"name": "Helper"}]}) == [a1]
+    # no enabled agents at all → [] either way
+    assert agents_for_step(agents, [], {}) == []
+    assert agents_for_step(agents, [], {"agents": [{"name": "Helper"}]}) == []
 
 
 def test_draft_retry_rejected_after_step_code_drift(store):
@@ -1530,3 +1551,140 @@ def test_engine_side_reply_gate_blocks_raw_control_line(store, monkeypatch):
     assert any("reply blocked — it contains the value of secret API_KEY" in l["text"]
                for l in logs)
     assert not any("super-secret-value-123" in l["text"] for l in logs)
+
+
+def test_agent_step_with_unresolvable_named_agents_fails(store):
+    """§6: a step naming agents that all fail to resolve (revoked grant,
+    renamed agent) fails like an agent step with no enabled agent — never a
+    silent hand-off to the enabled agent the step didn't name."""
+    from autowright.engine import Engine
+
+    store.agents = [{"id": "mock", "name": "Mock", "harness": "Claude Code", "model": "x"}]
+    store.default_agent_id = "mock"
+    engine = Engine(store)
+    ver = make_version()
+    ver["steps"] = [
+        {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
+         "agents": [{"name": "Revoked", "why": "gone"}],
+         "code": 'from autowright import agent\nagent.ask("hi")\n'},
+    ]
+    a = store.create_automation(ver, "Revoked Agents", None, enabled_agents=["mock"])
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "failed"
+    assert h["error"]["reason"] == \
+        "No enabled agent can serve this step — enable one for this automation."
+    assert any("needs an agent" in l["text"] for l in read_all_logs(store, h["id"]))
+
+
+def test_cancel_after_last_step_succeeded_finishes_succeeded(store, monkeypatch):
+    """§7: a cancel flag that lands after the last step already succeeded
+    changes nothing — every step is terminal and none was cancelled, so the
+    record finishes `succeeded` and keeps its chip."""
+    from autowright.engine import Engine
+
+    orig = Engine._step_event
+
+    def hook(self, h, i):
+        orig(self, h, i)
+        # deterministic "too late" cancel: the flag goes up right after the
+        # last step's terminal succeeded event, before finalize runs
+        if i == len(h["steps"]) - 1 and h["steps"][i]["status"] == "succeeded":
+            with self._lock:
+                state = self._live.get(h["id"])
+            if state:
+                state["cancel"] = True
+
+    monkeypatch.setattr(Engine, "_step_event", hook)
+    engine = Engine(store)
+    a = store.create_automation(make_version(), "Late Cancel", None)
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "succeeded"
+    assert [s["status"] for s in h["steps"]] == ["succeeded", "succeeded"]
+    assert h["chip"] == "All good" and h["chip_status"] == "ok"
+
+
+def test_cancel_between_steps_still_finishes_cancelled(store, monkeypatch):
+    """§7: a cancel landing while later steps are still queued marks them
+    cancelled and the record finishes `cancelled` — the flag only loses when
+    every step already reached a terminal, uncancelled state."""
+    from autowright.engine import Engine
+
+    orig = Engine._step_event
+
+    def hook(self, h, i):
+        orig(self, h, i)
+        if i == 0 and h["steps"][0]["status"] == "succeeded":
+            with self._lock:
+                state = self._live.get(h["id"])
+            if state:
+                state["cancel"] = True
+
+    monkeypatch.setattr(Engine, "_step_event", hook)
+    engine = Engine(store)
+    a = store.create_automation(make_version(), "Mid Cancel", None)
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "cancelled"
+    assert [s["status"] for s in h["steps"]] == ["succeeded", "cancelled"]
+
+
+def test_execution_caffeinate_ties_to_backend_pid(store, monkeypatch):
+    """§3: the per-execution power assertion is `caffeinate -i -w <backend
+    pid>` — tied to this process, so a crashed backend can never leave an
+    orphan keeping the Mac awake."""
+    import os
+    import subprocess
+
+    from autowright import engine as engmod
+    from autowright.engine import Engine
+
+    calls: list[list[str]] = []
+    real = subprocess.Popen
+
+    def recorder(argv, *a, **kw):
+        calls.append(list(argv))
+        return real(argv, *a, **kw)
+
+    monkeypatch.setattr(engmod.subprocess, "Popen", recorder)
+    engine = Engine(store)
+    a = store.create_automation(make_version(), "Caffeine", None)
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "succeeded"
+    caf = [c for c in calls if c and c[0] == "caffeinate"]
+    assert caf == [["caffeinate", "-i", "-w", str(os.getpid())]]
+
+
+def test_watchdog_covers_a_child_that_never_reads_stdin(monkeypatch, tmp_path):
+    """§6: the watchdog is armed before the ctx handoff — a child that never
+    reads its stdin (and a ctx big enough that the engine blocks in
+    stdin.write) still hits its deadline instead of hanging forever; the
+    mid-write kill surfaces as the caught BrokenPipeError."""
+    import subprocess
+    import sys
+    import time
+
+    from autowright import engine as engmod
+
+    real = subprocess.Popen
+
+    def fake_popen(argv, **kw):
+        # stand-in for a wedged executor: alive, but never touches stdin
+        return real([sys.executable, "-c", "import time; time.sleep(60)"], **kw)
+
+    monkeypatch.setattr(engmod.subprocess, "Popen", fake_popen)
+    script = tmp_path / "01-hang.py"
+    script.write_text("pass\n")
+    # far past the OS pipe buffer (~64 KB) — the engine blocks mid-write
+    ctx = {"pad": "x" * 2_000_000}
+    state = {"proc": None, "cancel": False}
+    holder: dict = {}
+    t0 = time.time()
+    rc = engmod.run_step_process(script, ctx, state, lambda k, t: None,
+                                 {"status": "ok", "chip": None}, holder, 1.0)
+    assert time.time() - t0 < 20, "the engine thread must not hang on a stdin-deaf child"
+    assert rc != 0
+    assert holder["error"]["type"] == "StepTimeout"
+    assert state["proc"] is None and "hard_kill" not in state

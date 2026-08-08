@@ -82,6 +82,37 @@ let bootTimer: ReturnType<typeof setTimeout> | undefined
 let closeWs: (() => void) | null = null
 let passedOnboard = false
 let restoring = false
+// Monotonic refresh sequence: only the newest in-flight /state snapshot may
+// land — an older response resolving late would clobber fresher data.
+let refreshSeq = 0
+
+// Execution cache eviction: full records and log buckets are kept only for
+// the currently viewed execution plus the 5 most recently viewed (MRU head is
+// the current one, so its live-streaming buckets are never evicted mid-view);
+// the rest are dropped on navigation. A tracked §11 test execution is always
+// kept while the test is live. Re-opening an evicted execution refetches
+// through the ordinary load paths, which already handle absence.
+const EXECUTION_CACHE_KEEP = 6
+let executionMru: string[] = []
+
+function touchExecutionMru(id: string) {
+  executionMru = [id, ...executionMru.filter((x) => x !== id)].slice(0, EXECUTION_CACHE_KEEP)
+}
+
+function evictExecutionCaches(
+  m: Pick<Model, 'executionFull' | 'execLogs' | 'test'>,
+): Pick<Model, 'executionFull' | 'execLogs'> | null {
+  const keep = new Set(executionMru)
+  if (m.test) keep.add(m.test.executionId)
+  const staleFull = Object.keys(m.executionFull).filter((id) => !keep.has(id))
+  const staleLogs = Object.keys(m.execLogs).filter((id) => !keep.has(id))
+  if (staleFull.length === 0 && staleLogs.length === 0) return null
+  const executionFull = { ...m.executionFull }
+  const execLogs = { ...m.execLogs }
+  for (const id of staleFull) delete executionFull[id]
+  for (const id of staleLogs) delete execLogs[id]
+  return { executionFull, execLogs }
+}
 
 // '/app?auto=<uuid>' — the §13 menu-bar row deep link.
 function autoIdFromHash(hash: string): string | null {
@@ -166,8 +197,12 @@ export const useStore = create<Model>((set, get) => ({
   },
 
   async refresh() {
+    const n = ++refreshSeq
     try {
       const s = await api.state()
+      // A newer refresh started while this one was in flight — its snapshot is
+      // fresher (or will be); applying this one would roll state backwards.
+      if (n !== refreshSeq) return
       set({ automations: s.automations, executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft })
       updateTrayAlert(s.automations)
     } catch { /* backend restarting; ws reconnect will re-trigger */ }
@@ -304,6 +339,10 @@ export const useStore = create<Model>((set, get) => ({
       agentEditId: ids.agentEditId !== undefined ? ids.agentEditId : null,
       ...(leavingCreate ? { surface: 'app' as const, createFrom: null } : {}),
     })
+    const m = get()
+    if (m.executionId) touchExecutionMru(m.executionId)
+    const evicted = evictExecutionCaches(m)
+    if (evicted) set(evicted)
     syncHistory(get())
   },
 
@@ -363,6 +402,7 @@ export const useStore = create<Model>((set, get) => ({
   },
 
   beginTest(executionId) {
+    touchExecutionMru(executionId) // counts as a view — survives eviction after clearTest too
     set({ test: { executionId } })
     void get().loadExecution(executionId) // steps/status render off the ordinary record
   },
@@ -411,6 +451,10 @@ window.addEventListener('popstate', (e) => {
     surface: s.surface, page: s.page, automationId: s.automationId, executionId: s.executionId,
     createFrom: s.createFrom ?? null, agentEditId: s.agentEditId ?? null,
   })
+  const m = useStore.getState()
+  if (m.executionId) touchExecutionMru(m.executionId)
+  const evicted = evictExecutionCaches(m)
+  if (evicted) useStore.setState(evicted)
   lastNav = s
   restoring = false
 })

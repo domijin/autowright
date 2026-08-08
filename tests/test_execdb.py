@@ -1,4 +1,4 @@
-"""SQLite execution index (§5) — schema wipe on version bump, upsert, time codecs."""
+"""SQLite execution index (§5) — schema wipe on version bump, upsert, ISO-TEXT timestamps."""
 
 
 def make_header(**over):
@@ -82,33 +82,42 @@ def test_upsert_updates_mutable_fields_and_roundtrips_error(home):
     db.close()
 
 
-def test_trigger_sender_roundtrips_from_either_shape(home):
-    """§4.5 triggerSender: upsert lifts the sender from a live record's
-    trigger_payload or accepts the already-lifted trigger_sender (a reloaded
-    header, the startup yaml reconcile)."""
+def test_trigger_sender_reads_the_stamped_field_only(home):
+    """§4.5/§5 triggerSender: stamped onto the record once at creation — upsert
+    reads only trigger_sender, never reaching into the payload (no dual-shape
+    fallback)."""
     from autowright import execdb
 
     db = execdb.ExecDB(_db_path(home))
-    db.upsert(make_header(trigger="discord", trigger_payload={
-        "kind": "discord", "text": "hi", "sender": "Dave", "channel": "#general",
-        "messageId": "m1", "guildId": None, "secret": "s", "at": "2026-07-20T08:29:00"}))
     db.upsert(make_header(id="e-2", trigger="discord", trigger_sender="Ana"))
-    db.upsert(make_header(id="e-3"))
+    # a payload without the stamped field contributes nothing
+    db.upsert(make_header(id="e-3", trigger="discord", trigger_payload={
+        "kind": "discord", "text": "hi", "sender": "Dave"}))
     rows = db.load_all()
-    assert rows["e-1"]["trigger_sender"] == "Dave"
     assert rows["e-2"]["trigger_sender"] == "Ana"
     assert rows["e-3"]["trigger_sender"] is None
     db.close()
 
 
-def test_ms_iso_roundtrip():
-    from autowright.execdb import _iso, _ms
+def test_timestamps_store_as_iso_text_and_sort_chronologically(home):
+    """§5: started/finished/queued are UTC ISO-8601 microsecond TEXT — stored
+    verbatim, and lexicographic order = chronological order, so the same-second
+    ordering promise survives a restart."""
+    from autowright import execdb
 
-    # §5: canonical timestamps are UTC ISO with offset — the codec round-trips
-    # them and re-emits UTC for any parseable input.
-    iso = "2026-07-23T09:15:42.123456+00:00"
-    ms = _ms(iso)
-    assert isinstance(ms, int)
-    assert _iso(ms) == "2026-07-23T09:15:42.123000+00:00"  # ms-precision column
-    assert _ms(None) is None
-    assert _iso(None) is None
+    db = execdb.ExecDB(_db_path(home))
+    early = "2026-07-20T08:30:00.000123+00:00"
+    late = "2026-07-20T08:30:00.000456+00:00"  # same second — microseconds decide
+    db.upsert(make_header(id="e-a", started_at=early, queued_at=early,
+                          finished_at="2026-07-20T08:31:05.500000+00:00"))
+    db.upsert(make_header(id="e-b", started_at=late))
+    row = db.conn.execute(
+        "SELECT started_at, finished_at, queued_at FROM executions WHERE id='e-a'").fetchone()
+    assert row == (early, "2026-07-20T08:31:05.500000+00:00", early)  # TEXT, verbatim
+    order = [r[0] for r in db.conn.execute(
+        "SELECT id FROM executions ORDER BY started_at DESC, id")]
+    assert order == ["e-b", "e-a"]
+    loaded = db.load_all()
+    assert loaded["e-a"]["started_at"] == early
+    assert loaded["e-b"]["finished_at"] is None
+    db.close()

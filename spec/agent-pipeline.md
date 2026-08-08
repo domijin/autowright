@@ -430,10 +430,14 @@ response like any other (repair round, then failure). The blockers ride the job 
 and are logged with the invocation like any response. UI handling is §11's Blockers &
 clarifications.
 
-**Failure policy.** A transient harness failure (timeout, nonzero exit) is retried **once per
-invocation** after a short pause, with the `detail` line "The agent call failed — retrying
-once…"; a missing or unknown CLI fails immediately, and a second transient failure ends the
-job `failed` with the harness error as the message. An invalid response gets one automatic
+**Failure policy.** A transient harness failure (a timeout, or a nonzero exit that looks
+transient) is retried **once per invocation** after a short pause, with the `detail` line
+"The agent call failed — retrying once…"; a missing or unknown CLI fails immediately, and a
+second transient failure ends the job `failed` with the harness error as the message. A
+nonzero exit whose stderr matches an obvious **deterministic** failure — authentication /
+sign-in errors, model-not-found ("unknown model" and kin) — is **not** retried: retrying
+can't fix a bad credential or a wrong model name, so the error surfaces immediately instead
+of costing a second multi-minute call. An invalid response gets one automatic
 repair round **per call** — the same prompt plus the previous raw response and the
 machine-generated validation errors. When the repair response is **also** invalid, the call
 does not fail: the backend makes one final **build-diagnosis call** (`detail`: "The response

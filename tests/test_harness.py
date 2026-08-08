@@ -555,6 +555,44 @@ def test_invoke_failure_carries_stderr_tail(monkeypatch, tmp_path, home):
     assert ei.value.retryable is True
 
 
+def test_invoke_auth_failure_is_not_retryable(monkeypatch, tmp_path, home):
+    # §8 failure policy: a nonzero exit whose stderr names an obvious
+    # deterministic failure (auth / model-not-found) is NOT retryable —
+    # drafting surfaces it immediately instead of retrying a doomed call.
+    from autowright import harness
+
+    for stderr_line in ("Invalid API key · Please run /login",
+                        "ERROR: 401 Unauthorized",
+                        "You are not logged in",
+                        "Authentication failed",
+                        "ERROR: model not found: gemini-9.9-ultra",
+                        "unknown model gpt-99"):
+        script = tmp_path / "claude"
+        script.write_text(f"#!/bin/sh\necho '{stderr_line}' >&2\nexit 1\n")
+        script.chmod(0o755)
+        monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+        with pytest.raises(harness.HarnessError) as ei:
+            harness.invoke({"harness": "Claude Code"}, "question: hi?")
+        assert stderr_line in str(ei.value)
+        assert ei.value.retryable is False, stderr_line
+
+
+def test_deterministic_failure_classification():
+    # Case-insensitive substrings; a generic crash stays retryable, and the
+    # timeout path never goes through this classifier at all.
+    from autowright.harness import _deterministic_failure
+
+    assert _deterministic_failure("Please run /login") is True
+    assert _deterministic_failure("401 UNAUTHORIZED") is True
+    assert _deterministic_failure("Not Logged In") is True
+    assert _deterministic_failure("Model Not Found") is True
+    assert _deterministic_failure("Unknown Model") is True
+    assert _deterministic_failure("invalid api key") is True
+    assert _deterministic_failure("segmentation fault") is False
+    assert _deterministic_failure("connection reset by peer") is False
+    assert _deterministic_failure("") is False
+
+
 def test_claude_stream_line_parse_table():
     # §8: one stream-json stdout line → (text_chunk, final_result, tool_uses).
     from autowright.harness import _claude_stream_line as parse
@@ -588,41 +626,70 @@ def test_claude_stream_line_parse_table():
 
 # ---------- §19 per-provider sign-in rules ----------
 
-def test_signed_in_gemini_and_opencode_rules(monkeypatch, tmp_path):
+def test_signed_in_gemini_rules(monkeypatch, tmp_path):
+    # §19: oauth_creds.json must PARSE as JSON carrying a refresh token —
+    # file existence alone never counts; a stale/empty/garbage file must not
+    # fake a working sign-in. GEMINI_API_KEY alone still counts.
     from autowright import harness
 
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
-    # nothing on disk, no API key → both signed out
-    assert harness.signed_in("gemini") is False
-    assert harness.signed_in("opencode") is False
+    assert harness.signed_in("gemini") is False  # nothing on disk, no API key
 
-    # gemini is EXISTENCE-ONLY: any oauth_creds.json file reads signed in,
-    # even empty-dict or garbage contents. Pinned real behavior — known
-    # deferred item "Gemini existence-only sign-in check" (release audit
-    # 2026-07); tighten this test when that check lands.
     gdir = tmp_path / ".gemini"
     gdir.mkdir()
-    (gdir / "oauth_creds.json").write_text("{}")
-    assert harness.signed_in("gemini") is True
-    (gdir / "oauth_creds.json").write_text("not json {")
-    assert harness.signed_in("gemini") is True
-    (gdir / "oauth_creds.json").unlink()
+    creds = gdir / "oauth_creds.json"
+    creds.write_text("{}")
+    assert harness.signed_in("gemini") is False   # no refresh token
+    creds.write_text("not json {")
+    assert harness.signed_in("gemini") is False   # unparseable → signed out
+    creds.write_text(json.dumps({"refresh_token": ""}))
+    assert harness.signed_in("gemini") is False   # empty token → signed out
+    creds.write_text(json.dumps([1, 2]))
+    assert harness.signed_in("gemini") is False   # JSON but not a dict
+    creds.write_text(json.dumps({"access_token": "a", "refresh_token": "1//r"}))
+    assert harness.signed_in("gemini") is True    # a real refresh token
+
+    creds.unlink()
     assert harness.signed_in("gemini") is False
     monkeypatch.setenv("GEMINI_API_KEY", "k")
-    assert harness.signed_in("gemini") is True  # the API key alone suffices
-    monkeypatch.delenv("GEMINI_API_KEY")
+    assert harness.signed_in("gemini") is True    # the API key alone suffices
 
-    # opencode: auth.json must parse to a NONEMPTY dict
+
+def test_signed_in_opencode_rules(monkeypatch, tmp_path):
+    # §19: auth.json must parse as a dict with at least one provider entry
+    # holding a non-empty credential (key / token / access / refresh — the
+    # shapes the OpenCode CLI writes). A credential-less, empty, unparseable,
+    # or non-dict file reads signed out.
+    from autowright import harness
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert harness.signed_in("opencode") is False  # nothing on disk
+
     ocdir = tmp_path / ".local" / "share" / "opencode"
     ocdir.mkdir(parents=True)
-    (ocdir / "auth.json").write_text("{}")
+    auth = ocdir / "auth.json"
+    auth.write_text("{}")
     assert harness.signed_in("opencode") is False  # empty dict → no account
-    (ocdir / "auth.json").write_text(json.dumps({"anthropic": {"type": "oauth"}}))
-    assert harness.signed_in("opencode") is True
-    (ocdir / "auth.json").write_text("garbage {")
+    auth.write_text("garbage {")
     assert harness.signed_in("opencode") is False  # unparseable → signed out
+    auth.write_text(json.dumps([{"key": "k"}]))
+    assert harness.signed_in("opencode") is False  # JSON but not a dict
+    auth.write_text(json.dumps({"anthropic": {"type": "oauth"}}))
+    assert harness.signed_in("opencode") is False  # entry with no credential
+    auth.write_text(json.dumps({"anthropic": {"type": "oauth", "refresh": "",
+                                              "access": ""}}))
+    assert harness.signed_in("opencode") is False  # empty credentials
+    auth.write_text(json.dumps({"anthropic": {"type": "oauth", "refresh": "r",
+                                              "access": "a", "expires": 1}}))
+    assert harness.signed_in("opencode") is True   # oauth entry with tokens
+    auth.write_text(json.dumps({"openai": {"type": "api", "key": "sk-x"}}))
+    assert harness.signed_in("opencode") is True   # api-key entry
+    auth.write_text(json.dumps({"github-copilot": {"type": "wellknown",
+                                                   "key": "k", "token": "t"}}))
+    assert harness.signed_in("opencode") is True   # wellknown entry
 
     assert harness.signed_in("ollama") is None  # no account concept at all
 

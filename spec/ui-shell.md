@@ -117,7 +117,7 @@ holds a draft (`pendingDraft` on `GET /state`), the header shows two buttons: a 
 **Resume draft** button (opens the create flow, which resumes the slot straight on Review)
 to the left of the primary **New automation** button — which then starts fresh: a danger
 confirm ("Start a new automation? — Your unsaved draft will be discarded. This can't be
-undone.") deletes the slot (`DELETE /draft`) before opening the create flow. Without a
+undone.") deletes the slot (`DELETE /draft/pending`) before opening the create flow. Without a
 pending draft, the single New automation button opens the create flow directly. Left of
 these sits a ghost **Import…** button (always present): it opens the **import modal**
 (§5.2 two-phase import). Input step: title "Import automation" over a one-line muted intro
@@ -359,7 +359,7 @@ Sections top to bottom:
   N counts the automation's `queued` execution records (§4.6) held client-side — the same
   source the §7 Waiting section lists, never a separate count carried on the automation.
   One source is what makes the number right: a promoted entry becomes `executing` on its own
-  record the moment §19 `exec.started` arrives, so a running execution can never still be
+  record the moment §19 `execution.started` arrives, so a running execution can never still be
   counted as waiting, and the line can never disagree with the Waiting list.
   Raising `maxParallel` above 1 on an automation whose current version has a step referencing
   memory shows a persistent amber caution under the row, naming those steps: "`<step>` writes

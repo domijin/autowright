@@ -159,7 +159,10 @@ the update bullets below).
   mid-execution), then runs the same `service install` path, which rewrites the plist and
   restarts the service on the current bundle's interpreter. Outcome lines append to `app.log`.
 - Sleep: launchd does not prevent sleep. The backend holds a power assertion for the duration of
-  an active execution, implemented as a `caffeinate -i` subprocess (prevents idle sleep mid-execution;
+  an active execution, implemented as a `caffeinate -i -w <backend pid>` subprocess (prevents
+  idle sleep mid-execution; the `-w` ties the assertion to the backend process — like the
+  permanent `keepAwake` one below — so a crashed backend can never leave a per-execution
+  orphan keeping the Mac awake;
   forced sleep — lid close, low battery — can still suspend an execution); outside executions, normal macOS energy settings
   apply and missed occurrences follow the §6 missed-execution policy. For the always-on use case
   (a Mac left running to catch schedules and §6 message triggers), the §4.9 `keepAwake` setting

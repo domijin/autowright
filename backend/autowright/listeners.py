@@ -15,6 +15,7 @@ import time
 
 from . import imessage, keychain
 from .events import hub
+from .firing import fire_trigger
 from .storage import Store
 
 log = logging.getLogger("autowright.listeners")
@@ -422,8 +423,6 @@ class Listeners:
                  guild_names: dict[str, str] | None = None) -> None:
         """Route one MESSAGE_CREATE to every matching enabled trigger — at
         most one firing per automation (§6: same-moment occurrences coalesce)."""
-        from .scheduler import fire_trigger
-
         with self.store.lock:
             hits = []
             for a in self.store.autos.values():
@@ -443,8 +442,6 @@ class Listeners:
     def dispatch_imessage(self, m: dict) -> None:
         """Route one decoded chat.db row to every matching enabled imessage
         trigger — at most one firing per automation, like Discord."""
-        from .scheduler import fire_trigger
-
         with self.store.lock:
             hits = []
             for a in self.store.autos.values():

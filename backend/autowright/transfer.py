@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import __version__, harness, schedule, timefmt
+from . import __version__, harness, timefmt, triggers as triggerlib
 from .specmd import blocks_to_md, md_to_blocks
 from .storage import SECRET_REF_RE, Store, new_id
 
@@ -238,7 +238,7 @@ def _validate(z: zipfile.ZipFile) -> dict:
                        "pattern": t.get("pattern")}
                  if t["kind"] == "imessage"
                  else {"kind": t["kind"], "expression": t.get("expression"), "timezone": t.get("timezone")})
-        if err := schedule.validate_trigger(probe):
+        if err := triggerlib.validate_trigger(probe):
             raise TransferError(f"invalid trigger in the archive: {err}")
         triggers.append({"kind": t["kind"],
                          **({"expression": t["expression"]} if t["kind"] == "cron" else {}),
@@ -246,14 +246,14 @@ def _validate(z: zipfile.ZipFile) -> dict:
                          **({"channel": t["channel"].strip(), "secret": t["secret"].strip(),
                              **({"pattern": t["pattern"].strip()} if t.get("pattern") else {}),
                              **({"mention": True} if t.get("mention") else {}),
-                             **({"author": schedule.normalize_authors(t["author"])}
+                             **({"author": triggerlib.normalize_authors(t["author"])}
                                 if t.get("author") else {})}
                             if t["kind"] == "discord" else {}),
                          # §4.3: normalize like every other ingest path — a
                          # formatted number stored verbatim would never match
                          # chat.db's E.164 handles and the trigger would
                          # silently never fire.
-                         **({"from": schedule.normalize_handle(t["from"]),
+                         **({"from": triggerlib.normalize_handle(t["from"]),
                              **({"pattern": t["pattern"].strip()} if t.get("pattern") else {})}
                             if t["kind"] == "imessage" else {})})
     values = manifest.get("param_values") or {}
@@ -450,14 +450,19 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                "packages": arch["packages"], "steps": arch["steps"],
                "spec": arch["spec"], "instructions": arch["instructions"], "notes": arch["notes"]}
         triggers = [{"id": new_id(), "enabled": False, **t} for t in arch["triggers"]]
+        # §5.1 grants: only what this import created, passed directly into the
+        # creation call as its grant lists (one write) — no post-create grant
+        # patch, so no window ever exists in which the automation is stored
+        # with different grants (an explicit empty list also overrides
+        # create_automation's drafting-agent fallback).
         a = store.create_automation(ver, name=arch["name"],
                                     agent_id=drafting["id"] if drafting else None,
-                                    triggers=triggers)
-        # §5.1 grants: only what this import created — create_automation's
-        # drafting-agent fallback must not survive for pre-existing records.
-        store.patch_automation(a, {"stepAgents": created_ids,
-                                   "allowedSecrets": list(created_secrets),
-                                   "paramValues": arch["param_values"]})
+                                    triggers=triggers,
+                                    enabled_agents=list(created_ids),
+                                    allowed_secrets=list(created_secrets))
+        if arch["param_values"]:
+            # Values are the one manifest field creation can't seed.
+            store.patch_automation(a, {"paramValues": arch["param_values"]})
     summary = {"secretsCreated": created_secrets, "secretsExisting": existing_secrets,
                "agentsCreated": created_agents, "agentsReused": reused_agents,
                "packages": arch["packages"]}

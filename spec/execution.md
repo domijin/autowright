@@ -29,7 +29,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   `succeeded`.
 - Cancel: kills timers/processes; execution cancelled, the executing attempt and its step
   cancelled, queued steps cancelled, sys log "execution cancelled by you — nothing else will
-  happen".
+  happen". At finalize the cancel flag marks the execution `cancelled` **only when at least
+  one step was actually cancelled or left non-terminal** — a cancel that lands after the
+  last step already succeeded changes nothing and the record finishes `succeeded`: the
+  status reports what happened to the steps, not that a button was pressed too late.
 - **Kill semantics:** each step's executor runs in its own process group
   (`start_new_session`), and timeout/cancel/skip signal the whole group — a step's children
   (Playwright browsers, subprocesses) die with it, are never orphaned, and can never hold the
@@ -93,7 +96,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   re-executed and keep their attempts. Each executed step appends the next attempt. Same
   workspace (earlier steps' outputs are already there — nothing is copied), same result dir
   (a failed pass's stale result files may remain until steps overwrite them), accumulated
-  duration (`duration_ms` sums the passes; `started_at` never changes). `exec.finished` fires
+  duration (`duration_ms` sums the passes; `started_at` never changes). `execution.finished` fires
   again per pass, so the end-of-execution toast repeats — intended. Retry is allowed only on
   terminal `failed` executions and answers 409 while the automation is live, when the
   version no longer resolves, or — for a Draft execution — when the draft's steps changed

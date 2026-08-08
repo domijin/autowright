@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import paths, schedule, timefmt
+from . import paths, timefmt, triggers as triggerlib
 from .execdb import ExecDB
 from .specmd import blocks_to_md, md_to_blocks
 from .yamlio import atomic_write_text, load_yaml, save_yaml
@@ -200,6 +200,9 @@ class Store:
         self.listener_status: dict[str, dict] = {}
         self.secrets: list[dict] = []             # {name, desc, set} — values live in the Keychain;
                                                   # set: False = §4.8 placeholder, no Keychain entry
+        # §5 log line cap: (execution_id, file name) → lines written so far,
+        # seeded from disk on first append (see append_log_line).
+        self._log_counts: dict[tuple[str, str], int] = {}
 
     # ---------- paths ----------
     def data_path(self) -> Path:
@@ -305,10 +308,7 @@ class Store:
                 y = self.read_exec_yaml(ed.name)
                 if not y or y.get("id") != ed.name or not y.get("started_at"):
                     continue
-                h = {k: y[k] for k in ("id", "automation_id", "automation_name", "kind", "version", "status",
-                                       "trigger", "queued_at", "started_at", "finished_at",
-                                       "duration_ms", "note", "chip", "chip_status", "error")}
-                h["trigger_sender"] = (y.get("trigger_payload") or {}).get("sender")
+                h = self.exec_header(y)
                 self.execdb.upsert(h)
             except Exception as e:  # noqa: BLE001
                 # §5: a hand-damaged execution.yaml (bad timestamps, missing
@@ -389,7 +389,7 @@ class Store:
             # Hand-edited disk must never brick startup (§5) — a validator
             # crash on weird trigger data counts as invalid, not fatal.
             try:
-                return schedule.validate_trigger(t) is None
+                return triggerlib.validate_trigger(t) is None
             except Exception:  # noqa: BLE001
                 return False
 
@@ -406,7 +406,7 @@ class Store:
                                {"channel": t["channel"], "secret": t["secret"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {}),
                                 **({"mention": True} if t.get("mention") else {}),
-                                **({"author": schedule.normalize_authors(t["author"])}
+                                **({"author": triggerlib.normalize_authors(t["author"])}
                                    if t.get("author") else {})}
                                if t["kind"] == "discord" else
                                {"from": t["from"],
@@ -635,29 +635,52 @@ class Store:
             n = a["current_version"] + 1
             while n in a["versions"]:
                 n += 1
-            src = self.auto_dir(a) / "versions" / f"v{v}"
             dst = self.auto_dir(a) / "versions" / f"v{n}"
-            shutil.copytree(src, dst)
-            meta = load_yaml(dst / "automation.yaml", {}) or {}
-            meta["when"] = timefmt.now_iso()
-            meta["note"] = f"Restored from v{v}"
-            save_yaml(dst / "automation.yaml", meta)
+            # §5: restore writes through the version-folder writer from vX's
+            # loaded content — never a tree copy — so the manifest lands last
+            # as the commit point and a crash mid-restore leaves no adoptable
+            # folder, just an incomplete directory the next save overwrites.
+            self._write_version_folder(dst, {**a["versions"][v],
+                                             "when": timefmt.now_iso(),
+                                             "note": f"Restored from v{v}"})
             a["versions"][n] = self._load_version_folder(dst)
             a["current_version"] = n
             a["updated_at"] = timefmt.now_iso()
             self._write_toplevel(a)
             return n
 
-    def save_draft(self, a: dict, ver: dict, chat: list | None = None) -> None:
-        # §5: draft/ is a container — only the automation/ working copy is
-        # rewritten; draft/memory/ (§4.4) survives re-saves from the editor.
-        # No rmtree: _write_version_folder rewrites in place (manifest last,
-        # stale files pruned after), so a crash never loses the previous draft.
+    def draft_dir(self, a: dict | None) -> Path:
+        """§5/§19: the one draft-container location rule — the pending
+        create-mode slot (`<root>/draft/`, owner `pending`) or the
+        automation's `draft/`; everything else about the container is shared."""
+        return paths.pending_draft_dir() if a is None else self.auto_dir(a) / "draft"
+
+    def save_draft(self, a: dict | None, ver: dict, *, name: str | None = None,
+                   agent_id: str | None = None, triggers: list | None = None,
+                   chat: list | None = None) -> None:
+        """§19: ONE write path for both /draft/{owner} owners (a=None →
+        pending). §5: draft/ is a container — only the automation/ working
+        copy is rewritten; memory/ (§4.4) survives re-saves from the editor.
+        No rmtree: _write_version_folder rewrites in place (manifest last,
+        stale files pruned after), so a crash never loses the previous draft.
+        For the pending owner the identity keyword args land as create-only
+        keys in automation.yaml (§5) — no automation record exists to hold
+        them; they are ignored for an automation owner."""
         with self.lock:
-            dd = self.auto_dir(a) / "draft" / "automation"
-            self._write_version_folder(dd, ver)
-            a["draft"] = self._load_version_folder(dd)
-            self.save_chat(self.auto_dir(a) / "draft", chat)
+            container = self.draft_dir(a)
+            dd = container / "automation"
+            if a is None:
+                prev = load_yaml(dd / "automation.yaml", {}) or {}
+                now = timefmt.now_iso()
+                self._write_version_folder(dd, ver, extra={
+                    "name": name, "description": ver.get("description", ""), "agent_id": agent_id,
+                    "triggers": triggers or [],
+                    "created_at": prev.get("created_at") or now, "updated_at": now,
+                })
+            else:
+                self._write_version_folder(dd, ver)
+                a["draft"] = self._load_version_folder(dd)
+            self.save_chat(container, chat)
 
     # ---------- §11 chat thread (§5 chat.jsonl in the draft container) ----------
     _CHAT_KEYS = ("id", "kind", "text", "blockers", "source", "diagnosed",
@@ -702,29 +725,13 @@ class Store:
         return out
 
     # ---------- pending create-mode draft (§4.4: the <root>/draft/ slot) ----------
-    def open_pending_draft(self) -> None:
-        """§4.4: make the slot's container (memory/ only — §11 tests execute as
-        execution records) exist — called when the create flow opens, before any
-        drafting; never touches contents already there."""
+    def open_draft(self, a: dict | None) -> None:
+        """§4.4/§19 POST /draft/{owner}/open: make the container (draft/ with
+        an empty memory/ — §11 tests execute as execution records) exist —
+        the create flow calls it on open, before any drafting; never touches
+        contents already there."""
         with self.lock:
-            (paths.pending_draft_dir() / "memory").mkdir(parents=True, exist_ok=True)
-
-    def save_pending_draft(self, ver: dict, name: str | None, agent_id: str | None,
-                           triggers: list | None, chat: list | None = None) -> None:
-        """Like save_draft, into the single `<root>/draft/` slot — only the
-        automation/ working copy is rewritten; memory/workspace/result survive
-        re-keeps. Identity fields ride automation.yaml (§5): no automation
-        record exists yet to hold them."""
-        with self.lock:
-            dd = paths.pending_draft_dir() / "automation"
-            prev = load_yaml(dd / "automation.yaml", {}) or {}
-            now = timefmt.now_iso()
-            self._write_version_folder(dd, ver, extra={
-                "name": name, "description": ver.get("description", ""), "agent_id": agent_id,
-                "triggers": triggers or [],
-                "created_at": prev.get("created_at") or now, "updated_at": now,
-            })
-            self.save_chat(paths.pending_draft_dir(), chat)
+            (self.draft_dir(a) / "memory").mkdir(parents=True, exist_ok=True)
 
     def load_pending_draft(self) -> dict | None:
         """The slot's draft + identity keys; None when the slot is empty."""
@@ -738,11 +745,15 @@ class Store:
                     "agent_id": meta.get("agent_id"),
                     "triggers": meta.get("triggers", []) or []}
 
-    def delete_pending_draft(self) -> None:
-        """Settles the slot (Create consumed it, or Start over discarded it)."""
+    def delete_draft(self, a: dict | None) -> None:
+        """§19: ONE delete path for both /draft/{owner} owners. Settles the
+        container (discard, save, Create, or Start over); §11 test records die
+        with it (automationId null for the pending owner)."""
         with self.lock:
-            shutil.rmtree(paths.pending_draft_dir(), ignore_errors=True)
-            self.delete_test_execs(None)  # §11: create-mode test records (automationId null)
+            shutil.rmtree(self.draft_dir(a), ignore_errors=True)
+            if a is not None:
+                a["draft"] = None
+            self.delete_test_execs(a["id"] if a is not None else None)
 
     def pending_draft_summary(self) -> dict | None:
         """§19 GET /state `pendingDraft`: the slot's identity summary — backs
@@ -755,30 +766,17 @@ class Store:
             return {"name": meta.get("name") or "New automation",
                     "updatedAt": meta.get("updated_at")}
 
-    def pending_draft_json(self) -> dict:
-        d = self.load_pending_draft()
-        if d is None:
-            return {"draft": None, "agentId": None}
-        steps = [self.step_json(s) for s in d.get("steps", [])]
-        return {"draft": {
-            "name": d.get("name"), "description": d.get("description", ""), "note": d.get("note"),
-            "params": d.get("params", []), "packages": d.get("packages", []),
-            "steps": steps, "spec": d.get("spec", []), "instructions": d.get("instructions"),
-            "notes": d.get("notes", ""),
-            "triggers": d.get("triggers", []),
-            **({"stepAgents": d["step_agents"]} if d.get("step_agents") is not None else {}),
-            **({"allowedSecrets": d["allowed_secrets"]} if d.get("allowed_secrets") is not None else {}),
-            **({"test": t} if (t := self.draft_test_json(paths.pending_draft_dir())) else {}),
-            **({"chat": c} if (c := self.chat_json(paths.pending_draft_dir())) else {}),
-        }, "agentId": d.get("agent_id")}
-
-    def delete_draft(self, a: dict) -> None:
+    def draft_container_json(self, a: dict | None) -> dict:
+        """§19 GET /draft/{owner} → `{ draft, agentId }` — the same envelope
+        for both owners; the pending owner's agentId rides the slot's identity
+        keys (§5), an automation owner's rides its record."""
         with self.lock:
-            dd = self.auto_dir(a) / "draft"
-            if dd.exists():
-                shutil.rmtree(dd)
-            a["draft"] = None
-            self.delete_test_execs(a["id"])  # §11: test records die with the draft
+            if a is None:
+                meta = load_yaml(paths.pending_draft_dir() / "automation" / "automation.yaml", {}) or {}
+                agent_id = meta.get("agent_id")
+            else:
+                agent_id = a.get("agent_id")
+            return {"draft": self.draft_json(a), "agentId": agent_id}
 
     def patch_automation(self, a: dict, patch: dict) -> None:
         """User-owned fields only (§19 PATCH)."""
@@ -821,7 +819,7 @@ class Store:
             self._write_toplevel(a)
 
     def trigger_json(self, t: dict) -> dict:
-        label, short = schedule.trigger_display(t)
+        label, short = triggerlib.trigger_display(t)
         out = {**t, "label": label, "short": short}
         if t["kind"] == "discord":
             # §4.3 `conn` — the listener manager's state for the trigger's
@@ -841,6 +839,17 @@ class Store:
             self.delete_test_execs(a["id"])  # §11 — real records stay (automationDeleted)
 
     # ---------- executions ----------
+    # §5 header projection — the fields the DB index carries per execution and
+    # the whole in-memory shape of any record that isn't live (startup-loaded
+    # rows, records demoted on their terminal transition).
+    EXEC_HEADER_KEYS = ("id", "automation_id", "automation_name", "kind", "version", "status",
+                        "trigger", "trigger_sender", "queued_at", "started_at", "finished_at",
+                        "duration_ms", "note", "chip", "chip_status", "error")
+
+    @classmethod
+    def exec_header(cls, h: dict) -> dict:
+        return {k: h.get(k) for k in cls.EXEC_HEADER_KEYS}
+
     def create_execution(self, auto: dict, kind: str, version: int | None, trigger: str,
                          steps: list[dict], note: str | None = None,
                          status: str = "executing", params: list[dict] | None = None,
@@ -853,6 +862,10 @@ class Store:
                 "id": new_id(), "automation_id": auto["id"], "automation_name": auto["name"],
                 "kind": kind, "version": version, "status": status, "trigger": trigger,
                 "trigger_payload": trigger_payload,
+                # §4.5/§5: the header's triggerSender is stamped once, here at
+                # record creation — every reader takes it from this field alone,
+                # never by reaching into the payload.
+                "trigger_sender": (trigger_payload or {}).get("sender"),
                 # §4.5: set only for a §6 queue entry; kept after promotion so the
                 # record still shows how long it waited.
                 "queued_at": now if status == "queued" else None,
@@ -909,6 +922,14 @@ class Store:
         with self.lock:
             self.write_exec_yaml(h)
             self.execdb.upsert(h)
+            if h["status"] not in ("executing", "queued") and h["id"] in self.execs:
+                # §5 slim-on-finish: on a terminal transition the stored record
+                # demotes to the header projection the DB index uses — the body
+                # stays lazy behind the just-written execution.yaml, re-read on
+                # the next open like any settled execution, so full bodies are
+                # never pinned in memory for the backend's lifetime. Callers
+                # keep their own full `h`; a retry re-inflates via exec_full.
+                self.execs[h["id"]] = self.exec_header(h)
             if is_test(h):
                 return  # §4.5: derived display state ignores test executions
             a = self.autos.get(h["automation_id"])
@@ -944,6 +965,7 @@ class Store:
             "status": h["status"],
             "trigger": h["trigger"],
             "trigger_payload": h.get("trigger_payload"),
+            "trigger_sender": h.get("trigger_sender"),
             "queued_at": h.get("queued_at"),
             "started_at": h["started_at"],
             "finished_at": h["finished_at"],
@@ -970,6 +992,7 @@ class Store:
             "kind": y.get("kind"), "version": y.get("version"),
             "status": y.get("status"), "trigger": y.get("trigger"),
             "trigger_payload": y.get("trigger_payload"),
+            "trigger_sender": y.get("trigger_sender"),
             "queued_at": y.get("queued_at"),
             "started_at": y.get("started_at"), "finished_at": y.get("finished_at"),
             "duration_ms": y.get("duration_ms"), "note": y.get("note"),
@@ -993,6 +1016,11 @@ class Store:
 
     # ---------- logs (§5 logs/, one file per step attempt) ----------
     EXEC_LOG = "execution.ndjson"
+    # §5 line cap: a log file stops appending at this many lines — one final
+    # `sys` marker line records the truncation, then nothing more lands in the
+    # file (the step itself keeps executing). Applies to per-attempt files and
+    # execution.ndjson alike; a runaway step can't fill the disk through logs.
+    MAX_LOG_LINES = 10_000
 
     @staticmethod
     def log_name(step_file: str | None, index: int, attempt: int) -> str:
@@ -1003,17 +1031,33 @@ class Store:
         return self.exec_dir(execution_id) / "logs" / name
 
     def append_log_line(self, execution_id: str, name: str, line: dict) -> None:
-        import json
-
         p = self.log_file(execution_id, name)
+        key = (execution_id, name)
+        count = self._log_counts.get(key)
+        if count is None:
+            # The count lives in memory per file key; the one-time seed counts
+            # the existing file (mirrors the engine's `_log_seq` resume). A
+            # restart mid-execution just re-seeds from disk here.
+            try:
+                with open(p, encoding="utf-8") as f:
+                    count = sum(1 for _ in f)
+            except OSError:
+                count = 0
+        if count > self.MAX_LOG_LINES:
+            self._log_counts[key] = count
+            return  # already truncated — the marker is the file's last line
+        if count == self.MAX_LOG_LINES:
+            line = {"timestamp": timefmt.now_iso(), "kind": "sys",
+                    "sequence": line.get("sequence", count + 1),
+                    "text": f"Log truncated at {self.MAX_LOG_LINES} lines — "
+                            "further output is discarded (the step keeps executing)"}
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
+        self._log_counts[key] = count + 1
 
     def read_log(self, execution_id: str, step_idx: int | None = None,
                  attempt: int | None = None) -> list[dict]:
-        import json
-
         if step_idx is None:
             name = self.EXEC_LOG
         else:
@@ -1073,6 +1117,8 @@ class Store:
             h = self.execs.pop(execution_id, None)
             shutil.rmtree(self.exec_dir(execution_id), ignore_errors=True)
             self.execdb.delete(execution_id)
+            for k in [k for k in self._log_counts if k[0] == execution_id]:
+                del self._log_counts[k]
             # Keep `_latest` honest inside the mutator — no caller should have
             # to remember to recompute after deleting.
             if h:
@@ -1306,10 +1352,7 @@ class Store:
                 "notes": ver.get("notes") or "",
                 "steps": [self.step_json(s) for s in ver.get("steps", [])],
                 "params": ver.get("params", []),
-                "packages": ver.get("packages", []),
-                **({"stepAgents": ver["step_agents"]} if ver.get("step_agents") is not None else {}),
-                **({"allowedSecrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
-                **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {})}
+                "packages": ver.get("packages", [])}
 
     def step_json(self, s: dict) -> dict:
         """One step-serialization for versions, drafts, and the pending slot."""
@@ -1330,17 +1373,40 @@ class Store:
             out["infiniteRetries"] = True
         return out
 
-    def draft_json(self, a: dict) -> dict:
-        """The automation's §4.4 draft object: the version-shaped working copy
-        plus the §11 last-test summary when one exists."""
-        out = self.version_json(a, a["current_version"], a["draft"])
-        t = self.draft_test_json(self.auto_dir(a) / "draft")
-        if t:
-            out["test"] = t
-        c = self.chat_json(self.auto_dir(a) / "draft")
-        if c:
-            out["chat"] = c
-        return out
+    def draft_json(self, a: dict | None) -> dict | None:
+        """§19: the ONE draft serializer behind /draft/{owner} — one container
+        shape for both owners (a=None → the pending slot). Only the identity
+        extras differ: the pending payload carries the name/description no
+        automation record exists to hold (§4.4). None when the container is
+        empty or absent."""
+        with self.lock:
+            if a is None:
+                ver = self.load_pending_draft()
+                extra = {"name": ver.get("name"), "description": ver.get("description", "")} if ver else {}
+            else:
+                ver = a["draft"]
+                extra = {}
+            if not ver:
+                return None
+            out = {
+                **extra,
+                "note": ver.get("note"),
+                "spec": ver.get("spec", []), "instructions": ver.get("instructions") or "",
+                "notes": ver.get("notes") or "",
+                "steps": [self.step_json(s) for s in ver.get("steps", [])],
+                "params": ver.get("params", []),
+                "packages": ver.get("packages", []),
+                # §4.4 draft-only keys: the editor's grant selections + trigger list
+                **({"stepAgents": ver["step_agents"]} if ver.get("step_agents") is not None else {}),
+                **({"allowedSecrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
+                **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {}),
+            }
+            container = self.draft_dir(a)
+            if t := self.draft_test_json(container):
+                out["test"] = t
+            if c := self.chat_json(container):
+                out["chat"] = c
+            return out
 
     def draft_test_json(self, container: Path) -> dict | None:
         """§11 last-test summary (`test.yaml` in the draft container, §5) —
@@ -1380,7 +1446,7 @@ class Store:
         elif latest_h and latest_h["status"] == "failed":
             chip = "Needs attention"
             chip_status = "attention"
-        nxt = schedule.next_at(a["triggers"])
+        nxt = triggerlib.next_at(a["triggers"])
         when = a["versions"].get(a["current_version"], {}).get("when")
         spec_meta = f"v{a['current_version']}"
         if when:
@@ -1392,7 +1458,7 @@ class Store:
             "description": a.get("description", ""),
             "version": a["current_version"],
             "triggers": [self.trigger_json(t) for t in a["triggers"]],
-            "triggerChip": schedule.trigger_chip(a["triggers"]),
+            "triggerChip": triggerlib.trigger_chip(a["triggers"]),
             "triggersOff": bool(a["triggers"]) and all(not t["enabled"] for t in a["triggers"]),
             "nextAt": int(nxt.timestamp() * 1000) if nxt else None,
             "instructions": cur.get("instructions") or "",
@@ -1424,7 +1490,7 @@ class Store:
                 "versions": [self.version_json(a, n, v)
                              for n, v in sorted(a["versions"].items(), reverse=True)
                              if n != a["current_version"]],
-                "draft": self.draft_json(a) if a["draft"] else None,
+                "draft": self.draft_json(a),
             })
         return out
 
@@ -1450,10 +1516,9 @@ class Store:
             "ver": exec_ver_label(h), "status": h["status"],
             "trigger": trigger_label(h["trigger"]),
             # §4.5 triggerSender rides on every row; the full payload stays
-            # full-record-only. Live records hold the payload, reloaded headers
-            # the lifted column.
-            "triggerSender": (h.get("trigger_payload") or {}).get("sender")
-                             or h.get("trigger_sender"),
+            # full-record-only. Stamped once at record creation (§5) — every
+            # shape carries the field itself.
+            "triggerSender": h.get("trigger_sender"),
             "test": is_test(h),
             "duration": timefmt.dur_label(h["duration_ms"]),
             "started": timefmt.started_label(dt) if dt else "",

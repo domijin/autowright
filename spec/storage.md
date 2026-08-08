@@ -40,7 +40,10 @@ harness/                       # per-provider workspaces for provider CLI childr
 draft/                         # THE pending create-mode draft (§4.4) — a single slot: created
                                # (with an empty memory/) the moment the create flow opens,
                                # deleted when Create or Start over settles it; same
-                               # container shape as automations/<uuid>/draft/ below, plus
+                               # container shape as automations/<uuid>/draft/ below — both
+                               # are read and written by ONE shared draft serializer behind
+                               # the §19 /draft/{owner} surface (owner `pending` here, the
+                               # automation id there) — plus
                                # create-only identity keys in its automation/automation.yaml
                                # (name, description, agent_id, triggers, created_at, updated_at —
                                # no automation record exists yet to hold them); the grant
@@ -232,7 +235,12 @@ There is no top-level copy of the "current" spec or steps: the current version i
 `automation.yaml`. Saving an edit writes a fresh `versions/vN+1/` folder, then atomically
 rewrites `automation.yaml` to flip the pointer (and apply any agent/secret/param changes) —
 versions are append-only and never edited in place; only `automation.yaml` and `draft/` are
-mutable. "Restore vX as vN+1" (§4.4) copies the vX folder to vN+1 and flips the pointer.
+mutable. The version-folder writer has one commit discipline: step scripts, spec, and the
+markdown documents land first, the folder's `automation.yaml` (the manifest) is written
+**last** as the commit point — a folder without it is never adopted by the startup walk.
+"Restore vX as vN+1" (§4.4) writes the new folder through that same writer from vX's loaded
+content — never a direct tree copy — so a crash mid-restore leaves no adoptable folder,
+just an incomplete directory the next save overwrites.
 
 Executions live under `<dataPath>/executions/` — unless the configured directory is itself
 named `executions`, in which case it is used directly rather than nested again (the §4.9
@@ -253,7 +261,13 @@ executions/
                                #     stored), status, trigger (§4.5 machine kind),
                                #     trigger_sender (§4.5 — NULL unless message-triggered),
                                #     queued_at, started_at /
-                               #     finished_at (epoch ms; finished_at NULL while executing),
+                               #     finished_at (UTC ISO-8601 microsecond TEXT — the §5
+                               #     timestamp form, so lexicographic order = chronological
+                               #     and the §5 same-second ordering promise survives a
+                               #     restart; finished_at NULL while executing. The schema
+                               #     version is bumped for this shape; a version mismatch
+                               #     drops and rebuilds the index from the yamls — no
+                               #     migration code),
                                #     duration_ms, note, chip / chip_status (§4.5 — NULL when the
                                #     execution set no chip), error_step / error_message /
                                #     error_reason (§4.5 — NULL unless failed; denormalized
@@ -312,12 +326,18 @@ list row, detail page, or menu bar report about real executions.
 Executions load **headers-eagerly, bodies-lazily**: startup reads every header row from the
 `executions.db` index into an in-memory `executions` table — one header per execution with
 `id, automation_id, status, trigger, kind, version, started_at, finished_at, duration_ms`, plus the
-light display fields (`automation_name`, `note`, `chip`/`chip_status`, `trigger_sender` — the
-§4.5 `triggerPayload` sender lifted out for list rows — the §4.5 `error`
+light display fields (`automation_name`, `note`, `chip`/`chip_status`, `trigger_sender` —
+the §4.5 `triggerPayload` sender for list rows, stamped onto the header **once at record
+creation** from the trigger payload; every reader takes it from that field alone, never by
+reaching into the payload — there is no dual-shape fallback — the §4.5 `error`
 fields) — kept queryable by `trigger`, `status`, `automation_id`, and `started_at`; paths
 resolve on demand from the id. The body (`execution.yaml` — steps, attempts, params,
 redacted names — plus `result/` and log files) is read only when an execution is opened; the
 live execution's in-memory record is the engine's own full record, so it needs no disk read.
+**On a terminal status transition the stored record is demoted to the same header projection
+the DB index uses** — the full body stays lazy behind its `execution.yaml`, re-read on the
+next open like any settled execution, so full bodies are never pinned in memory for the
+backend's lifetime.
 The in-memory table is rebuilt from the DB at every launch. An automation folder whose
 `versions/` is empty cannot resolve a current version and is skipped at startup with a
 warning in the app log. Every top-level YAML file is hand-editable, so an unreadable one —
@@ -339,7 +359,10 @@ Rules:
   reloads everything from the new directory. Nothing is moved — execution state is wholly
   contained in the executions dir, so there is no migration step.
 - Logs stream as append-only NDJSON — nothing else written on the execution hot path; CLI can
-  tail/grep them directly.
+  tail/grep them directly. **Line cap:** a per-attempt log file stops appending at 10,000
+  lines — one final `sys` marker line records the truncation, then nothing more lands in
+  that file (the step itself keeps executing). `logs/execution.ndjson` has the same cap. A
+  runaway step can't fill the disk through its logs.
 - Secret values never appear in any file — Keychain only, referenced by name.
 
 **Terminology:** **execution** is the one and only term for a single occurrence of an
@@ -428,7 +451,11 @@ answers 422 and writes nothing):
   archive with no agents falls back to the local default agent.
 - **Grants — auto-grant only what the import itself created.** Created placeholder secrets
   (valueless — nothing to leak) and created agents (exactly the exporter's config) are granted
-  on the new automation. Anything that matched a **pre-existing** local record is *not*
+  on the new automation — passed **directly into the automation-creation call** as its grant
+  lists (one write): there is no post-create grant patch, so no window ever exists in which
+  the automation is stored with different grants than it ends up with, and a wiring mistake
+  can never momentarily grant a pre-existing local agent. Anything that matched a
+  **pre-existing** local record is *not*
   auto-granted — silently granting would hand the imported automation a real local credential
   or agent; the §9.1 import summary lists each for one-click review in the editor.
 - Memory starts empty; no executions, snapshots, or drafts are created.

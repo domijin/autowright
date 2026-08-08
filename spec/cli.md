@@ -52,6 +52,14 @@ autowright service install|uninstall|status|restart   (§3 — the only group th
   message on stderr, §3 guidance style, never a traceback) · 2 from `automation execute -f`
   and `execution tail` when the followed execution ends in any terminal status other than
   `succeeded` — so a harness can branch on the exit code without parsing prose.
+- **HTTP timeouts:** every backend request runs with a 30 s timeout, except the three calls
+  that legitimately take long — package install (the §6.2 ensure runs pip), URL import (a
+  remote download rides the request), and automation delete (§19 waits for cancelled engine
+  threads) — which get 600 s.
+- **Follow semantics** (`execution tail`, `automation execute -f`): a `queued` record (§6
+  firing queue) is not terminal — the follow loop keeps polling while the execution is
+  `executing` **or** `queued`, so a followed queued firing is watched through promotion to
+  its real end (or its `skipped` settle), never reported the moment it is admitted.
 
 **Workdir (the authoring format).** `automation pull <ref> [dir]` materializes an automation
 into a directory; `automation push <ref> [dir] [--note] [--grant-agent NAME]…
@@ -73,7 +81,9 @@ Push/create run the **same §8 validators the drafting pipeline uses**
 (`drafting.validate_spec` + `validate_steps` — schema, param kinds/defaults, step-file 1:1 and
 ordering, `ast.parse`, the §6.2 import allowlist, timeout rules, trigger dialect). Validation
 errors print one per line and exit 1 with nothing written — agents iterate on the files until
-clean. Existence context for the validators is all configured agents plus all stored secrets,
+clean. This pre-save pass exists only for the friendlier errors: the backend runs the same
+validators server-side on every `POST /automations` / `POST .../versions` (§19) and rejects
+an invalid draft with 422, so the enforcement never depends on the client. Existence context for the validators is all configured agents plus all stored secrets,
 so a manifest naming an unknown agent/secret fails with the §8 message; which of the *known*
 names the automation may actually use is the grant model's job, below.
 

@@ -42,7 +42,7 @@ const ex = (id: string, startedMs: number, over: Partial<Execution> = {}): Execu
   status: 'succeeded', trigger: 'Manual', test: false, duration: '1s',
   started: 'now', startedMs, note: null, error: null, ...over,
 })
-const line = (sequence: number, text = 'line'): LogLine => ({ t: '00:00', k: 'out', sequence, text })
+const line = (sequence: number, text = 'line'): LogLine => ({ time: '00:00', kind: 'out', sequence, text })
 
 beforeEach(() => {
   // Full reset: fresh deep copies of every data field, action functions shared.
@@ -277,6 +277,28 @@ describe('applyEvent — harness.install / ollama.pull live progress (§10/§12)
     expect(store.useStore.getState().execLogs.e1['x.0'].map((l) => l.sequence)).toEqual([7, 8, 10])
   })
 
+  it('refresh: an out-of-order older /state snapshot never clobbers a newer one', async () => {
+    const snap = (executions: Execution[]) => ({
+      version: 'v', automations: [], executions, agents: [], secrets: [],
+      settings: null, pendingDraft: null,
+    })
+    const state = apiMod.api.state as ReturnType<typeof vi.fn>
+    let resolveOld!: (v: unknown) => void
+    let resolveNew!: (v: unknown) => void
+    state.mockReturnValueOnce(new Promise((r) => { resolveOld = r }))
+    state.mockReturnValueOnce(new Promise((r) => { resolveNew = r }))
+    const pOld = store.useStore.getState().refresh()
+    const pNew = store.useStore.getState().refresh()
+    // the newer request resolves first and lands…
+    resolveNew(snap([ex('fresh', 2)]))
+    await pNew
+    expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['fresh'])
+    // …then the stale older response arrives and must be discarded
+    resolveOld(snap([ex('stale', 1)]))
+    await pOld
+    expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['fresh'])
+  })
+
   it('agents.changed nudges a full refresh (§19: clients re-GET /state)', () => {
     const orig = store.useStore.getState().refresh
     const spy = vi.fn(async () => {})
@@ -287,5 +309,53 @@ describe('applyEvent — harness.install / ollama.pull live progress (§10/§12)
     } finally {
       store.useStore.setState({ refresh: orig })
     }
+  })
+})
+
+describe('execution cache eviction (MRU: current + 5 most recent)', () => {
+  // Seeds a full record + an open log bucket for id, then navigates to it —
+  // the same order the real execution page produces (go, then loads).
+  const view = (id: string) => {
+    const m = store.useStore.getState()
+    store.useStore.setState({
+      executionFull: { ...m.executionFull, [id]: ex(id, 1) },
+      execLogs: { ...m.execLogs, [id]: { 'x.0': [line(1)] } },
+    })
+    store.useStore.getState().go('execution', { executionId: id })
+  }
+
+  it('viewing a 7th execution evicts the oldest full record and its log buckets', () => {
+    const ids = ['e1', 'e2', 'e3', 'e4', 'e5', 'e6', 'e7']
+    for (const id of ids) view(id)
+    const m = store.useStore.getState()
+    // current (e7) + the 5 before it survive; e1 (oldest) is gone from both caches
+    expect(Object.keys(m.executionFull).sort()).toEqual(['e2', 'e3', 'e4', 'e5', 'e6', 'e7'])
+    expect(m.execLogs.e1).toBeUndefined()
+    expect(m.executionFull.e7).toBeDefined()
+    expect(m.execLogs.e7['x.0']).toHaveLength(1)
+  })
+
+  it('re-viewing an execution refreshes its MRU slot', () => {
+    for (const id of ['r1', 'r2', 'r3', 'r4', 'r5', 'r6']) view(id)
+    view('r1')  // r1 becomes most recent again
+    view('r7')  // now r2 is the oldest → evicted
+    const m = store.useStore.getState()
+    expect(m.executionFull.r1).toBeDefined()
+    expect(m.executionFull.r2).toBeUndefined()
+    expect(m.execLogs.r2).toBeUndefined()
+  })
+
+  it('the tracked test execution survives eviction while the test is live', () => {
+    store.useStore.getState().beginTest('eT') // loadExecution is mocked offline — record seeded below
+    const m0 = store.useStore.getState()
+    store.useStore.setState({
+      executionFull: { ...m0.executionFull, eT: ex('eT', 1, { test: true }) },
+      execLogs: { ...m0.execLogs, eT: { 'x.0': [line(1)] } },
+    })
+    for (let i = 1; i <= 7; i++) view(`t${i}`) // pushes eT out of the MRU window
+    const m = store.useStore.getState()
+    expect(m.executionFull.eT).toBeDefined()   // live test never evicted mid-view
+    expect(m.execLogs.eT['x.0']).toHaveLength(1)
+    expect(m.executionFull.t1).toBeUndefined() // ordinary oldest still evicted
   })
 })

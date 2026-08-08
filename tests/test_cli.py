@@ -49,6 +49,32 @@ def test_client_reads_port_and_token_from_backend_json(home):
     assert c.token == "tok"
 
 
+def test_client_req_timeout_default_and_override(home, monkeypatch):
+    """§20 HTTP timeouts: req runs at 30 s unless a call site overrides it."""
+    from autowright import cli, paths
+
+    paths.backend_json().write_text(json.dumps({"port": 5151, "token": "tok"}))
+    c = cli.Client()
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    timeouts = []
+    monkeypatch.setattr(cli._opener, "open",
+                        lambda r, timeout: timeouts.append(timeout) or _Resp())
+    c.req("GET", "/health")
+    c.req("DELETE", "/automations/x", timeout=600)
+    c.req_raw("GET", "/automations/x/export")
+    assert timeouts == [30, 600, 30]
+
+
 # ---------------------------------------------------------------- find_automation
 
 class _ListClient:
@@ -160,6 +186,44 @@ def test_follow_exec_dedupes_seqs_and_settles_terminal_attempts(monkeypatch, cap
     assert c.step_log_fetches == 1
 
 
+class _StatusScriptClient:
+    """Serves one scripted status per poll, with empty logs."""
+
+    def __init__(self, statuses):
+        self.statuses = list(statuses)
+        self.polls = 0
+
+    def req(self, method, path, body=None, timeout=30):
+        if path == "/executions/e1":
+            self.polls += 1
+            return {"status": self.statuses[self.polls - 1], "duration": "1s", "steps": []}
+        assert path == "/executions/e1/logs"
+        return {"lines": []}
+
+
+def test_follow_exec_polls_through_queued(monkeypatch, capsys):
+    """§20 follow semantics: `queued` (§6 firing queue) is not terminal — the
+    loop follows a queued firing through promotion to its real end."""
+    from autowright import cli
+
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    c = _StatusScriptClient(["queued", "queued", "executing", "succeeded"])
+    assert cli.follow_exec(c, "e1") == "succeeded"
+    assert c.polls == 4
+    assert capsys.readouterr().out == "→ succeeded in 1s\n"
+
+
+def test_follow_exec_queued_can_settle_skipped(monkeypatch, capsys):
+    """A queued firing that never promotes settles as `skipped` — terminal."""
+    from autowright import cli
+
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    c = _StatusScriptClient(["queued", "skipped"])
+    assert cli.follow_exec(c, "e1") == "skipped"
+    assert c.polls == 2
+    assert capsys.readouterr().out == "→ skipped in 1s\n"
+
+
 # ---------------------------------------------------------------- workdir (§20)
 
 FULL_AUTO = {
@@ -187,9 +251,10 @@ class _WorkdirClient:
     def __init__(self, auto=None, install_result=None):
         self.auto = auto or FULL_AUTO
         self.posted = []
+        self.timeouts = []  # (method, path, timeout) per write, parallel to posted
         self.install_result = install_result
 
-    def req(self, method, path, body=None):
+    def req(self, method, path, body=None, timeout=30):
         if method == "GET" and path == "/automations":
             return [self.auto]
         if method == "GET" and path == f"/automations/{self.auto['id']}":
@@ -200,6 +265,7 @@ class _WorkdirClient:
         if method == "GET" and path == "/secrets":
             return [{"name": "API_TOKEN", "set": True, "usedBy": []}]  # §4.8: a list
         self.posted.append((method, path, body))
+        self.timeouts.append((method, path, timeout))
         if method == "POST" and path == "/packages/install":
             return {"packages": self.install_result or []}
         return {"version": 2, "executionId": "e9", "id": "new-id", "name": "Daily Report",
@@ -339,6 +405,9 @@ def test_push_and_create_install_declared_packages(tmp_path, capsys):
     assert "warning: package ghostlib failed to install — no matching distribution" in out
     _, _, body = next(p for p in c.posted if p[1] == "/packages/install")
     assert body == {"packages": auto["packages"]}
+    # §20: pip runs behind the install call — 600 s; the save itself stays 30 s
+    assert dict((p, t) for _, p, t in c.timeouts) == {
+        f"/automations/{auto['id']}/versions": 30, "/packages/install": 600}
 
     c = _WorkdirClient(auto, install_result=result)
     cli.cmd_automation_create(c, SimpleNamespace(
@@ -579,12 +648,14 @@ class _RouteClient:
         self.gets = {k: copy.deepcopy(v) for k, v in (gets or {}).items()}
         self.reply, self.raw = reply or {}, raw
         self.calls = []
+        self.timeouts = []  # (method, path, timeout) per write, parallel to calls
 
-    def req(self, method, path, body=None):
+    def req(self, method, path, body=None, timeout=30):
         if method == "GET":
             assert path in self.gets, f"unexpected GET {path}"
             return self.gets[path]
         self.calls.append((method, path, body))
+        self.timeouts.append((method, path, timeout))
         return self.reply
 
     def req_raw(self, method, path, data=None):
@@ -703,6 +774,8 @@ def test_cmd_automation_delete_needs_yes(capsys):
 
     _run(c, "automation", "delete", "Daily Report", "--yes")
     assert c.calls == [("DELETE", f"/automations/{AUTO_ID}", None)]
+    # §20: delete waits for cancelled engine threads — long 600 s timeout
+    assert c.timeouts == [("DELETE", f"/automations/{AUTO_ID}", 600)]
     assert "deleted 'Daily Report'" in capsys.readouterr().out
 
 
@@ -787,6 +860,8 @@ def test_cmd_automation_import_url_confirms_immediately(capsys):
         ("POST", "/automations/import/url", {"url": "https://github.com/alice/watcher"}),
         ("POST", "/automations/import/confirm", {"token": "tok1"}),
     ]
+    # §20: the remote download rides the url call — 600 s; confirm stays 30 s
+    assert [t for _, _, t in c.timeouts] == [600, 30]
     out = capsys.readouterr().out
     assert "resolved to https://gh/dl/watcher.autowright" in out
     assert "imported 'Web' [cafebabe]" in out

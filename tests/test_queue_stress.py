@@ -34,7 +34,8 @@ def _discord_trig():
 def test_queue_stress_no_races(store, monkeypatch):
     from autowright import listeners as li_mod
     from autowright.engine import Engine
-    from autowright.scheduler import Scheduler, drain_queue, fire_trigger
+    from autowright.firing import drain_queue, fire_trigger
+    from autowright.scheduler import Scheduler
     from conftest import make_version
 
     monkeypatch.setattr(li_mod, "notify_busy", lambda p: None)
@@ -124,7 +125,8 @@ def test_queue_stress_no_races(store, monkeypatch):
             statuses[h["status"]] = statuses.get(h["status"], 0) + 1
             if h["status"] == "succeeded":
                 assert h["finished_at"], "succeeded without finished_at"
-                assert h["steps"], "succeeded with no steps"
+                # finished records are demoted to headers in memory; body is lazy
+                assert store.exec_full(h["id"])["steps"], "succeeded with no steps"
             if h["status"] == "skipped":
                 assert h["note"], "skipped record with no note"
             # a record that ran carries duration_ms
@@ -138,6 +140,7 @@ def test_queue_stress_no_races(store, monkeypatch):
                     if h.get("queued_at") and h["status"] in ("succeeded", "failed")]
         assert promoted, "no queued record was ever promoted — storm never hit the drain path"
         for h in promoted:
-            assert h["steps"], "promoted record executed with no steps filled in"
+            assert store.exec_full(h["id"])["steps"], \
+                "promoted record executed with no steps filled in"
             assert h["started_at"] >= h["queued_at"]
     print("status counts:", statuses, "| promoted:", len(promoted))

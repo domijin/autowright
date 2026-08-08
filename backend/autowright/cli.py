@@ -39,7 +39,9 @@ class Client:
             sys.exit("backend.json is stale or unreadable — restart the backend with "
                      "`autowright service restart` or `autowright-backend`")
 
-    def req(self, method: str, path: str, body: dict | None = None):
+    def req(self, method: str, path: str, body: dict | None = None, timeout: int = 30):
+        # §20 HTTP timeouts: 30 s default; the three legitimately long calls
+        # (package install, URL import, automation delete) override to 600 s.
         r = urllib.request.Request(
             self.base + path,
             data=json.dumps(body).encode() if body is not None else None,
@@ -47,7 +49,7 @@ class Client:
             method=method,
         )
         try:
-            with _opener.open(r, timeout=30) as resp:
+            with _opener.open(r, timeout=timeout) as resp:
                 return json.loads(resp.read().decode() or "{}")
         except urllib.error.HTTPError as e:
             detail = e.read().decode()[:300]
@@ -137,7 +139,9 @@ def follow_exec(c: Client, execution_id: str) -> str:
             seen[key] = last
             if terminal:
                 settled.add(key)
-        if e["status"] != "executing":
+        # §20 follow semantics: `queued` (§6 firing queue) is not terminal —
+        # keep polling through promotion to executing and on to a real end.
+        if e["status"] not in ("executing", "queued"):
             print(f"→ {e['status']} in {e['duration']}")
             return e["status"]
         time.sleep(1)
@@ -302,7 +306,7 @@ def ensure_packages(c: Client, pkgs: list[dict]) -> None:
     pre-execution ensure retries it before anything runs."""
     if not pkgs:
         return
-    r = c.req("POST", "/packages/install", {"packages": pkgs})
+    r = c.req("POST", "/packages/install", {"packages": pkgs}, timeout=600)
     for p in r.get("packages", []):
         if p.get("status") == "installed":
             ver = f" {p['version']}" if p.get("version") else ""
@@ -496,7 +500,7 @@ def cmd_automation_delete(c: Client, args) -> None:
     if not args.yes:
         sys.exit(f"deleting {a['name']!r} removes every version and its execution "
                  "history — add --yes to confirm")
-    c.req("DELETE", f"/automations/{a['id']}")
+    c.req("DELETE", f"/automations/{a['id']}", timeout=600)
     print(f"deleted {a['name']!r}")
 
 
@@ -536,7 +540,7 @@ def cmd_automation_import(c: Client, args) -> None:
     if args.path.startswith(("http://", "https://")):
         # §5.2: fetch + preview on the backend, confirm immediately — the typed
         # command is the user's explicit action (http:// gets the backend's 422).
-        pr = c.req("POST", "/automations/import/url", {"url": args.path})
+        pr = c.req("POST", "/automations/import/url", {"url": args.path}, timeout=600)
         resolved = pr.get("preview", {}).get("resolvedUrl")
         if resolved and resolved != args.path.strip():
             print(f"resolved to {resolved}")

@@ -151,7 +151,7 @@ export interface Automation {
   nextAt: number | null      // epoch ms of the next enabled occurrence
   instructions: string
   notes: string              // §4.1 — the current version's notes doc ("" when empty)
-  lastStatus: Status
+  lastStatus: Exclude<Status, 'queued' | 'skipped'>  // §4.1: those two can never be an automation's latest
   live: string[]             // §4.1 execution ids in progress, oldest first — maxParallel may allow several
   maxParallel: number        // §6 how many executions may run at once (≥ 1)
   maxQueued: number          // §6 how many message firings may wait for a slot (≥ 0)
@@ -376,3 +376,31 @@ export interface StateSnapshot {
   // §4.4 pending create-mode slot summary — backs the §9.1 Resume draft button
   pendingDraft: { name: string; updatedAt: string | null } | null
 }
+
+// §19 WS events — one envelope per publish, discriminated on `event`. Entity
+// payloads use the REST shapes above; a field the union doesn't list doesn't
+// exist on the wire.
+export type WsEvent =
+  | { event: 'ws.open' }  // client-synthesized on (re)connect — not a backend event
+  | { event: 'execution.started' | 'execution.queued' | 'execution.finished'
+      executionId: string; automationId: string | null
+      execution: Execution
+      // the owning automation's list row (null on §4.5 test executions and
+      // when the automation is already gone) — clients patch it in place
+      automation: Automation | null }
+  | { event: 'execution.step'
+      executionId: string; automationId: string | null; index: number
+      step: NonNullable<Execution['steps']>[number] }
+  | { event: 'execution.log'
+      executionId: string; automationId: string | null
+      stepIndex: number | null; attempt: number | null; line: LogLine }
+  | { event: 'harness.install'
+      id: string; line?: string; percent?: number; done?: boolean; ok?: boolean; error?: string }
+  | { event: 'ollama.pull'; model: string; line: string; done?: boolean; ok?: boolean }
+  // §19: automationId + automation (null = deleted) → patch one row in place;
+  // id without entity, or a bare event, → many may have changed, re-GET /state.
+  | { event: 'automation.changed'; automationId?: string; automation?: Automation | null }
+  | { event: 'agents.changed' }
+  | { event: 'secrets.changed' }
+  | { event: 'settings.changed' }
+  | { event: 'draft.changed' }

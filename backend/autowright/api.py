@@ -125,6 +125,15 @@ def _auto_json_locked(a: dict) -> dict:
         return store.auto_json(a)
 
 
+def _publish_auto_changed(a: dict) -> None:
+    """§19: a single-automation change event carries the changed row (list
+    shape) so clients patch in place instead of re-fetching /state. Bare
+    `automation.changed` stays the many-changed resync signal."""
+    with store.lock:
+        payload = store.auto_json(a, full=False)
+    hub.publish("automation.changed", automationId=a["id"], automation=payload)
+
+
 def _agent_or_404(agent_id: str) -> dict:
     for a in store.agents:
         if a["id"] == agent_id:
@@ -320,7 +329,7 @@ def patch_auto(automation_id: str, body: models.AutomationPatch) -> dict:
         # cancelled — it could never be re-admitted, and promoting it would
         # execute a firing the user just switched off.
         cancel_unmatched_queue(store, engine, automation_id)
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     # A raised maxParallel may have just opened a slot for a waiting firing (§6).
     drain_queue(store, engine, automation_id)
     return _auto_json_locked(a)
@@ -330,13 +339,13 @@ def patch_auto(automation_id: str, body: models.AutomationPatch) -> dict:
 def clear_queue(automation_id: str) -> dict:
     """§19: cancel every §6 firing-queue entry waiting on this automation.
     Running executions are untouched — an empty queue answers 0, not 404."""
-    _auto_or_404(automation_id)
+    a = _auto_or_404(automation_id)
     n = 0
     for h in store.queued_execs(automation_id):
         if engine.cancel(h["id"]):
             n += 1
     if n:
-        hub.publish("automation.changed", automationId=automation_id)
+        _publish_auto_changed(a)
     return {"cancelled": n}
 
 
@@ -396,7 +405,8 @@ def delete_auto(automation_id: str) -> dict:
         logging.getLogger(__name__).warning(
             "delete %s: an execution thread outlived the kill grace — removing anyway", automation_id)
     store.delete_automation(a)
-    hub.publish("automation.changed")
+    # §19: the deleted row travels as automation=None — clients drop it in place.
+    hub.publish("automation.changed", automationId=automation_id, automation=None)
     return {"ok": True}
 
 
@@ -433,7 +443,7 @@ def create_auto(body: models.AutomationCreate) -> dict:
     # never resurrected.
     store.delete_draft(None)
     hub.publish("draft.changed")
-    hub.publish("automation.changed", automationId=a["id"])
+    _publish_auto_changed(a)
     return _auto_json_locked(a)
 
 
@@ -469,7 +479,7 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         # §6: same rule as the PATCH — the saved version's trigger list may have
         # dropped or disabled the trigger some waiting entry came from.
         cancel_unmatched_queue(store, engine, automation_id)
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     return {"version": n, "automation": _auto_json_locked(a)}
 
 
@@ -497,7 +507,7 @@ def _publish_draft_changed(a: dict | None) -> None:
     if a is None:
         hub.publish("draft.changed")  # §19 GET /state pendingDraft consumers
     else:
-        hub.publish("automation.changed", automationId=a["id"])
+        _publish_auto_changed(a)
 
 
 @app.get("/draft/{owner}", dependencies=[Depends(auth)])
@@ -586,7 +596,7 @@ def _land_import(data: bytes) -> dict:
         hub.publish("secrets.changed")
     if summary["agentsCreated"]:
         hub.publish("agents.changed")
-    hub.publish("automation.changed", automationId=a["id"])
+    _publish_auto_changed(a)
     return {"automation": _auto_json_locked(a), "summary": summary}
 
 
@@ -653,7 +663,7 @@ def restore(automation_id: str, body: models.VersionRestore) -> dict:
     if v not in a["versions"]:
         raise HTTPException(404, f"v{v} not found")
     n = store.restore_version(a, v)
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     return {"version": n, "automation": _auto_json_locked(a)}
 
 
@@ -816,7 +826,7 @@ def clear_memory(automation_id: str) -> dict:
             raise HTTPException(409, "an execution is in progress")
         store.snapshot_memory(a, "pre-clear")  # §6.3 — silently skipped when memory is empty or the toggle is off
         store.clear_memory(a)
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     return {"ok": True}
 
 
@@ -833,7 +843,7 @@ def create_snapshot(automation_id: str, body: models.SnapshotCreate | None = Non
                                      name=((body.name if body else None) or "").strip() or None)
     if meta is None:
         raise HTTPException(422, "memory is empty")
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     return {"snapshot": store.snapshot_json(meta)}
 
 
@@ -843,7 +853,7 @@ def rename_snapshot(automation_id: str, sid: str, body: models.SnapshotRename | 
     meta = store.rename_snapshot(a, sid, body.name if body else None)
     if meta is None:
         raise HTTPException(404, "snapshot not found")
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     return {"snapshot": store.snapshot_json(meta)}
 
 
@@ -856,7 +866,7 @@ def restore_snapshot(automation_id: str, sid: str) -> dict:
             raise HTTPException(409, "an execution is in progress")
         if store.restore_snapshot(a, sid) is None:
             raise HTTPException(404, "snapshot not found")
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     return {"ok": True}
 
 
@@ -865,7 +875,7 @@ def delete_snapshot(automation_id: str, sid: str) -> dict:
     a = _auto_or_404(automation_id)
     if not store.delete_snapshot(a, sid):
         raise HTTPException(404, "snapshot not found")
-    hub.publish("automation.changed", automationId=automation_id)
+    _publish_auto_changed(a)
     return {"ok": True}
 
 

@@ -1,7 +1,7 @@
 // One central model drives everything (§4 top-level, §9 navigation).
 import { create } from 'zustand'
 import { api, connectInfo, openWs } from './api'
-import type { Agent, Automation, Execution, LogLine, SecretMeta, Settings, StateSnapshot } from './types'
+import type { Agent, Automation, Execution, LogLine, SecretMeta, Settings, StateSnapshot, WsEvent } from './types'
 
 type Surface = 'onboard' | 'app' | 'create' | 'menubar'
 export type Page =
@@ -66,7 +66,7 @@ interface Model {
   runAgentCheck(id: string, pending?: AgentCheck): Promise<'ready' | 'needs'>
   disconnect(): void
   refresh(): Promise<void>
-  applyEvent(msg: Record<string, unknown>): void
+  applyEvent(msg: WsEvent): void
   go(page: Page, ids?: { automationId?: string | null; executionId?: string | null; agentEditId?: string | null }): void
   setSurface(s: Surface, from?: CreateFrom): void
   showToast(msg: string, ms?: number): void
@@ -164,6 +164,12 @@ export const useStore = create<Model>((set, get) => ({
     const ok = await connectInfo()
     if (!ok) { set({ connected: false }); bootTimer = setTimeout(() => get().boot(), 1200); return }
     try {
+      // Boot's snapshot rides the same ordering guard as refresh() — a WS
+      // reconnect during boot must not let the older of the two /state
+      // responses land last and roll state backwards. A stale boot response
+      // still does boot's non-data duties (surface, socket); only the
+      // snapshot fields yield to the newer refresh.
+      const n = ++refreshSeq
       const s: StateSnapshot = await api.state()
       // Existing automations do NOT bypass onboarding: step 1 always shows; with
       // prior data its Continue goes straight to the app (§10).
@@ -171,11 +177,14 @@ export const useStore = create<Model>((set, get) => ({
       const hash = location.hash
       const deepAuto = onboarded ? autoIdFromHash(hash) : null
       set({
-        connected: true, version: s.version, automations: s.automations, executions: s.executions,
-        agents: s.agents, secrets: s.secrets, settings: s.settings,
-        pendingDraft: s.pendingDraft,
+        connected: true,
         surface: hash.includes('menubar') ? 'menubar' : onboarded ? 'app' : 'onboard',
         ...(deepAuto ? { page: 'automation' as const, automationId: deepAuto } : {}),
+        ...(n === refreshSeq ? {
+          version: s.version, automations: s.automations, executions: s.executions,
+          agents: s.agents, secrets: s.secrets, settings: s.settings,
+          pendingDraft: s.pendingDraft,
+        } : {}),
       })
       if (onboarded) passedOnboard = true
       // Exactly one live socket: a re-entrant boot (StrictMode re-mount,
@@ -209,7 +218,7 @@ export const useStore = create<Model>((set, get) => ({
   },
 
   applyEvent(msg) {
-    const ev = msg.event as string
+    const ev = msg.event
     const m = get()
     if (ev === 'ws.open') {
       void m.refresh()
@@ -234,45 +243,52 @@ export const useStore = create<Model>((set, get) => ({
       }
       return
     }
+    // §19: single-row automation update from an event payload — null removes
+    // the row (delete), an unknown id falls back to a full refresh (only the
+    // server knows list ordering for a brand-new row).
+    const patchAutomation = (id: string, row: Automation | null) => {
+      const cur = get().automations
+      if (row === null) set({ automations: cur.filter((a) => a.id !== id) })
+      else if (cur.some((a) => a.id === id)) set({ automations: cur.map((a) => (a.id === id ? row : a)) })
+      else { void m.refresh(); return }
+      updateTrayAlert(get().automations)
+    }
     // §6 exec.queued (a firing admitted to the queue) carries the same header
     // shape as exec.started — the record lands in the list the same way, which
     // is what the §7 Waiting section and the §9.2 "N waiting" line count.
     if (ev === 'execution.started' || ev === 'execution.finished' || ev === 'execution.queued') {
-      const ej = msg.execution_json as Execution | undefined
-      if (ej) {
-        const rest = m.executions.filter((e) => e.id !== ej.id)
-        set({ executions: [ej, ...rest].sort((a, b) => b.startedMs - a.startedMs) })
-        const full = m.executionFull[ej.id]
-        // ej is a header (no steps/result) — merging keeps the full record's body
-        if (full) set({ executionFull: { ...m.executionFull, [ej.id]: { ...full, ...ej } } })
-        // §7 retry re-publish (and §6 promotion, same id): re-fetch steps/attempts.
-        if (ev === 'execution.started' && full) void m.loadExecution(ej.id)
-        if (ev === 'execution.finished') {
-          void m.refresh()
-          // Refresh the body only when someone has opened this execution —
-          // unviewed executions would otherwise accumulate a full record each.
-          if (full) void m.loadExecution(ej.id)
-          // §7: the finished execution gets a summary toast (prototype pattern:
-          // "<name> finished — <chip>."). Cancelled executions are user-initiated —
-          // no toast; §11 tests report in the Test card instead.
-          if (!ej.test && (ej.status === 'succeeded' || ej.status === 'failed')) {
-            const aj = msg.automation_json as Automation | null | undefined
-            const name = aj?.name ?? m.automations.find((a) => a.id === ej.automationId)?.name ?? 'Automation'
-            m.showToast(ej.status === 'failed'
-              ? `${name} failed — needs attention.`
-              : aj?.resultChip ? `${name} finished — ${aj.resultChip}.` : `${name} finished.`)
-          }
-        } else {
-          void m.refresh()
+      const ej = msg.execution
+      const rest = m.executions.filter((e) => e.id !== ej.id)
+      set({ executions: [ej, ...rest].sort((a, b) => b.startedMs - a.startedMs) })
+      // §19: the event carries the owning automation's row (live/lastStatus/
+      // chip) — patch it in place; no /state refetch on the execution path.
+      // null means a test execution or a just-deleted automation: no row change.
+      if (msg.automation && ej.automationId) patchAutomation(ej.automationId, msg.automation)
+      const full = m.executionFull[ej.id]
+      // ej is a header (no steps/result) — merging keeps the full record's body
+      if (full) set({ executionFull: { ...m.executionFull, [ej.id]: { ...full, ...ej } } })
+      // §7 retry re-publish (and §6 promotion, same id): re-fetch steps/attempts.
+      if (ev === 'execution.started' && full) void m.loadExecution(ej.id)
+      if (msg.event === 'execution.finished') {
+        // Refresh the body only when someone has opened this execution —
+        // unviewed executions would otherwise accumulate a full record each.
+        if (full) void m.loadExecution(ej.id)
+        // §7: the finished execution gets a summary toast (prototype pattern:
+        // "<name> finished — <chip>."). Cancelled executions are user-initiated —
+        // no toast; §11 tests report in the Test card instead.
+        if (!ej.test && (ej.status === 'succeeded' || ej.status === 'failed')) {
+          const aj = msg.automation
+          const name = aj?.name ?? m.automations.find((a) => a.id === ej.automationId)?.name ?? 'Automation'
+          m.showToast(ej.status === 'failed'
+            ? `${name} failed — needs attention.`
+            : aj?.resultChip ? `${name} finished — ${aj.resultChip}.` : `${name} finished.`)
         }
       }
       return
     }
-    if (ev === 'execution.step') {
+    if (msg.event === 'execution.step') {
       // Steps live only on the full record (§19: list headers carry none).
-      const executionId = msg.executionId as string
-      const idx = msg.index as number
-      const step = msg.step as NonNullable<Execution['steps']>[number]
+      const { executionId, index: idx, step } = msg
       const full = m.executionFull[executionId]
       if (full?.steps) {
         set({
@@ -284,13 +300,12 @@ export const useStore = create<Model>((set, get) => ({
       }
       return
     }
-    if (ev === 'execution.log') {
-      const executionId = msg.executionId as string
-      const key = logKey(msg.stepIndex as number | null, msg.attempt as number | null)
+    if (msg.event === 'execution.log') {
+      const { executionId, line } = msg
+      const key = logKey(msg.stepIndex, msg.attempt)
       const buckets = m.execLogs[executionId]
       const bucket = buckets?.[key]
       if (bucket) {
-        const line = msg.line as LogLine
         // sequence dedupe: a line already covered by a fetched snapshot is dropped
         const last = bucket.length ? bucket[bucket.length - 1].sequence : 0
         if (line.sequence > last) {
@@ -299,29 +314,33 @@ export const useStore = create<Model>((set, get) => ({
       }
       return
     }
-    if (ev === 'harness.install') {
-      const id = msg.id as string
+    if (msg.event === 'harness.install') {
       set({
         harnessInstall: {
           ...get().harnessInstall,
-          [id]: {
-            line: msg.line as string | undefined, percent: msg.percent as number | undefined,
-            done: !!msg.done, ok: msg.ok as boolean | undefined, error: msg.error as string | undefined,
+          [msg.id]: {
+            line: msg.line, percent: msg.percent,
+            done: !!msg.done, ok: msg.ok, error: msg.error,
           },
         },
       })
       return
     }
-    if (ev === 'ollama.pull') {
-      set({
-        ollamaPull: {
-          model: msg.model as string, line: msg.line as string,
-          done: !!msg.done, ok: msg.ok as boolean | undefined,
-        },
-      })
+    if (msg.event === 'ollama.pull') {
+      set({ ollamaPull: { model: msg.model, line: msg.line, done: !!msg.done, ok: msg.ok } })
       return
     }
-    if (ev === 'automation.changed' || ev === 'agents.changed' || ev === 'secrets.changed' || ev === 'settings.changed' || ev === 'draft.changed') {
+    if (msg.event === 'automation.changed') {
+      // §19: entity present → patch the one row in place (null = deleted);
+      // id-only or bare → many may have changed, fall back to /state.
+      if (msg.automationId !== undefined && msg.automation !== undefined) {
+        patchAutomation(msg.automationId, msg.automation)
+      } else {
+        void m.refresh()
+      }
+      return
+    }
+    if (ev === 'agents.changed' || ev === 'secrets.changed' || ev === 'settings.changed' || ev === 'draft.changed') {
       void m.refresh()
     }
   },

@@ -103,9 +103,9 @@ describe('applyEvent', () => {
   it('exec.started inserts and re-sorts by startedMs description, replacing an existing id', () => {
     store.useStore.setState({ executions: [ex('e1', 100), ex('e2', 50)] })
     const m = store.useStore.getState()
-    m.applyEvent({ event: 'execution.started', execution_json: ex('e3', 200, { status: 'executing' }) })
+    m.applyEvent({ event: 'execution.started', execution: ex('e3', 200, { status: 'executing' }) })
     expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['e3', 'e1', 'e2'])
-    store.useStore.getState().applyEvent({ event: 'execution.started', execution_json: ex('e2', 300) })
+    store.useStore.getState().applyEvent({ event: 'execution.started', execution: ex('e2', 300) })
     expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['e2', 'e3', 'e1'])
   })
 
@@ -118,7 +118,7 @@ describe('applyEvent', () => {
     store.useStore.setState({ executions: [ex('e1', 100, { status: 'executing' })], executionFull: { e1: full } })
     store.useStore.getState().applyEvent({
       event: 'execution.finished',
-      execution_json: ex('e1', 100, { status: 'failed', test: true }), // header: no steps/result
+      execution: ex('e1', 100, { status: 'failed', test: true }), // header: no steps/result
     })
     const got = store.useStore.getState().executionFull.e1
     expect(got.status).toBe('failed')
@@ -144,8 +144,8 @@ describe('applyEvent', () => {
     vi.useFakeTimers()
     store.useStore.getState().applyEvent({
       event: 'execution.finished',
-      execution_json: ex('e5', 1, { status: 'succeeded' }),
-      automation_json: { name: 'My Automation', resultChip: '3 changes' },
+      execution: ex('e5', 1, { status: 'succeeded' }),
+      automation: { name: 'My Automation', resultChip: '3 changes' },
     })
     expect(store.useStore.getState().toast).toBe('My Automation finished — 3 changes.')
     vi.runAllTimers()
@@ -153,8 +153,8 @@ describe('applyEvent', () => {
 
     store.useStore.getState().applyEvent({
       event: 'execution.finished',
-      execution_json: ex('e6', 2, { status: 'failed' }),
-      automation_json: { name: 'My Automation', resultChip: null },
+      execution: ex('e6', 2, { status: 'failed' }),
+      automation: { name: 'My Automation', resultChip: null },
     })
     expect(store.useStore.getState().toast).toBe('My Automation failed — needs attention.')
     vi.runAllTimers()
@@ -207,8 +207,8 @@ describe('applyEvent', () => {
     store.useStore.setState({ fixExec: 'eF' })
     store.useStore.getState().applyEvent({
       event: 'execution.finished',
-      execution_json: ex('eF', 1, { status: 'failed' }),
-      automation_json: { name: 'A', resultChip: null },
+      execution: ex('eF', 1, { status: 'failed' }),
+      automation: { name: 'A', resultChip: null },
     })
     expect(store.useStore.getState().fixExec).toBe('eF')
   })
@@ -217,16 +217,77 @@ describe('applyEvent', () => {
     vi.useFakeTimers()
     store.useStore.getState().applyEvent({
       event: 'execution.finished',
-      execution_json: ex('e7', 3, { status: 'succeeded', test: true }),
-      automation_json: { name: 'My Automation', resultChip: null },
+      execution: ex('e7', 3, { status: 'succeeded', test: true }),
+      automation: { name: 'My Automation', resultChip: null },
     })
     expect(store.useStore.getState().toast).toBeNull()
     store.useStore.getState().applyEvent({
       event: 'execution.finished',
-      execution_json: ex('e8', 4, { status: 'cancelled' }),
-      automation_json: { name: 'My Automation', resultChip: null },
+      execution: ex('e8', 4, { status: 'cancelled' }),
+      automation: { name: 'My Automation', resultChip: null },
     })
     expect(store.useStore.getState().toast).toBeNull()
+  })
+})
+
+describe('applyEvent — automation.changed row patching (§19)', () => {
+  // Minimal list rows — the store only routes them, never reads deep fields.
+  const auto = (id: string, over: Record<string, unknown> = {}) =>
+    ({ id, name: `Auto ${id}`, lastStatus: 'none', triggers: [], live: [], ...over }) as never
+
+  it('entity payload patches the one row in place — no /state refetch', () => {
+    const state = vi.mocked(apiMod.api.state)
+    state.mockClear()
+    store.useStore.setState({ automations: [auto('a1'), auto('a2')] })
+    store.useStore.getState().applyEvent({
+      event: 'automation.changed', automationId: 'a2', automation: auto('a2', { name: 'Renamed' }),
+    })
+    const got = store.useStore.getState().automations
+    expect(got.map((a) => a.id)).toEqual(['a1', 'a2'])   // order kept
+    expect(got[1].name).toBe('Renamed')
+    expect(state).not.toHaveBeenCalled()
+  })
+
+  it('automation: null removes the deleted row', () => {
+    store.useStore.setState({ automations: [auto('a1'), auto('a2')] })
+    store.useStore.getState().applyEvent({ event: 'automation.changed', automationId: 'a1', automation: null })
+    expect(store.useStore.getState().automations.map((a) => a.id)).toEqual(['a2'])
+  })
+
+  it('bare event and unknown-id entity both fall back to a full refresh', () => {
+    const state = vi.mocked(apiMod.api.state)
+    state.mockClear()
+    store.useStore.setState({ automations: [auto('a1')] })
+    store.useStore.getState().applyEvent({ event: 'automation.changed' })
+    expect(state).toHaveBeenCalledTimes(1)
+    // a row the client has never seen: only the server knows list ordering
+    store.useStore.getState().applyEvent({
+      event: 'automation.changed', automationId: 'aNew', automation: auto('aNew'),
+    })
+    expect(state).toHaveBeenCalledTimes(2)
+    expect(store.useStore.getState().automations.map((a) => a.id)).toEqual(['a1'])
+  })
+
+  it('execution events patch the owning automation row and never refetch', () => {
+    const state = vi.mocked(apiMod.api.state)
+    state.mockClear()
+    store.useStore.setState({ automations: [auto('a1')] })
+    store.useStore.getState().applyEvent({
+      event: 'execution.started',
+      executionId: 'e1', automationId: 'a1',
+      execution: ex('e1', 100, { status: 'executing' }),
+      automation: auto('a1', { lastStatus: 'executing', live: ['e1'] }),
+    })
+    expect(store.useStore.getState().automations[0].lastStatus).toBe('executing')
+    // §4.5 test executions carry automation: null — row untouched, no refetch
+    store.useStore.getState().applyEvent({
+      event: 'execution.finished',
+      executionId: 'e2', automationId: 'a1',
+      execution: ex('e2', 200, { status: 'succeeded', test: true }),
+      automation: null,
+    })
+    expect(store.useStore.getState().automations[0].lastStatus).toBe('executing')
+    expect(state).not.toHaveBeenCalled()
   })
 })
 

@@ -419,7 +419,7 @@ def test_test_param_values_override(client, monkeypatch):
     r = client.post("/tests", json={"draft": _echo_draft(), "paramValues": {"greeting": "bonjour"}})
     assert r.status_code == 200
     eid = r.json()["executionId"]
-    assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
+    assert _until_finished(events, eid)["execution"]["status"] == "succeeded"
     full = client.get(f"/executions/{eid}").json()
     assert full["test"] is True and full["ver"] == "Test" and full["trigger"] == "Test"
     assert full["result"]["chip"] == "bonjour"
@@ -443,7 +443,7 @@ def test_test_trigger_mock_imessage_payload(client, monkeypatch):
     })
     assert r.status_code == 200
     eid = r.json()["executionId"]
-    assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
+    assert _until_finished(events, eid)["execution"]["status"] == "succeeded"
     logs = [e["line"]["text"] for e in events if e["event"] == "execution.log"]
     assert any("mock=imessage:+15551234567:new chapter?" in t for t in logs)
     full = client.get(f"/executions/{eid}").json()
@@ -507,7 +507,7 @@ def test_test_resolves_default_after_editor_roundtrip(client, monkeypatch):
                                     "automationId": auto["id"]})
     assert r.status_code == 200
     eid = r.json()["executionId"]
-    assert _until_finished(events, eid)["execution_json"]["status"] == "succeeded"
+    assert _until_finished(events, eid)["execution"]["status"] == "succeeded"
     logs = [e["line"]["text"] for e in events if e["event"] == "execution.log"]
     assert any("greeting=hello" in t for t in logs)
 
@@ -533,7 +533,7 @@ def test_test_failure_never_analyzes_by_itself(client, monkeypatch):
     r = client.post("/tests", json={"draft": d})
     assert r.status_code == 200
     eid = r.json()["executionId"]
-    assert _until_finished(events, eid)["execution_json"]["status"] == "failed"
+    assert _until_finished(events, eid)["execution"]["status"] == "failed"
     assert calls == []  # nothing analyzed by itself
 
 
@@ -569,7 +569,7 @@ def test_test_cancel(client, monkeypatch):
             break
         time.sleep(0.05)
     assert client.post(f"/executions/{eid}/cancel").json()["ok"]
-    assert _until_finished(events, eid)["execution_json"]["status"] == "cancelled"
+    assert _until_finished(events, eid)["execution"]["status"] == "cancelled"
 
 
 def test_test_409_while_live(client, monkeypatch):
@@ -871,7 +871,7 @@ def test_runs_context_covers_real_executions_and_run_id(client, monkeypatch):
                              {"kind": "p", "text": "Body."}])
     a = store.create_automation(ver, "Real fail", "mock")
     eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
-    assert _until_finished(events, eid)["execution_json"]["status"] == "failed"
+    assert _until_finished(events, eid)["execution"]["status"] == "failed"
     runs = testexec.runs_context(a, ver["steps"], eid)
     assert runs is not None
     assert "v1 run · failed" in runs
@@ -1836,7 +1836,7 @@ def test_draft_endpoints_409_while_draft_execution_live(client):
         a["_live"].discard(h2["id"])
 
 
-# ---------- §4.5 execution_json full record: workspace + redact list ----------
+# ---------- §4.5 execution full record: workspace + redact list ----------
 
 def test_exec_full_workspace_path_and_redact_list(client):
     from autowright.storage import store
@@ -1904,7 +1904,7 @@ def test_chat_assembles_recent_runs_and_run_id_forces_detail(client, monkeypatch
                           "raise KeyError('old boom')\n"}]
     a = store.create_automation(make_version(steps=old_steps), "Chat runs", "mock")
     old_eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
-    assert _until_finished(events, old_eid)["execution_json"]["status"] == "failed"
+    assert _until_finished(events, old_eid)["execution"]["status"] == "failed"
 
     new_steps = [{"file": "01-boom.py", "name": "Boom", "description": "",
                   "code": "from autowright import log\nlog('NEW-TAIL-MARK')\n"
@@ -1913,7 +1913,7 @@ def test_chat_assembles_recent_runs_and_run_id_forces_detail(client, monkeypatch
                        json={"draft": {**make_version(), "steps": new_steps}}).status_code == 200
     events.clear()
     new_eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
-    assert _until_finished(events, new_eid)["execution_json"]["status"] == "failed"
+    assert _until_finished(events, new_eid)["execution"]["status"] == "failed"
 
     # without runId: the newest run alone carries its log tail
     r = client.post("/drafts", json={"mode": "chat", "automationId": a["id"], "agentId": "mock",

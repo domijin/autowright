@@ -1,5 +1,5 @@
 // Backend client (§19). Discovers port+token via preload (backend.json).
-import type { DraftJob, StateSnapshot } from './types'
+import type { DraftJob, StateSnapshot, WsEvent } from './types'
 
 declare global {
   interface Window {
@@ -199,7 +199,7 @@ export const api = {
   },
 }
 
-export function openWs(onEvent: (msg: Record<string, unknown>) => void): () => void {
+export function openWs(onEvent: (msg: WsEvent) => void): () => void {
   let sock: WebSocket | null = null
   let closed = false
   const connect = () => {

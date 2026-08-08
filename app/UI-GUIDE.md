@@ -31,10 +31,12 @@ oklch/rgba values where no token fits.
     record (`executionFull[executionId]`, kept fresh by the `execution.*` events). There is no
     `test.issue` WS event and no analysis state on `test`.
 - `api` from `src/api.ts` — typed §19 client (`api.executeNow`, `api.patchAutomation`,
-  `api.putSecret`, …). All mutations trigger WS `*.changed` events which refresh the store —
-  after calling a mutation you usually only `showToast(...)`.
+  `api.putSecret`, …). All mutations trigger WS `*.changed` events which update the store —
+  after calling a mutation you usually only `showToast(...)`. Single-automation events carry
+  the changed row and patch it in place; only bare/many-changed events re-fetch `/state`.
 - Types in `src/types.ts` (`Automation`, `Execution`, `ExecutionStep`, `ParamDef`, `SpecBlock`,
-  `ExecutionResult`, …).
+  `ExecutionResult`, …). WS envelopes are the `WsEvent` discriminated union — extend it when
+  the backend adds an event; `applyEvent` narrows on `event`, no casts.
 
 ## Shared primitives (`src/ui.tsx`) — use these, don't reinvent
 

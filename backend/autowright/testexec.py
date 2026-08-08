@@ -100,8 +100,9 @@ def start(engine: Engine, draft: dict, auto: dict | None,
         state = {"proc": None, "cancel": False}
         with engine._lock:
             engine._live[h["id"]] = state
+        # §4.5: test executions never change display state — no automation row.
         hub.publish("execution.started", executionId=h["id"], automationId=container_id,
-                    execution_json=store.exec_json(h))
+                    execution=store.exec_json(h), automation=None)
         t = threading.Thread(target=_run, args=(engine, shadow, ver, h, state, dbase, scratch),
                              daemon=True)
         t.start()

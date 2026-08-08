@@ -246,8 +246,8 @@ def test_admission_publishes_exec_queued(store, monkeypatch):
     assert [ev for ev, _ in events] == ["execution.queued"]
     kw = events[0][1]
     assert kw["executionId"] == store.queued_execs(a["id"])[0]["id"]
-    assert kw["execution_json"]["status"] == "queued"
-    assert kw["execution_json"]["queuedMs"] > 0
+    assert kw["execution"]["status"] == "queued"
+    assert kw["execution"]["queuedMs"] > 0
 
 
 def test_queue_admits_every_firing_and_caps_at_max_queued(store, monkeypatch):

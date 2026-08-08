@@ -91,7 +91,7 @@ class Scheduler:
                         # §4.3: a spent one-shot never lingers — consumed even
                         # when its moment passed while the trigger was off.
                         self.store.consume_trigger(a, t["id"])
-                        hub.publish("automation.changed", automationId=a["id"])
+                        self._publish_changed(a)
                     continue
                 occ = triggerlib.trigger_next(t, after=base)
                 if occ and occ <= now:
@@ -102,7 +102,7 @@ class Scheduler:
                     # §4.3: the one-shot's moment passed before the baseline
                     # (backend down when it passed) — consumed, never fired.
                     self.store.consume_trigger(a, t["id"])
-                    hub.publish("automation.changed", automationId=a["id"])
+                    self._publish_changed(a)
             if due:
                 # §6: same-moment (and same-wake) occurrences coalesce into one execution.
                 due.sort(key=lambda p: p[0])
@@ -113,7 +113,7 @@ class Scheduler:
                         self.store.consume_trigger(a, t["id"])
                         consumed = True
                 if consumed:
-                    hub.publish("automation.changed", automationId=a["id"])
+                    self._publish_changed(a)
             # §6: drain here as well as on every execution finish — a raised
             # maxParallel, or a finish whose drain lost a race, is picked up
             # within a tick rather than waiting for the next firing.
@@ -132,3 +132,10 @@ class Scheduler:
         # queued — only message firings queue (a due one-shot is still consumed by
         # the caller).
         fire_trigger(self.store, self.engine, a, t)
+
+    def _publish_changed(self, a: dict) -> None:
+        # §19: single-automation change events carry the changed row so clients
+        # patch in place instead of re-fetching /state.
+        with self.store.lock:
+            payload = self.store.auto_json(a, full=False)
+        hub.publish("automation.changed", automationId=a["id"], automation=payload)

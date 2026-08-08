@@ -360,7 +360,14 @@ remain plain dicts (§2).
   `secrets.changed`, `settings.changed`, `draft.changed` (the §4.4 pending slot was kept
   or discarded — clients re-`GET /state`; §11 test executions stream over the
   ordinary `execution.*` events),
-  `ollama.pull` (model-pull progress). Clients re-`GET /state` on
+  `ollama.pull` (model-pull progress). Entity payloads ride the events under camelCase
+  keys matching the REST shapes: `execution.started`/`queued`/`finished` carry `execution`
+  (the record header, §19 executions-list shape; `finished` also carries `automation`, the
+  list-shape automation, for the toast). `automation.changed` carries `automationId` plus
+  `automation` — the changed automation in list shape, or `null` when it was deleted —
+  whenever exactly one automation changed; clients patch that one row in place. A bare
+  `automation.changed` (no `automationId`) means "many may have changed" (data-path switch,
+  startup repair): clients fall back to re-`GET /state`. Clients also re-`GET /state` on
   reconnect. The handler streams from a hub queue while concurrently watching the socket for
   the client's disconnect, so a dropped client ends the handler immediately — an idle open
   socket never leaves uvicorn's graceful shutdown waiting.

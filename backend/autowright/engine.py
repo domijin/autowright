@@ -480,8 +480,13 @@ class Engine:
         state["thread"] = t
         with self._lock:
             self._live[h["id"]] = state
-        hub.publish("execution.started", executionId=h["id"], automationId=auto["id"],
-                    execution_json=self.store.exec_json(h))
+        with self.store.lock:
+            # §19: the started event carries both rows so clients patch in
+            # place (list entry + the automation's live/lastStatus chip)
+            # instead of re-fetching /state.
+            hub.publish("execution.started", executionId=h["id"], automationId=auto["id"],
+                        execution=self.store.exec_json(h),
+                        automation=self.store.auto_json(auto, full=False))
         t.start()
         return h
 
@@ -950,8 +955,8 @@ class Engine:
                 if a and h["status"] != "executing":
                     a["_live"].discard(h["id"])
                 hub.publish("execution.finished", executionId=h["id"], automationId=h["automation_id"],
-                            execution_json=self.store.exec_json(h),
-                            automation_json=self.store.auto_json(a, full=False) if a else None)
+                            execution=self.store.exec_json(h),
+                            automation=self.store.auto_json(a, full=False) if a else None)
             # §6: a slot just freed — hand it to the longest-waiting firing.
             if self.drain_queue:
                 try:

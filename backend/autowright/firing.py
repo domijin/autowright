@@ -36,8 +36,8 @@ def finish_never_ran(store: Store, h: dict, note: str, *,
     store.update_execution(h)
     auto = store.autos.get(h["automation_id"]) if with_automation else None
     hub.publish("execution.finished", executionId=h["id"], automationId=h["automation_id"],
-                execution_json=store.exec_json(h),
-                automation_json=store.auto_json(auto, full=False) if auto else None)
+                execution=store.exec_json(h),
+                automation=store.auto_json(auto, full=False) if auto else None)
 
 
 def finish_queued(store: Store, h: dict, note: str) -> bool:
@@ -89,7 +89,8 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
                 # and the §9.2 "N waiting" line update off this, and promotion
                 # publishes the ordinary exec.started for the same record.
                 hub.publish("execution.queued", executionId=h["id"], automationId=a["id"],
-                            execution_json=store.exec_json(h))
+                            execution=store.exec_json(h),
+                            automation=store.auto_json(a, full=False))
                 skipped = False
             else:
                 # §6: past maxQueued the *newest* firing is refused — never an

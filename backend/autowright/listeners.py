@@ -27,9 +27,9 @@ API_BASE = "https://discord.com/api/v10"
 INTENTS = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15)
 BACKOFF_MAX = 60.0  # cap; also the retry period for parked auth errors (§6)
 REPLY_LIMIT = 2000  # Discord message length cap — §6.1 reply() truncates
-# §6 busy notice on a skipped message firing, and its per-sender cooldown (§15 knob).
-BUSY_COOLDOWN_S = float(os.environ.get("AUTOWRIGHT_BUSY_REPLY_COOLDOWN_S", "60"))
-BUSY_TEXT = "I'm working on something else right now — try again in a moment."
+# §6 busy notice — one per dropped message firing, no rate limit.
+BUSY_TEXT = ("I'm working on something else right now and couldn't take this "
+             "message — please send it again in a moment.")
 # `listener_status` key of the one iMessage watcher (§6) — all imessage
 # triggers share it. Lowercase, so it can never collide with a secret name
 # (§4.8 names are [A-Z][A-Z0-9_]*).
@@ -89,11 +89,15 @@ def trigger_payload(t: dict, d: dict, channel_name: str | None = None,
     }
 
 
-def send_reply(payload: dict, text: str) -> str | None:
+def send_reply(payload: dict, text: str,
+               reply_to: str | None = None) -> str | None:
     """§6.1 reply(): send `text` back to the payload's origin — Discord REST
     with the bot token from the payload's `secret`, or Messages.app osascript
     to the payload's `chat`. Returns an error message, None on success —
-    the engine logs either way; a failed send never fails the step."""
+    the engine logs either way; a failed send never fails the step.
+    `reply_to` (Discord only — iMessage has no reply references) threads the
+    send as a reply to that message id; the §6 busy notice uses it to pin
+    itself to the dropped message."""
     import requests
 
     kind = (payload or {}).get("kind")
@@ -104,11 +108,17 @@ def send_reply(payload: dict, text: str) -> str | None:
     token = keychain.get_secret(payload["secret"])
     if not token:
         return f"secret {payload['secret']} has no value — the bot token is gone"
+    body: dict = {"content": str(text)[:REPLY_LIMIT]}
+    if reply_to:
+        # fail_if_not_exists false: a since-deleted message degrades to a
+        # plain channel post instead of a 400.
+        body["message_reference"] = {"message_id": reply_to,
+                                     "fail_if_not_exists": False}
     try:
         r = requests.post(
             f"{API_BASE}/channels/{payload['channel']}/messages",
             headers={"Authorization": f"Bot {token}"},
-            json={"content": str(text)[:REPLY_LIMIT]}, timeout=10)
+            json=body, timeout=10)
     except Exception as e:  # noqa: BLE001
         return f"couldn't reach Discord: {e}"
     if r.status_code >= 400:
@@ -116,39 +126,22 @@ def send_reply(payload: dict, text: str) -> str | None:
     return None
 
 
-_busy_lock = threading.Lock()
-# Origin key → last send: (secret, channel, sender) for Discord,
-# ("", chat, sender) for iMessage (§6).
-_busy_last: dict[tuple[str, str, str], float] = {}
-
-
 def notify_busy(payload: dict) -> None:
-    """§6: a message firing skipped mid-execution answers its sender with a short
-    busy notice, so a dropped message never leaves a person waiting on a silent
-    bot. Rate-limited to one per origin key per BUSY_COOLDOWN_S.
+    """§6: a dropped message firing answers its sender with a short busy
+    notice — one per dropped message, never rate-limited or coalesced, so a
+    retry that is itself dropped is answered too instead of leaving the sender
+    waiting on a silent bot.
     The send runs on its own thread — this is called from the gateway read loop,
     which must never block on an HTTP round trip (a stalled read misses
     heartbeats and drops the connection)."""
     if (payload or {}).get("kind") not in ("discord", "imessage"):
         return  # cron/app-start firings have nobody to answer
-    key = (payload.get("secret") or "",
-           payload.get("channel") or payload.get("chat") or "",
-           payload.get("sender") or "")
-    now = time.monotonic()
-    with _busy_lock:
-        last = _busy_last.get(key)
-        if last is not None and now - last < BUSY_COOLDOWN_S:
-            return
-        _busy_last[key] = now
-        if len(_busy_last) > 512:  # senders come and go — drop cold keys
-            _busy_last.clear()
-            _busy_last[key] = now
     threading.Thread(target=_send_busy, args=(payload,), daemon=True,
                      name="ad-busy-reply").start()
 
 
 def _send_busy(payload: dict) -> None:
-    err = send_reply(payload, BUSY_TEXT)
+    err = send_reply(payload, BUSY_TEXT, reply_to=payload.get("messageId"))
     if err:
         # Same rule as §6.1 reply(): a failed send is logged, never raised — the
         # skipped record already stands and there is nothing to fail here.

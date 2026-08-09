@@ -69,15 +69,18 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   cannot be opened — no Full Disk Access, or no `chat.db` at all (Messages never signed in) —
   parks the watcher in the `connection` error state shared by every `imessage` trigger (§4.3),
   re-probed each tick, so granting the permission heals it without a restart;
-  `automation.changed` fires on every state change. **A skipped message
+  `automation.changed` fires on every state change. **A dropped message
   firing answers its sender** — a dropped message would otherwise leave a person waiting on a
   bot that silently ignored them, so the engine posts a short busy notice ("I'm working on
-  something else right now — try again in a moment.") back to the triggering channel. Only
-  message firings do this; a skipped cron or app-start firing has nobody to answer. The notice
-  is rate-limited per sender: at most one per origin key — (secret, channel, sender) for
-  Discord, (chat, sender) for iMessage — every
-  `AUTOWRIGHT_BUSY_REPLY_COOLDOWN_S` (§15, default 60) — a burst from one person gets one
-  reply, not one per message. A failed send is logged and otherwise ignored, exactly as for
+  something else right now and couldn't take this message — please send it again in a
+  moment.") back to the triggering message. One notice per dropped message, no rate limit or
+  coalescing: the notice tells the sender to retry, so a retry that is itself dropped must be
+  answered too, never silently swallowed. Discord notices carry a `message_reference` to the
+  dropped message's `messageId` (§4.5 payload, `fail_if_not_exists` false so a since-deleted
+  message still gets a plain channel post), so a burst reads as one threaded receipt per
+  message; iMessage has no reply references, so its notices are plain texts to the chat. Only
+  message firings do this; a skipped cron or app-start firing has nobody to answer. A failed
+  send is logged and otherwise ignored, exactly as for
   §6.1 `reply()`. Apart from this notice the listeners send nothing outbound on their own —
   outbound messages happen only through a step's explicit §6.1 `reply()`.
 - **Firing queue** — a message firing that finds every `maxParallel` slot taken waits instead of

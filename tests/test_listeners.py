@@ -83,29 +83,27 @@ def _busy_recorder(monkeypatch):
 
     sent = []
     monkeypatch.setattr(li_mod, "send_reply",
-                        lambda payload, text: sent.append((payload, text)))
+                        lambda payload, text, reply_to=None:
+                            sent.append((payload, text, reply_to)))
     monkeypatch.setattr(li_mod.threading, "Thread",
                         lambda target, args, daemon, name: type(
                             "T", (), {"start": lambda self: target(*args)})())
     return sent
 
 
-def test_notify_busy_replies_once_per_sender_within_cooldown(monkeypatch):
+def test_notify_busy_replies_to_every_dropped_message(monkeypatch):
     from autowright import listeners as li_mod
 
     sent = _busy_recorder(monkeypatch)
-    monkeypatch.setattr(li_mod, "BUSY_COOLDOWN_S", 60.0)
     payload = {"kind": "discord", "channel": "42", "secret": "TOKEN",
-               "sender": "Dave"}
+               "sender": "Dave", "messageId": "m1"}
 
+    # §6: one notice per dropped message — a burst from one sender is answered
+    # message by message, each threaded to the message it answers.
     notify_busy(payload)
-    notify_busy(payload)  # same sender, still inside the cooldown
-    assert len(sent) == 1
-    assert sent[0][1] == li_mod.BUSY_TEXT
-
-    # a different sender in the same channel is answered independently
-    notify_busy({**payload, "sender": "Ana"})
-    assert len(sent) == 2
+    notify_busy({**payload, "messageId": "m2"})
+    assert [(t, r) for _, t, r in sent] == [(li_mod.BUSY_TEXT, "m1"),
+                                           (li_mod.BUSY_TEXT, "m2")]
 
 
 def test_notify_busy_skips_non_message_firings(monkeypatch):
@@ -119,7 +117,8 @@ def test_notify_busy_reply_failure_never_raises(monkeypatch, caplog):
 
     _busy_recorder(monkeypatch)
     monkeypatch.setattr(li_mod, "send_reply",
-                        lambda payload, text: "couldn't reach Discord: boom")
+                        lambda payload, text, reply_to=None:
+                            "couldn't reach Discord: boom")
     with caplog.at_level(logging.WARNING, logger="autowright.listeners"):
         notify_busy({"kind": "discord", "channel": "42", "secret": "TOKEN",
                      "sender": "Dave"})  # logged, not raised
@@ -146,6 +145,13 @@ def test_send_reply_posts_with_bot_token(monkeypatch):
     assert calls["url"].endswith("/channels/42/messages")
     assert calls["headers"]["Authorization"] == "Bot abc123"
     assert len(calls["body"]["content"]) == 2000  # Discord cap — truncated
+    assert "message_reference" not in calls["body"]  # §6.1 reply(): no threading
+
+    # §6 busy notice threads to the dropped message; fail_if_not_exists False
+    # so a since-deleted message degrades to a plain post, not a 400
+    assert send_reply(payload, "hi", reply_to="m1") is None
+    assert calls["body"]["message_reference"] == {"message_id": "m1",
+                                                  "fail_if_not_exists": False}
 
 
 def test_send_reply_reports_http_failures(monkeypatch):

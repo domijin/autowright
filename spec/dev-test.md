@@ -37,8 +37,6 @@ Backend env knobs (configuration only):
   seconds instead of sitting out real 15 s ticks.
 - `AUTOWRIGHT_LISTEN_TICK_S` — §6 listener-manager reconcile period in seconds (default 3).
   Same rule as `AUTOWRIGHT_TICK_S`: configuration only, never a different code path.
-- `AUTOWRIGHT_BUSY_REPLY_COOLDOWN_S` — §6 per-sender cooldown in seconds between busy notices
-  on a skipped message firing (default 60). `0` replies to every skipped message.
 - `AUTOWRIGHT_QUEUE_TTL_S` — §6 firing-queue staleness cutoff in seconds (default 120): an entry
   that reaches the head having waited longer finishes `skipped` instead of executing.
 - `AUTOWRIGHT_CHAT_DB` — path of the Messages database the §6 iMessage watcher reads (default

@@ -113,9 +113,8 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
             except (RuntimeError, LookupError):
                 started = False
     if skipped and payload:
-        # §6: a skipped message firing answers its sender. Outside the store lock
-        # — notify_busy hands the send to its own thread, but the cooldown check
-        # has its own lock and there is no reason to hold this one across it.
+        # §6: a dropped message firing answers its sender. Outside the store
+        # lock — a network send must never run under it.
         from .listeners import notify_busy  # deferred: listeners imports fire_trigger
 
         notify_busy(payload)

@@ -293,7 +293,7 @@
     <h1>Say what you want done.<br><span class="dim">Your Mac keeps doing it.</span></h1>
     <p class="sub">Everyone has small recurring chores a computer should handle — checking a site for updates, backing up a folder, watching a price. Describe the job once, in plain words. The AI you already use writes it as scripts you can read, and Autowright runs them on schedule — on your Mac, only after you approve.</p>
     <div class="ctas">
-      <a class="btn primary" href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
+      <a class="btn primary" data-download href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
       <a class="btn ghost" href="https://github.com/hansololz/autowright">View source</a>
     </div>
     <div class="platform">Apple Silicon · MIT licensed · Windows &amp; Linux coming soon</div>
@@ -421,7 +421,7 @@
   <section class="closing reveal">
     <h2>Describe your first job today.</h2>
     <div class="ctas">
-      <a class="btn primary" href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
+      <a class="btn primary" data-download href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
     </div>
     <div class="platform">Free · open source · Apple Silicon · Windows &amp; Linux coming soon</div>
   </section>
@@ -585,6 +585,19 @@
   }, { threshold: 0.12 });
   document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
 })();
+</script>
+<script>
+// download buttons — point at the latest versioned DMG via the update feed;
+// the static href (the releases page) stays as the no-JS / fetch-failure fallback
+fetch("/updates/darwin-arm64.json")
+  .then((r) => (r.ok ? r.json() : Promise.reject()))
+  .then((feed) => {
+    const v = feed.currentRelease;
+    if (!/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/.test(v)) return;
+    const url = `https://github.com/hansololz/autowright/releases/download/v${v}/Autowright-${v}-darwin-arm64.dmg`;
+    document.querySelectorAll("a[data-download]").forEach((a) => { a.href = url; });
+  })
+  .catch(() => {});
 </script>
 </body>
 </html>

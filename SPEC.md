@@ -159,7 +159,13 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   `app/electron/icon/icon.svg`). Audience: technically savvy users plus curious
   non-technical people — plain-language copy, no jargon. Page structure, in order: header
   (mark + wordmark + GitHub link) · hero (headline, one-paragraph pitch, "Download for
-  macOS" → the repo's latest GitHub release, "View source") · an animated app-window demo
+  macOS" → a direct download of the latest versioned DMG: on load, page JS fetches the
+  same-origin §3 update feed (`/updates/darwin-arm64.json`) and rewrites the download
+  anchors' `href` to
+  `releases/download/v<currentRelease>/Autowright-<currentRelease>-darwin-arm64.dmg`, so
+  the click downloads the DMG with the version in its filename; the static fallback
+  `href` (no JS, fetch failure) is the repo's latest-release GitHub page,
+  "View source") · an animated app-window demo
   that mirrors the §11 chat-first create flow (46 px icon rail with the §9 nav icon set —
   bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
   page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
@@ -175,7 +181,9 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   approve it") · a feature grid (message triggers, runs-with-window-closed + menu bar,
   versions, memory + snapshots, execution history, `.autowright` share/import) ·
   supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · closing
-  download CTA · footer (GitHub, Privacy, MIT). All repo links point to
+  download CTA (same feed-driven direct-DMG link as the hero — both anchors carry
+  `data-download`; the JSON-LD `downloadUrl` stays the static latest-release page URL) ·
+  footer (GitHub, Privacy, MIT). All repo links point to
   `hansololz/autowright`. Respects `prefers-reduced-motion`. Head metadata: canonical
   `https://autowright.ai/`, `theme-color` `#090d14`, Open Graph + Twitter-card tags with a
   1200×630 social image (`docs/og.png`, AW mark + headline on the dark background),

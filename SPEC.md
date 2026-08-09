@@ -183,6 +183,12 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   .35 alpha and links/buttons get a visible `:focus-visible` accent outline, per §14. A
   faint accent radial glow sits behind the demo window. Also serves `updates/darwin-<arch>.json` — the §3 Squirrel.Mac update
   feeds, rewritten by `scripts/release.sh` on every release.
+- `pypi/` — standalone placeholder package reserving the `autowright` name on PyPI
+  (`pyproject.toml` hatchling build, version 0.0.1, `Development Status :: 1 - Planning`,
+  `src/autowright/__init__.py` with only `__version__`, README stating the real project is in
+  development). Not part of the app build and not used by anything in the repo — the real backend
+  package is `backend/`; never install `autowright` from PyPI. Uploaded manually via
+  `python -m build` + `twine`.
 - `VERSION` — single source of truth for the app version (one line, semver). Synced into
   `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
   `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to

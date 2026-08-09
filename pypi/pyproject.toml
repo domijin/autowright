@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "autowright"
+version = "0.0.1"
+description = "Placeholder for the Autowright project (in development)."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 1 - Planning",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/autowright"]

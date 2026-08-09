@@ -10,8 +10,6 @@
   `SPEC.md` section map current.
 - Always communicate using the `/caveman` skill with `lite` settings. Keep it active for every response in the session,
   and in particular whenever updating the `SPEC.md` or `.claude/CLAUDE.md` doc.
-- The app is unreleased: do not worry about backward compatibility. When changing a feature, just make the code
-  change — no legacy-code handlers, migration shims, or deprecated fallbacks.
 - Developer mode and production mode must behave the same: no mocked data in developer mode, and no separate
   dev-only code paths. Both modes execute the same real code.
 - The `scripts/` directory is developer-only — never run anything under it (enforced by a PreToolUse

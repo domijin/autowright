@@ -89,7 +89,8 @@ Electron path, never by DOM unit tests.
 **Shift-left order.** Tiers run cheapest-first so failures surface early: Vitest unit
 (<1 s) → `tsc --noEmit` → pytest unit (seconds) → pytest `-m integration` (~10 s) →
 e2e (minutes). `scripts/test-fast.sh` (§18) runs the three cheap tiers in that order,
-failing fast.
+failing fast. `scripts/test-all.sh` (§18) runs all five tiers in the same order — the
+fast gate via `test-fast.sh`, then integration, then e2e — failing fast at every tier.
 
 **Integration tests** live under `tests/integration/`, marked `integration` and excluded from
 the default run (`pytest.ini` at the repo root; run them with `python -m pytest -m

@@ -11,7 +11,8 @@ contextBridge.exposeInMainWorld('autowright', {
   saveFile: (defaultName, data) => ipcRenderer.invoke('save-file', defaultName, data),
   openArchive: () => ipcRenderer.invoke('open-archive'),
   revealPath: (p) => ipcRenderer.invoke('reveal-path', p),
-  setLoginItem: (on) => ipcRenderer.invoke('set-login-item', on),
+  // §4.9 shell-owned settings effects (login item + tray icon)
+  applySettings: (s) => ipcRenderer.invoke('apply-settings', s),
   // §9.3 developer log overlay
   tailLogs: () => ipcRenderer.invoke('tail-logs'),
   listRequestLogs: () => ipcRenderer.invoke('list-request-logs'),

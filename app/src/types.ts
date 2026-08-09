@@ -327,6 +327,9 @@ export interface DraftPayload {
   // §4.4: grant selections carried by the draft snapshot
   stepAgents?: string[]
   allowedSecrets?: string[]
+  // §4.4/§11: the dirty-gate state rides the draft — a kept out-of-sync draft
+  // must resume with saving still locked
+  outOfSync?: boolean
   test?: DraftTest  // §11: last-test summary, GET responses only — never sent back
   chat?: ChatEntry[] // §11: the persisted thread — rides the draft both ways
   answer?: string        // §8 chat call: prose answer / accompanying message

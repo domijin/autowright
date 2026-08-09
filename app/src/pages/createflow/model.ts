@@ -220,6 +220,9 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
     allowedSecrets: d.allowedSecrets ?? secretNames,
     lastTest: d.test ?? null,
     chat: d.chat ?? [],
+    // §4.4/§11: restore the persisted dirty-gate state — resuming a kept
+    // out-of-sync draft must not unlock Save around the gate.
+    dirty: !!d.outOfSync,
   }
 }
 
@@ -247,6 +250,9 @@ export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string
     lastTest: a.draft?.test ?? null,
     chat: a.draft?.chat ?? [],
     touched: !!a.draft,
+    // §4.4/§11: restore the persisted dirty-gate state — resuming a kept
+    // out-of-sync draft must not unlock Save around the gate.
+    dirty: !!a.draft?.outOfSync,
   }
 }
 
@@ -346,6 +352,9 @@ export function serializeDraft(r: Rev): DraftPayload {
     triggers: r.triggers,
     stepAgents: r.enabledAgents,
     allowedSecrets: r.allowedSecrets,
+    // §4.4/§11: the dirty-gate state rides the snapshot — a kept out-of-sync
+    // draft must resume with saving still locked.
+    ...(r.dirty ? { outOfSync: true } : {}),
     chat: persistChat(r.chat),
   }
 }

@@ -146,45 +146,84 @@ def test_pip_install_command_shape_and_pins(home, monkeypatch):
     _fake_dist(home, "PyYAML", "6.0.2")
     seen = {}
 
-    def fake_run(cmd, capture_output=None, text=None, timeout=None):
-        seen["cmd"] = cmd
-        seen["timeout"] = timeout
-        i = cmd.index("-c")
-        seen["constraints_path"] = cmd[i + 1]
-        # read while it still exists — it is deleted right after the run
-        seen["constraints"] = Path(cmd[i + 1]).read_text()
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    class FakeProc:
+        def __init__(self, cmd, **kw):
+            seen["cmd"] = cmd
+            i = cmd.index("-c")
+            seen["constraints_path"] = cmd[i + 1]
+            # read while it still exists — it is deleted right after the run
+            seen["constraints"] = Path(cmd[i + 1]).read_text()
+            self.pid = 4242
+            self.returncode = 0
 
-    monkeypatch.setattr(packages.subprocess, "run", fake_run)
+        def communicate(self, timeout=None):
+            return "", ""
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr(packages.subprocess, "Popen", FakeProc)
     assert packages._pip_install("requests", pin_installed=True) is None
     cmd = seen["cmd"]
     assert cmd[-1] == "requests"
     assert cmd[cmd.index("--only-binary") + 1] == ":all:"
     assert cmd[cmd.index("--target") + 1] == str(packages.site_packages_dir())
-    assert seen["timeout"] == packages.INSTALL_TIMEOUT
     # pins: every installed dist (PEP 503-normalized) except the target
     assert set(seen["constraints"].splitlines()) == {"pyyaml==6.0.2"}
     assert not Path(seen["constraints_path"]).exists()  # tmp file cleaned up
 
 
-def test_pip_install_timeout_and_stderr_tail(home, monkeypatch):
+def test_pip_install_timeout_cancel_and_stderr_tail(home, monkeypatch):
     import subprocess as sp
-    from types import SimpleNamespace
 
     from autowright import packages
 
-    def timed_out(cmd, capture_output=None, text=None, timeout=None):
-        raise sp.TimeoutExpired(cmd, timeout)
+    killed = []
+    monkeypatch.setattr(packages.os, "killpg", lambda pid, sig: killed.append(pid))
 
-    monkeypatch.setattr(packages.subprocess, "run", timed_out)
-    assert packages._pip_install("leftpad") == \
-        f"pip timed out after {packages.INSTALL_TIMEOUT} s"
+    class HungProc:
+        def __init__(self, cmd, **kw):
+            self.pid = 4242
+            self.returncode = None
+            self._killed = False
 
-    def failed(cmd, capture_output=None, text=None, timeout=None):
-        return SimpleNamespace(returncode=1, stdout="",
-                               stderr="ERROR: one\n  two  \nthree\nfour\n")
+        def communicate(self, timeout=None):
+            # After the kill the pipes drain immediately; before it, hang.
+            if self._killed or timeout is None:
+                return "", ""
+            raise sp.TimeoutExpired("pip", timeout)
 
-    monkeypatch.setattr(packages.subprocess, "run", failed)
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            self._killed = True
+
+    monkeypatch.setattr(packages.subprocess, "Popen", HungProc)
+    # os.killpg is stubbed to a no-op recorder, so communicate() keeps hanging
+    # until the deadline path fires — make the deadline immediate.
+    monkeypatch.setattr(packages, "INSTALL_TIMEOUT", 0)
+    assert packages._pip_install("leftpad") == "pip timed out after 0 s"
+    assert killed == [4242]
+
+    # should_stop wins before the deadline — the run comes back "cancelled".
+    monkeypatch.setattr(packages, "INSTALL_TIMEOUT", 600)
+    killed.clear()
+    assert packages._pip_install("leftpad", should_stop=lambda: True) == "cancelled"
+    assert killed == [4242]
+
+    class FailedProc:
+        def __init__(self, cmd, **kw):
+            self.pid = 4242
+            self.returncode = 1
+
+        def communicate(self, timeout=None):
+            return "", "ERROR: one\n  two  \nthree\nfour\n"
+
+        def poll(self):
+            return self.returncode
+
+    monkeypatch.setattr(packages.subprocess, "Popen", FailedProc)
     # message = last 3 stderr lines, stripped, joined with " · "
     assert packages._pip_install("leftpad") == "two · three · four"
 
@@ -196,7 +235,7 @@ def test_ensure_invalid_cancelled_and_missing_only(home, monkeypatch):
 
     calls = []
 
-    def fake_pip(name, pin_installed=False):
+    def fake_pip(name, pin_installed=False, should_stop=None):
         calls.append((name, pin_installed))
         _fake_dist(home, name, "1.0.0")  # what a successful install leaves behind
         return None
@@ -230,7 +269,7 @@ def test_ensure_fast_path_never_spawns_pip(home, monkeypatch):
     def no_pip(*a, **kw):
         raise AssertionError("ensure must not run pip when everything is installed")
 
-    monkeypatch.setattr(packages.subprocess, "run", no_pip)
+    monkeypatch.setattr(packages.subprocess, "Popen", no_pip)
     _fake_dist(home, "requests", "2.31.0")
     _fake_dist(home, "pyyaml", "6.0.2")
     out = packages.ensure([{"pip": "requests", "import": "requests"},

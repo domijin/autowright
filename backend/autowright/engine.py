@@ -251,6 +251,15 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
 
     state["hard_kill"] = _hard_kill
 
+    # Cancel/skip racing the spawn (mirrors harness._invoke): one that landed
+    # after the caller's loop-top check but before this Popen existed killed
+    # nothing — with no_timeout the freshly spawned step would then run
+    # unbounded while the record shows "executing". Re-check now that the
+    # proc is visible (a pending skip always targets the current step: the
+    # engine pops the flag after every step).
+    if state.get("cancel") or state.get("skip") is not None:
+        _hard_kill()
+
     def _on_timeout() -> None:
         timed_out.set()
         _hard_kill()
@@ -757,15 +766,19 @@ class Engine:
 
             # §4.4: first Draft execution seeds draft/memory as a copy of the
             # live memory; later Draft executions (and draft re-saves) reuse it.
+            # "Never written" is the test (exists-and-empty counts — §19
+            # /draft/open pre-creates an empty memory/); the store lock
+            # serializes two first executions racing under maxParallel > 1.
             if h["kind"] == "draft" and not failed:
-                dmem = self._memory_dir(auto, "draft")
-                if not dmem.exists():
-                    live_mem = self.store.auto_dir(auto) / "memory"
-                    if live_mem.exists() and any(live_mem.iterdir()):
-                        shutil.copytree(live_mem, dmem)
-                        self._log(h, "sys", "draft memory created — copied from the automation's memory", redactions)
-                    else:
-                        dmem.mkdir(parents=True, exist_ok=True)
+                with self.store.lock:
+                    dmem = self._memory_dir(auto, "draft")
+                    if not dmem.exists() or not any(dmem.iterdir()):
+                        live_mem = self.store.auto_dir(auto) / "memory"
+                        if live_mem.exists() and any(live_mem.iterdir()):
+                            shutil.copytree(live_mem, dmem, dirs_exist_ok=True)
+                            self._log(h, "sys", "draft memory created — copied from the automation's memory", redactions)
+                        else:
+                            dmem.mkdir(parents=True, exist_ok=True)
 
             # §11 test executions carry their own script/memory dirs (`_test` is
             # in-memory only — write_exec_yaml persists a fixed key set).

@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from . import paths
@@ -151,13 +153,18 @@ def outdated(entries: list[dict]) -> list[dict]:
         return list(pool.map(probe, items))
 
 
-def _pip_install(name: str, pin_installed: bool = False) -> str | None:
+def _pip_install(name: str, pin_installed: bool = False,
+                 should_stop=None) -> str | None:
     """One pip run into the §6.2 directory; returns an error string or None.
     Caller holds `_pip_lock`. `pin_installed` constrains every distribution
     already in the directory to its exact installed version — pip resolves
     with `--target` against its own env, not the directory, so without pins
     installing a new package silently *upgrades* shared dependencies already
-    there (§6.2: an installed distribution is never touched by ensure)."""
+    there (§6.2: an installed distribution is never touched by ensure).
+    `should_stop()` is polled while pip runs — a §7 cancel must not wait out
+    a single pip run (up to INSTALL_TIMEOUT s) while the execution holds its
+    §6 slot; on stop the pip process group is killed and 'cancelled' comes
+    back as the error."""
     target = site_packages_dir()
     target.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "pip", "install", "--upgrade",
@@ -177,15 +184,38 @@ def _pip_install(name: str, pin_installed: bool = False) -> str | None:
                     f.write("".join(f"{n}=={v}\n" for n, v in pins.items()))
                 cmd += ["-c", constraints]
         try:
-            proc = subprocess.run(cmd + [name], capture_output=True, text=True,
-                                  timeout=INSTALL_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            return f"pip timed out after {INSTALL_TIMEOUT} s"
+            # Own session so a stop/timeout kill reaches pip's own children
+            # (build helpers, vendored subprocesses).
+            proc = subprocess.Popen(cmd + [name], stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True,
+                                    stdin=subprocess.DEVNULL, start_new_session=True)
         except OSError as e:
             return str(e)
+
+        def _kill() -> None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                if proc.poll() is None:
+                    proc.kill()
+
+        deadline = time.monotonic() + INSTALL_TIMEOUT
+        while True:
+            try:
+                out, err = proc.communicate(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                if should_stop and should_stop():
+                    _kill()
+                    proc.communicate()
+                    return "cancelled"
+                if time.monotonic() > deadline:
+                    _kill()
+                    proc.communicate()
+                    return f"pip timed out after {INSTALL_TIMEOUT} s"
         if proc.returncode == 0:
             return None
-        tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
+        tail = (err or out or "").strip().splitlines()[-3:]
         return " · ".join(ln.strip() for ln in tail) or f"pip exited {proc.returncode}"
     finally:
         if constraints:
@@ -202,8 +232,9 @@ def ensure(entries: list[dict], on_progress=None, should_stop=None) -> list[dict
     shared dependencies at their installed versions; upgrades go through
     `upgrade()` only. Each entry comes back as {pip, import,
     status: installed | failed, version?, error?}. `on_progress(name)` fires
-    before each actual pip run; `should_stop()` (checked between pip runs)
-    abandons the remaining installs — a §7 cancel must not wait out pip."""
+    before each actual pip run; `should_stop()` (checked between pip runs and
+    polled during each one) abandons the remaining installs and kills the
+    running pip — a §7 cancel must not wait out pip."""
     results = check(entries)
     if all(r["status"] == "installed" for r in results):
         return results
@@ -222,7 +253,7 @@ def ensure(entries: list[dict], on_progress=None, should_stop=None) -> list[dict
                 continue
             if on_progress:
                 on_progress(r["pip"])
-            if err := _pip_install(r["pip"], pin_installed=True):
+            if err := _pip_install(r["pip"], pin_installed=True, should_stop=should_stop):
                 r["status"] = "failed"
                 r["error"] = err
             else:

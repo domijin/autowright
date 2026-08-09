@@ -171,9 +171,16 @@ export default function Onboarding() {
     up((o) => { o.detStarted = true; o.det = 'searching' })
     const started = Date.now()
     void Promise.all([
-      api.detectAgents().catch(() => [] as Det[]),
+      api.detectAgents().catch(() => null),
       api.ollamaStatus().catch(() => null),
     ]).then(([provs, ost]) => {
+      if (provs === null) {
+        // §10: a failed detect (backend restarting) must not render as
+        // "No AI app was found" with the suggestion cards missing — stay
+        // on the searching state and retry until the backend answers.
+        t(() => { ob.detStarted = false; startDetect() }, 1500)
+        return
+      }
       // §10: any installed model counts — the first one becomes the card's
       // model; qwen3:8b downloads only when none is installed.
       const localModel = ost?.models[0] ?? null

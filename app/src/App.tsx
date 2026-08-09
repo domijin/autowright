@@ -167,8 +167,18 @@ export default function App() {
   const toast = useStore((s) => s.toast)
   const boot = useStore((s) => s.boot)
   const disconnect = useStore((s) => s.disconnect)
+  const login = useStore((s) => s.settings?.login)
+  const menuBarIcon = useStore((s) => s.settings?.menuBarIcon)
 
   useEffect(() => { void boot(); return disconnect }, [])
+
+  // §4.9: the shell owns the OS-side settings effects (login item, tray icon)
+  // — push the stored values on every load/change so OS state never drifts
+  // from the toggles (a fresh install's default login:true registers here).
+  useEffect(() => {
+    if (login === undefined && menuBarIcon === undefined) return
+    void window.autowright?.applySettings({ login, menuBarIcon })
+  }, [login, menuBarIcon])
 
   if (connected === null || connected === false) {
     return <BootSplash waiting={connected === false} />

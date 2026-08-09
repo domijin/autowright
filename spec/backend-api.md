@@ -133,7 +133,7 @@ remain plain dicts (§2).
   shared draft serializer for both owners — only the on-disk location differs (§5,
   unchanged). An automation `owner` that doesn't resolve answers 404. `PUT`
   `{ draft, agentId? }` stores the §4.4 snapshot: the payload's
-  stepAgents/allowedSecrets/triggers are stored as draft-only keys and echoed back on the
+  stepAgents/allowedSecrets/triggers/outOfSync are stored as draft-only keys and echoed back on the
   automation's `draft` object (or on `GET /draft/pending`), and its `chat` list (the §11
   thread) is stored as the container's `chat.jsonl` (§5) and echoed back the same way; for
   the `pending` owner the payload additionally carries the identity fields no automation

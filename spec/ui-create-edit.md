@@ -416,7 +416,9 @@ editors enter with
   instructions.
 - **Dirty gating** — any spec/instruction/chat-rewrite change marks the workflow out of sync and
   **blocks saving** until the Build & test panel's "Sync now" button makes one §8 `sync` call
-  regenerating the steps ("Steps synced with the spec — review them, then save."). Grant
+  regenerating the steps ("Steps synced with the spec — review them, then save."). The
+  out-of-sync state persists with the draft (§4.4 `outOfSync`) and is restored on resume —
+  keeping a locked draft and reopening it must not unlock Save around the gate. Grant
   toggles (agent enablement, secret allowance) never mark the workflow out of sync by
   themselves — grants are permissions (§5), not versioned content. Instead, grant sync state is
   **derived** from steps vs grants: the workflow is out of sync exactly while some step needs a

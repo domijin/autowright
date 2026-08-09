@@ -320,7 +320,8 @@ def patch_auto(automation_id: str, body: models.AutomationPatch) -> dict:
         _check_param_values(a, patch["paramValues"])
     if "triggers" in patch:
         # §19: whole-list replace; message kinds / bad expressions / past times → 422.
-        norm, err = triggerlib.normalize_triggers(patch["triggers"])
+        norm, err = triggerlib.normalize_triggers(
+            patch["triggers"], existing_ids={t["id"] for t in a["triggers"]})
         if err:
             raise HTTPException(422, err)
         patch = {**patch, "triggers": norm}
@@ -428,7 +429,10 @@ def create_auto(body: models.AutomationCreate) -> dict:
     if not d.get("steps"):
         raise HTTPException(422, "draft has no steps")
     _check_agent_refs(body.agentId, body.stepAgents)
-    triggers, err = triggerlib.normalize_triggers(d.get("triggers") or [])
+    # Create: no automation exists yet, so no trigger id is "already stored" —
+    # every entry validates as new (a fabricated id must not bypass the 422).
+    triggers, err = triggerlib.normalize_triggers(d.get("triggers") or [],
+                                                  existing_ids=set())
     if err:
         raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
@@ -461,7 +465,8 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
     # automation's — validated like the PATCH, and before the version lands.
     triggers = None
     if "triggers" in d:
-        triggers, err = triggerlib.normalize_triggers(d["triggers"])
+        triggers, err = triggerlib.normalize_triggers(
+            d["triggers"], existing_ids={t["id"] for t in a["triggers"]})
         if err:
             raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
@@ -532,6 +537,9 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
     ver = _draft_to_version(d)
     ver["step_agents"] = d.get("stepAgents")
     ver["allowed_secrets"] = d.get("allowedSecrets")
+    # §4.4/§11: the dirty-gate state rides the snapshot — stored only when set,
+    # so a resumed out-of-sync draft keeps saving locked.
+    ver["out_of_sync"] = bool(d.get("outOfSync")) or None
     with store.lock:
         if a is None:
             # §19: the pending payload also carries the identity fields no
@@ -1020,6 +1028,11 @@ def retry_exec(execution_id: str) -> dict:
     h = store.execs.get(execution_id)
     if not h:
         raise HTTPException(404, "execution not found")
+    if h["automation_id"] is None:
+        # §4.5 create-mode test records have no automation to resolve — retry
+        # answers the §19 test rule's 409 (the draft may have changed), not a
+        # 404 for a record that plainly exists.
+        raise HTTPException(409, "the draft may have changed — execute a new test from the editor")
     a = _auto_or_404(h["automation_id"])
     try:
         h2 = engine.retry(a, h)

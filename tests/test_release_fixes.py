@@ -220,3 +220,172 @@ def test_app_started_is_idempotent_per_launch(client, monkeypatch):
     again = client.post("/app-started", json={"launchId": "launch-1"})
     assert again.json()["fired"] == 0
     assert fired == [a["id"]]
+
+
+# ---------- 2026-08 release proofread ----------
+
+def test_validate_steps_rejects_non_dict_entries():
+    """§8: a manifest whose steps are bare strings (a plausible agent
+    shorthand) must fail validation — it used to slip through every per-step
+    filter and settle a stepless 'done' draft."""
+    from autowright.drafting import validate_steps
+
+    manifest = (
+        "name: Hello\n"
+        "description: Says hello\n"
+        "note: Created\n"
+        "steps:\n"
+        "  - 01-fetch.py\n"
+    )
+    _, errors = validate_steps({"manifest.yaml": manifest})
+    assert any("must be a mapping" in e for e in errors)
+
+
+def test_reconcile_skips_unparsable_started_at(store, home):
+    """§5: a hand-damaged started_at must stay out of the index — it used to
+    be restored by the reconcile and 500 the whole executions list (and, via
+    _latest_exec, the automations list) on every request."""
+    from autowright.storage import Store
+    from autowright.yamlio import load_yaml, save_yaml
+
+    a = store.create_automation(make_version(), "Recon", None)
+    h = store.create_execution(a, "version", 1, "manual", steps=[])
+    h["status"] = "succeeded"
+    store.update_execution(h)
+    y = store.exec_dir(h["id"]) / "execution.yaml"
+    data = load_yaml(y)
+    data["started_at"] = "banana"
+    save_yaml(y, data)
+    store.close_exec_db()
+    for suffix in ("", "-wal", "-shm"):
+        (store.executions_dir() / ("executions.db" + suffix)).unlink(missing_ok=True)
+
+    s2 = Store()
+    s2.load_all()
+    assert h["id"] not in s2.execs  # left out of the index, not restored broken
+    # the serializers that used to 500 still work for the rest of the store
+    assert isinstance(s2.auto_json(s2.autos[a["id"]]), dict)
+
+
+def test_retention_never_deletes_queued(store, monkeypatch):
+    """§5/§6: queued records ARE the firing queue — retention used to delete
+    one older than the cutoff, silently dropping a waiting firing."""
+    from datetime import datetime, timedelta, timezone
+
+    a = store.create_automation(make_version(), "Queuey", None)
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    q = store.create_execution(a, "version", 1, "discord", steps=[], status="queued")
+    q["queued_at"] = q["started_at"] = old
+    store.update_execution(q)
+    done = store.create_execution(a, "version", 1, "manual", steps=[])
+    done["status"] = "succeeded"
+    done["started_at"] = old
+    store.update_execution(done)
+    store.settings["days"] = 7
+
+    deleted = store.retention_cleanup()
+    assert deleted == 1
+    assert q["id"] in store.execs          # the queued firing survives
+    assert done["id"] not in store.execs   # ordinary old records still go
+
+
+def test_damaged_snapshot_yaml_never_500s_detail(store):
+    """§5: a hand-damaged snapshot.yaml is skipped, never fatal to the
+    automation detail that serializes it."""
+    a = store.create_automation(make_version(), "Snappy", None)
+    d = store.auto_dir(a) / "memory"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "seen.yaml").write_text("x: 1\n")
+    good = store.snapshot_memory(a, "manual")
+    bad = store.snapshot_memory(a, "manual")
+    (store.snapshots_dir(a) / bad["id"] / "snapshot.yaml").write_text("just a string\n")
+
+    metas = store.list_snapshots(a)
+    assert [m["id"] for m in metas] == [good["id"]]
+    assert store.get_snapshot(a, bad["id"]) is None
+    assert isinstance(store.auto_json(a), dict)  # used to AttributeError/KeyError
+
+
+def test_load_yaml_survives_permission_error(home, monkeypatch):
+    """§5: an unreadable top-level yaml (permissions) must fall back to the
+    default, not crash startup into a launchd crash loop."""
+    import builtins
+
+    from autowright.yamlio import load_yaml
+
+    real_open = builtins.open
+
+    def deny(path, *a, **kw):
+        if str(path).endswith("settings.yaml"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_open(path, *a, **kw)
+
+    monkeypatch.setattr(builtins, "open", deny)
+    assert load_yaml(home / "settings.yaml", {"d": 1}) == {"d": 1}
+
+
+def test_import_rejects_unordered_step_filenames(store):
+    """§5.1: step filenames obey the NN-name.py rule in listed order — a
+    looser archive used to import fine and then 422 on every later save."""
+    import yaml as pyyaml
+
+    from autowright import transfer
+
+    a = store.create_automation(make_version(), "Archivey", None)
+    data = transfer.export_automation(store, a)
+    zin = zipfile.ZipFile(io.BytesIO(data))
+    meta = pyyaml.safe_load(zin.read("automation/automation.yaml"))
+    meta["steps"][0]["file"] = "say.py"  # no NN- prefix
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zout:
+        for n in zin.namelist():
+            if n == "automation/automation.yaml":
+                zout.writestr(n, pyyaml.safe_dump(meta))
+            elif n == "automation/01-say.py":
+                zout.writestr("automation/say.py", zin.read(n))
+            else:
+                zout.writestr(n, zin.read(n))
+    with pytest.raises(transfer.TransferError, match="NN-name.py"):
+        transfer.import_automation(store, buf.getvalue())
+
+
+def test_retry_create_mode_test_answers_409(client):
+    """§19: retrying a create-mode test record (automationId null) answers the
+    test rule's 409 — it used to 404 on the null automation lookup."""
+    from autowright.storage import store as live_store
+
+    h = live_store.create_execution({"id": None, "name": "Draft"}, "test", None,
+                                    "test", steps=[])
+    r = client.post(f"/executions/{h['id']}/retry")
+    assert r.status_code == 409
+
+
+def test_fabricated_trigger_id_cannot_store_past_time(client):
+    """§19: a past `time` answers 422 — a client-made id used to bypass the
+    check via the stored-entry leniency."""
+    r = client.post("/automations", json={"draft": make_version(), "name": "Timey",
+                                          "agentId": "mock"})
+    aid = r.json()["id"]
+    r2 = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2020-01-01T10:00", "id": "fake-id"}]})
+    assert r2.status_code == 422
+    # the real leniency still holds: an id the automation actually stores
+    r3 = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2030-01-01T10:00"}]})
+    assert r3.status_code == 200
+    stored = r3.json()["triggers"][0]
+    r4 = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2020-01-01T10:00", "id": stored["id"]}]})
+    assert r4.status_code == 200
+
+
+def test_draft_out_of_sync_roundtrips(client):
+    """§4.4/§11: the dirty-gate state rides the draft container — a kept
+    out-of-sync draft must resume with saving still locked."""
+    d = {**make_version(), "outOfSync": True}
+    assert client.put("/draft/pending", json={"draft": d}).status_code == 200
+    got = client.get("/draft/pending").json()["draft"]
+    assert got["outOfSync"] is True
+    # and absent when the editor is in sync
+    assert client.put("/draft/pending", json={"draft": make_version()}).status_code == 200
+    assert "outOfSync" not in client.get("/draft/pending").json()["draft"]

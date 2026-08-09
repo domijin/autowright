@@ -97,7 +97,7 @@ export function BuildTestPanel({
   drafting, outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
   agentGap, stageLabel, lockStyle, runSync, sendChat,
 }: BuildTestPanelProps) {
-  const { executions, executionFull, go, showToast, test, beginTest, clearTest } = useStore()
+  const { executions, executionFull, go, showToast, test, beginTest } = useStore()
 
   // §11 test-setup section: the Test the draft disclosure toggle —
   // expanding shows every test option at once (param editors, trigger message,
@@ -203,10 +203,17 @@ export function BuildTestPanel({
     // §11 Build & test panel: a test always runs steps that match the spec —
     // never stale ones (out of sync) and never mid-build.
     if (!rev || rev.steps.length === 0 || testLive || busyRewrite || outOfSync || drafting) return
-    clearTest()
     try {
       const values = valuesOverride ?? (testParams ? testParamValues(testParams) : undefined)
       const mock = testMock ? testTriggerMock(testMock) : undefined
+      // §11: a typed message with a blanked From must not silently run
+      // without the mock — the user believes it was delivered.
+      if (testMock?.text && !mock) {
+        showToast('Add a From name for the test message — or clear the message to run without it.')
+        return
+      }
+      // The tracked settled test is replaced only once the POST succeeds
+      // (beginTest below) — a 409/error must not erase the last outcome.
       const { executionId } = await api.postTest({
         draft: serializeDraft(rev),
         ...(isEdit && auto ? { automationId: auto.id } : {}), // edit: scratch memory copies the automation's

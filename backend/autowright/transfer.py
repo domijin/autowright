@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 import yaml
 
 from . import __version__, harness, timefmt, triggers as triggerlib
+from .drafting import STEP_FILE_RE
 from .specmd import blocks_to_md, md_to_blocks
 from .storage import SECRET_REF_RE, Store, new_id
 
@@ -52,12 +53,17 @@ def _referenced_secrets(ver: dict, triggers: list[dict] | None = None) -> list[s
 
 def _referenced_agents(store: Store, a: dict, ver: dict) -> list[dict]:
     """The drafting agent + every step-grant name, resolved like the engine
-    (§6 grant names) — deduped by record id, archive order stable."""
+    (§6 grant names: the automation's enabled agents, first enabled wins) —
+    deduped by record id, archive order stable."""
     by_id: dict[str, dict] = {}
     drafting = next((g for g in store.agents if g["id"] == a["agent_id"]), None)
     if drafting:
         by_id[drafting["id"]] = drafting
-    by_grant = {harness.grant_name(g): g for g in reversed(store.agents)}
+    agents_by_id = {g["id"]: g for g in store.agents}
+    pool = [agents_by_id[i] for i in a.get("enabled_agents") or [] if i in agents_by_id]
+    by_grant: dict[str, dict] = {}
+    for g in pool:  # duplicate grant names: the first enabled agent wins
+        by_grant.setdefault(harness.grant_name(g), g)
     for s in ver.get("steps", []):
         for e in s.get("agents") or []:
             g = by_grant.get(e.get("name"))
@@ -279,7 +285,7 @@ def _validate(z: zipfile.ZipFile) -> dict:
         raise TransferError("the archive holds no steps")
     steps = []
     seen_files: set[str] = set()
-    for s in steps_meta:
+    for i, s in enumerate(steps_meta, 1):
         if (not isinstance(s, dict) or not isinstance(s.get("file"), str)
                 or not s["file"] or not s.get("name")):
             raise TransferError(f"invalid step manifest entry: {s!r}")
@@ -288,6 +294,13 @@ def _validate(z: zipfile.ZipFile) -> dict:
             # Reserved names would let a step's code overwrite (or be
             # overwritten by) the version folder's own files at write time.
             raise TransferError(f"invalid step filename: {s['file']!r}")
+        # §5.1/§8: the NN-name.py rule in listed order, like every other ingest
+        # path — a looser name would land a version the app's own save
+        # endpoints later 422 on (and `automation pull` would silently drop).
+        m = STEP_FILE_RE.match(s["file"])
+        if not m or int(m.group(1)) != i:
+            raise TransferError(
+                f"step filename {s['file']!r} must follow NN-name.py in listed order ({i:02d}-…)")
         if s["file"] in seen_files:
             raise TransferError(f"duplicate step filename: {s['file']!r}")
         seen_files.add(s["file"])

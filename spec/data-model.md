@@ -360,7 +360,9 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   merged preview, so a resumed draft keeps a synced schedule change), the editor's
   step-agents + allowed-secrets grant selections (stored as
   draft-only `step_agents` / `allowed_secrets` keys in `draft/automation/automation.yaml`, §5),
-  and the §11 chat thread (`chat` on the payload → the container's `chat.jsonl`, §5).
+  the §11 out-of-sync state (`outOfSync` on the payload → draft-only `out_of_sync` key —
+  a kept draft whose steps lag its spec must resume with saving still locked, §11 dirty
+  gating), and the §11 chat thread (`chat` on the payload → the container's `chat.jsonl`, §5).
   Persisted thread entries: `{ id: uuid, kind: user | answer | rewrite | blockers | system
   | error, text?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` — `user` a
   message, `answer` the agent's markdown reply,
@@ -620,6 +622,11 @@ working."
 ```
 login: bool        — "Launch at login" ("Autowright starts quietly in the menu bar.")
 menuBarIcon: bool       — "Show in the menu bar" ("The quickest way to execute an automation.")
+  Both are OS-side effects owned by the Electron shell, reconciled from these stored values —
+  at startup and on the shell's periodic backend poll (so a tray-only app follows §20 CLI
+  changes), plus a renderer push on every settings change: `login` registers/unregisters the
+  macOS login item (the default true registers on first launch), `menuBarIcon` creates or
+  destroys the tray icon live (no restart; hiding it also hides an open §13 panel).
 keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac from sleeping so
   schedules and message triggers keep firing. The display can still sleep.") — while on, the
   backend holds a permanent idle-sleep power assertion (§3 sleep bullet); applied live on

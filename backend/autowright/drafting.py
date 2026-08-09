@@ -658,6 +658,12 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
     steps = manifest.get("steps") or []
     if not steps:
         errors.append("steps must be nonempty")
+    # A non-dict entry (a bare `- 01-fetch.py` string is a plausible agent
+    # shorthand) would otherwise be dropped by every filter below and produce
+    # a validated draft with zero steps — reject it so the repair round fires.
+    for s in steps:
+        if not isinstance(s, dict):
+            errors.append(f"steps entry must be a mapping with file/name/description — got {s!r}")
     listed = [s.get("file", "") for s in steps if isinstance(s, dict)]
     # §8: call 2 may return an optional notes.md beside the manifest — the
     # agent's updated working-knowledge doc, excluded from step-file matching.
@@ -900,11 +906,14 @@ class DraftJobs:
     def get(self, job_id: str) -> dict | None:
         with self._lock:
             j = self.jobs.get(job_id)
-        if not j:
-            return None
-        out = {k: v for k, v in j.items() if not k.startswith("_")}
-        # The job thread appends to `events` while this serializes — copy.
-        out["events"] = list(j["events"])
+            if not j:
+                return None
+            # Copy under the lock — _settle inserts new keys (blockers,
+            # errorDetail, …) and iterating the live dict outside it can raise
+            # "dictionary changed size during iteration" mid-poll.
+            out = {k: v for k, v in j.items() if not k.startswith("_")}
+            # The job thread appends to `events` while this serializes — copy.
+            out["events"] = list(j["events"])
         return out
 
     def cancel(self, job_id: str) -> bool:

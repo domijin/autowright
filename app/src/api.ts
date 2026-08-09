@@ -12,7 +12,7 @@ declare global {
       saveFile(defaultName: string, data: ArrayBuffer): Promise<string | null>
       openArchive(): Promise<{ name: string; data: Uint8Array } | null>
       revealPath(p: string): Promise<void>
-      setLoginItem(on: boolean): Promise<void>
+      applySettings(s: { login?: boolean; menuBarIcon?: boolean }): Promise<void>
       tailLogs(): Promise<{ name: string; text: string }[]>
       listRequestLogs(): Promise<string[]>
       readRequestLog(name: string): Promise<string | null>

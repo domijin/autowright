@@ -66,6 +66,10 @@ export default function CreateFlow() {
   const agentIdRef = useRef(agentId)
   agentIdRef.current = agentId
   const draftSettled = useRef(false)
+  // §4.4 "a discarded or saved draft is never resurrected": the last
+  // continuous-persist PUT, awaited before any draft DELETE so an in-flight
+  // write can't land after the discard on a slow backend.
+  const putInFlight = useRef<Promise<unknown>>(Promise.resolve())
   useEffect(() => () => {
     const r = revRef.current
     const a = autoRef.current
@@ -99,12 +103,12 @@ export default function CreateFlow() {
       if (!r) return
       if (isEdit) {
         if (a && holdsDraftEdits(r, a)) {
-          void api.putDraft(a.id, serializeDraft(r)).catch(() => { /* backend restarting */ })
+          putInFlight.current = api.putDraft(a.id, serializeDraft(r)).catch(() => { /* backend restarting */ })
         }
         return
       }
       if (!r.specBusy && (r.spec.length || r.steps.length)) {
-        void api.putDraft('pending', serializeDraft(r), agentIdRef.current).catch(() => { /* backend restarting */ })
+        putInFlight.current = api.putDraft('pending', serializeDraft(r), agentIdRef.current).catch(() => { /* backend restarting */ })
       }
     }, 1000)
     return () => clearTimeout(t) // each change resets the timer (debounce) and unmount cancels it
@@ -282,15 +286,22 @@ export default function CreateFlow() {
       void jobs.sendChat(answers)
       return
     }
-    appendEntry({ kind: 'user', text: answers })
+    // The restarted create call rides THIS entry — point the cancel ref at it
+    // like sendMessage does, or a Cancel during the restart would delete the
+    // original request entry and leave the answers orphaned in the thread.
+    const answersEntry = newEntry({ kind: 'user', text: answers })
+    jobs.createEntryRef.current = answersEntry.id
+    setRev((r) => (r ? { ...r, chat: [...r.chat, answersEntry] } : r))
     void jobs.submitCreate(`${jobs.lastCreateRef.current.trim()}\n\n${answers}`)
   }
 
   // §11 Start over (create): cancel any job, discard the pending slot (thread
   // included), return to the empty state with the description in the input.
-  const resetCreate = () => {
+  const resetCreate = async () => {
     jobs.cancelJob()
-    // §4.4: Start over discards the pending slot.
+    // §4.4: Start over discards the pending slot — after any in-flight
+    // continuous-persist PUT, which would otherwise resurrect it.
+    await putInFlight.current
     void api.deleteDraft('pending').catch(() => { /* none kept */ })
     setNameEdit(null)
     setDescEdit(null)
@@ -584,16 +595,19 @@ export default function CreateFlow() {
 
   const startOver = async () => {
     if (isEdit && auto) {
-      // Discard draft → back to detail
+      // Discard draft → back to detail. Settle BEFORE the awaits — the 1 s
+      // debounce timer checks the flag at fire time, and a PUT landing after
+      // the DELETE would resurrect the discarded draft (§4.4).
+      draftSettled.current = true
+      await putInFlight.current
       try { await api.deleteDraft(auto.id) } catch { /* none saved yet */ }
       draftSnap.current = null
-      draftSettled.current = true
       setSurface('app')
       go('automation')
       showToast(`Changes discarded — back to v${auto.version} as saved.`, 3200)
       return
     }
-    resetCreate()
+    await resetCreate()
   }
 
   const doSave = async () => {

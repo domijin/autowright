@@ -153,8 +153,12 @@ function MissingSecretRow({ name, sub, onAdded }: { name: string; sub: string; o
   return (
     <div style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
       <div
-        className="ad-hover-row"
+        className="ad-hover-row ad-focus-inset"
+        // §9: keyboard parity for a clickable row — no nested control here,
+        // so the row itself carries the button semantics.
+        role="button" tabIndex={0}
         onClick={() => setOpen(!open)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}
         title={`Add ${name} to your Keychain`}
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', cursor: 'pointer', userSelect: 'none' }}
       >
@@ -362,10 +366,12 @@ export function LeftColumn({
         right={<>
           {notesOpenEff && !rev.notesEdit && (
             <button
-              className="ad-btn-text small ad-focus-inset" disabled={busyRewrite}
+              // §11: an old version is browsed read-only — notes saved onto a
+              // vX view would vanish on Restore or a version switch.
+              className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld}
               onClick={(e) => {
                 e.stopPropagation()
-                if (busyRewrite) return
+                if (busyRewrite || viewingOld) return
                 up({
                   specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false,
                   notesDraft: rev.notes, notesEdit: true, notesSecOpen: true,
@@ -600,10 +606,13 @@ export function LeftColumn({
         right={<>
           {instrOpenEff && !rev.instrEdit && (
             <button
-              className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || testLive}
+              // §11: an old version is browsed read-only — an instruction save
+              // here would mark the draft dirty while Sync now and Restore are
+              // both locked (viewingOld), a dead end with no escape.
+              className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld || testLive}
               onClick={(e) => {
                 e.stopPropagation()
-                if (busyRewrite || testLive) return
+                if (busyRewrite || viewingOld || testLive) return
                 if (rev.specBusy) { showToast('Wait for the spec first.'); return }
                 const genCancelled = cancelStepsGen() // §11: instruction edits cancel an in-flight steps call
                 up({

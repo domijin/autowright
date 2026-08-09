@@ -48,7 +48,8 @@ draft/                         # THE pending create-mode draft (§4.4) — a sin
                                # (name, description, agent_id, triggers, created_at, updated_at —
                                # no automation record exists yet to hold them); the grant
                                # selections ride the same draft-only step_agents /
-                               # allowed_secrets keys as the edit-mode container below —
+                               # allowed_secrets keys (and the §4.4 out_of_sync flag) as the
+                               # edit-mode container below —
                                # there is no enabled_agents key anywhere in the slot:
   automation/                  #   the working copy (version-folder shape)
   memory/                      #   scratch memory copied by §11 tests; starts empty
@@ -90,8 +91,9 @@ automations/<uuid>/
   draft/                       # unsaved edit state — a container, not a version folder:
     automation/                # the working copy, same shape as a version folder; rewritten
                                # whole on every draft save; its automation.yaml also holds
-                               # draft-only step_agents / allowed_secrets / triggers keys
-                               # (§4.4 — the editor's grant selections and trigger list;
+                               # draft-only step_agents / allowed_secrets / triggers /
+                               # out_of_sync keys (§4.4 — the editor's grant selections,
+                               # trigger list, and §11 dirty-gate state;
                                # never written for real versions)
     memory/                    # the draft's own working memory: created on the first Draft
                                # execution as a copy of memory/, reused by every later Draft
@@ -360,7 +362,8 @@ Rules:
   DB schema wipe) and restores their header rows from `execution.yaml` — the yaml stays
   authoritative. Nothing exists only in memory.
 - Retention cleanup (§4.9 `days`) deletes execution directories and DB rows, then their
-  in-memory records.
+  in-memory records. Records still `executing` or waiting in the §6 queue (`queued`) are
+  exempt — deleting a queued record would silently drop a firing that never ran.
 - Changing the data location (§4.9) closes the DB connection first, updates `dataPath`, then
   reloads everything from the new directory. Nothing is moved — execution state is wholly
   contained in the executions dir, so there is no migration step.
@@ -440,7 +443,9 @@ answers 422 and writes nothing):
   §4.2 param kinds, §4.7 agent configs (harness/mode/model rules), §4.8 secret names, trigger
   kinds with at most one `app_start`. Imported steps obey the §8 step bounds: `retries`
   is 1–10, `timeout` never combines with `no_timeout`, and `retries` never combines with
-  `infinite_retries` — an archive can't land a step no drafting call could produce.
+  `infinite_retries` — an archive can't land a step no drafting call could produce. Step
+  filenames obey the §8 `NN-name.py` rule in listed order (`01-…`, `02-…`), like every other
+  ingest path — otherwise the app's own save endpoints would 422 on a version import created.
 - The automation lands as **v1** of a brand-new automation (note "Imported") — version history
   is local editing history and never travels. Duplicate names are fine (§5 directory naming);
   re-importing your own export creates a copy, never overwrites.

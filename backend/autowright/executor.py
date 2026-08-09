@@ -175,7 +175,9 @@ class Result:
         emit("result", field="status", value=s)
 
     def chip(self, text: str) -> None:
-        emit("result", field="chip", value=str(text))
+        # A chip is a short §4.5 badge — cap it so a runaway string can never
+        # blow the engine's size-capped control-line read.
+        emit("result", field="chip", value=str(text)[:1_000])
 
 
 def scan_outbound(text: str, what: str, scan: dict[str, str]) -> None:
@@ -328,9 +330,11 @@ def main() -> int:
     script = sys.argv[1]
     ctx = json.load(sys.stdin)
     # §6: take the automation-wide scan map off ctx — Agent keeps a ctx
-    # reference, so leaving it there would hand every secret of the automation
-    # to a step that declared none of them.
-    scan_secrets = ctx.pop("scan_secrets", None) or ctx.get("secrets", {})
+    # reference, so leaving it would hand every secret of the automation
+    # to a step that declared none of them. §6.1: passed, never defaulted —
+    # a wiring mistake that drops it must fail loudly here, not silently
+    # narrow the outbound scan to the step's own secrets (fail closed).
+    scan_secrets = ctx.pop("scan_secrets")
     # §6.2: declared packages live in the user-writable site-packages dir — the
     # bundled interpreter never has them installed directly.
     if ctx.get("site_packages"):
@@ -362,7 +366,9 @@ def main() -> int:
             os.environ[key] = str(value)
 
     def notify(text: str) -> None:
-        emit("notify", text=str(text))
+        # macOS notifications show ~150 chars — cap well above that so an
+        # oversize string can't blow the engine's control-line read.
+        emit("notify", text=str(text)[:10_000])
 
     def reply(text: str) -> None:
         # §6.1: only message-trigger executions have an origin to answer; the
@@ -374,6 +380,12 @@ def main() -> int:
         # gets. Hard raise, not a redaction: posting "•••" to a channel would
         # hide that the automation tried to send a Keychain value.
         text = str(text)
+        # Same 200k cap as agent prompts/replies — an oversize control line
+        # would blow the engine's size-capped readline and the reply would be
+        # silently lost mid-pipe; a hard raise tells the step instead (§6.1
+        # failed sends are never silent).
+        if len(text) > 200_000:
+            raise RuntimeError("reply too large (200k char cap)")
         scan_outbound(text, "reply", scan_secrets)
         emit("reply", text=text)
 

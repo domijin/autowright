@@ -89,21 +89,28 @@ async function backendHealthy() {
   return (await backendVersion()) !== null
 }
 
-// §3: an update install or backend restart must never land mid-execution. An
-// unreachable backend counts as idle — nothing can be executing on it.
-async function executionsLive() {
+// §3: an update install or backend restart must never land mid-execution.
+// Tri-state probe: true/false when the backend answered, null when it is
+// unreachable — callers decide what unknown means for them.
+async function executionsLiveProbe() {
   const info = backendInfo()
-  if (!info) return false
+  if (!info) return null
   try {
     const res = await fetch(`http://127.0.0.1:${info.port}/executions?status=executing`, {
       headers: { Authorization: `Bearer ${info.token}` },
       signal: AbortSignal.timeout(5000),
     })
-    if (!res.ok) return false
+    if (!res.ok) return null
     return (await res.json()).length > 0
   } catch {
-    return false
+    return null
   }
+}
+
+// §3 update-install rule: an unreachable backend counts as idle — nothing can
+// be executing on it.
+async function executionsLive() {
+  return (await executionsLiveProbe()) === true
 }
 
 // §3 install verification: launchctl can report success while the job never
@@ -140,7 +147,20 @@ async function verifyBackendUp() {
 async function syncBackendVersion(py, running) {
   appLog(`ensure-backend: backend ${running} != app ${app.getVersion()} — `
     + 'restarting service once live executions finish')
-  while (await executionsLive()) {
+  // This backend answered /health moments ago, so a transient probe failure
+  // (5 s timeout while its thread pool is busy mid-execution) must NOT read
+  // as idle — §3: the service is never restarted mid-execution. Only a
+  // backend that stays unreachable AND fails /health is treated as down
+  // (nothing can be executing on it) so the install still proceeds.
+  let unknown = 0
+  while (true) {
+    const live = await executionsLiveProbe()
+    if (live === false) break
+    if (live === null) {
+      if (++unknown >= 4 && !(await backendHealthy())) break
+    } else {
+      unknown = 0
+    }
     await new Promise((r) => setTimeout(r, 30_000))
   }
   execFile(py, ['-m', 'autowright.cli', 'service', 'install'], (err, stdout, stderr) => {
@@ -340,6 +360,39 @@ async function refreshTrayAlert() {
   } catch { /* backend down — keep the current icon */ }
 }
 
+// §4.9: the shell owns two OS-side settings effects — the macOS login item
+// (`login`) and the tray icon (`menuBarIcon`). Reconciled from the backend's
+// stored settings at startup and on the periodic poll (a tray-only app must
+// follow CLI changes too); the renderer pushes the same shape on every
+// settings change.
+function applyShellSettings(s) {
+  if (typeof s?.login === 'boolean'
+      && app.getLoginItemSettings().openAtLogin !== s.login) {
+    app.setLoginItemSettings({ openAtLogin: s.login })
+  }
+  if (typeof s?.menuBarIcon === 'boolean') {
+    if (s.menuBarIcon && !tray) {
+      createTray()
+      void refreshTrayAlert()
+    } else if (!s.menuBarIcon && tray) {
+      if (panel) panel.hide()
+      tray.destroy()
+      tray = null
+    }
+  }
+}
+
+async function syncShellSettings() {
+  const info = backendInfo()
+  if (!info) return
+  try {
+    const res = await fetch(`http://127.0.0.1:${info.port}/settings`, {
+      headers: { Authorization: `Bearer ${info.token}` },
+    })
+    if (res.ok) applyShellSettings(await res.json())
+  } catch { /* backend down — keep the current state */ }
+}
+
 // Tray-click toggle guard: on macOS the focused panel blurs (and hides)
 // before the tray click arrives, so a bare isVisible() check would always
 // re-show. A click landing right after a blur-hide means "close" — swallow it.
@@ -465,7 +518,7 @@ ipcMain.handle('read-request-log', (_e, name) => {
   if (typeof name !== 'string' || name !== path.basename(name)) return null
   try { return fs.readFileSync(path.join(logsDir(), 'requests', name), 'utf-8') } catch { return null }
 })
-ipcMain.handle('set-login-item', (_e, on) => app.setLoginItemSettings({ openAtLogin: !!on }))
+ipcMain.handle('apply-settings', (_e, s) => applyShellSettings(s))
 ipcMain.handle('tray-alert', (_e, on) => {
   if (tray) tray.setImage(trayIcon(!!on))
 })
@@ -613,7 +666,8 @@ app.whenReady().then(() => {
   createTray()
   void notifyAppStarted()
   void refreshTrayAlert()
-  setInterval(() => void refreshTrayAlert(), 60_000)
+  void syncShellSettings()
+  setInterval(() => { void refreshTrayAlert(); void syncShellSettings() }, 60_000)
   // The hidden tray panel is also a BrowserWindow, so count only the main
   // window — `getAllWindows().length` would block reopening from the Dock.
   app.on('activate', () => { if (win === null) createWindow(); else { win.show(); win.focus() } })

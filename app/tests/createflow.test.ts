@@ -378,6 +378,22 @@ describe('serializeDraft (§4.4 draft payload)', () => {
     }
     expect(serializeDraft(r).chat?.map((e) => e.kind)).toEqual(['user', 'error', 'answer'])
   })
+
+  it('round-trips the §11 dirty gate as outOfSync — resume must not unlock Save (§4.4)', () => {
+    const dirty = { ...seedDrafting(AGENTS, SECRETS), dirty: true }
+    expect(serializeDraft(dirty).outOfSync).toBe(true)
+    expect('outOfSync' in serializeDraft(seedDrafting(AGENTS, SECRETS))).toBe(false)
+    // both resume paths restore it
+    expect(seedFromPayload({ outOfSync: true } as DraftPayload, AGENTS, SECRETS).dirty).toBe(true)
+    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRETS).dirty).toBe(false)
+    const a = seedFromAuto({
+      name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
+      triggers: [], stepAgents: ['g1'], allowedSecrets: [],
+      agentId: null,
+      draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '', outOfSync: true },
+    } as unknown as Automation, AGENTS, SECRETS)
+    expect(a.dirty).toBe(true)
+  })
 })
 
 // ---- §11 thread persistence (§4.4 `chat` → §5 chat.jsonl) ----

@@ -85,6 +85,10 @@ let restoring = false
 // Monotonic refresh sequence: only the newest in-flight /state snapshot may
 // land — an older response resolving late would clobber fresher data.
 let refreshSeq = 0
+// Bumped when a WS execution event mutates the list directly — an in-flight
+// /state snapshot from before the bump is already stale and must refetch
+// rather than clobber the fresher event-applied rows (§19 event path).
+let eventSeq = 0
 
 // Execution cache eviction: full records and log buckets are kept only for
 // the currently viewed execution plus the 5 most recently viewed (MRU head is
@@ -208,12 +212,21 @@ export const useStore = create<Model>((set, get) => ({
   async refresh() {
     const n = ++refreshSeq
     try {
-      const s = await api.state()
-      // A newer refresh started while this one was in flight — its snapshot is
-      // fresher (or will be); applying this one would roll state backwards.
-      if (n !== refreshSeq) return
-      set({ automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft })
-      updateTrayAlert(s.automations)
+      // A WS execution event landing while /state is in flight makes the
+      // snapshot stale on arrival (an execution that just started would
+      // vanish until the next event) — refetch instead of applying it.
+      // Bounded: after a few tries the last snapshot applies best-effort.
+      for (let attempt = 0; ; attempt++) {
+        const mut = eventSeq
+        const s = await api.state()
+        // A newer refresh started while this one was in flight — its snapshot is
+        // fresher (or will be); applying this one would roll state backwards.
+        if (n !== refreshSeq) return
+        if (mut !== eventSeq && attempt < 3) continue
+        set({ automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft })
+        updateTrayAlert(s.automations)
+        return
+      }
     } catch { /* backend restarting; ws reconnect will re-trigger */ }
   },
 
@@ -257,6 +270,7 @@ export const useStore = create<Model>((set, get) => ({
     // shape as exec.started — the record lands in the list the same way, which
     // is what the §7 Waiting section and the §9.2 "N waiting" line count.
     if (ev === 'execution.started' || ev === 'execution.finished' || ev === 'execution.queued') {
+      eventSeq++ // an in-flight /state snapshot is stale from here on
       const ej = msg.execution
       const rest = m.executions.filter((e) => e.id !== ej.id)
       set({ executions: [ej, ...rest].sort((a, b) => b.startedMs - a.startedMs) })
@@ -465,8 +479,15 @@ function syncHistory(m: Model) {
     createFrom: m.createFrom, agentEditId: m.agentEditId,
   }
   if (navSame(s, lastNav)) return
+  const first = lastNav === null
   lastNav = s
-  try { history.pushState({ adNav: s }, '') } catch { /* file:// quirks */ }
+  try {
+    // The session's first snapshot stamps the CURRENT entry (replaceState) —
+    // a bare pushState would leave the initial history entry without adNav,
+    // making the first page unreachable via back (§9: browser/OS back works).
+    if (first) history.replaceState({ adNav: s }, '')
+    else history.pushState({ adNav: s }, '')
+  } catch { /* file:// quirks */ }
 }
 
 window.addEventListener('popstate', (e) => {

@@ -264,16 +264,22 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
     return f"unknown trigger kind {kind!r}"
 
 
-def normalize_triggers(raw: list) -> tuple[list[dict], str | None]:
-    """Validate a whole list; assign ids to new entries. → (stored shape, error)."""
+def normalize_triggers(raw: list,
+                       existing_ids: set[str] | None = None) -> tuple[list[dict], str | None]:
+    """Validate a whole list; assign ids to new entries. → (stored shape, error).
+
+    `existing_ids` is the set of trigger ids already stored on the automation:
+    only those revalidate leniently (allow_past), so an elapsed one-shot can't
+    block edits or version saves of the whole list — while a client-fabricated
+    id can't smuggle a past `time` past the §19 422. None (the §19 preview,
+    which has no automation context) trusts any id — display-only, nothing is
+    stored there."""
     out: list[dict] = []
     for t in raw or []:
         if not isinstance(t, dict):
             return [], "each trigger must be an object"
-        # An id marks a trigger that already exists on disk: it revalidates
-        # leniently (allow_past) so an elapsed one-shot can't block edits or
-        # version saves of the whole list. New triggers must be future.
-        err = validate_trigger(t, allow_past=bool(t.get("id")))
+        known = bool(t.get("id")) and (existing_ids is None or t["id"] in existing_ids)
+        err = validate_trigger(t, allow_past=known)
         if err:
             return [], err
         n: dict = {"id": t.get("id") or str(uuid.uuid4()),

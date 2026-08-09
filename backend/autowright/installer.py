@@ -136,21 +136,35 @@ def _stream_shell(cmd: list[str], emit, provider_id: str,
         except (ProcessLookupError, PermissionError):
             if proc.poll() is None:
                 proc.kill()
+        # An escaped child (a daemonizing grandchild that re-setsid'd) could
+        # still hold the merged pipe open — close our read end so the loop
+        # unblocks regardless, like harness._invoke's timeout kill.
+        try:
+            proc.stdout.close()  # type: ignore[union-attr]
+        except OSError:
+            pass
 
     timer = threading.Timer(INSTALL_TIMEOUT_S, _kill)
     timer.daemon = True
     timer.start()
     tail: list[str] = []
     try:
-        for raw in proc.stdout:  # type: ignore[union-attr]
-            line = raw.strip()
-            if line:
-                tail = (tail + [line])[-5:]
-                emit(line=line)
+        try:
+            for raw in proc.stdout:  # type: ignore[union-attr]
+                line = raw.strip()
+                if line:
+                    tail = (tail + [line])[-5:]
+                    emit(line=line)
+        except ValueError:
+            # The timeout kill closed our read end — anything else is real.
+            if not timed_out.is_set():
+                raise
         proc.wait()
     finally:
         timer.cancel()
-    if timed_out.is_set():
+    if timed_out.is_set() and proc.returncode != 0:
+        # returncode guard: a timer firing in the instant after a successful
+        # exit must not report a completed install as a timeout.
         raise RuntimeError(f"the installer timed out after {INSTALL_TIMEOUT_S // 60} minutes")
     if proc.returncode != 0:
         raise RuntimeError(tail[-1] if tail else f"installer exited with code {proc.returncode}")

@@ -308,6 +308,14 @@ class Store:
                 y = self.read_exec_yaml(ed.name)
                 if not y or y.get("id") != ed.name or not y.get("started_at"):
                     continue
+                # Timestamps must parse the way the serializers will parse them
+                # later — an unparsable value upserted here would 500 the whole
+                # executions list (and, via _latest_exec, the automations list)
+                # on every request until the row is removed by hand.
+                timefmt.parse_local(str(y["started_at"]))
+                for k in ("queued_at", "finished_at"):
+                    if y.get(k):
+                        timefmt.parse_local(str(y[k]))
                 h = self.exec_header(y)
                 self.execdb.upsert(h)
             except Exception as e:  # noqa: BLE001
@@ -452,6 +460,7 @@ class Store:
             "step_agents": meta.get("step_agents"),
             "allowed_secrets": meta.get("allowed_secrets"),
             "triggers": meta.get("triggers"),
+            "out_of_sync": bool(meta.get("out_of_sync")) or None,
         }
 
     def _refresh_exec_derived(self) -> None:
@@ -574,10 +583,12 @@ class Store:
             "note": ver.get("note"),
             "params": ver.get("params", []),
             **({"packages": pkgs} if pkgs else {}),
-            # §4.4 draft-only grant selections + trigger list — never present for real versions
+            # §4.4 draft-only grant selections + trigger list + §11 dirty-gate
+            # state — never present for real versions
             **({"step_agents": ver["step_agents"]} if ver.get("step_agents") is not None else {}),
             **({"allowed_secrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
             **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {}),
+            **({"out_of_sync": True} if ver.get("out_of_sync") else {}),
             "steps": manifest_steps,
             **(extra or {}),
         })
@@ -664,7 +675,10 @@ class Store:
         pending). §5: draft/ is a container — only the automation/ working
         copy is rewritten; memory/ (§4.4) survives re-saves from the editor.
         No rmtree: _write_version_folder rewrites in place (manifest last,
-        stale files pruned after), so a crash never loses the previous draft.
+        stale files pruned after), so a crash never leaves the container
+        manifest-less. (A crash between the step-file writes and the manifest
+        can pair the old manifest with freshly rewritten same-name step files —
+        a mixed draft, recoverable in the editor, never a lost one.)
         For the pending owner the identity keyword args land as create-only
         keys in automation.yaml (§5) — no automation record exists to hold
         them; they are ignored for an automation owner."""
@@ -1150,7 +1164,9 @@ class Store:
             cutoff = datetime.now().timestamp() - days * 86400
             doomed = []
             for h in self.execs.values():
-                if h["status"] == "executing" or not h["started_at"]:
+                # §5: `queued` records ARE the §6 firing queue — deleting one
+                # would silently drop a firing that never ran.
+                if h["status"] in ("executing", "queued") or not h["started_at"]:
                     continue
                 try:
                     if datetime.fromisoformat(h["started_at"]).timestamp() < cutoff:
@@ -1218,21 +1234,38 @@ class Store:
             files += 1
         return size, files
 
+    @staticmethod
+    def _snapshot_meta_ok(m) -> bool:
+        """§5: snapshot.yaml is hand-editable — a damaged one (non-mapping
+        root, missing fields, unparsable created_at) is skipped, never fatal
+        to the automation detail that serializes it."""
+        if not isinstance(m, dict) or not m.get("id") or not m.get("reason"):
+            return False
+        try:
+            timefmt.parse_local(str(m.get("created_at")))
+        except ValueError:
+            return False
+        return True
+
     def list_snapshots(self, a: dict) -> list[dict]:
-        """§6.3: read from disk on demand, newest first; orphan dirs (no snapshot.yaml) skipped."""
+        """§6.3: read from disk on demand, newest first; orphan dirs (no
+        snapshot.yaml) and damaged metadata skipped."""
         out = []
         root = self.snapshots_dir(a)
         if root.exists():
             for d in root.iterdir():
                 if d.is_dir():
                     meta = load_yaml(d / "snapshot.yaml")
-                    if meta:
+                    if self._snapshot_meta_ok(meta):
                         out.append(meta)
+                    elif meta:
+                        log.warning("snapshot %s has unusable snapshot.yaml — skipping it", d.name)
         return sorted(out, key=lambda m: m.get("created_at") or "", reverse=True)
 
     def get_snapshot(self, a: dict, sid: str) -> dict | None:
         d = self._snapshot_dir(a, sid)
-        return (load_yaml(d / "snapshot.yaml") or None) if d else None
+        meta = load_yaml(d / "snapshot.yaml") if d else None
+        return meta if self._snapshot_meta_ok(meta) else None
 
     def snapshot_memory(self, a: dict, reason: str, name: str | None = None,
                         version: str | None = None, keep: str | None = None) -> dict | None:
@@ -1400,10 +1433,12 @@ class Store:
                 "steps": [self.step_json(s) for s in ver.get("steps", [])],
                 "params": ver.get("params", []),
                 "packages": ver.get("packages", []),
-                # §4.4 draft-only keys: the editor's grant selections + trigger list
+                # §4.4 draft-only keys: the editor's grant selections + trigger
+                # list + §11 dirty-gate state
                 **({"stepAgents": ver["step_agents"]} if ver.get("step_agents") is not None else {}),
                 **({"allowedSecrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
                 **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {}),
+                **({"outOfSync": True} if ver.get("out_of_sync") else {}),
             }
             container = self.draft_dir(a)
             if t := self.draft_test_json(container):

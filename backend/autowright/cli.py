@@ -84,12 +84,20 @@ class Client:
 def find_automation(c: Client, ref: str) -> dict:
     autos = c.req("GET", "/automations")
     for a in autos:
-        if a["id"] == ref or a["name"].lower() == ref.lower():
+        if a["id"] == ref:
             return a
-    matches = [a for a in autos if ref.lower() in a["name"].lower()]
+    # §5.1 makes duplicate names a designed state (re-import creates a copy) —
+    # §20: ambiguity exits with the candidate list, never a silent first-match.
+    matches = [a for a in autos if a["name"].lower() == ref.lower()]
+    if not matches:
+        matches = [a for a in autos if ref.lower() in a["name"].lower()]
     if len(matches) == 1:
         return matches[0]
-    sys.exit(f"no unique automation matches {ref!r} — "
+    if matches:
+        sys.exit(f"{ref!r} is ambiguous — matches: "
+                 + ", ".join(f"{a['name']} ({a['id'][:8]})" for a in matches)
+                 + " — use the id instead")
+    sys.exit(f"no automation matches {ref!r} — "
              f"have: {', '.join(a['name'] for a in autos) or '(none)'}")
 
 
@@ -958,7 +966,15 @@ def cmd_settings_set(c: Client, args) -> None:
             sys.exit(f"unknown setting {k!r} — have: {', '.join(SETTINGS_KEYS)}, dataPath")
         kind = SETTINGS_KEYS[k]
         if kind is bool:
-            patch[k] = raw.strip().lower() in ("on", "true", "1", "yes")
+            low = raw.strip().lower()
+            # Strict like `param set`'s toggle parse — a typo must not
+            # silently become False.
+            if low in ("on", "true", "1", "yes"):
+                patch[k] = True
+            elif low in ("off", "false", "0", "no"):
+                patch[k] = False
+            else:
+                sys.exit(f"{k} takes on|off, got {raw!r}")
         elif kind is int:
             try:
                 patch[k] = int(raw)

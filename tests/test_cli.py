@@ -120,8 +120,30 @@ def test_find_auto_ambiguous_substring_exits():
     with pytest.raises(SystemExit) as ei:
         find_automation(_ListClient(AUTOS), "report")  # Daily + Weekly both match
     msg = str(ei.value.code)
-    assert "no unique automation" in msg
+    # §20: ambiguity exits with the candidate list (names + ids)
+    assert "ambiguous" in msg
     assert "Daily Report" in msg and "Weekly Report" in msg
+    assert "abc12345" in msg and "def67890" in msg
+
+
+def test_find_auto_duplicate_exact_names_exit():
+    """§20: duplicate names are a designed state (§5.1 re-import creates a
+    copy) — an exact-name reference matching two automations must exit with
+    the candidate list, never silently operate on the first one."""
+    from autowright.cli import find_automation
+
+    autos = [{"id": "abc12345", "name": "Backup"}, {"id": "def67890", "name": "Backup"}]
+
+    class _C:
+        def req(self, *_a, **_k):
+            return autos
+
+    with pytest.raises(SystemExit) as ei:
+        find_automation(_C(), "backup")
+    msg = str(ei.value.code)
+    assert "ambiguous" in msg and "abc12345" in msg and "def67890" in msg
+    # the id still resolves uniquely
+    assert find_automation(_C(), "def67890")["id"] == "def67890"
 
 
 def test_find_auto_no_match_exits():

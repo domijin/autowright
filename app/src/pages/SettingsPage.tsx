@@ -76,8 +76,10 @@ export default function SettingsPage() {
               <div style={rowSub}>Autowright starts quietly in the menu bar.</div>
             </div>
             <Toggle
+              // §4.9: the OS login item follows the stored setting — App.tsx
+              // pushes applySettings on every settings change, one apply path.
               on={settings.login}
-              onChange={(v) => { patch({ login: v }); void window.autowright?.setLoginItem(v) }}
+              onChange={(v) => patch({ login: v })}
             />
           </div>
           <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20, borderBottom: '1px solid var(--hairline-dim)' }}>

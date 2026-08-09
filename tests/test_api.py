@@ -399,7 +399,7 @@ def _until(events, ev, timeout=30):
         if any(e["event"] == ev for e in events):
             return next(e for e in events if e["event"] == ev)
         time.sleep(0.05)
-    raise AssertionError(f"{ev} never arrived (got {[e['ev'] for e in events]})")
+    raise AssertionError(f"{ev} never arrived (got {[e['event'] for e in events]})")
 
 
 def _until_finished(events, execution_id, timeout=30):
@@ -409,7 +409,7 @@ def _until_finished(events, execution_id, timeout=30):
         if e:
             return e
         time.sleep(0.05)
-    raise AssertionError(f"exec.finished never arrived (got {[e['ev'] for e in events]})")
+    raise AssertionError(f"exec.finished never arrived (got {[e['event'] for e in events]})")
 
 
 def test_test_param_values_override(client, monkeypatch):

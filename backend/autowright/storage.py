@@ -352,9 +352,9 @@ class Store:
             "allowed_secrets": top.get("allowed_secrets", []) or [],
             "memory_snapshots": self._load_snapshot_settings(top.get("memory_snapshots")),
             "param_values": top.get("param_values", {}) or {},
-            # §6 concurrency settings — absent keys default to the old behavior
-            # (one at a time) plus a queue; a hand-edited out-of-range value is
-            # clamped rather than dropping the automation at load.
+            # §6 concurrency settings — absent keys default to one at a time
+            # plus a queue; a hand-edited out-of-range value is clamped rather
+            # than dropping the automation at load.
             "max_parallel": clamp_max_parallel(top.get("max_parallel")),
             "max_queued": clamp_max_queued(top.get("max_queued")),
             "created_at": top.get("created_at"),

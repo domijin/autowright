@@ -56,16 +56,16 @@ def test_ws_streams_execution_events(backend, client):
         def pump():
             msg = json.loads(ws.recv(timeout=30))
             events.append(msg)
-            return msg["ev"] == "execution.finished" and msg.get("executionId") == execution_id
+            return msg["event"] == "execution.finished" and msg.get("executionId") == execution_id
 
         wait_for(pump, 60, "exec.finished on the WebSocket")
-    kinds = [m["ev"] for m in events]
+    kinds = [m["event"] for m in events]
     assert kinds.index("execution.started") < kinds.index("execution.finished")
     finished = events[-1]
     assert finished["execution"]["status"] == "succeeded"
     assert finished["auto_json"]["lastStatus"] == "succeeded"
     # §5 log lines stream with per-file monotonic seq
-    logs = [m for m in events if m["ev"] == "execution.log"]
+    logs = [m for m in events if m["event"] == "execution.log"]
     assert logs
     for step_key in {(m["stepIndex"], m.get("attempt")) for m in logs}:
         seqs = [m["line"]["sequence"] for m in logs

@@ -2,6 +2,8 @@
 
 > Describe the job once. Your Mac does it every day, exactly the same way, forever.
 
+**Website: [autowright.ai](https://autowright.ai)**
+
 Autowright is a desktop app for recurring personal automations. Everyone has small
 recurring chores a computer should handle: checking a site for updates, pulling a report,
 filing downloads. But scripting them yourself is work, chatbots re-improvise the task on

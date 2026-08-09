@@ -26,6 +26,8 @@ describe('edit draft e2e', () => {
 
   it('tests an edit draft without touching live memory, then discards it', async () => {
     backend = await new Backend().start()
+    // §11: entering edit with zero agents redirects to Agents — seed one
+    await backend.createAgent('Edit draft agent')
     const { id } = await backend.createAutomation('Edit draft e2e', [MEMORY_STEP])
     const realExec = await backend.executeAndWait(id)
     expect(realExec.status).toBe('succeeded')

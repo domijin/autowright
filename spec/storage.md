@@ -470,7 +470,9 @@ answers 422 and writes nothing):
 - Memory starts empty; no executions, snapshots, or drafts are created.
 
 The import response carries a **summary** — secrets created (need values), existing secrets
-referenced but not granted, agents created vs. reused, declared packages (the app installs
+referenced but not granted, agents created (each with a `ready` flag — the §19 check-ready
+rule run at import time on the created agent's harness/mode/model, so the §9.1 modal badges
+a not-ready harness Needs setup) vs. reused, declared packages (the app installs
 them on first execution as usual, §6.2; a §20 CLI import runs the ensure right away) —
 rendered by the §9.1 summary modal.
 

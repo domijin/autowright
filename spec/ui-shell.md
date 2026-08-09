@@ -52,10 +52,19 @@ animation animates `transform` and would knock the toast off-center while it pla
 **Interaction conventions** (every page, both windows):
 
 - Anything clickable is a real `<button>` (or an anchor for links) — cards, list/table rows,
-  picker rows, chips, tags. No `div onClick`: every interactive surface is reachable with
+  picker rows, chips, tags. Every interactive surface is reachable with
   Tab and activates with Enter/Space. Row/card buttons reset button chrome
   (`.ad-btn-bare`: no background/border, inherit font/color/text-align, full width) and then
   carry their surface class (`.ad-card-click`, `.ad-hover-row`, …).
+  **Sole carve-out — nested controls.** A clickable surface that must nest another
+  interactive control cannot be a `<button>` (nested `<button>`s are invalid HTML). It
+  renders as a `div` with `role="button"`, `tabIndex={0}`, and an Enter/Space keydown
+  handler that ignores key events originating in the nested control — the same
+  Tab/Enter/Space guarantee holds. Exactly four surfaces ship this pattern: the
+  automations-list card (nests the inline Execute-now button), the agent card (nests the
+  overflow-menu button), the menu-bar panel's automation row (nests the inline Execute-now
+  button), and the §11 section-card header (nests its `right`-slot action buttons).
+  Everything else stays a real `<button>` — no other `div onClick`.
 - Icon-only buttons always carry an `aria-label` (the `title` tooltip stays for sighted
   users). `Toggle` renders `role="switch"` + `aria-checked`; radio groups (`RadioRing`
   rows) render `role="radio"`/`aria-checked` inside a `role="radiogroup"`; a segmented

@@ -562,7 +562,9 @@ def cmd_automation_import(c: Client, args) -> None:
     if s.get("secretsExisting"):
         print(f"  existing secrets to grant on the edit page: {', '.join(s['secretsExisting'])}")
     if s.get("agentsCreated"):
-        print(f"  agents added: {', '.join(s['agentsCreated'])}")
+        print("  agents added: " + ", ".join(
+            g["name"] + ("" if g["ready"] else " (needs setup)")
+            for g in s["agentsCreated"]))
     if s.get("agentsReused"):
         print(f"  agents reused: {', '.join(s['agentsReused'])}")
     ensure_packages(c, s.get("packages") or [])

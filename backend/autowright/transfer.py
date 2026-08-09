@@ -436,7 +436,7 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
             store.save_secrets()
         # Agents: exact config match (name + harness + mode + model) reuses the
         # local record; anything else is created — same name allowed (§5.1).
-        created_agents, reused_agents = [], []
+        created_recs, reused_agents = [], []
         created_ids: list[str] = []
         matched: dict[str, dict] = {}   # archive name → local record
         for g in arch["agents"]:
@@ -453,9 +453,9 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                 if store.default_agent_id is None:
                     store.default_agent_id = rec["id"]  # §4.7: the first agent is the default
                 matched[g["name"]] = rec
-                created_agents.append(g["name"])
+                created_recs.append(rec)
                 created_ids.append(rec["id"])
-        if created_agents:
+        if created_recs:
             store.save_agents()
         # The drafting agent_id maps by name; no archive agents → local default.
         drafting = matched.get(arch["agent"]) if arch.get("agent") else None
@@ -479,8 +479,20 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
         if arch["param_values"]:
             # Values are the one manifest field creation can't seed.
             store.patch_automation(a, {"paramValues": arch["param_values"]})
+    # §5.1 summary: each created agent carries `ready` — the one §19 check-ready
+    # rule, run outside the store lock (it may spawn a status subprocess) and
+    # memoized per harness config so agents sharing one harness check once.
+    ready_memo: dict[tuple, bool] = {}
+
+    def _ready(rec: dict) -> bool:
+        key = (rec["harness"], rec["mode"], rec["model"])
+        if key not in ready_memo:
+            ready_memo[key] = harness.check_ready(rec["harness"], rec["model"], rec["mode"])
+        return ready_memo[key]
+
     summary = {"secretsCreated": created_secrets, "secretsExisting": existing_secrets,
-               "agentsCreated": created_agents, "agentsReused": reused_agents,
+               "agentsCreated": [{"name": r["name"], "ready": _ready(r)} for r in created_recs],
+               "agentsReused": reused_agents,
                "packages": arch["packages"]}
     return a, summary
 

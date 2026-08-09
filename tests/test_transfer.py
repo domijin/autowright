@@ -53,6 +53,14 @@ def _build(store: Store):
     return a
 
 
+@pytest.fixture(autouse=True)
+def stub_check_ready(monkeypatch):
+    """§5.1 summary readiness flag — stubbed so no test spawns a real harness
+    status subprocess; the readiness test overrides this per harness."""
+    monkeypatch.setattr(transfer.harness, "check_ready",
+                        lambda name, model=None, mode="default": False)
+
+
 def _fresh_home(monkeypatch, tmp_path_factory):
     home2 = tmp_path_factory.mktemp("home2")
     monkeypatch.setenv("AUTOWRIGHT_HOME", str(home2))
@@ -132,7 +140,7 @@ def test_import_on_fresh_machine(store, monkeypatch, tmp_path_factory):
     # secrets became placeholders, agents were created — and only those granted
     assert summary["secretsCreated"] == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
     assert summary["secretsExisting"] == []
-    assert sorted(summary["agentsCreated"]) == ["Coder", "Researcher"]
+    assert sorted(g["name"] for g in summary["agentsCreated"]) == ["Coder", "Researcher"]
     assert all(not s["set"] for s in s2.secrets)
     assert sorted(b["allowed_secrets"]) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
     assert set(b["enabled_agents"]) == {g["id"] for g in s2.agents}
@@ -250,12 +258,33 @@ def test_import_agent_name_collision_creates_second_record(store):
     coder["mode"], coder["model"] = "default", None
     store.save_agents()
     b, summary = transfer.import_automation(store, data)
-    assert summary["agentsCreated"] == ["Coder"]
+    assert summary["agentsCreated"] == [{"name": "Coder", "ready": False}]
     assert summary["agentsReused"] == ["Researcher"]
     coders = [g for g in store.agents if g["name"] == "Coder"]
     assert len(coders) == 2
     created = next(g for g in coders if g["mode"] == "custom")
     assert b["enabled_agents"] == [created["id"]]
+
+
+def test_import_summary_created_agents_carry_readiness(store, monkeypatch, tmp_path_factory):
+    """§5.1: each created agent's summary entry carries `ready` — the §19
+    check-ready rule run on the created agent's harness/mode/model."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    calls = []
+
+    def fake_ready(name, model=None, mode="default"):
+        calls.append((name, model, mode))
+        return name == "Claude Code"
+
+    monkeypatch.setattr(transfer.harness, "check_ready", fake_ready)
+    _b, summary = transfer.import_automation(s2, data)
+    assert {g["name"]: g["ready"] for g in summary["agentsCreated"]} == \
+        {"Researcher": True, "Coder": False}
+    # checked with each created agent's real config, once per config
+    assert sorted(calls) == [("Claude Code", None, "default"),
+                             ("OpenCode", "anthropic/x", "custom")]
 
 
 def test_import_rejects_and_writes_nothing(store):

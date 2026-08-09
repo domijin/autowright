@@ -130,8 +130,9 @@ direct `*.autowright` link on any host, or a `github.com` repo/release page reso
 archive asset). A URL goes through §19 `POST /automations/import/url` and confirms
 immediately — the typed command is the user's explicit action, so no interactive preview;
 when GitHub resolution changed the URL, the resolved source is printed. A file path POSTs
-`/automations/import` unchanged. Both paths print the same summary lines and run the
-package ensure.
+`/automations/import` unchanged. Both paths print the same summary lines — a created agent
+whose harness isn't ready (summary `ready: false`, §19) is marked "(needs setup)" — and run
+the package ensure.
 
 **Trigger semantics on push** — the §4.3 trigger merge, performed client-side exactly
 like the editor: the manifest's cron entries are matched against the stored list on

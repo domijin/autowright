@@ -153,8 +153,13 @@ remain plain dicts (§2).
   `values=0` omits `param_values` from the manifest (default `1`)
 - `POST /automations/import` — the §5.1 archive as the raw request body
   (`application/octet-stream`, no multipart) → `{ automation, summary }` where `summary` is
-  `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages }` (name lists;
-  `packages` the §6.2 declarations). Validates the whole archive first; any failure answers
+  `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages }` —
+  `agentsCreated` is `[{ name, ready }]`, `ready` computed at import time by the one §19
+  check-ready rule (`/agents/{id}/check`) for the created agent's harness/mode/model — it
+  backs the §9.1 summary modal's Needs setup badge (created agents can share a name with a
+  pre-existing local agent, §5.1, so the renderer can't look readiness up by name); the
+  other three are name lists and `packages` the §6.2 declarations. Validates the whole
+  archive first; any failure answers
   422 with the reason and writes nothing. Size caps (untrusted input): the upload itself is
   capped at 64 MB (413), one member at 32 MB decompressed and the whole archive at 256 MB
   decompressed (422) — a crafted archive can't balloon into memory

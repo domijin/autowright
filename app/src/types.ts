@@ -260,11 +260,13 @@ export interface Agent {
 // usedBy is the list of automation names using the secret — the UI joins it.
 export interface SecretMeta { name: string; description: string; set: boolean; usedBy: string[] }
 
-// §5.1 import summary — what the import created vs. matched (§19)
+// §5.1 import summary — what the import created vs. matched (§19).
+// Created agents carry `ready` (backend §19 check-ready rule at import time)
+// so the summary modal can badge a not-ready harness Needs setup (§12 badge).
 export interface ImportSummary {
   secretsCreated: string[]
   secretsExisting: string[]
-  agentsCreated: string[]
+  agentsCreated: { name: string; ready: boolean }[]
   agentsReused: string[]
   packages: PackageDep[]
 }

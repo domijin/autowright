@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
 import type { Automation, ImportPreview, ImportSummary } from '../types'
-import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
+import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, P, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
 import { useTriggerPreview } from '../triggers'
 
 // §5.1/§9.1 import summary modal — only the sections that apply render.
@@ -55,7 +55,10 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
             </>
           ))}
           {summary.agentsCreated.length > 0 && section('AGENTS ADDED', (
-            summary.agentsCreated.map((n) => nameRow(n))
+            // §12 badge, backend-computed `ready` (§5.1): not-ready harness → Needs setup.
+            summary.agentsCreated.map((g) => nameRow(g.name, g.ready ? undefined : (
+              <MiniBadge c={P.amber} bg={P.amberBg}>Needs setup</MiniBadge>
+            )))
           ))}
           {summary.packages.length > 0 && (
             <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)', margin: '16px 0 0' }}>

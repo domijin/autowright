@@ -237,7 +237,7 @@ export default function CreateFlow() {
 
   // ---- guards + edit-mode seeding ----
   useEffect(() => {
-    if (!isEdit && agents.length === 0) {
+    if (agents.length === 0) {
       setSurface('app')
       go('agents')
       showToast('No agent yet — add one here first. Creating and editing automations needs an AI.', 3600)
@@ -299,8 +299,11 @@ export default function CreateFlow() {
   }
 
   // §11 title rename — hidden while any job runs and, in edit mode, while
-  // viewing anything but the draft (Restore never renames).
-  const canRename = !!rev && !drafting && !busyRewrite && (!isEdit || rev.viewing === 'draft')
+  // viewing anything but the draft (Restore never renames). Create mode:
+  // renaming becomes available once drafting has produced a revision — a
+  // pre-draft rename would be wiped when the create job seeds and lands.
+  const canRename = !!rev && !drafting && !busyRewrite
+    && (isEdit ? rev.viewing === 'draft' : rev.spec.length > 0 || rev.steps.length > 0)
   // Create mode: the spec `#` title stands in until the manifest name lands (§11)
   const draftName = !rev ? ''
     : !isEdit && rev.name === 'New automation' && rev.spec.find((b) => b.kind === 'h1')?.text

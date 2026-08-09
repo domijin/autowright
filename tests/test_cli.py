@@ -837,7 +837,8 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
     raw = json.dumps({
         "automation": {"name": "Imported", "id": "deadbeef-1"},
         "summary": {"secretsCreated": ["BOT_TOKEN"], "secretsExisting": ["API_TOKEN"],
-                    "agentsCreated": ["Fast local"], "agentsReused": ["Claude"],
+                    "agentsCreated": [{"name": "Fast local", "ready": False}],
+                    "agentsReused": ["Claude"],
                     "packages": [{"pip": "requests"}]},
     }).encode()
     c = _RouteClient(raw=raw, reply={"packages": [
@@ -852,7 +853,7 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
     assert "imported 'Imported' [deadbeef]" in out
     assert "secrets that need values: BOT_TOKEN" in out
     assert "existing secrets to grant on the edit page: API_TOKEN" in out
-    assert "agents added: Fast local" in out
+    assert "agents added: Fast local (needs setup)" in out
     assert "agents reused: Claude" in out
     assert "package requests 2.32.3 installed" in out
     assert "triggers imported off" in out

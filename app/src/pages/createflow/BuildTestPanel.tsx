@@ -413,9 +413,10 @@ export function BuildTestPanel({
                           {syncGhostBtn}
                           {testToggleBtn('Test the draft')}
                           {/* §11: sends the canned analyze chat message — the
-                              whole repair loop lives in the thread */}
-                          {testExec.status === 'failed' && !anyJobBusy && (
-                            <button className="ad-btn-text dim" onClick={runAnalyze} style={panelBtnStyle}>
+                              whole repair loop lives in the thread. Disabled
+                              while a job runs, never hidden. */}
+                          {testExec.status === 'failed' && (
+                            <button className="ad-btn-text dim" disabled={anyJobBusy} onClick={runAnalyze} style={panelBtnStyle}>
                               <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze the failure
                             </button>
                           )}

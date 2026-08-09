@@ -239,6 +239,7 @@ export function LeftColumn({
   // host the thumb node itself, so the pane wires it up via this hook).
   const specThumb = useOverlayThumb()
   const instrThumb = useOverlayThumb()
+  const notesThumb = useOverlayThumb()
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -359,7 +360,7 @@ export function LeftColumn({
         hint="No notes yet — your AI records what it learns (page quirks, dead ends, fixes) as you build and test."
         preview={rev.notes.trim() ? docPreview(rev.notes) : null}
         right={<>
-          {notesOpenEff && !rev.notesEdit && rev.notes.trim() !== '' && (
+          {notesOpenEff && !rev.notesEdit && (
             <button
               className="ad-btn-text small ad-focus-inset" disabled={busyRewrite}
               onClick={(e) => {
@@ -410,17 +411,22 @@ export function LeftColumn({
           )
         )}
         {rev.notesEdit && (
-          <textarea
-            value={rev.notesDraft ?? rev.notes} rows={1}
-            ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
-            onChange={(e) => up({ notesDraft: e.target.value })}
-            placeholder="Markdown — your AI’s working knowledge for this automation. Prune anything stale or wrong."
-            style={{
-              width: '100%', background: 'var(--bg-inset)', border: 'none',
-              color: 'var(--text-2)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
-              resize: 'none', outline: 'none', display: 'block', minHeight: 92, overflow: 'hidden',
-            }}
-          />
+          <div className="ad-scrollwrap" style={{ position: 'relative' }}>
+            <textarea
+              value={rev.notesDraft ?? rev.notes} rows={1}
+              ref={(el) => { notesThumb.attach(el); if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
+              onChange={(e) => up({ notesDraft: e.target.value })}
+              onScroll={notesThumb.onScroll}
+              placeholder="Markdown — your AI’s working knowledge for this automation. Prune anything stale or wrong."
+              style={{
+                width: '100%', background: 'var(--bg-inset)', border: 'none',
+                color: 'var(--text-2)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
+                resize: 'none', outline: 'none', display: 'block', minHeight: 92, maxHeight: 440, overflowY: 'auto',
+              }}
+              className="ad-scrollhide"
+            />
+            {notesThumb.node}
+          </div>
         )}
       </SectionCard>
 

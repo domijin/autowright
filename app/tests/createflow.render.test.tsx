@@ -781,6 +781,46 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     expect(body.text).toBe('The test failed at step Fetch pages — figure out why and change the automation so it won’t happen again.')
     // the canned message lands as a user entry in the thread
     expect(screen.getByText(body.text as string)).toBeTruthy()
+    // §11: while the chat job runs the button disables — never hidden
+    const analyze = screen.getByText('Analyze the failure').closest('button')!
+    expect(analyze.disabled).toBe(true)
+  })
+
+  it('NOTES card: Edit is offered even while the notes are empty', () => {
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByText('NOTES'))
+    const card = cardOf(screen.getByText('NOTES'))
+    expect(within(card).getAllByText(/No notes yet/).length).toBeGreaterThan(0)
+    fireEvent.click(within(card).getByText('Edit'))
+    // §11: the editor caps at the Build-instructions 440px and scrolls inside
+    const ta = card.querySelector('textarea')!
+    expect(ta.style.maxHeight).toBe('440px')
+    fireEvent.change(ta, { target: { value: '- Added by hand' } })
+    fireEvent.click(within(card).getByText('Save'))
+    expect(bodyLi('Added by hand')).toBeTruthy()
+  })
+
+  it('rename pencils hide on the create empty state and show once a revision exists', () => {
+    storeMod.useStore.setState({ createFrom: 'app', automationId: null })
+    render(<CreateFlow />)
+    expect(screen.getByText('New automation')).toBeTruthy()
+    expect(screen.queryByTitle('Rename')).toBeNull()
+    expect(screen.queryByTitle('Edit the description')).toBeNull()
+    cleanup()
+    // edit mode viewing the draft: a revision exists — both pencils render
+    storeMod.useStore.setState({ createFrom: 'edit', automationId: 'a1' })
+    render(<CreateFlow />)
+    expect(screen.getByTitle('Rename')).toBeTruthy()
+    expect(screen.getByTitle('Edit the description')).toBeTruthy()
+  })
+
+  it('zero agents: edit mode redirects to Agents with the toast', () => {
+    storeMod.useStore.setState({ agents: [] })
+    render(<CreateFlow />)
+    const s = storeMod.useStore.getState()
+    expect(s.surface).toBe('app')
+    expect(s.page).toBe('agents')
+    expect(s.toast).toBe('No agent yet — add one here first. Creating and editing automations needs an AI.')
   })
 
   it('drafting-agent picker: selecting toasts, a busy rewrite disables it', () => {

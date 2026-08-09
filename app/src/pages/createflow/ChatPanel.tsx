@@ -8,20 +8,18 @@ import type { Agent, Blocker, ChatEntry } from '../../types'
 import { BtnGhost, BtnPrimary, Eyebrow, PopMenu, ScrollArea, Spinner, agName, dispModel, usePopover } from '../../ui'
 import { Markdown } from '../../result'
 import type { Rev } from './model'
-import { cardStyle } from './SectionCards'
 
 /** §11 blocker cards — one per blocker, three labeled, editable fields pre-filled
  * from the agent's answer; the user edits any of them (usually the fix). Fields
  * auto-grow with their content (ask-box pattern) above per-field minimum heights. */
-function BlockerCards({ blockers, onChange, bare, readOnly }: {
-  // §11: `bare` drops the bordered card wrapper — the panel's inline repair and
-  // test-analysis blocks provide the frame; the spec-card clarification keeps
-  // the bordered cards. `readOnly` locks the fields while the entry's primary
-  // action is unavailable (job in flight / viewing an old version).
-  blockers: Blocker[]; onChange?: (i: number, patch: Partial<Blocker>) => void; bare?: boolean; readOnly?: boolean
+function BlockerCards({ blockers, onChange, readOnly }: {
+  // §11: cards render bare — the thread entry provides the frame. `readOnly`
+  // locks the fields while the entry's primary action is unavailable (job in
+  // flight / viewing an old version).
+  blockers: Blocker[]; onChange?: (i: number, patch: Partial<Blocker>) => void; readOnly?: boolean
 }) {
   const field = (label: string, value: string, minLines: number, set: (v: string) => void, opts?: { placeholder?: string }) => (
-    <div style={{ padding: bare ? '10px 0 0' : '10px 16px 0' }}>
+    <div style={{ padding: '10px 0 0' }}>
       <Eyebrow>{label}</Eyebrow>
       <textarea
         className="ad-input amber"
@@ -40,12 +38,9 @@ function BlockerCards({ blockers, onChange, bare, readOnly }: {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: '100%' }}>
       {blockers.map((b, i) => (
-        <div key={i} style={bare ? { textAlign: 'left', paddingBottom: 4 } : {
-          ...cardStyle, borderColor: 'oklch(0.8 0.13 85 / .35)', paddingBottom: 14, textAlign: 'left',
-          borderLeft: '3px solid oklch(0.8 0.13 85 / .6)',
-        }}>
+        <div key={i} style={{ textAlign: 'left', paddingBottom: 4 }}>
           {blockers.length > 1 && (
-            <Eyebrow style={{ color: 'var(--amber)', padding: bare ? '12px 0 0' : '12px 16px 0' }}>BLOCKER {i + 1}</Eyebrow>
+            <Eyebrow style={{ color: 'var(--amber)', padding: '12px 0 0' }}>BLOCKER {i + 1}</Eyebrow>
           )}
           {field('REASON', b.reason, 2, (v) => onChange?.(i, { reason: v }))}
           {field('HOW TO FIX', b.fix, 3, (v) => onChange?.(i, { fix: v }), { placeholder: 'What should change so this can be built' })}
@@ -311,7 +306,6 @@ export function ChatPanel({
                   {blockersExplainer(e)}
                 </div>
                 <BlockerCards
-                  bare
                   readOnly={anyJobBusy || viewingOld}
                   blockers={e.blockers ?? []}
                   onChange={(i, patch) => patchEntryBlocker(e.id, i, patch)}

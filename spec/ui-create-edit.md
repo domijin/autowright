@@ -98,9 +98,12 @@ applies unchanged; the chat pane never collapses.
     appends a system entry ("Notes updated.");
   - **actions** (§8 `actions.yaml`) run after the rewrites land: `name`/`description` apply like
     the pencil edits (create: the draft's fields; edit: the immediate §19 PATCH) with a
-    system entry; `sync: true` starts the §8 sync at once — exactly as if the user pressed
-    Sync now — unless syncing is gated (a running draft test, viewing an old version), in
-    which case a system entry says why ("Sync skipped — finish the running test first.");
+    system entry; `sync: true` arms a **pending sync**: a watcher fires it as soon as no
+    §8 job or draft test is running — immediately when the panel is idle (exactly as if
+    the user pressed Sync now), otherwise automatically the moment the running work
+    finishes. While the user is viewing an old version the watcher instead clears both
+    pendings (sync and test) **silently** — no system entry, no toast; the discard is
+    deliberate, since an old version must never be synced or tested;
     `test: true` arms a **pending test** that starts the moment the workflow is in sync —
     immediately when it already is, after the chained sync succeeds otherwise (`test: true`
     implies the sync when the workflow is out of sync, §8) — using `test_values` as the
@@ -205,8 +208,8 @@ chat — "Answer below — your answers are sent back and the spec is rewritten.
 spec and rebuild."; sync — "It couldn't sync the steps with the spec. Edit the fix below,
 then apply it to the spec and sync again." One card per blocker with
 three labeled, editable text fields — **Reason** / **How to fix** / **Details** — pre-filled
-from the agent's answer; the user edits any of them (usually the fix). Card look: an amber
-left accent bar, and — only when the list has several blockers — a "BLOCKER N" eyebrow header.
+from the agent's answer; the user edits any of them (usually the fix). Card look: only when the list has
+several blockers does each card carry a "BLOCKER N" eyebrow header.
 The fields are auto-growing textareas (ask-box pattern) with comfortable minimum heights —
 roughly two text lines for Reason and Details and three for How to fix, the main editing
 target, whose box also draws a slightly brighter border and carries the placeholder "What

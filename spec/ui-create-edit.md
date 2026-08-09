@@ -37,15 +37,17 @@ applies unchanged; the chat pane never collapses.
   kinds (persisted shapes per §4.4; progress is transient editor state):
   - **user** — the message as quiet plain text.
   - **answer** — the agent's reply rendered through the shared §4.5 Markdown renderer.
-  - **rewrite** — a "Spec updated" event: the one-line summary, the out-of-sync note
+  - **rewrite** — a "Spec updated" event: the user's request text echoed back as the entry
+    body (the §8 payload carries no summary field), the out-of-sync note
     ("The workflow is out of sync — sync the steps before saving."), and — while the
     workflow is still out of sync — an inline ghost **Sync now** action (the same §8 sync
     call and gating as the panel's button), so the most common next step sits on the event
     itself. The entry carries no Undo of its own — undo restores the whole draft, not just
     the spec, so it lives on the standalone undo row (Draft undo below).
   - **blockers** — the §8 blocker list as editable cards (below).
-  - **system** — a quiet one-line status chip ("Steps synced with the spec.", "Sync
-    stopped — the workflow is still out of sync.", the §7 Fix-with-AI failure seed, the
+  - **system** — a quiet one-line status chip ("Steps synced with the spec.", the
+    create-completion entry "Draft generated — review the spec and steps, then create
+    it.", the §7 Fix-with-AI failure seed, the
     run-settled entries below, "Build instructions updated.", "Notes updated.",
     "Renamed to `<name>`.", "Description updated.", the Draft-undo entries "Last change
     undone — the rewrites above no longer apply." and "Nothing to undo.").
@@ -62,8 +64,10 @@ applies unchanged; the chat pane never collapses.
   inside the pane; the pill shrinks and truncates its label with an ellipsis rather
   than overlap the send button when the agent name is long) lives in the composer — the agent is a property of the message being
   sent (it answers chat, writes the spec, generates the steps), so it is chosen where the
-  message is written. Same gating as every other rewrite input (disabled while a §8 job is
-  in flight); picking an agent shows the confirmation toast "`<name> · <model>` now writes
+  message is written. The picker disables only while a rewrite is in flight (a §8 sync or
+  chat job — the inputs lock below); during a create job it stays enabled, but picking then
+  only fires the toast "Wait for the current rewrite to finish first." and changes nothing.
+  Otherwise picking an agent shows the confirmation toast "`<name> · <model>` now writes
   the spec and steps here." and, in edit mode, marks the draft touched. The send button is
   a quiet secondary affordance (Enter is primary): borderless, pill-height — the same
   height as the picker pill — always labeled "Send", disabled while the input is
@@ -117,7 +121,8 @@ applies unchanged; the chat pane never collapses.
   the textarea stays visible but disabled, the agent picker stays in place — and gains a
   **progress block** above the textarea: a spinner, the job's stage label ("Working on the
   request…" / "Writing the spec…" / "Installing the packages…" / "Generating the steps…" /
-  "`<agent>` is rewriting the steps from your spec…"), and a compact **activity feed**
+  "`<agent>` is rewriting the steps from your spec…"; the Build & test panel's coarse
+  state-1 label reads "Waiting for the spec…" while call 1 writes), and a compact **activity feed**
   beneath it — up to three of the newest §8 `events` lines as dim history (oldest first,
   single-line ellipsis) above the live §8 `detail` line; when `detail` extends the newest
   event (same message, growing ` · N lines` count) that event shows only as the live line,
@@ -135,7 +140,9 @@ applies unchanged; the chat pane never collapses.
   rewrite would pull the workflow out from under the running test), and the test's live
   controls (progress, Cancel, View run) stay in the Build & test panel.
 - **Create empty state:** headline "What should Autowright do for you?" over the thread
-  area, then an "OR START FROM AN EXAMPLE" eyebrow over icon-led example chips (fa icon +
+  area, the sub-line "Describe the job in plain words. Your AI writes it as scripts — you
+  review everything before it executes." beneath it, then an "OR START FROM AN EXAMPLE"
+  eyebrow over icon-led example chips (fa icon +
   label; accent-tinted border/background on hover, 1 px press-down on :active): Track manga
   chapters (fa-book-open) / Back up a folder every night (fa-box-archive) / Email me a
   weekly report (fa-envelope) / Watch a product's price (fa-tag) / Tidy my screenshots
@@ -233,7 +240,9 @@ user-driven and Start over/Dismiss always exits.
 
 **Review.** 1800 px max-width page. Title row: name (single line, shrinks with ellipsis so a long name never pushes the
 buttons out of the window), version dropdown (edit mode), Start over ghost
-(edit: "Discard draft"), primary Create/Save — labeled "Create automation" in create mode,
+(edit: "Discard draft"), a "Keep draft" ghost (edit mode only, rendered once the draft is
+touched or a stored draft exists — leaves the editor on the §4.4 draft-keep path, toast
+"Draft kept — resume it from this automation anytime."), primary Create/Save — labeled "Create automation" in create mode,
 "Save as vN+1" in edit mode, and "Restore vX as vN+1" while viewing an old version. The title is the plain automation name in both
 modes — never an "Edit …" framing. It is editable in place: a small pencil sits beside it,
 always visible on this page (no hover reveal — `.ad-title-rename.always`); clicking the
@@ -379,8 +388,8 @@ editors enter with
   handle, comfortable ~3-line minimum) sized to its content like the rendered view, so
   toggling view/edit doesn't jump the card height; both states cap at the Spec card's 440 px
   max height and scroll internally (§14 overlay scrollbar) past it, so a long rule list never
-  swallows the column; edit placeholder "Markdown — one rule per line: 'Prefer
-  Python.' 'Never delete files — move them to the Trash.'", empty state "No instructions yet —
+  swallows the column; edit placeholder "Markdown — one rule per line: “Prefer
+  Python.” “Never delete files — move them to the Trash.”", empty state "No instructions yet —
   press Edit to add standing rules." While editing, a ghost **Reset to default** button sits
   left of Cancel in the card header: it fills the editor with the app's current §8
   `default-build-instructions.md` text (from `GET /instructions`), and is disabled while the
@@ -451,13 +460,14 @@ editors enter with
   spec" check) — sync state lives only in the panel. The composer progress block's
   **Cancel** button cancels the in-flight sync (`DELETE /drafts/{jobId}`) no matter
   how it was started (the panel, a repair-block apply, "Rebuild the steps"): the steps and spec
-  are left untouched, the workflow stays out of sync, and the panel returns to its out-of-sync
-  state (toast "Sync
-  stopped — the workflow is still out of sync."). A `blocked` sync renders a thread
+  are left untouched and the workflow returns to its pre-sync state, announced by a toast
+  (never a system chip) — "Sync stopped — the workflow is still out of sync." when it was
+  out of sync when the sync started, "Sync stopped — nothing changed." when it wasn't (an
+  in-sync "Sync with spec" run). A `blocked` sync renders a thread
   blockers entry (source: sync; Blockers above): its
   primary amends the in-editor spec (same `## Constraints & resolutions` rule) and
   repeats the sync; dismissing it leaves the workflow out of sync with
-  the panel still showing it. Disabled Save shows an amber hint ("Sync and review the steps before saving." /
+  the panel still showing it. Disabled Save shows an amber hint ("Sync and review the steps before saving" /
   "Finish editing the spec first…" / "Syncing steps…" / "Rewriting the spec…" /
   "Writing the spec…" / "Generating the steps…" / "Installing the packages…"); saving is also
   blocked while any §8 job is in flight, and the panel's sync button disables while one is.
@@ -635,8 +645,9 @@ editors enter with
   test zone owns every test control — the test button never sits in the header: the test
   button with its hint / outcome / progress and their action rows, laid out per state
   below. Both zones share the card's 20 px side padding. States, first match wins:
-  1. **Drafting** (create job in flight) — the coarse §8 stage label as static text over
-     a plain faint dot (no spinner). The live `detail` line lives in the footer action
+  1. **Drafting** (create job in flight) — the coarse §8 stage label ("Waiting for the
+     spec…" while call 1 writes, then "Installing the packages…" / "Generating the
+     steps…") as static text over a plain faint dot (no spinner). The live `detail` line lives in the footer action
      block (Drafting on Review above), and the other right-column cards show their static
      placeholders.
   2. **Sync in flight** — static line "`<agent>` is rewriting the steps from your spec…"
@@ -649,7 +660,7 @@ editors enter with
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
   4. **In sync, test executing** — the live status line, progress bar, and the action row
-     Cancel + View run + the disabled faint **Sync with spec** (below); the test-setup
+     Cancel + the disabled faint **Sync with spec** (below) + View run; the test-setup
      section stays hidden while the test executes.
   5. **In sync, test settled** — the outcome line over the action row faint **Sync with
      spec** / **Test the draft** and, on failure, **Analyze the failure**, which sends
@@ -719,8 +730,11 @@ editors enter with
   - The closing **run row**: the muted **Run test** button — the only control that
     starts a test — and, when a test record exists, the faint **View run** beside it
     (the settled states' only View-run home — the action rows never carry it),
-    over the this-test-only note ("Values and the message apply to this test only —
-    nothing is saved.").
+    over the this-test-only note, worded to what the draft has — "Values and the message
+    apply to this test only — nothing is saved." (params and message triggers both),
+    "These values apply to this test only — nothing is saved." (params only), "The
+    message applies to this test only — nothing is saved." (message triggers only) — and
+    omitted entirely when the draft has neither.
   Clicking the toggle again collapses the section; starting a test collapses it too
   (its inputs were snapshotted), and it stays hidden while the test executes. The
   entered values survive a collapse — reopening shows them again; seeding happens only
@@ -746,7 +760,7 @@ editors enter with
   start and deleted with the draft. It rides the draft payload as `test` ({ status, when:
   §4.1 started-label, executionId }) — on the automation's `draft` object and on `GET /draft/pending` —
   and a resumed draft's panel renders it in place of the never-tested row: a status line
-  ("Last test succeeded — <when>" green / "Last test failed — <when>" amber); the setup
+  ("Last test succeeded — <when>." green / "Last test failed — <when>." amber); the setup
   section's run row shows View run while the record still exists (retention may outlive
   it — the button hides when the record is gone). A live test always
   takes over the panel. **When a test settles the thread hears about it:** the editor
@@ -777,7 +791,7 @@ appended, and the user asks when the job settles.
 
 **Settled runs seed the thread.** Beyond the test entries above, entering the editor in
 edit mode appends a run-settled system entry ("Draft execution failed at step `<name>` —
-`<message>`." / "Draft execution succeeded.") when the automation's newest settled Draft
+`<message>`" / "Draft execution succeeded.") when the automation's newest settled Draft
 execution (§4.5 kind `draft`) finished after the thread's last entry — a draft iterated
 via the §19 execute API picks the conversation up where the run left off. Duplicate
 seeds are suppressed the same way (only runs newer than the last thread entry qualify).

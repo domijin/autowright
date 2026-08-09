@@ -19,11 +19,15 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   a sys log line ("installing packages: `pandas`…"). An install failure fails the
   execution before any step with the package category below.
 - Streaming: each step queued → executing → terminal status with duration. Executing a step
-  appends an **attempt** (`n = attempts+1`) to that step; the step's status always equals its
+  appends an **attempt** (its `number` = the last attempt's `number` + 1 — monotonic per step,
+  never re-derived from list length, since the §4.5 prune drops old entries) to that step; the
+  step's status always equals its
   latest attempt's status. Each attempt streams into its own log file (§5) — the sys opener
-  "▸ Step N — `<name>`", the step's own output, and its timeout/cancel/skip lines all land
-  there; execution-level lines (package installs, secret failures, retry markers, the final
-  failure line) go to `logs/execution.ndjson`. Then the execution gets its final status,
+  "▸ Step N — `<name>`", the step's own output, its timeout/cancel/skip lines, and the
+  automatic step-retry marker (emitted after the new attempt opens, so it lands in the new
+  attempt's file) all land
+  there; execution-level lines (package installs, secret failures, the manual in-place retry
+  marker, the final failure line) go to `logs/execution.ndjson`. Then the execution gets its final status,
   duration, result object; automation gets latest/resultChip/lastExecutionLabel "Today"; toast
   summarizes. An execution whose steps include `skipped` ones but no failures finishes
   `succeeded`.
@@ -71,8 +75,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   message — never an agent call): step timed out ("The step hit its `N` s time limit.") ·
   disallowed import ("The step imports a package outside the allowed list.") · package install
   failed ("A required package couldn't be installed — check your connection, then execute
-  again or retry from the edit page.") · missing secret
-  ("The script references a secret that doesn't exist.") · undeclared secret — the step read
+  again or retry from the edit page.") · missing secret — the §6 pre-step gate sets one of
+  "A step references a secret this automation isn't allowed to use.", "A step references a
+  secret whose value hasn't been added yet.", "A step references a secret that isn't in your
+  Keychain."; a step whose code reads a nonexistent secret at runtime gets "The script
+  references a secret that doesn't exist." · undeclared secret — the step read
   a secret the automation allows but the step never declared or referenced, so it wasn't
   injected (§6 step scoping; the executor's message says so: "secret `NAME` wasn't injected
   into this step — steps only receive the secrets they reference in code or declare in the
@@ -98,7 +105,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   (a failed pass's stale result files may remain until steps overwrite them), accumulated
   duration (`duration_ms` sums the passes; `started_at` never changes). `execution.finished` fires
   again per pass, so the end-of-execution toast repeats — intended. Retry is allowed only on
-  terminal `failed` executions and answers 409 while the automation is live, when the
+  terminal `failed` executions and answers 409 when the automation is at `maxParallel`
+  capacity (§6 — with a free slot a retry is admitted beside a live execution), when the
   version no longer resolves, or — for a Draft execution — when the draft's steps changed
   since the record (a re-saved draft would pair old step statuses with new scripts; execute
   it fresh instead). Manual retries are uncapped and are the **only** execution-level retry —

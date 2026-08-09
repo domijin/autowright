@@ -1,6 +1,6 @@
 // §4.3/§19 trigger previews — the renderer keeps NO local trigger-math mirror:
 // every trigger label, validity verdict, and next-occurrence string comes from
-// the backend's `POST /triggers/preview` (schedule.py, the one implementation).
+// the backend's `POST /triggers/preview` (triggers.py — `triggers.cron_display`, the one implementation).
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import type { TriggerPreview } from './types'

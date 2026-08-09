@@ -19,11 +19,13 @@ with any port (the §15 renderer-URL dev server), credentials off. One rule in b
 
 **Request validation:** every mutating endpoint's request body is validated by a pydantic
 request model (`backend/autowright/models.py`) — a malformed body (missing or mistyped
-fields, wrong shapes) answers 422 before any handler logic runs. The models carry the
-cross-field checks too: `paramValues` entries are checked against the automation's param
-definitions (names **and** kinds), `stepAgents`/`allowedSecrets` must be lists of strings,
-`agentId` and `stepAgents` entries must reference existing agents, and the settings booleans
-must be booleans with `days` an int. Pydantic shapes **requests only** — response bodies
+fields, wrong shapes: `stepAgents`/`allowedSecrets` must be lists of strings, the settings
+booleans must be booleans with `days` an int) answers 422 before any handler logic runs.
+The store-state cross-field checks live in the handlers, answering the same 422:
+`paramValues` entries are checked against the automation's param definitions (names **and**
+kinds) and `agentId`/`stepAgents` entries must reference configured agents
+(`_check_param_values` / `_check_agent_refs` in `api.py` — they need store state the models
+never see). Pydantic shapes **requests only** — response bodies
 remain plain dicts (§2).
 
 - `GET /health` → `{ version, app }` (unauthenticated; used for discovery/liveness)
@@ -108,9 +110,15 @@ remain plain dicts (§2).
   normalized exactly like the PATCH (422 aborts, nothing written), and the §8 step validators
   run server-side (rule below). `name` falls back to the draft's name, then "New automation";
   `stepAgents`/`allowedSecrets` land as the automation's grants exactly as sent (§20 grant
-  model — no all-on seed). Success consumes the §4.4
+  model — no all-on seed), with one narrow default: when `stepAgents` is **omitted
+  entirely**, the store seeds it with the drafting agent (`[agentId]`, empty without one) —
+  an explicit empty list lands empty. Success consumes the §4.4
   pending create-mode slot (`<root>/draft/` is deleted on success)
-- `POST /automations/{id}/versions` `{ draft }` — save edit as vN+1; the draft's `triggers`
+- `POST /automations/{id}/versions` `{ draft, name?, agentId?, stepAgents?, allowedSecrets? }`
+  — save edit as vN+1; the optional identity/grant fields, when sent, are applied to the
+  automation as a patch after the version lands — the §20 push grant model rides this
+  (the CLI sends the draft plus its computed `stepAgents`/`allowedSecrets` in the one call).
+  The draft's `triggers`
   list (when the key is sent) replaces the automation's trigger list whole, validated and
   normalized like the PATCH (422 aborts the save; entries keep their `id`, new ones get one)
 - **Server-side step validation** — `POST /automations` and `POST /automations/{id}/versions`
@@ -343,9 +351,12 @@ remain plain dicts (§2).
   `@ai-sdk/openai-compatible`, `baseURL` = `AUTOWRIGHT_OLLAMA_URL` + `/v1`, the agent's model
   listed under `models`) so `opencode run --model ollama/<model>` resolves.
 - `GET /secrets` (names + `description` + `set` + usedBy — a list of automation names — never
-  values) · `PUT /secrets/{name}` `{ value }` — a blank
-  value on a new name creates a §4.8 placeholder (`set: false`); on an existing name it edits
-  only the description; answers 503 when the Keychain refuses the write · `DELETE /secrets/{name}` —
+  values) · `PUT /secrets/{name}` `{ value, description? }` — `description` is
+  presence-sensitive (`exclude_unset`): absent leaves the stored description untouched, sent
+  (even blank) sets it. A blank
+  value on a new name creates a §4.8 placeholder (`set: false`); on an existing name a blank
+  value edits only the description — the presence rule is what makes that read; answers 503
+  when the Keychain refuses the write · `DELETE /secrets/{name}` —
   values go straight to the Keychain, never
   into responses or files
 - `GET /settings` · `PATCH /settings` (validates before storing: `days` must be an int —
@@ -368,7 +379,8 @@ remain plain dicts (§2).
   `secrets.changed`, `settings.changed`, `draft.changed` (the §4.4 pending slot was kept
   or discarded — clients re-`GET /state`; §11 test executions stream over the
   ordinary `execution.*` events),
-  `ollama.pull` (model-pull progress). Entity payloads ride the events under camelCase
+  `harness.install` (provider install progress — the payload shape lives on the Install
+  bullet above), `ollama.pull` (model-pull progress). Entity payloads ride the events under camelCase
   keys matching the REST shapes: `execution.started`/`queued`/`finished` carry `execution`
   (the record header, §19 executions-list shape) plus `automation` — the owning automation in
   list shape, or `null` when there is no row to patch (§11 test executions; an automation
@@ -377,7 +389,7 @@ remain plain dicts (§2).
   `automation` — the changed automation in list shape, or `null` when it was deleted —
   whenever exactly one automation changed; clients patch that one row in place by **merging**
   it over the stored record, never replacing it. The list shape lacks the full-record fields
-  (`params`/`steps`/`latest`/`memory`/`snapshots`/`spec`/`versions`/`draft`), so a replace
+  (`params`/`steps`/`latest`/`memory`/`snapshots`/`spec`/`packages`/`versions`/`draft`), so a replace
   would blank those fields on an open detail page — its sections unmount and remount around
   the follow-up full fetch, which reads as a page-refresh flicker, drops input focus
   mid-edit, and collapses the page height so the scroll position jumps to the top. A bare

@@ -491,6 +491,9 @@ result: result object | null
 workspace: string — full-record-only: absolute path of the execution's `workspace/` dir (§5),
   backing the §7 workspace link ("Show workspace in Finder", §4.9 Show-in-Finder rule)
 redactedSecrets: secret names redacted in logs (a list) | null when none — display surfaces join it
+params: the execution's snapshot of the automation's param definitions + resolved values — the
+  §4.2 value-merged serialization, taken at execution start; stored in execution.yaml (§5),
+  full-record-only in the API
 note: optional note ("previous execution still in progress", "the queue was full (N waiting)",
   "Mac went to sleep") | null
 error: { step | null, message, reason | null } | null — failed executions only: the failing

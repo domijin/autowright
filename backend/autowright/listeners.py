@@ -3,7 +3,7 @@ distinct bot-token secret referenced by any enabled discord trigger, plus one
 chat.db watcher total while any enabled imessage trigger exists. Fires
 matching messages as executions (§4.3 rules, §4.5 triggerPayload) and sends
 §6.1 reply() messages back — Discord REST API or Messages.app osascript.
-Listener state is pushed into `store.listener_status` for the §4.3 `conn`
+Listener state is pushed into `store.listener_status` for the §4.3 `connection`
 field, keyed by secret name for Discord and by IMSG_KEY for iMessage."""
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ BUSY_TEXT = ("I'm working on something else right now and couldn't take this "
 # (§4.8 names are [A-Z][A-Z0-9_]*).
 IMSG_KEY = "imessage"
 
-# Gateway close codes worth a plain-word `conn` error (§4.3).
+# Gateway close codes worth a plain-word `connection` error (§4.3).
 _CLOSE_REASONS = {
     4004: "Discord rejected the bot token — check the secret's value",
     4014: "the bot's Message Content intent is off — enable it in the "
@@ -274,7 +274,7 @@ class _ImsgWatcher:
     """The one §6 chat.db watcher: opened lazily on the first tick (so no
     permission is touched before an enabled imessage trigger exists), polled
     synchronously from the reconcile loop — a ROWID-cursor read is cheap. A
-    db that can't be opened parks in the `conn` error state and re-probes
+    db that can't be opened parks in the `connection` error state and re-probes
     every tick, so granting Full Disk Access heals it without a restart."""
 
     def __init__(self, mgr: "Listeners"):

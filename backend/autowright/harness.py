@@ -218,9 +218,9 @@ def _claude_stream_line(line: str) -> tuple[str | None, str | None, list[dict]]:
     if not isinstance(obj, dict):
         return None, None, []
     if obj.get("type") == "stream_event":
-        ev = obj.get("event") or {}
-        delta = ev.get("delta") or {}
-        if ev.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
+        event = obj.get("event") or {}
+        delta = event.get("delta") or {}
+        if event.get("type") == "content_block_delta" and delta.get("type") == "text_delta":
             return delta.get("text") or "", None, []
         return None, None, []
     if obj.get("type") == "assistant":

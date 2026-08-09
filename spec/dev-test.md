@@ -60,7 +60,9 @@ Electron env knob (configuration only):
 Test doubles live in `tests/` only: a fake `claude` CLI at `tests/bin/claude` (conftest prepends
 `tests/bin` to `PATH`, so the real detect/invoke/subprocess path is exercised against it;
 `AUTOWRIGHT_TEST_CLAUDE_SIGNED_OUT=1` makes its `auth`-status invocation exit non-zero, so the
-signed-out detection path is testable), a fake
+signed-out detection path is testable; `AUTOWRIGHT_TEST_STREAM_DELAY_MS` — milliseconds pacing
+its stream-json output, for manual UI checks of live §8 progress; unset → instant, so the
+pytest suite stays fast), a fake
 `osascript` at `tests/bin/osascript` (records its argv to a file named by
 `AUTOWRIGHT_TEST_OSASCRIPT_LOG` and exits 0 — the §6 iMessage sender resolves `osascript`
 through PATH, so tests exercise the real send path; exit/stderr overridable via
@@ -273,8 +275,8 @@ Dev workflow:
   the interpreter to `Contents/Resources/python/`, smoke-checks that the bundled interpreter
   imports `autowright` + every curated package from inside the bundle, codesigns and
   notarizes per §3 (Developer ID + hardened runtime on every Mach-O, inside-out, stapled —
-  no ad-hoc fallback), and produces `build/Autowright-<version>-<arch>.dmg` (hdiutil UDZO)
-  plus the §3 update zip `build/Autowright-<version>-<arch>.zip` (`ditto` of the stapled
+  no ad-hoc fallback), and produces `build/Autowright-<version>-darwin-<arch>.dmg` (hdiutil UDZO)
+  plus the §3 update zip `build/Autowright-<version>-darwin-<arch>.zip` (`ditto` of the stapled
   app, the Squirrel.Mac artifact `release.sh` uploads).
 - **`./scripts/dev.sh`** — fastest dev loop, with hot reloading: invokes `build.sh --deps` only
   (no renderer bundle); shuts down lingering processes from previous sessions — backend by
@@ -366,16 +368,10 @@ Dev workflow:
   spec-missing / code-missing) with an explicit "sound — no findings" verdict for any clean
   layer; no orientation prose. Fails (non-empty check, same as the doc mode) if generation
   returns nothing.
-- **`./scripts/commit`** — stages all uncommitted changes (`git add -A`), asks Claude
+- **`./scripts/commit.sh`** — stages all uncommitted changes (`git add -A`), asks Claude
   (Opus 5, `claude --model claude-opus-5 -p`) for a commit message based on the staged diff
   (≤72-char imperative summary, whole message capped at 2-3 sentences), strips any markdown
   code-fence lines (```/```lang) the model wraps the message in, prints it, and commits. Exits 0 with no commit if
   the tree is clean; fails if the message is empty after stripping. Does not push. Developer-only:
   agents never run this script (`.claude/CLAUDE.md` forbids it).
-
-Claude Code commands:
-
-- `/commit` (`.claude/commands/commit.md`) — stage all changes and make one concise commit. Always
-  delegated to a subagent via the Agent tool, always launched with `model: opus` (Opus 4.8). Never adds
-  `Claude` as co-author. Does not push.
 

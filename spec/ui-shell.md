@@ -24,7 +24,7 @@ every window state) and end around y ≈ 28, so panel and lights never overlap. 
 (default, no hover) the rail is 58 px wide and shows icons only: logo at top, nav icons
 (Automations, Executions, Agents, Secrets, Settings), and the About icon pinned at the bottom
 below a flexible spacer — About is meta, not a working surface. On `:hover` the panel's width
-animates 58 px → 212 px (`.22s`, pure CSS on the `.ad-rail` class) **overlaying** the content
+animates 58 px → 212 px (200 ms — `var(--t-enter)` — pure CSS on the `.ad-rail` class) **overlaying** the content
 pane, which never reflows: the layout reserves a constant 58 px spacer, so the content pane
 always spans the rest of the window. Inner sidebar content keeps a fixed 212 px width with
 `overflow: hidden` on the panel, so nav rows never reflow or squish mid-animation — the
@@ -70,8 +70,9 @@ animation animates `transform` and would knock the toast off-center while it pla
 - A page whose data hasn't loaded yet renders a centered `LoadingRow` — never a blank pane.
 - One-click destructive actions (delete, remove trigger, clear) always confirm first —
   `ConfirmModal` or the row's inline confirm swap; never a bare instant delete.
-- Popover menus with unbounded content (the version menus, the timezone picker) cap at
-  60 vh and scroll inside (`ScrollArea`) — rows never render past the window edge.
+- Popover menus with unbounded content scroll inside (`ScrollArea`) — rows never render
+  past the window edge: the version menus cap at 60 vh; the timezone picker's list scrolls
+  in a fixed 240 px `ScrollArea` (its filter input sits above, outside the scroll).
 - Modal cards cap at 84 vh and scroll inside (`ScrollArea`, built into the `Modal` shell) —
   content and footer buttons can never render off-screen. (The §9.4 doc modal keeps its
   tighter 62 vh body.)
@@ -116,8 +117,10 @@ actions and sit alone in the right slot.
 holds a draft (`pendingDraft` on `GET /state`), the header shows two buttons: a bordered
 **Resume draft** button (opens the create flow, which resumes the slot straight on Review)
 to the left of the primary **New automation** button — which then starts fresh: a danger
-confirm ("Start a new automation? — Your unsaved draft will be discarded. This can't be
-undone.") deletes the slot (`DELETE /draft/pending`) before opening the create flow. Without a
+confirm (title "Start a new automation?", body "Your unsaved draft “`<name>`” will be
+discarded. This can't be undone." — the draft's name in curly quotes, omitted when the
+draft has none; confirm button "Discard and start new") deletes the slot
+(`DELETE /draft/pending`) before opening the create flow. Without a
 pending draft, the single New automation button opens the create flow directly. Left of
 these sits a ghost **Import…** button (always present): it opens the **import modal**
 (§5.2 two-phase import). Input step: title "Import automation" over a one-line muted intro
@@ -143,7 +146,8 @@ editor before enabling them." Footer: quiet **Back** (returns to the input step)
 **Import** — POSTs `/automations/import/confirm` with the preview's token, closes the
 modal, and opens the **import summary modal** (a 404 — expired token — surfaces inline on
 the preview step).
-The summary modal: title "Imported "`<name>`"", then only the sections that apply — "Secrets that
+The summary modal: title "Imported "`<name>`"", a fixed muted intro line under it ("Its
+triggers are off until you enable them."), then only the sections that apply — "Secrets that
 need values" (one row per created placeholder: name + amber Not set tag — "add values on
 the Secrets page"), "Already on this Mac — not granted" (pre-existing secrets/agents the
 automation references, §5.1: "review and grant them on the edit page"), "Agents added"
@@ -235,7 +239,8 @@ Sections top to bottom:
   any segment distributes the digit pairs across it and the following segments. The three
   segments and the date combine into the stored `at`. An out-of-range time reddens the group
   with preview "Hours go 0–23, minutes and seconds 0–59"; a complete pair in the past
-  reddens date and group with preview "Pick a time in the future";
+  reddens date and group, and the preview shows the §19 `/triggers/preview` error verbatim —
+  the copy comes from the backend: "the time must be in the future";
   either state blocks Add. App start shows no
   input — just the preview line "On app start — executes when you launch the app", and its
   picker chip renders disabled (title "Already added") while the list holds one. A discord or
@@ -280,7 +285,7 @@ Sections top to bottom:
   case-insensitive, plain substring"), an optional sender-filter text input (§4.3 `author`;
   placeholder "Sender filter — only messages from these user ids (optional)"; accepts
   comma-separated ids, each digits only, same invalid styling as the channel input; directly
-  below it a visible helper line (11.5px, `--text-faint`): "Fires only on messages from
+  below it a visible helper line (11.5px, `--text-muted`): "Fires only on messages from
   these Discord users — comma-separate several ids. A user id is a long number like
   234567890123456789 — right-click their name → Copy User ID (needs Developer Mode, enabled
   in step 8)."), and an
@@ -367,9 +372,11 @@ Sections top to bottom:
   value can lose one of the updates." No modal and no block — the caution is inline, specific,
   and stays visible while the setting is above 1. An automation whose steps never touch memory
   gets no caution.
-- **RECENT EXECUTIONS** — execution history rows (status, trigger·version — a message-triggered
-  row puts the §4.5 `triggerSender` between them, "Discord · Dave · v3" — time, duration, note
-  text when present), linking to execution pages.
+- **RECENT EXECUTIONS** — execution history rows (status badge, then the execution id's
+  first 8 chars in faint mono — same short id the Executions page rows show — then
+  trigger·version — a message-triggered row puts the §4.5 `triggerSender` between them,
+  "Discord · Dave · v3" — time, duration, note text when present), linking to execution
+  pages.
 - **MEMORY** card — mono size/updated info line; "Show in Finder", "Snapshot" and "Clear
   memory" buttons. Clear swaps the button row to an inline confirm: "Next execution starts
   fresh, like the first time. Current memory is snapshotted first." (pre-clear toggle off:
@@ -440,7 +447,7 @@ the execution, then deletes). Buttons Cancel / red "Delete automation".
 ### 9.3 Developer log overlay
 
 A low-priority debug surface, ComfyUI-style: with the §4.9 `developerMode` setting on, pressing
-`` ` `` (Backquote) in the main window toggles a bottom log panel; Escape also closes it. The
+`` ` `` (Backquote) in the main window toggles a full-window log overlay; Escape also closes it. The
 key is ignored while focus is in an editable element (input, textarea, contenteditable) and the
 whole feature is inert — no listener effect, overlay never renders — while `developerMode` is off
 (turning the setting off closes an open overlay). Main-window surfaces only, never the menu-bar
@@ -474,8 +481,9 @@ array, `[]` when the directory is missing) every 1 s; selecting a name fetches i
 `window.autowright.readRequestLog(name)` (→ `read-request-log` IPC: file text, `null` when
 gone; main rejects any `name` that is not a plain basename) — request files are written once,
 complete, so no re-fetch is needed. Empty states: "No request logs
-yet — make a request with Developer mode on" (empty list) / "Select a request" (no
-selection).
+yet — make a request with Developer mode on" (empty list) / "Select a request" (no selection
+while the list holds files; with an empty list the right pane is blank — the list's own
+empty note carries the message).
 
 ### 9.4 About page
 
@@ -706,8 +714,9 @@ permission-declined state anywhere in the flow.
 ## 12. Agents & Secrets pages
 
 **Agents.** Tile grid of agent cards — same grid as the Automations list (§9.1,
-`repeat(auto-fill, minmax(310px, 1fr))`), not a vertical list; each card's action row sticks to
-the card bottom so tiles in a row align. Badge states Checking (cyan) / Connecting / Ready (green) /
+`repeat(auto-fill, minmax(310px, 1fr))`), not a vertical list. Cards carry no action row —
+only the transient `LoadingRow` (Checking locally… / Reconnecting…) pins to the card bottom
+(`margin-top: auto`) while a check is in flight. Badge states Checking (cyan) / Connecting / Ready (green) /
 Needs setup (amber). Statuses are cached in the renderer for the app session: each agent is
 checked once, staggered, on the first Agents page visit that sees it (new agents get checked on
 the next visit); later visits render the cached badge with no re-check. The cache entry for an
@@ -743,18 +752,19 @@ switching to "Edit agent" / "Save changes" when editing). Edit mode is addressed
 the agent's id (`agentEditId`) in the nav snapshot, so browser back/forward re-enters the same
 edit form — never a blank add form; navigating anywhere else clears the id, and if the agent no
 longer exists the form redirects to the Agents page. The reconnect banner keys off the
-session-cached agent check being `needs` for that id. Fields: pick harness (Claude Code / Gemini CLI / Codex / OpenCode —
-all four selectable, §4.7), mode (option labels "Default model" / "A specific model" (note
-"Type the model this harness should use") / "A local model" — the specific-model option
-renders for every harness; the local-model
-option renders only when the harness is OpenCode, §4.7, and carries the note "Pick a model
-served on this Mac through Ollama — best for simple steps"),
-model (required for specific-model and local-model modes — the specific-model mode shows a
-mono free-text input with a per-harness placeholder: Claude Code "e.g. claude-opus-4-8",
-Gemini CLI "e.g. gemini-2.5-pro", Codex "e.g. gpt-5-codex", OpenCode
-"e.g. anthropic/claude-opus-4-8"; OpenCode expects the provider/model form), name
-(required, placeholder "Name this agent"), optional description ("What this agent is for — shown on the Agents page and given
-to the drafting agent").
+session-cached agent check being `needs` for that id. Fields, top to bottom in rendered
+order: name (required, placeholder "Name this agent"), optional description ("What this
+agent is for — shown on the Agents page and given to the drafting agent"), pick harness
+(Claude Code / Gemini CLI / Codex / OpenCode — all four selectable, §4.7), then the MODEL
+section — the mode rows live inside it (option labels "Default model" / "A specific model"
+(note "Type the model this harness should use") / "A local model" — the specific-model
+option renders for every harness; the local-model option renders only when the harness is
+OpenCode, §4.7, and carries the note "Pick a model served on this Mac through Ollama — best
+for simple steps") — with the model input below (required for specific-model and
+local-model modes — the specific-model mode shows a mono free-text input with a per-harness
+placeholder: Claude Code "e.g. claude-opus-4-8", Gemini CLI "e.g. gemini-2.5-pro", Codex
+"e.g. gpt-5-codex", OpenCode "e.g. anthropic/claude-opus-4-8"; OpenCode expects the
+provider/model form).
 **Install gating:** the form loads real install state on mount (§19 `GET /agents/detect`; a
 failed detect gates nothing). An uninstalled harness's card carries an amber NOT INSTALLED
 `MiniBadge` and stays selectable, but while the picked harness is uninstalled the MODEL section
@@ -811,9 +821,9 @@ pick the right secret"), pre-filled when editing. The value field is a 3-row ver
 resizable textarea (multi-line values allowed, §4.8) masked with `-webkit-text-security` unless
 Show is toggled; Enter inserts a newline, Cmd/Ctrl+Enter saves, Escape closes; when editing, a
 blank value keeps the stored one (§4.8) and the placeholder says so. A new secret saved with a
-blank value becomes a §4.8 placeholder (the add modal's value placeholder reads "Leave blank to
-add the value later"; the success toast is then "Saved — add the value before an automation
-needs it."). The edit modal is titled
+blank value becomes a §4.8 placeholder (the add modal's value placeholder reads "Paste the
+password or API key — or leave blank to add the value later"; the success toast is then
+"Saved — add the value before an automation needs it."). The edit modal is titled
 "Edit secret" with submit "Save changes"; add is "New secret" / "Save to Keychain". The
 add/edit modal is a shared component (`SecretModal.tsx`) — the §9.2 Discord trigger editor
 opens it in add mode from its New secret button and receives the saved name via an

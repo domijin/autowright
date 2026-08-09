@@ -64,7 +64,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   `0x01 0x2b`, lengths are BER-style — a byte < 0x80, or `0x81` + one byte, or `0x82` + two
   little-endian bytes — candidates decode as UTF-16 LE on a BOM else UTF-8, and the longest
   candidate wins); an undecodable body means the message
-  cannot fire (§4.3). A row passing the §4.3 rules starts one execution per matching trigger
+  cannot fire (§4.3). A row passing the §4.3 rules starts at most one execution per automation —
+  the first matching enabled trigger wins, exactly as for Discord (the §6 coalesce rule above) —
   with label "iMessage" and the §4.5 payload. Failure handling mirrors Discord: a db that
   cannot be opened — no Full Disk Access, or no `chat.db` at all (Messages never signed in) —
   parks the watcher in the `connection` error state shared by every `imessage` trigger (§4.3),
@@ -141,9 +142,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   that wedges before reading its stdin context (an interpreter that hangs on startup, a pipe
   that never drains) still hits its limit; no step can sit outside the watchdog for any part
   of its life. `no_timeout: true` disables the watchdog: the
-  step may run until it finishes or the user cancels/skips it — holding the automation's
-  one-execution-at-a-time slot the whole time (triggers firing meanwhile are skipped, per
-  scheduling above). On expiry the step's whole process group is killed (§7 kill semantics)
+  step may run until it finishes or the user cancels/skips it — holding one of the automation's
+  `maxParallel` slots the whole time (a firing that finds every slot taken meanwhile is queued
+  when it came from a message trigger and `maxQueued` allows it, and skipped otherwise, per
+  scheduling and the firing queue above). On expiry the step's whole process group is killed (§7 kill semantics)
   and the step fails with the §7 timeout reason ("The step hit its N s time limit."). The
   §6.1 agent-call cap (120 s per `agent.ask`) applies on top, unchanged.
 - **Memory between executions** — one private `memory/` directory per automation, reachable from
@@ -236,8 +238,10 @@ SDK name it uses** — `from autowright import params, log, result` (or `import 
   a scan that silently degrades to "no secrets" on a wiring mistake would fail open. This is
   scoping hygiene, not a sandbox — a step is arbitrary in-process Python, and §6.2 is explicit
   that the engine is not a sandbox.
-- `memory` — `pathlib.Path` of the automation's memory dir, plus `memory.load(name, default)` /
-  `memory.save(name, obj)` YAML helpers. `name` is a plain file name confined to the memory dir:
+- `memory` — path-like handle on the automation's memory dir: `memory.path` is the
+  `pathlib.Path`, and the handle supports `__fspath__` and `/`-join, so `open(memory)` and
+  `memory / "x"` work — but it is not a full `Path` (contrast `workspace`, which is one); plus
+  `memory.load(name, default)` / `memory.save(name, obj)` YAML helpers. `name` is a plain file name confined to the memory dir:
   a name that is absolute, contains a path separator, or contains a `..` segment raises
   `ValueError` — snapshots and "Clear memory" (§4.4) operate on that dir, so a key must never
   address a file outside it.
@@ -316,10 +320,11 @@ verbatim in the §8 contract preamble.
 
 **Declared packages.** When a task genuinely needs a library beyond the curated list (the
 task-solving ladder still prefers stdlib + curated first), the drafting agent declares it in
-`manifest.yaml` (§8): `packages: [{ pip: pandas, import: pandas }]` — one entry per
-distribution, the bare distribution name (PEP 503 name only — **no version specifier**; the
+`manifest.yaml` (§8): `packages: [{ pip: pandas, import: pandas, why: "…" }]` — one entry per
+distribution: the bare distribution name (PEP 503 name only — **no version specifier**; the
 installed distribution is the single source of truth for the version, see the install model
-below) plus the top-level module it provides. Python transitive dependencies are pip's job and
+below), the top-level module it provides, and a **required** `why` — the one-line purpose §8
+validation rejects an entry without, shown on the §11 Packages card. Python transitive dependencies are pip's job and
 are never declared; what
 must be declared is every **runtime companion** the task's usage needs beyond that — optional
 extras and binary-bundling wheels (e.g. yt-dlp merging streams needs ffmpeg → declare
@@ -393,8 +398,8 @@ card. Memory is the app's only mutable state with no version history; snapshots 
 destructive moments recoverable.
 
 - **Layout** — `memory-snapshots/<uuid4>/` beside `memory/` (§5 tree): `snapshot.yaml`
-  (`id` = the dir name, `name` = user label | null, `reason`, `created_at` ISO-8601 local at
-  microsecond resolution — snapshots can be taken within the same second, and "newest first"
+  (`id` = the dir name, `name` = user label | null, `reason`, `created_at` the §5 canonical
+  UTC ISO-8601 timestamp (offset, microsecond resolution) — snapshots can be taken within the same second, and "newest first"
   (and therefore which unnamed snapshots the prune keeps) must stay deterministic,
   `version` = "vN" label, `size` = total bytes, `files` = file count) plus `memory/`, the
   recursive copy. Each snapshot is self-describing; there is deliberately no index file. The

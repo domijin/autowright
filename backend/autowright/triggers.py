@@ -101,10 +101,10 @@ def cron_next(expr: str, after: datetime | None = None) -> datetime | None:
     return None
 
 
-# ---------- timezone (§4.3 `tz`): wall clock in the trigger's zone ----------
+# ---------- timezone (§4.3 `timezone`): wall clock in the trigger's zone ----------
 
 def zone_of(t: dict) -> ZoneInfo | None:
-    """The trigger's zone, None when local. Assumes a validated `tz`."""
+    """The trigger's zone, None when local. Assumes a validated `timezone`."""
     return ZoneInfo(t["timezone"]) if t.get("timezone") else None
 
 
@@ -154,7 +154,7 @@ def _to_local(wall: datetime, tz: ZoneInfo) -> datetime:
 
 
 def tz_error(tz) -> str | None:
-    """Error message for an unusable `tz` value, None when valid (or absent)."""
+    """Error message for an unusable timezone value, None when valid (or absent)."""
     if tz is None:
         return None
     try:
@@ -200,7 +200,7 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
         return None
     if kind == "discord":
         # §4.3: channel = ASCII-digit snowflake; secret = Keychain secret name
-        # holding the bot token (existence is a `conn` concern, not a 422).
+        # holding the bot token (existence is a `connection` concern, not a 422).
         ch = t.get("channel")
         if not (isinstance(ch, str) and _ascii_digits(ch.strip())):
             return "the Discord channel must be its numeric channel id"
@@ -352,7 +352,7 @@ def trigger_display(t: dict) -> tuple[str, str]:
 
 def trigger_next(t: dict, after: datetime | None = None) -> datetime | None:
     """Next occurrence of one trigger strictly after `after`, both local naive.
-    A `tz` trigger is evaluated on its zone's wall clock (off is the caller's concern)."""
+    A `timezone` trigger is evaluated on its zone's wall clock (the enabled flag is the caller's concern)."""
     if t["kind"] in ("app_start", "discord", "imessage"):
         return None  # §4.3: no computable next occurrence
     tz = zone_of(t)

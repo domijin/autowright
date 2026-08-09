@@ -24,7 +24,7 @@ way it edits any code. The §17 `skills/autowright/` agent skill is the primary 
 autowright status                       backend health, version, entity counts
 autowright instructions                 §8 framework + build instruction files, verbatim
 autowright automation <verb> …          list · show · pull · push · create · delete · restore ·
-                                        execute · export · import ·
+                                        execute [--version vN|draft] · export · import ·
                                         param list|set · trigger list|add|on|off|remove ·
                                         memory clear · snapshot list|create|restore|delete
 autowright execution <verb> …           list · show · tail · cancel · retry · skip · result
@@ -49,8 +49,9 @@ autowright service install|uninstall|status|restart   (§3 — the only group th
   channel — it must not KeyError on one). Then the text, indented. The `secret` is never
   printed. `--json` carries the raw payload (and list rows the §4.5 `triggerSender`) as always.
 - **Exit codes:** 0 success · 1 any error (connection, HTTP, validation, bad reference —
-  message on stderr, §3 guidance style, never a traceback) · 2 from `automation execute -f`
-  and `execution tail` when the followed execution ends in any terminal status other than
+  message on stderr, §3 guidance style, never a traceback) · 2 from `automation execute -f`,
+  `execution retry -f`, and `execution tail` when the followed execution ends in any
+  terminal status other than
   `succeeded` — so a harness can branch on the exit code without parsing prose.
 - **HTTP timeouts:** every backend request runs with a 30 s timeout, except the three calls
   that legitimately take long — package install (the §6.2 ensure runs pip), URL import (a
@@ -62,9 +63,11 @@ autowright service install|uninstall|status|restart   (§3 — the only group th
   its real end (or its `skipped` settle), never reported the moment it is admitted.
 
 **Workdir (the authoring format).** `automation pull <ref> [dir]` materializes an automation
-into a directory; `automation push <ref> [dir] [--note] [--grant-agent NAME]…
-[--grant-secret NAME]…` validates it and saves vN+1; `automation create [dir] [--name]
-[--agent] [--grant-agent NAME]… [--grant-secret NAME]…` validates and creates v1. Files:
+into a directory (dir defaults to the automation's name); `automation push <ref> <dir>
+[--note] [--grant-agent NAME]…
+[--grant-secret NAME]…` validates it and saves vN+1; `automation create <dir> [--name]
+[--agent] [--grant-agent NAME]… [--grant-secret NAME]…` validates and creates v1 — push and
+create take the workdir as a required positional; only pull's is optional. Files:
 
 - `spec.md` — the spec as markdown (§4.1 blocks ↔ markdown via `specmd`).
 - `manifest.yaml` — the §8 call-2 manifest shape verbatim: `name`, `description`, `note`, `triggers`
@@ -118,7 +121,9 @@ learns about an install failure at build time, not when a trigger fires.
 - Why this shape: the grant for a secret must appear in the command line the user (or the
   agent the user is watching) runs — never implied by the workdir's content alone, which an
   agent authors. The §17 skill's pre-save summary must show the full command including grant
-  flags. `execute` is unchanged — it runs the stored version under the stored grants.
+  flags. `execute` runs the stored version under the stored grants by default;
+  `execute --version <vN|draft>` selects an old version or the draft for that one run
+  (forwarded as the §19 execute body's `version` field) — the grants stay the stored ones.
 
 **`automation import`** takes a `.autowright` file path or an HTTPS URL (§5.2 rules — a
 direct `*.autowright` link on any host, or a `github.com` repo/release page resolved to its
@@ -135,7 +140,8 @@ crons the manifest no longer lists are dropped; the manifest's `discord`/`imessa
 `app_start` entries add only when no stored trigger matches their §4.3 identity fields; and
 stored non-cron triggers always survive untouched. `pull` writes the stored crons into the
 manifest, so an untouched manifest round-trips the schedule unchanged. Between pushes, `trigger add` (cron by default,
-`--at` for a §4.3 one-shot, `--app-start`, `--discord <channel> --secret <name>
+`--at` for a §4.3 one-shot — both take `--timezone <zone>`, an IANA zone, stored on the
+entry — `--app-start`, `--discord <channel> --secret <name>
 [--pattern <text>] [--mention] [--author <user-id>[,<user-id>…]]…` for a §4.3 discord
 trigger (`--author` repeats and each value may be comma-separated — all ids collect into
 the trigger's one `author` list), or `--imessage <from>

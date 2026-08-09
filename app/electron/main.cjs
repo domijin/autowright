@@ -277,8 +277,8 @@ function createWindow(hash) {
     minWidth: 980,
     minHeight: 640,
     titleBarStyle: 'hidden',
-    // §9: one fixed position in every state — 12px lights centered on the nav
-    // toggle's y=20 midline (top 6 + 28/2), nudged right of the macOS default.
+    // §9: lights pinned at one fixed spot for every window state — never moved
+    // or re-derived from layout, so they can't jitter between states.
     trafficLightPosition: { x: 14, y: 14 },
     backgroundColor: '#090d14',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs') },
@@ -508,7 +508,7 @@ ipcMain.handle('update-check', async () => {
 // one-shot loopback feed (§3). No dev fork: an unsigned build takes the same
 // path and surfaces Squirrel's real signature error.
 ipcMain.handle('update-download', async () => {
-  const sendPct = (pct) => win?.webContents.send('update-progress', pct)
+  const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
   const tmpZip = path.join(app.getPath('temp'), `autowright-update-${randomUUID()}.zip`)
   let server = null
   const cleanup = () => {
@@ -529,15 +529,15 @@ ipcMain.handle('update-download', async () => {
     const total = Number(zipRes.headers.get('content-length')) || 0
     const out = fs.createWriteStream(tmpZip)
     let got = 0
-    let lastPct = -1
+    let lastPercent = -1
     for await (const chunk of zipRes.body) {
       got += chunk.length
-      const pct = total ? Math.min(100, Math.round((got / total) * 100)) : null
-      if (pct !== lastPct) { lastPct = pct; sendPct(pct) }
+      const percent = total ? Math.min(100, Math.round((got / total) * 100)) : null
+      if (percent !== lastPercent) { lastPercent = percent; sendPercent(percent) }
       if (!out.write(chunk)) await new Promise((res) => out.once('drain', res))
     }
     await new Promise((res, rej) => { out.on('error', rej); out.end(res) })
-    sendPct(100)
+    sendPercent(100)
 
     // Loopback hand-off: serve the feed (updateTo.url rewritten to this
     // server's own zip route) and the staged zip; Squirrel re-downloads

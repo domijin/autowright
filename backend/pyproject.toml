@@ -5,6 +5,7 @@ description = "Autowright backend — local automation service, engine, and CLI"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.111",
+    "pydantic>=2.7",  # imported first-hand (models.py §19 request models), not just via fastapi
     "uvicorn>=0.30",
     "websockets>=12.0",  # uvicorn's WS implementation — plain uvicorn rejects upgrades without it
     "PyYAML>=6.0",
@@ -35,6 +36,3 @@ include = ["autowright*"]
 
 [tool.setuptools.package-data]
 autowright = ["instructions/*.md"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"

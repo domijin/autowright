@@ -31,9 +31,9 @@ class EventHub:
         with self._lock:
             self._subs.discard(q)
 
-    def publish(self, ev: str, **payload: Any) -> None:
+    def publish(self, event: str, **payload: Any) -> None:
         """Callable from any thread (engine worker threads publish log lines)."""
-        msg = {"event": ev, **payload}
+        msg = {"event": event, **payload}
         loop = self._loop
         if loop is None:
             return

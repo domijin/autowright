@@ -7,7 +7,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 - Dark theme only. Fonts: IBM Plex Sans 400/500/600 (all UI text; `--sans`; no 700 anywhere), IBM Plex Mono
   400/500/600 (timestamps, version labels, chips, eyebrows, counts, technical metadata;
   `--mono`), bundled via `@fontsource`. `-webkit-font-smoothing: antialiased`.
-- Type scale: base UI 13 px; page titles 20 px/600 (26–30 px in onboarding/create); card titles
+- Type scale: base UI 13 px; page titles 20 px/600 (26 px in onboarding); card titles
   15 px/600; body 13–13.5 px/400, line-height 1.55–1.6; secondary 12–12.5 px; metadata/mono
   10.5–12 px; eyebrows 9.5–10 px/600 mono uppercase, letter-spacing `.09em`. Headings tighten
   letter-spacing (`-.01em` to `-.02em`).
@@ -66,7 +66,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   inset top highlight — `inset 0 1px 0 rgba(255,255,255,.035)` on `.ad-card`/`.ad-card-click`
   — as a tactile edge cue. Floating surfaces are the only drop-shadow tier —
   popovers `0 18px 44px rgba(0,0,0,.5)`, toast `0 10px 30px rgba(0,0,0,.4)`,
-  modal `0 24px 60px rgba(0,0,0,.5)`, menu-bar panel `0 18px 50px rgba(0,0,0,.55)`.
+  modal `0 24px 60px rgba(0,0,0,.5)`, menu-bar panel `0 18px 50px rgba(0,0,0,.55)`,
+  hovered nav rail `10px 0 36px rgba(0,0,0,.38)` (§9).
 - Selection: all text is selectable by default — every piece of information on screen can be
   highlighted and copied. Only buttons and the drag region are `user-select: none`.
   `.ad-drag` marks the hidden-title-bar drag region
@@ -84,17 +85,20 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   (border + accent focus ring, also on `:focus-within` so grouped multi-field inputs like the
   §9.2 segmented time entry ring as one control; `.amber` variant on amber notice cards;
   `.invalid` variant — a red border that holds through focus — for live-invalid values, e.g.
-  the §9.2 trigger editor inputs). Classes own colors,
+  the §9.2 trigger editor inputs; `.oneline-ph` variant — the placeholder truncates with an
+  ellipsis instead of wrapping, for ask-box textareas that size to typed content only — the
+  §11 chat composer). Classes own colors,
   interaction, **and size** — call sites never override button padding/font-size/radius inline
   (layout-only styles such as `flex`, `whiteSpace`, margins are fine). All action buttons share
   one size: 13 px font, radius 8 px, padding 8 px 15 px on bordered buttons (`.ad-btn-ghost`,
   `.ad-btn-soft`, `.ad-btn-dashed`, `.ad-btn-accent-ghost`, `.ad-btn-danger-ghost`) and
   9 px 16 px on the borderless filled `.ad-btn-primary` — same rendered box. Borderless text
   buttons (`.ad-btn-text`, `.ad-btn-link`) are 500 13 px with 6 px 4 px padding. Dense in-card
-  editors get one sanctioned compact size, still class-owned: `.ad-btn-accent-ghost.small`
+  editors get sanctioned compact sizes, still class-owned: `.ad-btn-accent-ghost.small`
   (500 11.5 px mono, 5 px 11 px, radius 7 — the §9.2 trigger editor's Add/Save, New secret, and
-  permission-checklist buttons) and `.ad-btn-text.small` (11.5 px, no padding — the §9.2 setup
-  guide disclosure toggles); no other ad-hoc button sizes. Button labels
+  permission-checklist buttons), `.ad-btn-text.small` (11.5 px, no padding — the §9.2 setup
+  guide disclosure toggles and §11 card-header actions), and `.ad-btn-link.small` (11.5 px,
+  no padding — the §11 card-header Save); no other ad-hoc button sizes. Button labels
   never wrap (`white-space: nowrap` on all action/text button classes) — a tight flex row must
   yield elsewhere, never by squeezing a button onto two lines. Non-action
   controls keep their own scale: `.ad-btn-pill` (mono metadata pill), `.ad-chip-btn`
@@ -215,7 +219,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
     modal and `ConfirmModal`) animate both ways, and every dismissal path (backdrop click,
     Escape, Cancel, save/confirm) plays the exit before unmount; confirm actions fire after
     the exit finishes.
-- Layout: sidebar 212 px fixed; page gutter 30–32 px, max width 1200 px (Review page 1800 px,
+- Layout: sidebar rail 58 px, expanding to 212 px on hover (§9); page gutter 30–32 px, max width 1200 px (Review page 1800 px,
   forms 620–720 px, settings 640 px); card padding 15–22 px; control padding 9–10 px vertical /
   14–18 px horizontal. Grid cards (Automations §4, Agents §4.7) share one format: grid
   `repeat(auto-fill, minmax(310px, 1fr))` gap 14, card padding 18 px 20 px, title 15 px/600 with

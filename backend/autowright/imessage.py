@@ -32,7 +32,7 @@ NO_DB_ERROR = ("Messages database not found — open Messages.app on this Mac "
 
 
 class DbError(Exception):
-    """chat.db can't be opened/read — the message is the §4.3 `conn` error."""
+    """chat.db can't be opened/read — the message is the §4.3 `connection` error."""
 
 
 # ---------- typedstream decoding ----------
@@ -90,7 +90,7 @@ def decode_attributed_body(blob: bytes | None) -> str:
 def open_db() -> sqlite3.Connection:
     """Open chat.db read-only. Deliberately NOT immutable=1 — the db is WAL
     and an immutable open would miss live updates (§6). Raises DbError with
-    the plain-word §4.3 `conn` message."""
+    the plain-word §4.3 `connection` message."""
     path = Path(CHAT_DB)
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True,

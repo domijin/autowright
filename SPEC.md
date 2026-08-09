@@ -16,7 +16,7 @@ spec files the task touches. Keep the map current when sections are added or mov
   §5 storage (files on disk, incl. §5.1 transfer archives · §5.2 URL import) →
   [spec/storage.md](spec/storage.md)
 - **Runtime:** §6 engine contract & framework policies (incl. §6.1 step SDK · §6.2 curated
-  packages) → [spec/engine.md](spec/engine.md) ·
+  packages · §6.3 memory snapshots) → [spec/engine.md](spec/engine.md) ·
   §7 execution lifecycle → [spec/execution.md](spec/execution.md) ·
   §19 backend API → [spec/backend-api.md](spec/backend-api.md) ·
   §20 CLI → [spec/cli.md](spec/cli.md)
@@ -62,7 +62,7 @@ Four components (per top-level README):
   shorthand. Grants are explicit (§20 grant model): `create`/`push` grant only the agents and
   secrets named by `--grant-agent`/`--grant-secret` flags — no all-on seed, no silent widening.
 
-**Stack (decided):** the Electron renderer is React 18 + TypeScript + Vite (state: one zustand
+**Stack (decided):** the Electron renderer is React 19 + TypeScript + Vite (state: one zustand
 store mirroring the §4 model; markdown rendering is react-markdown + remark-gfm — see §4.5). The backend is Python 3.14 + FastAPI/uvicorn (PyYAML, keyring for
 Keychain; request bodies are validated by pydantic request models — `models.py`, §19 —
 while response bodies remain plain dicts). Transport is localhost HTTP (JSON) plus one WebSocket for live events —
@@ -86,6 +86,19 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   transfer archives (`transfer.py`, §5.1 + §5.2 URL fetch/resolution), FastAPI API (`api.py`),
   launchd service
   (`service.py`), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
+  Further modules: `main.py` (backend entry point, `python -m autowright.main` — bind localhost,
+  write `backend.json` per the §3 bind-before-publish handshake, start the scheduler, serve the
+  API), `installer.py` (§19 real harness installers + sign-in help), `packages.py` (§6.2
+  declared-package check/ensure/upgrade via the bundled interpreter's pip), `execdb.py`
+  (`executions.db`, the §5 list/filter index over execution headers — any `SCHEMA_VERSION` bump
+  drops the table and startup's yaml reconcile rebuilds it), `reqlog.py` (§5 per-request log
+  files + build-failure records, developerMode-gated), `testexec.py` (§11 draft test executions
+  through the real engine path, plus the §8 chat call's RECENT RUNS context), `specmd.py`
+  (spec.md ↔ §4.1 block-list conversion), `events.py` (in-process pubsub hub feeding the §19
+  WebSocket), and the small utilities `keychain.py` (§4.8 Keychain values via keyring),
+  `notify.py` (osascript notifications), `paths.py` (§5 filesystem locations,
+  `AUTOWRIGHT_HOME` override), `timefmt.py` (§4.1 display labels + §5 canonical UTC
+  timestamps), `yamlio.py` (§5 atomic temp-write + rename IO).
   `autowright/instructions/` holds the §8 prompt texts as markdown (packaged via
   `[tool.setuptools.package-data]`): `framework-instructions.md` (contract preamble) and
   `default-build-instructions.md` (default build instructions seeded into new automations).
@@ -103,9 +116,10 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon); `electron/` also holds
   the checked-in tray template PNGs (`trayTemplate.png`/`@2x`, `trayAlert.png`/`@2x`),
   rendered by `scripts/gen_tray_icon.py`.
-  Renderer tests live here too: `app/tests/` (vitest unit/render suites, `vitest.config.ts`)
-  and `app/e2e/` (end-to-end specs driving the real Electron app, shared `harness.ts`,
-  `vitest.e2e.config.ts`). `ds-entry.ts` is the renderer entry point for the `.design-sync/`
+  Renderer tests live here too: `app/tests/` (vitest unit/render suites) and `app/e2e/`
+  (end-to-end specs driving the real Electron app, shared `harness.ts`); both Vitest configs
+  (`vitest.config.ts`, `vitest.e2e.config.ts`) sit at the `app/` root — `npm run test:e2e`
+  passes the e2e one via `--config`. `ds-entry.ts` is the renderer entry point for the `.design-sync/`
   previews (below).
   `UI-GUIDE.md` records the renderer conventions.
 - `scripts/` — project scripts (`dev.sh`, `build.sh`, `prod.sh`, `build-clean.sh` — §18;
@@ -143,7 +157,7 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   non-technical people — plain-language copy, no jargon. Page structure, in order: header
   (mark + wordmark + GitHub link) · hero (headline, one-paragraph pitch, "Download for
   macOS" → the repo's latest GitHub release, "View source") · an animated app-window demo
-  that mirrors the §11 chat-first create flow (58 px icon rail with the §9 nav icon set —
+  that mirrors the §11 chat-first create flow (46 px icon rail with the §9 nav icon set —
   bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
   page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
   `@fortawesome/fontawesome-free` package into `<symbol>` defs; chat

@@ -13,7 +13,7 @@ at every startup.**
 
 **Timestamps:** every stored timestamp — automation `created_at`/`updated_at`, version `when`,
 execution `started_at`/`finished_at`/`queued_at`, step attempts, snapshot `created_at`,
-log-line `ts`, draft `test.yaml` — is UTC ISO-8601 **with offset and microsecond precision**
+log-line `timestamp`, draft `test.yaml` — is UTC ISO-8601 **with offset and microsecond precision**
 (`2026-08-01T15:04:05.123456+00:00`). UTC with a fixed offset keeps lexicographic order equal
 to chronological order, DST folds can't make times ambiguous or non-monotonic, and
 microseconds make same-second starts (`maxParallel` > 1, queue promotions) order
@@ -114,7 +114,7 @@ automations/<uuid>/
     automation.yaml            # when, note, param definitions (§4.2: name, kind,
                                # label, help, default, …) + ordered steps manifest:
                                # steps: [{file, name, description, agent?, why?, agents?, secrets?,
-                               #          timeout?, no_timeout?, retries?, infinite_retries?}]
+                               #          packages?, timeout?, no_timeout?, retries?, infinite_retries?}]
                                #          (§4.1 per-step time limits and retry pair — both
                                #          also travel in §5.1 archives; agents entries are
                                #          {name, why?}, secrets entries {name, why} —
@@ -287,12 +287,16 @@ executions/
                                # ordinary executions
     logs/
       execution.ndjson         # execution-scoped log lines: package installs, secret
-                               # failures, retry markers, the final failure line
+                               # failures, the manual in-place retry marker, the final
+                               # failure line (automatic step-retry markers land in the
+                               # new attempt's file below, §7)
       <stem>.a<n>.ndjson       # one log file per (step, attempt) — <stem> is the step's
                                # script file stem ("01-fetch-pages"), n the attempt number;
-                               # line shape {timestamp, kind: sys|out|wrn|err, sequence, text} — ts the §5
-                               # UTC timestamp (`timestamp`); the serialized line adds a derived local
-                               # clock label `time` (never stored). sequence is
+                               # line shape {timestamp, kind: sys|out|wrn|err, sequence, text} —
+                               # timestamp the §5 UTC form. Serialization derives a local clock
+                               # label `time` (never stored): the storage read adds it beside
+                               # `timestamp`; the §19 wire shape replaces the UTC field —
+                               # lines travel as {time, kind, sequence, text}. sequence is
                                # a per-file monotonic counter (renderer dedupe, §19); the
                                # file for (step, attempt) is derived by convention from
                                # execution.yaml — no index anywhere. §4.5 attempt prune:
@@ -313,9 +317,11 @@ executions/
 parses every top-level `automation.yaml` plus each `versions/vN/` folder (its `automation.yaml`
 + `spec.md` + `instructions.md` + `notes.md` + step scripts), and serves all automation reads (lists,
 detail, scheduler, menu bar) from memory. There is no automations table: the YAML files plus the
-startup walk are the whole story. The id → path map, `has_draft`, and `nextAt` are derived
-in memory during/after the walk; execution-derived display state (`last_status`,
-`last_execution_at`, `live_execution_id`) is filled by one startup query for the latest execution
+startup walk are the whole story. The id → path map and `nextAt` are derived in memory
+during/after the walk, and the walk loads any stored draft straight onto the record;
+execution-derived display state (`last_status`, `last_execution_at`, and the set of executing
+execution ids — serialized as the §4.1 `live` list, several at once under `maxParallel`) is
+filled by one startup query for the latest execution
 per `automation_id` and kept current as executions complete; `resultChip`/`resultStatus` read straight
 off that latest execution's header (§4.5) — never from `result/`. `skipped` records never count as the
 "latest" execution for this display state — they never ran, and §4.1's `lastStatus` vocabulary
@@ -325,7 +331,7 @@ list row, detail page, or menu bar report about real executions.
 
 Executions load **headers-eagerly, bodies-lazily**: startup reads every header row from the
 `executions.db` index into an in-memory `executions` table — one header per execution with
-`id, automation_id, status, trigger, kind, version, started_at, finished_at, duration_ms`, plus the
+`id, automation_id, status, trigger, kind, version, queued_at, started_at, finished_at, duration_ms`, plus the
 light display fields (`automation_name`, `note`, `chip`/`chip_status`, `trigger_sender` —
 the §4.5 `triggerPayload` sender for list rows, stamped onto the header **once at record
 creation** from the trigger payload; every reader takes it from that field alone, never by
@@ -416,7 +422,8 @@ agents.yaml                  # configs of referenced agents (the automation's dr
                              # agent + every grant name in any step's agents: list):
                              # [{name, description, harness, mode, model}] — no ids, no credentials
 secrets.yaml                 # referenced secret names (union of every step's secrets:
-                             # list and the secrets.NAME references in step code):
+                             # list, the secrets.NAME references in step code, and every
+                             # discord trigger's bot-token secret name):
                              # [{name, description}] — never values
 ```
 
@@ -477,7 +484,7 @@ placeholders, nothing pre-existing is auto-granted.
 - HTTPS only; plain `http://` is rejected.
 - A URL whose **path ends `.autowright`** downloads directly — any host (GitHub release
   assets, `raw.githubusercontent.com`, gist raw links, any web server).
-- A **`github.com/{owner}/{repo}`** page (optional trailing `/`, or `/releases/latest`)
+- A **`github.com/{owner}/{repo}`** page (optional `.git` suffix, trailing `/`, or `/releases/latest`)
   resolves through the unauthenticated GitHub API: the latest release's first asset named
   `*.autowright`; when the repo has no release with such an asset, the repo root's file
   listing, first `*.autowright` alphabetically. `github.com/{owner}/{repo}/releases/tag/{tag}`

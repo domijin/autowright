@@ -238,7 +238,7 @@ function ImportModal({ onDone, onClose }: {
                 ))}
               </div>
             ))}
-            {section('STEPS', pv.preview.steps.map((s, i) => (
+            {pv.preview.steps.length > 0 && section('STEPS', pv.preview.steps.map((s, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '3px 0' }}>
                 <span style={{
                   font: `600 10.5px var(--mono)`, color: 'var(--text-faint)',
@@ -334,6 +334,7 @@ function AutoCard({ a }: { a: Automation }) {
           onClick={execute}
           disabled={executing}
           title={executing ? 'Executing…' : 'Execute now'}
+          aria-label={executing ? 'Executing…' : 'Execute now'}
         >
           {/* play glyph sits 1px right of center optically */}
           <i

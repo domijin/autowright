@@ -186,6 +186,44 @@ def test_step_limits_retry_pair_and_handle_normalization(store, monkeypatch, tmp
     assert b["triggers"][0]["from"] == "+15551234567"
 
 
+def test_import_rejects_out_of_bounds_step_limits(store):
+    """§5.1: imported steps obey the §8 bounds — retries 1-10, timeout never
+    with no_timeout, retries never with infinite_retries. An archive can't
+    land a step no drafting call could produce."""
+    ver = {"description": "", "params": [], "packages": [],
+           "steps": [{"name": "Only", "description": "", "code": "print('x')\n",
+                      "timeout": 60, "retries": 2}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": ""}
+    a = store.create_automation(ver, name="Bounds", agent_id=None, triggers=[])
+    data = transfer.export_automation(store, a)
+    before = len(store.autos)
+
+    def rezip(edit):
+        src = zipfile.ZipFile(io.BytesIO(data))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as out:
+            for n in src.namelist():
+                if n == "automation/automation.yaml":
+                    meta = yaml.safe_load(src.read(n))
+                    edit(meta["steps"][0])
+                    out.writestr(n, yaml.safe_dump(meta))
+                else:
+                    out.writestr(n, src.read(n))
+        return buf.getvalue()
+
+    with pytest.raises(transfer.TransferError, match="invalid step retries: 11"):
+        transfer.import_automation(store, rezip(lambda s: s.update(retries=11)))
+    with pytest.raises(transfer.TransferError, match="invalid step retries: 0"):
+        transfer.import_automation(store, rezip(lambda s: s.update(retries=0)))
+    with pytest.raises(transfer.TransferError,
+                       match="can't combine timeout and no_timeout"):
+        transfer.import_automation(store, rezip(lambda s: s.update(no_timeout=True)))
+    with pytest.raises(transfer.TransferError,
+                       match="can't combine retries and infinite_retries"):
+        transfer.import_automation(store, rezip(lambda s: s.update(infinite_retries=True)))
+    assert len(store.autos) == before
+
+
 def test_import_on_same_machine_grants_nothing_preexisting(store):
     a = _build(store)
     data = transfer.export_automation(store, a)

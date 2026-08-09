@@ -165,6 +165,10 @@ export function useDraftJob(d: DraftJobDeps) {
       ...seedDrafting(agents, secretNames),
       chat: r?.chat ?? [], resolved: r?.resolved ?? [],
     }))
+    // Tracks whether call 1 already landed the spec: a failure before that is
+    // a spec-call failure, and §11 returns the description to the input (same
+    // restore as cancelCreate).
+    let specLanded = false
     try {
       await startJob({ mode: 'create', text: request, agentId }, {
         onDone: (d) => setRev((r) => ({
@@ -174,14 +178,17 @@ export function useDraftJob(d: DraftJobDeps) {
           // §11 title: the manifest name replaces the spec-title provisional
           name: d.name || (d.spec ?? []).find((b) => b.kind === 'h1')?.text || 'New automation',
         })),
-        onFail: (msg, detail) => setRev((r) => r && (r.specBusy
-          ? {
-            // §11: a spec-call failure lands in the thread — red-tinted error
-            // entry with Try again (the description also returns to the input).
-            ...r, specBusy: false,
-            chat: [...r.chat, newEntry({ kind: 'error', source: 'spec', text: msg || 'The spec didn’t validate — try again or rephrase.' })],
-          }
-          : { ...r, stepsBusy: false, stepsErr: { msg, detail } })),
+        onFail: (msg, detail) => {
+          // §11: a spec-call failure lands in the thread — red-tinted error
+          // entry with Try again (the description also returns to the input).
+          if (!specLanded) setChatText((cur) => cur || lastCreateRef.current)
+          setRev((r) => r && (r.specBusy
+            ? {
+              ...r, specBusy: false,
+              chat: [...r.chat, newEntry({ kind: 'error', source: 'spec', text: msg || 'The spec didn’t validate — try again or rephrase.' })],
+            }
+            : { ...r, stepsBusy: false, stepsErr: { msg, detail } }))
+        },
         onCancelled: () => setRev((r) => r && ({ ...seedEmpty(agents, secretNames), chat: r.chat })),
         // §11 Blockers: a spec-call block is the clarification case, a
         // steps-call block leaves the workflow out of sync — both land as
@@ -195,12 +202,17 @@ export function useDraftJob(d: DraftJobDeps) {
             ...r, stepsBusy: false, spec: spec ?? r.spec, dirty: true,
             chat: [...r.chat, newEntry({ kind: 'blockers', source: 'steps', blockers, diagnosed, resolved: r.resolved })],
           })),
-        onSpec: (spec) => setRev((r) => r && ({
-          ...r, specBusy: false, stepsBusy: true, spec,
-          name: spec.find((b) => b.kind === 'h1')?.text || r.name,
-        })),
+        onSpec: (spec) => {
+          specLanded = true
+          setRev((r) => r && ({
+            ...r, specBusy: false, stepsBusy: true, spec,
+            name: spec.find((b) => b.kind === 'h1')?.text || r.name,
+          }))
+        },
       })
     } catch (e) {
+      // POST failed — still the spec call, so the description returns too.
+      setChatText((cur) => cur || lastCreateRef.current)
       setRev((r) => r && ({
         ...r, specBusy: false,
         chat: [...r.chat, newEntry({ kind: 'error', source: 'spec', text: (e as Error).message })],

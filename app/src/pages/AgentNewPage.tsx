@@ -388,13 +388,15 @@ export default function AgentNewPage() {
       />
 
       <Eyebrow style={{ margin: '0 0 10px' }}>HARNESS</Eyebrow>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+      <div role="radiogroup" aria-label="Harness" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         {HARNESSES.map((h) => {
           const on = harness === h.id
           return (
             <button
               key={h.id}
               className="ad-btn-bare ad-card-click"
+              role="radio"
+              aria-checked={on}
               onClick={() => {
                 if (harness !== h.id) { setHInst('idle'); setHPct(null); setHErr(null) }
                 setHarness(h.id); setMode('default'); setModel(null)
@@ -457,7 +459,7 @@ export default function AgentNewPage() {
       {harness && hInstalled && (
         <>
           <Eyebrow style={{ margin: '0 0 10px' }}>MODEL</Eyebrow>
-          <div style={{
+          <div role="radiogroup" aria-label="Model" style={{
             background: 'var(--bg-card)', border: '1px solid var(--border-card)',
             borderRadius: 12, overflow: 'hidden', marginBottom: 16,
           }}>
@@ -475,6 +477,8 @@ export default function AgentNewPage() {
                 <button
                   key={md.id}
                   className="ad-btn-bare ad-hover-row ad-focus-inset"
+                  role="radio"
+                  aria-checked={on}
                   onClick={() => { setMode(md.id); setModel(null) }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px',
@@ -541,7 +545,7 @@ export default function AgentNewPage() {
             <>
               <Eyebrow style={{ margin: '0 0 10px' }}>LOCAL MODEL</Eyebrow>
               {models.length > 0 ? (
-                <div style={{
+                <div role="radiogroup" aria-label="Local model" style={{
                   background: 'var(--bg-card)', border: '1px solid var(--border-card)',
                   borderRadius: 12, overflow: 'hidden', marginBottom: 14,
                 }}>
@@ -552,6 +556,8 @@ export default function AgentNewPage() {
                       <button
                         key={n}
                         className="ad-btn-bare ad-hover-row ad-focus-inset"
+                        role="radio"
+                        aria-checked={on}
                         onClick={() => setModel(n)}
                         style={{
                           display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px',

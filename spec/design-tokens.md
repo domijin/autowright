@@ -77,7 +77,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   `.ad-btn-primary`, `.ad-btn-ghost`, `.ad-btn-soft`, `.ad-btn-text`[`.dim`], `.ad-btn-pill`,
   `.ad-btn-dashed`, `.ad-btn-x`, `.ad-btn-accent-ghost` (accent-tinted ghost: Execute once,
   Add trigger), `.ad-btn-danger-ghost` (red-tinted confirm), `.ad-btn-text.danger` (red text
-  button), `.ad-btn-link` (accent link-styled button), `.ad-chip-btn`, `.ad-menu-row`.
+  button), `.ad-btn-link` (accent link-styled button), `.ad-btn-tab`, `.ad-attempt-pill`,
+  `.ad-chip-btn`, `.ad-menu-row`.
   Surfaces: `.ad-hover-row` (clickable list/table rows), `.ad-card-click` (clickable cards),
   `.ad-link-title` (clickable titles), `.ad-title-rename` (click-to-edit automation title/description
   on the §11 Review page — the pencil is the only click target (the text itself is inert);
@@ -105,7 +106,13 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   (example-prompt chip), `.ad-btn-x` (row-remove ✕), `.ad-btn-exec` (square icon button),
   `.ad-btn-icon` (the 26×26 borderless icon-only row action — secrets edit/delete, trigger
   edit — `.ad-btn-text` colors in a fixed square box; call sites never rebuild it from
-  `.ad-btn-text` with inline size overrides). `.ad-btn-bare` resets button chrome (no
+  `.ad-btn-text` with inline size overrides), `.ad-btn-tab` (mono tab chip — 500 12 px mono,
+  3 px 9 px, radius 6, white-wash background; `aria-pressed` swaps the active tab to accent
+  text on `--accent-chip-bg` — the §11 trigger-mock picker tabs; never rebuilt from
+  `.ad-btn-text` with inline size overrides), and `.ad-attempt-pill` (the §7 execution-page
+  attempt switcher — 600 10 px mono, 2 px 8 px, radius 6; the class owns the resting/hover
+  neutrals, and the active pill pins its status badge color + tint background inline, which
+  takes precedence over the hover state). `.ad-btn-bare` resets button chrome (no
   background/border/padding, inherited font/color/text-align, full-width) so clickable
   cards and rows can be real `<button>`s (§9 keyboard convention) while their surface class
   (`.ad-card-click`, `.ad-hover-row`) keeps owning the visuals. `.ad-seg` is the segmented

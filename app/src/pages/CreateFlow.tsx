@@ -805,7 +805,7 @@ export default function CreateFlow() {
                     {rev.specBusy ? 'Writing the spec…'
                       : rev.stepsBusy ? (installingPkgs ? 'Installing the packages…' : 'Generating the steps…')
                         : rev.syncBusy ? (installingPkgs ? 'Installing the packages…' : 'Syncing steps…')
-                          : rev.chatBusy ? 'Working on your request…'
+                          : rev.chatBusy ? 'Working on the request…'
                             : rev.specEdit ? 'Finish editing the spec first — save or cancel your edits'
                               : 'Sync and review the steps before saving'}
                   </span>

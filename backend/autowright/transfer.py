@@ -326,13 +326,19 @@ def _validate(z: zipfile.ZipFile) -> dict:
                 raise TransferError(f"invalid step timeout: {t!r}")
             entry["timeout"] = t
         if s.get("no_timeout"):
+            # §5.1: steps obey the §8 bounds — an archive can't land a step no
+            # drafting call could produce.
+            if t is not None:
+                raise TransferError("a step can't combine timeout and no_timeout")
             entry["no_timeout"] = True
         r = s.get("retries")
         if r is not None:
-            if not isinstance(r, int) or isinstance(r, bool) or r <= 0:
+            if not isinstance(r, int) or isinstance(r, bool) or not 1 <= r <= 10:
                 raise TransferError(f"invalid step retries: {r!r}")
             entry["retries"] = r
         if s.get("infinite_retries"):
+            if r is not None:
+                raise TransferError("a step can't combine retries and infinite_retries")
             entry["infinite_retries"] = True
         steps.append(entry)
 

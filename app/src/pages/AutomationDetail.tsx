@@ -1227,6 +1227,7 @@ export default function AutomationDetail() {
               className="ad-btn-ghost"
               onClick={() => setActOpen(!actOpen)}
               title="More actions"
+              aria-label="Automation actions"
               style={{ padding: '8px 11px' }}
             >
               <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />

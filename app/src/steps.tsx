@@ -339,7 +339,7 @@ export function ParamValueEditor({ p, variant, on, lines, rows, value, setOn, se
               {invalid && (
                 <MiniBadge c="var(--red-text)" bg="var(--red-bg)" style={detail ? { flex: 'none' } : undefined}>NOT A VALID LINK</MiniBadge>
               )}
-              <button className="ad-btn-x" onClick={() => setLines(lines.filter((_, j) => j !== li), true)}>
+              <button className="ad-btn-x" onClick={() => setLines(lines.filter((_, j) => j !== li), true)} aria-label="Remove line">
                 <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
               </button>
             </div>
@@ -387,7 +387,7 @@ export function ParamValueEditor({ p, variant, on, lines, rows, value, setOn, se
               ? { flex: 1, minWidth: 0, fontSize: 12, padding: '7px 10px' }
               : inputStyle}
           />
-          <button className="ad-btn-x" onClick={() => setRows(rows.filter((_, j) => j !== ri), true)}>
+          <button className="ad-btn-x" onClick={() => setRows(rows.filter((_, j) => j !== ri), true)} aria-label={r.key.trim() ? `Remove ${r.key}` : 'Remove row'}>
             <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
           </button>
         </div>

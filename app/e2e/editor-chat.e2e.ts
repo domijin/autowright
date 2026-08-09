@@ -51,7 +51,8 @@ describe('editor chat e2e', () => {
     // for the page's only live-job surface — stage label + Cancel (§11).
     await page.getByPlaceholder(CHAT_INPUT).fill('Track new manga chapters instead')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.getByText('Working on the request…').waitFor({ timeout: 15_000 })
+    // .first(): the header save hint shows the same stage string as the footer
+    await page.getByText('Working on the request…').first().waitFor({ timeout: 15_000 })
     await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
 
     // The rewrite lands as a "Spec updated" entry carrying the request text

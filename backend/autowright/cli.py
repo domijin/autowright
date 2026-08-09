@@ -102,7 +102,8 @@ def find_execution(c: Client, ref: str | None) -> dict:
     matches = [e for e in execs if e["id"].startswith(ref)]
     if len(matches) == 1:
         return matches[0]
-    sys.exit(f"no unique execution matches {ref!r}")
+    sys.exit(f"no unique execution matches {ref!r} — "
+             f"have: {', '.join(f'{e['id'][:8]} ({e['automationName']}, {e['status']}, {e['started']})' for e in execs) or '(none)'}")
 
 
 def _pjson(data) -> None:
@@ -744,7 +745,8 @@ def _find_snapshot(c: Client, auto: dict, ref: str) -> dict:
     matches = [s for s in snaps if s["id"].startswith(ref)]
     if len(matches) == 1:
         return matches[0]
-    sys.exit(f"no unique snapshot matches {ref!r} — see `automation snapshot list`")
+    sys.exit(f"no unique snapshot matches {ref!r} — "
+             f"have: {', '.join(f'{s['id'][:8]} ({s['when']}, {s['reason']}, {s['version']}, {s['size']}{', ' + s['name'] if s.get('name') else ''})' for s in snaps) or '(none)'}")
 
 
 def cmd_snapshot_list(c: Client, args) -> None:

@@ -84,26 +84,17 @@ function latestN(step: ExecutionStep | undefined): number {
   return atts?.length ? atts[atts.length - 1].number : 1
 }
 
-/** §7 attempt pill — hover feedback over the badge colors needs local state,
- * so it's its own component; no instant background jumps. */
+/** §7 attempt pill — `.ad-attempt-pill` owns the resting/hover neutrals; the
+ * active pill pins its status badge colors inline (beats the class hover). */
 function AttemptPill({ a, active, onSelect }: {
   a: ExecutionStep['attempts'][number]; active: boolean; onSelect: () => void
 }) {
-  const [hover, setHover] = useState(false)
   const b = badgeOf(a.status)
   return (
     <button
-      className="ad-btn-bare"
+      className="ad-btn-bare ad-attempt-pill"
       onClick={onSelect}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        width: 'auto', fontFamily: 'var(--mono)', fontSize: 10, fontWeight: 600,
-        padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
-        color: active ? b.c : hover ? 'var(--text-muted)' : 'var(--text-faint)',
-        background: active ? b.bg : hover ? 'rgba(255,255,255,.07)' : 'rgba(255,255,255,.04)',
-        transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
-      }}
+      style={active ? { color: b.c, background: b.bg } : undefined}
     >
       Attempt {a.number} · {b.label}{a.duration ? ` · ${a.duration}` : ''}
     </button>

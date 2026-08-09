@@ -256,7 +256,7 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
         if at.tzinfo is not None:
             # An offset-aware `at` would make the naive comparison below (and
             # trigger_next) raise TypeError — the zone belongs in `tz`.
-            return "the timestamp must not carry a UTC offset — use tz for the zone"
+            return "the timestamp must not carry a UTC offset — use timezone for the zone"
         tz = zone_of(t)
         if not allow_past and (_to_local(at, tz) if tz else at) <= datetime.now():
             return "the time must be in the future"
@@ -298,7 +298,9 @@ def normalize_triggers(raw: list) -> tuple[list[dict], str | None]:
         else:  # app_start — no fields, at most one per automation (§4.3)
             if any(x["kind"] == "app_start" for x in out):
                 return [], "only one app-start trigger per automation"
-        if t["kind"] != "app_start" and t.get("timezone"):
+        # §4.3: `timezone` belongs to cron/time only — the loader drops it for
+        # any other kind, so keeping it here would survive only until restart.
+        if t["kind"] in ("cron", "time") and t.get("timezone"):
             n["timezone"] = t["timezone"]
         out.append(n)
     return out, None
@@ -338,12 +340,14 @@ def trigger_display(t: dict) -> tuple[str, str]:
     if t["kind"] == "app_start":
         return "On app start", "App start"
     if t["kind"] == "discord":
-        label = f"Discord · {t['channel']}"
+        # §11: a missing detail field renders "missing" — never a dangling
+        # "Discord · " label on a broken trigger.
+        label = f"Discord · {t.get('channel') or 'missing'}"
         if t.get("pattern"):
             label += f" · “{t['pattern']}”"
         return label, "Discord"
     if t["kind"] == "imessage":
-        label = f"iMessage · {t['from']}"
+        label = f"iMessage · {t.get('from') or 'missing'}"
         if t.get("pattern"):
             label += f" · “{t['pattern']}”"
         return label, "iMessage"

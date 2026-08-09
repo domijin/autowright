@@ -609,7 +609,12 @@ class _ExecListClient:
         return self.execs
 
 
-EXECS = [{"id": "e1111111-a"}, {"id": "e2222222-b"}, {"id": "f3333333-c"}]
+EXECS = [{"id": "e1111111-a", "automationName": "Daily Report", "status": "succeeded",
+          "started": "2026-07-29 08:00"},
+         {"id": "e2222222-b", "automationName": "Weekly Report", "status": "failed",
+          "started": "2026-07-28 09:00"},
+         {"id": "f3333333-c", "automationName": "Backup", "status": "executing",
+          "started": "2026-07-27 10:00"}]
 
 
 def test_find_execution_defaults_to_latest():
@@ -632,7 +637,15 @@ def test_find_execution_by_unique_prefix_and_ambiguity():
     assert find_execution(_ExecListClient(EXECS), "f3")["id"] == "f3333333-c"
     with pytest.raises(SystemExit) as ei:
         find_execution(_ExecListClient(EXECS), "e")  # two matches
-    assert "no unique execution" in str(ei.value.code)
+    msg = str(ei.value.code)
+    assert "no unique execution" in msg
+    # §20: ambiguity exits with the candidate list — id prefix, automation,
+    # status, started time for every execution
+    assert "e1111111 (Daily Report, succeeded, 2026-07-29 08:00)" in msg
+    assert "e2222222 (Weekly Report, failed, 2026-07-28 09:00)" in msg
+    with pytest.raises(SystemExit) as ei:
+        find_execution(_ExecListClient([]), "e")
+    assert "(none)" in str(ei.value.code)
 
 
 # ---------------------------------------------------------------- command layer
@@ -1127,7 +1140,12 @@ def test_find_snapshot_ambiguous_prefix_exits():
     c = _RouteClient(_auto_gets(dict(FULL_AUTO, snapshots=SNAPS)))
     with pytest.raises(SystemExit) as ei:
         _find_snapshot(c, {"id": AUTO_ID}, "s")  # both match
-    assert "no unique snapshot" in str(ei.value.code)
+    msg = str(ei.value.code)
+    assert "no unique snapshot" in msg
+    # §20: ambiguity exits with the candidate list — the snapshot-list row
+    # fields, name only when set
+    assert "s1111111 (today 10:00, manual, v2, 1 KB, before cleanup)" in msg
+    assert "s2222222 (today 11:00, pre-clear, v2, 2 KB)" in msg
 
 
 FULL_EXEC = {

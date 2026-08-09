@@ -649,7 +649,8 @@ describe('CreateFlow footer action block + input lock (§11)', () => {
     fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'),
       { target: { value: 'Do a thing' } })
     fireEvent.click(screen.getByText('Send'))
-    expect(screen.getByText('Working on the request…')).toBeTruthy()
+    // footer stage + the header save hint share the §11 label
+    expect(screen.getAllByText('Working on the request…').length).toBe(2)
     expect(spinnersIn(document.body).length).toBe(1)
     const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(panel).length).toBe(0)

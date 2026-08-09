@@ -336,7 +336,7 @@ editors enter with
   in-editor draft and grants) replaces the spec and marks the workflow out of sync exactly
   like a manual spec edit (toast "Spec updated — the workflow is out of sync. Sync the steps
   before saving."), and the Build & test panel's "Sync now" rebuilds the steps later; while
-  the chat job is in flight the Save hint reads "Rewriting the spec…", and cancelling it
+  the chat job is in flight the Save hint reads "Working on the request…", and cancelling it
   from the composer progress block leaves the draft untouched (toast "Edit stopped — the
   spec is unchanged."). On failure the §8 error renders as a thread error entry; a `blocked`
   outcome renders a thread blockers entry (source: chat) — either way the draft is
@@ -468,7 +468,7 @@ editors enter with
   primary amends the in-editor spec (same `## Constraints & resolutions` rule) and
   repeats the sync; dismissing it leaves the workflow out of sync with
   the panel still showing it. Disabled Save shows an amber hint ("Sync and review the steps before saving" /
-  "Finish editing the spec first…" / "Syncing steps…" / "Rewriting the spec…" /
+  "Finish editing the spec first…" / "Syncing steps…" / "Working on the request…" /
   "Writing the spec…" / "Generating the steps…" / "Installing the packages…"); saving is also
   blocked while any §8 job is in flight, and the panel's sync button disables while one is.
   Disabling an enabled agent that steps still call locks saving

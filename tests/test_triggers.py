@@ -92,6 +92,14 @@ def test_tz_validation():
     assert err is None and norm[0]["timezone"] == "UTC"
     norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *"}])
     assert err is None and "timezone" not in norm[0]
+    # §4.3: `timezone` belongs to cron/time only — a stray one on a message
+    # trigger drops at normalize (kept, the loader would drop it on restart)
+    norm, err = normalize_triggers([{"kind": "discord", "channel": "42",
+                                     "secret": "TOKEN", "timezone": "UTC"}])
+    assert err is None and "timezone" not in norm[0]
+    norm, err = normalize_triggers([{"kind": "imessage", "from": "+15551234567",
+                                     "timezone": "UTC"}])
+    assert err is None and "timezone" not in norm[0]
 
 
 def test_tz_cron_next_is_zone_wall_clock():
@@ -214,6 +222,11 @@ def test_discord_trigger_normalize_and_display():
     plain, _ = normalize_triggers([{"kind": "discord", "channel": "42", "secret": "TOKEN"}])
     assert "pattern" not in plain[0] and "mention" not in plain[0] and "author" not in plain[0]
     assert trigger_display(plain[0]) == ("Discord · 42", "Discord")
+    # §11: a missing detail field renders "missing" — never "Discord · "
+    assert trigger_display({"kind": "discord", "channel": ""}) == ("Discord · missing", "Discord")
+    assert trigger_display({"kind": "discord"}) == ("Discord · missing", "Discord")
+    assert trigger_display({"kind": "imessage", "from": ""}) == ("iMessage · missing", "iMessage")
+    assert trigger_display({"kind": "imessage"}) == ("iMessage · missing", "iMessage")
     # no computable next occurrence (§4.3) — nextAt ignores discord
     assert trigger_next(plain[0]) is None
     assert next_at([{**plain[0], "enabled": True}]) is None

@@ -438,7 +438,9 @@ answers 422 and writes nothing):
 
 - Validate: `format_version`, every yaml's schema, step files matching the steps manifest,
   §4.2 param kinds, §4.7 agent configs (harness/mode/model rules), §4.8 secret names, trigger
-  kinds with at most one `app_start`.
+  kinds with at most one `app_start`. Imported steps obey the §8 step bounds: `retries`
+  is 1–10, `timeout` never combines with `no_timeout`, and `retries` never combines with
+  `infinite_retries` — an archive can't land a step no drafting call could produce.
 - The automation lands as **v1** of a brand-new automation (note "Imported") — version history
   is local editing history and never travels. Duplicate names are fine (§5 directory naming);
   re-importing your own export creates a copy, never overwrites.

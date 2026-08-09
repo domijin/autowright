@@ -486,16 +486,11 @@ export function BuildTestPanel({
                     {msgTriggers.map((t, i) => (
                       <button
                         key={i}
-                        // .ad-btn-text supplies the resting/hover text colors for the
-                        // inactive tabs; the active tab pins accent inline
-                        className="ad-btn-text"
+                        // .ad-btn-tab owns size + resting/hover colors; aria-pressed
+                        // marks the active tab (accent text on the accent chip wash)
+                        className="ad-btn-tab"
+                        aria-pressed={i === testMock.idx}
                         onClick={() => setTestMock({ ...testMock, idx: i, sender: mockSenderSeed(t) })}
-                        style={{
-                          font: "500 12px var(--mono)", borderRadius: 6, padding: '3px 9px', whiteSpace: 'nowrap',
-                          ...(i === testMock.idx ? { color: 'var(--accent)' } : {}),
-                          background: i === testMock.idx ? 'var(--accent-chip-bg)' : 'rgba(255, 255, 255, 0.06)',
-                          transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
-                        }}
                       >
                         {msgPreviews[i]?.label ?? (t.kind === 'discord' ? 'Discord' : 'iMessage')}
                       </button>

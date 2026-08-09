@@ -200,6 +200,16 @@ textarea:disabled, input:disabled { opacity: .45; }
 }
 .ad-btn-pill:hover:not(:disabled) { color: var(--text-2); background: rgba(255, 255, 255, 0.09); }
 
+/* mono tab chip (§11 trigger-mock picker tabs) — aria-pressed marks the active tab */
+.ad-btn-tab {
+  font: 500 12px var(--mono); color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06); border-radius: 6px; padding: 3px 9px;
+  white-space: nowrap;
+  transition: color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter);
+}
+.ad-btn-tab:hover:not(:disabled) { color: var(--text); }
+.ad-btn-tab[aria-pressed='true'] { color: var(--accent); background: var(--accent-chip-bg); }
+
 /* dashed add-row button (+ Add line / + Add pair) */
 .ad-btn-dashed {
   align-self: flex-start; background: none;
@@ -272,6 +282,16 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-btn-exec:hover:not(:disabled) { background: var(--accent-hover); }
 .ad-btn-exec:active:not(:disabled) { transform: scale(0.94); }
 .ad-btn-exec:disabled { background: oklch(0.74 0.155 52 / 0.35); color: oklch(0.2 0.02 52 / 0.7); }
+
+/* §7 execution-page attempt switcher pill — the class owns the resting/hover
+   neutrals; the active pill pins its status badge color + tint background inline,
+   which takes precedence over the hover state */
+.ad-attempt-pill {
+  width: auto; font: 600 10px var(--mono); padding: 2px 8px; border-radius: 6px;
+  color: var(--text-faint); background: rgba(255, 255, 255, 0.04);
+  transition: background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter);
+}
+.ad-attempt-pill:hover:not(:disabled) { color: var(--text-muted); background: rgba(255, 255, 255, 0.07); }
 
 /* red-tinted confirm (destructive confirms, cancel-execution) */
 .ad-btn-danger-ghost {

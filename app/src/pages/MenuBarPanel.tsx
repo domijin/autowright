@@ -95,6 +95,7 @@ export default function MenuBarPanel() {
                 }}
                 disabled={live}
                 title={live ? 'Executing…' : 'Execute now'}
+                aria-label={live ? 'Executing…' : 'Execute now'}
                 style={{ width: 24, height: 24, borderRadius: 6 }}
               >
                 <i

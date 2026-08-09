@@ -45,6 +45,7 @@ function AgentCard({ ag, check, onDelete }: {
     // §12: whole card opens the edit form — needs-setup opens with the reconnect banner.
     <div
       className="ad-card-click"
+      data-testid="agent-card"
       role="button"
       tabIndex={0}
       onClick={() => go('agentNew', { agentEditId: ag.id })}

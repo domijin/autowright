@@ -20,6 +20,7 @@ function Row({ e, onOpen, waiting }: { e: Execution; onOpen: () => void; waiting
   return (
     <button
       className="ad-btn-bare ad-hover-row"
+      data-testid="execution-row"
       onClick={onOpen}
       style={{
         display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '11px 18px',

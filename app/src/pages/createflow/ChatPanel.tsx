@@ -280,7 +280,7 @@ export function ChatPanel({
                     </span>
                     {/* §11: the most common next step sits on the event itself */}
                     {!syncDisabled && !rev.pendingSync && (
-                      <button className="ad-btn-text" onClick={runSync} style={{ flex: 'none' }}>
+                      <button className="ad-btn-text" data-testid="chat-sync-now" onClick={runSync} style={{ flex: 'none' }}>
                         Sync now
                       </button>
                     )}

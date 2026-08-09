@@ -59,10 +59,7 @@ describe('editor chat e2e', () => {
     // "Spec updated — …" would otherwise match too)
     await page.getByText('Spec updated', { exact: true }).waitFor({ timeout: 60_000 })
     await page.getByText('Track new manga chapters instead').first().waitFor()
-    const syncRow = page
-      .getByText('The workflow is out of sync — sync the steps before saving.')
-      .locator('..')
-    await syncRow.getByRole('button', { name: 'Sync now' }).click()
+    await page.getByTestId('chat-sync-now').click()
     await page.getByText('Steps synced with the spec.', { exact: true }).waitFor({ timeout: 60_000 })
     await page.getByText('In sync with the spec.').waitFor()
     await shot(page, 'editor-chat-synced.png')

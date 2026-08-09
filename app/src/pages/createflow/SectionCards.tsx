@@ -256,7 +256,8 @@ export function LeftColumn({
               // §11: an old version is browsed read-only — editing
               // here would mark the draft dirty and lock Restore
               // behind a disabled sync button.
-              className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld || testLive}
+              className="ad-btn-text small ad-focus-inset" data-testid="spec-edit"
+              disabled={busyRewrite || viewingOld || testLive}
               onClick={(e) => {
                 e.stopPropagation()
                 if (busyRewrite || viewingOld || testLive) return
@@ -318,6 +319,7 @@ export function LeftColumn({
           <>
             <div className="ad-scrollwrap" style={{ position: 'relative' }}>
               <textarea
+                data-testid="spec-editor"
                 value={rev.specText} rows={1}
                 ref={(el) => { specThumb.attach(el); if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
                 onChange={(e) => up({ specText: e.target.value, touched: true })}

@@ -752,7 +752,7 @@ export default function CreateFlow() {
               )}
               {isEdit && auto && (
                 <div ref={verRef} style={{ position: 'relative' }}>
-                  <button className="ad-btn-pill" disabled={busyRewrite} onClick={() => setVerOpen(!verOpen)}>
+                  <button className="ad-btn-pill" data-testid="version-menu" disabled={busyRewrite} onClick={() => setVerOpen(!verOpen)}>
                     <span>{rev.viewing === 'draft' ? 'Draft' : `v${rev.viewing}${rev.viewing === auto.version ? ' · current' : ''}`}</span>
                     <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
                   </button>

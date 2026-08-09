@@ -59,13 +59,13 @@ describe('params and secrets e2e', () => {
     await page.keyboard.press('Tab')
     await waitFor(async () => (await param('limit'))?.value === 5, 10_000, 'number param clamp')
 
-    // Toggle — the row's only button (labelled rows have no other controls).
-    await page.getByText('Party mode', { exact: true }).locator('xpath=ancestor::div[3]//button').click()
+    // Toggle — the param row's switch control.
+    await page.getByTestId('param-row-party').getByRole('switch').click()
     await waitFor(async () => (await param('party'))?.on === true, 10_000, 'toggle param commit')
 
-    // List URL validation: typing a non-URL flags the line inline. Textbox
-    // order in the card is deterministic: greeting, limit, list line, kv k/v.
-    await page.getByRole('textbox').nth(2).fill('not a link')
+    // List URL validation: typing a non-URL flags the line inline. The row's
+    // textboxes are its lines in data order — edit the first (only) line.
+    await page.getByTestId('param-row-links').getByRole('textbox').first().fill('not a link')
     await page.getByText('NOT A VALID LINK').waitFor({ timeout: 10_000 })
     await page.getByText(/1 needs attention/).waitFor()
     await shot(page, 'params-edited.png')

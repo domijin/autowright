@@ -236,7 +236,7 @@ export async function clickNav(page: Page, label: string): Promise<void> {
   await page.getByText(label, { exact: true }).click()
   await page.mouse.move(640, 300)
   await waitFor(async () => {
-    const w = await page.locator('.ad-rail').evaluate((el) => el.getBoundingClientRect().width)
+    const w = await page.getByTestId('nav-rail').evaluate((el) => el.getBoundingClientRect().width)
     return w < 60
   }, 5_000, 'nav rail to collapse')
 }

@@ -849,7 +849,7 @@ function ParamRow({ automationId, p, last }: { automationId: string; p: ParamDef
   )
 
   return (
-    <div style={{
+    <div data-testid={`param-row-${p.name}`} style={{
       padding: '14px 18px', borderBottom: last ? 'none' : '1px solid var(--hairline-dim)',
       display: 'flex', gap: compact ? 18 : 8, flexDirection: compact ? 'row' : 'column',
       alignItems: compact ? 'center' : 'stretch',

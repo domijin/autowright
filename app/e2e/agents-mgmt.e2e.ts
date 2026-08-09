@@ -35,7 +35,7 @@ describe('agent management e2e', () => {
     expect((await agents()).find((a) => a.name === 'First Agent')?.default).toBe(true)
 
     // Make Second Agent the default via its card menu.
-    const secondCard = page.locator('.ad-card-click').filter({ hasText: 'Second Agent' })
+    const secondCard = page.getByTestId('agent-card').filter({ hasText: 'Second Agent' })
     await secondCard.getByTitle('More actions').click()
     await page.getByText('Make default').click()
     await page.getByText(/Second Agent is now the default/).waitFor({ timeout: 10_000 })

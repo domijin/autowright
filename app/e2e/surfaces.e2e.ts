@@ -75,11 +75,11 @@ describe('surfaces e2e', () => {
     // The test row's trigger column prints "Test" once, never "Test · Test".
     await clickNav(page, 'Executions')
     await page.getByText('Execution list e2e').first().waitFor({ timeout: 10_000 })
-    expect(await page.locator('.ad-hover-row').count()).toBe(2)
+    expect(await page.getByTestId('execution-row').count()).toBe(2)
     expect(await page.getByText('Execution list e2e').count()).toBe(2)
     expect(await page.getByText('Test', { exact: true }).count()).toBe(1)
     expect(await page.getByText('Test · Test').count()).toBe(0)
-    await page.locator('.ad-hover-row', { hasText: 'Manual' }).click()
+    await page.getByTestId('execution-row').filter({ hasText: 'Manual' }).click()
     await page.getByRole('button', { name: 'Execute again' }).waitFor({ timeout: 10_000 })
     await shot(page, 'executions-list-clickthrough.png')
 

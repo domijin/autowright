@@ -74,13 +74,12 @@ describe('edit draft e2e', () => {
     expect(auto.latest?.executionId).toBe(realExec.id)
 
     // Back to the automation → editor again: exercise the spec's editable
-    // surface (Edit → textarea → Save). The Build-instructions card defaults
-    // collapsed (its Edit hidden), so SPEC's is the only exact-"Edit" button.
+    // surface (Edit → textarea → Save).
     await page.getByRole('heading', { name: 'Edit draft e2e' }).click()
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
     await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
-    await page.getByRole('button', { name: 'Edit', exact: true }).first().click()
-    const specBox = page.locator('textarea:not([placeholder])')
+    await page.getByTestId('spec-edit').click()
+    const specBox = page.getByTestId('spec-editor')
     await specBox.waitFor({ timeout: 10_000 })
     const cur = await specBox.inputValue()
     await specBox.fill(`${cur}\nDistinctive spec addendum e2e.`)

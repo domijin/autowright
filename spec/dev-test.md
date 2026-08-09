@@ -170,6 +170,21 @@ exports its pure helpers
 `seedDrafting`, `seedFromPayload`, `seedFromAuto`, `serializeDraft`) and `result.tsx`
 exports `SpecMarkdown`/`Markdown` and `ext`/`fileKind` for the Vitest suite.
 
+**Selector policy.** An element an e2e test targets carries a stable `data-testid` (or is
+reached by role/label/user-visible text); tests never select by internal CSS class, DOM
+order (`.nth()`, xpath ancestor walks, unscoped `.first()` used to pick among same-named
+controls), or structural traversal — those re-aim silently when layout, styling, or copy
+around them changes. `.first()` stays legal only to collapse duplicates of the *same*
+target (a text that legitimately renders twice), never to choose between different
+controls. Test ids in the app (all in `app/src`): `nav-rail` (the §9 nav rail — the
+harness's `clickNav` measures its width), `agent-card` (§12 agent cards),
+`execution-row` (§9 executions-list rows), `param-row-<name>` (§9.2 parameter rows, one
+per param), `spec-edit` / `spec-editor` (§11 SPEC card's Edit button and its edit
+textarea), `sync-steps` (§11 Build panel's Sync now / Sync with spec button),
+`chat-sync-now` (§11 chat thread rewrite entry's inline Sync now), `version-menu` (§11
+editor version pill). New e2e targets that role/label/text cannot reach unambiguously get
+a test id added here.
+
 ## 16. Seed / demo data (tests only)
 
 The shipped app has NO seed path: a fresh install always starts empty (onboarding), and there is

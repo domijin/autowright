@@ -319,7 +319,8 @@ export function BuildTestPanel({
         {/* §11: no Cancel here — a running sync is cancelled from the
             chat footer's action block; the button just disables */}
         <button
-          className={outOfSync ? 'ad-btn-primary' : 'ad-btn-text dim'} disabled={syncDisabled}
+          className={outOfSync ? 'ad-btn-primary' : 'ad-btn-text dim'} data-testid="sync-steps"
+          disabled={syncDisabled}
           onClick={runSync}
           style={outOfSync ? { flex: 'none', whiteSpace: 'nowrap' } : panelBtnStyle}
         >

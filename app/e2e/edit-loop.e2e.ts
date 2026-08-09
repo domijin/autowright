@@ -27,9 +27,9 @@ describe('edit loop e2e', () => {
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
     await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
 
-    // Spec edit (the instructions card defaults collapsed, so SPEC's Edit is the only one).
-    await page.getByRole('button', { name: 'Edit', exact: true }).first().click()
-    const specBox = page.locator('textarea:not([placeholder])')
+    // Spec edit — the SPEC card's own Edit button and textarea.
+    await page.getByTestId('spec-edit').click()
+    const specBox = page.getByTestId('spec-editor')
     await specBox.waitFor({ timeout: 10_000 })
     await specBox.fill(`${await specBox.inputValue()}\nDistinctive sync requirement e2e.`)
     await page.getByRole('button', { name: 'Save', exact: true }).click()
@@ -37,7 +37,7 @@ describe('edit loop e2e', () => {
 
     // Sync: the real §8 steps call — the fake claude returns its canonical
     // steps envelope, and the panel returns to the in-sync state.
-    await page.getByRole('button', { name: 'Sync now' }).click()
+    await page.getByTestId('sync-steps').click()
     await page.getByText('In sync with the spec.').waitFor({ timeout: 60_000 })
     await page.getByText('Check for changes').waitFor()
     await shot(page, 'edit-loop-synced.png')
@@ -49,7 +49,7 @@ describe('edit loop e2e', () => {
     // Restore lives in the EDIT page's version menu (§11): load v1, save as v3.
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
     await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
-    await page.getByRole('button', { name: /Draft/ }).first().click()
+    await page.getByTestId('version-menu').click()
     await page.getByText('v1', { exact: true }).click()
     await page.getByText(/Loaded v1 from history/).waitFor({ timeout: 10_000 })
     await page.getByRole('button', { name: 'Restore v1 as v3' }).click()

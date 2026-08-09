@@ -51,6 +51,7 @@ function Sidebar() {
   return (
     <div
       className="ad-rail"
+      data-testid="nav-rail"
       style={{
         position: 'fixed', left: 0, top: 46, bottom: 12, zIndex: 90,
         display: 'flex', flexDirection: 'column',

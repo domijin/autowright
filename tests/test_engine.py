@@ -1810,10 +1810,43 @@ def test_cancel_during_retry_pause_cuts_the_wait_short(store, monkeypatch):
     wait_done(engine, h["id"])
     assert time.time() - t0 < 25, "cancel must cut the 30 s retry pause short"
     assert h["status"] == "cancelled"
+    # §7: cancel wins over the pending retry exactly as over a running attempt —
+    # the paused step lands cancelled; its failed attempt keeps the error.
+    assert h["steps"][0]["status"] == "cancelled"
+    assert h["steps"][0]["attempts"][-1]["status"] == "failed"
+    assert h["steps"][0]["attempts"][-1]["error"]
     assert h["steps"][1]["status"] == "cancelled"  # never ran
     assert len(h["steps"][0]["attempts"]) == attempts  # nothing re-spawned
     logs = read_all_logs(store, h["id"])
     assert any("execution cancelled by you" in l["text"] for l in logs)
+
+
+def test_cancel_during_retry_pause_on_last_step_lands_cancelled(store, monkeypatch):
+    """§7: same cancel-in-pause, but the retrying step is the ONLY step — no
+    queued step remains to trip finalize's cancelled-detection, so the paused
+    step itself must land cancelled or the record would finish `succeeded`
+    (the bug this pins)."""
+    import time
+
+    from autowright.engine import Engine
+
+    monkeypatch.setenv("AUTOWRIGHT_STEP_RETRY_PAUSE_S", "30")
+    engine = Engine(store)
+    ver = make_version()
+    ver["steps"] = [_counter_step(10_000, infinite_retries=True)]
+    a = store.create_automation(ver, "PauseCancelLast", None)
+    h = engine.start(a, "manual")
+    t0 = time.time()
+    while not h["steps"][0]["attempts"] or \
+            h["steps"][0]["attempts"][-1]["status"] != "failed":
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    assert engine.cancel(h["id"]) is True  # lands inside the 30 s pause
+    wait_done(engine, h["id"])
+    assert h["status"] == "cancelled"  # never `succeeded` with a failed step
+    assert h["steps"][0]["status"] == "cancelled"
+    assert h["steps"][0]["attempts"][-1]["status"] == "failed"  # keeps its error
+    assert h["error"] is None  # cancelled, not failed — no execution error
 
 
 def test_skip_during_retry_pause_skips_the_step(store, monkeypatch):

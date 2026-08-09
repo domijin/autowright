@@ -868,9 +868,17 @@ class Engine:
                             self._await_retry(state, i, forever)
                             skip = state.pop("skip", None)
                             if state["cancel"]:
+                                # §7: cancel wins over the pending retry exactly
+                                # as over a running attempt — the step lands
+                                # cancelled (the failed attempt keeps its error).
+                                # Left `failed`, a last-step cancel would slip
+                                # past finalize's cancelled-detection and the
+                                # record would finish `succeeded`.
+                                step["status"] = "cancelled"
                                 self._log(h, "sys",
                                           "execution cancelled by you — nothing else will happen",
                                           redactions)
+                                self._step_event(h, i)
                                 break
                             if skip == i:
                                 # §7: skip wins over a pending retry — the step is

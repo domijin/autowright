@@ -76,8 +76,8 @@ snapshots: [{ id, name, reason, when, version, size, files }] — the §6.3 memo
   the version about to execute), size = humanized byte label, files = file count
 snapshotSettings: { preVersion, preClear, preRestore } — booleans, the §6.3 automatic-snapshot
   toggles (all default true)
-steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, timeout?, noTimeout?,
-  retries?, infiniteRetries? }] — file is the version-folder script filename (§5 NN-name.py);
+steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, packages?, timeout?,
+  noTimeout?, retries?, infiniteRetries? }] — file is the version-folder script filename (§5 NN-name.py);
   code is
   human-readable script; agent
   marks a step that makes query-only runtime model calls (§6) — the script itself still does any
@@ -89,7 +89,14 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, timeou
   { name, why } entries — why is the per-use note (§8 rule 6, required on every declared
   entry) shown as the key tag's tooltip (§9.2). A step's effective secrets are these names
   unioned with the secrets.NAME references in its code; a code-referenced name with no
-  declared entry carries no why and keeps the generic tooltip. Both lists are chosen
+  declared entry carries no why and keeps the generic tooltip. packages: §6.2 declared
+  packages the step uses, as { import, why } entries — import names a declared package's
+  module (§8 validation rejects an import the version's packages list doesn't declare) and
+  why is the per-step note (§8 rule 5, required on every declared entry: what THIS step uses
+  the package for — the same package can serve different jobs in different steps), shown in
+  the box tag's tooltip (§11). A step's effective packages are these entries unioned with the
+  declared imports appearing in its code; a code-matched import with no declared entry falls
+  back to the package declaration's why, then to the generic tooltip. All three lists are chosen
   by the drafting agent per the §8 selection rule (the SPEC and build instructions win when they
   name a choice; the drafting agent's own judgment otherwise). timeout: optional per-step time
   limit in seconds (positive int) enforced by the §6 watchdog; noTimeout: true removes the limit
@@ -108,8 +115,9 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, timeou
 spec: block list [{ kind: h1|h2|p|li, text }] — the human-readable spec
 specMeta: "v3 · updated Yesterday" (shared time label)
 packages: [{ pip, import, why }] — the current version's §6.2 declared packages ([] when
-  none); why is the drafting agent's one-line purpose (§8 rule 5 — required), shown under
-  the package's row on the §11 Packages card; versioned like spec/steps — each version
+  none); why is the drafting agent's one-line GENERAL purpose (§8 rule 5 — required), shown
+  under the package's row on the §11 Packages card (per-step purposes live on the steps'
+  own packages entries, above); versioned like spec/steps — each version
   entry below carries its own list
 versions: [{ version, when, note, spec, steps, instructions, notes, params, packages }] — prior-version
   history, newest-first (the current version is not repeated in this list)

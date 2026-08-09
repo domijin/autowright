@@ -290,9 +290,14 @@ editor applies the whole outcome (§11).
                                      # agents: granted agents an agent step may call, as
                                      # { name, why? } entries — first = agent.ask default
                                      # (optional key; per-entry why required when a step
-                                     # lists two or more agents, naming each agent's role)
+                                     # lists two or more agents, naming each agent's role);
+                                     # packages: declared §6.2 packages the step uses, as
+                                     # { import, why } entries (optional key; why required
+                                     # per entry — one line on what THIS step uses the
+                                     # package for)
      - { file: 01-fetch.py, name: Fetch pages, description: ..., timeout: 60,
-         secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }] }
+         secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }],
+         packages: [{ import: pandas, why: parses the chapter tables }] }
      - { file: 02-classify.py, name: Classify updates, description: ..., timeout: 180, agent: true,
          why: needs judgment on chapter titles, agents: [{ name: Fast local }] }
    ===FILE: 01-fetch.py===
@@ -346,7 +351,12 @@ notes rewrite (§11).
    name (PEP 503 name only, no version specifier, ranges, or extras), `import` a valid module
    name that is not already stdlib or curated (declaring one that is, is a validation error —
    the list stays meaningful), `why` a nonempty one-line purpose (what the steps use the
-   package for — shown on the §11 Packages card and stored with the declaration). After validation the job enters stage "Installing the packages"
+   package for in general — shown on the §11 Packages card and stored with the declaration).
+   Per-step `packages` lists hold `{ import, why }` entries — the `import` must be one of the
+   manifest's declared package imports (an unknown or curated/stdlib import is a validation
+   error) and `why` is a required one-line note on what that step uses the package for (the
+   box tag's tooltip, §11) — one package can serve different jobs in different steps, and the
+   per-step note names this step's. After validation the job enters stage "Installing the packages"
    and runs the §6.2 ensure; per-package results ride the draft payload as
    `packages: [{ pip, import, status: installed | failed, version?, error? }]`. An install
    failure does **not** fail the job — the draft lands with the failure visible in the §11

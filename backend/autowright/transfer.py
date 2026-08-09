@@ -122,6 +122,8 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
                     entry["agents"] = list(s["agents"])
             if s.get("secrets"):
                 entry["secrets"] = list(s["secrets"])
+            if s.get("packages"):
+                entry["packages"] = list(s["packages"])
             # §4.1 per-step time limits travel — a no_timeout long-runner must
             # not silently regain the default watchdog on another Mac.
             if s.get("timeout"):
@@ -310,6 +312,14 @@ def _validate(z: zipfile.ZipFile) -> dict:
                  **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
                 for g in s["secrets"]
                 if isinstance(g, dict) and isinstance(g.get("name"), str)]
+        if s.get("packages"):
+            # §5.1: per-step package notes travel as {import, why} entries —
+            # malformed foreign entries are dropped, not imported.
+            entry["packages"] = [
+                {"import": g["import"],
+                 **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
+                for g in s["packages"]
+                if isinstance(g, dict) and isinstance(g.get("import"), str)]
         t = s.get("timeout")
         if t is not None:
             if not isinstance(t, int) or isinstance(t, bool) or t <= 0:

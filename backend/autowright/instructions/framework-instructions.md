@@ -279,7 +279,13 @@ One entry per distribution: `pip` is the bare distribution name (never a
 version, pin, or range — the app manages versions), `import` the top-level
 module it provides, `why` a required one-line purpose in the user's plain
 words — it appears on the Packages card so the user understands every install;
-say what the steps use the package for, never restate its name. The app installs declared packages automatically — never
+say what the steps use the package for, never restate its name. Every step
+that uses a declared package also lists it in its own `packages` key, as
+`{ import, why }` entries — that `why` names what THIS step uses the package
+for (one package can serve different jobs in different steps, e.g.
+`packages: [{ import: pandas, why: parses the fetched price tables }]` on a
+fetch step and `why: aggregates the weekly report` on a report step); the
+user reads it on the step's package tag. The app installs declared packages automatically — never
 write installation code or steps yourself: installs run when the automation is
 built or saved and self-heal before each execution, as pip wheels into the app's own
 package directory, nothing global on the Mac. The engine rejects any import that

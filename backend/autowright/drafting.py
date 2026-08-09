@@ -102,9 +102,14 @@ steps:                                 # ordered; file names NN-name.py, two-dig
                                        # agents: granted agents an agent step may call, as { name, why? }
                                        # entries — first = agent.ask default (omit the key to use the
                                        # automation's default); when a step lists two or more, every
-                                       # entry needs its own why naming that agent's role in the step
+                                       # entry needs its own why naming that agent's role in the step;
+                                       # packages: declared packages the step uses, as { import, why }
+                                       # entries — why: one line on what THIS step uses the package for
+                                       # (one package can serve different jobs in different steps — name
+                                       # this step's; omit the key when the step uses none)
   - { file: 01-fetch.py, name: ..., description: ..., timeout: 60,
-      secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }] }
+      secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }],
+      packages: [{ import: pandas, why: parses the fetched price tables }] }
   - { file: 02-judge.py, name: ..., description: ..., timeout: 180, agent: true, why: one line — why judgment is needed,
       agents: [{ name: Agent name }] }
 ===FILE: 01-fetch.py===
@@ -726,6 +731,22 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
                     if not str(x.get("why") or "").strip():
                         errors.append(f"step {s.get('name')}: secret {x['name']!r} needs a why — "
                                       "one line on why the step uses it")
+        pkgs = s.get("packages")
+        if pkgs is not None:
+            if (not isinstance(pkgs, list)
+                    or not all(isinstance(x, dict) and isinstance(x.get("import"), str) for x in pkgs)):
+                errors.append(f"step {s.get('name')}: packages must be a list of "
+                              "{ import, why } declared-package entries")
+            else:
+                for x in pkgs:
+                    if x["import"] not in pkg_imports:
+                        errors.append(f"step {s.get('name')}: package {x['import']!r} isn't among "
+                                      "the manifest's declared packages")
+                    # §8 rule 5: every per-step entry carries its per-use note —
+                    # one package can serve different jobs in different steps.
+                    if not str(x.get("why") or "").strip():
+                        errors.append(f"step {s.get('name')}: package {x['import']!r} needs a why — "
+                                      "one line on what this step uses it for")
 
     norm_steps = []
     for s in steps:
@@ -751,6 +772,9 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
             "secrets": [{"name": x["name"], "why": str(x.get("why") or "").strip()}
                         for x in (s.get("secrets") or [])
                         if isinstance(x, dict) and isinstance(x.get("name"), str)],
+            "packages": [{"import": x["import"], "why": str(x.get("why") or "").strip()}
+                         for x in (s.get("packages") or [])
+                         if isinstance(x, dict) and isinstance(x.get("import"), str)],
             **({"timeout": t} if isinstance(t, int) and not isinstance(t, bool) and t > 0 else {}),
             **({"no_timeout": True} if s.get("no_timeout") is True else {}),
             **({"retries": r} if isinstance(r, int) and not isinstance(r, bool)

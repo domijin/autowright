@@ -711,6 +711,43 @@ def test_step_multiple_agents_need_per_entry_why():
                                            {"name": "Smart", "why": "writes the summary"}]
 
 
+def test_step_packages_validate_against_declared():
+    # §8 rule 5: per-step `packages` entries name declared imports and each
+    # carries its per-step why; they ride the normalized steps.
+    files = {
+        "manifest.yaml": ("description: d\nnote: n\n"
+                          "packages:\n  - { pip: pandas, import: pandas, why: data work }\n"
+                          "steps:\n"
+                          "  - { file: 01-a.py, name: A, description: x,\n"
+                          "      packages: [{ import: pandas, why: parses the price tables }] }\n"),
+        "01-a.py": "import pandas\npandas.DataFrame()\n",
+    }
+    draft, errors = validate_steps(files, {})
+    assert errors == []
+    assert draft["steps"][0]["packages"] == [{"import": "pandas",
+                                              "why": "parses the price tables"}]
+
+    # An import the manifest doesn't declare is a validation error.
+    bad = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                         .replace("import: pandas, why: parses", "import: numpy, why: parses")})
+    _, errors = validate_steps(bad, {})
+    assert any("isn't among the manifest's declared packages" in e for e in errors)
+
+    # A per-step entry without a why is a validation error.
+    nowhy = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                           .replace("[{ import: pandas, why: parses the price tables }]",
+                                    "[{ import: pandas }]")})
+    _, errors = validate_steps(nowhy, {})
+    assert any("needs a why" in e for e in errors)
+
+    # Bare import strings are the wrong shape — rejected.
+    bare = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                          .replace("[{ import: pandas, why: parses the price tables }]",
+                                   "[pandas]")})
+    _, errors = validate_steps(bare, {})
+    assert any("{ import, why }" in e for e in errors)
+
+
 # ---------- appended coverage: chat job shapes, job cancel, packages ----------
 
 def test_chat_job_answer_path(monkeypatch):

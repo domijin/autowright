@@ -23,6 +23,23 @@ export function stepSecretNames(s: Step): string[] {
   return stepSecretTags(s).map((t) => t.name)
 }
 
+// A step's packages are its declared `packages` entries unioned with the §6.2
+// declared imports appearing in its code (§4.1). Tags carry the declared
+// entry's per-step `why`; a code-matched import with no entry falls back to
+// the package declaration's general `why` in the tooltip.
+export function stepPackageTags(s: Step, packages: PackageDep[]):
+    { import: string; why?: string; version?: string }[] {
+  const version = (imp: string) => packages.find((p) => p.import === imp)?.version
+  const tags = (s.packages ?? []).map((e) => ({ ...e, version: version(e.import) }))
+  for (const p of packages) {
+    if (tags.some((t) => t.import === p.import)) continue
+    if (new RegExp(`\\b(?:import|from)\\s+${p.import}\\b`).test(s.code || '')) {
+      tags.push({ import: p.import, why: p.why, version: p.version })
+    }
+  }
+  return tags
+}
+
 // ---------- step rows ----------
 
 type StepRowProps = {
@@ -48,7 +65,7 @@ function StepRow(props: StepRowProps) {
         ? (step.agents ?? []).map((e) => ({ nm: e.name, why: e.why, ag: availAgents.find((g) => agName(g) === e.name) ?? null }))
         : [{ nm: availAgents[0] ? agName(availAgents[0]) : null, ag: availAgents[0] ?? null }])
       : []
-    const stepPkgs = packages.filter((p) => new RegExp(`\\b(?:import|from)\\s+${p.import}\\b`).test(step.code || ''))
+    const stepPkgs = stepPackageTags(step, packages)
     return (
       <div style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
         <button
@@ -92,7 +109,7 @@ function StepRow(props: StepRowProps) {
               {stepPkgs.map((p) => (
                 <Tag
                   key={p.import}
-                  title={`This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''} — installed automatically`}
+                  title={`This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''} — ${p.why || 'installed automatically'}`}
                   icon="fa-cube" c="var(--text-muted)"
                   style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
                 >

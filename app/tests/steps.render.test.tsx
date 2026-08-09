@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { Agent, PackageDep, ParamDef, Step } from '../src/types'
-import { ParamValueEditor, StepList, stepSecretTags } from '../src/steps'
+import { ParamValueEditor, StepList, stepPackageTags, stepSecretTags } from '../src/steps'
 
 afterEach(() => cleanup())
 
@@ -35,9 +35,21 @@ describe('StepList (shared)', () => {
     const pkgTag = screen.getAllByText('bs4').find((el) =>
       el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
     expect(pkgTag).toBeTruthy()
+    // no per-step entry → the tooltip falls back to the declaration's why
+    expect(pkgTag!.closest('span')?.getAttribute('aria-label')).toContain('— parse pages')
     expect(screen.getByText('no agent')).toBeTruthy()
     // inline "1." number prefix (editor keeps the left edge free)
     expect(screen.getByText('1.')).toBeTruthy()
+  })
+
+  it('editor variant: a declared per-step package why wins the tooltip', () => {
+    const packages: PackageDep[] = [{ pip: 'pandas', import: 'pandas', why: 'data wrangling', version: '2.2' }]
+    const steps = [step({ code: 'import pandas', packages: [{ import: 'pandas', why: 'parses the price tables' }] })]
+    render(<StepList variant="editor" steps={steps} availAgents={[]} packages={packages} />)
+    const pkgTag = screen.getAllByText('pandas').find((el) =>
+      el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
+    expect(pkgTag!.closest('span')?.getAttribute('aria-label'))
+      .toBe('This step uses the pandas Python package, version 2.2 — parses the price tables')
   })
 
   it('editor variant: named agent resolves against the enabled agents', () => {
@@ -55,6 +67,23 @@ describe('stepSecretTags', () => {
       code: 'a = secrets.CRM_API_KEY\nb = secrets.MAIL_PASSWORD',
     }))
     expect(tags).toEqual([{ name: 'CRM_API_KEY', why: 'auth' }, { name: 'MAIL_PASSWORD' }])
+  })
+})
+
+describe('stepPackageTags', () => {
+  const deps: PackageDep[] = [
+    { pip: 'pandas', import: 'pandas', why: 'general data work', version: '2.2' },
+    { pip: 'beautifulsoup4', import: 'bs4', why: 'parse pages' },
+  ]
+  it('unions declared entries (per-step why) with code-matched declared imports', () => {
+    const tags = stepPackageTags(step({
+      packages: [{ import: 'pandas', why: 'parses the price tables' }],
+      code: 'import bs4',
+    }), deps)
+    expect(tags).toEqual([
+      { import: 'pandas', why: 'parses the price tables', version: '2.2' },
+      { import: 'bs4', why: 'parse pages', version: undefined },
+    ])
   })
 })
 

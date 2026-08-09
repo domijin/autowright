@@ -220,6 +220,8 @@ def _manifest_step(s: dict) -> dict:
             e["agents"] = list(s["agents"])
     if s.get("secrets"):
         e["secrets"] = list(s["secrets"])
+    if s.get("packages"):
+        e["packages"] = list(s["packages"])
     if s.get("timeout"):
         e["timeout"] = s["timeout"]
     if s.get("noTimeout"):  # API spelling — the CLI only ever reads API step JSON

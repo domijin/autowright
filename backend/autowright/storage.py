@@ -538,6 +538,8 @@ class Store:
                     entry["agents"] = list(s["agents"])
             if s.get("secrets"):
                 entry["secrets"] = list(s["secrets"])
+            if s.get("packages"):
+                entry["packages"] = list(s["packages"])
             # §4.1 per-step time limit + §7 retry pair. The internal shape is
             # snake_case only — the API boundary normalizes the camelCase
             # client spelling before anything reaches storage.
@@ -1359,6 +1361,8 @@ class Store:
         out = {"name": s.get("name", ""), "description": s.get("description", ""), "code": s.get("code", ""), "file": s.get("file")}
         if s.get("secrets"):
             out["secrets"] = list(s["secrets"])
+        if s.get("packages"):
+            out["packages"] = list(s["packages"])
         if s.get("agent"):
             out["agent"] = True
             out["agents"] = list(s.get("agents") or [])

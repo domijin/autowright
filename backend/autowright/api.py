@@ -184,11 +184,12 @@ def _validate_draft_steps(d: dict) -> None:
             raise HTTPException(422, "each step must be an object")
         files[str(s.get("file") or "")] = str(s.get("code") or "")
         # The serialized step shape carries `agents: []` / `secrets: []` /
-        # nulls on steps that have none — the validator's manifest dialect
-        # omits those keys instead, so strip the empties on the way in.
+        # `packages: []` / nulls on steps that have none — the validator's
+        # manifest dialect omits those keys instead, so strip the empties on
+        # the way in.
         man_steps.append({k: v for k, v in s.items()
                           if k != "code" and v is not None
-                          and not (k in ("agents", "secrets", "why") and not v)})
+                          and not (k in ("agents", "secrets", "packages", "why") and not v)})
     manifest = {"steps": man_steps, "params": d.get("params") or [],
                 "packages": d.get("packages") or []}
     files["manifest.yaml"] = yaml.safe_dump(manifest, sort_keys=False)

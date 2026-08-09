@@ -507,12 +507,13 @@ editors enter with
   enabled — red tooltip "No agent is enabled for steps — this step would fail"), a step shows
   one key-icon tag per secret it uses (its `secrets` entries' names unioned with
   the `secrets.NAME` references in its code; same §9.2 secret tooltip — the declared
-  entry's `why`, generic fallback), a step that imports a
-  declared
-  §6.2 package (its top-level `import` name appears in the step's code) shows one box-icon tag
-  per package, labeled with the import name (tooltip "This step uses the `<name>` Python
-  package, version `<x.y.z>` — installed automatically" with the installed version when the
-  §6.2 install check has reported one, else without the version clause), and every step
+  entry's `why`, generic fallback), a step shows one box-icon tag per declared §6.2 package
+  it uses (its `packages` entries' imports unioned with the declared `import` names appearing
+  in its code), labeled with the import name — tooltip "This step uses the `<name>` Python
+  package, version `<x.y.z>` — `<why>`", with the installed version when the §6.2 install
+  check has reported one (else without the version clause) and `why` the step entry's §4.1
+  per-use note, falling back to the package declaration's §6.2 general `why`, then to
+  "installed automatically" — and every step
   shows the §9.2 clock-icon time-limit tag (same labels and tooltips). Which agents a step calls is decided by
   the drafting agent per the §8 selection rule — changing it happens through the spec or
   build instructions plus sync (or the agent-enablement card), not per step. Step rows expand the same way as §9.2 — whole-row click, caret-only right-edge

@@ -34,6 +34,9 @@ export interface Step {
   secrets?: { name: string; why?: string }[] // §8 secret grants the step uses beyond its code
                       // references; why = the per-use note (§9.2 key-tag tooltip), required by
                       // §8 validation on every declared entry
+  packages?: { import: string; why?: string }[] // §6.2 declared packages the step uses beyond its
+                      // import statements; why = the per-step note (§11 box-tag tooltip: what THIS
+                      // step uses the package for), required by §8 validation on every entry
   why?: string
   timeout?: number    // §4.1 per-step time limit in seconds; absent → the 900 s engine default
   noTimeout?: boolean // §4.1 explicit no-limit marker — never combined with timeout

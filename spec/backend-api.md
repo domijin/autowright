@@ -152,7 +152,9 @@ remain plain dicts (§2).
   decompressed (422) — a crafted archive can't balloon into memory
 - `POST /automations/import/preview` — raw archive body exactly like `/automations/import`
   (same caps) → `{ token, preview }`: validates fully, writes nothing, parks the bytes under
-  the one-time `token` (§5.2 — 15-minute expiry). `preview` is `{ name, description, steps: [{name,
+  the one-time `token` (§5.2 — 15-minute expiry; at most 4 archives are parked at once, and
+  a 5th preview evicts the oldest — a confirm against an evicted token answers 404 exactly
+  like an expired one). `preview` is `{ name, description, steps: [{name,
   description, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
   model, reused}], secrets: [{name, description, exists}] }` — `reused`/`exists` are the §5.1 match
   rules run dry
@@ -227,7 +229,9 @@ remain plain dicts (§2).
   payload is `draft: { answer?, spec?, instructions?, notes?, actions? }` — the §8 chat call's
   response shape decides which keys are present; an `automationId` that doesn't resolve
   answers 404 (like the stale-`automationId` 404 on `/tests`) — never a silent fall-back to
-  the create-mode grant defaults below; the grant arrays, when present, override
+  the create-mode grant defaults below; the job's agent is the explicit `agentId` when sent,
+  else the default agent — 404 when neither resolves to a configured agent (including the
+  zero-agents case); the grant arrays, when present, override
   the stored automation's for the §8 grants context; when `enabledAgents` / `allowedSecrets`
   is absent and no stored automation exists (create mode — no `automationId` sent), the
   agents grant defaults to **all**
@@ -318,7 +322,8 @@ remain plain dicts (§2).
   dir (§6) first — Terminal shells
   otherwise start in `~`, and the CLI's startup scan must not walk the home folder.
   `GET /agents/signin/{id}` → `{ installed, signedIn }` is the cheap poll (§10 waits on it
-  every 2 s) — it runs only that provider's sign-in rule, never version lookups.
+  every 2 s) — it runs only that provider's sign-in rule, never version lookups. For an
+  ollama-mode agent `signedIn` is `null` — local models have no sign-in concept.
 - Ollama: `GET /ollama/status` → `{ ready, installed,
   models }`, `POST /ollama/pull`. All CLI lookups (detection and harness invocation alike)
   resolve the binary via PATH plus the usual macOS install locations (`~/.local/bin`,
@@ -337,11 +342,14 @@ remain plain dicts (§2).
   into `~/.config/opencode/opencode.json` (merge, never overwrite: provider `ollama` via npm
   `@ai-sdk/openai-compatible`, `baseURL` = `AUTOWRIGHT_OLLAMA_URL` + `/v1`, the agent's model
   listed under `models`) so `opencode run --model ollama/<model>` resolves.
-- `GET /secrets` (names + `set` + usedBy — a list of automation names — only) · `PUT /secrets/{name}` `{ value }` — a blank
+- `GET /secrets` (names + `description` + `set` + usedBy — a list of automation names — never
+  values) · `PUT /secrets/{name}` `{ value }` — a blank
   value on a new name creates a §4.8 placeholder (`set: false`); on an existing name it edits
-  only the description · `DELETE /secrets/{name}` — values go straight to the Keychain, never
+  only the description; answers 503 when the Keychain refuses the write · `DELETE /secrets/{name}` —
+  values go straight to the Keychain, never
   into responses or files
-- `GET /settings` · `PATCH /settings` (validates before storing: `days` coerced to int and
+- `GET /settings` · `PATCH /settings` (validates before storing: `days` must be an int —
+  strict, no coercion, 422 otherwise — and is
   clamped ≥ 1, `notifications` must be `attention | all` — 422 otherwise, so a bad value can never
   persist and silently break the retention sweep; flipping `keepAwake` starts/stops the §3
   permanent power assertion immediately) · `POST /settings/data-path` `{ path }` (sets the
@@ -362,8 +370,10 @@ remain plain dicts (§2).
   ordinary `execution.*` events),
   `ollama.pull` (model-pull progress). Entity payloads ride the events under camelCase
   keys matching the REST shapes: `execution.started`/`queued`/`finished` carry `execution`
-  (the record header, §19 executions-list shape; `finished` also carries `automation`, the
-  list-shape automation, for the toast). `automation.changed` carries `automationId` plus
+  (the record header, §19 executions-list shape) plus `automation` — the owning automation in
+  list shape, or `null` when there is no row to patch (§11 test executions; an automation
+  deleted before `finished`) — so clients patch the row (`lastStatus`, `live`, `nextAt`)
+  without a poll; the merge rule below applies. `automation.changed` carries `automationId` plus
   `automation` — the changed automation in list shape, or `null` when it was deleted —
   whenever exactly one automation changed; clients patch that one row in place by **merging**
   it over the stored record, never replacing it. The list shape lacks the full-record fields

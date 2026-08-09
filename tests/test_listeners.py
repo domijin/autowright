@@ -215,6 +215,35 @@ def test_desired_secrets_and_status(store):
     assert store.trigger_json(a["triggers"][1])["connection"] == {"state": "connecting"}
 
 
+def test_set_status_publishes_row(store, monkeypatch):
+    from autowright import listeners as li_mod
+
+    events = []
+    monkeypatch.setattr(li_mod.hub, "publish",
+                        lambda ev, **kw: events.append({"event": ev, **kw}))
+    a = store.create_automation(make_version(), "Chat", None)
+    a["triggers"] = [_trig()]
+    store.create_automation(make_version(), "No triggers", None)
+    li = Listeners(store, None)
+
+    li.set_status("TOKEN", "connected")
+    # §19: only the automation holding a TOKEN trigger fires, and the event
+    # carries its list-shape row with the new connection state riding it
+    assert len(events) == 1
+    e = events[0]
+    assert e["event"] == "automation.changed"
+    assert e["automationId"] == a["id"]
+    row = e["automation"]
+    assert row["id"] == a["id"]
+    assert row["triggers"][0]["connection"] == {"state": "connected"}
+    assert "steps" not in row
+
+    # unchanged status publishes nothing
+    events.clear()
+    li.set_status("TOKEN", "connected")
+    assert events == []
+
+
 def _wait_done(engine, execution_id, timeout=30):
     t0 = time.time()
     while engine.is_live(execution_id):

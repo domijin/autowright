@@ -304,6 +304,10 @@ export function stripTrigger(t: Trigger | DraftTrigger): DraftTrigger {
   }
 }
 const isCron = (t: DraftTrigger): t is Extract<DraftTrigger, { kind: 'cron' }> => t.kind === 'cron'
+// §4.3 discord `author` normalization (mirrors the backend's normalize_authors):
+// trimmed, deduped, sorted — element order must never distinguish two triggers.
+const normalizedAuthors = (raw: string[] | undefined) =>
+  [...new Set((raw ?? []).map((a) => a.trim()))].sort()
 function sameNonCron(a: DraftTrigger, b: DraftTrigger): boolean {
   if (a.kind === 'app_start' && b.kind === 'app_start') return true
   if (a.kind === 'imessage' && b.kind === 'imessage') {
@@ -312,7 +316,7 @@ function sameNonCron(a: DraftTrigger, b: DraftTrigger): boolean {
   if (a.kind === 'discord' && b.kind === 'discord') {
     return a.channel === b.channel && a.secret === b.secret
       && (a.pattern ?? '') === (b.pattern ?? '') && !!a.mention === !!b.mention
-      && (a.author ?? []).join(',') === (b.author ?? []).join(',')
+      && normalizedAuthors(a.author).join('\n') === normalizedAuthors(b.author).join('\n')
   }
   return false
 }

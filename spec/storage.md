@@ -59,7 +59,7 @@ automations/<uuid>/
                                # description (§4.1: seeded from the create manifest, user-owned
                                # thereafter),
                                # current_version (pointer: current = versions/v<N>/),
-                               # triggers [{id, kind, off, expression | at | channel+secret…}]
+                               # triggers [{id, kind, enabled, expression | at | channel+secret…}]
                                # (§4.3 stored fields per kind; never the derived
                                # label/short/connection), agent_id,
                                # enabled_agents, allowed_secrets,
@@ -98,7 +98,7 @@ automations/<uuid>/
                                # execution and draft re-save, deleted with the draft — Draft
                                # executions never touch the live memory/ dir
     test.yaml                  # §11 last-test summary: status (succeeded | failed),
-                               # finished-at ISO timestamp, and the test execution's id —
+                               # when (finished-at ISO timestamp), and execution_id —
                                # written when a test ends, wiped at each test start, deleted
                                # with the draft; lets a resumed draft's Build & test panel show the
                                # last outcome and link to the test's execution page. The
@@ -279,7 +279,7 @@ executions/
     execution.yaml             # the full execution record (§4.5): header fields (kind,
                                # version, trigger kind) plus params (snapshot),
                                # redacted_secrets, error,
-                               # note, and steps[] with per-step attempts[] ({n, status,
+                               # note, and steps[] with per-step attempts[] ({number, status,
                                # started_at, duration_ms, error? on failed attempts}); rewritten
                                # atomically (temp+rename) on every transition
     steps/                     # §11 test executions only: the sent draft's step scripts as
@@ -400,7 +400,7 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              #   cron, app_start, discord, and imessage (§4.3 stored
                              #   fields; the token itself never travels — only the
                              #   secret's name); no ids,
-                             #   no off state; one-shot `time` triggers are moments
+                             #   no enabled state; one-shot `time` triggers are moments
                              #   in time and are never exported,
                              # param_values: {name: value} — only when "Include parameter
                              #   values" was checked at export

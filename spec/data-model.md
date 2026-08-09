@@ -64,7 +64,8 @@ lastExecutionLabel: shared time label (below) | "executing…"
   Every relative time label in the app uses one shared scheme: "Today" | "Yesterday" | full
   weekday name ("Thursday", 2–6 days back) | the date in the user's locale format (year,
   month, day — e.g. "7/18/2026"). Labels that carry a clock time append it: "Today, 8:00 AM".
-latest: last execution's result object + when-label, for the detail page
+latest: last execution's result object + when-label + executionId (links the detail page's
+  result card to the execution page), for the detail page
 params: parameter list (§4.2)
 memory: { size, updated, path } — per-automation memory directory between executions (any
   files/formats): size a humanized byte label ("empty" when nothing is stored), updated the

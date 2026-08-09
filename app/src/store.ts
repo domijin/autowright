@@ -332,7 +332,7 @@ export const useStore = create<Model>((set, get) => ({
     }
     if (msg.event === 'automation.changed') {
       // §19: entity present → patch the one row in place (null = deleted);
-      // id-only or bare → many may have changed, fall back to /state.
+      // bare → many may have changed, fall back to /state.
       if (msg.automationId !== undefined && msg.automation !== undefined) {
         patchAutomation(msg.automationId, msg.automation)
       } else {

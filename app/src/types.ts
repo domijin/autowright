@@ -198,9 +198,10 @@ export interface MemorySnapshot {
 }
 
 // §4.5: one entry per execution of a step — a step's status is its latest
-// attempt's status; logs are fetched lazily per (step, attempt) (§19). `n` is
-// monotonic: only the newest 20 attempts are retained, so the latest entry's
-// `n` is the true attempt count — never use the list length for that.
+// attempt's status; logs are fetched lazily per (step, attempt) (§19).
+// `number` is monotonic: only the newest 20 attempts are retained, so the
+// latest entry's `number` is the true attempt count — never use the list
+// length for that.
 export interface Attempt { number: number; status: Status; duration: string; startedMs: number }
 export interface ExecutionStep { name: string; status: Status; duration: string; attempts: Attempt[] }
 export interface LogLine { time: string; kind: 'sys' | 'out' | 'wrn' | 'err'; sequence: number; text: string }
@@ -401,7 +402,7 @@ export type WsEvent =
       id: string; line?: string; percent?: number; done?: boolean; ok?: boolean; error?: string }
   | { event: 'ollama.pull'; model: string; line: string; done?: boolean; ok?: boolean }
   // §19: automationId + automation (null = deleted) → patch one row in place;
-  // id without entity, or a bare event, → many may have changed, re-GET /state.
+  // a bare event → many may have changed, re-GET /state.
   | { event: 'automation.changed'; automationId?: string; automation?: Automation | null }
   | { event: 'agents.changed' }
   | { event: 'secrets.changed' }

@@ -259,6 +259,18 @@ describe('mergeDraftTriggers — non-cron drafted entries', () => {
     expect(mergeDraftTriggers(cur, drafted)).toEqual(cur)
   })
 
+  it('discord author identity ignores order, dupes, and whitespace — no duplicate', () => {
+    const cur: DraftTrigger[] = [{ id: 'd1', ...disc({ author: ['alice', 'bob'] }) }]
+    const drafted: DraftTrigger[] = [disc({ author: ['bob ', 'alice', 'alice'] })]
+    expect(mergeDraftTriggers(cur, drafted)).toEqual(cur)
+  })
+
+  it('a genuinely different author set is a new identity and does add', () => {
+    const cur: DraftTrigger[] = [{ id: 'd1', ...disc({ author: ['alice'] }) }]
+    const merged = mergeDraftTriggers(cur, [disc({ author: ['alice', 'carol'] })])
+    expect(merged).toEqual([cur[0], disc({ author: ['alice', 'carol'] })])
+  })
+
   it('a differing pattern, mention, or secret is a new identity and does add', () => {
     const cur: DraftTrigger[] = [{ id: 'd1', ...disc() }]
     const merged = mergeDraftTriggers(cur, [

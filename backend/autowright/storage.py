@@ -195,10 +195,10 @@ class Store:
         # `default_agent` in agents.yaml), never a per-record flag.
         self.default_agent_id: str | None = None
         self.settings: dict = dict(DEFAULT_SETTINGS)
-        # §4.3 `conn`: token-secret name → {state, error?}, owned by the §6
+        # §4.3 `connection`: token-secret name → {state, error?}, owned by the §6
         # listener manager (listeners.py pushes updates; trigger_json reads).
         self.listener_status: dict[str, dict] = {}
-        self.secrets: list[dict] = []             # {name, desc, set} — values live in the Keychain;
+        self.secrets: list[dict] = []             # {name, description, set} — values live in the Keychain;
                                                   # set: False = §4.8 placeholder, no Keychain entry
         # §5 log line cap: (execution_id, file name) → lines written so far,
         # seeded from disk on first append (see append_log_line).
@@ -824,7 +824,7 @@ class Store:
         label, short = triggerlib.trigger_display(t)
         out = {**t, "label": label, "short": short}
         if t["kind"] == "discord":
-            # §4.3 `conn` — the listener manager's state for the trigger's
+            # §4.3 `connection` — the listener manager's state for the trigger's
             # token secret; derived at serialization time, never stored.
             out["connection"] = self.listener_status.get(
                 t["secret"], {"state": "connecting"})

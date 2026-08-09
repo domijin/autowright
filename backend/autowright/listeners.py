@@ -402,20 +402,24 @@ class Listeners:
             self._imsg.tick(senders)
 
     def set_status(self, key: str, state: str, error: str | None = None) -> None:
-        """Push a listener's §4.3 `conn` state; on change, `auto.changed`
-        fires for every automation holding a trigger on that listener —
-        `key` is a Discord token-secret name, or IMSG_KEY for the watcher."""
+        """Push a listener's §4.3 `connection` state; on change,
+        `automation.changed` fires for every automation holding a trigger on
+        that listener — `key` is a Discord token-secret name, or IMSG_KEY for
+        the watcher. §19: each event carries the automation's list row
+        (`connection` is list-shape) so clients patch in place, no /state
+        refetch per affected automation."""
         status = {"state": state, **({"error": error} if error else {})}
         with self.store.lock:
             if self.store.listener_status.get(key) == status:
                 return
             self.store.listener_status[key] = status
-            affected = [a["id"] for a in self.store.autos.values()
+            affected = [(a["id"], self.store.auto_json(a, full=False))
+                        for a in self.store.autos.values()
                         if any((t["kind"] == "imessage" if key == IMSG_KEY
                                 else t["kind"] == "discord" and t.get("secret") == key)
                                for t in a["triggers"])]
-        for automation_id in affected:
-            hub.publish("automation.changed", automationId=automation_id)
+        for automation_id, row in affected:
+            hub.publish("automation.changed", automationId=automation_id, automation=row)
 
     def dispatch(self, secret: str, d: dict, bot_id: str | None,
                  bot_roles: set[str] | None = None,

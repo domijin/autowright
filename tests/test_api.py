@@ -2183,3 +2183,130 @@ def test_chat_assembles_pkg_state_section(client):
     assert "=== PACKAGES" in logged
     assert "left-pad-nope" in logged
     assert "status: missing" in logged
+
+
+# ---------- §19 retry / skip-step endpoints ----------
+
+def test_retry_endpoint_reruns_and_answers_conflicts(client, monkeypatch):
+    """§19 POST /executions/{id}/retry: a failed record re-executes in place
+    and answers its own id; an unresolvable version is the 409, not a 500."""
+    from autowright.storage import store
+
+    events = _capture_events(monkeypatch)
+    ver = make_version()
+    ver["steps"] = [
+        {"file": "01-flag.py", "name": "Needs flag", "description": "",
+         "code": 'import os\nassert os.path.exists("flag"), "flaky"\n'},
+    ]
+    a = store.create_automation(ver, "API Retry", "mock")
+    eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    assert _until_finished(events, eid)["execution"]["status"] == "failed"
+
+    # §7: retry re-enters the same record — make the step pass this time
+    (store.exec_dir(eid) / "workspace" / "flag").write_text("ok")
+    events.clear()
+    r = client.post(f"/executions/{eid}/retry")
+    assert r.status_code == 200 and r.json()["executionId"] == eid
+    assert _until_finished(events, eid)["execution"]["status"] == "succeeded"
+
+    # a failed record whose version is gone → 409 with the engine's words
+    h2 = store.create_execution(a, "version", 99, "manual", [], status="failed")
+    store.update_execution(h2)
+    a["_live"].discard(h2["id"])
+    r2 = client.post(f"/executions/{h2['id']}/retry")
+    assert r2.status_code == 409
+    assert "not found" in r2.json()["detail"]
+
+    assert client.post("/executions/nope/retry").status_code == 404
+
+
+def test_skip_step_endpoint_live_and_conflicts(client, monkeypatch):
+    """§19 POST /executions/{id}/skip-step: skips the live step and the
+    execution continues; a finished record is the 409, an unknown id the 404."""
+    from autowright.storage import store
+
+    events = _capture_events(monkeypatch)
+    ver = make_version()
+    ver["steps"] = [
+        {"file": "01-sleep.py", "name": "Sleep", "description": "",
+         "code": "import time\ntime.sleep(30)\n"},
+        {"file": "02-after.py", "name": "After", "description": "",
+         "code": 'from autowright import log\nlog("after ran")\n'},
+    ]
+    a = store.create_automation(ver, "API Skip", "mock")
+    eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    t0 = time.time()
+    while store.execs[eid]["steps"][0]["status"] != "executing":
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    # the wrong index is refused while step 0 is the live one
+    assert client.post(f"/executions/{eid}/skip-step", json={"index": 1}).status_code == 409
+    r = client.post(f"/executions/{eid}/skip-step", json={"index": 0})
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    fin = _until_finished(events, eid)["execution"]
+    assert time.time() - t0 < 25, "the skip must kill the 30 s sleep"
+    assert fin["status"] == "succeeded"
+    full = store.exec_full(eid)
+    assert [s["status"] for s in full["steps"]] == ["skipped", "succeeded"]
+
+    # terminal record: nothing is executing → 409; unknown id → 404
+    assert client.post(f"/executions/{eid}/skip-step", json={"index": 0}).status_code == 409
+    assert client.post("/executions/nope/skip-step", json={"index": 0}).status_code == 404
+
+
+# ---------- §19 data-path switch (success) ----------
+
+def test_data_path_switch_moves_the_executions_root(client, tmp_path):
+    """§19 POST /settings/data-path: with nothing live or queued the store
+    closes the old DB, persists the new path (normalized to …/executions),
+    and reloads — old records stay behind, the automation survives."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Mover", "mock")
+    h = store.create_execution(a, "version", 1, "manual", [], status="succeeded")
+    store.update_execution(h)
+    a["_live"].discard(h["id"])
+
+    new_root = tmp_path / "elsewhere"
+    r = client.post("/settings/data-path", json={"path": str(new_root)})
+    assert r.status_code == 200
+    assert r.json()["dataPath"] == str(new_root / "executions")
+    assert store.settings["dataPath"] == str(new_root / "executions")
+    assert (new_root / "executions").is_dir()
+    # reloaded from the (empty) new location: records gone, automations kept
+    assert h["id"] not in store.execs
+    assert a["id"] in store.autos
+    # …and a path already ending in /executions is not nested again
+    r2 = client.post("/settings/data-path", json={"path": str(new_root / "executions")})
+    assert r2.status_code == 200
+    assert r2.json()["dataPath"] == str(new_root / "executions")
+
+
+# ---------- §19 websocket streaming + app lifespan ----------
+
+def test_ws_streams_events_and_lifespan_repairs(client):
+    """§3/§19: startup binds the hub loop and repairs stale records; an
+    authenticated /ws socket receives published events; shutdown runs the
+    kill-all hook. The nested TestClient context drives the real lifespan."""
+    from fastapi.testclient import TestClient
+
+    from autowright import api
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "WS", "mock")
+    stale = store.create_execution(a, "version", 1, "manual",
+                                   [{"name": "Say hello", "file": "01-say.py",
+                                     "status": "executing", "attempts": []}])
+    assert stale["status"] == "executing"
+    try:
+        with TestClient(api.app) as c:  # runs the real startup/shutdown events
+            # §3: startup repair marked the crashed record interrupted
+            assert store.exec_full(stale["id"])["status"] == "interrupted"
+            with c.websocket_connect(f"/ws?token={api.AUTH_TOKEN}") as sock:
+                api.hub.publish("test.ping", n=1)  # thread-safe publish path
+                msg = sock.receive_json()
+                assert msg == {"event": "test.ping", "n": 1}
+    finally:
+        # the loop died with the context — unbind so later tests' publishes
+        # fall back to the no-op path instead of hitting a closed loop
+        api.hub._loop = None

@@ -62,7 +62,7 @@ def test_cli_pull_edit_push_roundtrip(backend, client, tmp_path):
     a = next(x for x in full if x["name"] == "Editable")
     # `versions` is the history list (current v2 excluded): v1 remains restorable
     versions = client.get(f"/automations/{a['id']}").json()["versions"]
-    assert [v["v"] for v in versions] == [1]
+    assert [v["version"] for v in versions] == [1]
 
 
 def test_cli_execution_cancel(backend, client):

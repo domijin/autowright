@@ -47,6 +47,19 @@ describe('editor chat e2e', () => {
     await page.getByText(/The workflow has two steps/).waitFor({ timeout: 60_000 })
     await page.getByText('In sync with the spec.').waitFor() // still in sync
 
+    // §11 composer auto-grow (ask-box pattern): the textarea sizes to its
+    // content in both directions and never shows a scrollbar.
+    const input = page.getByPlaceholder(CHAT_INPUT)
+    await input.fill('hi')
+    const hShort = await input.evaluate((el) => el.clientHeight)
+    await input.fill(Array(8).fill('line').join('\n'))
+    const hTall = await input.evaluate((el) => el.clientHeight)
+    expect(hTall).toBeGreaterThan(hShort + 40)
+    // sized to content: nothing left to scroll (≤ the border box's few px)
+    expect(await input.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(4)
+    await input.fill('hi')
+    expect(await input.evaluate((el) => el.clientHeight)).toBe(hShort)
+
     // A change request: while the §8 chat job runs, the footer swaps the input
     // for the page's only live-job surface — stage label + Cancel (§11).
     await page.getByPlaceholder(CHAT_INPUT).fill('Track new manga chapters instead')
@@ -60,8 +73,34 @@ describe('editor chat e2e', () => {
     // "Spec updated — …" would otherwise match too)
     await page.getByText('Spec updated', { exact: true }).waitFor({ timeout: 60_000 })
     await page.getByText('Track new manga chapters instead').first().waitFor()
+
+    // §11 thread scroll behaviors. Growing the composer shrinks the thread
+    // viewport (flex) until it genuinely overflows — the guard below keeps
+    // these assertions from passing vacuously on a short thread.
+    const thread = page.getByTestId('chat-thread')
+    let draft = ''
+    for (let lines = 8; lines <= 28; lines += 4) {
+      draft = Array(lines).fill('draft text').join('\n')
+      await input.fill(draft)
+      if (await thread.evaluate((el) => el.scrollHeight > el.clientHeight + 40)) break
+    }
+    expect(await thread.evaluate((el) => el.scrollHeight > el.clientHeight + 40)).toBe(true)
+    // Typing more keeps the thread's scroll position — the auto-grow's
+    // transient height:auto collapse must not yank the thread upward.
+    await thread.evaluate((el) => { el.scrollTop = 5 })
+    await input.fill(draft + '\nmore')
+    expect(await thread.evaluate((el) => el.scrollTop)).toBe(5)
+
+    // A new entry re-pins the thread to the newest content: park the scroll
+    // away from the bottom, then let the sync chip land.
+    await thread.evaluate((el) => { el.scrollTop = 0 })
     await page.getByTestId('chat-sync-now').click()
     await page.getByText('Steps synced with the spec.', { exact: true }).waitFor({ timeout: 60_000 })
+    await expect.poll(() => thread.evaluate(
+      (el) => el.scrollHeight - el.scrollTop - el.clientHeight), { timeout: 5_000 }).toBeLessThan(2)
+    expect(await thread.evaluate((el) => el.scrollHeight > el.clientHeight + 40)).toBe(true)
+    await input.fill('') // back to the journey — composer at rest
+
     await page.getByText('In sync with the spec.').waitFor()
     await shot(page, 'editor-chat-synced.png')
 

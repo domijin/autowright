@@ -63,7 +63,7 @@ def test_ws_streams_execution_events(backend, client):
     assert kinds.index("execution.started") < kinds.index("execution.finished")
     finished = events[-1]
     assert finished["execution"]["status"] == "succeeded"
-    assert finished["auto_json"]["lastStatus"] == "succeeded"
+    assert finished["automation"]["lastStatus"] == "succeeded"
     # §5 log lines stream with per-file monotonic seq
     logs = [m for m in events if m["event"] == "execution.log"]
     assert logs

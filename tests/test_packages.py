@@ -278,3 +278,105 @@ def test_ensure_fast_path_never_spawns_pip(home, monkeypatch):
         {"pip": "requests", "import": "requests", "status": "installed", "version": "2.31.0"},
         {"pip": "pyyaml", "import": "yaml", "status": "installed", "version": "6.0.2"},
     ]
+
+
+def test_pip_install_spawn_failure_and_kill_fallback(home, monkeypatch):
+    """§6.2 _pip_install edges: a pip that can't even spawn returns the OS
+    error as the failure; a kill whose killpg finds no group falls back to
+    proc.kill(); a constraints file already gone is swallowed."""
+    import subprocess as sp
+    from pathlib import Path
+
+    from autowright import packages
+
+    _fake_dist(home, "requests", "2.31.0")  # something to pin → constraints exist
+
+    def no_spawn(cmd, **kw):
+        raise OSError("posix_spawn failed")
+
+    monkeypatch.setattr(packages.subprocess, "Popen", no_spawn)
+    assert packages._pip_install("leftpad", pin_installed=True) == "posix_spawn failed"
+
+    # killpg raising ProcessLookupError → the direct proc.kill() fallback
+    def killpg_gone(pid, sig):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(packages.os, "killpg", killpg_gone)
+
+    class HungProc:
+        def __init__(self, cmd, **kw):
+            self.pid = 4242
+            self.returncode = None
+            self.killed = False
+            # simulate an outside cleanup racing the finally-unlink
+            i = cmd.index("-c")
+            Path(cmd[i + 1]).unlink()
+
+        def communicate(self, timeout=None):
+            if self.killed or timeout is None:
+                return "", ""
+            raise sp.TimeoutExpired("pip", timeout)
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            self.killed = True
+
+    monkeypatch.setattr(packages.subprocess, "Popen", HungProc)
+    monkeypatch.setattr(packages, "INSTALL_TIMEOUT", 0)
+    out = packages._pip_install("leftpad", pin_installed=True)
+    assert out == "pip timed out after 0 s"  # fallback kill let communicate drain
+
+
+def test_ensure_reports_progress_and_pip_failure(home, monkeypatch):
+    """§6.2 ensure: on_progress fires once per actual pip run, and a pip
+    failure lands on the entry as status failed + the pip error text."""
+    from autowright import packages
+
+    _fake_dist(home, "requests", "2.31.0")
+    progressed = []
+    monkeypatch.setattr(packages, "_pip_install",
+                        lambda name, pin_installed=False, should_stop=None:
+                        "no matching distribution")
+    out = packages.ensure([{"pip": "requests", "import": "requests"},
+                           {"pip": "leftpad", "import": "leftpad"}],
+                          on_progress=progressed.append)
+    assert progressed == ["leftpad"]  # never for the already-installed entry
+    assert out == [
+        {"pip": "requests", "import": "requests", "status": "installed", "version": "2.31.0"},
+        {"pip": "leftpad", "import": "leftpad", "status": "failed",
+         "error": "no matching distribution"},
+    ]
+
+
+def test_upgrade_always_runs_pip_and_reports(home, monkeypatch):
+    """§19 upgrade (the §11 Update button): pip runs unpinned even for an
+    installed distribution; invalid names and pip failures come back failed
+    with no version, successes re-read the real installed version."""
+    from autowright import packages
+
+    _fake_dist(home, "requests", "2.31.0")
+    calls = []
+
+    def fake_pip(name, pin_installed=False, should_stop=None):
+        calls.append((name, pin_installed))
+        if name == "leftpad":
+            return "no matching distribution"
+        # what a real upgrade leaves behind: the new dist-info replaces the old
+        import shutil
+        shutil.rmtree(home / "site-packages" / f"{name}-2.31.0.dist-info")
+        _fake_dist(home, name, "9.9.9")
+        return None
+
+    monkeypatch.setattr(packages, "_pip_install", fake_pip)
+    out = packages.upgrade([{"pip": "bad name!", "import": "x"},
+                            {"pip": "requests", "import": "requests"},
+                            {"pip": "leftpad", "import": "leftpad"}])
+    # invalid name: no pip run; the others run unpinned (upgrade moves them)
+    assert calls == [("requests", False), ("leftpad", False)]
+    assert out[0] == {"pip": "bad name!", "import": "x", "status": "failed",
+                      "error": "not a bare distribution name"}
+    assert out[1]["status"] == "installed" and out[1]["version"] == "9.9.9"
+    assert out[2] == {"pip": "leftpad", "import": "leftpad", "status": "failed",
+                      "error": "no matching distribution"}

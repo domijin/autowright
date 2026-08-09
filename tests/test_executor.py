@@ -447,3 +447,173 @@ def test_fetch_page_second_attempt_succeeds(monkeypatch, clean_fetch_state):
 
     _urlopen_router(monkeypatch, b"", [OSError("flaky"), b"recovered"])
     assert fetch_page("https://example.com/a") == "recovered"
+
+
+# ---------- main() in-process (§6.1 subprocess entry, run without a subprocess) ----------
+
+@pytest.fixture()
+def run_main(tmp_path, monkeypatch, ctrl):
+    """Run executor.main() in-process with a scripted step + ctx, restoring every
+    global main() mutates: the sys.modules["autowright"] SDK shim, stdout/stderr,
+    sys.path, AUTOWRIGHT_* env, and the cwd. Returns (rc, control_lines)."""
+    import os
+    import sys as _sys
+
+    def run(source: str, **ctx_overrides):
+        from autowright import executor
+
+        script = tmp_path / "step.py"
+        script.write_text(source, encoding="utf-8")
+        ctx = {
+            "scan_secrets": {},
+            "workspace": str(tmp_path / "ws"),
+            "memory_dir": str(tmp_path / "memory"),
+            "result_dir": str(tmp_path / "result"),
+        }
+        ctx.update(ctx_overrides)
+        monkeypatch.setattr(_sys, "argv", ["executor", str(script)])
+        monkeypatch.setattr(_sys, "stdin", io.StringIO(json.dumps(ctx)))
+        saved_mod = _sys.modules["autowright"]
+        saved_out, saved_err = _sys.stdout, _sys.stderr
+        saved_path = list(_sys.path)
+        saved_env = {k: v for k, v in os.environ.items() if k.startswith("AUTOWRIGHT_")}
+        saved_cwd = os.getcwd()
+        try:
+            rc = executor.main()
+        finally:
+            _sys.modules["autowright"] = saved_mod
+            _sys.stdout, _sys.stderr = saved_out, saved_err
+            _sys.path[:] = saved_path
+            for k in [k for k in os.environ if k.startswith("AUTOWRIGHT_")]:
+                del os.environ[k]
+            os.environ.update(saved_env)
+            os.chdir(saved_cwd)
+        return rc, ctrl()
+
+    return run
+
+
+def test_main_happy_path_sdk_env_and_logs(run_main, tmp_path):
+    rc, lines = run_main(
+        "import os\n"
+        "from autowright import params, log, workspace\n"
+        "print('plain', params['n'])\n"
+        "log.warn('careful')\n"
+        "print('exec id', os.environ['AUTOWRIGHT_EXECUTION_ID'])\n"
+        "print('step', os.environ['AUTOWRIGHT_STEP_NAME'])\n"
+        "open('made.txt', 'w').write('x')\n",
+        params={"n": 7},
+        execution={"id": "e1", "automation_id": "a1", "automation_name": "A",
+                   "step_index": 0, "step_name": "fetch", "trigger": "cron"},
+    )
+    assert rc == 0
+    logs = [(l["kind"], l["text"]) for l in lines if l["op"] == "log"]
+    assert ("out", "plain 7") in logs
+    assert ("wrn", "careful") in logs
+    assert ("out", "exec id e1") in logs
+    assert ("out", "step fetch") in logs
+    # cwd was the workspace: the relative write landed there
+    assert (tmp_path / "ws" / "made.txt").read_text() == "x"
+
+
+def test_main_disallowed_import_fails_closed(run_main):
+    rc, lines = run_main("import definitely_not_a_real_pkg\n")
+    assert rc == 4
+    err = next(l for l in lines if l["op"] == "error")
+    assert err["type"] == "DisallowedImport"
+    assert "definitely_not_a_real_pkg" in err["message"]
+
+
+def test_main_declared_package_extends_allowlist(run_main):
+    # the module only has to pass the AST allowlist check — the script never
+    # actually imports it at runtime
+    rc, _ = run_main("if False:\n    import declared_pkg\nprint('ok')\n",
+                     package_imports=["declared_pkg"])
+    assert rc == 0
+
+
+def test_main_missing_secret_exit_code(run_main):
+    rc, lines = run_main("from autowright import secrets\nsecrets.NOPE\n",
+                         secrets={}, allowed_secrets=[])
+    assert rc == 3
+    err = next(l for l in lines if l["op"] == "error")
+    assert err["type"] == "MissingSecret"
+    assert "NOPE" in err["message"]
+
+
+def test_main_sys_exit_zero_is_ordinary_early_exit(run_main):
+    rc, lines = run_main("import sys\nprint('before')\nsys.exit(0)\nprint('after')\n")
+    assert rc == 0
+    assert not any(l["op"] == "error" for l in lines)
+    texts = [l["text"] for l in lines if l["op"] == "log"]
+    assert "before" in texts and "after" not in texts
+
+
+def test_main_sys_exit_nonzero_fails_with_code(run_main):
+    rc, lines = run_main("import sys\nsys.exit(5)\n")
+    assert rc == 5
+    err = next(l for l in lines if l["op"] == "error")
+    assert err["type"] == "SystemExit"
+    assert err["message"] == "step exited with code 5"
+
+
+def test_main_sys_exit_message_keeps_author_diagnostic(run_main):
+    rc, lines = run_main("import sys\nsys.exit('config file gone')\n")
+    assert rc == 1
+    err = next(l for l in lines if l["op"] == "error")
+    assert err["message"] == "SystemExit: config file gone"
+
+
+def test_main_exception_reports_type_and_traceback(run_main):
+    rc, lines = run_main("print('partial tail', end='')\nraise ValueError('bad input')\n")
+    assert rc == 1
+    err = next(l for l in lines if l["op"] == "error")
+    assert err["type"] == "ValueError"
+    assert err["message"] == "ValueError: bad input"
+    logs = [l for l in lines if l["op"] == "log"]
+    # the pending partial print() line was flushed before the error
+    assert any(l["kind"] == "out" and l["text"] == "partial tail" for l in logs)
+    assert any(l["kind"] == "err" and "ValueError: bad input" in l["text"] for l in logs)
+
+
+def test_main_reply_outside_message_trigger_raises(run_main):
+    rc, lines = run_main("from autowright import reply\nreply('hi')\n")
+    assert rc == 1
+    err = next(l for l in lines if l["op"] == "error")
+    assert "message trigger" in err["message"]
+
+
+def test_main_reply_scans_outbound_for_secret_values(run_main):
+    rc, lines = run_main(
+        "from autowright import reply, secrets\nreply('key is ' + secrets.TOKEN)\n",
+        can_reply=True, secrets={"TOKEN": "s3cr3t"}, allowed_secrets=["TOKEN"],
+        scan_secrets={"TOKEN": "s3cr3t"})
+    assert rc == 1
+    err = next(l for l in lines if l["op"] == "error")
+    assert "secret TOKEN" in err["message"]
+    assert not any(l["op"] == "reply" for l in lines)
+
+
+def test_main_reply_emits_control_line(run_main):
+    rc, lines = run_main("from autowright import reply\nreply('all done')\n",
+                         can_reply=True)
+    assert rc == 0
+    assert [l["text"] for l in lines if l["op"] == "reply"] == ["all done"]
+
+
+def test_main_notify_caps_text(run_main):
+    rc, lines = run_main("from autowright import notify\nnotify('x' * 20_000)\n")
+    assert rc == 0
+    n = next(l for l in lines if l["op"] == "notify")
+    assert len(n["text"]) == 10_000
+
+
+def test_main_site_packages_joins_sys_path(run_main, tmp_path):
+    sp = tmp_path / "site"
+    sp.mkdir()
+    (sp / "declared_pkg.py").write_text("VALUE = 41\n", encoding="utf-8")
+    rc, lines = run_main(
+        "import declared_pkg\nprint('got', declared_pkg.VALUE + 1)\n",
+        site_packages=str(sp), package_imports=["declared_pkg"])
+    assert rc == 0
+    assert any(l.get("text") == "got 42" for l in lines)

@@ -140,7 +140,10 @@ everything finer-grained belongs to the unit/integration tiers:
   version history → restore v1 as v3
 - the editor chat pane, question then edit: a question-shaped message lands a prose answer
   entry (workflow untouched); a change request rewrites the spec from chat, the thread
-  entry's inline Sync now rebuilds the steps, and the draft saves as v2
+  entry's inline Sync now rebuilds the steps, and the draft saves as v2; the same journey
+  checks the pane's two §11 visual behaviors happy-dom can't reach — the composer
+  auto-grows and shrinks with its content, and the thread scroll stays put while typing
+  and re-pins to the newest entry when one lands
 - the chat `actions.yaml` fix-and-test chain: one response carrying an answer, a spec
   rewrite, a notes rewrite, and `sync: true` + `test: true` → auto-sync → auto-test →
   the settled-test system chip in the thread
@@ -183,9 +186,10 @@ harness's `clickNav` measures its width), `agent-card` (§12 agent cards),
 `execution-row` (§9 executions-list rows), `param-row-<name>` (§9.2 parameter rows, one
 per param), `spec-edit` / `spec-editor` (§11 SPEC card's Edit button and its edit
 textarea), `sync-steps` (§11 Build panel's Sync now / Sync with spec button),
-`chat-sync-now` (§11 chat thread rewrite entry's inline Sync now), `version-menu` (§11
-editor version pill). New e2e targets that role/label/text cannot reach unambiguously get
-a test id added here.
+`chat-sync-now` (§11 chat thread rewrite entry's inline Sync now), `chat-thread` (§11
+chat thread's scrolling body — the element whose scrollTop the pinning tests measure),
+`version-menu` (§11 editor version pill). New e2e targets that role/label/text cannot
+reach unambiguously get a test id added here.
 
 ## 16. Seed / demo data (tests only)
 

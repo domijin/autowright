@@ -795,3 +795,19 @@ def test_log_line_cap_marker_then_silence(store, monkeypatch):
     # deleting the execution drops the in-memory counters
     store.delete_execution(h["id"])
     assert not any(k[0] == h["id"] for k in store._log_counts)
+
+
+def test_atomic_write_failure_unlinks_tmp_and_keeps_original(tmp_path):
+    """§5 atomic IO: a write that dies mid-stream (here: text the utf-8 codec
+    refuses) re-raises, removes its temp file, and never touches the existing
+    file — a crash can't leave a half-written or truncated target."""
+    import pytest
+
+    from autowright.yamlio import atomic_write_text
+
+    target = tmp_path / "settings.yaml"
+    atomic_write_text(target, "keep: me\n")
+    with pytest.raises(UnicodeEncodeError):
+        atomic_write_text(target, "broken \ud800 surrogate")
+    assert target.read_text(encoding="utf-8") == "keep: me\n"  # original intact
+    assert not list(tmp_path.glob(".ad-tmp-*"))               # temp cleaned up

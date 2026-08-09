@@ -572,3 +572,174 @@ def test_deleted_version_queue_entry_finishes_with_note(store, monkeypatch):
     assert not engine.is_live(entry["id"])  # never executed
     assert store.queued_execs(a["id"]) == []  # the queue isn't blocked behind it
     assert [p["sender"] for p in notified] == ["Dave"]  # sender still answered
+
+
+# ---------- the real tick loop thread (§6) ----------
+
+def test_loop_thread_survives_a_failing_tick(store, monkeypatch, caplog):
+    """§6: one bad tick is logged and never kills the scheduler thread —
+    a persistent failure here would silently turn every trigger off."""
+    import logging
+    import threading
+    import time
+    from datetime import datetime
+
+    from autowright import scheduler as sched_mod
+    from autowright.engine import Engine
+    from autowright.scheduler import Scheduler
+
+    monkeypatch.setattr(sched_mod, "TICK_S", 0.01)
+    calls = {"n": 0}
+
+    def clock():
+        calls["n"] += 1
+        if calls["n"] == 2:  # the ctor takes call 1; the first tick raises
+            raise RuntimeError("bad tick")
+        return datetime.now()
+
+    engine = Engine(store)
+    sched = Scheduler(store, engine, clock=clock)
+    with caplog.at_level(logging.ERROR, logger="autowright.scheduler"):
+        sched.start()
+        t0 = time.time()
+        while calls["n"] < 4:  # ticks keep coming after the failing one
+            assert time.time() - t0 < 30
+            time.sleep(0.01)
+        sched.stop()
+    for t in threading.enumerate():
+        if t.name == "ad-scheduler":
+            t.join(timeout=10)
+            assert not t.is_alive()
+    assert any("scheduler tick failed" in r.message for r in caplog.records)
+
+
+def test_disabled_one_shot_elapsed_is_consumed_unfired(store, monkeypatch):
+    """§4.3: a one-shot whose moment passes while the trigger is off is
+    consumed without firing — a spent one-shot never lingers."""
+    from datetime import datetime
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 8, 5))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "OffShot", None, triggers=[
+        {"id": "tt", "kind": "time", "enabled": False, "at": "2026-07-10T08:00"}])
+    sched._tick()
+    assert fires == []
+    assert a["triggers"] == []  # consumed even though it was off
+
+
+def test_one_shot_missed_before_baseline_consumed_unfired(store, monkeypatch):
+    """§4.3: a one-shot whose moment passed while the backend was down (before
+    the startup baseline) is consumed, never fired — no catch-up queue."""
+    from datetime import datetime
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 9, 0))  # backend wakes past the moment
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "MissedShot", None, triggers=[
+        {"id": "tt", "kind": "time", "enabled": True, "at": "2026-07-10T08:00"}])
+    sched._tick()
+    assert fires == []
+    assert a["triggers"] == []
+
+
+def test_retention_sweep_runs_hourly_and_publishes(store, monkeypatch):
+    """§5: the hourly retention pass deletes expired records and publishes
+    automation.changed only when something was actually removed."""
+    from datetime import datetime, timedelta
+    from autowright import scheduler as sched_mod
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 9, 0))
+    engine, sched = _mk_clocked(store, clock)
+    a = store.create_automation(make_version(), "Sweep", None)
+    h_old = store.create_execution(a, "version", 1, "manual", [], status="succeeded")
+    h_old["started_at"] = (datetime(2026, 7, 10) - timedelta(days=120)).isoformat(timespec="seconds")
+    store.update_execution(h_old)
+    store.settings["days"] = 90
+    events = []
+    monkeypatch.setattr(sched_mod.hub, "publish",
+                        lambda ev, **kw: events.append(ev))
+    sched._tick()
+    assert h_old["id"] in store.execs  # not an hour yet — nothing swept
+    clock.now += timedelta(hours=2)
+    sched._tick()
+    assert h_old["id"] not in store.execs
+    assert "automation.changed" in events
+    events.clear()
+    clock.now += timedelta(hours=2)
+    sched._tick()  # nothing left to remove → no publish
+    assert "automation.changed" not in events
+
+
+def test_fire_trigger_version_gone_reports_not_started(store):
+    """§6: a firing whose current version no longer resolves starts nothing
+    and returns False — the tick must survive it, not crash the loop."""
+    from autowright.firing import fire_trigger
+    from conftest import make_version
+
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "GoneVersion", None)
+    a["versions"].clear()  # the version the firing would resolve is gone
+    before = len(store.execs)
+    t = {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}
+    assert fire_trigger(store, engine, a, t) is False
+    assert len(store.execs) == before  # nothing started, nothing recorded
+    assert a["_live"] == set()
+
+
+def test_trigger_off_cancels_unmatched_imessage_entries(store, monkeypatch):
+    """§6: an imessage queue entry matches by sender ↔ the trigger's `from`
+    (case-insensitive) — turning that trigger off cancels only its entries;
+    an unknown automation id is a silent no-op."""
+    from autowright import listeners as li_mod
+    from autowright.firing import cancel_unmatched_queue, fire_trigger
+    from conftest import make_version
+
+    notified = []
+    monkeypatch.setattr(li_mod, "notify_busy", notified.append)
+
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "Texts", None)
+    keep = {"id": "tk", "kind": "imessage", "enabled": True, "from": "+15551234567"}
+    drop = {"id": "td", "kind": "imessage", "enabled": True, "from": "+19998887777"}
+    a["triggers"] = [keep, drop]
+    a["_live"] = {"blocking"}
+    fire_trigger(store, engine, a, keep,
+                 payload={"kind": "imessage", "sender": "+15551234567", "text": "run"})
+    fire_trigger(store, engine, a, drop,
+                 payload={"kind": "imessage", "sender": "+19998887777", "text": "run"})
+    assert len(store.queued_execs(a["id"])) == 2
+
+    a["triggers"][1]["enabled"] = False
+    cancel_unmatched_queue(store, engine, a["id"])
+    q = store.queued_execs(a["id"])
+    assert [h["trigger_payload"]["sender"] for h in q] == ["+15551234567"]
+    assert [p["sender"] for p in notified] == ["+19998887777"]
+
+    cancel_unmatched_queue(store, engine, "no-such-automation")  # silent no-op
+    assert len(store.queued_execs(a["id"])) == 1
+
+
+def test_drain_queue_slot_race_leaves_entry_queued(store, monkeypatch):
+    """§6 drain race: at_capacity said free but start answers RuntimeError (a
+    concurrent starter took the slot) — drain returns and the entry stays
+    queued for the next finish; an entry with no queued_at counts as fresh,
+    never stale."""
+    from autowright.firing import drain_queue, fire_trigger
+    from conftest import make_version
+
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "Race", None)
+    a["_live"] = {"blocking"}
+    fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave"))
+    head = store.queued_execs(a["id"])[0]
+    head["queued_at"] = None  # §6: no timestamp reads as freshly queued
+
+    a["_live"] = set()  # capacity looks free…
+    monkeypatch.setattr(engine, "start",
+                        lambda *args, **kw: (_ for _ in ()).throw(RuntimeError("already executing")))
+    drain_queue(store, engine, a["id"])  # …but the slot is taken under us
+    assert store.execs[head["id"]]["status"] == "queued"  # still waiting

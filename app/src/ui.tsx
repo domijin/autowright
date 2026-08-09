@@ -833,13 +833,14 @@ export function useOverlayThumb() {
 // §14 overlay-scrollbar pane for plain divs: the wrapper carries the layout
 // styles (flex/margins), the inner scroller carries padding/overflow and hides
 // its native bar.
-export function ScrollArea({ wrapStyle, scrollRef, style, className, children, onScroll }: {
+export function ScrollArea({ wrapStyle, scrollRef, style, className, children, onScroll, testId }: {
   wrapStyle?: React.CSSProperties
   scrollRef?: React.MutableRefObject<HTMLDivElement | null>
   style?: React.CSSProperties
   className?: string
   children?: React.ReactNode
   onScroll?: React.UIEventHandler<HTMLDivElement>
+  testId?: string
 }) {
   const t = useOverlayThumb()
   return (
@@ -847,6 +848,7 @@ export function ScrollArea({ wrapStyle, scrollRef, style, className, children, o
       <div
         ref={(el) => { t.attach(el); if (scrollRef) scrollRef.current = el }}
         onScroll={(e) => { t.onScroll(); onScroll?.(e) }}
+        data-testid={testId}
         className={`ad-scrollhide${className ? ` ${className}` : ''}`}
         style={{ height: '100%', overflowY: 'auto', ...style }}
       >

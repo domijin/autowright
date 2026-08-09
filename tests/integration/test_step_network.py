@@ -43,7 +43,8 @@ def test_declared_package_installs_from_local_wheel(backend_factory, tmp_path):
     b = backend_factory(extra_env={"PIP_NO_INDEX": "1", "PIP_FIND_LINKS": str(wheels)})
     with b.client() as client:
         a = create_auto(client, name="Wheeled",
-                        packages=[{"pip": "tinypkg", "import": "tinypkg"}],
+                        packages=[{"pip": "tinypkg", "import": "tinypkg",
+                                   "why": "provides the marker the step logs"}],
                         steps=[{"file": "01-use.py", "name": "Use", "description": "imports",
                                 "code": 'from autowright import log\nimport tinypkg\nlog(tinypkg.MARKER)\n'}])
         execution_id = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]

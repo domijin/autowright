@@ -1,8 +1,10 @@
 """§6 listener manager: Discord firing rules, payload shape, §6.1 reply
 sending, dispatch, and the engine/executor plumbing around triggerPayload."""
+import json
 import logging
 import time
 
+import pytest
 from conftest import make_version, read_all_logs
 
 from autowright import keychain
@@ -470,3 +472,188 @@ def test_conn_missing_token_parks_with_plain_status(monkeypatch):
     key, state, error = mgr.statuses[0]
     assert (key, state) == ("NO_VALUE", "error")
     assert "secret NO_VALUE has no value yet" in error
+
+
+# ---------- §6 _Conn._session: one scripted gateway session, no network ----------
+
+class _GwMgr(_FakeMgr):
+    def __init__(self):
+        super().__init__()
+        self.dispatched = []
+
+    def dispatch(self, secret, d, bot_id, role_ids, chan_names, guild_names):
+        self.dispatched.append((secret, d, bot_id, set(role_ids),
+                                dict(chan_names), dict(guild_names)))
+
+
+class _FakeWs:
+    """Context-manager websocket replaying scripted frames. A frame is a dict
+    (sent as JSON), an Exception (raised from recv), or ("tick", secs) — advance
+    the fake clock and raise TimeoutError, like a quiet gateway."""
+
+    def __init__(self, frames, clock=None):
+        self.frames = list(frames)
+        self.sent = []
+        self.clock = clock
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def recv(self, timeout=None):
+        assert self.frames, "test script exhausted — _session kept reading"
+        f = self.frames.pop(0)
+        if isinstance(f, tuple) and f[0] == "tick":
+            self.clock["t"] += f[1]
+            raise TimeoutError
+        if isinstance(f, Exception):
+            raise f
+        return json.dumps(f)
+
+    def send(self, s):
+        self.sent.append(json.loads(s))
+
+    def close(self):
+        pass
+
+
+def _session_over(monkeypatch, frames, clock=None):
+    import websockets.sync.client as ws_client
+
+    from autowright import listeners as li_mod
+
+    fake = _FakeWs(frames, clock)
+    monkeypatch.setattr(ws_client, "connect",
+                        lambda url, max_size=None: fake)
+    if clock is not None:
+        class _Clock:
+            @staticmethod
+            def monotonic():
+                return clock["t"]
+        monkeypatch.setattr(li_mod, "time", _Clock)
+    mgr = _GwMgr()
+    conn = li_mod._Conn("BOT", mgr)
+    return conn, mgr, fake
+
+
+_HELLO = {"op": 10, "d": {"heartbeat_interval": 45_000}}
+
+
+def test_session_identify_ready_and_dispatch(monkeypatch):
+    from autowright import listeners as li_mod
+
+    conn, mgr, fake = _session_over(monkeypatch, [
+        _HELLO,
+        {"op": 0, "t": "READY", "s": 1, "d": {"user": {"id": "B1"}}},
+        {"op": 0, "t": "GUILD_CREATE", "s": 2, "d": {
+            "id": "G1", "name": "My Server",
+            "roles": [{"id": "R1", "tags": {"bot_id": "B1"}},
+                      {"id": "R2", "tags": {}}],
+            "channels": [{"id": "C1", "name": "general"}],
+            "threads": [{"id": "T1", "name": "a-thread"}],
+        }},
+        {"op": 0, "t": "MESSAGE_CREATE", "s": 3,
+         "d": {"channel_id": "C1", "content": "hi",
+               "author": {"id": "U1", "username": "sam"}}},
+        {"op": 7},  # gateway asks to reconnect → session ends
+    ])
+    assert conn._session("tok-123") is True
+    ident = fake.sent[0]
+    assert ident["op"] == 2
+    assert ident["d"]["token"] == "tok-123"
+    assert ident["d"]["intents"] == li_mod.INTENTS
+    assert ("BOT", "connected", None) in mgr.statuses
+    assert conn.bot_id == "B1"
+    assert conn.role_ids == {"R1"}  # only the bot's managed role
+    (secret, d, bot_id, roles, chans, guilds) = mgr.dispatched[0]
+    assert (secret, bot_id) == ("BOT", "B1")
+    assert d["content"] == "hi"
+    assert chans == {"C1": "general", "T1": "a-thread"}
+    assert guilds == {"G1": "My Server"}
+    assert conn._ws is None  # cleared on the way out
+
+
+def test_session_bad_hello_raises(monkeypatch):
+    conn, _, _ = _session_over(monkeypatch, [{"op": 0}])
+    with pytest.raises(RuntimeError, match="gateway didn't say hello"):
+        conn._session("tok")
+
+
+def test_session_invalid_session_before_ready_keeps_backoff(monkeypatch):
+    conn, mgr, _ = _session_over(monkeypatch, [_HELLO, {"op": 9}])
+    assert conn._session("tok") is False  # never READY → run() keeps backing off
+    assert ("BOT", "connected", None) not in mgr.statuses
+
+
+def test_session_heartbeats_on_interval_and_on_request(monkeypatch):
+    clock = {"t": 100.0}
+    conn, _, fake = _session_over(monkeypatch, [
+        _HELLO,                     # interval 45s → next beat at t=145
+        {"op": 0, "t": "READY", "s": 5, "d": {"user": {"id": "B1"}}},
+        ("tick", 50),               # quiet past the deadline → timed heartbeat
+        {"op": 1, "s": 6},          # gateway asks for an immediate one
+        {"op": 7},
+    ], clock=clock)
+    assert conn._session("tok") is True
+    beats = [f for f in fake.sent if f["op"] == 1]
+    assert [b["d"] for b in beats] == [5, 6]  # latest seq echoed each time
+
+
+def test_run_generic_connect_failure_reports_connecting(monkeypatch):
+    from autowright import listeners as li_mod
+
+    keychain.set_secret("BOT", "tok")
+    mgr = _FakeMgr()
+    conn = li_mod._Conn("BOT", mgr)
+    monkeypatch.setattr(conn, "_session",
+                        lambda tok: (_ for _ in ()).throw(OSError("dns down")))
+    waits = _stub_stop_wait(monkeypatch, conn)
+    conn.run()
+    assert waits == [1.0]  # first retry backs off gently, not at the cap
+    assert ("BOT", "connecting", "connection failed — dns down") in mgr.statuses
+
+
+def test_run_healthy_session_resets_backoff(monkeypatch):
+    from autowright import listeners as li_mod
+
+    keychain.set_secret("BOT", "tok")
+    mgr = _FakeMgr()
+    conn = li_mod._Conn("BOT", mgr)
+    outcomes = [True]
+
+    def fake_session(tok):
+        if outcomes:
+            return outcomes.pop()
+        raise OSError("dropped")
+
+    monkeypatch.setattr(conn, "_session", fake_session)
+    waits = []
+
+    def fake_wait(timeout=None):
+        waits.append(timeout)
+        if len(waits) >= 2:
+            conn._stop.set()
+        return conn._stop.is_set()
+
+    monkeypatch.setattr(conn._stop, "wait", fake_wait)
+    conn.run()
+    # healthy session reset backoff to 1.0 before the failed one doubled it
+    assert waits == [1.0, 2.0]
+
+
+def test_stop_closes_live_socket(monkeypatch):
+    from autowright import listeners as li_mod
+
+    mgr = _FakeMgr()
+    conn = li_mod._Conn("BOT", mgr)
+    closed = []
+
+    class _Ws:
+        def close(self):
+            closed.append(True)
+
+    conn._ws = _Ws()
+    conn.stop()
+    assert closed == [True] and conn._stop.is_set()

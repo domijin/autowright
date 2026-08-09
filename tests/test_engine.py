@@ -1688,3 +1688,195 @@ def test_watchdog_covers_a_child_that_never_reads_stdin(monkeypatch, tmp_path):
     assert rc != 0
     assert holder["error"]["type"] == "StepTimeout"
     assert state["proc"] is None and "hard_kill" not in state
+
+
+def test_read_loop_error_reaps_the_step_group(monkeypatch, tmp_path):
+    """§6.1: a log callback dying mid-stream (e.g. disk full while persisting a
+    line) must not leave the step group alive with nothing left to cancel it by
+    — the finally block kills the group before re-raising."""
+    import subprocess
+    import sys
+    import time
+
+    from autowright import engine as engmod
+
+    import pytest
+
+    real = subprocess.Popen
+    spawned = {}
+
+    def fake_popen(argv, **kw):
+        # stand-in for the executor: prints one line, then lingers
+        p = real([sys.executable, "-c",
+                  "print('hello', flush=True); import time; time.sleep(60)"], **kw)
+        spawned["proc"] = p
+        return p
+
+    monkeypatch.setattr(engmod.subprocess, "Popen", fake_popen)
+    script = tmp_path / "01-any.py"
+    script.write_text("pass\n")
+    state = {"proc": None, "cancel": False}
+
+    def bad_log(kind, text):
+        raise RuntimeError("disk full")
+
+    t0 = time.time()
+    with pytest.raises(RuntimeError, match="disk full"):
+        engmod.run_step_process(script, {}, state, bad_log,
+                                {"status": "ok", "chip": None}, {}, None)
+    assert time.time() - t0 < 20, "the raise must not wait out the child's sleep"
+    assert spawned["proc"].poll() is not None  # the group is dead, not orphaned
+    assert state["proc"] is None and "hard_kill" not in state
+
+
+def test_kill_all_live_kills_a_running_step(store):
+    """§3 backend shutdown: kill_all_live hard-kills every live step group —
+    the engine thread then finishes the record instead of waiting out the
+    step's sleep."""
+    import time
+
+    from autowright.engine import Engine
+
+    engine = Engine(store)
+    ver = make_version()
+    ver["steps"] = [{"file": "01-sleep.py", "name": "Sleep", "description": "",
+                     "code": "import time\ntime.sleep(60)\n"}]
+    a = store.create_automation(ver, "Shutdown", None)
+    h = engine.start(a, "manual")
+    t0 = time.time()
+    while True:  # wait for the live step process to exist
+        with engine._lock:
+            state = engine._live.get(h["id"])
+        if state and state.get("proc") is not None:
+            break
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    engine.kill_all_live()
+    wait_done(engine, h["id"])
+    assert time.time() - t0 < 30, "the kill must not wait out the step's sleep"
+    assert h["status"] == "cancelled"  # the cancel flag went up with the kill
+    assert not engine.is_live(h["id"])
+
+
+def test_kill_all_live_without_hard_kill_kills_the_group(store):
+    """§3: a live state that has a proc but no hard_kill closure yet (the
+    window before run_step_process installs it) still gets its group killed."""
+    import subprocess
+    import sys
+
+    from autowright.engine import Engine
+
+    engine = Engine(store)
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                            start_new_session=True)
+    try:
+        state = {"cancel": False, "proc": proc}
+        with engine._lock:
+            engine._live["fake-exec"] = state
+        engine.kill_all_live()
+        proc.wait(timeout=10)  # SIGKILLed — never waits out the sleep
+        assert state["cancel"] is True
+    finally:
+        with engine._lock:
+            engine._live.pop("fake-exec", None)
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=10)
+
+
+def test_cancel_during_retry_pause_cuts_the_wait_short(store, monkeypatch):
+    """§7: a cancel landing while an infiniteRetries step sits in its between-
+    attempt pause ends the execution cancelled immediately — no further
+    attempt is ever spawned."""
+    import time
+
+    from autowright.engine import Engine
+
+    monkeypatch.setenv("AUTOWRIGHT_STEP_RETRY_PAUSE_S", "30")
+    engine = Engine(store)
+    ver = make_version()
+    ver["steps"] = [_counter_step(10_000, infinite_retries=True),
+                    {"file": "02-after.py", "name": "After", "description": "",
+                     "code": 'from autowright import log\nlog("after ran")\n'}]
+    a = store.create_automation(ver, "PauseCancel", None)
+    h = engine.start(a, "manual")
+    t0 = time.time()
+    while not h["steps"][0]["attempts"] or \
+            h["steps"][0]["attempts"][-1]["status"] != "failed":
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    attempts = len(h["steps"][0]["attempts"])
+    assert engine.cancel(h["id"]) is True  # lands inside the 30 s pause
+    wait_done(engine, h["id"])
+    assert time.time() - t0 < 25, "cancel must cut the 30 s retry pause short"
+    assert h["status"] == "cancelled"
+    assert h["steps"][1]["status"] == "cancelled"  # never ran
+    assert len(h["steps"][0]["attempts"]) == attempts  # nothing re-spawned
+    logs = read_all_logs(store, h["id"])
+    assert any("execution cancelled by you" in l["text"] for l in logs)
+
+
+def test_skip_during_retry_pause_skips_the_step(store, monkeypatch):
+    """§7: skip beats a pending retry even inside the between-attempt pause —
+    the step goes skipped and the next step still runs."""
+    import time
+
+    from autowright.engine import Engine
+
+    monkeypatch.setenv("AUTOWRIGHT_STEP_RETRY_PAUSE_S", "30")
+    engine = Engine(store)
+    ver = make_version()
+    ver["steps"] = [_counter_step(10_000, infinite_retries=True),
+                    {"file": "02-after.py", "name": "After", "description": "",
+                     "code": 'from autowright import log\nlog("after ran")\n'}]
+    a = store.create_automation(ver, "PauseSkip", None)
+    h = engine.start(a, "manual")
+    t0 = time.time()
+    while not h["steps"][0]["attempts"] or \
+            h["steps"][0]["attempts"][-1]["status"] != "failed":
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    assert engine.skip_step(h["id"], 0) is True  # lands inside the 30 s pause
+    wait_done(engine, h["id"])
+    assert time.time() - t0 < 25, "skip must cut the 30 s retry pause short"
+    assert h["status"] == "succeeded"
+    assert h["steps"][0]["status"] == "skipped"
+    assert h["steps"][1]["status"] == "succeeded"
+    logs = read_all_logs(store, h["id"])
+    assert any("after ran" in l["text"] for l in logs)
+
+
+def test_engine_error_path_always_finalizes_the_record(store, monkeypatch):
+    """§7: an unexpected engine-side exception (here: persistence dying) still
+    finalizes — the record lands `failed` with an engine-error message and the
+    live slot frees, so later starts never 409 forever."""
+    from autowright.engine import Engine
+
+    engine = Engine(store)
+    a = store.create_automation(make_version(), "EngineBoom", None)
+
+    def boom(h):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(store, "update_execution", boom)
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "failed"
+    assert h["finished_at"] is not None and h["pgid"] is None
+    assert "engine error" in h["error"]["message"]
+    assert not engine.is_live(h["id"])
+    assert a["_live"] == set()  # the slot freed despite persistence failing
+
+
+def test_queue_drain_failure_never_breaks_finalize(store, monkeypatch):
+    """§6: the post-finish queue drain is best-effort — a drain callback that
+    raises is logged and swallowed, the execution still finishes succeeded."""
+    from autowright.engine import Engine
+
+    engine = Engine(store)
+    engine.drain_queue = lambda automation_id: (_ for _ in ()).throw(RuntimeError("drain boom"))
+    a = store.create_automation(make_version(), "DrainBoom", None)
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "succeeded"
+    assert not engine.is_live(h["id"])

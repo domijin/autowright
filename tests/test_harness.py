@@ -709,3 +709,102 @@ def test_check_ready_opencode_sync_failure_is_needs_setup(monkeypatch):
 
     monkeypatch.setattr(harness, "sync_opencode_ollama", boom)
     assert harness.check_ready("OpenCode", "qwen3:8b", "ollama") is False
+
+
+def test_invoke_non_claude_streams_raw_lines(monkeypatch, tmp_path, home):
+    # §8: a non-stream-json harness streams each raw stdout line to on_chunk
+    # and returns the raw output verbatim.
+    from autowright import harness
+
+    script = tmp_path / "gemini"
+    script.write_text("#!/bin/sh\necho 'line one'\necho 'line two'\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    chunks = []
+    out = harness.invoke({"harness": "Gemini CLI"}, "question: hi?",
+                         on_chunk=chunks.append)
+    assert out == "line one\nline two\n"
+    assert chunks == ["line one\n", "line two\n"]
+
+
+def test_invoke_on_chunk_error_reaps_the_child(monkeypatch, tmp_path, home):
+    # §8: an on_chunk callback that raises must not orphan the CLI child —
+    # the group dies and the original error surfaces promptly.
+    from autowright import harness
+
+    script = tmp_path / "gemini"
+    script.write_text("#!/bin/sh\necho 'first'\nsleep 60\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+
+    def bad_chunk(text):
+        raise RuntimeError("renderer went away")
+
+    t0 = time.monotonic()
+    with pytest.raises(RuntimeError, match="renderer went away"):
+        harness.invoke({"harness": "Gemini CLI"}, "question: hi?",
+                       on_chunk=bad_chunk)
+    assert time.monotonic() - t0 < 10  # the child never got to sleep out 60 s
+
+
+def test_sync_opencode_ollama_replaces_non_dict_shapes(monkeypatch, tmp_path):
+    # §19: a config whose nodes hold the wrong JSON type (valid JSON, so not
+    # the .corrupt path) is normalized in place; a missing file starts clean.
+    import json
+
+    from autowright import harness
+
+    cfg = tmp_path / "opencode.json"
+    monkeypatch.setattr(harness, "_OPENCODE_CONFIG", str(cfg))
+
+    # missing file → clean config written from scratch
+    harness.sync_opencode_ollama("qwen3:8b")
+    out = json.loads(cfg.read_text())
+    assert "qwen3:8b" in out["provider"]["ollama"]["models"]
+
+    # top level not a dict
+    cfg.write_text(json.dumps([1, 2, 3]))
+    harness.sync_opencode_ollama("qwen3:8b")
+    out = json.loads(cfg.read_text())
+    assert "qwen3:8b" in out["provider"]["ollama"]["models"]
+
+    # provider / entry / options / models each the wrong type
+    cfg.write_text(json.dumps({"provider": "nope"}))
+    harness.sync_opencode_ollama("qwen3:8b")
+    assert "qwen3:8b" in json.loads(cfg.read_text())["provider"]["ollama"]["models"]
+
+    cfg.write_text(json.dumps({"provider": {"ollama": 5}}))
+    harness.sync_opencode_ollama("qwen3:8b")
+    assert "qwen3:8b" in json.loads(cfg.read_text())["provider"]["ollama"]["models"]
+
+    cfg.write_text(json.dumps({"provider": {"ollama": {"options": [], "models": "x"}}}))
+    harness.sync_opencode_ollama("qwen3:8b")
+    entry = json.loads(cfg.read_text())["provider"]["ollama"]
+    assert entry["options"]["baseURL"].endswith("/v1")
+    assert "qwen3:8b" in entry["models"]
+
+
+def test_sync_opencode_ollama_write_failure_raises_harness_error(monkeypatch, tmp_path):
+    # §19: an unwritable config dir surfaces as a HarnessError (check_ready
+    # turns it into needs-setup) — never a bare OSError up the stack.
+    from autowright import harness
+
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    ro.chmod(0o500)
+    monkeypatch.setattr(harness, "_OPENCODE_CONFIG", str(ro / "opencode.json"))
+    try:
+        with pytest.raises(harness.HarnessError, match="couldn't update opencode.json"):
+            harness.sync_opencode_ollama("qwen3:8b")
+    finally:
+        ro.chmod(0o700)
+
+
+def test_ollama_bin_prefers_path_resolution(monkeypatch, tmp_path):
+    from autowright import harness
+
+    fake = tmp_path / "ollama"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setattr(harness, "resolve_bin", lambda b: str(fake))
+    assert harness.ollama_bin() == str(fake)  # PATH hit wins; no bundle probe

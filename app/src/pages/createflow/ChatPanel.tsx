@@ -194,7 +194,7 @@ export function ChatPanel({
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>
       {/* thread — no header row (§11); the composer below carries the pane's identity */}
-      <ScrollArea scrollRef={chatScrollRef} wrapStyle={{ flex: 1, minHeight: 0 }} style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <ScrollArea scrollRef={chatScrollRef} testId="chat-thread" wrapStyle={{ flex: 1, minHeight: 0 }} style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {rev.chat.length === 0 && !anyJobBusy && (isCreateEmpty ? (
           <div style={{ padding: '10px 4px' }}>
             <h2 style={{ font: "600 19px/1.3 var(--sans)", letterSpacing: '-.02em', margin: '0 0 8px' }}>

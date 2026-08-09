@@ -2,7 +2,7 @@
 // The module graph pulls in store/api/ui/result — api is mocked so importing
 // never opens sockets or fetches.
 import { describe, expect, it, vi } from 'vitest'
-import type { Blocker, ChatEntry, DraftTrigger, ParamDef, SpecBlock, Step } from '../src/types'
+import type { Blocker, ChatEntry, DraftTrigger, ParamDef, SpecBlock, Step, Trigger } from '../src/types'
 
 vi.mock('../src/api', () => ({
   connectInfo: vi.fn(async () => false),
@@ -12,7 +12,7 @@ vi.mock('../src/api', () => ({
 
 import {
   specToText, textToSpec, amendSpec, stepSecretNames, stepSecretTags, secretRefsOf,
-  instrToMd, mergeDraftTriggers, persistChat, applyTestValues,
+  instrToMd, mergeDraftTriggers, persistChat, applyTestValues, stripTrigger,
 } from '../src/pages/CreateFlow'
 
 const step = (over: Partial<Step> = {}): Step =>
@@ -286,6 +286,14 @@ describe('mergeDraftTriggers — non-cron drafted entries', () => {
     ])
   })
 
+  it('a drafted app_start dedupes against an existing one and adds when none exists', () => {
+    const cur: DraftTrigger[] = [{ id: 'a1', kind: 'app_start', enabled: false }]
+    expect(mergeDraftTriggers(cur, [{ kind: 'app_start', enabled: true }])).toEqual(cur)
+    // enabled forced to true on add, like every other appended non-cron entry
+    expect(mergeDraftTriggers([], [{ kind: 'app_start', enabled: false }]))
+      .toEqual([{ kind: 'app_start', enabled: true }])
+  })
+
   it('drafted time entries are dropped entirely — only crons are mapped', () => {
     const cur: DraftTrigger[] = [
       { id: 't1', kind: 'time', enabled: true, at: '2026-01-01T00:00' },
@@ -294,6 +302,39 @@ describe('mergeDraftTriggers — non-cron drafted entries', () => {
       { kind: 'time', enabled: true, at: '2027-06-01T09:00' }, // dropped, not added
     ]
     expect(mergeDraftTriggers(cur, drafted)).toEqual([cur[0]])
+  })
+})
+
+describe('stripTrigger (§4.4 draft-only trigger shape)', () => {
+  it('keeps only the stored fields per kind — derived label/short/connection never leak', () => {
+    expect(stripTrigger({
+      id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', timezone: 'UTC',
+      label: 'Every day at 8:00', short: 'daily 8:00', connection: { state: 'connected' },
+    } as Trigger)).toEqual({ id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', timezone: 'UTC' })
+    expect(stripTrigger({
+      id: 't2', enabled: true, kind: 'time', at: '2026-08-09T09:00:00', label: 'L', short: 'S',
+    } as Trigger)).toEqual({ id: 't2', enabled: true, kind: 'time', at: '2026-08-09T09:00:00' })
+    expect(stripTrigger({ id: 't3', enabled: false, kind: 'app_start', label: 'L', short: 'S' } as Trigger))
+      .toEqual({ id: 't3', enabled: false, kind: 'app_start' })
+  })
+  it('optional keys are omitted entirely when absent — no undefined-valued fields', () => {
+    // draft entries have no id yet; a cron without a timezone stays timezone-free
+    expect(stripTrigger({ enabled: true, kind: 'cron', expression: '0 8 * * *' }))
+      .toEqual({ enabled: true, kind: 'cron', expression: '0 8 * * *' })
+    // discord: pattern/mention/author serialize only when set; [] counts as absent
+    expect(stripTrigger({ enabled: true, kind: 'discord', channel: '123', secret: 'BOT_TOKEN', author: [] }))
+      .toEqual({ enabled: true, kind: 'discord', channel: '123', secret: 'BOT_TOKEN' })
+    expect(stripTrigger({
+      enabled: true, kind: 'discord', channel: '123', secret: 'BOT_TOKEN',
+      pattern: 'deploy', mention: true, author: ['alice'],
+    })).toEqual({
+      enabled: true, kind: 'discord', channel: '123', secret: 'BOT_TOKEN',
+      pattern: 'deploy', mention: true, author: ['alice'],
+    })
+    expect(stripTrigger({ enabled: true, kind: 'imessage', from: '+15550123', pattern: 'go' }))
+      .toEqual({ enabled: true, kind: 'imessage', from: '+15550123', pattern: 'go' })
+    expect(stripTrigger({ enabled: true, kind: 'imessage', from: '+15550123' }))
+      .toEqual({ enabled: true, kind: 'imessage', from: '+15550123' })
   })
 })
 
@@ -352,6 +393,19 @@ describe('grant seeds (§11 Review checkboxes)', () => {
     } as unknown as Automation, AGENTS, SECRETS)
     expect(a.enabledAgents).toEqual(['g2'])
     expect(a.allowedSecrets).toEqual(['CRM_API_KEY'])
+  })
+})
+
+describe('seedFromAuto packages (§4.1 curated deps)', () => {
+  it('copies the version packages fresh — editor mutations never leak back', () => {
+    const pkgs = [{ pip: 'pandas', import: 'pandas', why: 'tables', version: '2.2' }]
+    const r = seedFromAuto({
+      name: 'A', description: '', spec: [], steps: [], instructions: '', notes: '',
+      params: [], packages: pkgs, triggers: [], stepAgents: [], allowedSecrets: [],
+      agentId: null, draft: null,
+    } as unknown as Automation, AGENTS, SECRETS)
+    expect(r.packages).toEqual(pkgs)
+    expect(r.packages[0]).not.toBe(pkgs[0])
   })
 })
 

@@ -586,3 +586,134 @@ def test_import_grants_ride_the_creation_call(store, monkeypatch, tmp_path_facto
     assert patches == []
     assert c["param_values"] == {}
     assert c["enabled_agents"] == [] and c["allowed_secrets"] == []
+
+
+# ---------- archive member parse rejects (§5.1 untrusted input) ----------
+
+def test_member_yaml_and_text_parse_rejects(store):
+    """§5.1: a member that is missing, non-YAML, a non-mapping, or non-UTF-8
+    text is a TransferError naming the member — never a stack trace, never a
+    partial import."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    before = len(store.autos)
+
+    def rejects(match, edit):
+        with pytest.raises(transfer.TransferError, match=match):
+            transfer.import_automation(store, _rezip(data, edit))
+
+    # manifest.yaml gone entirely (rebuild without it)
+    src = zipfile.ZipFile(io.BytesIO(data))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as out:
+        for nm in src.namelist():
+            if nm != "manifest.yaml":
+                out.writestr(nm, src.read(nm))
+    with pytest.raises(transfer.TransferError, match="missing manifest.yaml"):
+        transfer.import_automation(store, buf.getvalue())
+
+    rejects("manifest.yaml isn't valid YAML",
+            lambda nm, b: b"{ not: [valid" if nm == "manifest.yaml" else None)
+    rejects("manifest.yaml must hold a YAML mapping",
+            lambda nm, b: b"- just\n- a list\n" if nm == "manifest.yaml" else None)
+    # an empty member parses to {} — rejected for what it lacks (no format
+    # field), not with a parse crash
+    rejects("unsupported archive format None",
+            lambda nm, b: b"\n" if nm == "manifest.yaml" else None)
+    # spec.md is read as text — non-UTF-8 bytes are named, not decoded lossily
+    rejects("automation/spec.md isn't valid UTF-8",
+            lambda nm, b: b"\xff\xfe broken" if nm == "automation/spec.md" else None)
+    assert len(store.autos) == before
+
+
+def test_manifest_and_meta_shape_rejects(store):
+    """§5.1 _validate: each malformed manifest/automation.yaml shape gets its
+    own clear reject — param_values, params, packages, steps."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    before = len(store.autos)
+
+    def manifest_edit(**over):
+        def edit(nm, b):
+            if nm == "manifest.yaml":
+                return yaml.safe_dump({**yaml.safe_load(b), **over}).encode()
+            return None
+        return edit
+
+    def meta_edit(**over):
+        def edit(nm, b):
+            if nm == "automation/automation.yaml":
+                return yaml.safe_dump({**yaml.safe_load(b), **over}).encode()
+            return None
+        return edit
+
+    cases = [
+        ("manifest param_values must be a mapping", manifest_edit(param_values=[1, 2])),
+        ("param definitions must be a list", meta_edit(params={"name": "x"})),
+        ("invalid parameter definition", meta_edit(params=[{"name": "x", "kind": "nope"}])),
+        ("invalid packages declaration", meta_edit(packages=[{"pip": "pandas"}])),
+        ("the archive holds no steps", meta_edit(steps=[])),
+        ("invalid step manifest entry", meta_edit(steps=[{"file": "01-a.py"}])),
+    ]
+    for match, edit in cases:
+        with pytest.raises(transfer.TransferError, match=match):
+            transfer.import_automation(store, _rezip(data, edit))
+    assert len(store.autos) == before
+
+
+def test_github_api_error_mapping(monkeypatch):
+    """§5.2 _github_api over a faked urllib: 404 → None, 403/429 → the
+    rate-limit message, other codes → the generic one, network errors →
+    'couldn't reach GitHub'; a 200 parses the JSON body."""
+    import json as jsonlib
+    import urllib.error
+
+    def urlopen_for(result):
+        def fake(req, timeout):
+            assert req.full_url.startswith("https://api.github.com/")
+            if isinstance(result, Exception):
+                raise result
+            return _FakeResp(jsonlib.dumps(result).encode())
+        return fake
+
+    def http_error(code):
+        return urllib.error.HTTPError("https://api.github.com/x", code, "err", {}, None)
+
+    monkeypatch.setattr(transfer.urllib.request, "urlopen",
+                        urlopen_for({"assets": []}))
+    assert transfer._github_api("/repos/a/b/releases/latest") == {"assets": []}
+
+    monkeypatch.setattr(transfer.urllib.request, "urlopen", urlopen_for(http_error(404)))
+    assert transfer._github_api("/repos/a/b/releases/latest") is None
+
+    for code in (403, 429):
+        monkeypatch.setattr(transfer.urllib.request, "urlopen", urlopen_for(http_error(code)))
+        with pytest.raises(transfer.TransferError, match="rate-limited"):
+            transfer._github_api("/repos/a/b/releases/latest")
+
+    monkeypatch.setattr(transfer.urllib.request, "urlopen", urlopen_for(http_error(500)))
+    with pytest.raises(transfer.TransferError, match="GitHub answered 500"):
+        transfer._github_api("/repos/a/b/releases/latest")
+
+    monkeypatch.setattr(transfer.urllib.request, "urlopen",
+                        urlopen_for(urllib.error.URLError("no route to host")))
+    with pytest.raises(transfer.TransferError, match="couldn't reach GitHub"):
+        transfer._github_api("/repos/a/b/releases/latest")
+
+
+def test_import_without_optional_members_succeeds(store):
+    """§5.1: agents.yaml / secrets.yaml are optional — an archive stripped of
+    them imports with no grants created rather than being rejected."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    src = zipfile.ZipFile(io.BytesIO(data))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as out:
+        for nm in src.namelist():
+            if nm not in ("agents.yaml", "secrets.yaml"):
+                out.writestr(nm, src.read(nm))
+    agents_before = len(store.agents)
+    b, summary = transfer.import_automation(store, buf.getvalue())
+    assert b["id"] in store.autos
+    assert len(store.agents) == agents_before  # nothing new created
+    assert summary["agentsCreated"] == [] and summary["secretsCreated"] == []

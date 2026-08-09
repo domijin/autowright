@@ -138,6 +138,44 @@ describe('ParamValueEditor (shared)', () => {
     expect(screen.getByText('+ Add row')).toBeTruthy()
   })
 
+  it('list: editing a line patches it in place without committing', () => {
+    const setLines = vi.fn()
+    render(
+      <ParamValueEditor
+        variant="draft" p={listParam} on={false} lines={['a', 'b']} rows={[]} value=""
+        {...noop} setLines={setLines}
+      />,
+    )
+    const inputs = document.querySelectorAll('input.ad-input')
+    fireEvent.change(inputs[1], { target: { value: 'B' } })
+    expect(setLines).toHaveBeenCalledWith(['a', 'B'])   // edit → no commit flag
+  })
+
+  it('kv: edits patch the one row, removal commits at once, add appends a blank pair', () => {
+    const setRows = vi.fn()
+    const kv: ParamDef = { name: 'h', kind: 'kv', label: 'Headers', help: '' }
+    const rows = [{ key: 'a', value: '1' }, { key: 'b', value: '2' }]
+    render(
+      <ParamValueEditor variant="draft" p={kv} on={false} lines={[]} rows={rows} value="" {...noop} setRows={setRows} />,
+    )
+    fireEvent.change(screen.getAllByPlaceholderText('Key')[0], { target: { value: 'A' } })
+    expect(setRows).toHaveBeenCalledWith([{ key: 'A', value: '1' }, { key: 'b', value: '2' }])
+    fireEvent.change(screen.getAllByPlaceholderText('Value')[1], { target: { value: '9' } })
+    expect(setRows).toHaveBeenCalledWith([{ key: 'a', value: '1' }, { key: 'b', value: '9' }])
+    fireEvent.click(screen.getByLabelText('Remove a'))  // named row → labeled remove button
+    expect(setRows).toHaveBeenCalledWith([{ key: 'b', value: '2' }], true) // removal → commit now
+    fireEvent.click(screen.getByText('+ Add pair'))
+    expect(setRows).toHaveBeenCalledWith([...rows, { key: '', value: '' }])
+  })
+
+  it('kv: a blank key falls back to the generic remove label', () => {
+    const kv: ParamDef = { name: 'h', kind: 'kv', label: 'Headers', help: '' }
+    render(
+      <ParamValueEditor variant="detail" p={kv} on={false} lines={[]} rows={[{ key: ' ', value: '' }]} value="" {...noop} />,
+    )
+    expect(screen.getByLabelText('Remove row')).toBeTruthy()
+  })
+
   it('number: strips non-digits through setNumber; detail variant is inputMode=numeric', () => {
     const num: ParamDef = { name: 'n', kind: 'number', label: 'Count', help: '', min: 1 }
     const setNumber = vi.fn()

@@ -17,6 +17,7 @@ vi.mock('../src/api', () => ({
     getExecution: vi.fn(() => Promise.reject(new Error('offline'))),
     getExecutionLogs: vi.fn(() => Promise.reject(new Error('offline'))),
     getAutomation: vi.fn(() => Promise.reject(new Error('offline'))),
+    checkAgent: vi.fn(() => Promise.reject(new Error('offline'))),
   },
 }))
 
@@ -404,6 +405,169 @@ describe('applyEvent — harness.install / ollama.pull live progress (§10/§12)
     } finally {
       store.useStore.setState({ refresh: orig })
     }
+  })
+})
+
+describe('applyEvent — changed nudges and ws.open recovery (§19)', () => {
+  it('secrets/settings/draft.changed each nudge a full refresh', () => {
+    const orig = store.useStore.getState().refresh
+    const spy = vi.fn(async () => {})
+    store.useStore.setState({ refresh: spy })
+    try {
+      for (const event of ['secrets.changed', 'settings.changed', 'draft.changed']) {
+        store.useStore.getState().applyEvent({ event } as never)
+      }
+      expect(spy).toHaveBeenCalledTimes(3)
+    } finally {
+      store.useStore.setState({ refresh: orig })
+    }
+  })
+
+  it('execution.started for an already-loaded record refetches its body (§7 retry re-publish)', () => {
+    const getExecution = vi.mocked(apiMod.api.getExecution)
+    getExecution.mockClear()
+    store.useStore.setState({ executionFull: { e1: ex('e1', 100) } })
+    store.useStore.getState().applyEvent({
+      event: 'execution.started', execution: ex('e1', 100, { status: 'executing' }),
+    })
+    expect(getExecution).toHaveBeenCalledWith('e1')
+  })
+
+  it('ws.open refetches executing records, the viewed record, and their open log buckets', () => {
+    const state = vi.mocked(apiMod.api.state)
+    const getExecution = vi.mocked(apiMod.api.getExecution)
+    const getExecutionLogs = vi.mocked(apiMod.api.getExecutionLogs)
+    state.mockClear(); getExecution.mockClear(); getExecutionLogs.mockClear()
+    store.useStore.setState({
+      executionId: 'viewed',
+      executionFull: {
+        live: ex('live', 1, { status: 'executing' }),
+        viewed: ex('viewed', 2),
+        done: ex('done', 3),           // terminal, not on screen → left alone
+      },
+      execLogs: { live: { 'x.0': [line(1)], '1.2': [line(1)] } },
+    })
+    store.useStore.getState().applyEvent({ event: 'ws.open' } as never)
+    expect(state).toHaveBeenCalledTimes(1)                 // the reconnect refresh
+    expect(getExecution).toHaveBeenCalledWith('live')
+    expect(getExecution).toHaveBeenCalledWith('viewed')
+    expect(getExecution).not.toHaveBeenCalledWith('done')
+    // 'x.0' → the execution log, '1.2' → step 1 attempt 2
+    expect(getExecutionLogs).toHaveBeenCalledWith('live', undefined, undefined)
+    expect(getExecutionLogs).toHaveBeenCalledWith('live', 1, 2)
+  })
+
+  it('refresh refetches when a WS execution event lands while /state is in flight', async () => {
+    const snap = (executions: Execution[]) => ({
+      version: 'v', automations: [], executions, agents: [], secrets: [],
+      settings: null, pendingDraft: null,
+    })
+    const state = vi.mocked(apiMod.api.state)
+    state.mockClear()
+    state.mockImplementationOnce(async () => {
+      // the event makes this snapshot stale on arrival — it must not land
+      store.useStore.getState().applyEvent({
+        event: 'execution.started', execution: ex('mid', 5, { status: 'executing' }),
+      })
+      return snap([]) as never
+    })
+    state.mockResolvedValueOnce(snap([ex('mid', 5)]) as never)
+    await store.useStore.getState().refresh()
+    expect(state).toHaveBeenCalledTimes(2)
+    expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['mid'])
+  })
+})
+
+describe('runAgentCheck (§12 status badge cache)', () => {
+  it('shows the pending badge while in flight, then caches the ready result', async () => {
+    const check = vi.mocked(apiMod.api.checkAgent)
+    let resolve!: (v: { status: string }) => void
+    check.mockReturnValueOnce(new Promise((r) => { resolve = r }) as never)
+    const p = store.useStore.getState().runAgentCheck('g1')
+    expect(store.useStore.getState().agentChecks.g1).toBe('checking')
+    resolve({ status: 'ready' })
+    await expect(p).resolves.toBe('ready')
+    expect(store.useStore.getState().agentChecks.g1).toBe('ready')
+  })
+  it('non-ready statuses and a failed call both land as needs; pending label is overridable', async () => {
+    const check = vi.mocked(apiMod.api.checkAgent)
+    check.mockResolvedValueOnce({ status: 'signed_out' } as never)
+    await expect(store.useStore.getState().runAgentCheck('g2')).resolves.toBe('needs')
+    expect(store.useStore.getState().agentChecks.g2).toBe('needs')
+    check.mockRejectedValueOnce(new Error('offline'))
+    const p = store.useStore.getState().runAgentCheck('g3', 'connecting')
+    expect(store.useStore.getState().agentChecks.g3).toBe('connecting')
+    await expect(p).resolves.toBe('needs')
+  })
+})
+
+describe('loadExecution / setSurface', () => {
+  it('loadExecution stores the fetched record under its id', async () => {
+    vi.mocked(apiMod.api.getExecution).mockResolvedValueOnce(ex('eL', 1))
+    await store.useStore.getState().loadExecution('eL')
+    expect(store.useStore.getState().executionFull.eL).toEqual(ex('eL', 1))
+  })
+  it('setSurface app from onboard stamps ad-onboarded (§10)', () => {
+    // this Node build exposes no working localStorage global — stub the
+    // production mechanism (§15) with an in-memory one for the assertion
+    const backing = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => backing.get(k) ?? null,
+      setItem: (k: string, v: string) => backing.set(k, v),
+    })
+    try {
+      store.useStore.setState({ surface: 'onboard' })
+      store.useStore.getState().setSurface('app')
+      expect(backing.get('ad-onboarded')).toBe('1')
+      expect(store.useStore.getState().surface).toBe('app')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('history restore (popstate, §9)', () => {
+  const nav = (over: Record<string, unknown> = {}) => ({
+    adNav: {
+      surface: 'app', page: 'automations', automationId: null, executionId: null,
+      createFrom: null, agentEditId: null, ...over,
+    },
+  })
+
+  it('a popstate with an adNav snapshot restores surface/page/ids', () => {
+    store.useStore.getState().go('executions')
+    window.dispatchEvent(new PopStateEvent('popstate', {
+      state: nav({ page: 'execution', automationId: 'a1', executionId: 'e1' }),
+    }))
+    const m = store.useStore.getState()
+    expect(m.page).toBe('execution')
+    expect(m.automationId).toBe('a1')
+    expect(m.executionId).toBe('e1')
+    expect(m.surface).toBe('app')
+  })
+
+  it('a popstate without adNav state is ignored', () => {
+    store.useStore.getState().go('executions')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }))
+    expect(store.useStore.getState().page).toBe('executions')
+  })
+
+  it('back into onboarding is refused once passed — the entry is re-pushed', () => {
+    store.useStore.getState().setSurface('app')     // marks onboarding as passed
+    const spy = vi.spyOn(history, 'pushState')
+    window.dispatchEvent(new PopStateEvent('popstate', { state: nav({ surface: 'onboard' }) }))
+    expect(store.useStore.getState().surface).toBe('app')
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+  })
+})
+
+describe('onOpenTarget surface guard (§13)', () => {
+  it('deep links are ignored on the menubar surface', () => {
+    store.useStore.setState({ surface: 'menubar' })
+    openTarget!('#/app?auto=123e4567-e89b-12d3-a456-426614174000')
+    expect(store.useStore.getState().page).toBe('automations')
+    expect(store.useStore.getState().automationId).toBeNull()
   })
 })
 

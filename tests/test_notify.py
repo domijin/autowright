@@ -29,3 +29,13 @@ def test_post_swallows_osascript_failure(no_notifications, tmp_path, monkeypatch
     monkeypatch.setenv("AUTOWRIGHT_TEST_OSASCRIPT_FAIL", "1")
     real_post("Title", "Body")  # exit 1 from the fake — swallowed
     assert "display notification" in log.read_text()
+
+
+def test_post_swallows_a_missing_osascript(no_notifications, tmp_path, monkeypatch):
+    # §6: notifications must survive a machine where osascript can't even
+    # spawn (PATH broken/sandboxed) — the OSError is swallowed, never raised.
+    real_post = no_notifications
+    empty = tmp_path / "emptybin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    real_post("Title", "Body")  # FileNotFoundError inside → swallowed

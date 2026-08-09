@@ -453,7 +453,9 @@ def test_scheduler_warns_once_on_timezone_rewind(store, monkeypatch, caplog):
     monkeypatch.setattr(sched_mod, "fire_trigger",
                         lambda store, engine, a, t: fires.append(t["id"]) or True)
     store.create_automation(make_version(), "Zoney", None, triggers=[
-        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 13 * * *"}])
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 13 * * *"},
+        # a disabled trigger could never fire — it must not add rewind noise
+        {"id": "t2", "kind": "cron", "enabled": False, "expression": "0 13 * * *"}])
 
     sched._tick()  # baseline at 15:00
     # user moves the Mac three zones west: wall rewinds, UTC keeps advancing

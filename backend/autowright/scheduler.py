@@ -87,7 +87,7 @@ class Scheduler:
                     # repeated hour fire once (§4.3).
                     base = now
                     self._set_baseline(key, now, now_utc)
-                if base > now and (base - now).total_seconds() > 3900:
+                if t["enabled"] and base > now and (base - now).total_seconds() > 3900:
                     # §4.3: the wall clock rewound with UTC steady, by more
                     # than any DST fall-back shifts (> 65 min) — almost
                     # certainly a system-timezone change. Deliberately handled

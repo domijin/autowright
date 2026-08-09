@@ -44,6 +44,13 @@ def test_schema_version_bump_recreates_empty_table(home, monkeypatch):
     assert set(db.load_all()) == {"e-2"}
     db.close()
 
+    # §5: any mismatch rebuilds — a DOWNGRADE (stamp newer than the build's
+    # version) must also drop rather than run against a newer table shape
+    monkeypatch.setattr(execdb, "SCHEMA_VERSION", execdb.SCHEMA_VERSION - 2)
+    db = execdb.ExecDB(_db_path(home))
+    assert db.load_all() == {}
+    db.close()
+
 
 def test_upsert_updates_mutable_fields_and_roundtrips_error(home):
     from autowright import execdb

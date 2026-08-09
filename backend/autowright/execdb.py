@@ -55,7 +55,7 @@ class ExecDB:
             self.conn = sqlite3.connect(path, check_same_thread=False)
         try:
             self.conn.execute("PRAGMA journal_mode=WAL")
-            if self.conn.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+            if self.conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
                 # The DB is only an index (§5): on any schema change, drop and let
                 # startup's yaml reconcile rebuild the rows from disk.
                 with self.conn:

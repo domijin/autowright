@@ -45,8 +45,8 @@ case "$ARCH" in
 esac
 
 # ---- bundled relocatable CPython (python-build-standalone, pinned) ----
-PBS_TAG="20260623"
-PY_FULL="3.14.6"
+PBS_TAG="20260807"
+PY_FULL="3.14.7"
 PBS_URL="${AUTOWRIGHT_PBS_URL:-https://github.com/astral-sh/python-build-standalone/releases/download/$PBS_TAG/cpython-$PY_FULL+$PBS_TAG-$PBS_ARCH-install_only.tar.gz}"
 TARBALL="$CACHE/$(basename "$PBS_URL")"
 if [ ! -f "$TARBALL" ]; then
@@ -64,6 +64,9 @@ tar -xzf "$TARBALL" -C "$PYSTAGE" --strip-components 1   # tarball root is pytho
 # Backend + curated packages (§6.2) install into the bundled interpreter.
 # pip's bin/ entry-point scripts get absolute staging-path shebangs, so inside
 # the bundle the backend/CLI execute as `python3 -m autowright.main` / `-m autowright.cli`.
+echo "· upgrading bundled pip"
+"$PYSTAGE/bin/python3" -m pip -q install --upgrade pip
+
 echo "· installing backend into bundled Python"
 "$PYSTAGE/bin/python3" -m pip -q install "$ROOT/backend"
 

@@ -264,8 +264,9 @@ Dev workflow:
   Runs `release.sh --check` first and refuses to build on any version mismatch (the
   distributable's DMG name, bundle, and backend must agree on one version).
   Invokes `build.sh` (full), then: downloads the pinned relocatable CPython
-  (python-build-standalone `20260623` / CPython `3.14.6`, arch from `uname -m`, tarball
-  cached in `build/cache/`, URL overridable via `AUTOWRIGHT_PBS_URL`), pip-installs the backend
+  (python-build-standalone `20260807` / CPython `3.14.7`, arch from `uname -m`, tarball
+  cached in `build/cache/`, URL overridable via `AUTOWRIGHT_PBS_URL`), upgrades the bundled
+  pip to the latest release, pip-installs the backend
   + curated packages into it (inside the bundle the backend/CLI execute as
   `python3 -m autowright.main` / `-m autowright.cli` — pip's `bin/` entry scripts carry absolute
   staging-path shebangs), uses the checked-in app icon `app/electron/icon/icon.icns`
@@ -368,6 +369,13 @@ Dev workflow:
   spec-missing / code-missing) with an explicit "sound — no findings" verdict for any clean
   layer; no orientation prose. Fails (non-empty check, same as the doc mode) if generation
   returns nothing.
+- **`./scripts/pip-release.sh`** — builds and uploads the `pypi/` placeholder package (§17;
+  reserves the `autowright` name on PyPI, unrelated to the app build and to `release.sh`).
+  Creates `pypi/.venv` if missing, installs/upgrades `build` + `twine` into it, rebuilds
+  `pypi/dist/` from scratch, validates both artifacts with `twine check`, then uploads.
+  Credentials come from `~/.pypirc` or `TWINE_USERNAME`/`TWINE_PASSWORD` (API token: username
+  `__token__`) — never stored in the repo. Modes: **`--build`** stops after build + check (no
+  upload); **`--test`** uploads to TestPyPI (`--repository testpypi`) instead of PyPI.
 - **`./scripts/commit.sh`** — stages all uncommitted changes (`git add -A`), asks Claude
   (Opus 5, `claude --model claude-opus-5 -p`) for a commit message based on the staged diff
   (≤72-char imperative summary, whole message capped at 2-3 sentences), strips any markdown

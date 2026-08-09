@@ -134,6 +134,7 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   GitHub release via `gh`, and rewrites the §3 update feed under `docs/updates/`, §18;
   `test-fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
   `knowledge.sh` regenerates `knowledge.md`; its `audit` mode writes `knowledge-audit.md`, §18;
+  `pip-release.sh` builds and uploads the `pypi/` placeholder package, §18;
   `gen_licenses.py` regenerates `app/src/acknowledgements.md` — the §4.9
   open-source-libraries list, checked in, refreshed by `build.sh` on every build).
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
@@ -187,8 +188,8 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   (`pyproject.toml` hatchling build, version 0.0.1, `Development Status :: 1 - Planning`,
   `src/autowright/__init__.py` with only `__version__`, README stating the real project is in
   development). Not part of the app build and not used by anything in the repo — the real backend
-  package is `backend/`; never install `autowright` from PyPI. Uploaded manually via
-  `python -m build` + `twine`.
+  package is `backend/`; never install `autowright` from PyPI. Uploaded by the developer via
+  `scripts/pip-release.sh` (§18).
 - `VERSION` — single source of truth for the app version (one line, semver). Synced into
   `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
   `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to

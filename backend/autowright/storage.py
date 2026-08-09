@@ -376,6 +376,7 @@ class Store:
                 m = re.fullmatch(r"v(\d+)", vd.name)
                 if m and (vd / "automation.yaml").exists():
                     a["versions"][int(m.group(1))] = self._load_version_folder(vd)
+        self._recover_draft_swap(d / "draft")  # §5: repair a half-finished save_draft swap
         if (d / "draft" / "automation" / "automation.yaml").exists():
             a["draft"] = self._load_version_folder(d / "draft" / "automation")
         if not a["versions"]:
@@ -668,33 +669,54 @@ class Store:
         automation's `draft/`; everything else about the container is shared."""
         return paths.pending_draft_dir() if a is None else self.auto_dir(a) / "draft"
 
+    @staticmethod
+    def _recover_draft_swap(container: Path) -> None:
+        """§5 crash recovery for the save_draft staged swap: a previous save
+        died between the two renames — the aside dir is the sole complete
+        copy, put it back. Leftover temps from any other crash point are
+        stale and go."""
+        dd = container / "automation"
+        old = container / ".ad-old-automation"
+        new = container / ".ad-new-automation"
+        if not dd.exists() and old.exists():
+            old.rename(dd)
+        for stale in (old, new):
+            if stale.exists():
+                shutil.rmtree(stale, ignore_errors=True)
+
     def save_draft(self, a: dict | None, ver: dict, *, name: str | None = None,
                    agent_id: str | None = None, triggers: list | None = None,
                    chat: list | None = None) -> None:
         """§19: ONE write path for both /draft/{owner} owners (a=None →
         pending). §5: draft/ is a container — only the automation/ working
-        copy is rewritten; memory/ (§4.4) survives re-saves from the editor.
-        No rmtree: _write_version_folder rewrites in place (manifest last,
-        stale files pruned after), so a crash never leaves the container
-        manifest-less. (A crash between the step-file writes and the manifest
-        can pair the old manifest with freshly rewritten same-name step files —
-        a mixed draft, recoverable in the editor, never a lost one.)
+        copy is replaced; memory/ (§4.4) survives re-saves from the editor.
+        The working copy is written whole beside the container and swapped in
+        by rename (§5 staged-dir swap) — a crash at any point leaves the old
+        or the new copy complete, never a mix of the two.
         For the pending owner the identity keyword args land as create-only
         keys in automation.yaml (§5) — no automation record exists to hold
         them; they are ignored for an automation owner."""
         with self.lock:
             container = self.draft_dir(a)
+            self._recover_draft_swap(container)
             dd = container / "automation"
+            new = container / ".ad-new-automation"
+            old = container / ".ad-old-automation"
             if a is None:
                 prev = load_yaml(dd / "automation.yaml", {}) or {}
                 now = timefmt.now_iso()
-                self._write_version_folder(dd, ver, extra={
+                self._write_version_folder(new, ver, extra={
                     "name": name, "description": ver.get("description", ""), "agent_id": agent_id,
                     "triggers": triggers or [],
                     "created_at": prev.get("created_at") or now, "updated_at": now,
                 })
             else:
-                self._write_version_folder(dd, ver)
+                self._write_version_folder(new, ver)
+            if dd.exists():
+                dd.rename(old)
+            new.rename(dd)
+            shutil.rmtree(old, ignore_errors=True)
+            if a is not None:
                 a["draft"] = self._load_version_folder(dd)
             self.save_chat(container, chat)
 
@@ -752,6 +774,7 @@ class Store:
     def load_pending_draft(self) -> dict | None:
         """The slot's draft + identity keys; None when the slot is empty."""
         with self.lock:
+            self._recover_draft_swap(paths.pending_draft_dir())  # §5 swap repair
             dd = paths.pending_draft_dir() / "automation"
             if not (dd / "automation.yaml").exists():
                 return None

@@ -282,6 +282,10 @@ both restricted, a date matching either one fires. Times are wall clock in the t
 forward by the gap width (a "2:30" on the day the clock jumps 2:00→3:00 fires at 3:30 — the
 erased wall time read with the pre-transition offset), and one repeated by
 fall-back fires once. Invalid expressions are rejected at the API (422), never stored.
+(A system-timezone change that rewinds the wall clock is indistinguishable from fall-back
+and is handled the same conservative way — occurrences in the rewound span do not re-fire;
+a rewind larger than any DST shift logs a scheduler warning so a reported miss is
+diagnosable.)
 
 **Humanized cron labels** — exactly two shapes get words; everything else displays the raw
 expression:

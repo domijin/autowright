@@ -89,8 +89,13 @@ automations/<uuid>/
                                # (the aside dir is then the sole surviving copy), then
                                # deletes both before staging again
   draft/                       # unsaved edit state — a container, not a version folder:
-    automation/                # the working copy, same shape as a version folder; rewritten
-                               # whole on every draft save; its automation.yaml also holds
+    automation/                # the working copy, same shape as a version folder; replaced
+                               # whole on every draft save by a staged-dir swap (written
+                               # beside as .ad-new-automation, old renamed to
+                               # .ad-old-automation, new renamed in, aside deleted — a crash
+                               # at any point leaves the old or the new copy complete, never
+                               # a mix; loads and saves repair a half-finished swap first);
+                               # its automation.yaml also holds
                                # draft-only step_agents / allowed_secrets / triggers /
                                # out_of_sync keys (§4.4 — the editor's grant selections,
                                # trigger list, and §11 dirty-gate state;

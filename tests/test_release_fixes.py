@@ -389,3 +389,84 @@ def test_draft_out_of_sync_roundtrips(client):
     # and absent when the editor is in sync
     assert client.put("/draft/pending", json={"draft": make_version()}).status_code == 200
     assert "outOfSync" not in client.get("/draft/pending").json()["draft"]
+
+
+def test_save_draft_swap_recovers_from_crash(store):
+    """§5 staged-dir swap: a save crashing between the two renames leaves the
+    old copy renamed aside — loads and the next save put it back, so a draft
+    is never a mix of old manifest and new step files."""
+    a = store.create_automation(make_version(), "Swappy", None)
+    store.save_draft(a, {**make_version(), "note": "draft v1"})
+    container = store.draft_dir(a)
+
+    # crash point: old renamed aside, new never renamed in
+    (container / "automation").rename(container / ".ad-old-automation")
+    from autowright.storage import Store
+    s2 = Store()
+    s2.load_all()
+    recovered = s2.autos[a["id"]]["draft"]
+    assert recovered is not None and recovered["note"] == "draft v1"
+    assert not (container / ".ad-old-automation").exists()
+
+    # crash point: staged copy written, swap never started — stale temp goes
+    (container / ".ad-new-automation").mkdir()
+    store.save_draft(a, {**make_version(), "note": "draft v2"})
+    assert a["draft"]["note"] == "draft v2"
+    assert not (container / ".ad-new-automation").exists()
+    assert not (container / ".ad-old-automation").exists()
+
+
+def test_pending_draft_swap_recovers_from_crash(store):
+    """Same swap recovery for the create-mode pending slot."""
+    from autowright import paths
+
+    store.save_draft(None, {**make_version(), "note": "pending v1"}, name="Pendy")
+    slot = paths.pending_draft_dir()
+    (slot / "automation").rename(slot / ".ad-old-automation")
+    d = store.load_pending_draft()
+    assert d is not None and d["note"] == "pending v1" and d["name"] == "Pendy"
+    assert not (slot / ".ad-old-automation").exists()
+
+
+def test_scheduler_warns_once_on_timezone_rewind(store, monkeypatch, caplog):
+    """§4.3: a wall rewind too large for DST (system-timezone change) is
+    handled like fall-back but logs one diagnosable warning — and does not
+    double-fire the rewound span."""
+    import logging
+    from datetime import datetime, timedelta, timezone
+
+    from autowright.engine import Engine
+    from autowright.scheduler import Scheduler
+
+    class Clock:
+        def __init__(self, now):
+            self.now = now
+
+        def __call__(self):
+            return self.now
+
+    local = Clock(datetime(2026, 7, 10, 15, 0))
+    utc = Clock(datetime(2026, 7, 10, 19, 0, tzinfo=timezone.utc))
+    sched = Scheduler(store, Engine(store), clock=local, utc_clock=utc)
+    fires = []
+    from autowright import scheduler as sched_mod
+    monkeypatch.setattr(sched_mod, "fire_trigger",
+                        lambda store, engine, a, t: fires.append(t["id"]) or True)
+    store.create_automation(make_version(), "Zoney", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 13 * * *"}])
+
+    sched._tick()  # baseline at 15:00
+    # user moves the Mac three zones west: wall rewinds, UTC keeps advancing
+    local.now = datetime(2026, 7, 10, 12, 1)
+    utc.now += timedelta(minutes=1)
+    with caplog.at_level(logging.WARNING, logger="autowright.scheduler"):
+        sched._tick()
+        sched._tick()
+    warnings = [r for r in caplog.records if "timezone change" in r.message]
+    assert len(warnings) == 1          # once per rewind, not once per tick
+    assert fires == []                 # the 13:00 in the rewound span stays unfired
+    # the clock catching back up clears the state and normal firing resumes
+    local.now = datetime(2026, 7, 11, 13, 1)
+    utc.now += timedelta(days=1, hours=1)
+    sched._tick()
+    assert fires == ["t1"]

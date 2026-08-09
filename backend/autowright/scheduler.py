@@ -38,6 +38,9 @@ class Scheduler:
         # it never fire (startup baseline = now, §6 no catch-up queue).
         self._baseline: dict[tuple[str, str], datetime] = {}
         self._baseline_utc: dict[tuple[str, str], datetime] = {}
+        # Keys already warned about a wall-clock rewind too large for DST (a
+        # system-timezone change) — one warning per rewind, not one per tick.
+        self._warned_rewind: set[tuple[str, str]] = set()
         self._stop = threading.Event()
         self._last_retention = clock()
         engine.drain_queue = lambda automation_id: drain_queue(self.store, self.engine, automation_id)  # type: ignore[attr-defined]
@@ -84,6 +87,22 @@ class Scheduler:
                     # repeated hour fire once (§4.3).
                     base = now
                     self._set_baseline(key, now, now_utc)
+                if base > now and (base - now).total_seconds() > 3900:
+                    # §4.3: the wall clock rewound with UTC steady, by more
+                    # than any DST fall-back shifts (> 65 min) — almost
+                    # certainly a system-timezone change. Deliberately handled
+                    # like fall-back (occurrences in the rewound span never
+                    # re-fire; a pending one-shot there is consumed unfired) —
+                    # this line exists so a reported miss is diagnosable.
+                    if key not in self._warned_rewind:
+                        self._warned_rewind.add(key)
+                        log.warning(
+                            "wall clock rewound %d min with UTC steady — looks like a "
+                            "system timezone change; occurrences of trigger %s on %r "
+                            "before the old baseline will not fire",
+                            int((base - now).total_seconds() // 60), t["id"], a["name"])
+                else:
+                    self._warned_rewind.discard(key)
                 if not t["enabled"]:
                     # Occurrences passing while off never fire, even after a re-enable.
                     self._set_baseline(key, now, now_utc)
@@ -121,6 +140,7 @@ class Scheduler:
         # Forget baselines of deleted automations / removed triggers.
         self._baseline = {k: v for k, v in self._baseline.items() if k in live_keys}
         self._baseline_utc = {k: v for k, v in self._baseline_utc.items() if k in live_keys}
+        self._warned_rewind &= live_keys
         if (now - self._last_retention).total_seconds() > 3600:
             self._last_retention = now
             removed = self.store.retention_cleanup()

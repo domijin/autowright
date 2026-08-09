@@ -589,7 +589,7 @@
 <script>
 // download buttons — point at the latest versioned DMG via the update feed;
 // the static href (the releases page) stays as the no-JS / fetch-failure fallback
-fetch("/updates/darwin-arm64.json")
+fetch("updates/darwin-arm64.json")
   .then((r) => (r.ok ? r.json() : Promise.reject()))
   .then((feed) => {
     const v = feed.currentRelease;

@@ -160,7 +160,8 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   non-technical people — plain-language copy, no jargon. Page structure, in order: header
   (mark + wordmark + GitHub link) · hero (headline, one-paragraph pitch, "Download for
   macOS" → a direct download of the latest versioned DMG: on load, page JS fetches the
-  same-origin §3 update feed (`/updates/darwin-arm64.json`) and rewrites the download
+  same-origin §3 update feed (relative URL `updates/darwin-arm64.json`, so it also works
+  when the page is served from a sub-path in local previews) and rewrites the download
   anchors' `href` to
   `releases/download/v<currentRelease>/Autowright-<currentRelease>-darwin-arm64.dmg`, so
   the click downloads the DMG with the version in its filename; the static fallback

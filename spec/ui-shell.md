@@ -801,9 +801,12 @@ agent is for — shown on the Agents page and given to the drafting agent"), pic
 (Claude Code / Gemini CLI / Codex / OpenCode — all four selectable, §4.7), then the MODEL
 section — the mode rows live inside it (option labels "Default model" / "A specific model"
 (note "Type the model this harness should use") / "A local model" — the specific-model
-option renders for every harness; the local-model option renders only when the harness is
-OpenCode, §4.7, and carries the note "Pick a model served on this Mac through Ollama — best
-for simple steps") — with the model input below (required for specific-model and
+option renders for every harness; the local-model option renders enabled when the harness is
+Claude Code, Codex, or OpenCode (§4.7) and carries the note "Pick a model served on this Mac
+through Ollama — best for simple steps"; when the harness is Gemini CLI the local-model row
+renders disabled with the note "Gemini CLI can't drive local models." — a disabled row is
+never selectable, and switching to Gemini CLI while the local-model mode is picked moves the
+selection back to "Default model") — with the model input below (required for specific-model and
 local-model modes — the specific-model mode shows a mono free-text input with a per-harness
 placeholder: Claude Code "e.g. claude-opus-4-8", Gemini CLI "e.g. gemini-2.5-pro", Codex
 "e.g. gpt-5-codex", OpenCode "e.g. anthropic/claude-opus-4-8"; OpenCode expects the

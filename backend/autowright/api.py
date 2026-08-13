@@ -1095,12 +1095,13 @@ def add_agent(body: models.AgentAdd) -> dict:
     if harness_name not in HARNESSES:
         raise HTTPException(422, "unknown harness")
     mode = body.mode
-    # §4.7: mode ollama is OpenCode driving a local Ollama model; mode custom
+    # §4.7: mode ollama is a harness driving a local Ollama model — valid with
+    # Claude Code, Codex, and OpenCode, never Gemini CLI; mode custom
     # is a user-typed model string valid with every harness; model is null
     # only in default mode — a null model means the harness uses whatever it
     # is already configured with.
-    if mode == "ollama" and harness_name != "OpenCode":
-        raise HTTPException(422, "local-model mode needs the OpenCode harness")
+    if mode == "ollama" and harness_name not in harness.LOCAL_MODEL_HARNESSES:
+        raise HTTPException(422, "local-model mode needs Claude Code, Codex, or OpenCode")
     model = (body.model or None) if mode != "default" else None
     if mode == "ollama" and not model:
         raise HTTPException(422, "local-model mode needs a model")
@@ -1130,8 +1131,8 @@ def patch_agent(agent_id: str, patch: models.AgentPatch) -> dict:
         ag = _agent_or_404(agent_id)
         mode = body.get("mode", ag.get("mode", "default"))
         harness_name = body.get("harness", ag.get("harness"))
-        if mode == "ollama" and harness_name != "OpenCode":
-            raise HTTPException(422, "local-model mode needs the OpenCode harness")
+        if mode == "ollama" and harness_name not in harness.LOCAL_MODEL_HARNESSES:
+            raise HTTPException(422, "local-model mode needs Claude Code, Codex, or OpenCode")
         model = body["model"] if "model" in body else ag.get("model")
         if mode == "ollama" and not model:
             raise HTTPException(422, "local-model mode needs a model")

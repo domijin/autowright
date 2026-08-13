@@ -293,11 +293,17 @@ remain plain dicts (§2).
   (`harness.check_ready`) decides ready vs. needs-setup everywhere: the harness binary must
   resolve (rule below). A custom-model agent (mode `custom`, §4.7) checks exactly like a
   default-mode one — the typed model string is never validated by the check (§4.7); a wrong
-  name surfaces at invoke time. A local-model agent (OpenCode with mode `ollama`, §4.7) additionally
+  name surfaces at invoke time. A local-model agent (mode `ollama` — Claude Code, Codex, or
+  OpenCode, §4.7; the check answers needs-setup for Gemini CLI) additionally
   needs Ollama's server answering **and the agent's model installed** (the model appears in
   `/api/tags`; a bare name without a tag matches its `:latest` variant) — and needs **no**
-  sign-in: a local model needs no account. Every default-mode check instead requires the
-  harness to be signed in, by the per-harness rule below.
+  sign-in: a local model needs no account. A Claude Code local-model check additionally
+  requires **Ollama ≥ 0.14.0** (the `version` from `/ollama/status` below) — the
+  Anthropic-compatible `/v1/messages` endpoint Claude Code talks to (§6) shipped in 0.14.0,
+  so an older Ollama reads needs-setup rather than failing at invoke time. An OpenCode
+  local-model check additionally runs the opencode.json provider sync below (an unwritable
+  config is a needs-setup condition, never a 500). Every default-mode check instead requires
+  the harness to be signed in, by the per-harness rule below.
 - **Sign-in state, per harness** (shared by `check_ready`, detection, and the signin poll):
   Claude Code — `claude auth status` exits 0 · Codex — `codex login status` exits 0 ·
   Gemini CLI — `~/.gemini/oauth_creds.json` parses as JSON carrying a refresh token (or
@@ -349,7 +355,8 @@ remain plain dicts (§2).
   every 2 s) — it runs only that provider's sign-in rule, never version lookups. For an
   ollama-mode agent `signedIn` is `null` — local models have no sign-in concept.
 - Ollama: `GET /ollama/status` → `{ ready, installed,
-  models }`, `POST /ollama/pull`. All CLI lookups (detection and harness invocation alike)
+  models, version }` (`version` from Ollama's `/api/version` when the server answers, else
+  null — the §19 Claude Code local-model check gates on it), `POST /ollama/pull`. All CLI lookups (detection and harness invocation alike)
   resolve the binary via PATH plus the usual macOS install locations (`~/.local/bin`,
   `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; Ollama additionally `Ollama.app`),
   because a GUI-launched backend gets a minimal PATH — e.g. `claude` installs to `~/.local/bin`

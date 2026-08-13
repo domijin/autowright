@@ -363,8 +363,9 @@ def _validate(z: zipfile.ZipFile) -> dict:
         mode = g.get("mode", "default")
         if mode not in MODES:
             raise TransferError(f"invalid agent mode {mode!r}")
-        if mode == "ollama" and g["harness"] != "OpenCode":
-            raise TransferError("a local-model agent needs the OpenCode harness")
+        if mode == "ollama" and g["harness"] not in harness.LOCAL_MODEL_HARNESSES:
+            raise TransferError(
+                "a local-model agent needs Claude Code, Codex, or OpenCode")
         if mode != "default" and not g.get("model"):
             raise TransferError(f"agent {g['name']!r} needs a model for mode {mode!r}")
     secrets = _yaml_or_reject(z, "secrets.yaml", required=False).get("secrets") or []

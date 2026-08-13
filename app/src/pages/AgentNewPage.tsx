@@ -464,26 +464,30 @@ export default function AgentNewPage() {
             borderRadius: 12, overflow: 'hidden', marginBottom: 16,
           }}>
             {([
-              { id: 'default' as const, name: 'Default model', note: DEFAULT_NOTE[harness] },
+              { id: 'default' as const, name: 'Default model', note: DEFAULT_NOTE[harness], disabled: false },
               // §4.7: a user-typed model string — valid with every harness
-              { id: 'custom' as const, name: 'A specific model', note: 'Type the model this harness should use' },
-              // §4.7: local models run only through OpenCode (Ollama behind it)
-              ...(harness === 'opencode'
-                ? [{ id: 'ollama' as const, name: 'A local model', note: 'Pick a model served on this Mac through Ollama — best for simple steps' }]
-                : []),
+              { id: 'custom' as const, name: 'A specific model', note: 'Type the model this harness should use', disabled: false },
+              // §4.7: local models run through Ollama — valid with Claude Code,
+              // Codex, and OpenCode; Gemini CLI has no local-model mechanism,
+              // so its row renders disabled with the reason.
+              harness === 'gemini'
+                ? { id: 'ollama' as const, name: 'A local model', note: 'Gemini CLI can’t drive local models.', disabled: true }
+                : { id: 'ollama' as const, name: 'A local model', note: 'Pick a model served on this Mac through Ollama — best for simple steps', disabled: false },
             ]).map((md, i, arr) => {
               const on = mode === md.id
               return (
                 <button
                   key={md.id}
-                  className="ad-btn-bare ad-hover-row ad-focus-inset"
+                  className={`ad-btn-bare ad-focus-inset${md.disabled ? '' : ' ad-hover-row'}`}
                   role="radio"
                   aria-checked={on}
-                  onClick={() => { setMode(md.id); setModel(null) }}
+                  aria-disabled={md.disabled || undefined}
+                  onClick={() => { if (md.disabled) return; setMode(md.id); setModel(null) }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px',
                     borderBottom: i === arr.length - 1 ? 'none' : '1px solid var(--hairline-dim)',
-                    width: '100%', textAlign: 'left', cursor: 'pointer',
+                    width: '100%', textAlign: 'left', cursor: md.disabled ? 'default' : 'pointer',
+                    opacity: md.disabled ? 0.45 : 1,
                   }}
                 >
                   <RadioRing selected={on} />

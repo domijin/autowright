@@ -89,6 +89,81 @@ def test_opencode_local_model_invoked_with_ollama_model_flag(monkeypatch):
     assert synced == ["qwen3:8b"]  # and no sync either
 
 
+def _captured_invoke_full(monkeypatch, agent, web=False):
+    """Like _captured_invoke but also captures the spawn kwargs (env)."""
+    from autowright import harness
+
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: f"/usr/local/bin/{name}")
+    captured = {}
+
+    def fake_popen(cmd, **kw):
+        captured["cmd"] = cmd
+        captured["env"] = kw.get("env")
+        return _FakeProc()
+
+    monkeypatch.setattr(harness.subprocess, "Popen", fake_popen)
+    out = harness.invoke(agent, "question: hi?", web=web)
+    assert out == "ok"
+    return captured
+
+
+def test_claude_local_model_invoked_via_ollama_env(monkeypatch):
+    # §6: a Claude Code local-model agent rides the CLI's custom-endpoint env
+    # vars against Ollama's Anthropic-compatible API — bare `--model` (no
+    # ollama/ prefix), bearer auth, and never an inherited ANTHROPIC_API_KEY
+    # (Ollama doesn't reliably accept x-api-key).
+    from autowright import harness
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-real-key")
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    synced = []
+    monkeypatch.setattr(harness, "sync_opencode_ollama", synced.append)
+    cap = _captured_invoke_full(monkeypatch, {"harness": "Claude Code",
+                                              "mode": "ollama", "model": "qwen3:8b"})
+    cmd, env = cap["cmd"], cap["env"]
+    i = cmd.index("--model")
+    assert cmd[i + 1] == "qwen3:8b"
+    assert env["ANTHROPIC_BASE_URL"] == harness.OLLAMA_URL
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "ollama"
+    assert "ANTHROPIC_API_KEY" not in env
+    assert synced == []  # opencode.json sync is OpenCode-only
+
+    # default mode never overrides the endpoint
+    cap = _captured_invoke_full(monkeypatch, {"harness": "Claude Code"})
+    assert "ANTHROPIC_BASE_URL" not in cap["env"]
+    assert cap["env"]["ANTHROPIC_API_KEY"] == "sk-real-key"
+
+
+def test_codex_local_model_invoked_with_oss_flags(monkeypatch):
+    # §6: a Codex local-model agent rides the official top-level flags
+    # `--oss --local-provider ollama` before the exec subcommand (exec itself
+    # rejects them), with the model as a plain `--model` after it.
+    from autowright import harness
+
+    synced = []
+    monkeypatch.setattr(harness, "sync_opencode_ollama", synced.append)
+    cmd = _captured_invoke(monkeypatch, {"harness": "Codex", "mode": "ollama",
+                                         "model": "qwen3:8b"})
+    ex = cmd.index("exec")
+    assert cmd.index("--oss") < ex
+    lp = cmd.index("--local-provider")
+    assert lp < ex and cmd[lp + 1] == "ollama"
+    i = cmd.index("--model")
+    assert i > ex and cmd[i + 1] == "qwen3:8b"
+    assert "--sandbox" in cmd and "--skip-git-repo-check" in cmd
+    assert synced == []
+
+    # web=True composes: both top-level flags before exec
+    cmd = _captured_invoke(monkeypatch, {"harness": "Codex", "mode": "ollama",
+                                         "model": "qwen3:8b"}, web=True)
+    ex = cmd.index("exec")
+    assert cmd.index("--search") < ex and cmd.index("--oss") < ex
+
+    # default mode: no local flags
+    cmd = _captured_invoke(monkeypatch, {"harness": "Codex"})
+    assert "--oss" not in cmd and "--local-provider" not in cmd
+
+
 def test_custom_model_invoked_with_verbatim_model_flag(monkeypatch):
     # §4.7: a custom-model agent passes the user-typed string verbatim as
     # `--model` on every harness — no ollama/ prefix, no opencode.json sync.
@@ -271,8 +346,8 @@ def test_signin_state_is_cheap_per_provider(monkeypatch):
 
 
 def test_check_ready_local_model_requires_installed_model(monkeypatch):
-    """§4.7: a local-model agent is OpenCode + Ollama server + the model —
-    no sign-in needed."""
+    """§4.7: a local-model agent is a local-model harness + Ollama server +
+    the model — no sign-in needed."""
     from autowright import harness
 
     monkeypatch.setattr(harness, "resolve_bin", lambda name: f"/usr/local/bin/{name}")
@@ -280,11 +355,15 @@ def test_check_ready_local_model_requires_installed_model(monkeypatch):
     monkeypatch.setattr(harness, "sync_opencode_ollama", lambda model: None)
     monkeypatch.setattr(harness, "ollama_status",
                         lambda: {"ready": True, "installed": True,
-                                 "models": ["qwen3:8b", "llama3.2:latest"]})
-    assert harness.check_ready("OpenCode", "qwen3:8b", "ollama")  # signed out is fine
+                                 "models": ["qwen3:8b", "llama3.2:latest"],
+                                 "version": "0.14.2"})
+    # signed out is fine — every local-model harness (§4.7)
+    assert harness.check_ready("OpenCode", "qwen3:8b", "ollama")
+    assert harness.check_ready("Claude Code", "qwen3:8b", "ollama")
+    assert harness.check_ready("Codex", "qwen3:8b", "ollama")
     assert harness.check_ready("OpenCode", "llama3.2", "ollama")  # bare name → :latest
     assert not harness.check_ready("OpenCode", "mistral:7b", "ollama")
-    assert not harness.check_ready("Claude Code", "qwen3:8b", "ollama")  # OpenCode only
+    assert not harness.check_ready("Gemini CLI", "qwen3:8b", "ollama")  # never local (§4.7)
     # §4.7 custom mode: model string never validated — sign-in decides, and a
     # signed-out harness is not ready
     assert not harness.check_ready("Claude Code", "made-up-model", "custom")
@@ -293,11 +372,48 @@ def test_check_ready_local_model_requires_installed_model(monkeypatch):
     monkeypatch.setattr(harness, "signed_in", lambda pid: False)
 
     monkeypatch.setattr(harness, "ollama_status",
-                        lambda: {"ready": False, "installed": True, "models": []})
+                        lambda: {"ready": False, "installed": True, "models": [],
+                                 "version": None})
     assert not harness.check_ready("OpenCode", "qwen3:8b", "ollama")
 
     monkeypatch.setattr(harness, "resolve_bin", lambda name: None)
     assert not harness.check_ready("OpenCode", "qwen3:8b")  # no binary → never ready
+
+
+def test_check_ready_claude_local_gates_on_ollama_version(monkeypatch):
+    # §19: Claude Code talks to Ollama's Anthropic-compatible endpoint, which
+    # shipped in 0.14.0 — an older (or unknown-version) Ollama reads
+    # needs-setup for Claude Code while the other local harnesses stay ready.
+    from autowright import harness
+
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(harness, "signed_in", lambda pid: False)
+    monkeypatch.setattr(harness, "sync_opencode_ollama", lambda model: None)
+    monkeypatch.setattr(harness, "ollama_status",
+                        lambda: {"ready": True, "installed": True,
+                                 "models": ["qwen3:8b"], "version": "0.13.9"})
+    assert not harness.check_ready("Claude Code", "qwen3:8b", "ollama")
+    assert harness.check_ready("Codex", "qwen3:8b", "ollama")
+    assert harness.check_ready("OpenCode", "qwen3:8b", "ollama")
+
+    monkeypatch.setattr(harness, "ollama_status",
+                        lambda: {"ready": True, "installed": True,
+                                 "models": ["qwen3:8b"], "version": None})
+    assert not harness.check_ready("Claude Code", "qwen3:8b", "ollama")
+
+
+def test_version_at_least():
+    from autowright import harness
+
+    floor = harness.OLLAMA_MIN_ANTHROPIC
+    assert harness.version_at_least("0.14.0", floor)
+    assert harness.version_at_least("0.14.2", floor)
+    assert harness.version_at_least("1.0.0", floor)
+    assert harness.version_at_least("v0.15.0-rc1", floor)
+    assert not harness.version_at_least("0.13.9", floor)
+    assert not harness.version_at_least(None, floor)
+    assert not harness.version_at_least("", floor)
+    assert not harness.version_at_least("garbage", floor)
 
 
 def test_disallowed_imports_matches_drafting_rule():
@@ -372,12 +488,14 @@ def test_ollama_status_ready_when_server_answers(monkeypatch):
     from autowright import harness
 
     monkeypatch.setattr(harness, "_ollama_models", lambda: ["qwen3:8b", "gemma4:e4b"])
+    monkeypatch.setattr(harness, "_ollama_version", lambda: "0.14.2")
     monkeypatch.setattr(harness, "ollama_bin", lambda: "/fake/ollama")
     spawned = []
     monkeypatch.setattr(harness.subprocess, "Popen",
                         lambda *a, **k: spawned.append(a) or object())
     st = harness.ollama_status()
-    assert st == {"ready": True, "installed": True, "models": ["qwen3:8b", "gemma4:e4b"]}
+    assert st == {"ready": True, "installed": True,
+                  "models": ["qwen3:8b", "gemma4:e4b"], "version": "0.14.2"}
     assert spawned == []  # server already up — never a spawn
 
 
@@ -389,6 +507,7 @@ def test_ollama_status_autostarts_serve_once(monkeypatch):
 
     monkeypatch.setattr(harness, "OLLAMA_URL", "http://localhost:11434")
     monkeypatch.setattr(harness, "ollama_bin", lambda: "/fake/ollama")
+    monkeypatch.setattr(harness, "_ollama_version", lambda: "0.14.2")
     monkeypatch.setattr(harness.time, "sleep", lambda s: None)
     answers = [None, None, ["qwen3:8b"]]  # down, then up after the spawn
     monkeypatch.setattr(harness, "_ollama_models",
@@ -417,7 +536,8 @@ def test_ollama_status_not_installed(monkeypatch):
 
     monkeypatch.setattr(harness, "_ollama_models", lambda: None)
     monkeypatch.setattr(harness, "ollama_bin", lambda: None)
-    assert harness.ollama_status() == {"ready": False, "installed": False, "models": []}
+    assert harness.ollama_status() == {"ready": False, "installed": False,
+                                       "models": [], "version": None}
 
 
 def test_ollama_status_remote_url_never_autostarts(monkeypatch):
@@ -433,7 +553,7 @@ def test_ollama_status_remote_url_never_autostarts(monkeypatch):
                         lambda *a, **k: spawned.append(a) or object())
     st = harness.ollama_status()
     assert spawned == []
-    assert st == {"ready": False, "installed": True, "models": []}
+    assert st == {"ready": False, "installed": True, "models": [], "version": None}
 
 
 def test_ollama_model_installed_bare_name_matches_latest():

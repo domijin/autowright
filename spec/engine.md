@@ -185,8 +185,18 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   `codex exec --sandbox read-only --skip-git-repo-check`; Gemini CLI and OpenCode expose no
   tool-disable flag for one-shot invocations and are
   invoked bare (documented limitation; a custom-model agent — mode `custom`, §4.7 — adds
-  `--model <model>` to the harness command, the same flag on all four CLIs; an OpenCode
-  agent with a local model adds `--model ollama/<model>`). Every harness CLI child
+  `--model <model>` to the harness command, the same flag on all four CLIs). A local-model
+  agent (mode `ollama`, §4.7) rides each harness's own supported local mechanism, all against
+  the same Ollama server (`AUTOWRIGHT_OLLAMA_URL`, default `http://localhost:11434`):
+  Claude Code — the invocation env gets `ANTHROPIC_BASE_URL=<ollama url>` and
+  `ANTHROPIC_AUTH_TOKEN=ollama` (bearer auth; Ollama's Anthropic-compatible `/v1/messages`
+  does not reliably accept `x-api-key`, so never `ANTHROPIC_API_KEY`) plus a bare
+  `--model <model>` — behind a custom base URL the CLI passes any model name through
+  unvalidated and skips its sign-in check; Codex — the top-level flags
+  `--oss --local-provider ollama` before the `exec` subcommand (like `--search`, `exec`
+  itself rejects them) plus `--model <model>` after it — no login needed; OpenCode —
+  `--model ollama/<model>` after the §19 opencode.json provider sync. Gemini CLI has no
+  local-model mechanism (§4.7). Every harness CLI child
   (drafting and runtime alike)
   runs with its cwd set to its provider's own `harness/<provider-id>/workspace/` directory
   under Application Support (§5) — created on demand, kept empty by the app: CLI

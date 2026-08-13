@@ -326,6 +326,33 @@ def test_import_rejects_and_writes_nothing(store):
     assert (len(store.autos), len(store.secrets), len(store.agents)) == before
 
 
+def test_import_local_model_agent_harness_rule(store):
+    # §4.7: a local-model agent grant imports with Claude Code, Codex, or
+    # OpenCode — never Gemini CLI.
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+
+    def with_extra_agent(g):
+        src = zipfile.ZipFile(io.BytesIO(data))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as out:
+            for n in src.namelist():
+                body = src.read(n)
+                if n == "agents.yaml":
+                    body = yaml.safe_dump(
+                        {"agents": (yaml.safe_load(body).get("agents") or []) + [g]}).encode()
+                out.writestr(n, body)
+        return buf.getvalue()
+
+    for h in ("Claude Code", "Codex", "OpenCode"):
+        transfer.import_automation(store, with_extra_agent(
+            {"name": f"Local {h}", "harness": h, "mode": "ollama", "model": "qwen3:8b"}))
+    with pytest.raises(transfer.TransferError, match="local-model agent"):
+        transfer.import_automation(store, with_extra_agent(
+            {"name": "Local G", "harness": "Gemini CLI", "mode": "ollama",
+             "model": "qwen3:8b"}))
+
+
 # ---------- §4.7 default-agent pointer on import ----------
 
 def test_import_without_manifest_agent_uses_default_pointer(store):

@@ -892,6 +892,24 @@ def test_delete_agent_reassigns_default(client):
     assert any(g.get("default") for g in agents)
 
 
+def test_agent_local_model_harness_matrix(client):
+    # §4.7: mode ollama is valid with Claude Code, Codex, and OpenCode —
+    # never Gemini CLI (422); PATCH follows the same rule as POST.
+    for h in ("Claude Code", "Codex", "OpenCode"):
+        r = client.post("/agents", json={"harness": h, "mode": "ollama",
+                                         "model": "qwen3:8b", "name": f"Local {h}"})
+        assert r.status_code == 200, h
+    r = client.post("/agents", json={"harness": "Gemini CLI", "mode": "ollama",
+                                     "model": "qwen3:8b", "name": "Nope"})
+    assert r.status_code == 422
+    gid = client.post("/agents", json={"harness": "Gemini CLI", "name": "G"}).json()["id"]
+    r = client.patch(f"/agents/{gid}", json={"mode": "ollama", "model": "qwen3:8b"})
+    assert r.status_code == 422
+    r = client.patch(f"/agents/{gid}", json={"harness": "Codex", "mode": "ollama",
+                                             "model": "qwen3:8b"})
+    assert r.status_code == 200
+
+
 def test_seed_then_state(client, home):
     from autowright.storage import store
     from seed_data import seed
@@ -1671,11 +1689,11 @@ def test_ollama_pull_without_binary_reports_not_installed(client, monkeypatch):
 # ---------- §4.7/§19 agent record validation ----------
 
 def test_add_agent_validation_matrix(client):
-    # §4.7: mode ollama is OpenCode-only and needs a model; custom needs a model;
-    # default mode always stores a null model.
+    # §4.7: mode ollama needs a local-model harness (never Gemini CLI) and a
+    # model; custom needs a model; default mode always stores a null model.
     assert client.post("/agents", json={"harness": "GPT-5"}).status_code == 422
     assert client.post("/agents", json={"harness": "Codex", "mode": "turbo"}).status_code == 422
-    assert client.post("/agents", json={"harness": "Codex", "mode": "ollama",
+    assert client.post("/agents", json={"harness": "Gemini CLI", "mode": "ollama",
                                         "model": "qwen3:8b"}).status_code == 422
     assert client.post("/agents", json={"harness": "OpenCode", "mode": "ollama"}).status_code == 422
     assert client.post("/agents", json={"harness": "Codex", "mode": "custom"}).status_code == 422
@@ -1694,7 +1712,7 @@ def test_patch_agent_validation_and_default_switch(client):
                                       "model": "qwen3:8b", "name": "Local"}).json()
     # PATCH can't create a shape POST rejects
     assert client.patch(f"/agents/{ag['id']}",
-                        json={"harness": "Codex"}).status_code == 422  # ollama needs OpenCode
+                        json={"harness": "Gemini CLI"}).status_code == 422  # never local (§4.7)
     assert client.patch(f"/agents/{ag['id']}",
                         json={"model": None}).status_code == 422       # ollama needs a model
     # switching to default mode nulls the model

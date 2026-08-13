@@ -586,10 +586,15 @@ carried into the §8 grants yaml so the drafting agent knows what each enabled a
 every harness: the user types the model as a free-text string and the app passes it verbatim
 to the harness CLI as `--model <model>` (§6, §19); the string is never validated by the app —
 a wrong name surfaces as a harness error at invoke time. Mode `ollama`: `model` names the
-local Ollama model. Mode
-`ollama` is valid **only with the OpenCode harness** — Ollama is not a harness of its own; it
-is purely the local-model runtime OpenCode drives (`opencode run --model ollama/<model>`,
-§19). A null model means the app never picks or passes a model — the harness uses whatever
+local Ollama model. Mode `ollama` is valid with **Claude Code, Codex, and OpenCode** — Ollama
+is not a harness of its own; it is the single local-model runtime every local-model agent
+drives, and each harness connects to it through that harness's own supported mechanism
+(§6 invocation, §19 readiness): Claude Code through its custom-endpoint env vars against
+Ollama's Anthropic-compatible API, Codex through its official `--oss --local-provider ollama`
+flags, OpenCode through its provider config (`opencode run --model ollama/<model>`). Mode
+`ollama` is **not** valid with Gemini CLI — the stock CLI speaks only the Gemini wire format
+and has no local or OpenAI-compatible endpoint support (documented limitation; the backend
+rejects it with 422 and the UI shows the option disabled with the reason). A null model means the app never picks or passes a model — the harness uses whatever
 model it is already configured with. Display shows "Default model" when the model is null. One agent is
 the app default: a single `default_agent` id pointer in `agents.yaml` (§5) — never a
 per-record flag, so "exactly one default" holds structurally; the API serializes each

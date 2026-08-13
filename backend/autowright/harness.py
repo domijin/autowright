@@ -249,17 +249,25 @@ def _claude_stream_line(line: str) -> tuple[str | None, str | None, list[dict]]:
 def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
             proc_holder: dict | None, on_chunk=None, should_abort=None,
             web: bool = False, on_tool=None) -> str:
-    # §4.7: a local-model agent is OpenCode driving Ollama — the model rides
-    # in as `--model ollama/<model>` after the §19 opencode.json provider sync.
-    # A custom-model agent passes the user-typed string verbatim as `--model`
-    # (the same flag on all four CLIs), never validated by the app.
+    # §4.7/§6: a local-model agent (mode ollama — Claude Code, Codex, or
+    # OpenCode) drives the one local Ollama server through that harness's own
+    # supported mechanism: OpenCode rides `--model ollama/<model>` after the
+    # §19 opencode.json provider sync; Codex rides its official
+    # `--oss --local-provider ollama` top-level flags; Claude Code rides its
+    # custom-endpoint env vars against Ollama's Anthropic-compatible API
+    # (env built below, at spawn). A custom-model agent passes the user-typed
+    # string verbatim as `--model` (the same flag on all four CLIs), never
+    # validated by the app.
     mode = agent.get("mode", "default")
     model = agent.get("model")
-    if harness == "OpenCode" and mode == "ollama" and model:
+    local = mode == "ollama" and bool(model)
+    if harness == "OpenCode" and local:
         sync_opencode_ollama(model)
     model_args: list[str] = []
     if model:
-        model_args = ["--model", f"ollama/{model}" if mode == "ollama" else model]
+        model_args = ["--model",
+                      f"ollama/{model}" if local and harness == "OpenCode" else model]
+    codex_local_args = ["--oss", "--local-provider", "ollama"] if local else []
     # §6: runtime calls are query-only — invoke each harness with the
     # strongest flags it offers to disable tools/shell/file access beyond the
     # model API. §6 drafting calls pass web=True: the harness's web-read
@@ -288,8 +296,11 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         # Codex: read-only sandbox blocks writes/shell side effects;
         # --skip-git-repo-check lets exec work outside a git repo (workspace).
         # web=True adds --search — the native web_search tool. Top-level
-        # flag: `codex exec --search` is rejected, `codex --search exec` OK.
-        "Codex": ["codex", *(["--search"] if web else []), "exec", *model_args,
+        # flag: `codex exec --search` is rejected, `codex --search exec` OK —
+        # same placement rule for the §6 local-model flags
+        # `--oss --local-provider ollama`.
+        "Codex": ["codex", *(["--search"] if web else []), *codex_local_args,
+                  "exec", *model_args,
                   "--sandbox", "read-only", "--skip-git-repo-check",
                   "--", prompt],
         # OpenCode has no documented flag that disables tool use for
@@ -304,13 +315,22 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     if binpath is None:
         raise HarnessError(f"{cmd[0]} is not installed on this Mac")
     cmd[0] = binpath
+    env = spawn_env(binpath)
+    if harness == "Claude Code" and local:
+        # §6: Claude Code local mode — point the CLI at Ollama's
+        # Anthropic-compatible API. Bearer auth via ANTHROPIC_AUTH_TOKEN:
+        # Ollama's /v1/messages does not reliably accept x-api-key, so an
+        # inherited ANTHROPIC_API_KEY must not win the auth pick.
+        env["ANTHROPIC_BASE_URL"] = OLLAMA_URL
+        env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+        env.pop("ANTHROPIC_API_KEY", None)
     # Own session, like engine steps: timeout/cancel must reach helper
     # processes the CLI spawns — killing only the direct child can leave a
     # helper holding the stdout pipe open (read loop never sees EOF, the §8
     # idle window silently never fires).
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             stdin=subprocess.DEVNULL, text=True, errors="replace",
-                            env=spawn_env(binpath), cwd=_neutral_cwd(HARNESS_ID[harness]),
+                            env=env, cwd=_neutral_cwd(HARNESS_ID[harness]),
                             start_new_session=True)
     if proc_holder is not None:
         proc_holder["proc"] = proc
@@ -505,6 +525,41 @@ def _ollama_models() -> list[str] | None:
         return None
 
 
+def _ollama_version() -> str | None:
+    """The server's version string if it answers, else None (§19)."""
+    try:
+        with urllib.request.urlopen(f"{OLLAMA_URL}/api/version", timeout=2) as r:
+            return str(json.loads(r.read().decode()).get("version") or "") or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# §19/§6: Ollama's Anthropic-compatible /v1/messages endpoint (what a Claude
+# Code local-model agent talks to) shipped in 0.14.0.
+OLLAMA_MIN_ANTHROPIC = (0, 14, 0)
+
+
+def version_at_least(version: str | None, floor: tuple[int, ...]) -> bool:
+    """Compare a dotted version string's leading numeric parts against
+    `floor`. Unknown/unparseable versions read False — the §19 check answers
+    needs-setup rather than letting the invoke fail later."""
+    if not version:
+        return False
+    parts: list[int] = []
+    for piece in version.strip().lstrip("v").split("."):
+        digits = ""
+        for ch in piece:
+            if not ch.isdigit():
+                break
+            digits += ch
+        if not digits:
+            break
+        parts.append(int(digits))
+    if not parts:
+        return False
+    return tuple(parts) >= floor
+
+
 _serve_last_spawn = 0.0
 _SERVE_COOLDOWN_S = 30.0
 
@@ -534,7 +589,8 @@ def ollama_status() -> dict:
                     break
     return {"ready": models is not None,
             "installed": models is not None or binpath is not None,
-            "models": models or []}
+            "models": models or [],
+            "version": _ollama_version() if models is not None else None}
 
 
 def ollama_model_installed(model: str, installed: list[str]) -> bool:
@@ -550,9 +606,14 @@ def grant_name(agent: dict) -> str:
     return agent.get("name") or agent.get("harness", "")
 
 
+# §4.7: the harnesses local-model mode (mode ollama) is valid with. Gemini CLI
+# is excluded — the stock CLI speaks only the Gemini wire format and has no
+# local or OpenAI-compatible endpoint support.
+LOCAL_MODEL_HARNESSES = ("Claude Code", "Codex", "OpenCode")
+
 # Provider ids (§19 install/login/signin endpoints, §10 cards) ↔ harness names.
 # Ollama is an installable provider but never a harness (§4.7) — it's the
-# local-model runtime OpenCode drives.
+# local-model runtime the §4.7 local-model harnesses drive.
 PROVIDERS: tuple[tuple[str, str], ...] = (
     ("claude", "Claude Code"),
     ("ollama", "Ollama"),
@@ -636,9 +697,12 @@ def check_ready(harness_name: str, model: str | None = None,
     `/agents/check-harness`.
 
     Ready means the harness can take a prompt right now: the binary resolves.
-    A local-model agent (OpenCode with mode ollama, §4.7) additionally needs
-    the Ollama server answering and the model installed — and no sign-in, a
-    local model needs no account. Default- and custom-mode checks instead
+    A local-model agent (mode ollama — Claude Code, Codex, or OpenCode, §4.7)
+    additionally needs the Ollama server answering and the model installed —
+    and no sign-in, a local model needs no account. Claude Code additionally
+    needs Ollama ≥ 0.14.0 (the Anthropic-compatible endpoint it talks to, §6);
+    OpenCode additionally needs the opencode.json provider sync to land.
+    Default- and custom-mode checks instead
     require the harness to be signed in by the §19 per-harness rule; the
     custom-mode model string is never validated (§4.7) — a wrong name
     surfaces at invoke time.
@@ -649,17 +713,21 @@ def check_ready(harness_name: str, model: str | None = None,
     if resolve_bin(PROVIDER_BIN[pid]) is None:
         return False
     if mode == "ollama":
-        if harness_name != "OpenCode" or not model:
+        if harness_name not in LOCAL_MODEL_HARNESSES or not model:
             return False
         st = ollama_status()
         if not st["ready"] or not ollama_model_installed(model, st["models"]):
             return False
-        try:
-            sync_opencode_ollama(model)
-        except HarnessError:
-            # §19: check endpoints answer ready/needs-setup, never 500 — an
-            # unwritable opencode.json is a needs-setup condition.
+        if (harness_name == "Claude Code"
+                and not version_at_least(st["version"], OLLAMA_MIN_ANTHROPIC)):
             return False
+        if harness_name == "OpenCode":
+            try:
+                sync_opencode_ollama(model)
+            except HarnessError:
+                # §19: check endpoints answer ready/needs-setup, never 500 —
+                # an unwritable opencode.json is a needs-setup condition.
+                return False
         return True
     return signed_in(pid) is True
 

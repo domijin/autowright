@@ -90,12 +90,32 @@ describe('AgentNewPage (§12)', () => {
     })
   })
 
-  it('local-model mode only renders for OpenCode', async () => {
+  it('local-model mode renders for every harness — disabled for Gemini CLI (§4.7)', async () => {
     render(<AgentNewPage />)
     fireEvent.click(screen.getByText('Claude Code'))
-    expect(screen.queryByText('A local model')).toBeNull()
-    fireEvent.click(screen.getByText('OpenCode'))
     expect(screen.getByText('A local model')).toBeTruthy()
+    fireEvent.click(screen.getByText('Codex'))
+    expect(screen.getByText('A local model')).toBeTruthy()
+    fireEvent.click(screen.getByText('Gemini CLI'))
+    const row = screen.getByText('A local model').closest('button')!
+    expect(row.getAttribute('aria-disabled')).toBe('true')
+    expect(screen.getByText('Gemini CLI can’t drive local models.')).toBeTruthy()
+    fireEvent.click(row) // a disabled row never selects
+    expect(row.getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('picking an installed model saves a Claude Code ollama-mode agent', async () => {
+    status({ ready: true, installed: true, models: ['qwen3:8b'] })
+    render(<AgentNewPage />)
+    fireEvent.click(screen.getByText('Claude Code'))
+    fireEvent.click(screen.getByText('A local model'))
+    fireEvent.click(await screen.findByText('qwen3:8b'))
+    fireEvent.change(screen.getByPlaceholderText('Name this agent'), { target: { value: 'Local Claude' } })
+    fireEvent.click(screen.getByText('Add agent'))
+    await waitFor(() => expect(mockedApi.addAgent).toHaveBeenCalledTimes(1))
+    expect((mockedApi.addAgent as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatchObject({
+      harness: 'Claude Code', mode: 'ollama', model: 'qwen3:8b', name: 'Local Claude',
+    })
   })
 
   it('missing Ollama gates local mode behind the inline install (§19 install)', async () => {

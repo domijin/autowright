@@ -170,7 +170,14 @@ applies unchanged; the chat pane never collapses.
   visible but disabled, the agent picker stays in place — and in the toolbar row the send
   button is replaced by a **Cancel** button at the same pill height
   (`DELETE /drafts/{jobId}`; cancelling a chat/create job returns the request text to the
-  input for editing, sync-cancel semantics under Dirty gating below). Every other place on the page
+  input for editing, sync-cancel semantics under Dirty gating below). A composer cancel
+  (the button or Esc) also moves focus to the re-enabled input with the caret at the end,
+  and the restored text sizes the box through the ask-box auto-grow — editing the request
+  picks up exactly where it left off. Pressing **Esc**
+  anywhere on the page fires the same cancel while a §8 job is in flight — it is a
+  keyboard shortcut for this Cancel button, nothing more (it never cancels a draft test,
+  whose Cancel lives in the Build & test panel), and it yields to surfaces that own Esc
+  while open: the modal stack and the §9.3 developer log overlay. Every other place on the page
   shows only static text while a job runs — no second spinner, live `detail` line, or
   Cancel anywhere. The draft **test** is not a §8 job and never appears here: while a test
   is executing the input stays, disabled with the hint "Wait for the test to finish." (a

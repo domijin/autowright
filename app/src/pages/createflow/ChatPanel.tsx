@@ -6,7 +6,8 @@
 // drafting-agent picker and Clear chat.
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Agent, ChatEntry } from '../../types'
-import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, dispModel, usePopover } from '../../ui'
+import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, usePopover } from '../../ui'
+import { devlogOverlayOpen } from '../../devlog'
 import { Markdown } from '../../result'
 import { type Rev, jobStageTitle } from './model'
 
@@ -128,6 +129,30 @@ export function ChatPanel({
   // §11 Clear chat: confirm step before the thread is emptied.
   const [confirmClear, setConfirmClear] = useState(false)
 
+  // §11 composer cancel — one dispatch for the Cancel button and Esc. Marks the
+  // input for refocus once the cancel re-enables it (effect below the auto-grow
+  // block), so editing the returned request text picks up where it left off.
+  const focusAfterCancelRef = useRef(false)
+  const cancelJob = () => {
+    focusAfterCancelRef.current = true
+    if (rev.chatBusy) cancelChat()
+    else if (rev.syncBusy) cancelSync()
+    else cancelCreate()
+  }
+
+  // §11 Esc-to-cancel: a keyboard shortcut for the composer's Cancel while a §8
+  // job is in flight — never the draft test's Cancel — yielding to surfaces
+  // that own Esc while open (the modal stack, the §9.3 developer log overlay).
+  useEffect(() => {
+    if (!anyJobBusy) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || anyModalOpen() || devlogOverlayOpen()) return
+      cancelJob()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [anyJobBusy, rev.chatBusy, rev.syncBusy, cancelChat, cancelSync, cancelCreate])
+
   // Chat-input auto-grow (ask-box pattern). Runs when the text changes and once
   // when the textarea attaches (it mounts after `rev` loads and again whenever a
   // job's busy footer swaps back to the input, so the mount-time effect pass
@@ -149,6 +174,18 @@ export function ChatPanel({
     if (el) sizeChatInput()
   }, [])
   useLayoutEffect(() => { sizeChatInput() }, [chatText])
+
+  // §11: after a composer cancel re-enables the input, focus it with the caret
+  // at the end of the returned request text (the auto-grow above already sized
+  // the box to it).
+  useLayoutEffect(() => {
+    if (anyJobBusy || !focusAfterCancelRef.current) return
+    focusAfterCancelRef.current = false
+    const el = chatInputRef.current
+    if (!el || el.disabled) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [anyJobBusy])
 
   // §11 blockers-entry copy, by source and kind
   const blockersHeadline = (e: ChatEntry) => {
@@ -473,7 +510,7 @@ export function ChatPanel({
               </button>
             </div>
             {anyJobBusy ? (
-              <button className="ad-btn-pill" onClick={rev.chatBusy ? cancelChat : rev.syncBusy ? cancelSync : cancelCreate} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              <button className="ad-btn-pill" onClick={cancelJob} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
                 Cancel
               </button>
             ) : (

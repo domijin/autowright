@@ -751,6 +751,48 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     await waitFor(() => expect(screen.getAllByText('Installing the packages…').length).toBeGreaterThan(0), { timeout: 3000 })
   })
 
+  it('Esc cancels a chat job like the composer Cancel and returns the prompt to the input', () => {
+    render(<CreateFlow />)
+    const input = () => screen.getByPlaceholderText('Change something, or ask a question…') as HTMLTextAreaElement
+    fireEvent.change(input(), { target: { value: 'Do a thing' } })
+    fireEvent.click(screen.getByText('Send'))
+    expect(screen.getByText('Cancel')).toBeTruthy()
+    expect(input().value).toBe('')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    // job settled: Send is back and the request text returned to the input,
+    // which takes focus with the caret at the end (§11 composer cancel)
+    expect(screen.queryByText('Cancel')).toBeNull()
+    expect(screen.getByText('Send')).toBeTruthy()
+    expect(input().value).toBe('Do a thing')
+    expect(document.activeElement).toBe(input())
+    expect(input().selectionStart).toBe('Do a thing'.length)
+    expect(input().selectionEnd).toBe('Do a thing'.length)
+  })
+
+  it('the composer Cancel button also refocuses the input with the caret at the end', () => {
+    render(<CreateFlow />)
+    const input = () => screen.getByPlaceholderText('Change something, or ask a question…') as HTMLTextAreaElement
+    fireEvent.change(input(), { target: { value: 'Another thing' } })
+    fireEvent.click(screen.getByText('Send'))
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(input().value).toBe('Another thing')
+    expect(document.activeElement).toBe(input())
+    expect(input().selectionStart).toBe('Another thing'.length)
+  })
+
+  it('Esc cancels a running sync; idle Esc is inert', async () => {
+    render(<CreateFlow />)
+    fireEvent.keyDown(document, { key: 'Escape' }) // no job — nothing happens
+    expect(screen.getByText('Send')).toBeTruthy()
+    fireEvent.click(screen.getByText('Sync with spec'))
+    expect(screen.getByText('Cancel')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByText('Cancel')).toBeNull()
+    // the cancel landed while the POST was in flight — the gen-guard cancels
+    // the freshly created job once the POST resolves
+    await waitFor(() => expect(mockedApi.cancelDraftJob).toHaveBeenCalled())
+  })
+
   it('a live test disables the input with the wait placeholder', () => {
     storeMod.useStore.setState({
       test: { executionId: 'e9' },

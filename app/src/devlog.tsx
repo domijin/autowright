@@ -85,9 +85,18 @@ function RequestsPane() {
   )
 }
 
+// Mirror of the overlay's `open` state readable outside React (same pattern as
+// ui.tsx anyModalOpen) — the §11 Esc-to-cancel handler yields to an open overlay.
+let overlayOpen = false
+export const devlogOverlayOpen = () => overlayOpen
+
 export default function DevLogOverlay() {
   const developerMode = useStore((s) => s.settings?.developerMode) ?? false
   const [open, setOpen] = useState(false)
+  useEffect(() => {
+    overlayOpen = open
+    return () => { overlayOpen = false }
+  }, [open])
   const [tails, setTails] = useState<Tail[] | null>(null)
   const [tab, setTab] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement | null>(null)

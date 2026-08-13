@@ -282,8 +282,8 @@ describe('CreateFlow Build & test panel (§11)', () => {
       () => expect(screen.getByText('The build failed — your AI suggests these fixes')).toBeTruthy(),
       { timeout: 3000 },
     )
-    // same editable cards + apply action as an agent-refusal blocker
-    expect(screen.getByDisplayValue('The build failed validation.')).toBeTruthy()
+    // same agent-output rendering + apply action as an agent-refusal blocker
+    expect(screen.getByText('The build failed validation.')).toBeTruthy()
     expect(screen.getByText('Apply to the spec & sync')).toBeTruthy()
   })
 
@@ -305,27 +305,25 @@ describe('CreateFlow Build & test panel (§11)', () => {
 describe('CreateFlow blockers thread entries (§11)', () => {
   beforeEach(armPendingPoll)
 
-  it('fields lock while a job is busy and unlock when it settles (cb095d9)', async () => {
+  it('Apply gates while a job is busy and ungates when it settles; text renders as agent output', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce(BLOCKED_SYNC)
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('Sync with spec'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
-    // sync-source explainer
-    expect(screen.getByText('It couldn’t sync the steps with the spec. Edit the fix below, then apply it to the spec and sync again.')).toBeTruthy()
-    const fix = screen.getByDisplayValue('Name it in the spec.') as HTMLTextAreaElement
-    expect(fix.readOnly).toBe(false)
-    fireEvent.change(fix, { target: { value: 'Use channel 42.' } })
-    // a second sync (never answering) locks the fields and the primary
+    // sync-source explainer + the blocker text as read-only agent output (no textareas)
+    expect(screen.getByText('It couldn’t sync the steps with the spec.')).toBeTruthy()
+    expect(screen.getByText('Name it in the spec.')).toBeTruthy()
+    expect(screen.queryByDisplayValue('Name it in the spec.')).toBeNull()
+    expect((screen.getByText('Apply to the spec & sync').closest('button')!).disabled).toBe(false)
+    // a second sync (never answering) disables the primary
     fireEvent.click(screen.getByText('Sync with spec'))
-    expect((screen.getByDisplayValue('Use channel 42.') as HTMLTextAreaElement).readOnly).toBe(true)
     expect((screen.getByText('Apply to the spec & sync').closest('button')!).disabled).toBe(true)
-    // the footer Cancel settles the job — the entry is editable again
+    // the composer Cancel settles the job — the primary ungates
     fireEvent.click(screen.getByText('Cancel'))
-    expect((screen.getByDisplayValue('Use channel 42.') as HTMLTextAreaElement).readOnly).toBe(false)
     expect((screen.getByText('Apply to the spec & sync').closest('button')!).disabled).toBe(false)
   })
 
-  it('viewing an old version locks the fields; Dismiss still collapses the entry', async () => {
+  it('viewing an old version disables Apply; Dismiss still collapses the entry', async () => {
     storeMod.useStore.setState({
       automations: [{
         ...AUTO, version: 2,
@@ -336,10 +334,9 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('Sync with spec'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
-    // browse v1 from the version menu — the thread survives, read-only
+    // browse v1 from the version menu — the thread survives, Apply gated
     fireEvent.click(screen.getByText('Draft'))
     fireEvent.click(screen.getByText('v1'))
-    expect((screen.getByDisplayValue('Name it in the spec.') as HTMLTextAreaElement).readOnly).toBe(true)
     expect((screen.getByText('Apply to the spec & sync').closest('button')!).disabled).toBe(true)
     expect((screen.getByPlaceholderText('Back to the draft to edit or ask.') as HTMLTextAreaElement).disabled).toBe(true)
     // Dismiss is never gated — the entry collapses to the one-line summary
@@ -347,36 +344,35 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     expect(screen.getByText('1 blocker — dismissed')).toBeTruthy()
   })
 
-  it('create spec blockers: answers join the request and restart the create job', async () => {
+  it('create spec blockers: the composer reply joins the request and restarts the create job', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'j1', status: 'blocked', stage: null, detail: null, error: null, draft: null,
       mode: 'create', blockedAt: 'spec',
-      blockers: [{ reason: 'Which folder?', fix: '' }],
+      blockers: [{ reason: 'Which folder?', fix: 'Name the folder to watch.' }],
     })
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
-    // spec-source explainer + the clarify primary
-    expect(screen.getByText('It couldn’t write a spec for this request. Answer below — your answers are added to the request and the spec is rewritten.')).toBeTruthy()
-    const primary = screen.getByText('Answer & rewrite the spec').closest('button')!
-    expect(primary.disabled).toBe(true) // fix still empty
-    fireEvent.change(screen.getByPlaceholderText('What should change so this can be built'),
+    // spec-source explainer, no primary button — the composer is the answer path
+    expect(screen.getByText('It couldn’t write a spec for this request. Reply below — your answer is added to the request and the spec is rewritten.')).toBeTruthy()
+    expect(screen.queryByText('Answer & rewrite the spec')).toBeNull()
+    expect(screen.queryByText('Apply to the spec & sync')).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'The Downloads folder' } })
-    expect(primary.disabled).toBe(false)
-    fireEvent.click(primary)
-    // entry collapses, the answer lines land as a user entry, create re-runs
+    fireEvent.click(screen.getByText('Send'))
+    // entry auto-dismisses, the reply lands as a user entry, create re-runs
     expect(screen.getByText('1 blocker — dismissed')).toBeTruthy()
-    expect(screen.getByText('Which folder? — The Downloads folder')).toBeTruthy()
+    expect(screen.getByText('The Downloads folder')).toBeTruthy()
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(2))
     const body = draftBody(1)
     expect(body.mode).toBe('create')
-    expect(body.text).toBe('Watch my Downloads folder\n\nWhich folder? — The Downloads folder')
+    expect(body.text).toBe('Watch my Downloads folder\n\nThe Downloads folder')
   })
 
-  it('chat blockers answer as a fresh chat message with the chat explainer', async () => {
+  it('chat blockers auto-dismiss when the reply goes out as a chat message', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ ...BLOCKED_SYNC, mode: 'chat', blockedAt: 'chat' })
     render(<CreateFlow />)
@@ -384,13 +380,17 @@ describe('CreateFlow blockers thread entries (§11)', () => {
       { target: { value: 'Send it to Discord too' } })
     fireEvent.click(screen.getByText('Send'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
-    expect(screen.getByText('Answer below — your answers are sent back and the spec is rewritten.')).toBeTruthy()
-    fireEvent.click(screen.getByText('Answer & rewrite the spec'))
+    expect(screen.getByText('Reply below — your answer is sent back and the spec is rewritten.')).toBeTruthy()
+    expect(screen.queryByText('Answer & rewrite the spec')).toBeNull()
+    // the blocked job settled — the reply goes out through the composer
+    fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'),
+      { target: { value: 'Channel 42' } })
+    fireEvent.click(screen.getByText('Send'))
     expect(screen.getByText('1 blocker — dismissed')).toBeTruthy()
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(2))
     const body = draftBody(1)
     expect(body.mode).toBe('chat')
-    expect(body.text).toBe('Needs a channel id. — Name it in the spec.')
+    expect(body.text).toBe('Channel 42')
   })
 
   it('create steps blockers keep the landed spec out of sync with the steps explainer', async () => {
@@ -412,11 +412,44 @@ describe('CreateFlow blockers thread entries (§11)', () => {
       { target: { value: 'Watch my Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
-    expect(screen.getByText('It couldn’t build the steps as the spec asks. Edit the fix below, then apply it to the spec and rebuild.')).toBeTruthy()
+    expect(screen.getByText('It couldn’t build the steps as the spec asks.')).toBeTruthy()
     expect(screen.getByText('Apply to the spec & sync')).toBeTruthy()
     // the call-1 spec landed and the workflow is out of sync
     expect(screen.getByText('Watches things.')).toBeTruthy()
     expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
+  })
+
+  it('a markdown link in a blocker renders as a clickable anchor', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...BLOCKED_SYNC,
+      blockers: [{ reason: 'Transmission isn’t installed.',
+        fix: 'Download it from [transmissionbt.com](https://transmissionbt.com) and install it.' }],
+    })
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByText('Sync with spec'))
+    await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
+    const a = screen.getByText('transmissionbt.com').closest('a')!
+    expect(a.getAttribute('href')).toBe('https://transmissionbt.com')
+    expect(a.getAttribute('target')).toBe('_blank')
+  })
+
+  it('a user-action blocker offers Dismiss only under the needs-you headline', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ...BLOCKED_SYNC,
+      blockers: [{ reason: 'Transmission isn’t installed.',
+        fix: 'Install Transmission, then run the automation again.', kind: 'user-action' }],
+    })
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByText('Sync with spec'))
+    await waitFor(
+      () => expect(screen.getByText('Your AI needs you to do something first')).toBeTruthy(),
+      { timeout: 3000 },
+    )
+    // no source explainer, no Apply — the Mac isn't ready, nothing to amend
+    expect(screen.queryByText('It couldn’t sync the steps with the spec.')).toBeNull()
+    expect(screen.queryByText('Apply to the spec & sync')).toBeNull()
+    fireEvent.click(screen.getByText('Dismiss'))
+    expect(screen.getByText('1 blocker — dismissed')).toBeTruthy()
   })
 })
 
@@ -641,30 +674,34 @@ describe('CreateFlow draft undo (§11)', () => {
   })
 })
 
-describe('CreateFlow footer action block + input lock (§11)', () => {
+describe('CreateFlow thread progress entry + input lock (§11)', () => {
   beforeEach(armPendingPoll)
 
-  it('chat job: footer shows the stage with the only spinner and Cancel (a1354db)', () => {
+  it('chat job: the thread shows the stage with the only spinner; Cancel in the composer (a1354db)', () => {
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'),
       { target: { value: 'Do a thing' } })
     fireEvent.click(screen.getByText('Send'))
-    // footer stage + the header save hint share the §11 label
+    // thread progress entry + the header save hint share the §11 label
     expect(screen.getAllByText('Working on the request…').length).toBe(2)
+    const thread = screen.getByTestId('chat-thread')
+    expect(within(thread).getByText('Working on the request…')).toBeTruthy()
     expect(spinnersIn(document.body).length).toBe(1)
+    expect(spinnersIn(thread).length).toBe(1) // the progress entry's
     const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(panel).length).toBe(0)
     expect(within(panel).queryByText('Cancel')).toBeNull()
-    expect(screen.getAllByText('Cancel').length).toBe(1) // the footer's
+    expect(screen.getAllByText('Cancel').length).toBe(1) // the composer's
   })
 
-  it('sync job: footer and panel status name the agent; spinner and Cancel stay in the footer', () => {
+  it('sync job: thread and panel status name the agent; spinner in the thread, Cancel in the composer', () => {
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('Sync with spec'))
-    // the same live line renders in the footer and as the panel's status text
+    // the same live line renders in the thread and as the panel's status text
     expect(screen.getAllByText('Cloud writer · Default model is rewriting the steps from your spec…').length).toBe(2)
     const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(document.body).length).toBe(1)
+    expect(spinnersIn(screen.getByTestId('chat-thread')).length).toBe(1)
     expect(spinnersIn(panel).length).toBe(0)
     expect(within(panel).queryByText('Cancel')).toBeNull()
     expect(screen.getAllByText('Cancel').length).toBe(1)
@@ -684,7 +721,7 @@ describe('CreateFlow footer action block + input lock (§11)', () => {
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
-    // call 1 in flight — the footer (and spec card) show the spec stage
+    // call 1 in flight — the thread (and spec card) show the spec stage
     expect(screen.getAllByText('Writing the spec…').length).toBeGreaterThan(0)
     // the spec lands mid-job → steps stage plus the finer detail line
     await waitFor(() => expect(screen.getAllByText('Generating the steps…').length).toBeGreaterThan(0), { timeout: 3000 })
@@ -708,6 +745,46 @@ describe('CreateFlow footer action block + input lock (§11)', () => {
     const input = screen.getByPlaceholderText('Wait for the test to finish.') as HTMLTextAreaElement
     expect(input.disabled).toBe(true)
     expect((screen.getByText('Send').closest('button')!).disabled).toBe(true)
+  })
+})
+
+describe('CreateFlow clear chat (§11)', () => {
+  beforeEach(armPendingPoll)
+  const done = (draft: Record<string, unknown>) => ({
+    id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'chat', draft,
+  })
+  const send = (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'), { target: { value: text } })
+    fireEvent.click(screen.getByText('Send'))
+  }
+  const clearBtn = () => screen.getByTestId('chat-clear') as HTMLButtonElement
+
+  it('disabled on an empty thread and while a job runs; confirm empties the thread and the undo snapshot', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten body.' }],
+    }))
+    render(<CreateFlow />)
+    expect(clearBtn().disabled).toBe(true) // empty thread
+    send('Change it')
+    expect(clearBtn().disabled).toBe(true) // job in flight
+    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    expect(clearBtn().disabled).toBe(false)
+    expect(screen.getAllByText('Undo this change')).toHaveLength(1)
+    // confirm step — cancelling keeps the thread
+    fireEvent.click(clearBtn())
+    expect(screen.getByText('Clear this conversation?')).toBeTruthy()
+    fireEvent.click(screen.getByText('Cancel'))
+    expect(screen.getByText('Spec updated')).toBeTruthy()
+    // confirming empties the thread; the undo row's snapshot clears with it
+    fireEvent.click(clearBtn())
+    fireEvent.click(document.querySelector('.ad-btn-danger-ghost') as HTMLButtonElement)
+    await waitFor(() => expect(screen.queryByText('Spec updated')).toBeNull())
+    expect(screen.queryByText('Undo this change')).toBeNull()
+    expect(clearBtn().disabled).toBe(true) // empty again
+    // the draft itself is untouched: still out of sync from the rewrite
+    expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
+    // the composer still works
+    expect((screen.getByPlaceholderText('Change something, or ask a question…') as HTMLTextAreaElement).disabled).toBe(false)
   })
 })
 
@@ -778,7 +855,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     const body = draftBody(0)
     expect(body.mode).toBe('chat')
     expect(body.runId).toBe('e9')
-    expect(body.text).toBe('The test failed at step Fetch pages — figure out why and change the automation so it won’t happen again.')
+    expect(body.text).toBe('The test failed at step Fetch pages — figure out why. If the automation is at fault, fix it; if it’s something I need to do on this Mac, tell me what to do and how instead.')
     // the canned message lands as a user entry in the thread
     expect(screen.getByText(body.text as string)).toBeTruthy()
     // §11: while the chat job runs the button disables — never hidden

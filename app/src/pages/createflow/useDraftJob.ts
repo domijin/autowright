@@ -254,7 +254,11 @@ export function useDraftJob(d: DraftJobDeps) {
       ...r,
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // one edit at a time
       notesDraft: null, notesEdit: false,
-      chat: [...r.chat, entry],
+      // §11 auto-dismiss on reply: a sent message answers any open
+      // clarification blockers (spec/chat source); steps/sync entries stay
+      // open — their Apply button remains useful until a sync lands
+      chat: [...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed
+        && (e.source === 'chat' || e.source === 'spec') ? { ...e, dismissed: true } : e)), entry],
       chatBusy: true, genStage: null, genDetail: null, genEvents: [], touched: true,
       ...(genCancelled ? { stepsBusy: false, dirty: true } : {}),
     }))

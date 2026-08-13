@@ -33,26 +33,36 @@ applies unchanged; the chat pane never collapses.
 - **No header:** the pane has no header row — the thread starts at the top of the card
   and the composer carries the pane's identity (the drafting-agent picker below). No
   `CHAT` label anywhere; the thread and input make the pane self-evident.
-- **Thread:** scrolling body, newest at the bottom, auto-scrolled on new content. Entry
+- **Thread:** scrolling body, newest at the bottom, auto-scrolled on new content. The
+  thread reads as a user ↔ agent conversation: **user** entries are the only bubbles —
+  quiet, right-aligned — and **every agent-side entry renders left-aligned in the
+  Claude-output style**: full-width markdown/prose blocks, no bubbles, no centered text
+  anywhere in the thread. Suggested actions render as a left-aligned quiet
+  **option-button row** (`.ad-btn-soft` buttons, wrapping flex row) beneath the agent
+  block they belong to; one response may land several consecutive agent blocks. Entry
   kinds (persisted shapes per §4.4; progress is transient editor state):
-  - **user** — the message as quiet plain text.
+  - **user** — the message as a quiet right-aligned bubble (inset background, hairline
+    border, ~92% max width).
   - **answer** — the agent's reply rendered through the shared §4.5 Markdown renderer.
-  - **rewrite** — a "Spec updated" event: the user's request text echoed back as the entry
-    body (the §8 payload carries no summary field), the out-of-sync note
-    ("The workflow is out of sync — sync the steps before saving."), and — while the
-    workflow is still out of sync — an inline ghost **Sync now** action (the same §8 sync
-    call and gating as the panel's button), so the most common next step sits on the event
-    itself. The entry carries no Undo of its own — undo restores the whole draft, not just
-    the spec, so it lives on the standalone undo row (Draft undo below).
-  - **blockers** — the §8 blocker list as editable cards (below).
-  - **system** — a quiet one-line status chip ("Steps synced with the spec.", the
-    create-completion entry "Draft generated — review the spec and steps, then create
-    it.", the §7 Fix-with-AI failure seed, the
+  - **rewrite** — a "Spec updated" event: an icon-led event line, the user's request text
+    echoed beneath it as dim prose (the §8 payload carries no summary field), the
+    out-of-sync note ("The workflow is out of sync — sync the steps before saving."),
+    and — while the workflow is still out of sync — **Sync now** in the entry's
+    option-button row (the same §8 sync call and gating as the panel's button), so the
+    most common next step sits on the event itself. No card chrome — the entry is a
+    left-aligned agent block like the rest. The entry carries no Undo of its own — undo
+    restores the whole draft, not just the spec, so it lives on the standalone undo row
+    (Draft undo below).
+  - **blockers** — the §8 blocker list rendered as agent output (Blockers below).
+  - **system** — a quiet one-line left-aligned status line ("Steps synced with the
+    spec.", the create-completion entry "Draft generated — review the spec and steps,
+    then create it.", the §7 Fix-with-AI failure seed, the
     run-settled entries below, "Build instructions updated.", "Notes updated.",
     "Renamed to `<name>`.", "Description updated.", the Draft-undo entries "Last change
     undone — the rewrites above no longer apply." and "Nothing to undo.").
-  - **error** — a red-tinted failure entry (a failed §8 job's message, the Failures
-    paragraph below). Persisted like the other kinds (§4.4), so it survives a reload and
+  - **error** — a red-tinted left-aligned failure entry (a failed §8 job's message, the
+    Failures paragraph below); its "Try again" action, when present, sits in the entry's
+    option-button row. Persisted like the other kinds (§4.4), so it survives a reload and
     reaches the agent's CONVERSATION context.
 - **Input:** pinned footer composer, two stacked rows. Top row: a full-width auto-growing
   textarea — the **ask-box pattern** referenced throughout this spec: sized to its
@@ -71,7 +81,14 @@ applies unchanged; the chat pane never collapses.
   the spec and steps here." and, in edit mode, marks the draft touched. The send button is
   a quiet secondary affordance (Enter is primary): borderless, pill-height — the same
   height as the picker pill — always labeled "Send", disabled while the input is
-  disabled or holds only whitespace. Placeholder "Describe the job — one sentence is
+  disabled or holds only whitespace. Right of the picker — grouped with it on the
+  toolbar's left, away from Send — sits **Clear chat**, an icon-only dim button
+  (`fa-eraser` glyph, tooltip and aria-label "Clear chat"): it opens a confirm dialog ("Clear this
+  conversation?" — body noting the
+  draft itself is untouched), and on confirm empties the thread (Thread lifetime below).
+  It disables while any §8 job is in flight, while a test executes, while viewing an old
+  version, and while the thread is empty. Left side = conversation meta (picker, clear);
+  right side = the send/cancel action alone. Placeholder "Describe the job — one sentence is
   enough." while the draft has no spec (fresh create), else "Change something, or ask a
   question…"; while viewing an old version the input is disabled with the placeholder
   "Back to the draft to edit or ask." (and while a test executes, "Wait for the test to
@@ -119,24 +136,26 @@ applies unchanged; the chat pane never collapses.
     permissions and the final commit stay user clicks;
   - a **blocked** job appends a blockers entry (source: chat).
 
-  **Composer progress block — the page's only live job surface.** While any §8 job is in
-  flight (create, chat, or sync, however started), the composer keeps its two-row shape —
-  the textarea stays visible but disabled, the agent picker stays in place — and gains a
-  **progress block** above the textarea: a spinner, the job's stage label ("Working on the
+  **Thread progress entry — the page's only live job surface.** While any §8 job is in
+  flight (create, chat, or sync, however started), a **transient agent-activity entry**
+  renders at the bottom of the thread, styled as a left-aligned agent block: a spinner,
+  the job's stage label ("Working on the
   request…" / "Writing the spec…" / "Installing the packages…" / "Generating the steps…" /
   "`<agent>` is rewriting the steps from your spec…"; the Build & test panel's coarse
   state-1 label reads "Waiting for the spec…" while call 1 writes), and a compact **activity feed**
   beneath it — up to three of the newest §8 `events` lines as dim history (oldest first,
   single-line ellipsis) above the live §8 `detail` line; when `detail` extends the newest
   event (same message, growing ` · N lines` count) that event shows only as the live line,
-  never twice. In the toolbar row the send button is replaced by a **Cancel** button at
-  the same pill height, so the row holds still while feed lines accumulate and the block
-  grows upward
+  never twice. The entry is **derived editor state, never a persisted thread entry**
+  (§4.4 `chat` never carries it): it appears when the job starts and disappears when the
+  job settles, the outcome landing as ordinary thread entries in its place. The thread
+  auto-pins to the bottom when the entry appears; while the feed grows it follows only
+  when the user is already at (or near) the bottom — a user who scrolled up is never
+  yanked back down. Meanwhile the composer keeps its two-row shape — the textarea stays
+  visible but disabled, the agent picker stays in place — and in the toolbar row the send
+  button is replaced by a **Cancel** button at the same pill height
   (`DELETE /drafts/{jobId}`; cancelling a chat/create job returns the request text to the
-  input for editing, sync-cancel semantics under Dirty gating below). Pinned like the
-  input, so it never scrolls away with the thread; the progress block disappears and
-  Cancel reverts to Send when the job settles, and the outcome lands as ordinary thread
-  entries. Every other place on the page
+  input for editing, sync-cancel semantics under Dirty gating below). Every other place on the page
   shows only static text while a job runs — no second spinner, live `detail` line, or
   Cancel anywhere. The draft **test** is not a §8 job and never appears here: while a test
   is executing the input stays, disabled with the hint "Wait for the test to finish." (a
@@ -155,8 +174,13 @@ applies unchanged; the chat pane never collapses.
   answers here and rewrites the spec when you ask for changes."
 - **Thread lifetime:** the thread rides the draft (§4.4 `chat` → §5 `chat.jsonl`): kept on
   every draft-keep path, restored when a draft resumes, deleted when the draft settles
-  (discard, save, Create, Start over). The composer progress block is transient editor state,
-  never persisted.
+  (discard, save, Create, Start over). The thread progress entry is transient editor state,
+  never persisted. **Clear chat** (the composer button above) empties the thread only:
+  `chat` serializes as `[]` and the next draft persist unlinks §5 `chat.jsonl`. It also
+  clears the Draft-undo snapshot (its anchor row leaves with the thread — a dangling
+  snapshot would allow an invisible undo, Draft undo below) and takes open blockers
+  entries with it; the draft documents, the dirty/out-of-sync state, and the session's
+  "Previously resolved" list are untouched, so no sync or save gate is bypassed.
 
 **Drafting on Review.** The first chat message starts the §8 create job; the review pane
 renders in a drafting state and fills in as the pipeline delivers, driven by the job's
@@ -167,14 +191,14 @@ renders in a drafting state and fills in as the pipeline delivers, driven by the
   over ghost cancels any in-flight job, deletes the pending slot (thread included), and
   returns the editor to the create empty state with the description back in the input.
 - **Spec card** — force-open, static "Writing the spec…" line (agent label, no spinner —
-  the live surface is the composer progress block). The moment call 1
+  the live surface is the thread progress entry). The moment call 1
   validates, the spec renders — while the steps are still generating — and is readable and
   editable right away.
 - **Right column** (steps, triggers, parameters, packages) — static placeholder cards: plain
   text, no spinner and no stage label, one line per card — "Steps appear here once the build
   finishes." / "Triggers appear here once the build finishes." / "Parameters appear here once
   the build finishes." / "Packages appear here once the build finishes.".
-- **Live progress** — the composer progress block (Input above) is the only live drafting
+- **Live progress** — the thread progress entry (Input above) is the only live drafting
   surface: the §8 stage label with the activity feed beneath it (recent §8 `events` as dim
   history over the live `detail` line), so a minutes-long call never looks stuck and web
   reads / retries stay visible. The spec card shows its static "Writing the spec…" line
@@ -200,32 +224,32 @@ renders in a drafting state and fills in as the pipeline delivers, driven by the
 blockers render as **one thread entry** — never a modal, never inline in a card. Headline:
 "Your AI hit a blocker" ("Your AI hit N blockers" when several); a job carrying
 `diagnosed: true` (§8 build-diagnosis blockers — the build failed validation rather than
-the agent refusing) instead headlines "The build failed — your AI suggests these fixes".
+the agent refusing) instead headlines "The build failed — your AI suggests these fixes";
+an entry whose blockers are all §8 `kind: user-action` instead headlines "Your AI needs
+you to do something first".
 Beneath it an explanatory line by source: spec call — "It couldn't write a spec for this
-request. Answer below — your answers are added to the request and the spec is rewritten.";
-chat — "Answer below — your answers are sent back and the spec is rewritten."; steps call —
-"It couldn't build the steps as the spec asks. Edit the fix below, then apply it to the
-spec and rebuild."; sync — "It couldn't sync the steps with the spec. Edit the fix below,
-then apply it to the spec and sync again." One card per blocker with
-three labeled, editable text fields — **Reason** / **How to fix** / **Details** — pre-filled
-from the agent's answer; the user edits any of them (usually the fix). Card look: only when the list has
-several blockers does each card carry a "BLOCKER N" eyebrow header.
-The fields are auto-growing textareas (ask-box pattern) with comfortable minimum heights —
-roughly two text lines for Reason and Details and three for How to fix, the main editing
-target, whose box also draws a slightly brighter border and carries the placeholder "What
-should change so this can be built". A focused field shows an amber
-border. The fields lock (read-only) whenever the entry's primary action is unavailable —
-while any §8 job is in flight or an old version is being viewed — and unlock again when
-the gate clears. Each blockers entry closes with a quiet **Dismiss** and one primary action, by
-source:
+request. Reply below — your answer is added to the request and the spec is rewritten.";
+chat — "Reply below — your answer is sent back and the spec is rewritten."; steps call —
+"It couldn't build the steps as the spec asks."; sync — "It couldn't sync the steps with
+the spec." (user-action entries drop the source explainer — the blocker text itself says
+what to do). The blockers themselves render as **agent output, not editable cards**:
+per blocker, the **Reason** / **How to fix** / **Details** texts render through the
+shared §4.5 Markdown renderer under small eyebrow labels — install instructions read as
+prose and download links are clickable — and only when the list has several blockers does
+each block carry a "BLOCKER N" eyebrow header. There are no editable fields: the user
+answers through the composer like any other message. Each blockers entry closes with a
+left-aligned option-button row — a quiet **Dismiss** plus, by source and kind:
 
-- **Spec call** (create) and **chat** — the clarification case: primary **"Answer & rewrite
-  the spec"**. On a spec-call block it appends the cards to the description — one line per
-  blocker, "`reason` — `fix`", using the edited text — and starts a new create job; on a
-  chat block it sends the same lines as a new chat message (a fresh user entry), so the
-  agent rewrites with the answers in hand.
-- **Steps call** (create) and **blocked `sync`** — primary **"Apply to the spec & sync"**.
-  It writes each card into the
+- **Spec call** (create) and **chat** — the clarification case: no primary button. The
+  user replies in the composer; **sending any message auto-dismisses the entry** (the
+  question is answered — stated gating below). On a spec-call block the reply is appended
+  to the original description and a new create job starts ("`description` + blank line +
+  `reply`"); on a chat block the reply goes out as an ordinary chat message — the thread
+  already carries the blocker entry into the agent's §8 CONVERSATION context, so the
+  agent rewrites with the answer in hand.
+- **Steps call** (create) and **blocked `sync`** — primary **"Apply to the spec & sync"**
+  (disabled while any §8 job is in flight or an old version is viewed; Dismiss is never
+  gated). It writes each blocker into the
   in-editor spec under a `## Constraints & resolutions` section (created on first use,
   extended after), one bullet per blocker — "`reason` — `fix`" — then runs a §8 `sync`
   against the amended spec and the Build & test panel re-enters "Generating the steps". The
@@ -233,9 +257,22 @@ source:
   version like any spec text. If the rebuild blocks again the new entry carries a muted
   "Previously resolved" list of this session's earlier resolutions, so a fix that didn't
   take is visible.
+- **Any blocker with §8 `kind: user-action`** — the Mac isn't ready, the automation is
+  fine: the entry offers **Dismiss only** (never "Apply to the spec & sync", even on a
+  steps/sync block — there is nothing to amend). The blocker body carries the agent's
+  instructions (what to install or start, why, a clickable download link, the offer of
+  step-by-step help); the user acts on them, then replies or re-runs. A mixed entry
+  (user-action and ordinary blockers together) keeps the source's primary button — it
+  applies only the ordinary blockers' resolutions.
+
+Auto-dismiss on reply: sending a chat/create message from the composer marks open
+**spec/chat-source** blockers entries dismissed — the reply answers the clarification
+(deliberately even when the message is unrelated: Dismiss is non-destructive and the
+entry stays readable as its one-line summary). Steps/sync entries stay open — their
+Apply button remains useful until a sync lands.
 
 Dismiss collapses the entry to a one-line muted summary ("N blockers — dismissed";
-singular "1 blocker — dismissed") and, for
+singular "1 blocker — dismissed"; left-aligned like all agent output) and, for
 steps/sync blocks, leaves the workflow out of sync with the spec editable and the panel
 showing out of sync. A completed sync collapses any pending blockers entry the same way —
 its blockers describe steps that no longer exist. No automatic loop cap — the cycle is
@@ -340,7 +377,7 @@ editors enter with
   like a manual spec edit (toast "Spec updated — the workflow is out of sync. Sync the steps
   before saving."), and the Build & test panel's "Sync now" rebuilds the steps later; while
   the chat job is in flight the Save hint reads "Working on the request…", and cancelling it
-  from the composer progress block leaves the draft untouched (toast "Edit stopped — the
+  from the composer's Cancel button leaves the draft untouched (toast "Edit stopped — the
   spec is unchanged."). On failure the §8 error renders as a thread error entry; a `blocked`
   outcome renders a thread blockers entry (source: chat) — either way the draft is
   untouched. Manual spec/instruction edits are mutually exclusive (one edit at a time), and
@@ -352,8 +389,11 @@ editors enter with
   and name/description are user-owned, never agent-rewritten, and stay out). One ghost **Undo**
   restores it all, so the draft looks **exactly as it did before that request** — including
   steps a chained `sync: true` action rewrote, which is why a completed sync does **not**
-  clear the snapshot. The Undo is a **standalone thread row** — a quiet centered ghost
-  **"Undo this change"** button at the small text-button size, rendered directly beneath
+  clear the snapshot. The Undo is a **standalone thread row** — a left-aligned
+  row holding a quiet **"Undo this change"** tag: an `.ad-btn-pill` (the
+  composer pills' small mono look) led by a rotate-left glyph, deliberately
+  lighter than the `.ad-btn-soft` option buttons — those are the agent's
+  suggested next steps, undo is an escape hatch. Rendered directly beneath
   the **last** thread entry the request produced (the snapshot's anchor): the response's
   final rewrite/system chip — doc rewrites and the "Renamed to …" / "Description updated."
   chips included — and, when a sync lands while the snapshot exists (chained or manual),
@@ -373,7 +413,8 @@ editors enter with
   assumes its earlier rewrites still stand. The
   snapshot is single-level — each new draft-changing response replaces it — and it clears
   on any manual document Save (spec, build instructions, or notes — an undo would silently
-  destroy the newer manual work), on a repair-block spec amend, and on loading a version
+  destroy the newer manual work), on a repair-block spec amend, on Clear chat (the anchor
+  row leaves with the thread), and on loading a version
   from the Version menu. It lives only in
   editor state: it is not part of the serialized draft and does not survive leaving the page.
   There is deliberately **no multi-level revert history**: chat can walk any change back, and
@@ -451,7 +492,7 @@ editors enter with
   Secrets card's New secret button), the
   build-instructions Edit button, the Build & test panel's test-values editors and its Test
   button, the version menu, the drafting-agent picker, and Discard draft / Start over. The only
-  live control is the running job's Cancel button (the composer progress block's). **Rewrites
+  live control is the running job's Cancel button (the composer's). **Rewrites
   lock while a test
   executes** — while a draft test is executing, every affordance that would rewrite the
   workflow under the running test disables: the panel's sync button, the spec card's Edit,
@@ -462,7 +503,7 @@ editors enter with
   45 % opacity, default cursor, no hover response. The step list dims to the same 45 % opacity
   whenever it can't be trusted as-is: while the workflow is out of sync, while a sync is
   rewriting the steps, and while an agent spec rewrite is in flight. The Steps card header carries no in-sync badge (no "in sync with
-  spec" check) — sync state lives only in the panel. The composer progress block's
+  spec" check) — sync state lives only in the panel. The composer's
   **Cancel** button cancels the in-flight sync (`DELETE /drafts/{jobId}`) no matter
   how it was started (the panel, a repair-block apply, "Rebuild the steps"): the steps and spec
   are left untouched and the workflow returns to its pre-sync state, announced by a toast
@@ -642,7 +683,7 @@ editors enter with
   text's left edge, and the sync control right-aligned at the zone's top — accent-primary
   **Sync now** while out of sync, a faint disabled text button while drafting or syncing;
   disabled per Dirty gating (including while its own sync
-  runs — cancelling lives in the composer progress block), never hidden — with the **test
+  runs — cancelling lives in the composer's Cancel button), never hidden — with the **test
   zone** under a hairline. In the in-sync states (4–6) the build zone disappears and the
   panel is a **single test zone** under the header hairline; sync access stays as a faint
   **Sync with spec** text button riding the test zone's action row (the same §8 `sync`
@@ -774,7 +815,8 @@ editors enter with
   CONVERSATION context names the run. **On failure nothing analyzes by itself:** the panel
   shows the "Test failed" line plus an **"Analyze the failure"** button on the action row —
   it sends the **canned analyze chat message** "The test failed at step `<name>` — figure
-  out why and change the automation so it won't happen again." as an ordinary §8 chat job
+  out why. If the automation is at fault, fix it; if it's something I need to do on this
+  Mac, tell me what to do and how instead." as an ordinary §8 chat job
   (gated exactly like the chat input, so it disables while any §8 job is in flight): the
   §8 RECENT RUNS context carries the failing run's error and log tails, and the response —
   an explanation, a spec rewrite, actions that resync and retest — lands in the thread
@@ -786,8 +828,10 @@ editors enter with
 AI** button behaves as: open edit mode on that automation (resuming a stored draft when one
 exists, else seeding the editor from the current version as usual), append a **system**
 thread entry naming the failure ("Execution failed at step `<name>` — `<message>`"), and
-immediately send the canned analyze chat message "This execution failed — figure out why
-and change the automation so it won't happen again." (the step is not repeated — the
+immediately send the canned analyze chat message "This execution failed — figure out why.
+If the automation is at fault, change it so it won't happen again; if the fix is
+something I need to do on this Mac (install or start an app, sign in), tell me what to do
+and how instead." (the step is not repeated — the
 system entry directly above already names it) as a §8 chat job
 carrying the execution's id as the §19 `runId`, so the RECENT RUNS context includes that
 run in full detail however old it is. The outcome lands like any chat outcome. While

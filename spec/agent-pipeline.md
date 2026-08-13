@@ -144,7 +144,9 @@ secrets, same yaml lists), the build instructions, **NOTES** — the §4.1 notes
 nonempty ("your own working knowledge from earlier sessions — trust it before rediscovering"),
 **CONVERSATION** — the most recent §11 thread entries (capped at the last 20; user text,
 answer text, error-entry text, and one-line summaries of rewrite/blocker/system entries — a
-blocker summary keeps its clipped `details`, so a build-diagnosis failure's specifics reach
+blocker summary keeps its clipped `details` and prefixes "(needs user action)" when the
+blocker carries `kind: user-action`, so a build-diagnosis failure's specifics and a
+pending install ask both reach
 later chats — context only, so a follow-up request reads naturally), **RECENT RUNS** (below), **PACKAGES** — present when the
 draft declares §6.2 packages: the fast §6.2 installed-check's per-package status and version
 as a yaml list, so install trouble is answerable, **AUTOMATION** — the automation's current
@@ -173,7 +175,9 @@ contract:
   failed and why; keep it a terse cheat sheet, not a log), `actions.yaml` (follow-up
   actions, below). Prose before the first marker is the accompanying chat message shown to
   the user (optional).
-- The blocker envelope stays reserved for genuine impossibility.
+- The blocker envelope stays reserved for genuine impossibility and for fixes that are
+  user action outside the app (`kind: user-action` — e.g. a missing desktop dependency a
+  failed run reveals; Blocker response below).
 
 **RECENT RUNS section** — assembled by the backend from the §5 execution store, never sent
 by the editor: the most recent settled executions of this automation/draft, newest first,
@@ -418,26 +422,39 @@ notes rewrite (§11).
    stored triggers stay user-owned (§5).
 
 **Blocker response (either call).** When the task cannot be built as asked — a needed
-capability, grant, or framework policy makes it impossible — the agent returns, instead of its
+capability, grant, or framework policy makes it impossible — **or when the real fix is
+something only the user can do outside the app** (install a desktop app, sign in
+somewhere, start a program), the agent returns, instead of its
 file blocks, a blocker envelope:
 
 ```
 ===BLOCKED===
 blockers:
   - reason: One sentence naming the problem.
-    fix: The suggested resolution, in plain words.
-    details: Optional longer explanation.
+    fix: The suggested resolution — markdown, links included.
+    details: Optional longer explanation (markdown).
+    kind: user-action   # optional; only when the fix is something the USER does on
+                        # their Mac — omit for a true impossibility
 ===END===
 ```
 
 Validation: YAML with a nonempty `blockers` list; every entry carries a nonempty `reason` and
-`fix` (`details` optional); no file blocks alongside it. `framework-instructions.md` tells the
-agent to use it only for genuine impossibility (never mere uncertainty), to report **all**
+`fix` (`details` optional); `kind`, when present, must be the literal `user-action` —
+anything else is a validation error feeding the repair round; no file blocks alongside it.
+`fix` and `details` are markdown — §11 renders them through the shared renderer, so
+download links are clickable. A `kind: user-action` blocker says the automation is fine
+but the Mac isn't ready: its text names what to install or start, says why the automation
+needs it, carries a markdown download link when one exists, and closes by offering
+step-by-step install instructions. `framework-instructions.md` tells the
+agent to use the envelope only for genuine impossibility or needed user action (never mere
+uncertainty, and never `user-action` for anything a declared pip package solves), to
+report **all**
 blockers in one response, and to write plain words. A valid blocker envelope ends the job in
 its own terminal state **`blocked`** — not `failed`: there is nothing to repair, so the repair
 round below is skipped and no error is raised. A malformed blocker envelope is an invalid
 response like any other (repair round, then failure). The blockers ride the job payload (§19)
-and are logged with the invocation like any response. UI handling is §11's Blockers &
+and are logged with the invocation like any response. Each blocker's optional `kind` rides
+the payload with it. UI handling is §11's Blockers &
 clarifications.
 
 **Failure policy.** A transient harness failure (a timeout, or a nonzero exit that looks
@@ -511,7 +528,7 @@ the retry / repair / diagnosis notices, and each `Installing <pip spec>…` line
 appended event also becomes the current `detail` (marker-change events set the full
 counted message), so `detail` is always the newest activity; stage changes append nothing —
 the stage label is its own field. `events` rides the job beside `stage`/`detail` (§19) and
-backs the §11 footer activity feed.
+backs the §11 thread progress entry's activity feed.
 
 **Failed-run analysis is a chat message.** There is no separate issue-analysis call:
 the chat call's RECENT RUNS section already carries a failed run's error and log tails, so
@@ -519,4 +536,10 @@ the chat call's RECENT RUNS section already carries a failed run's error and log
 button and the §7/§9.2 Fix-with-AI entry just send canned chat messages (the latter naming
 the execution via the §19 `runId` body field). One call shape, one repair loop, one thread.
 Secret values never travel: the log tails are the already-redacted execution output (§6).
+The canned messages permit both outcomes — fix the automation, or tell the user what to
+do — and the CHAT task directs the diagnosis: when the RECENT RUNS show the failure comes
+from the user's Mac rather than the steps — a missing desktop app or a daemon that isn't
+running (a §6 pre-flight error, `ConnectionRefusedError` to a local service, "command not
+found" on a binary) — the agent returns a `kind: user-action` blocker with instructions
+instead of rewriting the automation.
 

@@ -284,6 +284,29 @@ def test_truncated_blocker_rejected():
         parse_blockers(BLOCKED.replace("===END===", ""))
 
 
+def test_blocker_kind_user_action_rides_the_entry():
+    # §8: optional `kind: user-action` — the fix is something the USER does on
+    # their Mac; the key rides the parsed entry only when present
+    bl = parse_blockers(BLOCKED.replace(
+        "    details: Only files and web pages are reachable.\n",
+        "    details: Only files and web pages are reachable.\n    kind: user-action\n"))
+    assert bl == [{"reason": "Needs physical mail.", "fix": "Use a digital source.",
+                   "details": "Only files and web pages are reachable.",
+                   "kind": "user-action"}]
+
+
+def test_blocker_kind_absent_stays_absent():
+    # backward compatibility: no `kind` key in the parsed dict when not sent
+    assert "kind" not in parse_blockers(BLOCKED)[0]
+
+
+def test_blocker_kind_rejects_other_values():
+    with pytest.raises(ValueError, match="user-action"):
+        parse_blockers(BLOCKED.replace(
+            "    fix: Use a digital source.\n",
+            "    fix: Use a digital source.\n    kind: impossible\n"))
+
+
 # ---------- prompts ----------
 
 def test_spec_prompt_carries_framework_instructions_and_request():
@@ -314,10 +337,13 @@ def test_prompts_carry_grants_yaml():
 
 
 def test_prompts_carry_blocker_contract():
-    # §8: framework-instructions travel with every call, blocker envelope included
+    # §8: framework-instructions travel with every call — blocker envelope,
+    # the user-action kind, and the straightforward-first dependency policy
     for p in (build_spec_prompt("x", None, GRANTS),
               build_steps_prompt("sync", "# T\n\nBody.", None, GRANTS)):
         assert "===BLOCKED===" in p
+        assert "kind: user-action" in p
+        assert "canonical tool" in p and "pre-flight" in p
 
 
 def test_spec_prompt_section_order():
@@ -788,6 +814,28 @@ def test_chat_job_blocker_envelope(monkeypatch):
     assert j["status"] == "blocked", j
     assert j["blockedAt"] == "chat" and not j["diagnosed"]
     assert j["blockers"] == [{"reason": "r", "fix": "f", "details": ""}]
+
+
+def test_chat_job_user_action_blocker_rides_the_payload(monkeypatch):
+    # §8: a user-action blocker (install/start something on the Mac) settles
+    # the chat job blocked with the kind riding each blocker
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setattr(
+        harness, "invoke",
+        lambda agent, prompt, **kw:
+        "===BLOCKED===\nblockers:\n"
+        "  - reason: Transmission isn't installed.\n"
+        "    fix: Download it from [transmissionbt.com](https://transmissionbt.com).\n"
+        "    kind: user-action\n===END===\n")
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "fix the failed run",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "blocked", j
+    assert j["blockers"] == [{
+        "reason": "Transmission isn't installed.",
+        "fix": "Download it from [transmissionbt.com](https://transmissionbt.com).",
+        "details": "", "kind": "user-action"}]
 
 
 def test_chat_job_multi_block_outcome(monkeypatch):
@@ -1581,6 +1629,21 @@ def test_chat_prompt_conversation_cap_and_clipping():
     assert p.count("[500 chars omitted]") == 2  # head 2000 + tail 500 kept
     assert "user: " + "u" * 2000 in p
     assert "not a dict" not in p
+
+
+def test_chat_prompt_marks_user_action_blockers():
+    # _conversation_lines: a kinded blocker keeps its classification, so a
+    # follow-up chat knows an install ask is still pending
+    cur = {"spec": "# T\n\nbody", "params": [], "steps": []}
+    chat = [{"kind": "blockers", "blockers": [
+        {"reason": "Transmission isn't installed.", "fix": "Install it.",
+         "kind": "user-action"},
+        {"reason": "Needs a channel id.", "fix": "Name it in the spec."},
+    ]}]
+    p = build_chat_prompt("x", cur, GRANTS, chat)
+    assert "(needs user action) Transmission isn't installed. — Install it." in p
+    assert "(needs user action) Needs a channel id." not in p
+    assert "Needs a channel id. — Name it in the spec." in p
 
 
 def test_validate_actions_test_values_must_be_mapping():

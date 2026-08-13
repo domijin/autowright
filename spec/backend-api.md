@@ -254,8 +254,9 @@ remain plain dicts (§2).
   activity feed) + validated §8 draft payload — on a create job the payload
   carries call 1's validated spec as soon as the spec call completes (the §11 spec card renders
   it while the steps call is still working); a `blocked` job's state is
-  `blocked` and it carries the §8 `blockers` list plus `blockedAt: spec | steps | chat` (a create job
-  blocked at the steps call keeps call 1's spec in its payload, so the §11 Blocker modal can
+  `blocked` and it carries the §8 `blockers` list — each entry `{ reason, fix, details?,
+  kind? }`, `kind` only ever `user-action` (§8) — plus `blockedAt: spec | steps | chat` (a create job
+  blocked at the steps call keeps call 1's spec in its payload, so the §11 blockers entry can
   amend and rebuild it); a `blocked` job whose blockers came from the §8 build-diagnosis call
   (or its deterministic fallback) additionally carries `diagnosed: true`, and `failed` is
   reserved for harness errors and crashes — a validation double-failure always ends `blocked`

@@ -236,7 +236,7 @@ export function BuildTestPanel({
     if (!rev || !test || anyJobBusy || testLive || viewingOld) return
     const stepName = testExec?.error?.step
     void sendChat(
-      `The test failed${stepName ? ` at step ${stepName}` : ''} — figure out why and change the automation so it won’t happen again.`,
+      `The test failed${stepName ? ` at step ${stepName}` : ''} — figure out why. If the automation is at fault, fix it; if it’s something I need to do on this Mac, tell me what to do and how instead.`,
       test.executionId)
   }
 

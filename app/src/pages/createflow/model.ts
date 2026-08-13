@@ -136,7 +136,7 @@ export interface Rev {
   genStage: string | null
   // §8 live progress: the job's finer in-flight line under the stage
   genDetail: string | null
-  // §8 activity feed: the newest event texts (footer feed's dim history)
+  // §8 activity feed: the newest event texts (thread progress entry's dim history)
   genEvents: string[]
   // §11 drafting-on-Review (create): call-1/call-2 in-flight flags drive the
   // spec-card spinner and the right-column skeletons; blockers and spec-call

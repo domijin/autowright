@@ -63,6 +63,16 @@ blockers:
 ===END===
 """
 
+# §8 kind: user-action — the fix is something the USER does on their Mac
+USER_ACTION_ENVELOPE = """===BLOCKED===
+blockers:
+  - reason: Transmission isn't installed on this Mac.
+    fix: Download it from [transmissionbt.com](https://transmissionbt.com/download.html) and install it, then run the automation again.
+    details: The automation drives Transmission's RPC interface, so it can't run until the app is installed and open. Want step-by-step install instructions?
+    kind: user-action
+===END===
+"""
+
 
 def respond(prompt: str) -> str:
     if "question:" in prompt.lower() and "=== TASK ===" not in prompt:
@@ -75,6 +85,8 @@ def respond(prompt: str) -> str:
         user = (m.group(1) if m else "").strip()
         if "blocked-chat" in user.lower():
             return BLOCKED_ENVELOPE
+        if "install-blocked" in user.lower():
+            return USER_ACTION_ENVELOPE
         if "undo" in user.lower():
             # §8 undo action — always alone (no rewrites, no other actions)
             return ("Rolling the draft back.\n"

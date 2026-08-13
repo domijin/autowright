@@ -60,12 +60,12 @@ describe('editor chat e2e', () => {
     await input.fill('hi')
     expect(await input.evaluate((el) => el.clientHeight)).toBe(hShort)
 
-    // A change request: while the §8 chat job runs, the footer swaps the input
-    // for the page's only live-job surface — stage label + Cancel (§11).
+    // A change request: while the §8 chat job runs, the thread progress entry
+    // is the page's only live-job surface — stage label + spinner render at
+    // the bottom of the thread, and the composer's Send becomes Cancel (§11).
     await page.getByPlaceholder(CHAT_INPUT).fill('Track new manga chapters instead')
     await page.getByRole('button', { name: 'Send' }).click()
-    // .first(): the header save hint shows the same stage string as the footer
-    await page.getByText('Working on the request…').first().waitFor({ timeout: 15_000 })
+    await page.getByTestId('chat-thread').getByText('Working on the request…').waitFor({ timeout: 15_000 })
     await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
 
     // The rewrite lands as a "Spec updated" entry carrying the request text
@@ -103,6 +103,14 @@ describe('editor chat e2e', () => {
 
     await page.getByText('In sync with the spec.').waitFor()
     await shot(page, 'editor-chat-synced.png')
+
+    // §11 Clear chat: confirm empties the thread only — the draft (and its
+    // in-sync state) is untouched and the composer still works.
+    await page.getByTestId('chat-clear').click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Clear chat' }).click()
+    await expect.poll(() => page.getByText('Spec updated', { exact: true }).count()).toBe(0)
+    await page.getByText(/Ask anything, or describe a change/).waitFor()
+    await page.getByText('In sync with the spec.').waitFor()
 
     // The chat-driven edit saves like any other draft.
     await page.getByRole('button', { name: 'Save as v2' }).click()

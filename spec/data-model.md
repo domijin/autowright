@@ -370,12 +370,14 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   Persisted thread entries: `{ id: uuid, kind: user | answer | rewrite | blockers | system
   | error, text?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` — `user` a
   message, `answer` the agent's markdown reply,
-  `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list
+  `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list —
+  each blocker `{ reason, fix, details?, kind? }`, `kind` only ever the literal
+  `user-action` (§8 blocker response) —
   (`source`: chat | spec | steps | sync — which call produced it; `spec` is the create-flow
   spec call, §11 — `error` entries from that call carry the same `source`), `system` a
   quiet status chip, `error` a red failure entry (a failed §8 job's message, §11) — persisted
-  so a later chat's CONVERSATION context still names the failure. The §11 footer action block
-  (live job progress) is editor state only, never persisted.
+  so a later chat's CONVERSATION context still names the failure. The §11 thread progress
+  entry (live job progress) is editor state only, never persisted.
   Resuming restores the grant checkboxes from the draft; the automation's live
   stepAgents/allowedSecrets stay untouched until the draft is saved as vN+1. A Draft
   execution honors the draft's grants when present, not the live ones.

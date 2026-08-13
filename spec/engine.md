@@ -382,9 +382,18 @@ manifests carry no version; every automation declaring the distribution picks up
 version at its next execution automatically.
 
 **Native tools (deliberately deferred).** System binaries (ffmpeg, tesseract, …) are not
-installable — pip is the only channel. When a task needs one, the drafting agent prefers a pip
-package that bundles a static binary (e.g. `imageio-ffmpeg` — binary ships inside the wheel;
-the step passes its path to the tool) and returns a §8 blocker when no such wheel exists.
+installable — pip is the only channel. That never justifies a contorted workaround: the
+drafting agent goes straightforward-first (§8 `framework-instructions.md`). When a pip
+package bundles a genuinely equivalent static binary (e.g. `imageio-ffmpeg` — binary ships
+inside the wheel; the step passes its path to the tool), it wins — a bundled equal beats
+asking the user to install anything. Otherwise the steps target the **canonical tool for
+the job** (Transmission for torrents, the Discord desktop app, …) with a deterministic
+**pre-flight** that fails in plain words when the tool is absent — `shutil.which` for a
+CLI, a quick connect for a local daemon — raising an error that names the tool, says it
+isn't installed or running, and includes the download URL, so the failure reads as user
+instructions and reaches later §8 chat calls verbatim via RECENT RUNS. A dependency the
+agent already **knows** is missing (the user said so; a run proved it) yields a §8
+`kind: user-action` blocker instead of steps that will fail.
 Future escalation, to build only when a real automation is blocked on a binary with no wheel:
 a `tools:` manifest channel backed by a bundled micromamba installing exactly-pinned
 conda-forge packages into `<app-support>/env/`, with the same ensure semantics (§8 install

@@ -81,8 +81,9 @@ formatting, store reducers, spec/text round-trips) plus a small happy-dom compon
 under its safety rules — the original motivation: installer/set-up card flows (e2e must
 never click them), queued/waiting execution rows (timing-hard to stage live), and
 grant-checkbox → draft-request payloads — and editor branch behavior uneconomical to stage
-live: blocker-entry states and field locking, chat-response application branches, footer
-stage labels, collapsed-card defaults, and analyze/agent-picker request payloads. Full
+live: blocker-entry states and action gating, chat-response application branches, thread
+progress-entry stage labels, collapsed-card defaults, and analyze/agent-picker request
+payloads. Full
 journeys stay e2e; all other component rendering is exercised by the playwright-driven
 Electron path, never by DOM unit tests.
 

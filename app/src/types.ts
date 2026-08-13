@@ -336,11 +336,15 @@ export interface DraftPayload {
   actions?: ChatActions  // §8 chat call: validated follow-up actions
 }
 
-// §8 blocker envelope entry — a `blocked` job's payload.
+// §8 blocker envelope entry — a `blocked` job's payload. `kind: user-action`
+// marks a fix the USER does on their Mac (install/start something) — the
+// automation is fine; §11 renders it Dismiss-only with the instructions as
+// markdown.
 export interface Blocker {
   reason: string
   fix: string
   details?: string
+  kind?: 'user-action'
 }
 
 // §8 activity feed entry — one discrete drafting milestone (file started, web

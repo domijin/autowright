@@ -146,9 +146,11 @@ description: One-line description  # rewrite its one-line description
 undo: true                  # restore the draft to before the last request — exact revert, one level
 ===END===
 
-Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work", prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
+Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
-Use the blocker envelope only when a requested change is genuinely impossible."""
+- A failure the user can't fix by changing the automation → when the RECENT RUNS show the failure comes from the user's Mac, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
+
+Use the blocker envelope when a requested change is genuinely impossible, or when the real fix is user action outside this app (`kind: user-action`)."""
 
 
 def spec_as_md(current: dict | None) -> str:
@@ -251,7 +253,8 @@ def _conversation_lines(chat: list | None) -> str:
             lines.append("[spec updated] " + text)
         elif kind == "blockers":
             bl = "; ".join(
-                f"{b.get('reason', '')} — {b.get('fix', '')}"
+                ("(needs user action) " if b.get("kind") == "user-action" else "")
+                + f"{b.get('reason', '')} — {b.get('fix', '')}"
                 + (f" ({clip_response(str(b['details']).strip(), 400, 0)})"
                    if b.get("details") else "")
                 for b in (e.get("blockers") or []) if isinstance(b, dict))
@@ -475,8 +478,13 @@ def parse_blockers(text: str) -> list[dict] | None:
         if not isinstance(b, dict) or not str(b.get("reason") or "").strip() \
                 or not str(b.get("fix") or "").strip():
             raise ValueError("every blocker needs a nonempty reason and fix")
-        out.append({"reason": str(b["reason"]).strip(), "fix": str(b["fix"]).strip(),
-                    "details": str(b.get("details") or "").strip()})
+        entry = {"reason": str(b["reason"]).strip(), "fix": str(b["fix"]).strip(),
+                 "details": str(b.get("details") or "").strip()}
+        if b.get("kind") is not None:
+            if b["kind"] != "user-action":
+                raise ValueError("a blocker's `kind`, when present, must be the literal user-action")
+            entry["kind"] = "user-action"
+        out.append(entry)
     return out
 
 

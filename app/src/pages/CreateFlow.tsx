@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import type { Agent, Blocker, ChatEntry } from '../types'
+import type { Agent, ChatEntry } from '../types'
 import { BtnPrimary, ConfirmModal, HeaderActions, PULSE, PopMenu, ScrollArea, Spinner, usePopover } from '../ui'
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import {
@@ -274,27 +274,6 @@ export default function CreateFlow() {
 
   const selAgent = agents.find((g) => g.id === agentId) ?? agents.find((g) => g.default) ?? agents[0] ?? null
 
-  // §11 clarification case: the user answers spec-call blockers by editing the
-  // entry's cards; the answers join the description and a new create job
-  // starts in place. Chat-source blockers answer as a fresh chat message.
-  const answerBlockersEntry = (entry: ChatEntry) => {
-    const blockers = entry.blockers ?? []
-    if (blockers.some((b) => !b.reason.trim() || !b.fix.trim())) return
-    patchEntry(entry.id, { dismissed: true })
-    const answers = blockers.map(blockerLine).join('\n')
-    if (entry.source === 'chat') {
-      void jobs.sendChat(answers)
-      return
-    }
-    // The restarted create call rides THIS entry — point the cancel ref at it
-    // like sendMessage does, or a Cancel during the restart would delete the
-    // original request entry and leave the answers orphaned in the thread.
-    const answersEntry = newEntry({ kind: 'user', text: answers })
-    jobs.createEntryRef.current = answersEntry.id
-    setRev((r) => (r ? { ...r, chat: [...r.chat, answersEntry] } : r))
-    void jobs.submitCreate(`${jobs.lastCreateRef.current.trim()}\n\n${answers}`)
-  }
-
   // §11 Start over (create): cancel any job, discard the pending slot (thread
   // included), return to the empty state with the description in the input.
   const resetCreate = async () => {
@@ -347,6 +326,8 @@ export default function CreateFlow() {
 
   // §11 chat input send: with no spec or steps yet (fresh create), the message
   // is the description and starts the create job; otherwise it's a chat job.
+  // A reply while a spec-source blockers entry is open is the clarification
+  // answer: it joins the original description and a new create job starts.
   const sendMessage = () => {
     if (!rev || anyJobBusy || testLive || viewingOld) return
     const request = chatText.trim()
@@ -354,10 +335,27 @@ export default function CreateFlow() {
     const isCreate = !isEdit && rev.spec.length === 0 && rev.steps.length === 0
     if (!isCreate) { void jobs.sendChat(); return }
     setChatText('')
+    const specBlock = [...rev.chat].reverse()
+      .find((e) => e.kind === 'blockers' && !e.dismissed && e.source === 'spec')
     const entry = newEntry({ kind: 'user', text: request })
     jobs.createEntryRef.current = entry.id
-    setRev((r) => r && ({ ...r, chat: [...r.chat, entry] }))
-    void jobs.submitCreate(request)
+    setRev((r) => r && ({
+      ...r,
+      // §11 auto-dismiss on reply: the answer settles the clarification
+      chat: [...r.chat.map((e) => (specBlock && e.id === specBlock.id ? { ...e, dismissed: true } : e)), entry],
+    }))
+    // NOTE: lastCreateRef is a ref — a spec-blocked create that left the page
+    // loses it, but a spec-blocked draft holds no spec and is never kept, so
+    // the entry cannot outlive the ref (pre-existing limitation).
+    void jobs.submitCreate(specBlock ? `${jobs.lastCreateRef.current.trim()}\n\n${request}` : request)
+  }
+
+  // §11 Clear chat: empties the thread only — the debounced draft persist
+  // serializes `chat: []`, which unlinks chat.jsonl backend-side. The undo
+  // snapshot clears with it (its anchor row leaves with the thread); the
+  // draft documents and dirty state are untouched.
+  const clearChat = () => {
+    setRev((r) => r && ({ ...r, chat: [], undo: null, touched: true }))
   }
 
   // §11 draft undo: restore the full pre-request snapshot — the draft looks
@@ -486,12 +484,13 @@ export default function CreateFlow() {
   }
 
   // §11 blockers-entry apply — same door for every non-clarification source:
-  // write the edited cards into the spec's "Constraints & resolutions"
-  // section, collapse the entry, then sync the steps.
+  // write the blockers into the spec's "Constraints & resolutions" section,
+  // collapse the entry, then sync the steps. §8 user-action blockers are
+  // skipped — the Mac isn't ready, there is nothing to amend.
   const applyBlockersEntry = (entry: ChatEntry) => {
     if (!rev) return
-    const blockers = entry.blockers ?? []
-    if (blockers.some((b) => !b.reason.trim() || !b.fix.trim())) return
+    const blockers = (entry.blockers ?? []).filter((b) => b.kind !== 'user-action')
+    if (!blockers.length) return
     setRev((r) => r && ({
       ...r,
       resolved: [...r.resolved, ...blockers.map(blockerLine)],
@@ -519,7 +518,7 @@ export default function CreateFlow() {
     appendEntry({ kind: 'system', text: failure })
     if (anyJobBusy || testLive || !ex || ex.status !== 'failed') return
     // The seed entry above already names the failing step — don't repeat it here.
-    void jobs.sendChat('This execution failed — figure out why and change the automation so it won’t happen again.', fx)
+    void jobs.sendChat('This execution failed — figure out why. If the automation is at fault, change it so it won’t happen again; if the fix is something I need to do on this Mac (install or start an app, sign in), tell me what to do and how instead.', fx)
   }, [rev != null]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11: settled runs seed the thread — entering the editor after the newest
@@ -656,13 +655,6 @@ export default function CreateFlow() {
   const isCreateEmpty = !isEdit && !!rev && rev.spec.length === 0 && rev.steps.length === 0 && !drafting
   const inputDisabled = anyJobBusy || testLive || viewingOld
   const lastRewriteId = rev ? [...rev.chat].reverse().find((e) => e.kind === 'rewrite')?.id : undefined
-  const patchEntryBlocker = (id: string, i: number, patch: Partial<Blocker>) =>
-    setRev((r) => r && ({
-      ...r,
-      chat: r.chat.map((e) => (e.id === id
-        ? { ...e, blockers: (e.blockers ?? []).map((b, k) => (k === i ? { ...b, ...patch } : b)) }
-        : e)),
-    }))
 
   return (
     <div style={{
@@ -697,9 +689,8 @@ export default function CreateFlow() {
             undoDraft={undoDraft}
             runSync={() => void jobs.runSync()}
             patchEntry={patchEntry}
-            patchEntryBlocker={patchEntryBlocker}
-            answerBlockersEntry={answerBlockersEntry}
             applyBlockersEntry={applyBlockersEntry}
+            clearChat={clearChat}
             cancelChat={jobs.cancelChat}
             cancelCreate={jobs.cancelCreate}
             cancelSync={jobs.cancelSync}

@@ -10,7 +10,7 @@ import { useStore } from '../../store'
 import { useTriggerPreview } from '../../triggers'
 import { ParamValueEditor } from '../../steps'
 import type { Agent, Automation, ChatEntry, DraftTrigger, ParamDef } from '../../types'
-import { Eyebrow, GreenCheck, ProgressBar, Spinner, agName, dispModel } from '../../ui'
+import { Eyebrow, GreenCheck, ProgressBar, Spinner } from '../../ui'
 import { type Rev, applyTestValues, serializeDraft } from './model'
 import { cardStyle } from './SectionCards'
 
@@ -78,7 +78,6 @@ export interface BuildTestPanelProps {
   appendEntry: (e: Omit<ChatEntry, 'id' | 'at'>) => void
   isEdit: boolean
   auto: Automation | null
-  selAgent: Agent | null
   drafting: boolean
   outOfSync: boolean
   anyJobBusy: boolean
@@ -93,7 +92,7 @@ export interface BuildTestPanelProps {
 }
 
 export function BuildTestPanel({
-  rev, up, appendEntry, isEdit, auto, selAgent,
+  rev, up, appendEntry, isEdit, auto,
   drafting, outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
   agentGap, stageLabel, lockStyle, runSync, sendChat,
 }: BuildTestPanelProps) {
@@ -309,7 +308,7 @@ export function BuildTestPanel({
             }}>
               {drafting ? stageLabel
                 : rev.syncBusy
-                  ? `${selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'Your agent'} is rewriting the steps from your spec…`
+                  ? 'Rewriting the steps from your spec…'
                   : (rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
                     : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
                       : 'The workflow is out of sync — steps use a secret that isn’t allowed.')}

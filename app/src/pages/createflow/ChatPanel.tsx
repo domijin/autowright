@@ -402,7 +402,7 @@ export function ChatPanel({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Spinner size={13} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
-                {jobStageTitle(rev, installingPkgs, selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : null)}
+                {jobStageTitle(rev, installingPkgs)}
               </div>
             </div>
             {(() => {

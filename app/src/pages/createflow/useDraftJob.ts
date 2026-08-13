@@ -8,7 +8,6 @@ import { useEffect, useRef } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../types'
-import { agName, dispModel } from '../../ui'
 import {
   type Rev, jobStageTitle, mergeDraftTriggers, newEntry, persistChat,
   seedDrafting, seedEmpty, seedFromPayload, serializeDraft,
@@ -105,9 +104,7 @@ export function useDraftJob(d: DraftJobDeps) {
           if (j.status === 'done' || j.status === 'blocked' || j.status === 'failed') {
             setRev((r) => {
               if (!r) return r
-              const g = agents.find((a) => a.id === agentId) ?? agents.find((a) => a.default) ?? agents[0] ?? null
-              const title = jobStageTitle(r, r.genStage === 'Installing the packages',
-                g ? `${agName(g)} · ${dispModel(g)}` : null)
+              const title = jobStageTitle(r, r.genStage === 'Installing the packages')
               const feed = newEntry({ kind: 'activity', title, text: evs.map((e) => e.text).join('\n') })
               return { ...r, chat: [...r.chat, feed] }
             })

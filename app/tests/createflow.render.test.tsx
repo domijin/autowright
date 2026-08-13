@@ -712,11 +712,12 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect(screen.getAllByText('Cancel').length).toBe(1) // the composer's
   })
 
-  it('sync job: thread and panel status name the agent; spinner in the thread, Cancel in the composer', () => {
+  it('sync job: thread and panel share the sync line; spinner in the thread, Cancel in the composer', () => {
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('Sync with spec'))
     // the same live line renders in the thread and as the panel's status text
-    expect(screen.getAllByText('Cloud writer · Default model is rewriting the steps from your spec…').length).toBe(2)
+    // (no agent · model attribution — the composer's picker names the agent)
+    expect(screen.getAllByText('Rewriting the steps from your spec…').length).toBe(2)
     const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(document.body).length).toBe(1)
     expect(spinnersIn(screen.getByTestId('chat-thread')).length).toBe(1)

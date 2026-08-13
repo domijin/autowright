@@ -149,7 +149,8 @@ applies unchanged; the chat pane never collapses.
   renders at the bottom of the thread, styled as a left-aligned agent block: a spinner,
   the job's stage label ("Working on the
   request…" / "Writing the spec…" / "Installing the packages…" / "Generating the steps…" /
-  "`<agent>` is rewriting the steps from your spec…"; the Build & test panel's coarse
+  "Rewriting the steps from your spec…"; no title ever carries agent · model attribution —
+  the composer's picker names the agent; the Build & test panel's coarse
   state-1 label reads "Waiting for the spec…" while call 1 writes), and an **activity feed**
   beneath it — the job's §8 `events` lines as dim history (all of them, oldest first,
   each single-line with an ellipsis; the §8 per-job event cap bounds the list) above the
@@ -707,12 +708,13 @@ editors enter with
   below. Both zones share the card's 20 px side padding. States, first match wins:
   1. **Drafting** (create job in flight) — the coarse §8 stage label ("Waiting for the
      spec…" while call 1 writes, then "Installing the packages…" / "Generating the
-     steps…") as static text over a plain faint dot (no spinner). The live `detail` line lives in the footer action
-     block (Drafting on Review above), and the other right-column cards show their static
+     steps…") as static text over a plain faint dot (no spinner). The live `detail` line
+     lives in the thread progress entry
+     (Drafting on Review above), and the other right-column cards show their static
      placeholders.
-  2. **Sync in flight** — static line "`<agent>` is rewriting the steps from your spec…"
-     over a faint dot; the live `detail` line and the ghost **Cancel** live in the footer
-     action block (cancel semantics under Dirty gating above).
+  2. **Sync in flight** — static line "Rewriting the steps from your spec…"
+     over a faint dot; the live `detail` line lives in the thread progress entry and the
+     **Cancel** in the composer (cancel semantics under Dirty gating above).
   3. **Out of sync** — build zone: amber dot, the reason line and saving-is-locked
      explainer (Dirty gating above), primary **Sync now**; the test zone shows the test
      button disabled beside the muted hint "Sync first — a test executes the steps as

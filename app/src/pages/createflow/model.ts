@@ -53,11 +53,13 @@ export function persistChat(chat: ChatEntry[]): ChatEntry[] {
 
 // §11: one stage label per job kind — shared by the live thread progress
 // entry and the persisted activity entry's title, so the settled record reads
-// exactly like the spinner line it replaces.
-export function jobStageTitle(r: Rev, installing: boolean, agentLabel: string | null): string {
+// exactly like the spinner line it replaces. No agent · model attribution:
+// the composer's picker already names the agent, and naming it in one title
+// only would read as if a different agent handled the other jobs.
+export function jobStageTitle(r: Rev, installing: boolean): string {
   return r.chatBusy ? 'Working on the request…'
     : r.specBusy ? 'Writing the spec…'
-      : r.syncBusy ? `${agentLabel ?? 'Your agent'} is rewriting the steps from your spec…`
+      : r.syncBusy ? 'Rewriting the steps from your spec…'
         : installing ? 'Installing the packages…' : 'Generating the steps…'
 }
 

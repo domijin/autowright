@@ -955,7 +955,6 @@ export default function CreateFlow() {
                   appendEntry={appendEntry}
                   isEdit={isEdit}
                   auto={auto}
-                  selAgent={selAgent}
                   drafting={drafting}
                   outOfSync={outOfSync}
                   anyJobBusy={anyJobBusy}

@@ -194,6 +194,8 @@ per param), `spec-edit` / `spec-editor` (§11 SPEC card's Edit button and its ed
 textarea), `sync-steps` (§11 Build panel's Sync now / Sync with spec button),
 `chat-sync-now` (§11 chat thread rewrite entry's inline Sync now), `chat-thread` (§11
 chat thread's scrolling body — the element whose scrollTop the pinning tests measure),
+`chat-progress` (§11 thread's transient live-job progress entry — its stage label text
+also appears verbatim as settled activity-entry titles, so bare text can't reach it),
 `version-menu` (§11 editor version pill). New e2e targets that role/label/text cannot
 reach unambiguously get a test id added here.
 

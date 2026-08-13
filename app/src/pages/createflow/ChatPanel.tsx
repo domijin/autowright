@@ -438,7 +438,7 @@ export function ChatPanel({
             transient (derived from the job, never persisted), rendered as a
             left-aligned agent block at the bottom of the thread */}
         {anyJobBusy && (
-          <div>
+          <div data-testid="chat-progress">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Spinner size={13} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>

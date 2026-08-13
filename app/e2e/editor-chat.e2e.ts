@@ -65,7 +65,9 @@ describe('editor chat e2e', () => {
     // the bottom of the thread, and the composer's Send becomes Cancel (§11).
     await page.getByPlaceholder(CHAT_INPUT).fill('Track new manga chapters instead')
     await page.getByRole('button', { name: 'Send' }).click()
-    await page.getByTestId('chat-thread').getByText('Working on the request…').waitFor({ timeout: 15_000 })
+    // scoped to the live progress entry — the first job's settled activity
+    // entry repeats the same stage title in the thread
+    await page.getByTestId('chat-progress').getByText('Working on the request…').waitFor({ timeout: 15_000 })
     await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
 
     // The rewrite lands as a "Spec updated" entry carrying the request text

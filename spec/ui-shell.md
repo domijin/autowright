@@ -758,7 +758,10 @@ renderer: the badge returns to Checking while it runs, success toasts "`<name>` 
 X.X s — ready.", failure flips the badge to Needs setup and toasts "`<name>` didn't answer —
 needs setup." — and, when not default, "Make default" (toast "`<name>` is now the default —
 new automations use it.", the name falling back to the harness name); for every agent it holds
-"Remove agent…" (red, confirm modal). Default status is indicated by the absent "Make default"
+"Remove agent…" (red, confirm modal). Confirming the removal plays the §14 grid-card removal
+exit: the card fades out-down at exit timing, then the surviving cards slide (FLIP) into their
+new grid slots; if the delete request fails the card is restored in place. Default status is
+indicated by the absent "Make default"
 menu row — no chip. Empty state (dashed card): "No agents yet. Existing automations still execute on
 schedule — but you need an agent to create or edit them." + CTA "Add your first agent".
 

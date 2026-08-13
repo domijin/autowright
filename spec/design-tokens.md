@@ -203,6 +203,18 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   - **Two-way surfaces:** `Modal`, popover menus (`PopMenu` in `ui.tsx` — wraps `menuStyle`,
     used by every `usePopover` consumer) and `Toast` all enter at `--t-enter` and play a
     `--t-exit` fade-down before unmounting, on every dismissal path.
+  - **Grid-card removal** (Agents grid §12 — the one place a grid card is deleted in place):
+    deleting a card is a two-phase exit. Phase 1: the card's grid wrapper gets
+    `.ad-anim-card-exit` (`adFadeOutDown` at `--t-exit`/`--ease-exit`, `pointer-events: none`)
+    and stays rendered until `animationend` — even if the store has already dropped the agent
+    (the wrapper holds a snapshot of the card at its original list index, connection badge
+    frozen, so the card cannot change appearance mid-fade). Phase 2: on
+    `animationend` the card leaves the DOM and the surviving cards FLIP to their new grid
+    slots — sibling rects are captured just before removal, each moved card is offset back to
+    its old position with `transform`, then released to identity via a `transform` transition
+    at `--t-enter`/`--ease-enter` — so neighbors slide instead of snapping. The delete request
+    runs concurrently with the exit; if it fails the card is restored in place (siblings FLIP
+    back the same way) and the error toasts.
   - **Collapsibles:** the `Collapse` primitive in `ui.tsx` (`.ad-collapse` grid-rows
     `0fr`→`1fr`; content stays mounted) animates every expand/collapse section (the §11
     review cards — body and collapsed hint alike — §9.2 step rows and setup-guide

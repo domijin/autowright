@@ -423,6 +423,8 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-anim-page { animation: adFadeUp var(--t-page) var(--ease-enter) both; }
 .ad-anim-item { animation: adFadeUp var(--t-enter) var(--ease-enter) both; }
 .ad-anim-fade { animation: adFadeIn var(--t-enter) var(--ease-enter) both; }
+/* §14 grid-card removal, phase 1 — card fades out-down and stays until animationend */
+.ad-anim-card-exit { animation: adFadeOutDown var(--t-exit) var(--ease-exit) both; pointer-events: none; }
 
 /* collapsible body (ui.tsx Collapse): grid-rows 0fr→1fr height animation,
    content stays mounted; the inner wrapper must clip while closed */

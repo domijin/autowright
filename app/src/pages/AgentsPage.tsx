@@ -1,6 +1,6 @@
 // Agents page (§4.7, §12): agent cards with session-cached connection checks,
 // check/make-default/remove via row menu.
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore, type AgentCheck } from '../store'
 import type { Agent } from '../types'
@@ -144,6 +144,53 @@ function AgentCard({ ag, check, onDelete }: {
 export default function AgentsPage() {
   const { agents, agentChecks, go, showToast } = useStore()
   const [delAgent, setDelAgent] = useState<Agent | null>(null)
+  // §14 grid-card removal: `exiting` keeps the card rendered (as a snapshot at its
+  // original index) through the fade-out even if the store drops it first;
+  // `removedIds` hides it after animationend while the store catches up.
+  const [exiting, setExiting] = useState<{ ag: Agent; index: number; check: AgentCheck | undefined } | null>(null)
+  const [removedIds, setRemovedIds] = useState<string[]>([])
+  const gridRef = useRef<HTMLDivElement>(null)
+  const flipRects = useRef<Map<string, DOMRect> | null>(null)
+
+  // FLIP phase 2 (§14): after the exiting card leaves the DOM (or is restored),
+  // slide every surviving card from its captured rect to its new grid slot.
+  const captureRects = () => {
+    const grid = gridRef.current
+    if (!grid) return
+    const rects = new Map<string, DOMRect>()
+    for (const el of Array.from(grid.children)) {
+      const fid = el.getAttribute('data-flip-id')
+      if (fid) rects.set(fid, el.getBoundingClientRect())
+    }
+    flipRects.current = rects
+  }
+  useLayoutEffect(() => {
+    const rects = flipRects.current
+    flipRects.current = null
+    const grid = gridRef.current
+    if (!rects || !grid) return
+    for (const el of Array.from(grid.children) as HTMLElement[]) {
+      const fid = el.getAttribute('data-flip-id')
+      const prev = fid ? rects.get(fid) : undefined
+      if (!prev) continue
+      const next = el.getBoundingClientRect()
+      const dx = prev.left - next.left
+      const dy = prev.top - next.top
+      if (!dx && !dy) continue
+      el.style.transition = 'none'
+      el.style.transform = `translate(${dx}px, ${dy}px)`
+      void el.offsetWidth
+      el.style.transition = 'transform var(--t-enter) var(--ease-enter)'
+      el.style.transform = ''
+      el.addEventListener('transitionend', () => { el.style.transition = '' }, { once: true })
+    }
+  }, [removedIds])
+
+  const finishExit = (id: string) => {
+    captureRects()
+    setExiting(null)
+    setRemovedIds((ids) => [...ids, id])
+  }
 
   // §12 session cache: only agents with no cached status get checked, with a
   // small stagger. The cache entry is claimed synchronously (StrictMode
@@ -165,15 +212,32 @@ export default function AgentsPage() {
     if (!delAgent) return
     const ag = delAgent
     setDelAgent(null)
+    // §14: exit animation starts now; the delete request runs concurrently.
+    // The check is frozen in the snapshot so the badge can't flip mid-fade
+    // when the store's agentChecks entry is dropped on success.
+    setExiting({ ag, index: agents.findIndex((a) => a.id === ag.id), check: agentChecks[ag.id] })
     try {
       await api.deleteAgent(ag.id)
       const { [ag.id]: _gone, ...rest } = useStore.getState().agentChecks
       useStore.setState({ agentChecks: rest })
       showToast('Agent removed — automations it wrote still execute on schedule.')
-    } catch (e) { showToast((e as Error).message) }
+    } catch (e) {
+      // Restore the card in place; if it already left the DOM, FLIP siblings back.
+      captureRects()
+      setExiting((cur) => (cur?.ag.id === ag.id ? null : cur))
+      setRemovedIds((ids) => ids.filter((id) => id !== ag.id))
+      showToast((e as Error).message)
+    }
   }
 
   const delUses = delAgent?.usedBy ?? []
+
+  // Render list: store agents minus already-removed cards, plus the exiting
+  // card re-inserted at its original index when the store dropped it mid-exit.
+  const shown = agents.filter((ag) => !removedIds.includes(ag.id))
+  if (exiting && !shown.some((a) => a.id === exiting.ag.id)) {
+    shown.splice(Math.min(exiting.index, shown.length), 0, exiting.ag)
+  }
 
   return (
     <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
@@ -186,10 +250,24 @@ export default function AgentsPage() {
       <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 20px' }}>
         The AI that writes your automations. It never executes anything — Autowright does that. New automations use your default agent.
       </p>
-      {agents.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(310px,1fr))', gap: 14 }}>
-          {agents.map((ag) => (
-            <AgentCard key={ag.id} ag={ag} check={agentChecks[ag.id]} onDelete={setDelAgent} />
+      {shown.length > 0 ? (
+        <div ref={gridRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(310px,1fr))', gap: 14 }}>
+          {shown.map((ag) => (
+            <div
+              key={ag.id}
+              data-flip-id={ag.id}
+              className={exiting?.ag.id === ag.id ? 'ad-anim-card-exit' : undefined}
+              onAnimationEnd={exiting?.ag.id === ag.id
+                ? (e) => { if (e.target === e.currentTarget) finishExit(ag.id) }
+                : undefined}
+              style={{ display: 'grid' }}
+            >
+              <AgentCard
+                ag={ag}
+                check={exiting?.ag.id === ag.id ? exiting.check : agentChecks[ag.id]}
+                onDelete={setDelAgent}
+              />
+            </div>
           ))}
         </div>
       ) : (

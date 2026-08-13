@@ -371,12 +371,12 @@ describe('applyEvent — harness.install / ollama.pull live progress (§10/§12)
     expect(g.error).toBe('Gemini CLI needs Node.js')
   })
 
-  it('ollama.pull holds the latest line only — the UI parses percent out of it', () => {
+  it('ollama.pull holds the latest event — the UI renders its §19 overall percent', () => {
     const m = store.useStore.getState()
-    m.applyEvent({ event: 'ollama.pull', model: 'qwen3:8b', line: 'pulling 3f2a… 12%', done: false })
-    expect(store.useStore.getState().ollamaPull).toEqual({ model: 'qwen3:8b', line: 'pulling 3f2a… 12%', done: false, ok: undefined })
-    m.applyEvent({ event: 'ollama.pull', model: 'qwen3:8b', line: '', done: true, ok: true })
-    expect(store.useStore.getState().ollamaPull).toEqual({ model: 'qwen3:8b', line: '', done: true, ok: true })
+    m.applyEvent({ event: 'ollama.pull', model: 'qwen3:8b', line: 'pulling 3f2a… 12% 624 MB/5.2 GB', percent: 12, done: false })
+    expect(store.useStore.getState().ollamaPull).toEqual({ model: 'qwen3:8b', line: 'pulling 3f2a… 12% 624 MB/5.2 GB', percent: 12, done: false, ok: undefined })
+    m.applyEvent({ event: 'ollama.pull', model: 'qwen3:8b', line: '', percent: 100, done: true, ok: true })
+    expect(store.useStore.getState().ollamaPull).toEqual({ model: 'qwen3:8b', line: '', percent: 100, done: true, ok: true })
   })
 
   it('loadExecLogs merges the snapshot with WS lines streamed past it', async () => {

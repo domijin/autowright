@@ -92,7 +92,8 @@ def test_download_writes_file_and_reports_increasing_progress(tmp_path):
     assert rec.pcts == sorted(set(rec.pcts))
     assert rec.pcts[-1] == 100
     assert rec.pcts[0] < 100
-    assert all(l.startswith("Downloading Codex — ") for l in rec.lines)
+    # §19: the number rides only `percent` — the line stays the bare step label.
+    assert all(l == "Downloading Codex" for l in rec.lines)
 
 
 def test_download_trickle_hits_wall_clock_deadline(tmp_path, monkeypatch):

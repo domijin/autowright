@@ -168,11 +168,14 @@ describe('AgentNewPage (§12)', () => {
     await waitFor(() => expect(mockedApi.ollamaPull).toHaveBeenCalledWith('qwen3-coder:30b'))
     expect(screen.getByText(/Downloading/)).toBeTruthy()
 
-    // §12: the UI parses the percent out of the raw `ollama pull` line
+    // §12: the UI renders the event's overall percent (computed in the
+    // backend — never parsed out of the raw per-layer line), with the raw
+    // line shown under the bar.
     storeMod.useStore.getState().applyEvent({
-      event: 'ollama.pull', model: 'qwen3-coder:30b', line: 'pulling 3f2a… 45% 8.6 GB/19 GB', done: false,
+      event: 'ollama.pull', model: 'qwen3-coder:30b', line: 'pulling 3f2a… 45% 8.6 GB/19 GB', percent: 45, done: false,
     })
     expect(await screen.findByText('45%')).toBeTruthy()
+    expect(screen.getByText('pulling 3f2a… 45% 8.6 GB/19 GB')).toBeTruthy()
   })
 
   it('a failed pull clears the progress card and toasts the failure line', async () => {

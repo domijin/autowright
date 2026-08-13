@@ -189,7 +189,9 @@ def _download(url: str, dest: str, emit, label: str) -> None:
                 percent = int(got * 100 / total)
                 if percent != last:
                     last = percent
-                    emit(line=f"{label} — {percent}%", percent=percent)
+                    # §19: the number rides only `percent` — `line` stays the
+                    # bare step label the UI renders under the one install bar.
+                    emit(line=label, percent=percent)
 
 
 def _install_tarball(url: str, binprefix: str, dest_name: str, emit, label: str) -> None:

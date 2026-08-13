@@ -688,7 +688,9 @@ real sign-in checks; no simulation in any mode:
 - **Suggestion card** (one per missing harness) — "Claude" ("Set up Claude Code") /
   "Codex" / "Gemini" / "OpenCode" (each "Set up `<name>`"): install via §19
   `POST /agents/install` → labelled progress ("Installing `<name>`…"; determinate bar when the
-  `harness.install` stream carries a percent, indeterminate otherwise) → then the sign-in flow
+  `harness.install` stream carries a percent, indeterminate otherwise; the stream's current
+  step line renders under the bar — also while the bar is determinate, so post-download steps
+  like "Unpacking…" are explained instead of looking stuck) → then the sign-in flow
   above **only if the provider needs an account and isn't signed in** → connected:
   "Use as default →" alone. An install failure shows red
   "Install failed — `<first error line>`" with "Try again". There is no sudo step: every
@@ -723,7 +725,9 @@ real sign-in checks; no simulation in any mode:
   and pulls `qwen3:8b` instead (recovery for installed models that can't chat, e.g.
   embedding-only ones). Otherwise the install button runs only the **missing** pieces, in
   order — OpenCode (§19 install), Ollama (§19 install), the model (`POST /ollama/pull` of
-  `qwen3:8b`, real percent from the pull stream, continues in the background) — labelled
+  `qwen3:8b`; the bar renders the stream's `percent` field — the §19 single overall pull
+  percent, so the bar never resets per layer — with the current output line under it, and
+  the download continues in the background) — labelled
   "Step k of n — Installing OpenCode… / Installing Ollama… / Downloading Qwen3 8B…" where n
   counts the missing pieces, then lands on the same connection check → connected. A failure
   at any piece shows red "Install failed — `<first error line>`" with "Try again", which
@@ -820,7 +824,8 @@ up for you." offers **Download & set up** — the real §19 `POST /agents/instal
 the Ollama install card ("Installing `<Harness>`…", determinate bar only when the
 `harness.install` stream carries a percent; failure "Install failed — `<first error line>`" +
 Try again; a form that finds the install already running for the picked harness reattaches via
-§19 `GET /agents/install/{id}`). After a finished install the form asks §19
+§19 `GET /agents/install/{id}`; the stream's current step line renders under the bar). After a
+finished install the form asks §19
 `GET /agents/signin/{id}`; when signed out it starts the §19 sign-in help
 (`POST /agents/login`) and shows "Finish signing in — Autowright opened Terminal / your
 browser. Waiting for the sign-in…" with a **Reopen** button, polling `GET /agents/signin/{id}`
@@ -840,14 +845,17 @@ installed and ready: while missing, the notice "Local models need Ollama, which 
 installed on this Mac yet."; once ready, a green check "Ollama is installed and active."
 Inline install flow: button "Install Ollama" starts a real §19
 `POST /agents/install` for Ollama; the label "Installing Ollama…" renders a determinate bar
-when the `harness.install` stream carries a percent (indeterminate otherwise), and failure
+when the `harness.install` stream carries a percent (indeterminate otherwise) with the
+stream's current step line under it, and failure
 shows "Install failed — `<first error line>`" with the button returning to "Install Ollama".
 **LOCAL MODEL** picker: radio list of installed Ollama models with
 size metadata, empty state "No local models installed yet — download one below and it will show
-up here." Model pulls: one at a time — the backend streams raw `ollama pull` output over the
-`ollama.pull` WS event and the UI parses the percent out of it (right column shows "N%";
-determinate bar when a percent is present, indeterminate otherwise — real `ollama pull` output
-may not yield a percent); suggested-model
+up here." Model pulls: one at a time — the backend streams `ollama.pull` WS events and the UI
+renders the event's `percent` field (the §19 single overall pull percent — one continuous bar,
+never the raw per-layer numbers, which reset 0–100 per layer; the UI never parses percents out
+of `line`). Right column shows "N%"; determinate bar once a percent has arrived, indeterminate
+before; the current output line renders under the bar so the post-download steps ("verifying
+sha256 digest") are explained instead of looking stuck at 100%; suggested-model
 chips fill the pull input (placeholder "e.g. qwen3-coder:30b"; they don't start the pull); suggested models qwen3-coder:30b (19 GB,
 "Best local coding model"), gemma4:e4b (9.6 GB, "Good local default"), deepseek-coder:6.7b
 (3.8 GB, "Light and quick"). A suggestion chip is hidden when that model is already installed or

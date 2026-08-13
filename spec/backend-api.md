@@ -320,7 +320,11 @@ remain plain dicts (§2).
   Free local AI card reads it from `GET /ollama/status`.
 - **Install** — `POST /agents/install` `{ id }` starts a background install of that provider
   (409 while one is already running for the same id) and streams `harness.install` WS events
-  `{ id, line, percent?, done, ok?, error? }` (determinate UI bar only when `percent` is present);
+  `{ id, line, percent?, done, ok?, error? }` (determinate UI bar only when `percent` is present).
+  One install renders as **one** continuous bar: `percent` never decreases across the install's
+  phases, and download events carry the bare step label in `line` ("Downloading Codex") with the
+  number riding only `percent` — post-download steps ("Unpacking…", "Starting the Ollama
+  server…") keep the bar where it is while the step label explains the wait;
   `GET /agents/install/{id}` → `{ state: idle | running | done | failed, percent?, line?, error? }`
   lets a remounted UI reattach. A 15-minute wall-clock cap applies to each install phase
   (installer subprocess run and download): on expiry the job fails with a timeout message —
@@ -356,7 +360,16 @@ remain plain dicts (§2).
   ollama-mode agent `signedIn` is `null` — local models have no sign-in concept.
 - Ollama: `GET /ollama/status` → `{ ready, installed,
   models, version }` (`version` from Ollama's `/api/version` when the server answers, else
-  null — the §19 Claude Code local-model check gates on it), `POST /ollama/pull`. All CLI lookups (detection and harness invocation alike)
+  null — the §19 Claude Code local-model check gates on it), `POST /ollama/pull` — streams
+  `ollama.pull` WS events `{ model, line, percent?, done, ok? }`. `line` is the raw
+  `ollama pull` output line; `percent` is computed in the backend as **one overall pull
+  progress**: byte-weighted across every layer seen so far in the stream (the
+  `… 2.3 GB/5.2 GB` byte counts), falling back to the line's bare `N%` when no byte counts
+  parse, clamped monotonic (never decreases within one pull), and 100 on the ok terminal
+  event. Raw `ollama pull` restarts its own bar per layer (one multi-GB blob plus small
+  metadata layers, then `verifying sha256 digest`/`writing manifest`) — those per-layer
+  resets must never reach the UI as a bar reset, so clients render `percent` and never parse
+  percents out of `line`. All CLI lookups (detection and harness invocation alike)
   resolve the binary via PATH plus the usual macOS install locations (`~/.local/bin`,
   `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; Ollama additionally `Ollama.app`),
   because a GUI-launched backend gets a minimal PATH — e.g. `claude` installs to `~/.local/bin`

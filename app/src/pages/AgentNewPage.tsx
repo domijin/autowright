@@ -321,13 +321,11 @@ export default function AgentNewPage() {
 
   const sugRows = SUGGESTED.filter((sg) => !models.includes(sg.id) && pulling !== sg.id)
 
-  // Pull progress from the backend's `ollama.pull` WS lines — render a real %
-  // bar when the line carries one ("… 45% …"), slide otherwise.
+  // Pull progress from the backend's `ollama.pull` stream — §19 computes one
+  // overall monotonic percent across layers; never parse it out of the line
+  // (raw `ollama pull` restarts its bar per layer).
   const pullLine = pulling && ollamaPull && ollamaPull.model === pulling ? ollamaPull.line : ''
-  const pullPct = (() => {
-    const m = pullLine.match(/(\d{1,3})%/)
-    return m ? Math.min(100, parseInt(m[1], 10)) : null
-  })()
+  const pullPct = pulling && ollamaPull && ollamaPull.model === pulling ? ollamaPull.percent ?? null : null
 
   if (missingEdit) return null // redirecting to Agents (effect above)
 
@@ -436,6 +434,11 @@ export default function AgentNewPage() {
               )}
             </div>
             <ProgressBar percent={hPct} />
+            {harnessInstall[harness]?.line && (
+              <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-faint)', marginTop: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {harnessInstall[harness].line}
+              </div>
+            )}
           </div>
         ) : hInst === 'signin' ? (
           <AmberNotice
@@ -529,6 +532,11 @@ export default function AgentNewPage() {
                   )}
                 </div>
                 <ProgressBar percent={instPct} />
+                {harnessInstall.ollama?.line && (
+                  <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-faint)', marginTop: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {harnessInstall.ollama.line}
+                  </div>
+                )}
               </div>
             ) : (
               <AmberNotice
@@ -618,6 +626,11 @@ export default function AgentNewPage() {
                     )}
                   </div>
                   <ProgressBar percent={pullPct} />
+                  {pullLine && (
+                    <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-faint)', marginTop: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {pullLine}
+                    </div>
+                  )}
                 </div>
               )}
 

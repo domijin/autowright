@@ -1250,6 +1250,43 @@ def ollama_status() -> dict:
     return harness.ollama_status()
 
 
+_PULL_UNITS = {"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12}
+
+
+class _PullProgress:
+    """One overall percent for an `ollama pull` (§19).
+
+    Raw `ollama pull` output restarts its own bar per layer (one multi-GB blob
+    plus small metadata layers), so a naive per-line percent flashes back to 0
+    over and over. This byte-weights every layer seen so far and never goes
+    backwards; lines with a bare `N%` but no byte counts fall back to that
+    number under the same monotonic clamp.
+    """
+
+    def __init__(self) -> None:
+        self._layers: dict[str, tuple[float, float]] = {}  # layer id → (done, total) bytes
+        self.percent: int | None = None
+
+    def update(self, line: str) -> int | None:
+        layer = re.match(r"pulling ([0-9a-f]{4,})", line)
+        counts = re.search(r"([\d.]+)\s*(B|KB|MB|GB|TB)\s*/\s*([\d.]+)\s*(B|KB|MB|GB|TB)", line)
+        pct: int | None = None
+        if layer and counts:
+            self._layers[layer.group(1)] = (
+                float(counts.group(1)) * _PULL_UNITS[counts.group(2)],
+                float(counts.group(3)) * _PULL_UNITS[counts.group(4)])
+            total = sum(t for _, t in self._layers.values())
+            if total:
+                pct = int(sum(d for d, _ in self._layers.values()) * 100 / total)
+        else:
+            bare = re.search(r"(\d{1,3})%", line)
+            if bare:
+                pct = int(bare.group(1))
+        if pct is not None:
+            self.percent = max(self.percent or 0, min(pct, 100))
+        return self.percent
+
+
 @app.post("/ollama/pull", dependencies=[Depends(auth)])
 def ollama_pull(body: models.OllamaPull) -> dict:
     model = body.model
@@ -1265,10 +1302,16 @@ def ollama_pull(body: models.OllamaPull) -> dict:
             proc = subprocess.Popen([binpath, "pull", model], stdout=subprocess.PIPE,
                                     stderr=subprocess.STDOUT, text=True,
                                     env=harness.spawn_env(binpath))
+            prog = _PullProgress()
             for line in proc.stdout:  # type: ignore[union-attr]
-                hub.publish("ollama.pull", model=model, line=line.strip(), done=False)
+                stripped = line.strip()
+                pct = prog.update(stripped)
+                extra = {} if pct is None else {"percent": pct}
+                hub.publish("ollama.pull", model=model, line=stripped, done=False, **extra)
             proc.wait()
-            hub.publish("ollama.pull", model=model, line="", done=True, ok=proc.returncode == 0)
+            ok = proc.returncode == 0
+            hub.publish("ollama.pull", model=model, line="", done=True, ok=ok,
+                        **({"percent": 100} if ok else {}))
         except FileNotFoundError:
             hub.publish("ollama.pull", model=model, line="ollama isn't installed", done=True, ok=False)
         hub.publish("agents.changed")

@@ -415,7 +415,9 @@ export type WsEvent =
       stepIndex: number | null; attempt: number | null; line: LogLine }
   | { event: 'harness.install'
       id: string; line?: string; percent?: number; done?: boolean; ok?: boolean; error?: string }
-  | { event: 'ollama.pull'; model: string; line: string; done?: boolean; ok?: boolean }
+  // §19: `percent` is the backend's single overall pull percent (byte-weighted
+  // across layers, monotonic) — the UI renders it and never parses `line`.
+  | { event: 'ollama.pull'; model: string; line: string; percent?: number; done?: boolean; ok?: boolean }
   // §19: automationId + automation (null = deleted) → patch one row in place;
   // a bare event → many may have changed, re-GET /state.
   | { event: 'automation.changed'; automationId?: string; automation?: Automation | null }

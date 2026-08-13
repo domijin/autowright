@@ -1632,12 +1632,23 @@ def _wait_pull_done(events, timeout=10):
 
 
 def test_ollama_pull_streams_lines_then_done(client, monkeypatch):
-    # §19: the pull streams raw `ollama pull` output over ollama.pull events,
-    # closing with done/ok and an agents.changed refresh nudge.
+    # §19: the pull streams raw `ollama pull` output over ollama.pull events —
+    # each carrying the single overall `percent` once one is known — closing
+    # with done/ok/percent 100 and an agents.changed refresh nudge.
     from autowright import api, harness
 
     events = _capture_events(monkeypatch)
     monkeypatch.setattr(harness, "ollama_bin", lambda: "/fake/ollama")
+
+    lines = [
+        "pulling manifest\n",
+        "pulling 3f2a... 42% ▕█▏ 2.2 GB/5.2 GB\n",
+        "pulling 3f2a... 100% ▕█▏ 5.2 GB/5.2 GB\n",
+        # a small metadata layer restarts the raw bar at 0% — the overall
+        # percent must not reset with it
+        "pulling ab12... 0% ▕▏ 0 B/1.2 KB\n",
+        "verifying sha256 digest\n",
+    ]
 
     class FakeProc:
         returncode = 0
@@ -1645,7 +1656,7 @@ def test_ollama_pull_streams_lines_then_done(client, monkeypatch):
         def __init__(self):
             # per-instance: a class-attribute iterator would be exhausted by
             # the first FakeProc and starve any later one
-            self.stdout = iter(["pulling manifest\n", "pulling 3f2a... 42%\n"])
+            self.stdout = iter(lines)
 
         def wait(self):
             return 0
@@ -1661,13 +1672,35 @@ def test_ollama_pull_streams_lines_then_done(client, monkeypatch):
     assert client.post("/ollama/pull", json={"model": "qwen3:8b"}).json() == {"ok": True}
     pulls = _wait_pull_done(events)
     assert popen["cmd"] == ["/fake/ollama", "pull", "qwen3:8b"]
-    assert [e["line"] for e in pulls[:-1]] == ["pulling manifest", "pulling 3f2a... 42%"]
+    assert [e["line"] for e in pulls[:-1]] == [ln.strip() for ln in lines]
+    assert [e.get("percent") for e in pulls] == [None, 42, 100, 100, 100, 100]
+    assert "percent" not in pulls[0]  # nothing parseable yet → key omitted
     assert pulls[-1]["done"] is True and pulls[-1]["ok"] is True
     assert all(e["model"] == "qwen3:8b" for e in pulls)
     t0 = time.time()
     while not any(e["event"] == "agents.changed" for e in events):
         assert time.time() - t0 < 5
         time.sleep(0.05)
+
+
+def test_pull_progress_byte_weights_layers_and_never_goes_backwards():
+    # §19 _PullProgress: one overall percent — byte-weighted across layers,
+    # bare-`N%` fallback when no byte counts parse, monotonic throughout.
+    from autowright.api import _PullProgress
+
+    p = _PullProgress()
+    assert p.update("pulling manifest") is None
+    assert p.update("pulling a1b2c3... 50% ▕█▏ 2.6 GB/5.2 GB") == 50
+    assert p.update("pulling a1b2c3... 100% ▕█▏ 5.2 GB/5.2 GB") == 100
+    assert p.update("pulling ff00aa... 0% ▕▏ 0 B/1.2 KB") == 100  # no reset
+    assert p.update("verifying sha256 digest") == 100
+    assert p.update("writing manifest") == 100
+
+    # bare-percent fallback (no byte counts): later layers restart the raw
+    # number — the overall percent holds
+    q = _PullProgress()
+    assert q.update("pulling a1b2... 90%") == 90
+    assert q.update("pulling c3d4... 3%") == 90
 
 
 def test_ollama_pull_without_binary_reports_not_installed(client, monkeypatch):

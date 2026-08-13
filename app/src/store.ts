@@ -61,7 +61,7 @@ interface Model {
   // seeds the thread and sends the §11 canned analyze chat message on mount,
   // then clears it.
   fixExec: string | null
-  ollamaPull: { model: string; line: string; done: boolean; ok?: boolean } | null
+  ollamaPull: { model: string; line: string; percent?: number; done: boolean; ok?: boolean } | null
   // §19 harness.install stream, latest event per provider id
   harnessInstall: Record<string, { line?: string; percent?: number; done: boolean; ok?: boolean; error?: string }>
   // §12 session cache of agent status checks, keyed by agent id
@@ -361,7 +361,7 @@ export const useStore = create<Model>((set, get) => ({
       return
     }
     if (msg.event === 'ollama.pull') {
-      set({ ollamaPull: { model: msg.model, line: msg.line, done: !!msg.done, ok: msg.ok } })
+      set({ ollamaPull: { model: msg.model, line: msg.line, percent: msg.percent, done: !!msg.done, ok: msg.ok } })
       return
     }
     if (msg.event === 'automation.changed') {

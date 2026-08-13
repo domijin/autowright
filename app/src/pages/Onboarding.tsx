@@ -330,7 +330,7 @@ export default function Onboarding() {
     const piece = queue[qi]
     if (!piece) { startLocalCheck(); return }
     if (piece === 'model') {
-      setCard(LOCAL_ID, { phase: 'pulling', pullPct: 0, queue, qi })
+      setCard(LOCAL_ID, { phase: 'pulling', pullPct: 0, line: '', queue, qi })
       // A previous attempt's terminal ollama.pull event may still sit in the
       // store — clear it or the failure effect would instantly kill this pull.
       useStore.setState({ ollamaPull: null })
@@ -402,8 +402,13 @@ export default function Onboarding() {
       setCard(LOCAL_ID, { phase: 'failed', error: ollamaPull.line || `couldn't pull ${LOCAL_MODEL}` })
       return
     }
-    const m = (ollamaPull.line || '').match(/(\d{1,3})%/)
-    if (m) setCard(LOCAL_ID, { pullPct: Math.min(100, parseInt(m[1], 10)) })
+    // §19: percent is the backend's single overall pull percent (byte-weighted
+    // across layers, monotonic) — never parsed out of the raw line, whose own
+    // numbers reset 0–100 per layer.
+    setCard(LOCAL_ID, {
+      line: ollamaPull.line || card(LOCAL_ID).line,
+      ...(ollamaPull.percent !== undefined ? { pullPct: Math.min(100, ollamaPull.percent) } : {}),
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ollamaPull])
 
@@ -855,7 +860,7 @@ export default function Onboarding() {
                   )}
                 </div>
                 <ProgressBar percent={c.percent} />
-                {c.line && c.percent === null && (
+                {c.line && (
                   <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-faint)', marginTop: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {c.line}
                   </div>
@@ -871,6 +876,11 @@ export default function Onboarding() {
                   </span>
                 </div>
                 <ProgressBar percent={c.pullPct} />
+                {c.line && (
+                  <div style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--text-faint)', marginTop: 7, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {c.line}
+                  </div>
+                )}
                 <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 8 }}>
                   Ollama is installed. You can keep using your Mac — this finishes in the background.
                 </div>

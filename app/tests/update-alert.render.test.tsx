@@ -70,19 +70,20 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); storeMod.useStore.getState().disconnect() })
 
-describe('sidebar update badge (§9)', () => {
-  it('renders no badge while no newer version is known', async () => {
+describe('sidebar update row (§9)', () => {
+  it('renders no row while no newer version is known', async () => {
     render(<App />)
     await waitFor(() => expect(screen.getByTestId('nav-rail')).toBeTruthy())
-    expect(screen.queryByTestId('update-badge')).toBeNull()
+    expect(screen.queryByTestId('nav-update')).toBeNull()
   })
 
-  it("seeds from main's cached state; About opens pre-armed", async () => {
+  it("seeds from main's cached state and navigates to About pre-armed", async () => {
     cachedUpdate = '9.9.9'
     render(<App />)
-    expect(await screen.findByTestId('update-badge')).toBeTruthy()
+    const row = await screen.findByTestId('nav-update')
+    expect(row.textContent).toContain('Update available')
 
-    fireEvent.click(screen.getByText('About'))
+    fireEvent.click(row)
     // §9.4: About mounts directly in the `available` state — no idle line.
     expect(await screen.findByText('Version 9.9.9 is available.')).toBeTruthy()
     expect(screen.getByText('Download update')).toBeTruthy()
@@ -92,9 +93,9 @@ describe('sidebar update badge (§9)', () => {
     render(<App />)
     await waitFor(() => expect(pushUpdate).not.toBeNull())
     pushUpdate!('9.9.9')
-    expect(await screen.findByTestId('update-badge')).toBeTruthy()
+    expect(await screen.findByTestId('nav-update')).toBeTruthy()
     pushUpdate!(null)
-    await waitFor(() => expect(screen.queryByTestId('update-badge')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('nav-update')).toBeNull())
   })
 })
 

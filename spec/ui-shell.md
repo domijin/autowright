@@ -24,11 +24,13 @@ every window state) and end around y ≈ 28, so panel and lights never overlap. 
 (default, no hover) the rail is 58 px wide and shows icons only: logo at top, nav icons
 (Automations, Executions, Agents, Secrets, Settings), and the About icon pinned at the bottom
 below a flexible spacer — About is meta, not a working surface. While the store holds §9.4
-`updateAvailable` (the §3 update-available event — a known, not-yet-installed update), the
-About row's icon carries a small `--accent` dot on its top-right corner (the update badge),
-visible in both the collapsed and expanded rail; it never shows a count pill. The badge
-follows the §3 clearing rule: gone when a later check answers up-to-date, otherwise only
-with the restart that installs. On `:hover` the panel's width
+`updateAvailable` (the §3 update-available event — a known, not-yet-installed update), an
+extra nav row appears directly above About (`data-testid="nav-update"`): fa-circle-down icon
+and "Update available" label, both `--accent`-colored so the icon alone signals in the
+collapsed rail; no count pill, never in the active state. Clicking it navigates to the About
+page, which opens pre-armed (§9.4) — the download itself still starts from that row's
+button. The row follows the §3 clearing rule: gone when a later check answers up-to-date,
+otherwise only with the restart that installs. On `:hover` the panel's width
 animates 58 px → 212 px (200 ms — `var(--t-enter)` — pure CSS on the `.ad-rail` class) **overlaying** the content
 pane, which never reflows: the layout reserves a constant 58 px spacer, so the content pane
 always spans the rest of the window. Inner sidebar content keeps a fixed 212 px width with
@@ -553,8 +555,9 @@ with a bordered **Retry** button that re-attempts the import.
   holds `updateAvailable` (fed by the §3 update-available event + invoke at store boot;
   set by any check — manual or automatic — that finds a newer version): it renders the
   `available` state below without a button press. Manual results feed the same shared
-  state: `available` sets `updateAvailable` (the §9 badge appears and persists across
-  navigation), `uptodate` clears it, `error` leaves it alone — the §3 clearing rule.
+  state: `available` sets `updateAvailable` (the §9 "Update available" nav row appears and
+  persists across navigation), `uptodate` clears it, `error` leaves it alone — the §3
+  clearing rule.
   The "Check for updates" button calls
   `update-check` (one fetch of the §3 feed) and reads "Checking…" (disabled) while in
   flight. Results render in the row's sub-line: `available` → "Version `<x.y.z>` is

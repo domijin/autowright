@@ -125,14 +125,15 @@ the update bullets below).
     transition (which includes a launch with the setting on — the default) it runs the same
     feed fetch as `update-check` immediately, then every 24 h on a timer; on→off clears the
     timer. Nothing is persisted about past checks — each launch with the toggle on checks
-    once at startup. Automatic-check failures are silent (no badge, no toast — the manual
+    once at startup. Automatic-check failures are silent (no nav row, no toast — the manual
     button still reports errors), and an automatic check never starts a download.
   - **update-available event:** any check — manual `update-check` or automatic — that finds a
     newer version records it in the main process and pushes an `update-available`
     IPC event (the version string) to the main window; an `update-available` invoke handler
     answers the remembered version (or `null`), so a renderer that boots after the check still
     learns it — the §9 store subscribes to the event and asks the handler once at boot,
-    keeping `updateAvailable`. It feeds the §9 About-row badge and the §9.4 pre-armed row.
+    keeping `updateAvailable`. It feeds the §9 "Update available" nav row and the §9.4
+    pre-armed row.
     A later check answering up-to-date clears the remembered version and pushes `null` (the
     feed rolled back, or the user updated by hand); an `error` check leaves it alone.
     Otherwise it clears only with the app restart that installs the update.

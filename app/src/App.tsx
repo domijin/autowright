@@ -38,8 +38,9 @@ function Sidebar() {
   const nExecs = useStore((s) => s.executions.filter((e) => !e.test).length)
   const nAgents = useStore((s) => s.agents.length)
   const nSecrets = useStore((s) => s.secrets.length)
-  // §9 update badge: accent dot on the About icon while an update is known and
-  // not yet installed (§3 update-available) — visible in the collapsed rail.
+  // §9 "Update available" nav row: appears above About while an update is
+  // known and not yet installed (§3 update-available) — the accent icon alone
+  // signals in the collapsed rail. Clicking opens About pre-armed (§9.4).
   const updateAvailable = useStore((s) => s.updateAvailable)
   const activeRoot = page === 'automation' ? 'automations' : page === 'execution' ? 'executions' : page === 'agentNew' ? 'agents' : page
   const counts: Record<string, number> = {
@@ -70,6 +71,21 @@ function Sidebar() {
           { rows: BOTTOM_NAV, style: { padding: '0 10px 12px', marginTop: 'auto' } },
         ].map((group, i) => (
           <nav key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2, ...group.style }}>
+            {i === 1 && updateAvailable && (
+              <button
+                data-testid="nav-update"
+                className="ad-nav-row"
+                onClick={() => go('about', { automationId: null, executionId: null })}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
+                  borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',
+                  color: 'var(--accent)',
+                }}
+              >
+                <i className="fa-solid fa-circle-down" style={{ width: 16, fontSize: 12 }} />
+                <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Update available</span>
+              </button>
+            )}
             {group.rows.map((n) => {
               const active = activeRoot === n.page
               return (
@@ -84,18 +100,7 @@ function Sidebar() {
                     ...(active ? { background: 'var(--accent-hint-bg)' } : null),
                   }}
                 >
-                  <span style={{ position: 'relative', display: 'inline-flex', flex: 'none' }}>
-                    <i className={`fa-solid ${n.icon}`} style={{ width: 16, fontSize: 12, opacity: 0.85 }} />
-                    {n.page === 'about' && updateAvailable && (
-                      <span
-                        data-testid="update-badge"
-                        style={{
-                          position: 'absolute', top: -2, right: -1, width: 6, height: 6,
-                          borderRadius: '50%', background: 'var(--accent)',
-                        }}
-                      />
-                    )}
-                  </span>
+                  <i className={`fa-solid ${n.icon}`} style={{ width: 16, fontSize: 12, opacity: 0.85 }} />
                   <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>{n.label}</span>
                   <span className="ad-rail-reveal" style={{ display: 'inline-flex' }}>
                     <CountPill n={counts[n.page] ?? 0} active={active} />

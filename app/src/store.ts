@@ -33,8 +33,9 @@ interface Model {
   secrets: SecretMeta[]
   settings: Settings | null
   // §3 update-available: a known, not-yet-installed newer version — feeds the
-  // §9 About-row badge and the §9.4 pre-armed Updates row. A later up-to-date
-  // check clears it; otherwise it lives until the restart that installs.
+  // §9 "Update available" nav row and the §9.4 pre-armed Updates row. A later
+  // up-to-date check clears it; otherwise it lives until the restart that
+  // installs.
   updateAvailable: string | null
   // §4.4 pending create-mode slot — drives the §9.1 Resume draft button
   pendingDraft: { name: string; updatedAt: string | null } | null

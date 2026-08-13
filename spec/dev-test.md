@@ -119,7 +119,9 @@ real macOS notification — accepted, per the no-dev-only-branches rule.
 
 **End-to-end tests** live under `app/e2e/` (run `npm run test:e2e` in `app/` — it builds
 first, then runs a second Vitest config, `vitest.e2e.config.ts`, sequentially with long
-timeouts). Each test launches the real pieces exactly as release does: the backend subprocess
+timeouts and one automatic retry per test: launching a real Electron per test occasionally
+dies to a transient helper-process crash outside our code — "Target page, context or browser
+has been closed" — and a genuine failure still fails both attempts). Each test launches the real pieces exactly as release does: the backend subprocess
 over a tmp `AUTOWRIGHT_HOME` (fake `claude` from `tests/bin` on PATH), then the real Electron
 binary via playwright-core `_electron.launch` loading `app/dist` — real preload bridge, real
 `backend.json` discovery, real windows on screen. Scenarios stay high-value journeys —

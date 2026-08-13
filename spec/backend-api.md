@@ -177,6 +177,16 @@ remain plain dicts (§2).
   error, oversized or non-archive download — answers 422 with the reason
 - `POST /automations/import/confirm` `{ token }` → `{ automation, summary }` exactly like
   `/automations/import`; the token is one-time — spent, expired, or unknown answers 404
+- `GET /automations/{id}/memory/files` — read-only list of the §4.1 memory directory's
+  files: `{ files: [{ name, size, updated }] }` — `name` the memory-relative posix path
+  (recursive), `size` in bytes, `updated` the §4.1 display label; sorted by name; empty or
+  missing memory → `[]`. No live-execution 409 and no lock: reads rely on the §6 atomic
+  commit, so a whole file is always seen. Backs §20 `automation memory show`
+- `GET /automations/{id}/memory/files/{name}` — one memory file's content:
+  `{ name, size, text }` (`name` may contain `/` — the route takes the rest of the path).
+  422 when `name` escapes the memory directory (absolute, `..`, or otherwise resolving
+  outside it) or the file is not UTF-8 text (the message says the file is binary and names
+  the memory path on disk); 404 when no such file. Same lock-free read rule as the list
 - `POST /automations/{id}/memory/clear` — 409 while **any** execution of the automation is
   live, the same guard (and the same lock span) as manual snapshot and restore — a
   mid-execution clear could delete files a step is reading; then §6.3 pre-clear snapshot,

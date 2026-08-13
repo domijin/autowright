@@ -1130,6 +1130,32 @@ SNAPS = [{"id": "s1111111-a", "when": "today 10:00", "reason": "manual", "versio
           "size": "2 KB", "name": ""}]
 
 
+def test_cmd_memory_show(capsys):
+    # §20 memory inspection: list (columns + --json), empty hint, one file verbatim.
+    files = [{"name": "seen.yaml", "size": 7, "updated": "Today"},
+             {"name": "sub/cache.bin", "size": 3, "updated": "Yesterday"}]
+    base = f"/automations/{AUTO_ID}/memory/files"
+
+    _run(_RouteClient({**_auto_gets(), base: {"files": files}}),
+         "automation", "memory", "show", "Daily Report")
+    out = capsys.readouterr().out
+    assert "seen.yaml" in out and "sub/cache.bin" in out and "Today" in out
+
+    _run(_RouteClient({**_auto_gets(), base: {"files": []}}),
+         "automation", "memory", "show", "Daily Report")
+    assert "memory is empty" in capsys.readouterr().out
+
+    _run(_RouteClient({**_auto_gets(), base: {"files": files}}),
+         "automation", "memory", "show", "Daily Report", "--json")
+    assert json.loads(capsys.readouterr().out) == files
+
+    # a file argument prints the text verbatim — nothing added
+    one = {**_auto_gets(),
+           f"{base}/seen.yaml": {"name": "seen.yaml", "size": 7, "text": "v: old\n"}}
+    _run(_RouteClient(one), "automation", "memory", "show", "Daily Report", "seen.yaml")
+    assert capsys.readouterr().out == "v: old\n"
+
+
 def test_cmd_memory_and_snapshot_commands(capsys):
     auto = dict(FULL_AUTO, snapshots=SNAPS)
 

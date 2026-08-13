@@ -1242,6 +1242,39 @@ class Store:
             shutil.rmtree(d)
         d.mkdir(parents=True, exist_ok=True)
 
+    def memory_files(self, a: dict) -> list[dict]:
+        """§19 read-only memory listing: memory-relative posix path, size in
+        bytes, updated label; sorted by name. Lock-free — §6 atomic commit
+        means a whole file is always seen; an entry vanishing mid-walk is
+        skipped, like iter_file_stats."""
+        d = self.auto_dir(a) / "memory"
+        out: list[dict] = []
+        if not d.exists():
+            return out
+        for f in d.rglob("*"):
+            try:
+                st = f.stat()
+            except OSError:
+                continue
+            if stat.S_ISREG(st.st_mode):
+                out.append({"name": f.relative_to(d).as_posix(), "size": st.st_size,
+                            "updated": timefmt.date_label(datetime.fromtimestamp(st.st_mtime))})
+        out.sort(key=lambda e: e["name"])
+        return out
+
+    def memory_file_path(self, a: dict, name: str) -> Path | None:
+        """Resolve a memory-relative file name; None when it escapes the
+        memory dir (absolute, `..`, or a symlink resolving outside) — §19
+        422 vs 404 is the caller's split, so existence isn't checked here."""
+        d = (self.auto_dir(a) / "memory").resolve()
+        try:
+            p = (d / name).resolve()
+        except (OSError, ValueError):
+            return None
+        if d not in p.parents:
+            return None
+        return p
+
     # ---------- memory snapshots (§6.3) ----------
     def snapshots_dir(self, a: dict) -> Path:
         return self.auto_dir(a) / "memory-snapshots"

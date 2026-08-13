@@ -145,9 +145,16 @@ autowright agent list · agent check <name>        # AI agents available to agen
 ## Memory, sharing, settings
 
 - Memory persists files between executions (e.g. "seen items"). `automation show` reports
-  its size; `automation memory clear <name>` resets it; `automation snapshot
+  its size; `automation memory show <name> [file]` lists the memory files or prints one
+  file's text (read-only — use it before writing steps that migrate or reshape stored
+  state, and when diagnosing a failure that hinges on what memory actually holds);
+  `automation memory clear <name>` resets it; `automation snapshot
   list|create|restore|delete <name>` manages point-in-time copies (automatic snapshots are
   taken before clears/restores/new versions).
+- When a push changes the shape of what steps store in memory, the old data survives the
+  save — write the new steps to migrate lazily (a `schema_version` key, `memory.load`
+  defaults for missing shapes) rather than assuming a fresh dir; check the real shape
+  first with `memory show`.
 - `automation export <name> [file.autowright]` / `automation import <file>` share
   automations as archives (secrets travel as names only, never values; imported triggers
   arrive off).

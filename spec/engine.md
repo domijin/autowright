@@ -419,7 +419,9 @@ destructive moments recoverable.
   before §9.2 "Clear memory" empties the dir); `pre-version` (automatic, taken by the engine
   right before the first execution of a version with no recorded execution yet — real "vN"
   versions only, never Draft — a Draft execution runs on `draft/memory/` (§4.4) and can't
-  touch the live dir; `version` in the meta is the version about to execute);
+  touch the live dir; `version` in the meta is the version about to execute — this snapshot
+  is also the safety net for the §8 memory-migration duty: when a new version's steps
+  mishandle the old memory shape, restoring it undoes the damage);
   `pre-restore` (automatic, current memory saved right before a restore replaces it).
 - **Automatic-snapshot toggles** — every automatic reason has a per-automation on/off setting,
   edited on the §9.2 MEMORY card and stored top-level as

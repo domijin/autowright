@@ -1081,6 +1081,45 @@ def test_memory_snapshot_endpoints(client):
     assert client.delete(f"{base}/{snap['id']}").status_code == 404
 
 
+def test_memory_read_endpoints(client):
+    # §19 GET memory/files + memory/files/{name}: list, content, traversal
+    # 422, binary 422, unknown 404 — all lock-free reads.
+    from autowright.storage import store
+
+    auto = client.post("/automations", json={"draft": _echo_draft()}).json()
+    a = store.autos[auto["id"]]
+    base = f"/automations/{auto['id']}/memory"
+
+    assert client.get("/automations/nope/memory/files").status_code == 404
+    assert client.get(f"{base}/files").json() == {"files": []}
+
+    mem = store.auto_dir(a) / "memory"
+    (mem / "seen.yaml").write_text("v: old\n")
+    (mem / "sub").mkdir()
+    (mem / "sub" / "cache.bin").write_bytes(b"\xff\xfe\x00")
+
+    files = client.get(f"{base}/files").json()["files"]
+    assert [f["name"] for f in files] == ["seen.yaml", "sub/cache.bin"]
+    assert files[0]["size"] == 7 and files[0]["updated"] == "Today"
+
+    r = client.get(f"{base}/files/seen.yaml")
+    assert r.status_code == 200
+    assert r.json() == {"name": "seen.yaml", "size": 7, "text": "v: old\n"}
+
+    # binary answers 422 pointing at the on-disk memory dir, never bytes
+    r = client.get(f"{base}/files/sub/cache.bin")
+    assert r.status_code == 422 and "binary" in r.json()["detail"]
+
+    assert client.get(f"{base}/files/nope.yaml").status_code == 404
+    # traversal: an encoded ../ reaches the handler as a name and is rejected
+    assert client.get(f"{base}/files/..%2Fautomation.yaml").status_code == 422
+
+    # the resolver itself: escapes → None; normalizing inside memory/ is fine
+    assert store.memory_file_path(a, "../automation.yaml") is None
+    assert store.memory_file_path(a, "/etc/passwd") is None
+    assert store.memory_file_path(a, "sub/../seen.yaml") == (mem / "seen.yaml").resolve()
+
+
 def test_patch_snapshot_settings_and_gated_clear(client):
     # §19 PATCH snapshotSettings: partial merge; §6.3 pre-clear off → clear leaves no snapshot.
     from autowright.storage import store

@@ -26,7 +26,7 @@ autowright instructions                 §8 framework + build instruction files,
 autowright automation <verb> …          list · show · pull · push · create · delete · restore ·
                                         execute [--version vN|draft] · export · import ·
                                         param list|set · trigger list|add|on|off|remove ·
-                                        memory clear · snapshot list|create|restore|delete
+                                        memory show|clear · snapshot list|create|restore|delete
 autowright execution <verb> …           list · show · tail · cancel · retry · skip · result
 autowright secret list|set|delete
 autowright agent list|check
@@ -38,9 +38,17 @@ autowright service install|uninstall|status|restart   (§3 — the only group th
   substring; executions and snapshots by id prefix. Ambiguity or no match exits with the
   candidate list.
 - **`--json`** on every read verb (`status`, `instructions`, `automation list|show`,
-  `param list`, `trigger list`, `snapshot list`, `execution list|show`, `secret list`,
-  `agent list`, `settings show`) prints the raw API JSON instead of the human columns —
-  the machine mode agents parse.
+  `param list`, `trigger list`, `memory show`, `snapshot list`, `execution list|show`,
+  `secret list`, `agent list`, `settings show`) prints the raw API JSON instead of the human
+  columns — the machine mode agents parse.
+- **Memory inspection** (`automation memory show <ref> [file]`) — the authoring surface's
+  only read access to §6 memory contents (§8 drafting calls never carry them). With no
+  `file`, lists the memory directory's files — memory-relative path, size, updated — via §19
+  `GET .../memory/files` ("memory is empty" when none); with a `file` argument (a listed
+  relative path), prints that file's text verbatim via §19 `GET .../memory/files/{name}`.
+  Read-only and lock-free — §6 atomic commit means a read never sees a partial file. A
+  non-UTF-8 (binary) file is not printed: the 422 message points at the memory directory
+  on disk instead.
 - **Trigger message parity (§7):** `execution show`'s human output prints a
   `trigger message:` line when the record carries the §4.5 `triggerPayload` — the same input
   the UI's TRIGGER MESSAGE block shows. Kind-aware, like the UI: Discord prints

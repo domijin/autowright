@@ -13,6 +13,7 @@ import getpass
 import json
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -744,6 +745,29 @@ def cmd_trigger_remove(c: Client, args) -> None:
 
 # ----------------------------------------------------- automation memory/snapshot
 
+def cmd_memory_show(c: Client, args) -> None:
+    # §20 memory inspection — the authoring surface's only read access to
+    # memory contents; list the files, or print one file's text verbatim.
+    a = find_automation(c, args.automation)
+    if args.file:
+        r = c.req("GET", f"/automations/{a['id']}/memory/files/"
+                         + urllib.parse.quote(args.file, safe="/"))
+        if args.json:
+            _pjson(r)
+        else:
+            sys.stdout.write(r["text"])
+        return
+    r = c.req("GET", f"/automations/{a['id']}/memory/files")
+    if args.json:
+        _pjson(r["files"])
+        return
+    if not r["files"]:
+        print("memory is empty")
+        return
+    for f in r["files"]:
+        print(f"{f['size']:>9}  {f['updated']:<16} {f['name']}")
+
+
 def cmd_memory_clear(c: Client, args) -> None:
     a = find_automation(c, args.automation)
     c.req("POST", f"/automations/{a['id']}/memory/clear")
@@ -1126,6 +1150,10 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
 
     mg = _sub(ag, "memory", None, "per-automation memory").add_subparsers(
         dest="verb2", required=True)
+    p = _sub(mg, "show", cmd_memory_show,
+             "list the memory files, or print one file's text", json_flag=True)
+    p.add_argument("automation")
+    p.add_argument("file", nargs="?", help="memory-relative file path to print")
     p = _sub(mg, "clear", cmd_memory_clear, "clear the memory (snapshots first)")
     p.add_argument("automation")
 

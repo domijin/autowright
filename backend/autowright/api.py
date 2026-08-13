@@ -824,6 +824,33 @@ def packages_update(body: models.PackagesBody) -> dict:
     return {"packages": pkglib.upgrade(entries)}
 
 
+@app.get("/automations/{automation_id}/memory/files", dependencies=[Depends(auth)])
+def list_memory_files(automation_id: str) -> dict:
+    # §19 read-only memory listing (backs §20 `automation memory show`).
+    # No live-execution 409 and no lock: §6 atomic commit means a read
+    # never sees a partial file.
+    a = _auto_or_404(automation_id)
+    return {"files": store.memory_files(a)}
+
+
+@app.get("/automations/{automation_id}/memory/files/{name:path}", dependencies=[Depends(auth)])
+def get_memory_file(automation_id: str, name: str) -> dict:
+    # §19 one memory file's content — same lock-free read rule as the list.
+    a = _auto_or_404(automation_id)
+    p = store.memory_file_path(a, name)
+    if p is None:
+        raise HTTPException(422, f"not a memory-relative file path: {name!r}")
+    if not p.is_file():
+        raise HTTPException(404, "no such memory file")
+    data = p.read_bytes()
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(422, "binary file — open it from the memory directory on disk "
+                                 f"instead: {store.memory_stats(a)['path']}")
+    return {"name": name, "size": len(data), "text": text}
+
+
 @app.post("/automations/{automation_id}/memory/clear", dependencies=[Depends(auth)])
 def clear_memory(automation_id: str) -> dict:
     # §9.2 MEMORY card: "Clear memory" — next execution starts fresh.

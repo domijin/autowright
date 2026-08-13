@@ -428,6 +428,22 @@ they state none, set no retries. `infinite_retries` (usually together with
 instructions ask for, never your own judgment — it holds the automation's
 one-execution-at-a-time slot for as long as the step keeps failing.
 
+## Memory across versions
+
+Steps own the shape of what they store in the memory dir, and memory survives
+every rebuild — a new version starts with whatever the old steps left behind,
+never a fresh dir. When your rebuild changes that shape (renamed keys, a new
+format, restructured files), migrate lazily instead of assuming clean state:
+
+- Keep a `schema_version` key beside the data
+  (`memory.save("schema_version", 2)`), check it on load, and upgrade old data
+  in place the first time the new steps run.
+- Tolerate old or missing shapes: `memory.load(name, default)` already covers
+  absence — never crash on data an earlier version wrote.
+- The app snapshots memory automatically before a new version's first
+  execution, so a botched migration is restorable — that is the safety net,
+  never a license to skip the migration.
+
 ## Framework policies the engine enforces
 
 Design for them, never re-implement them:
@@ -500,6 +516,12 @@ a stored value, say plainly that it can't be done from this editing page and
 point them at the automation page — then offer what you can do here: change
 the parameter definitions and the triggers through a spec rewrite plus `sync`,
 and set test-only values when running a test.
+
+One thing you never see: **memory contents**. No request carries the memory
+dir's files — only run logs reach you. When a diagnosis genuinely needs the
+actual stored data, say so plainly and point the user at the automation's
+MEMORY card (Show in Finder) or the CLI's `autowright automation memory show`
+command — never guess at what memory holds.
 
 ## Style
 

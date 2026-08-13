@@ -294,7 +294,8 @@ SDK name it uses** — `from autowright import params, log, result` (or `import 
   redaction-scans the prompt first. `agent` picks among the step's `agents` by grant name (§8);
   omitted, the first is used; naming an agent the step doesn't carry raises. Convenience
   aliases `agent.read(data, prompt, agent=None)` / `agent.write(data, prompt, agent=None)` wrap
-  it. Agent-step calls time out at 120 s (drafting calls use the §8 5-minute cap).
+  it. Agent-step calls use a 120 s window (drafting calls use the §8 5-minute one); both are
+  §8 idle windows under the same §8 hard cap.
 - `fetch_page(url) -> str` — HTTP GET honoring the §6 web policies (timeout, per-site spacing,
   retries, robots.txt, UA).
 

@@ -28,7 +28,11 @@ Backend env knobs (configuration only):
 - `AUTOWRIGHT_OLLAMA_URL` — Ollama HTTP endpoint override (default `http://localhost:11434`).
 - `AUTOWRIGHT_STEP_TIMEOUT` — the **default** per-step timeout in seconds (default 900); a
   step's own `timeout`/`no_timeout` (§4.1, §6) always wins over it.
-- `AUTOWRIGHT_AGENT_TIMEOUT_S` — per-invocation agent-call timeout in seconds (default 300)
+- `AUTOWRIGHT_AGENT_TIMEOUT_S` — per-invocation agent-call **idle window** in seconds (default
+  300): the call is killed after this long with no stdout output; every streamed line resets
+  the window (§8)
+- `AUTOWRIGHT_AGENT_HARD_CAP_S` — per-invocation agent-call **total wall-clock cap** in seconds
+  (default 1800); ends a call that streams forever (§8)
   for every §8 harness call (drafting, chat, build diagnosis).
   Configuration only, never a different code path; read per call, so a running backend picks
   up changes. Local Ollama models on big builds are the typical reason to raise it.

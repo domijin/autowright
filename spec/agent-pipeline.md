@@ -488,7 +488,12 @@ omission marker between); the §5 app-log framing always logs it whole. While th
 repair round then fixed — also writes one §5 build-failure record under
 `<logs>/build-failures/` (rounds' validation errors + raw responses, diagnosis blockers,
 the prompt) when the call settles, so failures can later feed instruction improvements. Per-call timeout
-5 minutes by default (§15 `AUTOWRIGHT_AGENT_TIMEOUT_S`); cancelling
+is an **idle window**, 5 minutes of stdout silence by default (§15 `AUTOWRIGHT_AGENT_TIMEOUT_S`):
+every stdout line the harness streams resets the window, so a call that keeps producing output
+keeps running, while a harness that buffers its whole output gets no resets and the window
+degrades to the old fixed timeout. On top of the window sits a **total wall-clock hard cap**,
+30 minutes by default (§15 `AUTOWRIGHT_AGENT_HARD_CAP_S`), so even a call that never stops
+streaming still ends. Both kills raise the same retryable timeout error; cancelling
 the job (Start over, or an edit that supersedes an in-flight steps call, §11) kills the harness
 process. The job's `stage` tracks the pipeline ("Writing the spec" → "Generating the steps" →
 "Installing the packages" — the §11 drafting labels; sync jobs start at the second, chat

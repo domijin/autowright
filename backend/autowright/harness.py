@@ -55,12 +55,24 @@ class HarnessError(Exception):
 
 
 def agent_timeout() -> int:
-    """§8/§15: per-invocation agent-call timeout in seconds. Read per call
-    (like AUTOWRIGHT_STEP_TIMEOUT) so a running backend picks up changes."""
+    """§8/§15: per-invocation agent-call idle window in seconds — the call is
+    killed after this long with no stdout output; every streamed line resets
+    it. Read per call (like AUTOWRIGHT_STEP_TIMEOUT) so a running backend
+    picks up changes."""
     try:
         return int(float(os.environ.get("AUTOWRIGHT_AGENT_TIMEOUT_S") or 300))
     except ValueError:
         return 300
+
+
+def agent_hard_cap() -> int:
+    """§8/§15: per-invocation total wall-clock cap in seconds — ends a call
+    that streams forever, which the idle window alone never would. Read per
+    call, like `agent_timeout`."""
+    try:
+        return int(float(os.environ.get("AUTOWRIGHT_AGENT_HARD_CAP_S") or 1800))
+    except ValueError:
+        return 1800
 
 
 def kill_group(proc: subprocess.Popen, sig: int | None = None) -> None:
@@ -295,7 +307,7 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     # Own session, like engine steps: timeout/cancel must reach helper
     # processes the CLI spawns — killing only the direct child can leave a
     # helper holding the stdout pipe open (read loop never sees EOF, the §8
-    # 5-minute cap silently never fires).
+    # idle window silently never fires).
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             stdin=subprocess.DEVNULL, text=True, errors="replace",
                             env=spawn_env(binpath), cwd=_neutral_cwd(HARNESS_ID[harness]),
@@ -308,9 +320,9 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     if should_abort is not None and should_abort():
         kill_group(proc)
     # §8 live progress: read stdout as it streams instead of communicate();
-    # the timeout is enforced by a timer that kills the group (readline then
-    # sees EOF), and stderr drains on its own thread so a chatty child can't
-    # deadlock on a full pipe.
+    # the timeout is enforced by a watchdog that kills the group (readline
+    # then sees EOF), and stderr drains on its own thread so a chatty child
+    # can't deadlock on a full pipe.
     timed_out = threading.Event()
 
     def _kill() -> None:
@@ -323,8 +335,34 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         except OSError:
             pass
 
-    timer = threading.Timer(timeout, _kill)
-    timer.start()
+    # §8: `timeout` is an idle window — every stdout line pushes the deadline
+    # out, so a call still streaming keeps running (a harness that buffers its
+    # whole output gets no resets and the window degrades to a fixed timeout).
+    # The hard cap bounds total wall clock even when output never stops.
+    hard_cap = agent_hard_cap()
+    start = time.monotonic()
+    idle_deadline = [start + timeout]
+    hard_deadline = start + hard_cap
+    hard_capped = threading.Event()
+    done = threading.Event()
+
+    def _watch() -> None:
+        while not done.is_set():
+            now = time.monotonic()
+            if now >= hard_deadline:
+                hard_capped.set()
+                _kill()
+                return
+            if now >= idle_deadline[0]:
+                _kill()
+                return
+            # Sleep to the nearer deadline; a reset moves idle_deadline
+            # forward, so waking at the stale deadline just re-checks and
+            # sleeps again.
+            done.wait(min(idle_deadline[0], hard_deadline) - now)
+
+    watcher = threading.Thread(target=_watch, daemon=True)
+    watcher.start()
     err_parts: list[str] = []
     drain = threading.Thread(target=lambda: err_parts.append(proc.stderr.read() or ""),
                              daemon=True)
@@ -335,6 +373,7 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     try:
         try:
             for line in proc.stdout:
+                idle_deadline[0] = time.monotonic() + timeout
                 raw_parts.append(line)
                 if harness == "Claude Code":
                     chunk, result, tools = _claude_stream_line(line)
@@ -361,12 +400,16 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         proc.wait()
         raise
     finally:
-        timer.cancel()
+        done.set()
     drain.join(timeout=5)
     if timed_out.is_set() and proc.returncode != 0:
-        # returncode guard: a timer firing in the instant after a successful
+        # returncode guard: a watchdog firing in the instant after a successful
         # exit must not discard a complete valid reply.
-        raise HarnessError(f"{harness} timed out after {timeout}s", retryable=True)
+        if hard_capped.is_set():
+            raise HarnessError(f"{harness} timed out after {hard_cap}s total",
+                               retryable=True)
+        raise HarnessError(f"{harness} timed out after {timeout}s without output",
+                           retryable=True)
     raw = "".join(raw_parts)
     if proc.returncode != 0:
         err = (err_parts[0] if err_parts else "") or raw

@@ -505,6 +505,18 @@ def test_agent_timeout_env(monkeypatch):
     assert harness.agent_timeout() == 300
 
 
+def test_agent_hard_cap_env(monkeypatch):
+    # §15 AUTOWRIGHT_AGENT_HARD_CAP_S: read per call, default 1800, junk ignored.
+    from autowright import harness
+
+    monkeypatch.delenv("AUTOWRIGHT_AGENT_HARD_CAP_S", raising=False)
+    assert harness.agent_hard_cap() == 1800
+    monkeypatch.setenv("AUTOWRIGHT_AGENT_HARD_CAP_S", "60")
+    assert harness.agent_hard_cap() == 60
+    monkeypatch.setenv("AUTOWRIGHT_AGENT_HARD_CAP_S", "junk")
+    assert harness.agent_hard_cap() == 1800
+
+
 def test_harness_error_retryable_flag():
     from autowright.harness import HarnessError
 
@@ -528,6 +540,41 @@ def test_invoke_timeout_kills_group_and_is_retryable(monkeypatch, tmp_path, home
         harness.invoke({"harness": "Claude Code"}, "question: hi?", timeout=1)
     assert time.monotonic() - t0 < 10  # the group kill worked — no 60 s wait
     assert "timed out after 1s" in str(ei.value)
+    assert ei.value.retryable is True
+
+
+def test_invoke_output_resets_idle_window(monkeypatch, tmp_path, home):
+    # §8: the timeout is an idle window — a child that streams a line every
+    # 0.4 s outlives a 1 s window because each line resets it. The old fixed
+    # timer would have killed this run at 1 s.
+    from autowright import harness
+
+    script = tmp_path / "claude"
+    script.write_text("#!/bin/sh\n"
+                      "i=0\n"
+                      "while [ $i -lt 5 ]; do echo tick; sleep 0.4; i=$((i+1)); done\n"
+                      "echo done\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    out = harness.invoke({"harness": "Claude Code"}, "question: hi?", timeout=1)
+    assert "done" in out
+
+
+def test_invoke_hard_cap_ends_endless_streamer(monkeypatch, tmp_path, home):
+    # §8: the hard cap bounds total wall clock — a child that streams forever
+    # never trips the idle window but dies at the cap, with a retryable error.
+    from autowright import harness
+
+    script = tmp_path / "claude"
+    script.write_text("#!/bin/sh\nwhile true; do echo tick; sleep 0.3; done\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    monkeypatch.setenv("AUTOWRIGHT_AGENT_HARD_CAP_S", "2")
+    t0 = time.monotonic()
+    with pytest.raises(harness.HarnessError) as ei:
+        harness.invoke({"harness": "Claude Code"}, "question: hi?", timeout=1)
+    assert time.monotonic() - t0 < 10
+    assert "timed out after 2s total" in str(ei.value)
     assert ei.value.retryable is True
 
 

@@ -855,7 +855,13 @@ renders the event's `percent` field (the §19 single overall pull percent — on
 never the raw per-layer numbers, which reset 0–100 per layer; the UI never parses percents out
 of `line`). Right column shows "N%"; determinate bar once a percent has arrived, indeterminate
 before; the current output line renders under the bar so the post-download steps ("verifying
-sha256 digest") are explained instead of looking stuck at 100%; suggested-model
+sha256 digest") are explained instead of looking stuck at 100%. A pull completes when the model
+shows up in `GET /ollama/status` (polled every 2 s while a pull runs), matched by the §19 rule
+that a bare name without a tag counts its `:latest` variant — Ollama stores `qwen3` as
+`qwen3:latest`, and a literal match would leave the download card spinning forever on a
+finished pull. The already-installed guard on starting a pull uses the same rule, and the
+resolved installed name (e.g. `qwen3:latest`) is what gets selected in the picker and named
+in the success toast; suggested-model
 chips fill the pull input (placeholder "e.g. qwen3-coder:30b"; they don't start the pull); suggested models qwen3-coder:30b (19 GB,
 "Best local coding model"), gemma4:e4b (9.6 GB, "Good local default"), deepseek-coder:6.7b
 (3.8 GB, "Light and quick"). A suggestion chip is hidden when that model is already installed or

@@ -42,6 +42,15 @@ const SUGGESTED = [
   { id: 'deepseek-coder:6.7b', note: 'Light and quick', meta: '3.8 GB' },
 ]
 
+/** §12/§19 bare-name rule: Ollama stores `qwen3` as `qwen3:latest` — return
+ * the name it is actually installed under, or null when it isn't installed
+ * (mirrors the backend's ollama_model_installed). */
+const installedVariant = (nm: string, models: string[]): string | null => {
+  if (models.includes(nm)) return nm
+  if (!nm.includes(':') && models.includes(`${nm}:latest`)) return `${nm}:latest`
+  return null
+}
+
 /** Amber notice card (§12): pulsless dot + body + amber action button — used for
  * the signed-out reconnect banner and the missing-Ollama install prompt. */
 function AmberNotice({ body, btn, onBtn, style }: {
@@ -218,17 +227,20 @@ export default function AgentNewPage() {
   }, [harness, det])
 
   // Success confirmation: poll status every 2s while a pull is in progress —
-  // the model appearing in the installed list is the source of truth.
+  // the model appearing in the installed list is the source of truth. Matched
+  // by the §19 bare-name rule: Ollama stores `qwen3` as `qwen3:latest`, and a
+  // literal match would leave the card spinning forever on a finished pull.
   useEffect(() => {
     if (!pulling) return
     const id = setInterval(() => {
       api.ollamaStatus().then((s) => {
         setSt(s)
         const nm = pullingRef.current
-        if (nm && s.models.includes(nm)) {
+        const got = nm ? installedVariant(nm, s.models) : null
+        if (got) {
           setPulling(null)
-          setModel(nm)
-          showToast(`${nm} installed — selected for this agent.`)
+          setModel(got)
+          showToast(`${got} installed — selected for this agent.`)
         }
       }).catch(() => { /* backend hiccup — keep polling */ })
     }, 2000)
@@ -258,7 +270,8 @@ export default function AgentNewPage() {
     const nm = raw.trim()
     if (!nm) { showToast('Type a model name, like qwen3-coder:30b.'); return }
     if (pulling) { showToast(`One download at a time — ${pulling} is still downloading.`); return }
-    if (models.includes(nm)) { showToast(`${nm} is already installed.`); return }
+    const have = installedVariant(nm, models)
+    if (have) { showToast(`${have} is already installed.`); return }
     // A previous attempt's terminal ollama.pull event may still sit in the
     // store — clear it or the failure effect would instantly kill this retry.
     useStore.setState({ ollamaPull: null })

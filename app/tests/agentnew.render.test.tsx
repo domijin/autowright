@@ -3,7 +3,7 @@
 // The page renders for real (happy-dom) against the real store with the api
 // module mocked.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('../src/api', () => ({
   connectInfo: vi.fn(async () => false),
@@ -176,6 +176,43 @@ describe('AgentNewPage (§12)', () => {
     })
     expect(await screen.findByText('45%')).toBeTruthy()
     expect(screen.getByText('pulling 3f2a… 45% 8.6 GB/19 GB')).toBeTruthy()
+  })
+
+  it('a bare name already installed as :latest is not re-pulled (§12/§19 rule)', async () => {
+    status({ ready: true, installed: true, models: ['qwen3:latest'] })
+    render(<AgentNewPage />)
+    fireEvent.click(screen.getByText('OpenCode'))
+    fireEvent.click(screen.getByText('A local model'))
+    fireEvent.change(await screen.findByPlaceholderText('e.g. qwen3-coder:30b'),
+      { target: { value: 'qwen3' } })
+    fireEvent.click(screen.getByText('Download'))
+    expect(mockedApi.ollamaPull).not.toHaveBeenCalled()
+    expect(storeMod.useStore.getState().toast).toContain('qwen3:latest is already installed')
+  })
+
+  it('a bare-name pull completes when Ollama lists its :latest variant', async () => {
+    status({ ready: true, installed: true, models: [] })
+    render(<AgentNewPage />)
+    fireEvent.click(screen.getByText('OpenCode'))
+    fireEvent.click(screen.getByText('A local model'))
+    fireEvent.change(await screen.findByPlaceholderText('e.g. qwen3-coder:30b'),
+      { target: { value: 'qwen3' } })
+
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByText('Download'))
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(mockedApi.ollamaPull).toHaveBeenCalledWith('qwen3')
+      expect(screen.getByText(/Downloading/)).toBeTruthy()
+
+      // Ollama stores the bare name under :latest — the poll must match it.
+      status({ ready: true, installed: true, models: ['qwen3:latest'] })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2100) })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(screen.queryByText(/Downloading/)).toBeNull()
+    expect(storeMod.useStore.getState().toast).toContain('qwen3:latest installed')
   })
 
   it('a failed pull clears the progress card and toasts the failure line', async () => {

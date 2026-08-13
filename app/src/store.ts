@@ -287,6 +287,12 @@ export const useStore = create<Model>((set, get) => ({
         // Refresh the body only when someone has opened this execution —
         // unviewed executions would otherwise accumulate a full record each.
         if (full) void m.loadExecution(ej.id)
+        // §19: full-only fields (latest/memory/snapshots/versions) never ride
+        // events — refetch the full record so an open detail page's LATEST
+        // RESULT card shows this run. Only when the full record was ever
+        // fetched; never for tests (draft-scoped, they don't touch `latest`).
+        const row = ej.automationId ? get().automations.find((a) => a.id === ej.automationId) : undefined
+        if (!ej.test && row && 'latest' in row) void m.loadAuto(row.id)
         // §7: the finished execution gets a summary toast (prototype pattern:
         // "<name> finished — <chip>."). Cancelled executions are user-initiated —
         // no toast; §11 tests report in the Test card instead.

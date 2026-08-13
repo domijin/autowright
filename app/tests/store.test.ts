@@ -229,6 +229,30 @@ describe('applyEvent', () => {
     })
     expect(store.useStore.getState().toast).toBeNull()
   })
+
+  it('exec.finished refetches the full automation record only when one is loaded (§19)', () => {
+    const getAutomation = vi.mocked(apiMod.api.getAutomation)
+    const row = (over: Record<string, unknown> = {}) =>
+      ({ id: 'a1', name: 'Auto', lastStatus: 'none', triggers: [], live: [], ...over }) as never
+    const finished = (id: string, over: Partial<Execution> = {}) => ({
+      event: 'execution.finished',
+      execution: ex(id, 1, { status: 'cancelled', ...over }), // cancelled: no toast timer to flush
+      automation: row(),
+    })
+    // list-shape row only (detail page never opened) → no refetch
+    getAutomation.mockClear()
+    store.useStore.setState({ automations: [row()] })
+    store.useStore.getState().applyEvent(finished('e1'))
+    expect(getAutomation).not.toHaveBeenCalled()
+    // full record loaded (`latest` key present, even null) → refetch
+    store.useStore.setState({ automations: [row({ latest: null })] })
+    store.useStore.getState().applyEvent(finished('e2'))
+    expect(getAutomation).toHaveBeenCalledWith('a1')
+    // §4.5 test executions are draft-scoped — never refetch
+    getAutomation.mockClear()
+    store.useStore.getState().applyEvent(finished('e3', { test: true }))
+    expect(getAutomation).not.toHaveBeenCalled()
+  })
 })
 
 describe('applyEvent — automation.changed row patching (§19)', () => {

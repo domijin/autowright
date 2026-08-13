@@ -203,7 +203,13 @@ Sections top to bottom:
   that wrote no `result.md` gets no top view and the footer **expanded** instead, so the card is
   never blank; its rows still start collapsed and still expand to the same previews. Chip rules,
   per-session collapse state, and the no-files dashed placeholder are §7's, unchanged. The full
-  every-file stack stays one click away on the execution page. When the latest
+  every-file stack stays one click away on the execution page. The card is **live**: on
+  `execution.finished` the page refetches the full record (§19 client rule), so the finished
+  run's result replaces the previous one — and replaces the no-executions empty state after a
+  first run — without leaving the page. With parallel executions the card shows the most
+  recently **started** run that has finished with a result (§4.1 `latest` ordering — the same
+  run the status chip reflects), so an older run finishing later never replaces a newer run's
+  result. When the latest
   execution **failed**, the card opens with a red-tinted **failure notice** ahead of any result
   views: "Failed at step “`<name>`”" (the step name in curly quotes; "Execution failed" when
 `error.step` is null), the §4.5 possible reason as plain text when present, the

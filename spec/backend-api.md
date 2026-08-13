@@ -390,7 +390,11 @@ remain plain dicts (§2).
   (the record header, §19 executions-list shape) plus `automation` — the owning automation in
   list shape, or `null` when there is no row to patch (§11 test executions; an automation
   deleted before `finished`) — so clients patch the row (`lastStatus`, `live`, `nextAt`)
-  without a poll; the merge rule below applies. `automation.changed` carries `automationId` plus
+  without a poll; the merge rule below applies. A non-test `execution.finished` additionally
+  makes a client holding that automation's **full** record re-`GET /automations/{id}`: the
+  full-only fields (`latest`/`memory`/`snapshots`/`versions`) never ride events, and this
+  refetch is what moves the §9.2 LATEST RESULT card (and the memory/snapshot lists) to the
+  finished run. `automation.changed` carries `automationId` plus
   `automation` — the changed automation in list shape, or `null` when it was deleted —
   whenever exactly one automation changed; clients patch that one row in place by **merging**
   it over the stored record, never replacing it. The list shape lacks the full-record fields

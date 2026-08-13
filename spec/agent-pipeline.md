@@ -386,7 +386,9 @@ notes rewrite (§11).
    `agents` list (agent steps only) holds `{ name, why? }` entries whose names must be
    enabled-agent grants — the engine resolves the names against the automation's enabled
    agents at execution time; no per-step agent id is ever assigned or stored. An entry's
-   `why` is that agent's role note (its tag tooltip, §9.2); a step listing two or more
+   `why` is that agent's role note (appended to its tag tooltip, §9.2/§11 — a single-entry
+   or empty list shows the step's own `why` there instead, so both read as the user's plain
+   words); a step listing two or more
    entries must carry a `why` on every one — a single shared step `why` can't tell two
    agents' jobs apart.
 8. Per-step `timeout` is an optional positive integer (seconds); `no_timeout: true` is the

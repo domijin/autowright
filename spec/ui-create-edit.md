@@ -194,7 +194,9 @@ applies unchanged; the chat pane never collapses.
   label; accent-tinted border/background on hover, 1 px press-down on :active): Track manga
   chapters (fa-book-open) / Back up a folder every night (fa-box-archive) / Email me a
   weekly report (fa-envelope) / Watch a product's price (fa-tag) / Tidy my screenshots
-  folder (fa-broom). Clicking a chip fills the input (it never sends). Footer reassurance
+  folder (fa-broom) / Log ideas from Discord (fa-brands fa-discord — the one brand icon;
+  the others are fa-solid). The Discord chip promotes the §4.3 Discord trigger: its text
+  describes a message-triggered automation. Clicking a chip fills the input (it never sends). Footer reassurance
   line: "Your AI writes the steps — Autowright still executes everything on this Mac."
   Edit-mode empty state (no stored thread): "Ask anything, or describe a change — your AI
   answers here and rewrites the spec when you ask for changes."
@@ -579,23 +581,27 @@ editors enter with
   "No settings needed — your AI didn't ask for any."
 - **Steps** — readable scripts with per-step read-only tags (same tag language as the §9.2
   detail page — never menus, every tag carries a plain-language tooltip — the §14 Tag
-  tooltip bubble, custom, not the native `title`): an agent step
+  tooltip bubble, custom, not the native `title`; every tooltip follows one shape — what
+  the tag is, then " — `<why>`" appended when a why exists, never a why alone): an agent step
   shows one microchip-icon tag per entry in its `agents`
   list (tooltip "This step calls `<name>` · `<model>` mid-execution", with " — `<why>`"
-  appended when the entry carries its §4.1 role note; a tag turns red when its
+  appended — the entry's §4.1 role note, falling back to the step's own `why`; a tag turns
+  red when its
   name matches no enabled agent — red tooltip "`<name>` isn't enabled for steps — this step
   would fail"; an empty list shows one tag
-  naming the automation's first enabled agent, and reads "no agent" in red when none is
+  naming the automation's first enabled agent (step-`why` tooltip rule), and reads "no agent"
+  in red when none is
   enabled — red tooltip "No agent is enabled for steps — this step would fail"), a step shows
   one key-icon tag per secret it uses (its `secrets` entries' names unioned with
-  the `secrets.NAME` references in its code; same §9.2 secret tooltip — the declared
-  entry's `why`, generic fallback), a step shows one box-icon tag per declared §6.2 package
+  the `secrets.NAME` references in its code; same §9.2 secret tooltip — "This step uses the
+  `<NAME>` secret from your Keychain", with " — `<why>`" appended when the declared entry
+  carries its §4.1 per-use note), a step shows one box-icon tag per declared §6.2 package
   it uses (its `packages` entries' imports unioned with the declared `import` names appearing
   in its code), labeled with the import name — tooltip "This step uses the `<name>` Python
   package, version `<x.y.z>` — `<why>`", with the installed version when the §6.2 install
   check has reported one (else without the version clause) and `why` the step entry's §4.1
-  per-use note, falling back to the package declaration's §6.2 general `why`, then to
-  "installed automatically" — and every step
+  per-use note, falling back to the package declaration's §6.2 general `why` (no why at
+  all — old data — drops the clause) — and every step
   shows the §9.2 clock-icon time-limit tag (same labels and tooltips). Which agents a step calls is decided by
   the drafting agent per the §8 selection rule — changing it happens through the spec or
   build instructions plus sync (or the agent-enablement card), not per step. Step rows expand the same way as §9.2 — whole-row click, caret-only right-edge

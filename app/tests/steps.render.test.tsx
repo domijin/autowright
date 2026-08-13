@@ -56,7 +56,52 @@ describe('StepList (shared)', () => {
     const steps = [step({ agent: true, agents: [{ name: 'Cloud writer', why: 'writes prose' }] })]
     render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} packages={[]} />)
     const tag = screen.getByText('Cloud writer')
-    expect(tag.closest('span')?.getAttribute('aria-label')).toContain('mid-execution')
+    expect(tag.closest('span')?.getAttribute('aria-label')).toContain('mid-execution — writes prose')
+  })
+
+  it('editor variant: an agent entry without a why falls back to the step why', () => {
+    const steps = [step({ agent: true, why: 'needs judgment on titles', agents: [{ name: 'Cloud writer' }] })]
+    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} packages={[]} />)
+    const tag = screen.getByText('Cloud writer')
+    expect(tag.closest('span')?.getAttribute('aria-label'))
+      .toContain('mid-execution — needs judgment on titles')
+  })
+
+  it('editor variant: the empty-list fallback agent tag carries the step why', () => {
+    const steps = [step({ agent: true, why: 'summarizes the page' })]
+    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} packages={[]} />)
+    const tag = screen.getByText('Cloud writer')
+    expect(tag.closest('span')?.getAttribute('aria-label')).toContain('— summarizes the page')
+  })
+
+  it('secret tag tooltip: what + why when declared, what alone for code refs', () => {
+    const steps = [step({
+      secrets: [{ name: 'CRM_API_KEY', why: 'authenticates the CRM fetch' }],
+      code: 'a = secrets.CRM_API_KEY\nb = secrets.MAIL_PASSWORD',
+    })]
+    render(<StepList variant="editor" steps={steps} availAgents={[]} packages={[]} />)
+    expect(screen.getByText('CRM_API_KEY').closest('span')?.getAttribute('aria-label'))
+      .toBe('This step uses the CRM_API_KEY secret from your Keychain — authenticates the CRM fetch')
+    expect(screen.getByText('MAIL_PASSWORD').closest('span')?.getAttribute('aria-label'))
+      .toBe('This step uses the MAIL_PASSWORD secret from your Keychain')
+  })
+
+  it('package tag tooltip: no why at all drops the why clause', () => {
+    const packages: PackageDep[] = [{ pip: 'requests', import: 'requests', why: '' }]
+    const steps = [step({ code: 'import requests' })]
+    render(<StepList variant="editor" steps={steps} availAgents={[]} packages={packages} />)
+    const pkgTag = screen.getAllByText('requests').find((el) =>
+      el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
+    expect(pkgTag!.closest('span')?.getAttribute('aria-label'))
+      .toBe('This step uses the requests Python package')
+  })
+
+  it('detail variant: agent tag tooltip reads what + why', () => {
+    const steps = [step({ agent: true, why: 'writes the final summary' })]
+    render(<StepList variant="detail" steps={steps} fallbackAgent="Cloud writer" />)
+    const tag = screen.getByText('Cloud writer')
+    expect(tag.closest('span')?.getAttribute('aria-label'))
+      .toBe('This step calls the Cloud writer AI agent — writes the final summary')
   })
 })
 
@@ -84,6 +129,10 @@ describe('stepPackageTags', () => {
       { import: 'pandas', why: 'parses the price tables', version: '2.2' },
       { import: 'bs4', why: 'parse pages', version: undefined },
     ])
+  })
+  it('a declared entry with an empty why falls back to the declaration general why', () => {
+    const tags = stepPackageTags(step({ packages: [{ import: 'pandas', why: '' }] }), deps)
+    expect(tags).toEqual([{ import: 'pandas', why: 'general data work', version: '2.2' }])
   })
 })
 

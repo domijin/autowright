@@ -83,7 +83,8 @@ agents:
 ```
 
 With a single entry the `why` is optional — the step's own `why` already covers
-it. One rule decides both choices: when the SPEC or BUILD INSTRUCTIONS name
+it, and shows as the agent tag's tooltip note, so write it in the user's plain
+words. One rule decides both choices: when the SPEC or BUILD INSTRUCTIONS name
 which agent or secret to use, follow them; otherwise pick whichever granted
 entries fit the step best, by your own judgment. Omit `agents` to let the step
 use the automation's default agent; omit `secrets` when the step uses none.

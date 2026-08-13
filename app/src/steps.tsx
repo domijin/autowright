@@ -25,12 +25,13 @@ export function stepSecretNames(s: Step): string[] {
 
 // A step's packages are its declared `packages` entries unioned with the §6.2
 // declared imports appearing in its code (§4.1). Tags carry the declared
-// entry's per-step `why`; a code-matched import with no entry falls back to
-// the package declaration's general `why` in the tooltip.
+// entry's per-step `why`, falling back to the package declaration's general
+// `why` (§4.1); with neither, the tooltip drops its why clause.
 export function stepPackageTags(s: Step, packages: PackageDep[]):
     { import: string; why?: string; version?: string }[] {
   const version = (imp: string) => packages.find((p) => p.import === imp)?.version
-  const tags = (s.packages ?? []).map((e) => ({ ...e, version: version(e.import) }))
+  const general = (imp: string) => packages.find((p) => p.import === imp)?.why
+  const tags = (s.packages ?? []).map((e) => ({ ...e, why: e.why || general(e.import), version: version(e.import) }))
   for (const p of packages) {
     if (tags.some((t) => t.import === p.import)) continue
     if (new RegExp(`\\b(?:import|from)\\s+${p.import}\\b`).test(s.code || '')) {
@@ -78,11 +79,12 @@ function StepRow(props: StepRowProps) {
               <div style={{ font: "600 13px var(--sans)" }}>
                 <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{i + 1}.</span> {step.name}
               </div>
+              {/* §11: why = the entry's role note, falling back to the step's own why */}
               {agentTags.map(({ nm, why, ag }, j) => (
                 <Tag
                   key={j}
                   title={ag
-                    ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution${why ? ` — ${why}` : ''}`
+                    ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution${(why || step.why) ? ` — ${why || step.why}` : ''}`
                     : nm
                       ? `${nm} isn’t enabled for steps — this step would fail`
                       : 'No agent is enabled for steps — this step would fail'}
@@ -99,7 +101,7 @@ function StepRow(props: StepRowProps) {
               {stepSecrets.map((t) => (
                 <Tag
                   key={t.name}
-                  title={t.why || `This step uses the ${t.name} secret from your Keychain`}
+                  title={`This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
                   icon="fa-key" c="var(--text-muted)"
                   style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
                 >
@@ -109,7 +111,7 @@ function StepRow(props: StepRowProps) {
               {stepPkgs.map((p) => (
                 <Tag
                   key={p.import}
-                  title={`This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''} — ${p.why || 'installed automatically'}`}
+                  title={`This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''}${p.why ? ` — ${p.why}` : ''}`}
                   icon="fa-cube" c="var(--text-muted)"
                   style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
                 >
@@ -165,7 +167,7 @@ function StepRow(props: StepRowProps) {
                 key={t.name}
                 icon="fa-microchip"
                 c="var(--accent)"
-                title={t.why || step.why || `This step calls the ${t.name} AI agent.`}
+                title={`This step calls the ${t.name} AI agent${(t.why || step.why) ? ` — ${t.why || step.why}` : ''}`}
                 style={{ background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' }}
               >
                 {t.name}
@@ -175,7 +177,7 @@ function StepRow(props: StepRowProps) {
               <Tag
                 key={t.name}
                 icon="fa-key"
-                title={t.why || `This step uses the ${t.name} secret from your Keychain`}
+                title={`This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
                 style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
               >
                 {t.name}

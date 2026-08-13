@@ -85,19 +85,19 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, packag
   changes. agents (agent steps only): ordered list of §8 grants the step may call, as
   { name, why? } entries — the first is agent.ask's default, the others are addressable per
   call by name; empty/absent falls back to the automation's first enabled agent. An entry's
-  why is that agent's role note (its §9.2 tag tooltip); §8 validation requires one on every
+  why is that agent's role note (appended to its §9.2/§11 tag tooltip); §8 validation requires one on every
   entry when the step lists two or more agents. secrets: §8 grants the step uses, as
   { name, why } entries — why is the per-use note (§8 rule 6, required on every declared
-  entry) shown as the key tag's tooltip (§9.2). A step's effective secrets are these names
+  entry) appended to the key tag's tooltip (§9.2). A step's effective secrets are these names
   unioned with the secrets.NAME references in its code; a code-referenced name with no
-  declared entry carries no why and keeps the generic tooltip. packages: §6.2 declared
+  declared entry carries no why and its tooltip states only what the tag is. packages: §6.2 declared
   packages the step uses, as { import, why } entries — import names a declared package's
   module (§8 validation rejects an import the version's packages list doesn't declare) and
   why is the per-step note (§8 rule 5, required on every declared entry: what THIS step uses
   the package for — the same package can serve different jobs in different steps), shown in
   the box tag's tooltip (§11). A step's effective packages are these entries unioned with the
   declared imports appearing in its code; a code-matched import with no declared entry falls
-  back to the package declaration's why, then to the generic tooltip. All three lists are chosen
+  back to the package declaration's why; with no why at all the tooltip drops its why clause. All three lists are chosen
   by the drafting agent per the §8 selection rule (the SPEC and build instructions win when they
   name a choice; the drafting agent's own judgment otherwise). timeout: optional per-step time
   limit in seconds (positive int) enforced by the §6 watchdog; noTimeout: true removes the limit

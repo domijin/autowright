@@ -222,14 +222,15 @@ export function ChatPanel({
             <Eyebrow>OR START FROM AN EXAMPLE</Eyebrow>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0 20px' }}>
               {[
-                { label: 'Track manga chapters', icon: 'fa-book-open', s: 'Check the manga I follow for new chapters every morning at 8.' },
-                { label: 'Back up a folder every night', icon: 'fa-box-archive', s: 'Back up my Projects folder to the Vault drive every night at 2.' },
-                { label: 'Email me a weekly report', icon: 'fa-envelope', s: 'Gather the week’s numbers and email the team a summary every Monday at 9.' },
-                { label: 'Watch a product’s price', icon: 'fa-tag', s: 'Watch the price of the keyboard I want and tell me when it drops below €120.' },
-                { label: 'Tidy my screenshots folder', icon: 'fa-broom', s: 'File my desktop screenshots into monthly folders every Sunday night.' },
+                { label: 'Track manga chapters', icon: 'fa-solid fa-book-open', s: 'Check the manga I follow for new chapters every morning at 8.' },
+                { label: 'Back up a folder every night', icon: 'fa-solid fa-box-archive', s: 'Back up my Projects folder to the Vault drive every night at 2.' },
+                { label: 'Email me a weekly report', icon: 'fa-solid fa-envelope', s: 'Gather the week’s numbers and email the team a summary every Monday at 9.' },
+                { label: 'Watch a product’s price', icon: 'fa-solid fa-tag', s: 'Watch the price of the keyboard I want and tell me when it drops below €120.' },
+                { label: 'Tidy my screenshots folder', icon: 'fa-solid fa-broom', s: 'File my desktop screenshots into monthly folders every Sunday night.' },
+                { label: 'Log ideas from Discord', icon: 'fa-brands fa-discord', s: 'When a message in my Discord #ideas channel starts with “idea:”, append it to my ideas file and react with a thumbs-up.' },
               ].map((c) => (
                 <button key={c.label} className="ad-chip-btn" onClick={() => setChatText(c.s)}>
-                  <i className={`fa-solid ${c.icon}`} />
+                  <i className={c.icon} />
                   {c.label}
                 </button>
               ))}

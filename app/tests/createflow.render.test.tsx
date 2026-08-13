@@ -310,6 +310,9 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('Sync with spec'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
+    // the blocked job's activity glyph is the amber check (§11 outcome glyph)
+    const glyph = document.querySelector('[data-testid="chat-thread"] .fa-check') as HTMLElement
+    expect(glyph.style.color).toBe('var(--amber)')
     // sync-source explainer + the blocker text as read-only agent output (no textareas)
     expect(screen.getByText('It couldn’t sync the steps with the spec.')).toBeTruthy()
     expect(screen.getByText('Name it in the spec.')).toBeTruthy()
@@ -500,6 +503,22 @@ describe('CreateFlow chat response application (§11)', () => {
     const feedLine = screen.getByText('Reading https://example.com/docs…')
     expect(screen.getByText('Writing the reply…')).toBeTruthy()
     expect(feedLine.compareDocumentPosition(screen.getByText('Looked into it.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('a failed job’s activity entry settles into a red X, not a check (§11 outcome glyph)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'j1', status: 'failed', stage: null, detail: null, error: 'The harness crashed.',
+      mode: 'chat', draft: null,
+      events: [{ time: 1, text: 'Reading the spec…' }],
+    })
+    render(<CreateFlow />)
+    send('Change it')
+    await waitFor(() => expect(screen.getByText('The harness crashed.')).toBeTruthy(), { timeout: 3000 })
+    // the trail survives with the failed glyph; the feed line is kept
+    const thread = document.querySelector('[data-testid="chat-thread"]')!
+    expect(thread.querySelector('.fa-xmark')).toBeTruthy()
+    expect(thread.querySelector('.fa-check')).toBeNull()
+    expect(screen.getByText('Reading the spec…')).toBeTruthy()
   })
 
   it('a notes rewrite applies without marking the workflow out of sync (§4.1)', async () => {

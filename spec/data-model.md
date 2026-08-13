@@ -369,10 +369,12 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   gating), and the §11 chat thread (`chat` on the payload → the container's `chat.jsonl`, §5).
   Persisted thread entries: `{ id: uuid, kind: user | answer | activity | rewrite |
   blockers | system
-  | error, text?, title?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
+  | error, text?, title?, outcome?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
   `user` a
   message, `answer` the agent's markdown reply, `activity` a settled §8 job's record
-  (`title` = its final stage label, text = one event per line; §11),
+  (`title` = its final stage label, text = one event per line, `outcome` = the job's
+  settled status — done | blocked | failed — driving the §11 outcome glyph; an entry
+  persisted before the field existed has none and renders as done; §11),
   `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list —
   each blocker `{ reason, fix, details?, kind? }`, `kind` only ever the literal
   `user-action` (§8 blocker response) —

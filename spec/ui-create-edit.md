@@ -48,10 +48,14 @@ applies unchanged; the chat pane never collapses.
     `done`, `blocked`, or `failed` (a cancelled job leaves none — its request text
     returns to the input instead): the job's final stage label (`title`) plus its full
     §8 `events` feed. Renders exactly like the live progress entry it replaces — the
-    stage label kept, a green check in the spinner's 13 px box (same size, so the text
-    never shifts when the spinner settles into the check), the dim
+    stage label kept, an **outcome glyph** in the spinner's 13 px box (same size, so the
+    text never shifts when the spinner settles): a green check when the job ended
+    `done`, an amber check when it ended `blocked` (the trail finished; the blockers
+    entry beneath asks for input), a red X (`fa-xmark`) when it ended `failed` — the dim
     single-line-ellipsized feed beneath — so the trail of what the agent did survives
-    the job. Excluded from the agent's §8 CONVERSATION context (operational noise, §8).
+    the job, and a failed job never leads with a green check. The entry's §4.4
+    `outcome` field carries the settled status; an entry persisted before the field
+    existed renders as done. Excluded from the agent's §8 CONVERSATION context (operational noise, §8).
   - **rewrite** — a "Spec updated" event: an icon-led event line, the user's request text
     echoed beneath it as dim prose (the §8 payload carries no summary field), the
     out-of-sync note ("The workflow is out of sync — sync the steps before saving."),
@@ -163,7 +167,7 @@ applies unchanged; the chat pane never collapses.
   job settles, the outcome landing as ordinary thread entries in its place — led by an
   **activity** entry carrying the job's final stage label and full event feed (entry
   kinds above), so the label and detail lines outlive the spinner, which settles into a
-  same-size check. The thread
+  same-size outcome glyph (entry kinds above). The thread
   auto-pins to the bottom when the entry appears; while the feed grows it follows only
   when the user is already at (or near) the bottom — a user who scrolled up is never
   yanked back down. Meanwhile the composer keeps its two-row shape — the textarea stays

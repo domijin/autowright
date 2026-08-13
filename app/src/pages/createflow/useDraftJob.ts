@@ -105,7 +105,7 @@ export function useDraftJob(d: DraftJobDeps) {
             setRev((r) => {
               if (!r) return r
               const title = jobStageTitle(r, r.genStage === 'Installing the packages')
-              const feed = newEntry({ kind: 'activity', title, text: evs.map((e) => e.text).join('\n') })
+              const feed = newEntry({ kind: 'activity', title, text: evs.map((e) => e.text).join('\n'), outcome: j.status as 'done' | 'blocked' | 'failed' })
               return { ...r, chat: [...r.chat, feed] }
             })
           }

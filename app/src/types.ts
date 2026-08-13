@@ -99,6 +99,9 @@ export interface ChatEntry {
   kind: 'user' | 'answer' | 'activity' | 'rewrite' | 'blockers' | 'system' | 'error'
   text?: string
   title?: string         // activity: the settled job's final stage label (§11)
+  // activity: the job's settled status, driving the §11 outcome glyph — a
+  // pre-field entry has none and renders as done
+  outcome?: 'done' | 'blocked' | 'failed'
   blockers?: Blocker[]
   // blockers entries: which call produced them — decides headline + primary action
   source?: 'chat' | 'spec' | 'steps' | 'sync'

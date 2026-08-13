@@ -277,16 +277,19 @@ export function ChatPanel({
           }
           if (e.kind === 'activity') {
             // §11: a settled job — the live progress entry's exact layout with
-            // a check in the spinner's 13px box (same size, no text shift),
-            // the stage label kept, and the full event feed beneath, flush
-            // left with the check
+            // an outcome glyph in the spinner's 13px box (same size, no text
+            // shift): green check done, amber check blocked, red X failed (a
+            // pre-outcome-field entry renders as done), the stage label kept,
+            // and the full event feed beneath, flush left with the glyph
             const lines = (e.text ?? '').split('\n').filter(Boolean)
+            const failed = e.outcome === 'failed'
+            const glyphColor = failed ? 'var(--red)' : e.outcome === 'blocked' ? 'var(--amber)' : 'var(--green)'
             return (
               <div key={e.id}>
                 {e.title && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ width: 13, height: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <i className="fa-solid fa-check" style={{ fontSize: 11, color: 'var(--green)' }} />
+                      <i className={`fa-solid ${failed ? 'fa-xmark' : 'fa-check'}`} style={{ fontSize: 11, color: glyphColor }} />
                     </span>
                     <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>{e.title}</div>
                   </div>

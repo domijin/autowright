@@ -938,6 +938,8 @@ export default function AutomationDetail() {
   // §19: per-trigger next occurrences come from POST /triggers/preview — the
   // renderer holds no trigger math (must run before the early return: hooks).
   const trigPreviews = useTriggerPreview(auto?.triggers ?? [])
+  const [editTrig, setEditTrig] = useState<string | null>(null) // §9.2: id of the row swapped for the inline editor
+  const [removeTrig, setRemoveTrig] = useState<Trigger | null>(null) // §9.2: trigger awaiting remove confirmation
 
   if (!auto) return null
 
@@ -1005,8 +1007,6 @@ export default function AutomationDetail() {
       }
     })()
   }
-  const [editTrig, setEditTrig] = useState<string | null>(null) // §9.2: id of the row swapped for the inline editor
-  const [removeTrig, setRemoveTrig] = useState<Trigger | null>(null) // §9.2: trigger awaiting remove confirmation
   const toggleTrigger = (t: Trigger) => {
     putTriggers(
       trigs.map((x) => (x.id === t.id ? { ...x, enabled: !x.enabled } : x)),

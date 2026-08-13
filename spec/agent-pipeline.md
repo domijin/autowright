@@ -147,7 +147,8 @@ answer text, error-entry text, and one-line summaries of rewrite/blocker/system 
 blocker summary keeps its clipped `details` and prefixes "(needs user action)" when the
 blocker carries `kind: user-action`, so a build-diagnosis failure's specifics and a
 pending install ask both reach
-later chats — context only, so a follow-up request reads naturally), **RECENT RUNS** (below), **PACKAGES** — present when the
+later chats — context only, so a follow-up request reads naturally; §11 `activity`
+entries are skipped — a job's event feed is operational noise, not conversation), **RECENT RUNS** (below), **PACKAGES** — present when the
 draft declares §6.2 packages: the fast §6.2 installed-check's per-package status and version
 as a yaml list, so install trouble is answerable, **AUTOMATION** — the automation's current
 name and one-line description as yaml (§4.1 user-owned identity; the §19 `current` body's

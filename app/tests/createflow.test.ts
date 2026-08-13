@@ -455,9 +455,9 @@ const entry = (kind: ChatEntry['kind']): ChatEntry => ({ id: kind, kind, text: k
 
 describe('persistChat', () => {
   it('keeps every §4.4 kind in order — error entries persist so a later chat can name the failure', () => {
-    const chat = (['user', 'answer', 'error', 'rewrite', 'blockers', 'system'] as const).map(entry)
+    const chat = (['user', 'answer', 'activity', 'error', 'rewrite', 'blockers', 'system'] as const).map(entry)
     expect(persistChat(chat).map((e) => e.kind))
-      .toEqual(['user', 'answer', 'error', 'rewrite', 'blockers', 'system'])
+      .toEqual(['user', 'answer', 'activity', 'error', 'rewrite', 'blockers', 'system'])
   })
   it('drops entries outside the §4.4 kinds', () => {
     expect(persistChat([{ id: 'x', kind: 'progress' as ChatEntry['kind'], text: 'x' }])).toEqual([])

@@ -43,10 +43,22 @@ export function newEntry(e: Omit<ChatEntry, 'id' | 'at'>): ChatEntry {
   return { id: crypto.randomUUID(), at: new Date().toISOString(), ...e }
 }
 // §4.4: error entries persist too, so a later chat's CONVERSATION context
-// still names a harness failure the user saw in the thread.
-const PERSIST_KINDS = new Set(['user', 'answer', 'rewrite', 'blockers', 'system', 'error'])
+// still names a harness failure the user saw in the thread; activity entries
+// (a settled job's event feed) persist for the user but are skipped by the
+// backend's CONVERSATION assembly (§8).
+const PERSIST_KINDS = new Set(['user', 'answer', 'activity', 'rewrite', 'blockers', 'system', 'error'])
 export function persistChat(chat: ChatEntry[]): ChatEntry[] {
   return chat.filter((e) => PERSIST_KINDS.has(e.kind))
+}
+
+// §11: one stage label per job kind — shared by the live thread progress
+// entry and the persisted activity entry's title, so the settled record reads
+// exactly like the spinner line it replaces.
+export function jobStageTitle(r: Rev, installing: boolean, agentLabel: string | null): string {
+  return r.chatBusy ? 'Working on the request…'
+    : r.specBusy ? 'Writing the spec…'
+      : r.syncBusy ? `${agentLabel ?? 'Your agent'} is rewriting the steps from your spec…`
+        : installing ? 'Installing the packages…' : 'Generating the steps…'
 }
 
 export interface SecretRef { name: string; steps: number[] }

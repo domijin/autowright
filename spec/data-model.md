@@ -367,9 +367,12 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   the §11 out-of-sync state (`outOfSync` on the payload → draft-only `out_of_sync` key —
   a kept draft whose steps lag its spec must resume with saving still locked, §11 dirty
   gating), and the §11 chat thread (`chat` on the payload → the container's `chat.jsonl`, §5).
-  Persisted thread entries: `{ id: uuid, kind: user | answer | rewrite | blockers | system
-  | error, text?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` — `user` a
-  message, `answer` the agent's markdown reply,
+  Persisted thread entries: `{ id: uuid, kind: user | answer | activity | rewrite |
+  blockers | system
+  | error, text?, title?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
+  `user` a
+  message, `answer` the agent's markdown reply, `activity` a settled §8 job's record
+  (`title` = its final stage label, text = one event per line; §11),
   `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list —
   each blocker `{ reason, fix, details?, kind? }`, `kind` only ever the literal
   `user-action` (§8 blocker response) —

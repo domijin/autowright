@@ -615,6 +615,19 @@ def test_chat_json_skips_bad_lines_and_unreadable_file(tmp_path):
     assert Store.chat_json(d2) == []                          # undecodable file
 
 
+def test_save_chat_keeps_activity_title(store, tmp_path):
+    """§4.4: activity entries persist their stage-label `title` through
+    save_chat's key filter; unknown keys are still dropped."""
+    d = tmp_path / "container"
+    store.save_chat(d, [{"id": "c1", "kind": "activity", "at": "t",
+                         "title": "Generating the steps…",
+                         "text": "Writing 01-check.py…", "junk": "dropped"}])
+    from autowright.storage import Store
+    [e] = Store.chat_json(d)
+    assert e["title"] == "Generating the steps…"
+    assert "junk" not in e
+
+
 def test_default_agent_pointer_self_heals_on_load(home):
     """§4.7: a dangling or absent `default_agent` in agents.yaml falls back to
     the first agent at load; save_agents round-trips the pointer."""

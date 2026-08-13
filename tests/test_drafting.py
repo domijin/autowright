@@ -1631,6 +1631,17 @@ def test_chat_prompt_conversation_cap_and_clipping():
     assert "not a dict" not in p
 
 
+def test_chat_prompt_skips_activity_entries():
+    # §11 activity entries (a settled job's event feed) never reach the
+    # CONVERSATION context — operational noise, not conversation
+    cur = {"spec": "# T\n\nbody", "params": [], "steps": []}
+    chat = [{"kind": "activity", "text": "Writing 01-check.py…\nInstalling requests…"},
+            {"kind": "user", "text": "hello"}]
+    p = build_chat_prompt("x", cur, GRANTS, chat)
+    assert "Writing 01-check.py…" not in p
+    assert "user: hello" in p
+
+
 def test_chat_prompt_marks_user_action_blockers():
     # _conversation_lines: a kinded blocker keeps its classification, so a
     # follow-up chat knows an install ask is still pending

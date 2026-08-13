@@ -238,7 +238,8 @@ def _conversation_lines(chat: list | None) -> str:
     context — user, answer, and error text (clipped), one-line summaries for
     rewrite/blockers/system entries (a blocker keeps its clipped details, so a
     build-diagnosis failure's specifics reach later chats). Transient progress
-    entries never travel."""
+    entries never travel, and §11 `activity` entries (a settled job's event
+    feed) are deliberately skipped — operational noise, not conversation."""
     lines: list[str] = []
     for e in (chat or [])[-20:]:
         if not isinstance(e, dict):

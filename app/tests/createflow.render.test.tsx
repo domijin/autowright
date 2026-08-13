@@ -484,6 +484,24 @@ describe('CreateFlow chat response application (§11)', () => {
       .toBe('Spec updated — the workflow is out of sync. Sync the steps before saving.')
   })
 
+  it('a settled job persists its event feed as an activity entry before the outcome', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...done({ answer: 'Looked into it.' }),
+      events: [{ time: 1, text: 'Reading https://example.com/docs…' }, { time: 2, text: 'Writing the reply…' }],
+    })
+    render(<CreateFlow />)
+    send('Check the docs')
+    await waitFor(() => expect(screen.getByText('Looked into it.')).toBeTruthy(), { timeout: 3000 })
+    // the stage label survives the job with a check where the spinner was
+    expect(screen.getByText('Working on the request…')).toBeTruthy()
+    expect(spinnersIn(document.body).length).toBe(0)
+    expect(document.querySelector('[data-testid="chat-thread"] .fa-check')).toBeTruthy()
+    // the feed lines survive too, dim history above the answer
+    const feedLine = screen.getByText('Reading https://example.com/docs…')
+    expect(screen.getByText('Writing the reply…')).toBeTruthy()
+    expect(feedLine.compareDocumentPosition(screen.getByText('Looked into it.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('a notes rewrite applies without marking the workflow out of sync (§4.1)', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
       spec: null, notes: '- The site rate-limits at 10 rpm',

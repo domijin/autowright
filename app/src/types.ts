@@ -96,8 +96,9 @@ export interface VersionInfo {
 // Transient progress entries are editor state only and never use this shape.
 export interface ChatEntry {
   id: string
-  kind: 'user' | 'answer' | 'rewrite' | 'blockers' | 'system' | 'error'
+  kind: 'user' | 'answer' | 'activity' | 'rewrite' | 'blockers' | 'system' | 'error'
   text?: string
+  title?: string         // activity: the settled job's final stage label (§11)
   blockers?: Blocker[]
   // blockers entries: which call produced them — decides headline + primary action
   source?: 'chat' | 'spec' | 'steps' | 'sync'

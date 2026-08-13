@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import type { Agent, ChatEntry } from '../../types'
 import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, dispModel, usePopover } from '../../ui'
 import { Markdown } from '../../result'
-import type { Rev } from './model'
+import { type Rev, jobStageTitle } from './model'
 
 /** §11 option-button row — left-aligned quiet actions beneath an agent block. */
 function ActionRow({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
@@ -238,6 +238,28 @@ export function ChatPanel({
               </div>
             )
           }
+          if (e.kind === 'activity') {
+            // §11: a settled job — the live progress entry's exact layout with
+            // a check in the spinner's 13px box (same size, no text shift),
+            // the stage label kept, and the full event feed beneath, flush
+            // left with the check
+            const lines = (e.text ?? '').split('\n').filter(Boolean)
+            return (
+              <div key={e.id}>
+                {e.title && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 13, height: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <i className="fa-solid fa-check" style={{ fontSize: 11, color: 'var(--green)' }} />
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>{e.title}</div>
+                  </div>
+                )}
+                {lines.map((t, i) => (
+                  <div key={`${i}-${t}`} style={{ font: "400 11px/1.5 var(--sans)", color: 'var(--text-faint)', marginTop: i === 0 ? 3 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>
+                ))}
+              </div>
+            )
+          }
           if (e.kind === 'rewrite') {
             // §11: left-aligned agent event block — no card chrome
             return (
@@ -376,35 +398,32 @@ export function ChatPanel({
             transient (derived from the job, never persisted), rendered as a
             left-aligned agent block at the bottom of the thread */}
         {anyJobBusy && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <Spinner size={13} style={{ marginTop: 2, flex: 'none' }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
-                {rev.chatBusy ? 'Working on the request…'
-                  : rev.specBusy ? 'Writing the spec…'
-                    : rev.syncBusy
-                      ? `${selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'Your agent'} is rewriting the steps from your spec…`
-                      : installingPkgs ? 'Installing the packages…' : 'Generating the steps…'}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Spinner size={13} style={{ flex: 'none' }} />
+              <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
+                {jobStageTitle(rev, installingPkgs, selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : null)}
               </div>
-              {(() => {
-                // §11 activity feed: dim event history over the live detail
-                // line; the newest event hides when detail extends it (same
-                // message, growing line count) so it never shows twice.
-                const evs = rev.genEvents
-                const last = evs.length ? evs[evs.length - 1] : null
-                const hist = (rev.genDetail && last && rev.genDetail.startsWith(last) ? evs.slice(0, -1) : evs).slice(-3)
-                return (
-                  <>
-                    {hist.map((t, i) => (
-                      <div key={`${i}-${t}`} style={{ font: "400 11px/1.5 var(--sans)", color: 'var(--text-faint)', marginTop: i === 0 ? 2 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>
-                    ))}
-                    {rev.genDetail && (
-                      <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: hist.length ? 0 : 2 }}>{rev.genDetail}</div>
-                    )}
-                  </>
-                )
-              })()}
             </div>
+            {(() => {
+              // §11 activity feed: the full dim event history over the live
+              // detail line (the backend caps events per job), flush left
+              // with the spinner; the newest event hides when detail extends
+              // it (same message, growing line count) so it never shows twice.
+              const evs = rev.genEvents
+              const last = evs.length ? evs[evs.length - 1] : null
+              const hist = rev.genDetail && last && rev.genDetail.startsWith(last) ? evs.slice(0, -1) : evs
+              return (
+                <>
+                  {hist.map((t, i) => (
+                    <div key={`${i}-${t}`} style={{ font: "400 11px/1.5 var(--sans)", color: 'var(--text-faint)', marginTop: i === 0 ? 3 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>
+                  ))}
+                  {rev.genDetail && (
+                    <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: hist.length ? 0 : 3 }}>{rev.genDetail}</div>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
       </ScrollArea>

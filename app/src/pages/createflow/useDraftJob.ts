@@ -8,8 +8,9 @@ import { useEffect, useRef } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../types'
+import { agName, dispModel } from '../../ui'
 import {
-  type Rev, mergeDraftTriggers, newEntry, persistChat,
+  type Rev, jobStageTitle, mergeDraftTriggers, newEntry, persistChat,
   seedDrafting, seedEmpty, seedFromPayload, serializeDraft,
 } from './model'
 
@@ -90,12 +91,26 @@ export function useDraftJob(d: DraftJobDeps) {
             lastStage = j.stage
             lastDetail = j.detail ?? null
             lastEvKey = evKey
-            const texts = evs.slice(-4).map((e) => e.text)
+            const texts = evs.map((e) => e.text)
             setRev((r) => (r ? { ...r, genStage: j.stage, genDetail: lastDetail, genEvents: texts } : r))
           }
           if (onSpec && !specDelivered && j.status === 'building' && j.draft?.spec) {
             specDelivered = true
             onSpec(j.draft.spec)
+          }
+          // §11 activity entry: a settled job persists its final stage label
+          // (rendered with a check where the spinner was) plus its full event
+          // feed, before the outcome entries the handlers append; a cancelled
+          // job leaves none — its request returns to the input.
+          if (j.status === 'done' || j.status === 'blocked' || j.status === 'failed') {
+            setRev((r) => {
+              if (!r) return r
+              const g = agents.find((a) => a.id === agentId) ?? agents.find((a) => a.default) ?? agents[0] ?? null
+              const title = jobStageTitle(r, r.genStage === 'Installing the packages',
+                g ? `${agName(g)} · ${dispModel(g)}` : null)
+              const feed = newEntry({ kind: 'activity', title, text: evs.map((e) => e.text).join('\n') })
+              return { ...r, chat: [...r.chat, feed] }
+            })
           }
           if (j.status === 'done') {
             stopPoll()

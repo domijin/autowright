@@ -721,7 +721,7 @@ class Store:
             self.save_chat(container, chat)
 
     # ---------- §11 chat thread (§5 chat.jsonl in the draft container) ----------
-    _CHAT_KEYS = ("id", "kind", "text", "blockers", "source", "diagnosed",
+    _CHAT_KEYS = ("id", "kind", "text", "title", "blockers", "source", "diagnosed",
                   "dismissed", "resolved", "at")
 
     def save_chat(self, container: Path, chat: list | None) -> None:

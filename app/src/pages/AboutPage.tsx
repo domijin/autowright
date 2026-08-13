@@ -2,8 +2,9 @@
 // update check, privacy policy, open-source libraries, disclaimer. New
 // about-ish content lands here, never on Settings.
 import React, { useEffect, useState } from 'react'
+import { api } from '../api'
 import { useStore } from '../store'
-import { BtnGhost, Eyebrow, Modal, PageTitle, ProgressBar, ScrollArea } from '../ui'
+import { BtnGhost, Eyebrow, Modal, PageTitle, ProgressBar, ScrollArea, Toggle } from '../ui'
 import { Markdown } from '../result'
 
 const REPO_URL = 'https://github.com/hansololz/autowright'
@@ -54,19 +55,31 @@ const DOCS = {
 type DocKey = keyof typeof DOCS
 
 export default function AboutPage() {
-  const { version } = useStore()
-  const [upd, setUpd] = useState<UpdateCheck>({ state: 'idle' })
+  const { version, settings, showToast, updateAvailable } = useStore()
+  // §9.4 pre-armed: a known update (§3 update-available — an automatic check,
+  // or an earlier manual one) renders the `available` state without a press.
+  const [upd, setUpd] = useState<UpdateCheck>(() => (
+    updateAvailable ? { state: 'available', version: updateAvailable } : { state: 'idle' }
+  ))
   const [doc, setDoc] = useState<DocKey | null>(null)
   const [docTexts, setDocTexts] = useState<Partial<Record<DocKey, string>>>({})
   const [docErrs, setDocErrs] = useState<Partial<Record<DocKey, boolean>>>({})
 
-  // Manual only — the app never checks for updates in the background (§9.4).
+  // Checks run manually from the button here, or daily via the §3 automatic
+  // check the toggle below controls (§9.4). Manual results feed the shared
+  // §3 state (the §9 badge): available sets it, uptodate clears it, error
+  // leaves it alone.
   const checkForUpdates = async () => {
     setUpd({ state: 'checking' })
     const r = await window.autowright?.updateCheck()
     if (!r || r.state === 'error') setUpd({ state: 'error' })
-    else if (r.state === 'available') setUpd({ state: 'available', version: r.version })
-    else setUpd({ state: 'current' })
+    else if (r.state === 'available') {
+      useStore.setState({ updateAvailable: r.version })
+      setUpd({ state: 'available', version: r.version })
+    } else {
+      useStore.setState({ updateAvailable: null })
+      setUpd({ state: 'current' })
+    }
   }
 
   // The main process streams the zip itself (§3) and pushes percent over
@@ -76,6 +89,15 @@ export default function AboutPage() {
       setUpd((u) => (u.state === 'downloading' ? { ...u, percent } : u))
     })
   }, [])
+
+  // A §3 automatic check can land while this page is open — arm the row unless
+  // a download is already under way.
+  useEffect(() => {
+    if (!updateAvailable) return
+    setUpd((u) => (u.state === 'idle' || u.state === 'checking' || u.state === 'current' || u.state === 'error'
+      ? { state: 'available', version: updateAvailable }
+      : u))
+  }, [updateAvailable])
 
   const downloadUpdate = async (v: string) => {
     setUpd({ state: 'downloading', version: v, percent: null })
@@ -106,7 +128,10 @@ export default function AboutPage() {
   }
 
   const updSub = {
-    idle: 'Updates are only checked when you ask — nothing runs in the background.',
+    // §9.4: the idle line follows the automatic-check toggle below.
+    idle: settings?.automaticUpdateCheck
+      ? 'Checks once a day — downloads still start only when you ask.'
+      : 'Updates are only checked when you ask — nothing runs in the background.',
     checking: 'Checking…',
     current: "You're up to date.",
     available: 'version' in upd ? `Version ${upd.version} is available.` : '',
@@ -179,6 +204,22 @@ export default function AboutPage() {
           >
             {updBtn.label}
           </button>
+        </div>
+        <div style={rowDivided}>
+          <div style={{ flex: 1 }}>
+            <div style={rowTitle}>Check for updates automatically</div>
+            <div style={rowSub}>
+              Once a day, ask autowright.ai whether a newer version exists. Downloads still
+              start only when you ask.
+            </div>
+          </div>
+          <Toggle
+            // §4.9 automaticUpdateCheck: same one-apply path as the Settings
+            // toggles — App.tsx pushes applySettings on every settings change,
+            // and the shell's reconcile starts or stops the §3 automatic check.
+            on={!!settings?.automaticUpdateCheck}
+            onChange={(v) => { api.patchSettings({ automaticUpdateCheck: v }).catch((e: Error) => showToast(e.message)) }}
+          />
         </div>
         <div style={row}>
           <div style={{ flex: 1 }}>

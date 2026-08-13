@@ -112,11 +112,30 @@ the update bullets below).
 - **One app process** (`requestSingleInstanceLock`): a second launch (a login item racing a
   manual open, `open -n`) quits immediately and focuses the existing window via the
   `second-instance` event — never a second tray icon, never a second §6 `POST /app-started`.
-- **In-app updates (decided):** manual-only, per §9.4 — the app never checks in the background
-  or on launch (§1 promise); everything starts from the About page's "Check for updates"
-  button. Machinery is Squirrel.Mac via Electron's built-in `autoUpdater` (its `ShipIt` helper
+- **In-app updates (decided):** the app checks for updates automatically by default — §4.9
+  `automaticUpdateCheck`, default true; PRIVACY.md names the daily check and its off switch.
+  Turning the toggle off restores strict manual-only checking (no background or launch
+  checks; everything starts from the About page's "Check for updates" button). Downloads and
+  installs are always manual, both modes — a check only ever reads the feed. Machinery
+  is Squirrel.Mac via Electron's built-in `autoUpdater` (its `ShipIt` helper
   already ships in the bundle). The repo and its releases must stay public — the update zip is
   downloaded unauthenticated.
+  - **Automatic check:** `applyShellSettings` reconciles §4.9 `automaticUpdateCheck`
+    exactly like `login`/`menuBarIcon` (startup, 60 s poll, renderer push). On the off→on
+    transition (which includes a launch with the setting on — the default) it runs the same
+    feed fetch as `update-check` immediately, then every 24 h on a timer; on→off clears the
+    timer. Nothing is persisted about past checks — each launch with the toggle on checks
+    once at startup. Automatic-check failures are silent (no badge, no toast — the manual
+    button still reports errors), and an automatic check never starts a download.
+  - **update-available event:** any check — manual `update-check` or automatic — that finds a
+    newer version records it in the main process and pushes an `update-available`
+    IPC event (the version string) to the main window; an `update-available` invoke handler
+    answers the remembered version (or `null`), so a renderer that boots after the check still
+    learns it — the §9 store subscribes to the event and asks the handler once at boot,
+    keeping `updateAvailable`. It feeds the §9 About-row badge and the §9.4 pre-armed row.
+    A later check answering up-to-date clears the remembered version and pushes `null` (the
+    feed rolled back, or the user updated by hand); an `error` check leaves it alone.
+    Otherwise it clears only with the app restart that installs the update.
   - **Artifacts:** `prod.sh` emits, next to the DMG, a zip of the signed + stapled app
     (`ditto -c -k --keepParent` → `Autowright-<version>-darwin-<arch>.zip`; the DMG is named
     `Autowright-<version>-darwin-<arch>.dmg`) — Squirrel.Mac consumes

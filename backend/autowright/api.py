@@ -1312,7 +1312,8 @@ def patch_settings(body: models.SettingsPatch) -> dict:
     if "days" in patch:
         patch["days"] = max(1, patch["days"])  # §4.9: floor 1
     with store.lock:
-        for k in ("login", "menuBarIcon", "keepAwake", "notifications", "days", "keepForever", "developerMode"):
+        for k in ("login", "menuBarIcon", "keepAwake", "automaticUpdateCheck", "notifications", "days",
+                  "keepForever", "developerMode"):
             if k in patch:
                 store.settings[k] = patch[k]
         store.save_settings()

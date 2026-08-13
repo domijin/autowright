@@ -12,7 +12,7 @@ declare global {
       saveFile(defaultName: string, data: ArrayBuffer): Promise<string | null>
       openArchive(): Promise<{ name: string; data: Uint8Array } | null>
       revealPath(p: string): Promise<void>
-      applySettings(s: { login?: boolean; menuBarIcon?: boolean }): Promise<void>
+      applySettings(s: { login?: boolean; menuBarIcon?: boolean; automaticUpdateCheck?: boolean }): Promise<void>
       tailLogs(): Promise<{ name: string; text: string }[]>
       listRequestLogs(): Promise<string[]>
       readRequestLog(name: string): Promise<string | null>
@@ -22,6 +22,8 @@ declare global {
       updateDownload(): Promise<{ ok: true } | { error: string }>
       updateInstall(): Promise<{ ok: true } | { busy: true }>
       onUpdateProgress(cb: (percent: number | null) => void): void
+      updateAvailable(): Promise<string | null>
+      onUpdateAvailable(cb: (version: string | null) => void): void
       onOpenTarget(cb: (hash: string) => void): void
     }
   }

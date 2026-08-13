@@ -365,6 +365,8 @@ async function refreshTrayAlert() {
 // stored settings at startup and on the periodic poll (a tray-only app must
 // follow CLI changes too); the renderer pushes the same shape on every
 // settings change.
+let automaticUpdateTimer = null
+
 function applyShellSettings(s) {
   if (typeof s?.login === 'boolean'
       && app.getLoginItemSettings().openAtLogin !== s.login) {
@@ -378,6 +380,19 @@ function applyShellSettings(s) {
       if (panel) panel.hide()
       tray.destroy()
       tray = null
+    }
+  }
+  // §3 automatic update check (§4.9, on by default): off→on — which includes a
+  // launch with the setting on — checks immediately, then every 24 h; on→off
+  // clears the timer. Nothing about past checks is persisted. Failures are
+  // silent, and an automatic check never starts a download.
+  if (typeof s?.automaticUpdateCheck === 'boolean') {
+    if (s.automaticUpdateCheck && !automaticUpdateTimer) {
+      void fetchUpdateState()
+      automaticUpdateTimer = setInterval(() => { void fetchUpdateState() }, 24 * 60 * 60_000)
+    } else if (!s.automaticUpdateCheck && automaticUpdateTimer) {
+      clearInterval(automaticUpdateTimer)
+      automaticUpdateTimer = null
     }
   }
 }
@@ -542,18 +557,38 @@ function isNewerVersion(remote, current) {
   return false
 }
 
-ipcMain.handle('update-check', async () => {
+// §3 update-available: any check — manual or automatic — that finds a newer
+// version remembers it here and tells the main window; an invoke handler
+// answers the remembered value so a renderer that boots after the check still
+// learns it. A later up-to-date answer clears it (feed rolled back, or the
+// user updated by hand); errors leave it alone; otherwise it lives until the
+// restart that installs.
+let availableVersion = null
+
+function recordAvailable(version) {
+  if (availableVersion === version) return
+  availableVersion = version
+  win?.webContents.send('update-available', version)
+}
+
+async function fetchUpdateState() {
   try {
     const res = await fetch(UPDATE_FEED, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return { state: 'error' }
     const version = String((await res.json()).currentRelease ?? '')
-    return isNewerVersion(version, app.getVersion())
-      ? { state: 'available', version }
-      : { state: 'uptodate' }
+    if (!isNewerVersion(version, app.getVersion())) {
+      recordAvailable(null)
+      return { state: 'uptodate' }
+    }
+    recordAvailable(version)
+    return { state: 'available', version }
   } catch {
     return { state: 'error' }
   }
-})
+}
+
+ipcMain.handle('update-check', () => fetchUpdateState())
+ipcMain.handle('update-available', () => availableVersion)
 
 // Squirrel's autoUpdater emits no download-progress events, so the zip is
 // downloaded here first — streamed to a temp file, percent pushed to the

@@ -2,8 +2,8 @@
 
 Autowright collects nothing. There is no telemetry, no analytics, no crash
 reporting, no account, and no Autowright server. This page explains where your
-data lives and the few network connections the app can make — all of them
-started by you.
+data lives and the few network connections the app can make — each one listed
+below, with its off switch.
 
 ## Everything stays on your Mac
 
@@ -27,10 +27,12 @@ drafting also stays entirely on your Mac.
 
 ## Network connections Autowright itself makes
 
-- **Check for updates** — only when you press the button on the About page: one
-  request to GitHub's public API to read the latest release. GitHub sees your
-  IP address, as with any web request. Autowright never checks in the
-  background.
+- **Check for updates** — once a day by default: one request to autowright.ai
+  (served by GitHub Pages) to read the latest version number, nothing more.
+  Turn off "Check for updates automatically" on the About page and Autowright
+  never checks in the background — only when you press the button. Downloading
+  an update — always started by you — fetches it from GitHub. Those servers
+  see your IP address, as with any web request.
 - **Installing an AI or a model** — only when you ask during setup: downloads
   come from the provider's official source (npm, Ollama, or the vendor's
   installer).
@@ -43,4 +45,4 @@ network themselves — but only in the ways you reviewed and saved.
 This policy lives at the root of the repository; any change to it is visible in
 the project's git history.
 
-_Last updated: 2026-07-26_
+_Last updated: 2026-08-12_

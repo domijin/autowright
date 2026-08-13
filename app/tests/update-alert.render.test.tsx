@@ -1,15 +1,15 @@
-// §3/§9 available-update state: the sidebar's conditional "Update available"
-// row (exists only while main's daily-check state holds a version, navigates
-// to About) and the §9.4 Updates row seeding from / feeding back into that
-// shared state. App renders for real (happy-dom) with the api module mocked
-// to a connected, onboarded snapshot.
+// §3/§9 available-update state: the About nav row's update badge (exists only
+// while main's check state holds a version) and the §9.4 Updates row seeding
+// from / feeding back into that shared state. App renders for real (happy-dom)
+// with the api module mocked to a connected, onboarded snapshot.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settings } from '../src/types'
 
 const SETTINGS: Settings = {
-  login: false, menuBarIcon: false, keepAwake: false, notifications: 'attention',
-  days: 30, keepForever: false, developerMode: false, dataPath: '/tmp', dataSize: '0 B',
+  login: false, menuBarIcon: false, keepAwake: false, automaticUpdateCheck: false,
+  notifications: 'attention', days: 30, keepForever: false, developerMode: false,
+  dataPath: '/tmp', dataSize: '0 B',
 }
 
 vi.mock('../src/api', () => ({
@@ -65,25 +65,24 @@ beforeEach(() => {
   updateCheck.mockReset()
   storeMod.useStore.setState({
     connected: true, surface: 'app', page: 'automations', automations: [],
-    executions: [], agents: [], secrets: [], settings: SETTINGS, updateVersion: null,
+    executions: [], agents: [], secrets: [], settings: SETTINGS, updateAvailable: null,
   })
 })
 afterEach(() => { cleanup(); storeMod.useStore.getState().disconnect() })
 
-describe('sidebar update alert (§9)', () => {
-  it('renders no row while no newer version is known', async () => {
+describe('sidebar update badge (§9)', () => {
+  it('renders no badge while no newer version is known', async () => {
     render(<App />)
     await waitFor(() => expect(screen.getByTestId('nav-rail')).toBeTruthy())
-    expect(screen.queryByTestId('nav-update')).toBeNull()
+    expect(screen.queryByTestId('update-badge')).toBeNull()
   })
 
-  it("seeds from main's cached state and navigates to About", async () => {
+  it("seeds from main's cached state; About opens pre-armed", async () => {
     cachedUpdate = '9.9.9'
     render(<App />)
-    const row = await screen.findByTestId('nav-update')
-    expect(row.textContent).toContain('Update available')
+    expect(await screen.findByTestId('update-badge')).toBeTruthy()
 
-    fireEvent.click(row)
+    fireEvent.click(screen.getByText('About'))
     // §9.4: About mounts directly in the `available` state — no idle line.
     expect(await screen.findByText('Version 9.9.9 is available.')).toBeTruthy()
     expect(screen.getByText('Download update')).toBeTruthy()
@@ -93,9 +92,9 @@ describe('sidebar update alert (§9)', () => {
     render(<App />)
     await waitFor(() => expect(pushUpdate).not.toBeNull())
     pushUpdate!('9.9.9')
-    expect(await screen.findByTestId('nav-update')).toBeTruthy()
+    expect(await screen.findByTestId('update-badge')).toBeTruthy()
     pushUpdate!(null)
-    await waitFor(() => expect(screen.queryByTestId('nav-update')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('update-badge')).toBeNull())
   })
 })
 
@@ -104,7 +103,7 @@ describe('About updates row ↔ shared state (§9.4)', () => {
     updateCheck.mockResolvedValueOnce({ state: 'available', version: '9.9.9' })
     render(<AboutPage />)
     fireEvent.click(screen.getByText('Check for updates'))
-    await waitFor(() => expect(storeMod.useStore.getState().updateVersion).toBe('9.9.9'))
+    await waitFor(() => expect(storeMod.useStore.getState().updateAvailable).toBe('9.9.9'))
     expect(screen.getByText('Download update')).toBeTruthy()
   })
 
@@ -113,11 +112,11 @@ describe('About updates row ↔ shared state (§9.4)', () => {
     render(<AboutPage />)
     fireEvent.click(screen.getByText('Check for updates'))
     await waitFor(() => expect(screen.getByText("You're up to date.")).toBeTruthy())
-    expect(storeMod.useStore.getState().updateVersion).toBeNull()
+    expect(storeMod.useStore.getState().updateAvailable).toBeNull()
   })
 
   it('an error result leaves the known update alone', async () => {
-    storeMod.useStore.setState({ updateVersion: '9.9.9' })
+    storeMod.useStore.setState({ updateAvailable: '9.9.9' })
     updateCheck.mockResolvedValueOnce({ state: 'error' })
     render(<AboutPage />)
     // Seeded available — the button reads "Download update"; drive the manual
@@ -128,7 +127,7 @@ describe('About updates row ↔ shared state (§9.4)', () => {
   it('a background check landing while the row sits idle flips it live', async () => {
     render(<AboutPage />)
     expect(screen.getByText('Check for updates')).toBeTruthy()
-    storeMod.useStore.setState({ updateVersion: '9.9.9' })
+    storeMod.useStore.setState({ updateAvailable: '9.9.9' })
     expect(await screen.findByText('Version 9.9.9 is available.')).toBeTruthy()
     expect(screen.getByText('Download update')).toBeTruthy()
   })

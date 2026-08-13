@@ -1985,6 +1985,7 @@ def test_settings_patch_strict_types(client):
     for bad in ({"days": True}, {"days": 2.5}, {"days": "14"}, {"days": None},
                 {"login": "yes"}, {"login": 1}, {"menuBarIcon": 0},
                 {"keepAwake": "true"}, {"keepForever": "no"}, {"developerMode": 1},
+                {"automaticUpdateCheck": 1},
                 {"notifications": "sometimes"}, {"notifications": True}):
         assert client.patch("/settings", json=bad).status_code == 422, bad
     from autowright.storage import store
@@ -1994,6 +1995,10 @@ def test_settings_patch_strict_types(client):
     assert client.patch("/settings", json={"days": 0}).status_code == 200
     assert store.settings["days"] == 1  # §4.9 floor
     assert client.patch("/settings", json={"login": True}).status_code == 200
+    # §4.9 automaticUpdateCheck: on by default, stored for §20 CLI parity
+    assert client.get("/settings").json()["automaticUpdateCheck"] is True
+    assert client.patch("/settings", json={"automaticUpdateCheck": False}).status_code == 200
+    assert store.settings["automaticUpdateCheck"] is False
 
 
 def test_restore_and_skip_step_strict_ints(client):

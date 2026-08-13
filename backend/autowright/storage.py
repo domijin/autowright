@@ -86,6 +86,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "login": True,
     "menuBarIcon": True,
     "keepAwake": True,  # §4.9: permanent idle-sleep assertion while on (§3, awake.py)
+    "automaticUpdateCheck": True,  # §4.9: on by default — consumed by the Electron shell (§3)
     "notifications": "attention",
     "days": 90,
     "keepForever": False,

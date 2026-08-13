@@ -23,7 +23,12 @@ Its top edge (46 px) sits **below** the traffic lights — the lights are pinned
 every window state) and end around y ≈ 28, so panel and lights never overlap. Collapsed
 (default, no hover) the rail is 58 px wide and shows icons only: logo at top, nav icons
 (Automations, Executions, Agents, Secrets, Settings), and the About icon pinned at the bottom
-below a flexible spacer — About is meta, not a working surface. On `:hover` the panel's width
+below a flexible spacer — About is meta, not a working surface. While the store holds §9.4
+`updateAvailable` (the §3 update-available event — a known, not-yet-installed update), the
+About row's icon carries a small `--accent` dot on its top-right corner (the update badge),
+visible in both the collapsed and expanded rail; it never shows a count pill. The badge
+follows the §3 clearing rule: gone when a later check answers up-to-date, otherwise only
+with the restart that installs. On `:hover` the panel's width
 animates 58 px → 212 px (200 ms — `var(--t-enter)` — pure CSS on the `.ad-rail` class) **overlaying** the content
 pane, which never reflows: the layout reserves a constant 58 px spacer, so the content pane
 always spans the rest of the window. Inner sidebar content keeps a fixed 212 px width with
@@ -539,10 +544,18 @@ with a bordered **Retry** button that re-attempts the import.
 
 **UPDATES**
 
-- **Updates** — a manual check only; the app never checks in the background or on
-  launch (keeps the §1 local-only promise: no network calls the user didn't ask for).
+- **Updates** — checked automatically by default (§4.9 `automaticUpdateCheck`, default
+  true; §3 automatic-check bullet); turning the toggle off restores strict manual-only
+  checking — no background or launch checks (PRIVACY.md documents both modes).
+  Downloads and installs are manual in both modes.
   Everything runs in the Electron main process over the §3 IPC handlers; the renderer
-  never talks to GitHub or the feed itself. The "Check for updates" button calls
+  never talks to GitHub or the feed itself. The row opens **pre-armed** when the store
+  holds `updateAvailable` (fed by the §3 update-available event + invoke at store boot;
+  set by any check — manual or automatic — that finds a newer version): it renders the
+  `available` state below without a button press. Manual results feed the same shared
+  state: `available` sets `updateAvailable` (the §9 badge appears and persists across
+  navigation), `uptodate` clears it, `error` leaves it alone — the §3 clearing rule.
+  The "Check for updates" button calls
   `update-check` (one fetch of the §3 feed) and reads "Checking…" (disabled) while in
   flight. Results render in the row's sub-line: `available` → "Version `<x.y.z>` is
   available." and the button becomes **"Download update"**; `uptodate` → "You're up
@@ -561,8 +574,17 @@ with a bordered **Retry** button that re-attempts the import.
   `update-install`; a `{ busy }` answer renders "An automation is executing — the
   update installs when you restart after it finishes." and keeps the button;
   otherwise the app quits and relaunches updated (the backend restarts on the next
-  launch's §3 version-compare flow). Idle sub-line: "Updates are only checked when
-  you ask — nothing runs in the background."
+  launch's §3 version-compare flow). Idle sub-line follows the toggle below: off →
+  "Updates are only checked when you ask — nothing runs in the background."; on →
+  "Checks once a day — downloads still start only when you ask."
+- **Check for updates automatically** — toggle row between Updates and What's new,
+  bound to §4.9 `automaticUpdateCheck` (default on). Sub-line "Once a day, ask
+  autowright.ai whether a newer version exists. Downloads still start only when you
+  ask." Writes PATCH `/settings` like the Settings-page toggles (§4.9 one-apply
+  path: the renderer pushes apply-settings on every settings change, and the shell's
+  reconcile starts or stops the §3 automatic check — turning it on checks
+  immediately). The row lives here, not on Settings — updates are About-page
+  territory (§4.9).
 - **What's new** — sub-line "Release notes for every version live on GitHub.";
   right-side "Release notes ↗" link (same external-anchor mechanism) to
   https://github.com/hansololz/autowright/releases. The changelog is the GitHub

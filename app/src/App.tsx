@@ -38,6 +38,9 @@ function Sidebar() {
   const nExecs = useStore((s) => s.executions.filter((e) => !e.test).length)
   const nAgents = useStore((s) => s.agents.length)
   const nSecrets = useStore((s) => s.secrets.length)
+  // §9 update badge: accent dot on the About icon while an update is known and
+  // not yet installed (§3 update-available) — visible in the collapsed rail.
+  const updateAvailable = useStore((s) => s.updateAvailable)
   const activeRoot = page === 'automation' ? 'automations' : page === 'execution' ? 'executions' : page === 'agentNew' ? 'agents' : page
   const counts: Record<string, number> = {
     automations: nAutos,
@@ -81,7 +84,18 @@ function Sidebar() {
                     ...(active ? { background: 'var(--accent-hint-bg)' } : null),
                   }}
                 >
-                  <i className={`fa-solid ${n.icon}`} style={{ width: 16, fontSize: 12, opacity: 0.85 }} />
+                  <span style={{ position: 'relative', display: 'inline-flex', flex: 'none' }}>
+                    <i className={`fa-solid ${n.icon}`} style={{ width: 16, fontSize: 12, opacity: 0.85 }} />
+                    {n.page === 'about' && updateAvailable && (
+                      <span
+                        data-testid="update-badge"
+                        style={{
+                          position: 'absolute', top: -2, right: -1, width: 6, height: 6,
+                          borderRadius: '50%', background: 'var(--accent)',
+                        }}
+                      />
+                    )}
+                  </span>
                   <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>{n.label}</span>
                   <span className="ad-rail-reveal" style={{ display: 'inline-flex' }}>
                     <CountPill n={counts[n.page] ?? 0} active={active} />
@@ -169,16 +183,18 @@ export default function App() {
   const disconnect = useStore((s) => s.disconnect)
   const login = useStore((s) => s.settings?.login)
   const menuBarIcon = useStore((s) => s.settings?.menuBarIcon)
+  const automaticUpdateCheck = useStore((s) => s.settings?.automaticUpdateCheck)
 
   useEffect(() => { void boot(); return disconnect }, [])
 
-  // §4.9: the shell owns the OS-side settings effects (login item, tray icon)
-  // — push the stored values on every load/change so OS state never drifts
-  // from the toggles (a fresh install's default login:true registers here).
+  // §4.9: the shell owns the OS-side settings effects (login item, tray icon,
+  // §3 automatic update check) — push the stored values on every load/change
+  // so OS state never drifts from the toggles (a fresh install's default
+  // login:true registers here).
   useEffect(() => {
     if (login === undefined && menuBarIcon === undefined) return
-    void window.autowright?.applySettings({ login, menuBarIcon })
-  }, [login, menuBarIcon])
+    void window.autowright?.applySettings({ login, menuBarIcon, automaticUpdateCheck })
+  }, [login, menuBarIcon, automaticUpdateCheck])
 
   if (connected === null || connected === false) {
     return <BootSplash waiting={connected === false} />

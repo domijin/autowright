@@ -294,6 +294,7 @@ export interface Settings {
   login: boolean
   menuBarIcon: boolean
   keepAwake: boolean
+  automaticUpdateCheck: boolean
   notifications: 'attention' | 'all'
   days: number
   keepForever: boolean

@@ -28,6 +28,12 @@ contextBridge.exposeInMainWorld('autowright', {
     ipcRenderer.removeAllListeners('update-progress')
     ipcRenderer.on('update-progress', (_e, pct) => cb(pct))
   },
+  // §3 update-available: known newer version (or null) + push on later finds.
+  updateAvailable: () => ipcRenderer.invoke('update-available'),
+  onUpdateAvailable: (cb) => {
+    ipcRenderer.removeAllListeners('update-available')
+    ipcRenderer.on('update-available', (_e, version) => cb(version))
+  },
   // Deep-link target ('/app?auto=<id>') pushed by main when the window already
   // exists — a reload would drop the WS and all renderer state.
   onOpenTarget: (cb) => ipcRenderer.on('open-target', (_e, hash) => cb(hash)),

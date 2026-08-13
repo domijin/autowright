@@ -269,6 +269,7 @@ class SettingsPatch(BaseModel):
     login: StrictBool = None
     menuBarIcon: StrictBool = None
     keepAwake: StrictBool = None
+    automaticUpdateCheck: StrictBool = None
     keepForever: StrictBool = None
     developerMode: StrictBool = None
     notifications: Literal["attention", "all"] = None

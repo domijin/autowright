@@ -642,6 +642,13 @@ keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac fro
   schedules and message triggers keep firing. The display can still sleep.") — while on, the
   backend holds a permanent idle-sleep power assertion (§3 sleep bullet); applied live on
   settings change, no restart. Row sits in the GENERAL card below "Show in the menu bar".
+automaticUpdateCheck: bool (default true) — "Check for updates automatically" ("Once a day,
+  ask autowright.ai whether a newer version exists. Downloads still start only when you ask.")
+  — on by default (PRIVACY.md names the daily check and its off switch; existing installs
+  gain the key as true through the defaults merge). Turning it off restores strict
+  manual-only checking. Stored here for §20 CLI parity; consumed by the Electron shell's §3
+  automatic-check machinery through the same reconcile path as `login`/`menuBarIcon`. Its
+  toggle row lives on the About page's UPDATES card (§9.4), not Settings.
 notifications: attention | all — "Only when something needs attention" / "After every execution"
 days: int ≥ 1 (default 90) — history retention; keepForever: bool disables cleanup
 developerMode: bool (default false) — "Developer mode" ("Logs every backend request and every AI

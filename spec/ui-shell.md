@@ -866,8 +866,10 @@ resolved installed name (e.g. `qwen3:latest`) is what gets selected in the picke
 in the success toast; suggested-model
 chips fill the pull input (placeholder "e.g. qwen3-coder:30b"; they don't start the pull); suggested models qwen3-coder:30b (19 GB,
 "Best local coding model"), gemma4:e4b (9.6 GB, "Good local default"), deepseek-coder:6.7b
-(3.8 GB, "Light and quick"). A suggestion chip is hidden when that model is already installed or
-currently downloading; when no chips remain, the whole SUGGESTED section is hidden. Below the
+(3.8 GB, "Light and quick"). A suggestion chip is hidden once that model is installed, and the whole
+SUGGESTED section is hidden while any model download is in progress (only one pull runs at a
+time and the pull input the chips fill is replaced by the download card, so the chips would be
+inert); when no chips remain, the section is hidden too. Below the
 pull input: link "Browse more models on Ollama ↗" (opens https://ollama.com/library).
 
 **Secrets.** List with add/edit modal, masked values, delete confirm (§4.8 — the confirm

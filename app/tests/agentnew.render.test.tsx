@@ -167,6 +167,10 @@ describe('AgentNewPage (§12)', () => {
     fireEvent.click(screen.getByText('Download'))
     await waitFor(() => expect(mockedApi.ollamaPull).toHaveBeenCalledWith('qwen3-coder:30b'))
     expect(screen.getByText(/Downloading/)).toBeTruthy()
+    // §12: the whole SUGGESTED section hides while a pull runs — the chips
+    // fill an input the download card replaced.
+    expect(screen.queryByText('SUGGESTED')).toBeNull()
+    expect(screen.queryByText('gemma4:e4b')).toBeNull()
 
     // §12: the UI renders the event's overall percent (computed in the
     // backend — never parsed out of the raw per-layer line), with the raw
@@ -176,6 +180,36 @@ describe('AgentNewPage (§12)', () => {
     })
     expect(await screen.findByText('45%')).toBeTruthy()
     expect(screen.getByText('pulling 3f2a… 45% 8.6 GB/19 GB')).toBeTruthy()
+  })
+
+  it('an installed suggested model loses its chip; the section returns after a pull (§12)', async () => {
+    status({ ready: true, installed: true, models: ['gemma4:e4b'] })
+    render(<AgentNewPage />)
+    fireEvent.click(screen.getByText('OpenCode'))
+    fireEvent.click(screen.getByText('A local model'))
+    // installed model's chip is gone; the others still render
+    expect(await screen.findByText('qwen3-coder:30b')).toBeTruthy()
+    expect(screen.getByText('deepseek-coder:6.7b')).toBeTruthy()
+    const chips = screen.getAllByText('gemma4:e4b')             // radio row only, no chip
+    expect(chips.every((el) => el.closest('.ad-chip-btn') === null)).toBe(true)
+
+    vi.useFakeTimers()
+    try {
+      fireEvent.click(screen.getByText('qwen3-coder:30b'))      // chip fills the input
+      fireEvent.click(screen.getByText('Download'))
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(screen.queryByText('SUGGESTED')).toBeNull()        // hidden while pulling
+
+      status({ ready: true, installed: true, models: ['gemma4:e4b', 'qwen3-coder:30b'] })
+      await act(async () => { await vi.advanceTimersByTimeAsync(2100) })
+    } finally {
+      vi.useRealTimers()
+    }
+    // pull done: section is back with the finished model's chip gone too
+    expect(screen.getByText('SUGGESTED')).toBeTruthy()
+    expect(screen.getByText('deepseek-coder:6.7b')).toBeTruthy()
+    const pulled = screen.getAllByText('qwen3-coder:30b')
+    expect(pulled.every((el) => el.closest('.ad-chip-btn') === null)).toBe(true)
   })
 
   it('a bare name already installed as :latest is not re-pulled (§12/§19 rule)', async () => {

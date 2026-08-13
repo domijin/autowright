@@ -332,7 +332,7 @@ export default function AgentNewPage() {
 
   const olMissingMsg = 'Local models need Ollama, which isn’t installed on this Mac yet.'
 
-  const sugRows = SUGGESTED.filter((sg) => !models.includes(sg.id) && pulling !== sg.id)
+  const sugRows = SUGGESTED.filter((sg) => !models.includes(sg.id))
 
   // Pull progress from the backend's `ollama.pull` stream — §19 computes one
   // overall monotonic percent across layers; never parse it out of the line
@@ -647,7 +647,9 @@ export default function AgentNewPage() {
                 </div>
               )}
 
-              {sugRows.length > 0 && (
+              {/* §12: hidden while a pull runs — the chips fill an input the
+                  download card replaces, so mid-pull they'd be inert. */}
+              {!pulling && sugRows.length > 0 && (
                 <>
                   <Eyebrow style={{ margin: '0 0 10px' }}>SUGGESTED</Eyebrow>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>

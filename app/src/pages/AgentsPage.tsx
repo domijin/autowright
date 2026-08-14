@@ -1,20 +1,38 @@
-// Agents page (§4.7, §12): agent cards with session-cached connection checks,
-// check/make-default/remove via row menu.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { api } from '../api'
+// Agents page (§4.7, §12): agent cards with session-cached connection checks.
+// Agent actions (check/make-default/remove) live on the edit form, not the card.
+import { useEffect, type MouseEvent } from 'react'
 import { useStore, type AgentCheck } from '../store'
 import type { Agent } from '../types'
-import { BtnPrimary, ConfirmModal, EmptyState, Eyebrow, LoadingRow, MenuRow, MiniBadge, P, PageTitle, PopMenu, usePopover, dispModel } from '../ui'
+import { BtnPrimary, EmptyState, Eyebrow, LoadingRow, MiniBadge, P, PageTitle, dispModel } from '../ui'
 
 
-function AgentCard({ ag, check, onDelete }: {
-  ag: Agent; check: AgentCheck | undefined; onDelete: (ag: Agent) => void
-}) {
+function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) {
   const { automations, go, showToast, runAgentCheck } = useStore()
-  const [menuOpen, setMenuOpen, menuRef] = usePopover()
   const checking = check === 'checking' || check === undefined
   const connecting = check === 'connecting'
   const ready = check === 'ready'
+  const busy = checking || connecting
+
+  // §12 per-card check button — Ready runs the timed "Check connection",
+  // Needs setup runs the reconnect check; both refresh the cached badge.
+  const recheck = (e: MouseEvent) => {
+    e.stopPropagation()
+    if (ready) {
+      const t0 = performance.now()
+      void runAgentCheck(ag.id).then((st) => {
+        const secs = ((performance.now() - t0) / 1000).toFixed(1)
+        showToast(st === 'ready'
+          ? `${ag.name || ag.harness} answered in ${secs} s — ready.`
+          : `${ag.name || ag.harness} didn't answer — needs setup.`)
+      })
+    } else {
+      void runAgentCheck(ag.id, 'connecting').then((st) => {
+        showToast(st === 'ready'
+          ? 'Connected — signed in as you.'
+          : 'Still signed out — finish signing in, then try again.', 2600)
+      })
+    }
+  }
   const badge = checking
     ? { label: 'Checking', c: P.cyan, bg: P.cyanBg }
     : connecting
@@ -23,23 +41,6 @@ function AgentCard({ ag, check, onDelete }: {
         ? { label: 'Ready', c: P.green, bg: P.greenBg }
         : { label: 'Needs setup', c: P.amber, bg: P.amberBg }
   const uses = ag.usedBy ?? []
-
-  const makeDefault = async () => {
-    try {
-      await api.patchAgent(ag.id, { default: true })
-      showToast(`${ag.name || ag.harness} is now the default — new automations use it.`)
-    } catch (e) { showToast((e as Error).message) }
-  }
-
-  // §12 "Check connection" — a real, timed check that refreshes the cached badge.
-  const recheck = async () => {
-    const t0 = performance.now()
-    const st = await runAgentCheck(ag.id)
-    const secs = ((performance.now() - t0) / 1000).toFixed(1)
-    showToast(st === 'ready'
-      ? `${ag.name || ag.harness} answered in ${secs} s — ready.`
-      : `${ag.name || ag.harness} didn't answer — needs setup.`)
-  }
 
   return (
     // §12: whole card opens the edit form — needs-setup opens with the reconnect banner.
@@ -60,36 +61,20 @@ function AgentCard({ ag, check, onDelete }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600, fontSize: 15 }}>{ag.name || ag.harness}</span>
         <MiniBadge c={badge.c} bg={badge.bg}>{badge.label}</MiniBadge>
-        {/* Overflow menu at the card's top right (§12) — visible in every badge state. */}
-        <div ref={menuRef} onClick={(e) => e.stopPropagation()} style={{ position: 'relative', marginLeft: 'auto' }}>
-          <button
-            className="ad-btn-ghost"
-            onClick={() => setMenuOpen(!menuOpen)}
-            title="More actions"
-            aria-label="Agent actions"
-            style={{ padding: '8px 11px' }}
-          >
-            <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
-          </button>
-          <PopMenu show={menuOpen} style={{ top: 'calc(100% + 6px)', right: 0, minWidth: 190 }}>
-            {ready && (
-              <MenuRow onClick={() => { setMenuOpen(false); void recheck() }}>
-                <i className="fa-solid fa-plug" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-                Check connection
-              </MenuRow>
-            )}
-            {ready && !ag.default && (
-              <MenuRow onClick={() => { setMenuOpen(false); void makeDefault() }}>
-                <i className="fa-solid fa-star" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-                Make default
-              </MenuRow>
-            )}
-            <MenuRow danger onClick={() => { setMenuOpen(false); onDelete(ag) }}>
-              <i className="fa-solid fa-trash-can" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-              Remove agent…
-            </MenuRow>
-          </PopMenu>
-        </div>
+        {/* §12: square icon button like the automations list's Execute now. */}
+        <button
+          className="ad-btn-exec"
+          onClick={recheck}
+          disabled={busy}
+          title={busy ? 'Checking…' : ready ? 'Check connection' : 'Reconnect'}
+          aria-label={busy ? 'Checking…' : ready ? 'Check connection' : 'Reconnect'}
+          style={{ marginLeft: 'auto' }}
+        >
+          <i
+            className={busy ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-plug'}
+            style={{ fontSize: 11 }}
+          />
+        </button>
       </div>
       <div style={{ font: `500 11px var(--mono)`, color: 'var(--text-faint)', marginTop: -5 }}>
         {ag.harness} · {dispModel(ag)}
@@ -142,55 +127,7 @@ function AgentCard({ ag, check, onDelete }: {
 }
 
 export default function AgentsPage() {
-  const { agents, agentChecks, go, showToast } = useStore()
-  const [delAgent, setDelAgent] = useState<Agent | null>(null)
-  // §14 grid-card removal: `exiting` keeps the card rendered (as a snapshot at its
-  // original index) through the fade-out even if the store drops it first;
-  // `removedIds` hides it after animationend while the store catches up.
-  const [exiting, setExiting] = useState<{ ag: Agent; index: number; check: AgentCheck | undefined } | null>(null)
-  const [removedIds, setRemovedIds] = useState<string[]>([])
-  const gridRef = useRef<HTMLDivElement>(null)
-  const flipRects = useRef<Map<string, DOMRect> | null>(null)
-
-  // FLIP phase 2 (§14): after the exiting card leaves the DOM (or is restored),
-  // slide every surviving card from its captured rect to its new grid slot.
-  const captureRects = () => {
-    const grid = gridRef.current
-    if (!grid) return
-    const rects = new Map<string, DOMRect>()
-    for (const el of Array.from(grid.children)) {
-      const fid = el.getAttribute('data-flip-id')
-      if (fid) rects.set(fid, el.getBoundingClientRect())
-    }
-    flipRects.current = rects
-  }
-  useLayoutEffect(() => {
-    const rects = flipRects.current
-    flipRects.current = null
-    const grid = gridRef.current
-    if (!rects || !grid) return
-    for (const el of Array.from(grid.children) as HTMLElement[]) {
-      const fid = el.getAttribute('data-flip-id')
-      const prev = fid ? rects.get(fid) : undefined
-      if (!prev) continue
-      const next = el.getBoundingClientRect()
-      const dx = prev.left - next.left
-      const dy = prev.top - next.top
-      if (!dx && !dy) continue
-      el.style.transition = 'none'
-      el.style.transform = `translate(${dx}px, ${dy}px)`
-      void el.offsetWidth
-      el.style.transition = 'transform var(--t-enter) var(--ease-enter)'
-      el.style.transform = ''
-      el.addEventListener('transitionend', () => { el.style.transition = '' }, { once: true })
-    }
-  }, [removedIds])
-
-  const finishExit = (id: string) => {
-    captureRects()
-    setExiting(null)
-    setRemovedIds((ids) => [...ids, id])
-  }
+  const { agents, agentChecks, go } = useStore()
 
   // §12 session cache: only agents with no cached status get checked, with a
   // small stagger. The cache entry is claimed synchronously (StrictMode
@@ -208,37 +145,6 @@ export default function AgentsPage() {
     })
   }, [agents])
 
-  const confirmDelete = async () => {
-    if (!delAgent) return
-    const ag = delAgent
-    setDelAgent(null)
-    // §14: exit animation starts now; the delete request runs concurrently.
-    // The check is frozen in the snapshot so the badge can't flip mid-fade
-    // when the store's agentChecks entry is dropped on success.
-    setExiting({ ag, index: agents.findIndex((a) => a.id === ag.id), check: agentChecks[ag.id] })
-    try {
-      await api.deleteAgent(ag.id)
-      const { [ag.id]: _gone, ...rest } = useStore.getState().agentChecks
-      useStore.setState({ agentChecks: rest })
-      showToast('Agent removed — automations it wrote still execute on schedule.')
-    } catch (e) {
-      // Restore the card in place; if it already left the DOM, FLIP siblings back.
-      captureRects()
-      setExiting((cur) => (cur?.ag.id === ag.id ? null : cur))
-      setRemovedIds((ids) => ids.filter((id) => id !== ag.id))
-      showToast((e as Error).message)
-    }
-  }
-
-  const delUses = delAgent?.usedBy ?? []
-
-  // Render list: store agents minus already-removed cards, plus the exiting
-  // card re-inserted at its original index when the store dropped it mid-exit.
-  const shown = agents.filter((ag) => !removedIds.includes(ag.id))
-  if (exiting && !shown.some((a) => a.id === exiting.ag.id)) {
-    shown.splice(Math.min(exiting.index, shown.length), 0, exiting.ag)
-  }
-
   return (
     <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
       <PageTitle
@@ -250,52 +156,16 @@ export default function AgentsPage() {
       <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 20px' }}>
         The AI that writes your automations. It never executes anything — Autowright does that. New automations use your default agent.
       </p>
-      {shown.length > 0 ? (
-        <div ref={gridRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(310px,1fr))', gap: 14 }}>
-          {shown.map((ag) => (
-            <div
-              key={ag.id}
-              data-flip-id={ag.id}
-              className={exiting?.ag.id === ag.id ? 'ad-anim-card-exit' : undefined}
-              onAnimationEnd={exiting?.ag.id === ag.id
-                ? (e) => { if (e.target === e.currentTarget) finishExit(ag.id) }
-                : undefined}
-              style={{ display: 'grid' }}
-            >
-              <AgentCard
-                ag={ag}
-                check={exiting?.ag.id === ag.id ? exiting.check : agentChecks[ag.id]}
-                onDelete={setDelAgent}
-              />
-            </div>
+      {agents.length > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(310px,1fr))', gap: 14 }}>
+          {agents.map((ag) => (
+            <AgentCard key={ag.id} ag={ag} check={agentChecks[ag.id]} />
           ))}
         </div>
       ) : (
         <EmptyState
           text="No agents yet. Existing automations still execute on schedule — but you need an agent to create or edit them."
           cta={<BtnPrimary onClick={() => go('agentNew')}>Add your first agent</BtnPrimary>}
-        />
-      )}
-      {delAgent && (
-        <ConfirmModal
-          title="Remove this agent?"
-          body={(
-            <>
-              <span style={{ fontWeight: 500, color: 'var(--text)' }}>{delAgent.name || delAgent.harness}</span>
-              {' '}will be removed from Autowright. Nothing it wrote is deleted.
-              {delUses.length > 0 && (
-                <p style={{ color: P.amber, margin: '8px 0 0' }}>
-                  {delUses.length === 1
-                    ? `“${delUses[0]}” uses this agent. It still executes on schedule — you’ll just need another agent to edit it.`
-                    : `${delUses.length} automations use this agent — they still execute on schedule, but you’ll need another agent to edit them.`}
-                </p>
-              )}
-            </>
-          )}
-          confirmLabel="Remove agent"
-          danger
-          onConfirm={() => { void confirmDelete() }}
-          onCancel={() => setDelAgent(null)}
         />
       )}
     </div>

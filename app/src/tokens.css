@@ -272,7 +272,8 @@ textarea:disabled, input:disabled { opacity: .45; }
 /* compact in-card-editor size (§9.2 trigger editor: Add/Save, New secret, permission checklist) */
 .ad-btn-accent-ghost.small { font: 500 11.5px var(--mono); padding: 5px 11px; border-radius: 7px; }
 
-/* square accent-filled icon button (per-card Execute now on the automations list) */
+/* square accent-filled icon button (per-card Execute now on the automations list,
+   per-card Reconnect on the agents list) */
 .ad-btn-exec {
   width: 28px; height: 28px; border-radius: 7px; flex: none;
   display: flex; align-items: center; justify-content: center;
@@ -427,8 +428,6 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-anim-page { animation: adFadeUp var(--t-page) var(--ease-enter) both; }
 .ad-anim-item { animation: adFadeUp var(--t-enter) var(--ease-enter) both; }
 .ad-anim-fade { animation: adFadeIn var(--t-enter) var(--ease-enter) both; }
-/* §14 grid-card removal, phase 1 — card fades out-down and stays until animationend */
-.ad-anim-card-exit { animation: adFadeOutDown var(--t-exit) var(--ease-exit) both; pointer-events: none; }
 /* §14 attention ring — one-shot spotlight (§9.4 Download update), two pulses then done */
 .ad-anim-attention { animation: adAttentionRing 900ms var(--ease-enter) 2; }
 

@@ -804,7 +804,8 @@ Needs setup (amber). Statuses are cached in the renderer for the app session: ea
 checked once, staggered, on the first Agents page visit that sees it (new agents get checked on
 the next visit); later visits render the cached badge with no re-check. The cache entry for an
 agent updates when its edit form saves ("Connecting" until the fresh result lands, §4.7 check
-re-run right after the save) and when the reconnect flow's check answers (§12 form banner).
+re-run right after the save), when the reconnect flow's check answers (§12 form banner), and
+when the edit form's "Check connection" action runs.
 Each card shows the agent's `description` detail line — the real §4.7 description only, never
 generated marketing copy (the description is drafting input, §8 grants yaml); when the description is empty
 the line reads "No description yet — add one in Edit to tell the drafting AI what this agent
@@ -814,23 +815,21 @@ USED BY means actual reference, not permission: an automation is listed when the
 writer (`agent_id`) or a current-version step names the agent's grant name in its `agents` list. The
 `enabled_agents` grant alone never counts — same rule as secrets, whose usage is step-code
 references, not `allowed_secrets` (§12 Secrets).
-There is no Edit button —
-the whole card is clickable (same hover treatment as the Automations list tiles) and opens the
-§12 edit form; a Needs-setup card opens it with the reconnect banner. Clicks on the overflow
-menu and on USED BY chips do not navigate. The card's overflow (ellipsis) menu
-button sits at the card's top right, on the title row, visible in every badge state (while a
-check is in flight only "Remove agent…" is offered); its popover opens right-aligned. The
-overflow menu holds, for
-ready agents, "Check connection" — a real §19 `/agents/{id}/check` call timed by the
-renderer: the badge returns to Checking while it runs, success toasts "`<name>` answered in
-X.X s — ready.", failure flips the badge to Needs setup and toasts "`<name>` didn't answer —
-needs setup." — and, when not default, "Make default" (toast "`<name>` is now the default —
-new automations use it.", the name falling back to the harness name); for every agent it holds
-"Remove agent…" (red, confirm modal). Confirming the removal plays the §14 grid-card removal
-exit: the card fades out-down at exit timing, then the surviving cards slide (FLIP) into their
-new grid slots; if the delete request fails the card is restored in place. Default status is
-indicated by the absent "Make default"
-menu row — no chip. Empty state (dashed card): "No agents yet. Existing automations still execute on
+There is no Edit button and no per-card menu — the whole card is
+clickable (same hover treatment as the Automations list tiles) and opens the §12 edit form; a
+Needs-setup card opens it with the reconnect banner. Clicks on USED BY chips do not navigate.
+The agent actions (check connection, make default, remove) live on the edit form's overflow
+menu (below), not on the card.
+Every card carries one action: a square accent icon button at the title row's right
+(`.ad-btn-exec` — the same style as the Automations list's per-card Execute now button — plug
+glyph). Clicking it does not navigate; what it does follows the cached check. On a Ready card
+it is "Check connection" (title/aria): the same timed §19 check as the edit form's menu row —
+badge back to Checking while it runs, success toasts "`<name>` answered in X.X s — ready.",
+failure toasts "`<name>` didn't answer — needs setup." On a Needs-setup card it is
+"Reconnect": the reconnect check (badge flips to Connecting, LoadingRow "Reconnecting…"),
+success toasts "Connected — signed in as you.", failure toasts "Still signed out — finish
+signing in, then try again." While a check is in flight the button renders disabled with a
+spinner glyph (title/aria "Checking…"), like the list's executing state. Empty state (dashed card): "No agents yet. Existing automations still execute on
 schedule — but you need an agent to create or edit them." + CTA "Add your first agent".
 
 **New / Edit agent** form (720 px, one form — title "Add an agent" and submit "Add agent",
@@ -838,7 +837,22 @@ switching to "Edit agent" / "Save changes" when editing). Edit mode is addressed
 the agent's id (`agentEditId`) in the nav snapshot, so browser back/forward re-enters the same
 edit form — never a blank add form; navigating anywhere else clears the id, and if the agent no
 longer exists the form redirects to the Agents page. The reconnect banner keys off the
-session-cached agent check being `needs` for that id. Fields, top to bottom in rendered
+session-cached agent check being `needs` for that id.
+In edit mode only, the title row carries an overflow (ellipsis) menu button at its right;
+its popover opens right-aligned. It holds, for ready agents (per the session-cached check),
+"Check connection" — a real §19 `/agents/{id}/check` call timed by the renderer: the cached
+check returns to Checking while it runs (so the Agents-page badge reflects it), success
+toasts "`<name>` answered in X.X s — ready.", failure flips the cached check to Needs setup,
+shows the form's reconnect banner, and toasts "`<name>` didn't answer — needs setup." — and,
+when not default, "Make default" (toast "`<name>` is now the default — new automations use
+it.", the name falling back to the harness name; the default flag is read live from the
+store, so the row disappears once the change lands). For every agent it holds "Remove agent…"
+(red, confirm modal — same title, body, and used-by warning as before); while a check is in
+flight only "Remove agent…" is offered. Confirming the removal deletes the agent, drops its
+cached check, toasts "Agent removed — automations it wrote still execute on schedule.", and
+returns to the Agents page; a failed delete toasts the error and stays on the form. Default
+status is indicated by the absent "Make default" menu row — no chip anywhere.
+Fields, top to bottom in rendered
 order: name (required, placeholder "Name this agent"), optional description ("What this
 agent is for — shown on the Agents page and given to the drafting agent"), pick harness
 (Claude Code / Gemini CLI / Codex / OpenCode — all four selectable, §4.7), then the MODEL

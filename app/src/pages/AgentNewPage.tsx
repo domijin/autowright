@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
 import type { Agent } from '../types'
-import { BackLink, BtnPrimary, Eyebrow, GreenCheck, LoadingRow, MiniBadge, P, ProgressBar, RadioRing } from '../ui'
+import { BackLink, BtnPrimary, ConfirmModal, Eyebrow, GreenCheck, LoadingRow, MenuRow, MiniBadge, P, PopMenu, ProgressBar, RadioRing, usePopover } from '../ui'
 
 type HarnessId = 'claude' | 'gemini' | 'codex' | 'opencode'
 
@@ -96,6 +96,9 @@ export default function AgentNewPage() {
   const [nameErr, setNameErr] = useState(false)
   const [fix, setFix] = useState<'needs' | 'busy' | 'done'>(
     () => (editAgent && agentChecks[editAgent.id] === 'needs' ? 'needs' : 'done'))
+  // §12 edit-mode overflow menu (moved off the agent card): check / make default / remove.
+  const [menuOpen, setMenuOpen, menuRef] = usePopover()
+  const [delOpen, setDelOpen] = useState(false)
   const [st, setSt] = useState<{ ready: boolean; models: string[] } | null>(null)
   const [pulling, setPulling] = useState<string | null>(null)
   const [pullText, setPullText] = useState('')
@@ -297,6 +300,49 @@ export default function AgentNewPage() {
     })
   }
 
+  // §12 overflow-menu actions — live agent for the default flag (the mount
+  // snapshot goes stale once "Make default" lands), cached check for gating.
+  const liveAgent = editAgent ? agents.find((a) => a.id === editAgent.id) ?? editAgent : null
+  const editCheck = editAgent ? agentChecks[editAgent.id] : undefined
+  // A not-ready check (needs setup, or one in flight) offers only "Remove agent…".
+  const checkReady = editCheck === 'ready'
+  const agentLabel = editAgent ? (editAgent.name || editAgent.harness) : ''
+
+  const makeDefault = async () => {
+    if (!editAgent) return
+    try {
+      await api.patchAgent(editAgent.id, { default: true })
+      showToast(`${agentLabel} is now the default — new automations use it.`)
+    } catch (e) { showToast((e as Error).message) }
+  }
+
+  // §12 "Check connection" — a real, timed check that refreshes the cached
+  // badge; a failed check surfaces the form's reconnect banner.
+  const recheck = async () => {
+    if (!editAgent) return
+    const t0 = performance.now()
+    const st = await runAgentCheck(editAgent.id)
+    const secs = ((performance.now() - t0) / 1000).toFixed(1)
+    setFix(st === 'ready' ? 'done' : 'needs')
+    showToast(st === 'ready'
+      ? `${agentLabel} answered in ${secs} s — ready.`
+      : `${agentLabel} didn't answer — needs setup.`)
+  }
+
+  const confirmDelete = async () => {
+    if (!editAgent) return
+    setDelOpen(false)
+    try {
+      await api.deleteAgent(editAgent.id)
+      const { [editAgent.id]: _gone, ...rest } = useStore.getState().agentChecks
+      useStore.setState({ agentChecks: rest })
+      go('agents')
+      showToast('Agent removed — automations it wrote still execute on schedule.')
+    } catch (e) { showToast((e as Error).message) }
+  }
+
+  const delUses = liveAgent?.usedBy ?? []
+
   const addAgent = async () => {
     if (!canAdd) {
       const needsName = harness && mode && !name.trim()
@@ -345,9 +391,43 @@ export default function AgentNewPage() {
   return (
     <div className="ad-anim-page" style={{ maxWidth: 720, margin: '0 auto', padding: '20px 30px 70px' }}>
       <BackLink label="Agents" onClick={() => go('agents')} style={{ marginBottom: 10 }} />
-      <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-.01em', margin: '0 0 6px' }}>
-        {editAgent ? 'Edit agent' : 'Add an agent'}
-      </h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-.01em', margin: 0, flex: 1 }}>
+          {editAgent ? 'Edit agent' : 'Add an agent'}
+        </h1>
+        {/* §12: edit-mode overflow menu — the agent actions moved off the card. */}
+        {editAgent && (
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              className="ad-btn-ghost"
+              onClick={() => setMenuOpen(!menuOpen)}
+              title="More actions"
+              aria-label="Agent actions"
+              style={{ padding: '8px 11px' }}
+            >
+              <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
+            </button>
+            <PopMenu show={menuOpen} style={{ top: 'calc(100% + 6px)', right: 0, minWidth: 190 }}>
+              {checkReady && (
+                <MenuRow onClick={() => { setMenuOpen(false); void recheck() }}>
+                  <i className="fa-solid fa-plug" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                  Check connection
+                </MenuRow>
+              )}
+              {checkReady && !liveAgent?.default && (
+                <MenuRow onClick={() => { setMenuOpen(false); void makeDefault() }}>
+                  <i className="fa-solid fa-star" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                  Make default
+                </MenuRow>
+              )}
+              <MenuRow danger onClick={() => { setMenuOpen(false); setDelOpen(true) }}>
+                <i className="fa-solid fa-trash-can" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                Remove agent…
+              </MenuRow>
+            </PopMenu>
+          </div>
+        )}
+      </div>
       <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 22px' }}>
         Pick the harness that writes your automations, then choose which model it uses. The agent never executes anything — Autowright does.
       </p>
@@ -698,6 +778,29 @@ export default function AgentNewPage() {
           Cancel
         </button>
       </div>
+
+      {delOpen && editAgent && (
+        <ConfirmModal
+          title="Remove this agent?"
+          body={(
+            <>
+              <span style={{ fontWeight: 500, color: 'var(--text)' }}>{agentLabel}</span>
+              {' '}will be removed from Autowright. Nothing it wrote is deleted.
+              {delUses.length > 0 && (
+                <p style={{ color: P.amber, margin: '8px 0 0' }}>
+                  {delUses.length === 1
+                    ? `“${delUses[0]}” uses this agent. It still executes on schedule — you’ll just need another agent to edit it.`
+                    : `${delUses.length} automations use this agent — they still execute on schedule, but you’ll need another agent to edit them.`}
+                </p>
+              )}
+            </>
+          )}
+          confirmLabel="Remove agent"
+          danger
+          onConfirm={() => { void confirmDelete() }}
+          onCancel={() => setDelOpen(false)}
+        />
+      )}
     </div>
   )
 }

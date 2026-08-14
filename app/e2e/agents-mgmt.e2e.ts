@@ -34,20 +34,23 @@ describe('agent management e2e', () => {
     const agents = async () => await backend!.api('GET', '/agents') as AgentJson[]
     expect((await agents()).find((a) => a.name === 'First Agent')?.default).toBe(true)
 
-    // Make Second Agent the default via its card menu.
+    // Make Second Agent the default via the edit page's overflow menu (§12 —
+    // the agent actions live on the edit form, not the card).
     const secondCard = page.getByTestId('agent-card').filter({ hasText: 'Second Agent' })
-    await secondCard.getByTitle('More actions').click()
+    await secondCard.click()
+    await page.getByRole('heading', { name: 'Edit agent' }).waitFor({ timeout: 10_000 })
+    await page.getByTitle('More actions').click()
     await page.getByText('Make default').click()
     await page.getByText(/Second Agent is now the default/).waitFor({ timeout: 10_000 })
     await waitFor(async () => (await agents()).find((a) => a.name === 'Second Agent')?.default === true,
       10_000, 'default to switch')
     await shot(page, 'agents-default-switched.png')
 
-    // Delete it — the other agent gets the default flag back.
-    await secondCard.getByTitle('More actions').click()
+    // Delete it from the same page — confirming returns to the Agents list,
+    // and the other agent gets the default flag back.
+    await page.getByTitle('More actions').click()
     await page.getByText('Remove agent…').click()
     await page.getByRole('button', { name: 'Remove agent', exact: true }).click()
-    // The confirm modal also names the agent — wait on the CARD disappearing.
     await secondCard.waitFor({ state: 'detached', timeout: 10_000 })
     await waitFor(async () => {
       const list = await agents()

@@ -15,6 +15,13 @@ AI agent (Claude Code, Gemini CLI, Codex, OpenCode, or a local Ollama model) wri
 human-readable Python step scripts, you review and approve, and a local scheduler runs those
 exact scripts on time. No re-prompting, context drift, or subscriptions.
 
+## Install
+
+Download the DMG from [autowright.ai](https://autowright.ai) or the
+[latest release](https://github.com/hansololz/autowright/releases/latest). Apple Silicon
+Macs; the app is Developer-ID signed and notarized. Or build from source — see §18 in
+[SPEC.md](SPEC.md).
+
 ## Features
 
 - **Plain-words authoring and editing** — The AI does the scripting, you do the deciding;
@@ -32,19 +39,17 @@ exact scripts on time. No re-prompting, context drift, or subscriptions.
 - **Menu-bar surface** — Glance at what's running and fire jobs without opening the window.
 - **Local and file-first** — Automations are YAML and Python on disk, secrets stay in the
   macOS Keychain, and everything runs on your Mac; portable `.autowright` export/import.
-
-## Planned Features
-
-- **First packaged release** — A signed `Autowright.app` and DMG download (today you build
-  from source).
-- **Linux and Windows support** — Currently macOS only.
-- **More install options** — Homebrew for the app, and a headless pip package for running
-  the backend and CLI without the desktop app.
 - **CLI with full app parity** — Author automations as files, execute and follow them,
   manage secrets and triggers. Headless- and agent-friendly with explicit per-automation
   secret grants.
-- **Agent skills** — Drive Autowright straight from your agent chat session (create, edit,
-  and run automations without opening the app).
+- **Agent skill** — Drive Autowright straight from your agent chat session (create, edit,
+  and run automations without opening the app); see `skills/autowright/`.
+
+## Planned Features
+
+- **Linux and Windows support** — Currently macOS (Apple Silicon) only.
+- **More install options** — Homebrew for the app, and a headless pip package for running
+  the backend and CLI without the desktop app.
 - **GitHub sync** — Keep your automations in a GitHub repo and pull changes into the app.
 - **Automation & agent marketplace** — Browse, share, and install automations and agents
   made by others.
@@ -54,5 +59,5 @@ exact scripts on time. No re-prompting, context drift, or subscriptions.
 
 ## Status
 
-Unreleased and under active development, macOS only right now. `SPEC.md` is the source of truth for
-the whole app; see §18 for the dev workflow.
+Early release, under active development, macOS only right now. Feedback and issues are very
+welcome. `SPEC.md` is the source of truth for the whole app; see §18 for the dev workflow.

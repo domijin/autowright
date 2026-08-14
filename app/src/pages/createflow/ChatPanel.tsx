@@ -210,7 +210,10 @@ export function ChatPanel({
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>
       {/* thread — no header row (§11); the composer below carries the pane's identity */}
-      <ScrollArea scrollRef={chatScrollRef} testId="chat-thread" wrapStyle={{ flex: 1, minHeight: 0 }} style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* §11 thread spacing: no flex gap — each entry carries its own top margin
+          (14px turn gap touching a user bubble, 6px between consecutive
+          agent-side entries so one response reads as one group) */}
+      <ScrollArea scrollRef={chatScrollRef} testId="chat-thread" wrapStyle={{ flex: 1, minHeight: 0 }} style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
         {rev.chat.length === 0 && !anyJobBusy && (isCreateEmpty ? (
           <div style={{ padding: '10px 4px' }}>
             <h2 style={{ font: "600 19px/1.3 var(--sans)", letterSpacing: '-.02em', margin: '0 0 8px' }}>
@@ -244,14 +247,18 @@ export function ChatPanel({
             Ask anything, or describe a change — your AI answers here and rewrites the spec when you ask for changes.
           </div>
         ))}
-        {rev.chat.map((e) => {
+        {rev.chat.map((e, i) => {
+          // §11 thread spacing: 14px turns (any gap touching a user bubble);
+          // consecutive agent-side entries chain flush, one block per response
+          const prev = i > 0 ? rev.chat[i - 1] : null
+          const mt = !prev ? 0 : e.kind === 'user' || prev.kind === 'user' ? 14 : 0
           // §11 draft undo: the standalone undo row — the page's only
           // undo affordance — beneath the snapshot's anchor entry
           // §11: tag-style pill — lighter than the option buttons; an
           // escape hatch, not a suggested next step
           const undoRow = e.id === rev.undo?.entryId && !anyJobBusy && !viewingOld && !testLive ? (
-            <ActionRow>
-              <button className="ad-btn-pill" onClick={undoDraft}>
+            <ActionRow style={{ marginTop: 10 }}>
+              <button className="ad-btn-pill action" onClick={undoDraft}>
                 <i className="fa-solid fa-rotate-left" style={{ fontSize: 9, color: 'var(--text-faint)' }} />
                 Undo this change
               </button>
@@ -260,6 +267,7 @@ export function ChatPanel({
           if (e.kind === 'user') {
             return (
               <div key={e.id} style={{
+                marginTop: mt,
                 font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-2)',
                 background: 'var(--bg-inset)', border: '1px solid var(--hairline)',
                 borderRadius: 9, padding: '8px 12px', alignSelf: 'flex-end', maxWidth: '92%',
@@ -271,8 +279,8 @@ export function ChatPanel({
           }
           if (e.kind === 'answer') {
             return (
-              <div key={e.id} style={{ font: "400 12.5px/1.65 var(--sans)", color: 'var(--text-2)' }}>
-                <Markdown text={e.text ?? ''} />
+              <div key={e.id} style={{ marginTop: mt }}>
+                <Markdown small text={e.text ?? ''} />
               </div>
             )
           }
@@ -286,7 +294,7 @@ export function ChatPanel({
             const failed = e.outcome === 'failed'
             const glyphColor = failed ? 'var(--red)' : e.outcome === 'blocked' ? 'var(--amber)' : 'var(--green)'
             return (
-              <div key={e.id}>
+              <div key={e.id} style={{ marginTop: mt }}>
                 {e.title && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ width: 13, height: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -305,10 +313,10 @@ export function ChatPanel({
             // §11: left-aligned agent event block — no card chrome
             return (
               <React.Fragment key={e.id}>
-              <div className="ad-anim-item">
+              <div className="ad-anim-item" style={{ marginTop: mt }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <i className="fa-solid fa-file-pen" style={{ fontSize: 10, color: 'var(--accent)' }} />
-                  <span style={{ font: "600 12px var(--sans)", flex: 1, minWidth: 0 }}>Spec updated</span>
+                  <span style={{ font: "600 12.5px var(--sans)", color: 'var(--text)', flex: 1, minWidth: 0 }}>Spec updated</span>
                 </div>
                 {e.text && (
                   <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 3, overflowWrap: 'break-word' }}>{e.text}</div>
@@ -337,7 +345,7 @@ export function ChatPanel({
             const blockers = e.blockers ?? []
             if (e.dismissed) {
               return (
-                <div key={e.id} style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
+                <div key={e.id} style={{ marginTop: mt, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                   {blockers.length} blocker{blockers.length === 1 ? '' : 's'} — dismissed
                 </div>
               )
@@ -349,18 +357,18 @@ export function ChatPanel({
             // offers Dismiss only (there is nothing to amend)
             const ordinary = blockers.filter((b) => b.kind !== 'user-action')
             const mdBody = (text: string) => (
-              <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-2)', margin: '3px 0 8px' }}>
-                <Markdown text={text} />
+              <div style={{ margin: '3px 0 8px' }}>
+                <Markdown small text={text} />
               </div>
             )
             return (
-              <div key={e.id} className="ad-anim-item" style={{ textAlign: 'left' }}>
+              <div key={e.id} className="ad-anim-item" style={{ marginTop: mt, textAlign: 'left' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)', flex: 'none' }} />
-                  <span style={{ font: "600 13.5px var(--sans)", color: 'var(--text)' }}>{blockersHeadline(e)}</span>
+                  <span style={{ font: "600 13px var(--sans)", color: 'var(--text)' }}>{blockersHeadline(e)}</span>
                 </div>
                 {!allUserAction && (
-                  <div style={{ font: "400 12px/1.6 var(--sans)", color: 'var(--text-muted)', margin: '0 0 10px 15px' }}>
+                  <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: '0 0 10px 15px' }}>
                     {blockersExplainer(e)}
                   </div>
                 )}
@@ -386,7 +394,7 @@ export function ChatPanel({
                   ))}
                 </div>
                 {(e.resolved ?? []).length > 0 && (
-                  <div style={{ margin: '12px 0 0', font: "400 11.5px/1.7 var(--sans)", color: 'var(--text-faint)' }}>
+                  <div style={{ margin: '12px 0 0', font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faint)' }}>
                     <Eyebrow>PREVIOUSLY RESOLVED</Eyebrow>
                     {(e.resolved ?? []).map((s, i) => <div key={i}>– {s}</div>)}
                   </div>
@@ -407,10 +415,10 @@ export function ChatPanel({
           }
           if (e.kind === 'error') {
             return (
-              <div key={e.id}>
+              <div key={e.id} style={{ marginTop: mt }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', flex: 'none', marginTop: 5 }} />
-                  <span style={{ flex: 1, minWidth: 0, font: "400 12px/1.6 var(--sans)", color: 'var(--text-2)', overflowWrap: 'break-word' }}>{e.text}</span>
+                  <span style={{ flex: 1, minWidth: 0, font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-2)', overflowWrap: 'break-word' }}>{e.text}</span>
                 </div>
                 {e.source === 'spec' && !anyJobBusy && !isEdit && (
                   <ActionRow style={{ marginTop: 8, marginLeft: 15 }}>
@@ -428,7 +436,7 @@ export function ChatPanel({
           // spec, §11)
           return (
             <React.Fragment key={e.id}>
-            <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faint)', overflowWrap: 'break-word' }}>
+            <div style={{ marginTop: mt, font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faint)', overflowWrap: 'break-word' }}>
               {e.text}
             </div>
             {undoRow}
@@ -439,7 +447,9 @@ export function ChatPanel({
             transient (derived from the job, never persisted), rendered as a
             left-aligned agent block at the bottom of the thread */}
         {anyJobBusy && (
-          <div data-testid="chat-progress">
+          // §11 thread spacing: restarting beneath a just-settled activity
+          // entry chains the same job's trail flush, else a turn gap
+          <div data-testid="chat-progress" style={{ marginTop: rev.chat.length === 0 ? 0 : rev.chat[rev.chat.length - 1].kind === 'activity' ? 0 : 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Spinner size={13} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
@@ -514,11 +524,11 @@ export function ChatPanel({
               </button>
             </div>
             {anyJobBusy ? (
-              <button className="ad-btn-pill" onClick={cancelJob} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              <button className="ad-btn-pill action" onClick={cancelJob} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
                 Cancel
               </button>
             ) : (
-              <button className="ad-btn-pill" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              <button className="ad-btn-pill action" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
                 Send
               </button>
             )}

@@ -84,11 +84,12 @@ function ViewCard({ title, kind, meta, mono = true, defaultOpen = true, children
 
 // ---------- markdown (§4.5 shared renderer) ----------
 
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, small }: { text: string; small?: boolean }) {
   // GFM via react-markdown + remark-gfm; output is React elements (never
-  // injected HTML). Styling lives in tokens.css under .ad-md.
+  // injected HTML). Styling lives in tokens.css under .ad-md; `small` is the
+  // §4.5 compact variant for the chat thread (.ad-md-sm).
   return (
-    <div className="ad-md">
+    <div className={small ? 'ad-md ad-md-sm' : 'ad-md'}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

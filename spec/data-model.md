@@ -550,7 +550,14 @@ remark-gfm, app-styled; output is React elements, never injected HTML, so no san
 needed) used everywhere the app renders markdown, with one standard styling for every
 surface: result views, the Build-instructions and Framework-instructions cards, and the
 Spec cards (create flow and automation page — no spec-specific look; markdown renders the
-same there as anywhere else) — `.html` in a sandboxed iframe (no
+same there as anywhere else). The component offers exactly one **compact variant**
+(`small` prop → `.ad-md-sm`) for the §11 chat thread, the app's one dense narrow
+markdown surface: the same look scaled to the thread's type scale — body and list text
+12.5 px with list items in the same `--text-2` as paragraphs (the standard styling's
+brighter `--text` list items would read as random emphasis inside a conversation),
+headings capped at 13.5 px, code wells one step smaller, and the full-bleed table wrap
+matched to the pane's 16 px padding instead of the result card's 18 px. No other
+per-surface markdown styling exists — `.html` in a sandboxed iframe (no
 scripts, no remote loads — preserves the §6 no-exfiltration guarantee) with the app's base
 result stylesheet injected, so plain semantic HTML renders in app typography and colors (a
 page's own inline CSS overrides it), images inline; every other format appears only in the

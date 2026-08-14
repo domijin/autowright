@@ -102,7 +102,12 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   no padding — the §11 card-header Save); no other ad-hoc button sizes. Button labels
   never wrap (`white-space: nowrap` on all action/text button classes) — a tight flex row must
   yield elsewhere, never by squeezing a button onto two lines. Non-action
-  controls keep their own scale: `.ad-btn-pill` (mono metadata pill), `.ad-chip-btn`
+  controls keep their own scale: `.ad-btn-pill` (mono metadata pill — pickers and version
+  chips whose label is technical metadata: `name · model`, timezone, secret name, `vN`; its
+  one variant `.ad-btn-pill.action` swaps the type to 500 11 px sans for pill-height
+  buttons whose label is a plain-language action — the §11 chat composer's Send/Cancel and
+  the thread's "Undo this change" tag — action words never render in the mono metadata
+  face), `.ad-chip-btn`
   (example-prompt chip), `.ad-btn-x` (row-remove ✕), `.ad-btn-exec` (square icon button),
   `.ad-btn-icon` (the 26×26 borderless icon-only row action — secrets edit/delete, trigger
   edit — `.ad-btn-text` colors in a fixed square box; call sites never rebuild it from

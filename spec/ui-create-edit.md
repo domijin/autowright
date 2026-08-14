@@ -43,7 +43,8 @@ applies unchanged; the chat pane never collapses.
   kinds (persisted shapes per §4.4; progress is transient editor state):
   - **user** — the message as a quiet right-aligned bubble (inset background, hairline
     border, ~92% max width).
-  - **answer** — the agent's reply rendered through the shared §4.5 Markdown renderer.
+  - **answer** — the agent's reply rendered through the shared §4.5 Markdown renderer
+    (its compact `.ad-md-sm` variant — thread type scale below).
   - **activity** — a settled stage's record: **one entry per §8 pipeline stage** the job
     passed through, persisted the moment the stage finishes — mid-job when the next stage
     begins (that stage's label and feed must survive the transition, never be replaced by
@@ -85,6 +86,32 @@ applies unchanged; the chat pane never collapses.
     Failures paragraph below); its "Try again" action, when present, sits in the entry's
     option-button row. Persisted like the other kinds (§4.4), so it survives a reload and
     reaches the agent's CONVERSATION context.
+- **Thread type scale** — one scale across every entry kind, three roles (all sans;
+  §14 tokens for the colors):
+  - **Body prose** — 12.5 px / 1.6 `--text-2`: user bubbles, answer markdown (the §4.5
+    compact variant pins its paragraphs and list items here), blocker Reason / How to
+    fix / Details bodies, and error entry text. Markdown headings stay within
+    12.5–13.5 px (the compact variant's cap).
+  - **Entry titles** — one-line, beside the entry's glyph: the blockers headline is the
+    thread's loudest line at 13 px / 600 `--text`; the rewrite "Spec updated" title is
+    12.5 px / 600 `--text`; activity/progress stage titles 12.5 px / 500 `--text-muted`.
+  - **Secondary & feed** — supporting prose (blockers explainer, the rewrite entry's
+    echoed request, system lines, the dismissed-blockers summary, "Previously resolved")
+    is 11.5 px / 1.5–1.6, `--text-muted` or `--text-faint` by weight of the information;
+    activity/progress feed history lines are 11 px `--text-faint` under an 11.5 px
+    `--text-muted` live detail line.
+  No entry hand-picks sizes outside these roles — a new entry kind joins one of the
+  three.
+- **Thread spacing — one gap, at turn boundaries only.** 14 px separates turns: any gap
+  that touches a user bubble. Consecutive agent-side entries chain **flush (0 px)** — one
+  response often lands several entries (stage trails, the rewrite entry, its "Renamed
+  to …" / "Description updated." system chips), and they read as one continuous block,
+  exactly like an activity entry's own feed lines, not as blank-line-separated
+  paragraphs (each entry's internal line-height and its own top padding, where a kind has
+  one, provide the breathing room). The transient progress entry follows the same rule:
+  flush when it restarts beneath a just-settled **activity** entry (the same job's trail
+  chains as one block), 14 px otherwise. The standalone undo row sits 10 px beneath its
+  anchor — slightly detached from the group it escapes.
 - **Input:** pinned footer composer, two stacked rows. Top row: a full-width auto-growing
   textarea — the **ask-box pattern** referenced throughout this spec: sized to its
   content, never scrolls, no manual resize handle, Enter sends (the primary send path),
@@ -101,7 +128,9 @@ applies unchanged; the chat pane never collapses.
   Otherwise picking an agent shows the confirmation toast "`<name> · <model>` now writes
   the spec and steps here." and, in edit mode, marks the draft touched. The send button is
   a quiet secondary affordance (Enter is primary): borderless, pill-height — the same
-  height as the picker pill — always labeled "Send", disabled while the input is
+  height as the picker pill, in the §14 `.ad-btn-pill.action` sans face (an action word;
+  only the picker's `name · model` metadata wears the mono face) —
+  always labeled "Send", disabled while the input is
   disabled or holds only whitespace. Right of the picker — grouped with it on the
   toolbar's left, away from Send — sits **Clear chat**, an icon-only dim button
   (`fa-eraser` glyph, tooltip and aria-label "Clear chat"): it opens a confirm dialog ("Clear this
@@ -276,7 +305,8 @@ chat — "Reply below — your answer is sent back and the spec is rewritten."; 
 the spec." (user-action entries drop the source explainer — the blocker text itself says
 what to do). The blockers themselves render as **agent output, not editable cards**:
 per blocker, the **Reason** / **How to fix** / **Details** texts render through the
-shared §4.5 Markdown renderer under small eyebrow labels — install instructions read as
+shared §4.5 Markdown renderer (compact variant, thread type scale above) under small
+eyebrow labels — install instructions read as
 prose and download links are clickable — and only when the list has several blockers does
 each block carry a "BLOCKER N" eyebrow header. There are no editable fields: the user
 answers through the composer like any other message. Each blockers entry closes with a
@@ -432,8 +462,9 @@ editors enter with
   restores it all, so the draft looks **exactly as it did before that request** — including
   steps a chained `sync: true` action rewrote, which is why a completed sync does **not**
   clear the snapshot. The Undo is a **standalone thread row** — a left-aligned
-  row holding a quiet **"Undo this change"** tag: an `.ad-btn-pill` (the
-  composer pills' small mono look) led by a rotate-left glyph, deliberately
+  row holding a quiet **"Undo this change"** tag: an `.ad-btn-pill.action` (the
+  composer pills' small look in the §14 sans action face — an action phrase, not
+  metadata, so never the mono face) led by a rotate-left glyph, deliberately
   lighter than the `.ad-btn-soft` option buttons — those are the agent's
   suggested next steps, undo is an escape hatch. Rendered directly beneath
   the **last** thread entry the request produced (the snapshot's anchor): the response's

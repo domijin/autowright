@@ -199,6 +199,9 @@ textarea:disabled, input:disabled { opacity: .45; }
   transition: color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter);
 }
 .ad-btn-pill:hover:not(:disabled) { color: var(--text-2); background: rgba(255, 255, 255, 0.09); }
+/* §14 action variant — same pill box, sans face for plain-language action labels
+   (chat composer Send/Cancel, the thread's Undo tag); mono stays metadata-only. */
+.ad-btn-pill.action { font: 500 11px var(--sans); }
 
 /* mono tab chip (§11 trigger-mock picker tabs) — aria-pressed marks the active tab */
 .ad-btn-tab {
@@ -516,3 +519,20 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-md td:first-child { color: var(--text); font-weight: 500; }
 .ad-md th:first-child, .ad-md td:first-child { padding-left: 18px; }
 .ad-md th:last-child, .ad-md td:last-child { padding-right: 18px; }
+
+/* §4.5 compact variant (.ad-md-sm) — the §11 chat thread's markdown: the same
+   look on the thread's type scale. Body and list text 12.5px with list items in
+   the paragraphs' --text-2 (the base --text list color reads as random emphasis
+   in a conversation), headings capped at 13.5px, code one step smaller, table
+   bleed matched to the pane's 16px padding (base assumes the 18px result card). */
+.ad-md-sm { gap: 8px; }
+.ad-md-sm p { font-size: 12.5px; }
+.ad-md-sm li { font-size: 12.5px; color: var(--text-2); }
+.ad-md-sm h1 { font-size: 13.5px; }
+.ad-md-sm h2 { font-size: 13px; }
+.ad-md-sm h3, .ad-md-sm h4, .ad-md-sm h5, .ad-md-sm h6 { font-size: 12.5px; }
+.ad-md-sm pre { font-size: 11px; padding: 8px 12px; }
+.ad-md-sm td { font-size: 12px; }
+.ad-md-sm .ad-md-tablewrap { margin-left: -16px; margin-right: -16px; }
+.ad-md-sm th:first-child, .ad-md-sm td:first-child { padding-left: 16px; }
+.ad-md-sm th:last-child, .ad-md-sm td:last-child { padding-right: 16px; }

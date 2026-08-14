@@ -1785,3 +1785,202 @@ def test_runs_context_success_detail_and_result_excerpt(home):
     assert "result.md:\n# Result" in ctx
     assert "… [result.md truncated]" in ctx
     assert "x" * 2500 not in ctx  # cut at RESULT_EXCERPT
+
+
+# ---------- §8/§15 repair rounds + per-block chat repair ----------
+
+def test_repair_rounds_env_default_and_clamp(monkeypatch):
+    # §15 AUTOWRIGHT_REPAIR_ROUNDS: default 1, clamped 0–5, junk falls back.
+    from autowright.drafting import repair_rounds
+
+    monkeypatch.delenv("AUTOWRIGHT_REPAIR_ROUNDS", raising=False)
+    assert repair_rounds() == 1
+    for val, want in (("0", 0), ("3", 3), ("99", 5), ("-2", 0), ("junk", 1)):
+        monkeypatch.setenv("AUTOWRIGHT_REPAIR_ROUNDS", val)
+        assert repair_rounds() == want, val
+
+
+def test_try_prefix_ordinals():
+    # §8: repair-round progress prefixes follow the round number.
+    from autowright.drafting import try_prefix
+
+    assert [try_prefix(i) for i in (1, 2, 3, 4, 5)] == [
+        "Second try — ", "Third try — ", "Fourth try — ",
+        "Fifth try — ", "Sixth try — "]
+
+
+def test_steps_call_three_repair_rounds_then_diagnosis(home, devmode, monkeypatch):
+    # §8/§15: AUTOWRIGHT_REPAIR_ROUNDS=3 → three repair rounds before the
+    # diagnosis call, and the wording counts the four invalid attempts.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setenv("AUTOWRIGHT_REPAIR_ROUNDS", "3")
+    calls = []
+
+    def fake_invoke(agent, prompt, **kw):
+        calls.append(prompt)
+        if "Diagnose why this automation could not be built" in prompt:
+            return DIAGNOSED_BLOCKERS
+        return INVALID_STEPS
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "sync", {"harness": "Claude Code"}, None,
+                 {"spec": "# T\n\nBody."}, GRANTS)
+    assert j["status"] == "blocked" and j["diagnosed"] is True, j
+    assert len(calls) == 5  # 1 + 3 repair rounds + 1 diagnosis
+    texts = [e["text"] for e in j["events"]]
+    assert texts.count("The response didn't validate — asking for a corrected one…") == 3
+    assert "The response didn't validate 4 times — analyzing what went wrong…" in texts
+    rec = sorted((home / "logs" / "build-failures").iterdir())[0].read_text()
+    assert "round 4" in rec
+
+
+def test_repair_rounds_zero_skips_repair(home, monkeypatch):
+    # §15: 0 = no repair — an invalid response goes straight to the diagnosis,
+    # and the single-attempt wording drops "twice" entirely.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setenv("AUTOWRIGHT_REPAIR_ROUNDS", "0")
+    calls = []
+
+    def fake_invoke(agent, prompt, **kw):
+        calls.append(prompt)
+        if "Diagnose why this automation could not be built" in prompt:
+            return DIAGNOSED_BLOCKERS
+        return INVALID_STEPS
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "sync", {"harness": "Claude Code"}, None,
+                 {"spec": "# T\n\nBody."}, GRANTS)
+    assert j["status"] == "blocked" and j["diagnosed"] is True, j
+    assert len(calls) == 2  # no repair round
+    texts = [e["text"] for e in j["events"]]
+    assert "The response didn't validate — analyzing what went wrong…" in texts
+
+
+def test_diagnosis_fallback_wording_counts_attempts(monkeypatch, home):
+    # §8: the deterministic fallback blocker's reason follows the same
+    # twice/N-times wording as the detail line.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setenv("AUTOWRIGHT_REPAIR_ROUNDS", "2")
+    monkeypatch.setattr(harness, "invoke",
+                        lambda agent, prompt, **kw: INVALID_STEPS)
+    j = _run_job(DraftJobs(), "sync", {"harness": "Claude Code"}, None,
+                 {"spec": "# T\n\nBody."}, GRANTS)
+    assert j["status"] == "blocked" and j["diagnosed"] is True, j
+    assert "failed validation 3 times" in j["blockers"][0]["reason"]
+
+
+def test_chat_repair_per_block_merge(home, devmode, monkeypatch):
+    # §8 per-block chat repair: the valid spec.md is kept as written, the
+    # repair prompt asks only for the failed actions.yaml, the repair's block
+    # merges over the kept one, and round 1's prose survives as the answer.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    prompts = []
+
+    def fake_invoke(agent, prompt, **kw):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return ("Here you go.\n"
+                    "===FILE: spec.md===\n# Hello\n\nDoes things.\n"
+                    "===FILE: actions.yaml===\nbogus_key: true\n===END===\n")
+        return "===FILE: actions.yaml===\nsync: true\n===END===\n"
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "tweak it",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "done", j
+    assert j["draft"]["spec"][0] == {"kind": "h1", "text": "Hello"}
+    assert j["draft"]["actions"] == {"sync": True}
+    assert j["draft"]["answer"] == "Here you go."
+    assert len(prompts) == 2
+    assert "do not resend them: spec.md" in prompts[1]
+    assert "each failed block (actions.yaml)" in prompts[1]
+    files = sorted((home / "logs" / "build-failures").iterdir())
+    assert len(files) == 1 and "_chat-chat_repaired" in files[0].name
+
+
+def test_chat_repair_prose_only_settles_kept_blocks(home, monkeypatch):
+    # §8: a prose-only repair response settles the kept blocks with that
+    # prose as the answer — the failed block is dropped.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    calls = {"n": 0}
+
+    def fake_invoke(agent, prompt, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return ("===FILE: notes.md===\n- selector tip\n"
+                    "===FILE: actions.yaml===\nbogus_key: true\n===END===\n")
+        return "Dropped the actions — nothing to run."
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "tweak it",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "done", j
+    assert j["draft"]["notes"] == "- selector tip"
+    assert j["draft"]["answer"] == "Dropped the actions — nothing to run."
+    assert "actions" not in j["draft"]
+
+
+def test_chat_repair_undo_conflict_attributes_to_actions(home, monkeypatch):
+    # §8: the undo-with-rewrite conflict attributes to actions.yaml — the
+    # spec rewrite is kept and only the actions block is re-asked-for.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    prompts = []
+
+    def fake_invoke(agent, prompt, **kw):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            return ("===FILE: spec.md===\n# Hello\n\nDoes things.\n"
+                    "===FILE: actions.yaml===\nundo: true\n===END===\n")
+        return "===FILE: actions.yaml===\nsync: true\n===END===\n"
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "tweak it",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "done", j
+    assert j["draft"]["spec"][0] == {"kind": "h1", "text": "Hello"}
+    assert j["draft"]["actions"] == {"sync": True}
+    assert "do not resend them: spec.md" in prompts[1]
+    assert "each failed block (actions.yaml)" in prompts[1]
+
+
+def test_chat_repair_merged_set_revalidates_as_whole(home, devmode, monkeypatch):
+    # §8: the merged set validates as a whole — when the repair drops the
+    # failed spec rewrite, the kept actions.yaml's test_values gate now
+    # applies against today's params, so the round stays invalid → diagnosis.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    calls = {"n": 0}
+
+    def fake_invoke(agent, prompt, **kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # spec.md invalid (no # title); actions valid in isolation — its
+            # test_values gate is skipped while a spec rewrite is present
+            return ("===FILE: spec.md===\nno title here\n"
+                    "===FILE: actions.yaml===\ntest: true\n"
+                    "test_values: { new_p: 1 }\n===END===\n")
+        if calls["n"] == 2:
+            return "Can't fix the spec."  # prose-only: drops the spec rewrite
+        return DIAGNOSED_BLOCKERS
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "tweak it",
+                 {"spec": "# T\n\nbody",
+                  "params": [{"name": "old_p", "kind": "text", "default": ""}]},
+                 GRANTS)
+    assert j["status"] == "blocked" and j["diagnosed"] is True, j
+    assert calls["n"] == 3
+    rec = sorted((home / "logs" / "build-failures").iterdir())[0].read_text()
+    assert "test_values names unknown params" in rec

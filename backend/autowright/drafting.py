@@ -11,7 +11,9 @@ state, and the current steps — and the RESPONSE SHAPE decides the outcome: any
 subset of spec.md / instructions.md / notes.md / actions.yaml blocks is a
 rewrite-plus-actions (validated per block), plain prose is an answer, a blocker
 envelope blocks. Each envelope-shaped call is
-followed by deterministic validation with one automatic repair round; a valid
+followed by deterministic validation with up to AUTOWRIGHT_REPAIR_ROUNDS (§15,
+default 1) automatic repair rounds — chat repairs are per-block: valid blocks are
+kept and only the failed ones are re-asked-for, merged latest-wins; a valid
 ===BLOCKED=== envelope instead ends the job in the terminal `blocked` state with
 the agent's blocker list (§8).
 """
@@ -19,6 +21,7 @@ from __future__ import annotations
 
 import ast
 import logging
+import os
 import re
 import signal
 import threading
@@ -406,6 +409,34 @@ blockers:
 """
 
 
+def repair_rounds() -> int:
+    """§8/§15 AUTOWRIGHT_REPAIR_ROUNDS: maximum automatic repair rounds per
+    drafting call (default 1, clamped 0–5; 0 = no repair — an invalid response
+    goes straight to the build diagnosis). Read per call, so a running backend
+    picks up changes."""
+    try:
+        n = int(os.environ.get("AUTOWRIGHT_REPAIR_ROUNDS", "1"))
+    except ValueError:
+        return 1
+    return max(0, min(5, n))
+
+
+_TRY_ORDINALS = ("Second", "Third", "Fourth", "Fifth", "Sixth")
+
+
+def try_prefix(round_no: int) -> str:
+    """§8 progress prefix for repair round `round_no` (1-based): `Second try — `,
+    `Third try — `, … (the rounds clamp keeps the ordinal table sufficient)."""
+    return f"{_TRY_ORDINALS[min(round_no, len(_TRY_ORDINALS)) - 1]} try — "
+
+
+def attempts_phrase(attempts: int) -> str:
+    """§8 diagnosis wording for the total invalid-attempt count: '' for one,
+    ' twice' for two, ' N times' beyond — appended to 'failed validation' /
+    'didn't validate'."""
+    return {1: "", 2: " twice"}.get(attempts, f" {attempts} times")
+
+
 def clip_response(text: str, head: int = 60_000, tail: int = 20_000) -> str:
     """§8: repair/diagnosis prompts embed the previous raw response clipped —
     a huge bad response must not blow the model's context on the retry. The
@@ -567,22 +598,28 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
     return ({}, errors) if errors else (out, [])
 
 
-def validate_chat(raw: str, files: dict[str, str],
-                  param_names: list[str] | None = None) -> tuple[dict, list[str]]:
-    """§8 chat-call response with file blocks → terminal payload
-    { answer?, spec?, instructions?, notes?, actions? }. Prose before the first
-    marker is the accompanying chat message; only the four CHAT_FILES names
-    are allowed. `param_names` gates actions.yaml test_values keys."""
+def validate_chat_files(files: dict[str, str],
+                        param_names: list[str] | None = None
+                        ) -> tuple[dict, list[str], set[str]]:
+    """§8 chat-call blocks → (payload sans answer, errors, failed block names).
+    Every error attributes to exactly one block — an unknown block name to
+    itself, the undo-with-rewrite conflict to actions.yaml — so the per-block
+    repair can keep the valid blocks and re-ask only for the failed ones.
+    `param_names` gates actions.yaml test_values keys."""
     errors: list[str] = []
+    bad: set[str] = set()
     extras = sorted(f for f in files if f not in CHAT_FILES)
     if extras:
         errors.append("a chat response may only return spec.md, instructions.md, "
                       f"notes.md, and actions.yaml — never step files (got {extras})")
+        bad.update(extras)
     payload: dict = {}
     if "spec.md" in files:
         spec, errs = validate_spec({"spec.md": files["spec.md"]})
         errors += errs
-        if not errs:
+        if errs:
+            bad.add("spec.md")
+        else:
             payload["spec"] = spec["blocks"]
     if "instructions.md" in files:
         payload["instructions"] = files["instructions.md"].strip()
@@ -596,11 +633,27 @@ def validate_chat(raw: str, files: dict[str, str],
         errors += errs
         # §8: undo is exclusive of rewrites too — restoring the draft and
         # rewriting it in one response is contradictory.
-        if actions.get("undo") and any(f in files for f in ("spec.md", "instructions.md", "notes.md")):
+        conflict = actions.get("undo") and any(
+            f in files for f in ("spec.md", "instructions.md", "notes.md"))
+        if conflict:
             errors.append("actions.yaml: undo cannot be combined with spec.md, "
                           "instructions.md, or notes.md rewrites")
-        if not errs:
+        if errs or conflict:
+            bad.add("actions.yaml")
+        else:
             payload["actions"] = actions
+    if errors:
+        return {}, errors, bad
+    return payload, [], set()
+
+
+def validate_chat(raw: str, files: dict[str, str],
+                  param_names: list[str] | None = None) -> tuple[dict, list[str]]:
+    """§8 chat-call response with file blocks → terminal payload
+    { answer?, spec?, instructions?, notes?, actions? }. Prose before the first
+    marker is the accompanying chat message; only the four CHAT_FILES names
+    are allowed."""
+    payload, errors, _ = validate_chat_files(files, param_names)
     if errors:
         return {}, errors
     m = FILE_MARK_RE.search(raw)
@@ -1033,33 +1086,41 @@ class DraftJobs:
                    pkg_state: list[dict] | None = None) -> None:
         """§8 chat call: one call whose response shape decides the outcome —
         plain prose is an answer, file blocks are rewrites/actions
-        (spec.md / instructions.md / notes.md / actions.yaml — validated, one
-        repair round, then diagnosis), a blocker envelope blocks
-        (blockedAt: chat). A cancel raises `Cancelled` out of `_invoke`."""
+        (spec.md / instructions.md / notes.md / actions.yaml — validated, up to
+        §15 AUTOWRIGHT_REPAIR_ROUNDS per-block repair rounds, then diagnosis),
+        a blocker envelope blocks (blockedAt: chat). Repair is per-block: an
+        invalid round's valid blocks are kept as written, the repair round is
+        asked only for the failed blocks, and its blocks merge over the kept
+        ones (latest wins) before the merged set revalidates as a whole. A
+        cancel raises `Cancelled` out of `_invoke`."""
         prompt = build_chat_prompt(user_text, current, grants, chat_history,
                                    runs=runs, pkg_state=pkg_state)
         # §8: actions.yaml test_values keys must name the draft's params
         pnames = [str(p.get("name")) for p in (current or {}).get("params") or []
                   if p.get("name")]
         raw = self._invoke(job, agent, prompt, on_chunk=self._chat_cb(job))
-        outcome, payload = self._chat_shape(raw, pnames)
-        if outcome == "invalid":
-            round1 = {"errors": payload, "response": raw}
-            repair = (prompt + "\n\n=== YOUR PREVIOUS RESPONSE ===\n" + clip_response(raw)
-                      + "\n\n=== VALIDATION ERRORS — fix these and resend ===\n- "
-                      + "\n- ".join(payload))
+        outcome, payload, kept, answer, failed = self._chat_classify(raw, pnames)
+        rounds: list[dict] = []
+        for i in range(1, repair_rounds() + 1):
+            if outcome != "invalid":
+                break
+            rounds.append({"errors": payload, "response": raw})
+            repair = self._chat_repair_prompt(prompt, raw, payload, kept, failed)
             self._event(job, "The response didn't validate — asking for a corrected one…")
-            raw2 = self._invoke(job, agent, repair,
-                                on_chunk=self._chat_cb(job, prefix="Second try — "))
-            outcome, payload = self._chat_shape(raw2, pnames)
-            if outcome == "invalid":
-                diag = self._diagnose(job, agent, prompt, raw2, payload)
-                self._record_failure(job, agent, "chat", "diagnosed", prompt,
-                                     [round1, {"errors": payload, "response": raw2}], diag)
-                return self._block(job, "chat", diag, None, diagnosed=True)
+            raw = self._invoke(job, agent, repair,
+                               on_chunk=self._chat_cb(job, prefix=try_prefix(i)))
+            outcome, payload, kept, answer, failed = self._chat_classify(
+                raw, pnames, kept, answer)
+        if outcome == "invalid":
+            diag = self._diagnose(job, agent, prompt, raw, payload,
+                                  attempts=len(rounds) + 1)
+            self._record_failure(job, agent, "chat", "diagnosed", prompt,
+                                 rounds + [{"errors": payload, "response": raw}], diag)
+            return self._block(job, "chat", diag, None, diagnosed=True)
+        if rounds:
             self._record_failure(job, agent, "chat",
                                  "blocked" if outcome == "blocked" else "repaired",
-                                 prompt, [round1], None)
+                                 prompt, rounds, None)
         if outcome == "blocked":
             return self._block(job, "chat", payload, None)
         if not payload:
@@ -1067,29 +1128,78 @@ class DraftJobs:
         self._settle(job, "done", draft=payload)
 
     @staticmethod
-    def _chat_shape(raw: str, param_names: list[str] | None = None):
-        """Classify a chat-call response (§8): ("blocked", blockers) |
-        ("done", payload) | ("invalid", errors) — payload is the terminal
-        { answer?, spec?, instructions?, notes?, actions? } dict (empty for an empty
-        response). Only envelope-shaped responses can be invalid — prose is
-        always an answer."""
+    def _chat_classify(raw: str, param_names: list[str] | None = None,
+                       kept: dict[str, str] | None = None, answer: str = ""):
+        """Classify a chat-call response (§8), merging its blocks over `kept` —
+        the valid blocks carried forward from earlier rounds (per-block
+        repair). Returns (outcome, payload-or-errors-or-blockers, kept2,
+        answer2, failed_names):
+
+        - ("blocked", blockers, …) — a valid blocker envelope, terminal.
+        - ("done", payload, …) — payload the terminal { answer?, spec?,
+          instructions?, notes?, actions? } dict (empty for an empty response).
+        - ("invalid", errors, kept2, answer2, failed) — kept2 the valid blocks
+          of the merged set (kept as written for the next round), failed the
+          block names the errors attribute to (empty when the envelope itself
+          didn't parse — a full resend repairs that round).
+
+        The merged set is validated as a whole, so cross-block checks run
+        against what will actually be applied. Prose before a round's first
+        marker replaces the carried `answer`; a prose-only response with kept
+        blocks settles them with that prose as the answer. Round 1 (no kept
+        blocks) behaves exactly like the unmerged classification: prose is
+        always an answer, never invalid."""
+        kept = kept or {}
         try:
             blockers = parse_blockers(raw)
             if blockers is not None:
-                return "blocked", blockers
+                return "blocked", blockers, kept, answer, []
         except ValueError as e:
-            return "invalid", [str(e)]
+            return "invalid", [str(e)], kept, answer, []
         if not FILE_MARK_RE.search(raw):
             text = raw.strip()
-            return "done", ({"answer": text} if text else {})
-        try:
-            files = parse_envelope(raw)
-        except ValueError as e:
-            return "invalid", [str(e)]
-        payload, errors = validate_chat(raw, files, param_names)
+            if not kept:
+                return "done", ({"answer": text} if text else {}), {}, text, []
+            merged, prose = dict(kept), text
+        else:
+            try:
+                files = parse_envelope(raw)
+            except ValueError as e:
+                return "invalid", [str(e)], kept, answer, []
+            merged = {**kept, **files}
+            m = FILE_MARK_RE.search(raw)
+            prose = raw[:m.start()].strip()
+        payload, errors, bad = validate_chat_files(merged, param_names)
+        answer = prose or answer
         if errors:
-            return "invalid", errors
-        return "done", payload
+            good = {k: v for k, v in merged.items()
+                    if k in CHAT_FILES and k not in bad}
+            return "invalid", errors, good, answer, sorted(bad)
+        if answer:
+            payload["answer"] = answer
+        return "done", payload, merged, answer, []
+
+    @staticmethod
+    def _chat_repair_prompt(prompt: str, raw: str, errors: list[str],
+                            kept: dict[str, str], failed: list[str]) -> str:
+        """§8 per-block chat repair prompt: when the errors attribute to blocks,
+        name the kept blocks ("do not resend them") and ask only for corrected
+        versions of the failed ones; without attribution (the envelope itself
+        didn't parse) fall back to the full resend."""
+        out = prompt + "\n\n=== YOUR PREVIOUS RESPONSE ===\n" + clip_response(raw)
+        if failed:
+            kept_names = ", ".join(sorted(kept)) or "none"
+            return (out
+                    + "\n\n=== VALIDATION ERRORS — resend only the failed blocks ===\n- "
+                    + "\n- ".join(errors)
+                    + "\n\nThese blocks were valid and are kept exactly as you wrote "
+                    + f"them — do not resend them: {kept_names}."
+                    + "\nResend a corrected version of each failed block "
+                    + f"({', '.join(failed)}); omit one to drop it entirely."
+                    + "\nAny prose before your first block replaces the accompanying "
+                    + "chat message.")
+        return (out + "\n\n=== VALIDATION ERRORS — fix these and resend ===\n- "
+                + "\n- ".join(errors))
 
     @staticmethod
     def _check_cancel(job: dict) -> None:
@@ -1131,37 +1241,43 @@ class DraftJobs:
 
     def _call_with_repair(self, job: dict, agent: dict, prompt: str,
                           validator, call: str) -> tuple[dict, list[str], list[dict] | None, bool]:
-        """One harness call + one automatic repair round against `validator`,
-        then — when the repair is still invalid — one §8 build-diagnosis call
-        that turns the failure into blockers (returned with diagnosed=True), so
-        a validation double-failure never fails the job. A valid §8 blocker
-        envelope is terminal — returned as-is, no repair. A cancel raises
-        `Cancelled` out of `_invoke` (checked before every spawn there): a
-        cancel between calls never lets a fresh full-timeout harness call
-        start. `call` names the pipeline call ("spec"/"steps") for the §5
-        build-failure record."""
+        """One harness call + up to §15 AUTOWRIGHT_REPAIR_ROUNDS automatic
+        repair rounds against `validator` — each round the same prompt plus the
+        newest raw response and its errors — then, when every round is still
+        invalid, one §8 build-diagnosis call that turns the failure into
+        blockers (returned with diagnosed=True), so a surviving validation
+        failure never fails the job. A valid §8 blocker envelope is terminal —
+        returned as-is, no repair. A cancel raises `Cancelled` out of `_invoke`
+        (checked before every spawn there): a cancel between calls never lets a
+        fresh full-timeout harness call start. `call` names the pipeline call
+        ("spec"/"steps") for the §5 build-failure record."""
         raw = self._invoke(job, agent, prompt, on_chunk=self._progress_cb(job))
         result, errors, blockers = self._parse_validate(raw, validator)
-        if errors:
-            round1 = {"errors": errors, "response": raw}
+        rounds: list[dict] = []
+        for i in range(1, repair_rounds() + 1):
+            if not errors:
+                break
+            rounds.append({"errors": errors, "response": raw})
             repair = (prompt + "\n\n=== YOUR PREVIOUS RESPONSE ===\n" + clip_response(raw)
                       + "\n\n=== VALIDATION ERRORS — fix these and resend the full envelope ===\n- "
                       + "\n- ".join(errors))
             self._event(job, "The response didn't validate — asking for a corrected one…")
-            raw2 = self._invoke(job, agent, repair,
-                                on_chunk=self._progress_cb(job, prefix="Second try — "))
-            result, errors, blockers = self._parse_validate(raw2, validator)
-            if errors:
-                diag = self._diagnose(job, agent, prompt, raw2, errors)
-                self._record_failure(job, agent, call, "diagnosed", prompt,
-                                     [round1, {"errors": errors, "response": raw2}], diag)
-                return {}, [], diag, True
-            # The repair round settled the call — a fixed envelope or a
-            # blocker envelope — but round 1 still failed validation:
+            raw = self._invoke(job, agent, repair,
+                               on_chunk=self._progress_cb(job, prefix=try_prefix(i)))
+            result, errors, blockers = self._parse_validate(raw, validator)
+        if errors:
+            diag = self._diagnose(job, agent, prompt, raw, errors,
+                                  attempts=len(rounds) + 1)
+            self._record_failure(job, agent, call, "diagnosed", prompt,
+                                 rounds + [{"errors": errors, "response": raw}], diag)
+            return {}, [], diag, True
+        if rounds:
+            # A repair round settled the call — a fixed envelope or a blocker
+            # envelope — but the earlier rounds still failed validation:
             # exactly the near-miss the record exists for (§5).
             self._record_failure(job, agent, call,
                                  "blocked" if blockers else "repaired",
-                                 prompt, [round1], None)
+                                 prompt, rounds, None)
         return result, errors, blockers, False
 
     @staticmethod
@@ -1175,11 +1291,14 @@ class DraftJobs:
             agent.get("model") or "configured default", outcome, prompt, rounds, blockers)
 
     def _diagnose(self, job: dict, agent: dict, prompt: str, raw: str,
-                  errors: list[str]) -> list[dict]:
+                  errors: list[str], attempts: int = 2) -> list[dict]:
         """§8 build diagnosis: one blocker-envelope-only call explaining why the
-        build failed validation twice; on any failure of the diagnosis itself,
-        a deterministic fallback blocker built from the validation errors."""
-        self._event(job, "The response didn't validate twice — analyzing what went wrong…")
+        build failed validation every round (`attempts` = total invalid
+        responses, driving the twice/N-times wording); on any failure of the
+        diagnosis itself, a deterministic fallback blocker built from the
+        validation errors."""
+        self._event(job, f"The response didn't validate{attempts_phrase(attempts)}"
+                         " — analyzing what went wrong…")
         diagnose = (prompt + "\n\n=== YOUR PREVIOUS RESPONSE ===\n" + clip_response(raw)
                     + "\n\n=== VALIDATION ERRORS ===\n- " + "\n- ".join(errors)
                     + "\n\n" + DIAGNOSE_TASK)
@@ -1192,7 +1311,8 @@ class DraftJobs:
             log.warning("build-diagnosis call failed: %s", e)
         if not blockers:
             blockers = [{
-                "reason": "The draft didn't build — the agent's response failed validation twice.",
+                "reason": "The draft didn't build — the agent's response failed "
+                          f"validation{attempts_phrase(attempts)}.",
                 "fix": "Simplify or clarify the spec, or try a different drafting agent, then rebuild.",
                 "details": "\n".join(errors[:8]),
             }]

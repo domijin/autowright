@@ -213,15 +213,15 @@ every §8 drafting call (spec or steps) whose response fails validation writes *
 call**, when the call settles, under `<logs dir>/build-failures/` — the raw material for later
 improving the §8 agent instructions. File name: `<stamp>_<mode>-<call>_<outcome>.log` (same
 Pacific millisecond stamp; `mode` the §8 job mode, `call` `spec` or `steps`), `outcome` one of
-`repaired` (the repair round produced a valid envelope), `blocked` (the repair round returned
-a valid blocker envelope), or `diagnosed` (validation failed twice — the §8 build-diagnosis
+`repaired` (a repair round produced a valid envelope), `blocked` (a repair round returned
+a valid blocker envelope), or `diagnosed` (every §8 repair round failed — the §8 build-diagnosis
 blockers, agent-written or the deterministic fallback, land in the record). Content: a header
 line (mode, call, harness, model, outcome), then each invalid round's **full** validation
 error list and **full** raw response (never truncated, never clipped), the diagnosis blockers
 when present, and finally the call's original prompt — self-contained, no cross-referencing
 the request-log files. The directory keeps the **newest 200 files**; writes are best-effort
 with the same live `developerMode` gate as the request-log files above. A validation failure the
-user never sees (the repair round fixed it) still records — near-misses are exactly the
+user never sees (a repair round fixed it) still records — near-misses are exactly the
 instruction-tuning signal.
 
 A version folder holds **what the agent wrote** (spec, instructions, steps + scripts, param

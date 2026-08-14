@@ -36,6 +36,10 @@ Backend env knobs (configuration only):
   for every §8 harness call (drafting, chat, build diagnosis).
   Configuration only, never a different code path; read per call, so a running backend picks
   up changes. Local Ollama models on big builds are the typical reason to raise it.
+- `AUTOWRIGHT_REPAIR_ROUNDS` — §8 maximum automatic repair rounds per drafting call
+  (default 1, clamped 0–5; 0 = no repair, an invalid response goes straight to the §8
+  build diagnosis). Configuration only, never a different code path; read per call, so a
+  running backend picks up changes.
 - `AUTOWRIGHT_TICK_S` — scheduler tick period in seconds (default 15). Same loop re-tuned,
   never a different code path; the integration harness sets `1` so live-scheduler tests wait
   seconds instead of sitting out real 15 s ticks.

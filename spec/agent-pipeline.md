@@ -257,7 +257,20 @@ rules; the allowed block names are exactly `spec.md`, `instructions.md`, `notes.
 `actions.yaml` — anything else (a step file, say) is a validation error; `spec.md`
 validates like call 1; `actions.yaml` must parse as a yaml mapping matching the schema
 above; prose before the first marker becomes the payload's `answer`. The truncation rule
-and the one repair round (then build diagnosis) apply. Terminal payload:
+and the failure policy's repair rounds (then build diagnosis) apply — and a chat repair
+is **per-block**: every validation error attributes to exactly one block (an unknown
+block name to itself, the undo-with-rewrite conflict to `actions.yaml`), the blocks that
+validated are **kept as written**, and the repair prompt lists the kept blocks ("do not
+resend them") and asks only for corrected versions of the failed blocks — omitting a
+failed block drops it. The repair response's blocks are merged over the kept ones
+(latest wins) and the merged set is validated as a whole, so cross-block checks (the
+`test_values` param gate, undo exclusivity) run against what will actually be applied.
+Prose before the repair response's first marker replaces the accompanying `answer`
+(absent that, the earlier round's prose stands), and a prose-only repair response
+settles the kept blocks with that prose as the answer. When a round's response never
+parsed into blocks (a truncated envelope, a malformed blocker envelope), that round
+repairs by full resend — per-block attribution needs parsed blocks — but blocks kept
+from earlier rounds still merge under whatever the resend returns. Terminal payload:
 `draft: { answer?, spec?, instructions?, notes?, actions? }` — `spec` as §5 blocks, `instructions` and
 `notes` as markdown strings, `actions` the validated mapping with the §4.1 camelCase
 serialization (`testValues`). Stage label: "Working on the request"; the streamed `detail`
@@ -477,11 +490,15 @@ second transient failure ends the job `failed` with the harness error as the mes
 nonzero exit whose stderr matches an obvious **deterministic** failure — authentication /
 sign-in errors, model-not-found ("unknown model" and kin) — is **not** retried: retrying
 can't fix a bad credential or a wrong model name, so the error surfaces immediately instead
-of costing a second multi-minute call. An invalid response gets one automatic
-repair round **per call** — the same prompt plus the previous raw response and the
-machine-generated validation errors. When the repair response is **also** invalid, the call
+of costing a second multi-minute call. An invalid response gets up to **N automatic
+repair rounds per call** (§15 `AUTOWRIGHT_REPAIR_ROUNDS`, default 1, clamped 0–5; 0 skips
+repair and goes straight to the diagnosis below) — each round the same prompt plus the
+**newest** raw response and its machine-generated validation errors (earlier rounds'
+responses never re-travel; chat rounds use the per-block form above). When every round is
+still invalid, the call
 does not fail: the backend makes one final **build-diagnosis call** (`detail`: "The response
-didn't validate twice — analyzing what went wrong…") — the same prompt plus the clipped second
+didn't validate twice — analyzing what went wrong…" — "twice" reads "N times" when the
+total attempt count exceeds two, and drops entirely on a single attempt) — the same prompt plus the clipped last
 response, the validation errors, and a TASK asking the agent to diagnose why the automation
 couldn't be built and answer with **exactly one blocker envelope** (the same `===BLOCKED===`
 format and parser as every blocker envelope; `fix` holds the spec change or clarification
@@ -489,10 +506,12 @@ that would let the build succeed; no repair round for the diagnosis call itself)
 envelope settles the job `blocked` at the failing call (`blockedAt: spec | steps`); when the
 diagnosis call itself fails or returns anything else, the job still settles `blocked` with one
 deterministic fallback blocker — reason "The draft didn't build — the agent's response failed
-validation twice.", fix "Simplify or clarify the spec, or try a different drafting agent,
+validation twice." (the same twice/N-times/single-attempt wording rule as the detail line),
+fix "Simplify or clarify the spec, or try a different drafting agent,
 then rebuild.", details the validation errors (first 8). Either way the job payload carries
 `diagnosed: true` (§19), so §11 words the panel as a build failure rather than an agent
-refusal. A validation double-failure therefore never ends `failed` — `failed` is reserved for
+refusal. A validation failure that survives every repair round therefore never ends
+`failed` — `failed` is reserved for
 harness errors (after the retry above) and unexpected crashes. Repair and diagnosis prompts
 embed the previous raw response **clipped** to ~80k characters (head and tail kept, an
 omission marker between); the §5 app-log framing always logs it whole. While the §4.9
@@ -528,7 +547,8 @@ during call 1; `Writing the manifest — name, triggers, parameters, step list` 
 `Writing step i of n — NN-name.py · N lines` during call 2 (`i of n` comes from the
 already-streamed manifest block once it parses as yaml; without it, just the file name); on a
 repair round, `The response didn't validate — asking for a corrected one…` and then the same
-messages prefixed `Second try — ` with the message's first letter lowercased
+messages prefixed with the round's try label — `Second try — ` on the first repair round,
+`Third try — `, `Fourth try — `, … on later ones — with the message's first letter lowercased
 (`Second try — writing the spec · 3 lines`); during the install stage, `Installing <pip spec>…` per
 package (the §6.2 ensure's progress hook). Line-count updates throttle to one update per
 second; marker changes update immediately. `detail` rides the job (§19 `GET /drafts`, beside

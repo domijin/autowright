@@ -654,15 +654,15 @@ function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToast: (m:
   // counted as waiting; a record's status flips with `exec.started` and can't.
   const waiting = executions.filter((e) => e.automationId === auto.id && e.status === 'queued' && !e.test).length
 
-  const patch = (key: 'maxParallel' | 'maxQueued', v: number) => {
-    void (async () => {
-      try {
-        await api.patchAutomation(auto.id, { [key]: v })
-        void loadAuto(auto.id)
-      } catch (err) {
-        showToast((err as Error).message)
-      }
-    })()
+  const patch = async (key: 'maxParallel' | 'maxQueued', v: number) => {
+    try {
+      await api.patchAutomation(auto.id, { [key]: v })
+      // awaited so the row's draft outlives the refresh — clearing it sooner
+      // would flash the pre-PATCH store value before the new one lands
+      await loadAuto(auto.id)
+    } catch (err) {
+      showToast((err as Error).message)
+    }
   }
 
   // §6/§9.2: the caution is specific or it isn't shown — an automation whose
@@ -676,7 +676,7 @@ function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToast: (m:
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
         <Eyebrow>CONCURRENCY</Eyebrow>
         <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-          Applies to incoming messages — no new version, no AI involved.
+          Changes apply immediately — no new version, no AI involved.
         </span>
       </div>
       <div className="ad-card" style={{ overflow: 'hidden' }}>
@@ -704,7 +704,7 @@ function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToast: (m:
         )}
         <NumberSettingRow
           label="Queue when busy"
-          help="How many incoming messages wait for a free slot. Beyond this they're answered with a busy notice instead."
+          help="How many executions wait for a free slot. Incoming messages beyond this are answered with a busy notice instead."
           value={auto.maxQueued} min={0} last={waiting === 0}
           onCommit={(v) => patch('maxQueued', v)}
         />
@@ -748,7 +748,7 @@ function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToast: (m:
 
 function NumberSettingRow(
   { label, help, value, min, last, onCommit }:
-  { label: string; help: string; value: number; min: number; last?: boolean; onCommit: (v: number) => void },
+  { label: string; help: string; value: number; min: number; last?: boolean; onCommit: (v: number) => Promise<void> | void },
 ) {
   const [draft, setDraft] = useState<string | null>(null)
 
@@ -769,8 +769,14 @@ function NumberSettingRow(
           // Commit on blur rather than per keystroke: an intermediate "" or "0"
           // would otherwise PATCH a value the user never meant to set.
           const v = draft === null || draft === '' ? value : Math.max(min, parseInt(draft, 10))
-          setDraft(null)
-          if (v !== value) onCommit(v)
+          if (v === value) { setDraft(null); return }
+          // Hold the committed number until the PATCH (and store refresh) settles;
+          // clearing now would show the old value for the length of the round-trip.
+          // Success finds the store already refreshed; failure reverts to the prop.
+          const committed = String(v)
+          setDraft(committed)
+          void Promise.resolve(onCommit(v)).finally(() =>
+            setDraft((d) => (d === committed ? null : d)))
         }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
         className="ad-input"
@@ -1460,10 +1466,8 @@ export default function AutomationDetail() {
         </div>
       )}
 
-      {/* §6 concurrency — only for automations that can actually queue */}
-      {trigs.some(t => t.kind === 'discord' || t.kind === 'imessage') && (
-        <ConcurrencyCard auto={auto} showToast={showToast} />
-      )}
+      {/* §6 concurrency — manual executions can queue too, so every automation gets it */}
+      <ConcurrencyCard auto={auto} showToast={showToast} />
 
       {/* recent executions */}
       {recentExecs.length > 0 && (

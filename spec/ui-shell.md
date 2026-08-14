@@ -403,13 +403,15 @@ Sections top to bottom:
   text runs below the label at full width. `text`, `list`, and `kv` rows stack — label (with
   the amber NOT SET tag when a text param has no value) and full-width help on top, the editor
   underneath spanning the full card width (text inputs capped at 520px).
-- **CONCURRENCY** card — the §6 settings, rendered only when the automation has at least one
-  message trigger (nothing else can queue, so the card would be inert otherwise). Two `number`
+- **CONCURRENCY** card — the §6 settings, rendered for every automation (manual executions
+  can run in parallel and queue via the §9.2 capacity popup, so the card is never inert). Two `number`
   rows using the §9.2 row layout: **"Run at once"** (`maxParallel`, min 1) with caption "How many
   executions of this automation may run at the same time." and **"Queue when busy"**
-  (`maxQueued`, min 0) with caption "How many incoming messages wait for a free slot. Beyond
-  this they're answered with a busy notice instead." Both PATCH immediately like parameters —
-  no version, no AI. Below the rows, when at least one firing is waiting, a live line "N waiting"
+  (`maxQueued`, min 0) with caption "How many executions wait for a free slot. Incoming
+  messages beyond this are answered with a busy notice instead." Both PATCH immediately like parameters —
+  no version, no AI. Through the PATCH round-trip the input keeps showing the committed
+  number (never flashing back to the old value while the refresh is in flight); only a
+  failed PATCH reverts it, alongside the error toast. Below the rows, when at least one firing is waiting, a live line "N waiting"
   with a quiet **Clear queue** button (§19 queue-clear; confirm copy "Cancel N waiting message(s)?
   Each sender is told." — the running execution is not affected, which the copy says).
   The waiting line and the memory caution enter with `.ad-anim-item` when they appear.

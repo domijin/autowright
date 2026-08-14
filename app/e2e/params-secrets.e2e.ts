@@ -54,7 +54,7 @@ describe('params and secrets e2e', () => {
     await waitFor(async () => (await param('greeting'))?.value === 'Hello e2e', 10_000, 'text param commit')
 
     // Number param — a below-min entry clamps to min (5).
-    const num = page.locator('input[inputmode="numeric"]')
+    const num = page.getByTestId('param-row-limit').getByRole('textbox')
     await num.fill('2')
     await page.keyboard.press('Tab')
     await waitFor(async () => (await param('limit'))?.value === 5, 10_000, 'number param clamp')

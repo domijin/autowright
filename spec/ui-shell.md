@@ -27,9 +27,10 @@ below a flexible spacer — About is meta, not a working surface. While the stor
 `updateAvailable` (the §3 update-available event — a known, not-yet-installed update), an
 extra nav row appears directly above About (`data-testid="nav-update"`): fa-download icon
 and "Update available" label, both `--accent`-colored so the icon alone signals in the
-collapsed rail; no count pill, never in the active state. Clicking it navigates to the About
-page, which opens pre-armed (§9.4) — the download itself still starts from that row's
-button. The row follows the §3 clearing rule: gone when a later check answers up-to-date,
+collapsed rail; no count pill, never in the active state. Clicking it sets the one-shot
+`updateSpotlight` store flag and navigates to the About page, which opens pre-armed with its
+action button playing the §14 attention ring (§9.4) — the download itself still starts from
+that row's button. The row follows the §3 clearing rule: gone when a later check answers up-to-date,
 otherwise only with the restart that installs. On `:hover` the panel's width
 animates 58 px → 212 px (200 ms — `var(--t-enter)` — pure CSS on the `.ad-rail` class) **overlaying** the content
 pane, which never reflows: the layout reserves a constant 58 px spacer, so the content pane
@@ -556,7 +557,12 @@ with a bordered **Retry** button that re-attempts the import.
   never talks to GitHub or the feed itself. The row opens **pre-armed** when the store
   holds `updateAvailable` (fed by the §3 update-available event + invoke at store boot;
   set by any check — manual or automatic — that finds a newer version): it renders the
-  `available` state below without a button press. Manual results feed the same shared
+  `available` state below without a button press. Arriving specifically by clicking the §9
+  "Update available" nav row also spotlights the row's action button: the click sets a
+  one-shot `updateSpotlight` store flag, consumed on About mount (cleared before first
+  paint, so re-renders and revisits never replay it); when it was set, the action button
+  carries `.ad-anim-attention` — the §14 attention ring — pointing the eye at "Download
+  update". Manual results feed the same shared
   state: `available` sets `updateAvailable` (the §9 "Update available" nav row appears and
   persists across navigation), `uptodate` clears it, `error` leaves it alone — the §3
   clearing rule.

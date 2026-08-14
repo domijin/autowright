@@ -61,6 +61,13 @@ export default function AboutPage() {
   const [upd, setUpd] = useState<UpdateCheck>(() => (
     updateAvailable ? { state: 'available', version: updateAvailable } : { state: 'idle' }
   ))
+  // §9.4 updateSpotlight (set by the §9 "Update available" nav row): consumed
+  // before first paint so re-renders and revisits never replay the ring.
+  const [spotlight] = useState(() => {
+    const on = useStore.getState().updateSpotlight
+    if (on) useStore.setState({ updateSpotlight: false })
+    return on
+  })
   const [doc, setDoc] = useState<DocKey | null>(null)
   const [docTexts, setDocTexts] = useState<Partial<Record<DocKey, string>>>({})
   const [docErrs, setDocErrs] = useState<Partial<Record<DocKey, boolean>>>({})
@@ -197,7 +204,7 @@ export default function AboutPage() {
             )}
           </div>
           <button
-            className="ad-btn-soft"
+            className={'ad-btn-soft' + (spotlight ? ' ad-anim-attention' : '')}
             onClick={() => { void updBtn.run() }}
             disabled={updBtn.disabled}
             style={{ flex: 'none' }}

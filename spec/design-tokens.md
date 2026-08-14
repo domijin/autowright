@@ -183,7 +183,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   installed. Release builds get the name from `@electron/packager` (§18 prod.sh), which
   excludes `brand-electron.cjs` from the bundle.
 - Motion (keyframes in `tokens.css`: `adFadeUp`, `adFadeOutDown`, `adFadeIn`, `adFadeOut`,
-  `adSpin`, `adPulse`, `adBlink`, `adBarSlide`). One timing system, tokenized in `tokens.css`:
+  `adSpin`, `adPulse`, `adBlink`, `adBarSlide`, `adAttentionRing`). One timing system, tokenized in `tokens.css`:
   - **Duration tokens:** `--t-exit` 120 ms (all exits), `--t-hover` 150 ms (hover/control state
     changes: buttons, toggles, radios, carets, hover rows), `--t-enter` 200 ms (element
     entrances: menus, modals, toasts, in-page items, collapsibles, sidebar collapse,
@@ -229,6 +229,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
     an icon-class swap.
   - **Executing pulse:** one value app-wide — `adPulse 1.4s ease-in-out infinite`, exported as
     the `PULSE` const in `ui.tsx`; all executing badges/dots use it.
+  - **Attention ring:** `.ad-anim-attention` — one-shot spotlight for a control the user was
+    just routed to (§9.4 "Download update" after clicking the §9 update nav row): an accent
+    box-shadow ring expands and fades (`adAttentionRing` 900 ms, `--ease-enter`), played
+    twice, then done — never an infinite loop.
   - **Press feedback:** all bordered/filled action buttons get `:active` `translateY(1px)`
     (`.ad-btn-exec` keeps its `scale(.94)`; `.ad-chip-btn` its `translateY(1px)`).
   - **Reduced motion:** a global `@media (prefers-reduced-motion: reduce)` rule collapses all

@@ -37,6 +37,9 @@ interface Model {
   // up-to-date check clears it; otherwise it lives until the restart that
   // installs.
   updateAvailable: string | null
+  // §9.4 one-shot: set by clicking the §9 "Update available" nav row, consumed
+  // on About mount — spotlights the Download update button with the attention ring.
+  updateSpotlight: boolean
   // §4.4 pending create-mode slot — drives the §9.1 Resume draft button
   pendingDraft: { name: string; updatedAt: string | null } | null
 
@@ -138,6 +141,7 @@ export const useStore = create<Model>((set, get) => ({
   secrets: [],
   settings: null,
   updateAvailable: null,
+  updateSpotlight: false,
   pendingDraft: null,
   surface: 'app',
   page: 'automations',

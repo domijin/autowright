@@ -1899,6 +1899,45 @@ def test_execute_trigger_menubar_and_validation(client, monkeypatch):
     assert client.get(f"/executions/{eid}").json()["trigger"] == "Menu bar"
 
 
+def test_execute_queue_mode(client):
+    """§19 `queue: true` (the §9.2 popup's Queue action): a free slot starts
+    (`queued: false`); at capacity the start is admitted to the §6 queue
+    (`queued: true`); a full queue or a Draft answers 409 with no record; a
+    plain execute at capacity keeps the refusal."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "API Queue", "mock")
+    a["max_queued"] = 1
+
+    # Free slot: queue: true simply starts.
+    r0 = client.post(f"/automations/{a['id']}/execute", json={"queue": True})
+    assert r0.status_code == 200 and r0.json()["queued"] is False
+    for _ in range(200):
+        if client.get(f"/executions/{r0.json()['executionId']}").json()["status"] != "executing":
+            break
+        time.sleep(0.1)
+
+    a["_live"] = {"blocking"}  # fake a busy slot — §6 at_capacity reads _live
+    r = client.post(f"/automations/{a['id']}/execute", json={"queue": True})
+    assert r.status_code == 200
+    assert r.json()["queued"] is True
+    eid = r.json()["executionId"]
+    assert store.execs[eid]["status"] == "queued"
+    assert store.execs[eid]["trigger"] == "manual"
+    assert client.get(f"/executions/{eid}").json()["trigger"] == "Manual"
+
+    # Full queue → 409, no record; the §6 message names the cap.
+    n = len(store.execs)
+    r2 = client.post(f"/automations/{a['id']}/execute", json={"queue": True})
+    assert r2.status_code == 409 and "the queue is full (1 waiting)" in r2.json()["detail"]
+    # A Draft is never queued (§6) and a plain execute keeps the refusal (§7).
+    assert client.post(f"/automations/{a['id']}/execute",
+                       json={"queue": True, "version": "draft"}).status_code == 409
+    assert client.post(f"/automations/{a['id']}/execute", json={}).status_code == 409
+    assert len(store.execs) == n
+    a["_live"] = set()
+
+
 # ---------- §7 draft-execution guard (api._reject_live_draft_exec) ----------
 
 def test_draft_endpoints_409_while_draft_execution_live(client):

@@ -743,3 +743,109 @@ def test_drain_queue_slot_race_leaves_entry_queued(store, monkeypatch):
                         lambda *args, **kw: (_ for _ in ()).throw(RuntimeError("already executing")))
     drain_queue(store, engine, a["id"])  # …but the slot is taken under us
     assert store.execs[head["id"]]["status"] == "queued"  # still waiting
+
+
+# ---------- §6 manual queue admission (§19 queue: true) ----------
+
+def test_queue_manual_starts_when_a_slot_is_free(store):
+    """§6 manual admission: `queue: true` with a free slot simply starts —
+    queueing beside a free slot would promote on the next drain anyway."""
+    import time
+
+    from autowright.firing import queue_manual
+
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "Manual Q", None)
+    h, queued = queue_manual(store, engine, a, "manual")
+    assert queued is False
+    t0 = time.time()
+    while engine.is_live(h["id"]):
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    assert store.exec_full(h["id"])["status"] == "succeeded"
+
+
+def test_queue_manual_admits_at_capacity_and_drains(store):
+    """§6 manual admission: at capacity the entry queues pinned to the current
+    version with no payload (trigger `manual`); a freed slot promotes it like
+    any firing."""
+    import time
+
+    from autowright.firing import drain_queue, queue_manual
+
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "Manual Q", None)
+    a["_live"] = {"blocking"}
+    h, queued = queue_manual(store, engine, a, "manual")
+    assert queued is True
+    assert h["status"] == "queued" and h["trigger"] == "manual"
+    assert h["trigger_payload"] is None and h["queued_at"]
+    assert h["kind"] == "version" and h["version"] == a["current_version"]
+
+    a["_live"] = set()  # the blocking execution finished
+    drain_queue(store, engine, a["id"])
+    t0 = time.time()
+    while engine.is_live(h["id"]):
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    assert store.exec_full(h["id"])["status"] == "succeeded"
+
+
+def test_queue_manual_has_no_ttl(store, monkeypatch):
+    """§6 staleness is message-firings-only: a manual entry the user chose to
+    queue is promoted no matter how long it waited — evaporating that choice
+    would be a silent no-op."""
+    import time
+
+    from autowright import firing as firing_mod
+    from autowright.firing import drain_queue, queue_manual
+
+    monkeypatch.setattr(firing_mod, "QUEUE_TTL_S", -1.0)  # everything is stale
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "Manual Q", None)
+    a["_live"] = {"blocking"}
+    h, _queued = queue_manual(store, engine, a, "manual")
+
+    a["_live"] = set()
+    drain_queue(store, engine, a["id"])
+    t0 = time.time()
+    while engine.is_live(h["id"]):
+        assert time.time() - t0 < 30
+        time.sleep(0.05)
+    assert store.exec_full(h["id"])["status"] == "succeeded"  # ran, never skipped
+
+
+def test_queue_manual_full_queue_and_draft_refuse_with_no_record(store):
+    """§6: a manual queue request past the cap — or for a Draft — raises (the
+    API's 409) and writes no record; the user is present to decide, unlike a
+    message sender."""
+    import pytest
+
+    from autowright.firing import fire_trigger, queue_manual
+
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "Manual Q", None)
+    a["max_queued"] = 1
+    a["_live"] = {"blocking"}
+    fire_trigger(store, engine, a, _discord_trig(), payload=_payload())  # fills the queue
+    before = set(store.execs)
+    with pytest.raises(RuntimeError, match=r"the queue is full \(1 waiting\)"):
+        queue_manual(store, engine, a, "manual")
+    with pytest.raises(RuntimeError, match="Draft"):
+        queue_manual(store, engine, a, "manual", version_label="draft")
+    with pytest.raises(LookupError):
+        queue_manual(store, engine, a, "manual", version_label="v99")
+    assert set(store.execs) == before  # no record any which way
+
+
+def test_trigger_edits_never_cancel_a_manual_entry(store):
+    """§6: cancel_unmatched_queue matches payload-carrying entries only — a
+    manual entry was not admitted by any trigger and survives trigger edits."""
+    from autowright.firing import cancel_unmatched_queue, queue_manual
+
+    engine, sched = _mk(store)
+    a = store.create_automation(make_version(), "Manual Q", None)
+    a["_live"] = {"blocking"}
+    h, _queued = queue_manual(store, engine, a, "manual")
+    cancel_unmatched_queue(store, engine, a["id"])  # no message triggers enabled at all
+    assert store.execs[h["id"]]["status"] == "queued"  # still waiting

@@ -4,13 +4,21 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 
 ## 7. Execution lifecycle
 
-- At most `maxParallel` executions at a time per automation (§4.1, default 1). Starting with every
-  slot taken: toast "Already executing — one execution at a time. A trigger firing now would be
-  skipped." at the default (`maxParallel` 1, no queue). When `maxParallel > 1` or
-  `maxQueued > 0` the toast says what actually happens next: "The slot is busy" (`maxParallel`
-  1) or "All N slots are busy" (`maxParallel` > 1), followed by "A trigger firing now would be
-  queued." when `maxQueued > 0`, else "A trigger firing now would be skipped." The §6 firing queue applies to message triggers only —
-  a manual start is never queued, it is refused (409) so the user can decide what to do.
+- At most `maxParallel` executions at a time per automation (§4.1, default 1). A plain manual
+  start (§19 `queue` absent/false) with every slot taken is refused (409), never silently
+  queued — but the user can **choose** to queue it: §19 `queue: true` joins the §6 firing
+  queue (manual-admission rules there: free slot starts immediately, Draft never queues, full
+  queue answers 409 "the queue is full (N waiting)", and manual entries have no TTL).
+  Surfaces: the §9.2 detail page's Execute now (and its version-chip Execute once) opens the
+  **capacity popup** (§9.2) instead of firing blind whenever another execution is live — the
+  popup is where Run now / Queue / capacity-full are offered. Every other surface (the §9.1
+  inline execute button, the §13 menu bar, the execution page's Execute again, and any raced
+  409 behind the popup) keeps the busy **toast**: "Already executing — one execution at a
+  time. A trigger firing now would be skipped." at the default (`maxParallel` 1, no queue);
+  when `maxParallel > 1` or `maxQueued > 0` the toast says what actually happens next: "The
+  slot is busy" (`maxParallel` 1) or "All N slots are busy" (`maxParallel` > 1), followed by
+  "A trigger firing now would be queued." when `maxQueued > 0`, else "A trigger firing now
+  would be skipped."
 - Start: execution record created with all steps queued; automation gets live id, lastStatus
   executing, lastExecutionLabel "executing…"; the execution appears at top of Executions; sidebar counts
   and menu-bar rows update live.
@@ -127,7 +135,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   still exists, so an orphaned step can't keep executing beside the record it lost. A sleep the
   backend process survives simply resumes the execution. `skipped`/`cancelled` executions may carry a
   note ("previous execution still in progress", "the queue was full (N waiting)", "waited too
-  long in the queue", "cancelled before it ran", "backend restarted before this ran",
+  long in the queue" — never on a §6 manual queue entry, which has no TTL —
+  "cancelled before it ran", "backend restarted before this ran",
   "version vN no longer exists" — a queued entry whose admitted version is gone by its turn). The
   first two are different problems and must not share a note: "still in progress" is the
   configured skip-on-busy behaviour, while a full queue is a capacity limit the user fixes by

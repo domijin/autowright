@@ -121,6 +121,41 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
     return started
 
 
+def queue_manual(store: Store, engine: Engine, a: dict, trigger: str,
+                 version_label: str | None = None) -> tuple[dict, bool]:
+    """§6 manual admission (§19 `queue: true` — the §9.2 popup's Queue action):
+    with a free slot the execution simply starts — queueing beside a free slot
+    would promote on the next drain anyway. At capacity the entry is admitted
+    pinned to the resolved version, with no `triggerPayload` and so no sender
+    to notify and no TTL. A Draft is never queued (the draft could change under
+    the waiting entry) and a full queue refuses with **no record** — the user is
+    present to decide, unlike a message sender. Returns (record, queued).
+    Raises LookupError (unknown version → the API's 404) and RuntimeError
+    (Draft / full queue → 409). The capacity check and the start/admission
+    happen under one lock, exactly as in fire_trigger."""
+    with store.lock:
+        if not engine.at_capacity(a):
+            return engine.start(a, trigger, version_label=version_label), False
+        # Same label parse/resolve as engine.start — a queue admission must
+        # 404 the same labels a start would.
+        kind, version = engine._parse_version_label(a, version_label)
+        if kind != "version":
+            raise RuntimeError("a Draft execution can't be queued — execute it "
+                               "again when a slot frees up")
+        if engine._resolve_version(a, kind, version) is None:
+            raise LookupError(f"version {version_label or f'v{version}'} not found")
+        cap = clamp_max_queued(a.get("max_queued"))
+        if len(store.queued_execs(a["id"])) >= cap:
+            raise RuntimeError(f"the queue is full ({cap} waiting)")
+        h = store.create_execution(a, "version", version, trigger,
+                                   steps=[], status="queued")
+        # §6: admission is visible immediately, same event as a message firing.
+        hub.publish("execution.queued", executionId=h["id"], automationId=a["id"],
+                    execution=store.exec_json(h),
+                    automation=store.auto_json(a, full=False))
+        return h, True
+
+
 def cancel_unmatched_queue(store: Store, engine: Engine, automation_id: str) -> None:
     """§6: turning a message trigger off (or removing it) cancels the waiting
     entries it admitted — an entry whose payload no longer matches any enabled
@@ -143,8 +178,12 @@ def cancel_unmatched_queue(store: Store, engine: Engine, automation_id: str) -> 
         live |= {("imessage", (t.get("from") or "").lower())
                  for t in a["triggers"]
                  if t["kind"] == "imessage" and t["enabled"]}
+        # §6: only payload-carrying (message-admitted) entries are matched —
+        # a manual entry was not admitted by any trigger, so trigger edits
+        # never cancel it.
         doomed = [h["id"] for h in store.queued_execs(automation_id)
-                  if _key(h.get("trigger_payload") or {}) not in live]
+                  if h.get("trigger_payload")
+                  and _key(h["trigger_payload"]) not in live]
     for eid in doomed:
         engine.cancel(eid)  # queued → finish_queued: skipped, sender told
 
@@ -164,7 +203,9 @@ def drain_queue(store: Store, engine: Engine, automation_id: str) -> None:
             if not queue:
                 return
             head = queue[0]
-            stale = _waited_s(head) > QUEUE_TTL_S
+            # §6: the TTL applies to message firings only — a manual entry the
+            # user chose to queue waits until promoted or cancelled.
+            stale = bool(head.get("trigger_payload")) and _waited_s(head) > QUEUE_TTL_S
             if not stale:
                 try:
                     engine.start(a, head["trigger"],

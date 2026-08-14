@@ -18,7 +18,7 @@ from . import drafting, packages as pkglib, reqlog, timefmt, transfer, triggers 
 from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
-from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger
+from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger, queue_manual
 from .storage import _kind_ok, iter_file_stats, size_label, store
 from . import testexec
 
@@ -683,13 +683,19 @@ def execute_auto(automation_id: str, body: models.ExecuteBody | None = None) -> 
     # §4.5/§19: the record stores the trigger's machine kind; manual starts are
     # `manual` (Execute now, CLI) or `menubar` (the tray panel) — the model
     # rejects anything else, and a non-string version, with a 422.
+    # §6/§19 `queue: true`: the §9.2 popup's Queue action — at capacity the
+    # start is admitted to the firing queue instead of refused.
     try:
-        h = engine.start(a, body.trigger, version_label=body.version)
+        if body.queue:
+            h, queued = queue_manual(store, engine, a, body.trigger,
+                                     version_label=body.version)
+        else:
+            h, queued = engine.start(a, body.trigger, version_label=body.version), False
     except LookupError as e:  # unknown version label — not a liveness conflict
         raise HTTPException(404, str(e)) from e
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
-    return {"executionId": h["id"]}
+    return {"executionId": h["id"], "queued": queued}
 
 
 _served_launches: set[str] = set()

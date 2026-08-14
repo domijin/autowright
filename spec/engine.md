@@ -85,10 +85,13 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   §6.1 `reply()`. Apart from this notice the listeners send nothing outbound on their own —
   outbound messages happen only through a step's explicit §6.1 `reply()`.
 - **Firing queue** — a message firing that finds every `maxParallel` slot taken waits instead of
-  vanishing, up to `maxQueued` entries (§4.1). Only message firings queue: a cron, one-shot, or
+  vanishing, up to `maxQueued` entries (§4.1). Two kinds of entry queue: message firings, and
+  **manual starts the user chose to queue** (§19 `queue: true` — the §9.2 capacity popup's
+  Queue action; trigger label Manual). A cron, one-shot, or
   app-start occurrence that arrives late is worse than one that never ran, so those keep the
   skip. A queued firing is a **real execution record** with status `queued` (§4.6) carrying its
-  §4.5 `triggerPayload` — it appears in Executions immediately (admission publishes the §19
+  §4.5 `triggerPayload` (a manual entry carries none) — it appears in Executions immediately
+  (admission publishes the §19
   `execution.queued` event, so the §7 Waiting section and the §9.2 "N waiting" line update live),
   is addressable by
   `POST /executions/{id}/cancel` (§19), and is removed by retention like any other record.
@@ -104,10 +107,21 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
     answered. Setting `maxQueued: 0` restores pure skip-on-busy, and its refusals keep the
     plain "previous execution still in progress" note — nothing was queued, so nothing was
     full. Same note for every firing that cannot queue at all (cron, one-shot, app-start).
+    A **manual** queue request past the cap is refused with a 409 ("the queue is full
+    (N waiting)") and **no record** — the user is present to decide, unlike a message sender
+    (the §9.2 popup normally prevents the call; the 409 covers the race).
   - **Staleness** — an entry that reaches the head having waited longer than
     `AUTOWRIGHT_QUEUE_TTL_S` (§15, default 120) does not execute: its record finishes `skipped`
     with the note "waited too long in the queue" and its sender is told. Answering a stale
-    question is noise.
+    question is noise. **Message firings only** — a manual entry has no TTL and waits until
+    promoted or cancelled: the user chose to wait, and evaporating that choice two minutes
+    later would be a silent no-op.
+  - **Manual admission** — a `queue: true` start with a free slot simply starts (queueing
+    beside a free slot would promote on the next drain anyway); at capacity it is admitted
+    pinned to the resolved version (§4.5 kind `version` — a Draft is never queued: the draft
+    could change under the entry, so the request answers 409 and the user executes it fresh
+    when a slot frees). Promotion, cancel, and the queued-execution page behave exactly as
+    for a message entry — there is simply no sender to notify.
   Draining is FIFO by queue-entry time and happens whenever a slot frees — an execution
   finishing, being cancelled, or `maxParallel` being raised. Promotion reuses the queued record:
   the same record's steps are filled in and its status flips `queued` → `executing`, so a
@@ -121,7 +135,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   message trigger — same `secret` and `channel` for `discord`, sender matching `from`
   (case-insensitive) for `imessage` — is cancelled exactly like a user cancel
   ("cancelled before it ran", sender told); it could never be re-admitted, and promoting it
-  would execute a firing the user just switched off. Queued records do not survive a restart: §3's stale-record repair
+  would execute a firing the user just switched off. Trigger edits never touch a **manual**
+  entry — it was not admitted by any trigger, so only a user cancel, automation deletion, or
+  a restart ends it early. Queued records do not survive a restart: §3's stale-record repair
   finishes any leftover `queued` record as `skipped` ("backend restarted before this ran"), since
   the in-memory queue and the sender's patience are both gone.
 - **Missed executions** — execute when possible: if a trigger's moment passes while the Mac is

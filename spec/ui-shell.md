@@ -201,6 +201,35 @@ this off when sharing with someone else."), footer note "Secret values and memor
 this Mac", accent Export / quiet Cancel — then a native save dialog (main-process IPC, default
 name `<name>.autowright` in Downloads) writes the §19 export response; success toasts
 "Exported to `<file>`."
+
+**Capacity popup** — pressing Execute now (or a version row's Execute once) while **any**
+execution of this automation is live never fires blind: the click opens a modal decided by
+the store's state at click time (`live` count, the automation's own non-test `queued`
+records = waiting, `maxParallel`, `maxQueued`). Nothing live → no popup, executes as always.
+Three cases:
+
+1. **Free slot** (live > 0, live < `maxParallel`) — confirm parallel run. Title "Already
+   executing", body "N of M slots are busy. This runs now, in parallel with the execution
+   already running." Accent **Run now** / quiet Cancel. No Queue option: beside a free slot
+   a queued entry would promote immediately, so offering "queue" would be a lie.
+2. **Slots full, queue has room** (live ≥ `maxParallel`, `maxQueued` > 0, waiting <
+   `maxQueued`) — offer the queue. Title "Already executing", body "The slot is busy."
+   (`maxParallel` 1) or "All N slots are busy." (`maxParallel` > 1), then "Queue this
+   execution? It runs as soon as a slot frees up, and waits until you cancel it." and the
+   faint hint "Raise Max parallel in Settings to allow more at once." Accent **Queue** /
+   quiet Cancel. Confirm sends §19 `queue: true` (an Execute-once row queues pinned to its
+   version); success toasts "Queued — runs as soon as a slot frees up." (or, when the raced
+   response started instead of queueing, no toast — the live UI already shows it running).
+3. **Slots full, queue full** (live ≥ `maxParallel`, waiting ≥ `maxQueued` — `maxQueued` 0
+   included) — nothing can be offered. Title "Execution and queue capacity is full", body
+   "N executing, M waiting." (just "N executing." when `maxQueued` is 0) then "Raise Max
+   parallel or Max queued in Settings below to allow more." Single quiet **OK** — no run
+   option, per the §7 capacity rules.
+
+A 409 racing any choice (capacity changed between render and click) falls back to the §7
+busy toast — same pattern as a snapshot row's raced 409. The popup lives on the detail page
+only; the §9.1 inline execute button, the §13 menu bar, and the execution page keep the
+plain toast (§7).
 Sections top to bottom:
 
 - Optional **Draft banner** (§4.4), then **LATEST RESULT** card — the execution's chip (if it set one)

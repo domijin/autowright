@@ -913,6 +913,11 @@ export default function AutomationDetail() {
   const [verOpen, setVerOpen, verRef] = usePopover()
   const [actOpen, setActOpen, actRef] = usePopover()
   const [delAsk, setDelAsk] = useState(false)
+  // §9.2 capacity popup — a click on Execute now / Execute once while anything
+  // is live routes through the modal; `kind` is decided at click time.
+  const [execAsk, setExecAsk] = useState<{
+    ver?: string; toastMsg?: string; kind: 'parallel' | 'queue' | 'full'
+  } | null>(null)
   const [exportAsk, setExportAsk] = useState(false)
   const [exportValues, setExportValues] = useState(true)
   const [specOpen, setSpecOpen] = useState(true)
@@ -949,6 +954,10 @@ export default function AutomationDetail() {
   const executing = liveCount > 0
   const atCapacity = liveCount >= auto.maxParallel
   const busyToast = executingToast(auto.maxParallel, auto.maxQueued)
+  // §9.2 capacity popup: the waiting count is the automation's own `queued`
+  // records — the same source the ConcurrencyCard and the §7 Waiting section
+  // count, so the popup and the settings row can never disagree.
+  const waiting = executions.filter((e) => e.automationId === auto.id && e.status === 'queued' && !e.test).length
   const trigs = auto.triggers
   const noTrigs = trigs.length === 0
   const allOff = auto.triggersOff
@@ -980,17 +989,31 @@ export default function AutomationDetail() {
   const execLabel = executing ? 'Executing…' : 'Execute now'
   const execIconCls = executing ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play'
 
-  const doExecute = (ver?: string, toastMsg?: string) => {
-    if (atCapacity) { showToast(busyToast); return }
+  const runExecute = (ver?: string, toastMsg?: string, queue = false) => {
     void (async () => {
       try {
-        await api.executeNow(auto.id, ver)
-        if (toastMsg) showToast(toastMsg)
+        const r = await api.executeNow(auto.id, ver, 'manual', queue)
+        if (queue && r.queued) showToast('Queued — runs as soon as a slot frees up.')
+        else if (toastMsg) showToast(toastMsg)
       } catch (err) {
+        // §9.2: a raced 409 (capacity changed between popup and click) falls
+        // back to the §7 busy toast.
         const er = err as Error & { status?: number }
         showToast(er.status === 409 ? busyToast : er.message)
       }
     })()
+  }
+  // §9.2 capacity popup: anything live never fires blind — the click opens the
+  // modal whose case is decided by the store's state right now.
+  const doExecute = (ver?: string, toastMsg?: string) => {
+    if (executing) {
+      setExecAsk({
+        ver, toastMsg,
+        kind: !atCapacity ? 'parallel' : waiting < auto.maxQueued ? 'queue' : 'full',
+      })
+      return
+    }
+    runExecute(ver, toastMsg)
   }
 
   // §4.3 trigger edits are user-owned operational state: whole-list PATCH, no
@@ -1778,6 +1801,50 @@ export default function AutomationDetail() {
           onConfirm={() => { const t = removeTrig; setRemoveTrig(null); removeTrigger(t) }}
           onCancel={() => setRemoveTrig(null)}
         />
+      )}
+      {execAsk?.kind === 'parallel' && (
+        <ConfirmModal
+          title="Already executing"
+          body={`${liveCount} of ${auto.maxParallel} slots are busy. This runs now, in parallel with the execution already running.`}
+          confirmLabel="Run now"
+          onConfirm={() => { const a = execAsk; setExecAsk(null); runExecute(a.ver, a.toastMsg) }}
+          onCancel={() => setExecAsk(null)}
+        />
+      )}
+      {execAsk?.kind === 'queue' && (
+        <ConfirmModal
+          title="Already executing"
+          body={(
+            <>
+              {auto.maxParallel === 1 ? 'The slot is busy.' : `All ${auto.maxParallel} slots are busy.`}
+              {' '}Queue this execution? It runs as soon as a slot frees up, and waits until you cancel it.
+              <p style={{ color: 'var(--text-faint)', margin: '8px 0 0' }}>Raise Max parallel in Settings to allow more at once.</p>
+            </>
+          )}
+          confirmLabel="Queue"
+          onConfirm={() => { const a = execAsk; setExecAsk(null); runExecute(a.ver, a.toastMsg, true) }}
+          onCancel={() => setExecAsk(null)}
+        />
+      )}
+      {execAsk?.kind === 'full' && (
+        <Modal
+          onClose={() => setExecAsk(null)} width={400} zIndex={90}
+          cardStyle={{ padding: '22px 24px' }}
+          role="alertdialog" ariaLabel="Execution and queue capacity is full"
+        >
+          {(close) => (
+            <>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Execution and queue capacity is full</div>
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', marginBottom: 18 }}>
+                {auto.maxQueued > 0 ? `${liveCount} executing, ${waiting} waiting.` : `${liveCount} executing.`}
+                {' '}Raise Max parallel or Max queued in Settings below to allow more.
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <BtnGhost onClick={close}>OK</BtnGhost>
+              </div>
+            </>
+          )}
+        </Modal>
       )}
       {delAsk && (
         <ConfirmModal

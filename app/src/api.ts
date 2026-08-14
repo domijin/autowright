@@ -76,8 +76,11 @@ export const api = {
   state: () => req<StateSnapshot>('GET', '/state'),
   instructions: () => req<{ framework: string; defaultBuild: string }>('GET', '/instructions'),
   // §4.5/§19: the machine kind — the API serializes the display label
-  executeNow: (automationId: string, version?: string, trigger: 'manual' | 'menubar' = 'manual') =>
-    req<{ executionId: string }>('POST', `/automations/${automationId}/execute`, { version, trigger }),
+  // §6/§19 `queue`: the §9.2 capacity popup's Queue action — at capacity the
+  // start joins the firing queue instead of answering 409.
+  executeNow: (automationId: string, version?: string, trigger: 'manual' | 'menubar' = 'manual', queue?: boolean) =>
+    req<{ executionId: string; queued: boolean }>('POST', `/automations/${automationId}/execute`,
+      { version, trigger, queue: queue || undefined }),
   cancelExecution: (executionId: string) => req('POST', `/executions/${executionId}/cancel`),
   // §7 in-place retry: same execution record, from the failed step
   retryExecution: (executionId: string) => req<{ executionId: string }>('POST', `/executions/${executionId}/retry`),

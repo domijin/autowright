@@ -24,7 +24,7 @@ way it edits any code. The §17 `skills/autowright/` agent skill is the primary 
 autowright status                       backend health, version, entity counts
 autowright instructions                 §8 framework + build instruction files, verbatim
 autowright automation <verb> …          list · show · pull · push · create · delete · restore ·
-                                        execute [--version vN|draft] · export · import ·
+                                        execute [--version vN|draft] [--queue] · export · import ·
                                         param list|set · trigger list|add|on|off|remove ·
                                         memory show|clear · snapshot list|create|restore|delete
 autowright execution <verb> …           list · show · tail · cancel · retry · skip · result
@@ -132,6 +132,10 @@ learns about an install failure at build time, not when a trigger fires.
   flags. `execute` runs the stored version under the stored grants by default;
   `execute --version <vN|draft>` selects an old version or the draft for that one run
   (forwarded as the §19 execute body's `version` field) — the grants stay the stored ones.
+  `execute --queue` forwards the §19 `queue: true` field: with every slot busy the start
+  joins the §6 queue instead of failing ("queued — execution `<id>` (waiting for a free
+  slot)"; `-f` follows through promotion per the follow semantics above). Without the flag
+  a busy automation stays a plain refusal (409).
 
 **`automation import`** takes a `.autowright` file path or an HTTPS URL (§5.2 rules — a
 direct `*.autowright` link on any host, or a `github.com` repo/release page resolved to its

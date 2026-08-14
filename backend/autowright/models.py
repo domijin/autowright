@@ -129,6 +129,9 @@ class ExecuteBody(BaseModel):
 
     version: StrictStr | None = None
     trigger: Literal["manual", "menubar"] = "manual"
+    # §6/§19: opt into the firing queue when every slot is taken — the §9.2
+    # capacity popup's Queue action. False keeps the refuse-with-409 behavior.
+    queue: StrictBool = False
 
 
 class AppStarted(BaseModel):

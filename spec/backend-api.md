@@ -75,9 +75,15 @@ remain plain dicts (§2).
   live preview line, the §11 draft-trigger chips, and every "next trigger" label read from
   this endpoint — trigger math exists once, in `triggers.py`.
 - `POST /automations/{id}/execute` `{ version?: "vN" | "draft" (case-insensitive),
-  trigger?: "manual" | "menubar" (§4.5 kind, default "manual"; anything else answers 422) }` →
-  `{ executionId }` (409 when every §6 `maxParallel` slot is taken — a manual start is refused, never
-  queued; a version label that doesn't resolve answers 404)
+  trigger?: "manual" | "menubar" (§4.5 kind, default "manual"; anything else answers 422),
+  queue?: bool (default false) }` →
+  `{ executionId, queued: bool }`. `queue` absent/false: 409 when every §6 `maxParallel`
+  slot is taken — a plain manual start is refused, never silently queued. `queue: true`
+  (the §9.2 popup's Queue action): with a free slot it starts (`queued: false`); at
+  capacity it is admitted to the §6 queue per the manual-admission rules (`queued: true`,
+  the record publishes `execution.queued`); a full queue answers 409 "the queue is full
+  (N waiting)" with no record, and `version: "draft"` answers 409 (a Draft is never
+  queued, §6). A version label that doesn't resolve answers 404 either way.
 - `POST /automations/{id}/queue/clear` → `{ cancelled }` — cancels every §6 firing-queue entry
   waiting on this automation (each finishes `skipped`, §4.6, and its sender is told). Running
   executions are untouched; use `POST /executions/{id}/cancel` for those. Answers `{cancelled: 0}`

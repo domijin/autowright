@@ -530,8 +530,13 @@ def cmd_automation_execute(c: Client, args) -> None:
     body: dict = {"trigger": "manual"}  # §4.5 machine kind; the API serializes the label
     if args.version:
         body["version"] = args.version
+    if args.queue:
+        body["queue"] = True  # §6/§19 manual queue admission when every slot is taken
     r = c.req("POST", f"/automations/{a['id']}/execute", body)
-    print(f"started — execution {r['executionId']}")
+    if r.get("queued"):
+        print(f"queued — execution {r['executionId']} (waiting for a free slot)")
+    else:
+        print(f"started — execution {r['executionId']}")
     if args.follow:
         _exit_by_status(follow_exec(c, r["executionId"]))
 
@@ -1095,6 +1100,8 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("automation")
     p.add_argument("-f", "--follow", action="store_true", help="stream logs until it finishes")
     p.add_argument("--version", help='execute an old version or the draft once ("vN" | "draft")')
+    p.add_argument("--queue", action="store_true",
+                   help="when every slot is busy, wait in the queue instead of failing")
     p = _sub(ag, "export", cmd_automation_export, "export to a .autowright file")
     p.add_argument("automation")
     p.add_argument("path", nargs="?", help="output file (default: <name>.autowright)")

@@ -216,11 +216,14 @@ def _login_shell_path() -> list[str]:
 
 
 def _ensure_login_path(emit) -> None:
-    """§19 terminal-access guarantee: a bin our own mechanics put in
-    ~/.local/bin (gemini's npm --prefix, ollama's symlink) must be reachable
-    from the user's terminal — when the dir isn't on the login shell's PATH,
-    append a guarded export line to the shell profile, exactly like the vendor
-    scripts do for their own bin dirs. Best-effort: never fails the install."""
+    """§19 terminal-access guarantee: every install that lands a bin in
+    ~/.local/bin (claude's and codex's vendor scripts, gemini's npm --prefix,
+    ollama's symlink) must leave it reachable from the user's terminal — the
+    vendor scripts at most print PATH instructions nobody sees in a background
+    install. When the dir isn't on the login shell's PATH, append a guarded
+    export line to the shell profile (profile, not rc file: macOS terminals
+    start login shells and PATH is environment). Best-effort: never fails the
+    install."""
     if LOCAL_BIN in _login_shell_path():
         return
     shell = os.path.basename(os.environ.get("SHELL") or "/bin/zsh")
@@ -235,7 +238,8 @@ def _ensure_login_path(emit) -> None:
             return
         with open(prof, "a", encoding="utf-8") as f:
             f.write(f'\n{PATH_MARKER}\nexport PATH="$HOME/.local/bin:$PATH"\n')
-        emit(line=f"Added ~/.local/bin to your PATH ({profile})")
+        emit(line=f"Added ~/.local/bin to your PATH ({profile}) — "
+                  "open a new terminal to use it")
     except OSError:
         pass
 
@@ -250,6 +254,9 @@ def _install_claude(emit) -> None:
     _stream_shell(["/bin/bash", "-c", f"curl -fsSL {CLAUDE_INSTALLER} | bash"], emit,
                   "claude")
     _require("claude")
+    # The vendor script lands the bin in ~/.local/bin but only prints PATH
+    # instructions — invisible from a background install (§19).
+    _ensure_login_path(emit)
 
 
 def _install_opencode(emit) -> None:
@@ -283,6 +290,8 @@ def _install_codex(emit) -> None:
     _stream_shell(["/bin/bash", "-c", f"curl -fsSL {CODEX_INSTALLER} | sh"], emit,
                   "codex", env_extra={"CODEX_NON_INTERACTIVE": "1"})
     _require("codex")
+    # Same §19 guarantee as claude: the vendor symlink lands in ~/.local/bin.
+    _ensure_login_path(emit)
 
 
 def _install_ollama_app(emit) -> str:

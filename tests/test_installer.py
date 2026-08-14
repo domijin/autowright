@@ -396,10 +396,16 @@ def test_claude_recipe_pipes_official_installer_and_requires_binary(monkeypatch)
                         lambda cmd, emit, provider_id, env_extra=None: calls.append(list(cmd)))
     required = []
     monkeypatch.setattr(installer, "_require", required.append)
+    ensured = []
+    monkeypatch.setattr(installer, "_ensure_login_path",
+                        lambda emit: ensured.append(True))
     installer._install_claude(Recorder())
     assert calls == [["/bin/bash", "-c",
                       f"curl -fsSL {installer.CLAUDE_INSTALLER} | bash"]]
     assert required == ["claude"]
+    # the vendor script lands in ~/.local/bin but only prints PATH
+    # instructions → §19 terminal-access guarantee runs
+    assert ensured == [True]
 
 
 # ---------------------------------------------------------------- _ensure_login_path
@@ -429,7 +435,7 @@ def test_ensure_login_path_appends_marked_export_to_zprofile(monkeypatch, fake_h
     text = (fake_home / ".zprofile").read_text()
     assert installer.PATH_MARKER in text
     assert 'export PATH="$HOME/.local/bin:$PATH"' in text
-    assert any(".zprofile" in line for line in rec.lines)
+    assert any(".zprofile" in line and "new terminal" in line for line in rec.lines)
     # idempotent: a second run finds the mention and never duplicates it
     installer._ensure_login_path(rec)
     assert (fake_home / ".zprofile").read_text() == text
@@ -544,12 +550,17 @@ def test_codex_recipe_pipes_official_installer_non_interactive(monkeypatch):
 
     monkeypatch.setattr(installer, "_stream_shell", fake_stream)
     monkeypatch.setattr(installer, "_require", lambda b: calls.setdefault("req", b))
+    ensured = []
+    monkeypatch.setattr(installer, "_ensure_login_path",
+                        lambda emit: ensured.append(True))
     installer._install_codex(lambda **k: None)
     assert calls["cmd"] == ["/bin/bash", "-c",
                             f"curl -fsSL {installer.CODEX_INSTALLER} | sh"]
     # §19: no TTY on the backend — the script must never wait on a prompt
     assert calls["env"] == {"CODEX_NON_INTERACTIVE": "1"}
     assert calls["req"] == "codex"
+    # the vendor symlink lands in ~/.local/bin → §19 guarantee runs
+    assert ensured == [True]
 
 
 def test_ollama_recipe_opens_app_and_waits_for_server_ready(monkeypatch):

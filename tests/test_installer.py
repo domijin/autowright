@@ -1,16 +1,15 @@
-"""installer.py internals (§19): downloads, tarballs, shell streaming, job
-lifecycle. Nothing real is touched — HTTP servers bind 127.0.0.1, LOCAL_BIN
-and the harness bin search are redirected into tmp, and every spawned
-subprocess is a harmless `sh` builtin. Real installer commands are asserted
-only via recorded argv on mocked subprocess entry points.
+"""installer.py internals (§19): downloads, the Ollama app install, shell
+streaming, job lifecycle. Nothing real is touched — HTTP servers bind
+127.0.0.1, LOCAL_BIN / APPLICATIONS and the harness bin search are redirected
+into tmp, and every spawned subprocess is a harmless `sh` builtin or recorded
+argv on mocked subprocess entry points.
 """
 import contextlib
-import io
 import os
 import shutil
-import tarfile
 import threading
 import time
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -125,21 +124,7 @@ def test_download_trickle_hits_wall_clock_deadline(tmp_path, monkeypatch):
             installer._download(f"{base}/slow.bin", str(dest), Recorder(), "slow")
 
 
-# ---------------------------------------------------------------- _install_tarball
-
-def _make_tar(path, files: dict[str, bytes], dirs: tuple[str, ...] = ()):
-    with tarfile.open(path, "w:gz") as tf:
-        for name in dirs:
-            info = tarfile.TarInfo(name)
-            info.type = tarfile.DIRTYPE
-            info.mode = 0o755
-            tf.addfile(info)
-        for name, data in files.items():
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            info.mode = 0o644
-            tf.addfile(info, io.BytesIO(data))
-
+# ---------------------------------------------------------------- _install_ollama_app
 
 @pytest.fixture()
 def local_bin(tmp_path, monkeypatch):
@@ -149,46 +134,79 @@ def local_bin(tmp_path, monkeypatch):
     return d
 
 
-def test_install_tarball_extracts_matching_member_mode_755(tmp_path, local_bin,
-                                                           monkeypatch):
-    tar_src = tmp_path / "pkg.tgz"
-    _make_tar(tar_src,
-              files={"pkg/README.md": b"docs",
-                     "pkg/lib/helper": b"not me",
-                     "pkg/bin/codex-aarch64": b"#!/bin/sh\nreal binary\n"},
-              # dir whose basename matches the prefix — must lose to isreg()
-              dirs=("pkg", "pkg/codex",))
+def _make_app_zip(path):
+    """A minimal Ollama.app bundle zip (what ollama.com ships)."""
+    with zipfile.ZipFile(path, "w") as zf:
+        info = zipfile.ZipInfo("Ollama.app/Contents/Resources/ollama")
+        info.external_attr = 0o100755 << 16  # regular file, rwxr-xr-x
+        zf.writestr(info, "#!/bin/sh\nreal ollama\n")
 
+
+@pytest.fixture()
+def _passthrough_ditto(monkeypatch):
+    """Record subprocess.run argv; really run ditto, no-op pkill/open."""
+    runs = []
+    real_run = installer.subprocess.run
+
+    def fake_run(cmd, **kw):
+        runs.append(list(cmd))
+        if cmd[0] == "/usr/bin/ditto":
+            return real_run(cmd, **kw)
+        return installer.subprocess.CompletedProcess(cmd, 1)
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    return runs
+
+
+def test_install_ollama_app_places_bundle_and_user_symlink(tmp_path, local_bin,
+                                                           monkeypatch,
+                                                           _passthrough_ditto):
+    zip_src = tmp_path / "Ollama-darwin.zip"
+    _make_app_zip(zip_src)
+    apps = tmp_path / "Applications"
+    apps.mkdir()
+    # an existing install must be replaced, vendor-script style
+    stale = apps / "Ollama.app" / "Contents"
+    stale.mkdir(parents=True)
+    (stale / "stale-marker").write_text("old")
+    monkeypatch.setattr(installer, "APPLICATIONS", str(apps))
     urls = []
 
     def fake_download(url, dest, emit, label):
         urls.append(url)
-        shutil.copy(tar_src, dest)
+        shutil.copy(zip_src, dest)
 
     monkeypatch.setattr(installer, "_download", fake_download)
     rec = Recorder()
-    installer._install_tarball("https://example.invalid/pkg.tgz", "codex",
-                               "codex", rec, "Downloading Codex")
+    dest = installer._install_ollama_app(rec)
 
-    assert urls == ["https://example.invalid/pkg.tgz"]
-    dest = local_bin / "codex"  # dest_name, not the member's own basename
-    assert dest.read_bytes() == b"#!/bin/sh\nreal binary\n"
-    assert (dest.stat().st_mode & 0o777) == 0o755
-    assert "Unpacking…" in rec.lines
-    # only the matching member lands in LOCAL_BIN
-    assert [p.name for p in local_bin.iterdir()] == ["codex"]
+    assert urls == [installer.OLLAMA_APP_ZIP]
+    assert dest == str(apps / "Ollama.app")
+    app_bin = apps / "Ollama.app" / "Contents" / "Resources" / "ollama"
+    assert app_bin.read_text() == "#!/bin/sh\nreal ollama\n"
+    assert not (apps / "Ollama.app" / "Contents" / "stale-marker").exists()
+    link = local_bin / "ollama"
+    assert link.is_symlink() and os.readlink(link) == str(app_bin)
+    assert os.access(link, os.X_OK)
+    assert "Installing the Ollama app…" in rec.lines
+    # a running app would have been quit before the bundle swap
+    assert ["pkill", "-x", "Ollama"] in _passthrough_ditto
 
 
-def test_install_tarball_without_matching_member_errors(tmp_path, local_bin,
-                                                        monkeypatch):
-    tar_src = tmp_path / "empty.tgz"
-    _make_tar(tar_src, files={"pkg/README.md": b"docs"})
+def test_install_ollama_app_without_bundle_errors(tmp_path, local_bin,
+                                                  monkeypatch, _passthrough_ditto):
+    zip_src = tmp_path / "empty.zip"
+    with zipfile.ZipFile(zip_src, "w") as zf:
+        zf.writestr("README.md", "docs")
+    apps = tmp_path / "Applications"
+    apps.mkdir()
+    monkeypatch.setattr(installer, "APPLICATIONS", str(apps))
     monkeypatch.setattr(installer, "_download",
-                        lambda url, dest, emit, label: shutil.copy(tar_src, dest))
-    with pytest.raises(RuntimeError, match="no binary found"):
-        installer._install_tarball("https://example.invalid/x.tgz", "codex",
-                                   "codex", Recorder(), "dl")
-    assert not (local_bin / "codex").exists()
+                        lambda url, dest, emit, label: shutil.copy(zip_src, dest))
+    with pytest.raises(RuntimeError, match="no Ollama.app found"):
+        installer._install_ollama_app(Recorder())
+    assert not (apps / "Ollama.app").exists()
+    assert not (local_bin / "ollama").exists()
 
 
 # ---------------------------------------------------------------- _stream_shell
@@ -413,7 +431,7 @@ def test_login_requires_installed_binary(monkeypatch):
 
 # ---------- remaining per-provider recipes ----------
 
-def test_opencode_recipe_pipes_installer_with_install_dir_env(monkeypatch):
+def test_opencode_recipe_pipes_installer_with_vendor_defaults(monkeypatch):
     calls = {}
 
     def fake_stream(cmd, emit, provider_id, env_extra=None):
@@ -424,37 +442,48 @@ def test_opencode_recipe_pipes_installer_with_install_dir_env(monkeypatch):
     installer._install_opencode(lambda **k: None)
     assert calls["cmd"][:2] == ["/bin/bash", "-c"]
     assert installer.OPENCODE_INSTALLER in calls["cmd"][2]
-    # §19: OPENCODE_INSTALL_DIR pins the install into the user-writable bin dir
-    assert calls["env"] == {"OPENCODE_INSTALL_DIR": installer.LOCAL_BIN}
+    # §19: the live script ignores OPENCODE_INSTALL_DIR — vendor defaults only
+    assert calls["env"] is None
     assert calls["req"] == "opencode"
 
 
-@pytest.mark.parametrize("machine,arch", [("arm64", "aarch64"), ("x86_64", "x86_64")])
-def test_codex_recipe_picks_release_for_architecture(monkeypatch, machine, arch):
-    tarballs = []
-    monkeypatch.setattr(installer.platform, "machine", lambda: machine)
-    monkeypatch.setattr(installer, "_install_tarball",
-                        lambda url, pre, dest, emit, label: tarballs.append((url, pre, dest)))
-    monkeypatch.setattr(installer, "_require", lambda b: None)
+def test_codex_recipe_pipes_official_installer_non_interactive(monkeypatch):
+    calls = {}
+
+    def fake_stream(cmd, emit, provider_id, env_extra=None):
+        calls["cmd"], calls["env"] = cmd, env_extra
+
+    monkeypatch.setattr(installer, "_stream_shell", fake_stream)
+    monkeypatch.setattr(installer, "_require", lambda b: calls.setdefault("req", b))
     installer._install_codex(lambda **k: None)
-    assert tarballs == [(installer.CODEX_URL.format(arch=arch), "codex", "codex")]
-    assert arch in tarballs[0][0]
+    assert calls["cmd"] == ["/bin/bash", "-c",
+                            f"curl -fsSL {installer.CODEX_INSTALLER} | sh"]
+    # §19: no TTY on the backend — the script must never wait on a prompt
+    assert calls["env"] == {"CODEX_NON_INTERACTIVE": "1"}
+    assert calls["req"] == "codex"
 
 
-def test_ollama_recipe_waits_for_server_ready(monkeypatch):
-    monkeypatch.setattr(installer, "_install_tarball", lambda *a, **k: None)
+def test_ollama_recipe_opens_app_and_waits_for_server_ready(monkeypatch):
+    monkeypatch.setattr(installer, "_install_ollama_app",
+                        lambda emit: "/apps/Ollama.app")
     monkeypatch.setattr(installer, "_require", lambda b: None)
     monkeypatch.setattr(installer.time, "sleep", lambda s: None)
+    runs = []
+    monkeypatch.setattr(installer.subprocess, "run",
+                        lambda cmd, **kw: runs.append(list(cmd)))
     answers = [{"ready": False}, {"ready": True}]
     monkeypatch.setattr(harness, "ollama_status", lambda: answers.pop(0))
     installer._install_ollama(lambda **k: None)  # returns once ready flips
     assert answers == []
+    # §19: the app is launched hidden — its menu-bar agent owns the server
+    assert runs == [["open", "/apps/Ollama.app", "--args", "hidden"]]
 
 
 def test_ollama_recipe_fails_when_server_never_starts(monkeypatch):
-    monkeypatch.setattr(installer, "_install_tarball", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_install_ollama_app", lambda emit: "/apps/Ollama.app")
     monkeypatch.setattr(installer, "_require", lambda b: None)
     monkeypatch.setattr(installer.time, "sleep", lambda s: None)
+    monkeypatch.setattr(installer.subprocess, "run", lambda cmd, **kw: None)
     monkeypatch.setattr(harness, "ollama_status", lambda: {"ready": False})
     with pytest.raises(RuntimeError, match="server didn't start"):
         installer._install_ollama(lambda **k: None)

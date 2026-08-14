@@ -344,14 +344,20 @@ Dev workflow:
   via Vite + `AUTOWRIGHT_RENDERER_URL`, §15).
 - **`./scripts/uninstall/<tool>.sh`** (`claude-code.sh`, `codex.sh`, `gemini.sh`,
   `opencode.sh`, `ollama.sh`) — developer-only reversal of the §19 installers, run manually by a
-  developer in a terminal. Default removes the tool's binary from `~/.local/bin` (Gemini via
+  developer in a terminal. Default removes what the §19 installer put there (Claude: the
+  `~/.local/bin/claude` symlink + `~/.local/share/claude` versions; Codex: the
+  `~/.local/bin/codex` + `codex-code-mode-host` symlinks and the
+  `~/.codex/packages/standalone` payload tree; Gemini via
   `npm uninstall -g --prefix ~/.local @google/gemini-cli` plus its `~/.local/lib/node_modules`
-  tree; Ollama stops the running server first; OpenCode prefers the CLI's own
-  `opencode uninstall --force` — with `--keep-config --keep-data` unless purging — then removes
-  any leftover paths). **`--purge`** also deletes the tool's
+  tree; Ollama quits the app and running server first, then removes `Ollama.app` from
+  `/Applications`/`~/Applications` and the `~/.local/bin/ollama` symlink; OpenCode prefers
+  the CLI's own `opencode uninstall --force` — with `--keep-config --keep-data` unless
+  purging — then removes leftovers in `~/.opencode/bin` and legacy `~/.local/bin`).
+  **`--purge`** also deletes the tool's
   config/auth/data dirs (`~/.claude` + `~/.claude.json*` and `~/.local/share/claude`;
-  `~/.codex`; `~/.gemini`; `~/.config`/`~/.local/share`/`~/.local/state`/`~/.cache`
-  `opencode` dirs; `~/.ollama` incl. models). Never invoked by the app, the backend, or any
+  `~/.codex`; `~/.gemini`; `~/.opencode` plus the
+  `~/.config`/`~/.local/share`/`~/.local/state`/`~/.cache` `opencode` dirs;
+  `~/.ollama` incl. models). Never invoked by the app, the backend, or any
   agent — each script guards itself (shared `_lib.sh`): exits if agent env markers are present
   (`CLAUDECODE`), exits without an interactive TTY on stdin+stdout, and requires the developer
   to type the tool name to confirm.

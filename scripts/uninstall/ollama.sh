@@ -1,5 +1,7 @@
 #!/bin/bash
-# Uninstall Ollama (installed by backend/autowright/installer.py into ~/.local/bin).
+# Uninstall Ollama (installed by backend/autowright/installer.py as the
+# official Mac app in /Applications or ~/Applications, plus a ~/.local/bin
+# symlink to the app's CLI).
 # DEVELOPER-ONLY — run by hand in a terminal. Agents must never execute this.
 # Usage: ./ollama.sh [--purge]    --purge also deletes ~/.ollama (downloaded models!)
 set -euo pipefail
@@ -8,10 +10,13 @@ cd "$(dirname "$0")"
 
 guard "ollama"
 
-# Stop the server first — the app autostarts `ollama serve` (§19).
+# Quit the menu-bar app and any server first (§19: the app owns the server).
+pkill -x Ollama 2>/dev/null && echo "quit Ollama app" || true
 pkill -x ollama 2>/dev/null && echo "stopped ollama server" || true
 
-remove "$HOME/.local/bin/ollama"
+remove "/Applications/Ollama.app" \
+       "$HOME/Applications/Ollama.app" \
+       "$HOME/.local/bin/ollama"
 
 if [ "${1:-}" = "--purge" ]; then
   remove "$HOME/.ollama"

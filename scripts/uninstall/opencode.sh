@@ -1,5 +1,6 @@
 #!/bin/bash
-# Uninstall OpenCode (installed by backend/autowright/installer.py into ~/.local/bin).
+# Uninstall OpenCode (installed by backend/autowright/installer.py via the
+# official installer script into its default ~/.opencode/bin).
 # DEVELOPER-ONLY — run by hand in a terminal. Agents must never execute this.
 # Usage: ./opencode.sh [--purge]    --purge also deletes config/auth/data dirs
 #
@@ -15,6 +16,7 @@ guard "opencode"
 
 opencode_bin="$(command -v opencode || true)"
 [ -x "$HOME/.local/bin/opencode" ] && opencode_bin="$HOME/.local/bin/opencode"
+[ -x "$HOME/.opencode/bin/opencode" ] && opencode_bin="$HOME/.opencode/bin/opencode"
 if [ -n "$opencode_bin" ]; then
   if [ "$purge" = "--purge" ]; then
     "$opencode_bin" uninstall --force || true
@@ -23,10 +25,12 @@ if [ -n "$opencode_bin" ]; then
   fi
 fi
 
-remove "$HOME/.local/bin/opencode"
+remove "$HOME/.opencode/bin/opencode" \
+       "$HOME/.local/bin/opencode"
 
 if [ "$purge" = "--purge" ]; then
-  remove "$HOME/.local/share/opencode" \
+  remove "$HOME/.opencode" \
+         "$HOME/.local/share/opencode" \
          "$HOME/.local/state/opencode" \
          "$HOME/.config/opencode" \
          "$HOME/.cache/opencode"

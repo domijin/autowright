@@ -328,23 +328,33 @@ remain plain dicts (§2).
   `GET /agents/install/{id}` → `{ state: idle | running | done | failed, percent?, line?, error? }`
   lets a remounted UI reattach. A 15-minute wall-clock cap applies to each install phase
   (installer subprocess run and download): on expiry the job fails with a timeout message —
-  it can never sit `running` forever and block retries. Channels, per provider — official
-  vendor channels only, all into user-writable locations (no sudo), never Homebrew:
+  it can never sit `running` forever and block retries. Channels, per provider — each
+  vendor's own suggested install method, never sudo, never Homebrew (a vendor script adding
+  its bin dir to the shell profile is vendor behavior we accept):
   Claude Code — the official installer script (`curl -fsSL https://claude.ai/install.sh |
   bash`), lands in `~/.local/bin/claude`, indeterminate ·
-  Codex — the latest GitHub release binary tarball for the Mac's architecture
-  (`codex-{aarch64|x86_64}-apple-darwin.tar.gz`) unpacked to `~/.local/bin/codex`, determinate
-  (Content-Length) ·
-  Gemini CLI — `npm install -g --prefix ~/.local @google/gemini-cli` (bin lands in
-  `~/.local/bin`); Gemini ships only through npm, so without `npm` on this Mac the install
-  fails fast with "Gemini CLI needs Node.js — install it from nodejs.org first, then try
-  again."; npm runs with the augmented PATH below so its `#!/usr/bin/env node` shebang
-  resolves; indeterminate ·
-  OpenCode — the official installer script (`curl -fsSL https://opencode.ai/install | bash`)
-  with `OPENCODE_INSTALL_DIR=~/.local/bin`, indeterminate ·
-  Ollama — the latest GitHub release standalone CLI (`ollama-darwin.tgz`) unpacked to
-  `~/.local/bin/ollama`, determinate; the server then starts via the `/ollama/status`
-  autostart below. Ollama installs only as a piece of the local-model setup (§10 Free local
+  Codex — the official installer script (`curl -fsSL https://chatgpt.com/codex/install.sh |
+  sh`) with `CODEX_NON_INTERACTIVE=1` (the backend has no TTY to answer its "Start Codex
+  now?" prompt); versioned payloads live under `~/.codex/packages/standalone` with a `codex`
+  symlink in `~/.local/bin`, indeterminate ·
+  Gemini CLI — `npm install -g --prefix ~/.local @google/gemini-cli` (npm is Google's only
+  official channel; the `--prefix` is ours, keeping the install sudo-free — bin lands in
+  `~/.local/bin`); without `npm` on this Mac the install fails fast with "Gemini CLI needs
+  Node.js — install it from nodejs.org first, then try again."; npm runs with the augmented
+  PATH below so its `#!/usr/bin/env node` shebang resolves; indeterminate ·
+  OpenCode — the official installer script (`curl -fsSL https://opencode.ai/install | bash`),
+  lands in the script's own default `~/.opencode/bin` (already on the fallback bin-dir list
+  below; the live script ignores its documented `OPENCODE_INSTALL_DIR`, so no env is passed),
+  indeterminate ·
+  Ollama — the official Mac app: `Ollama-darwin.zip` from `https://ollama.com/download`
+  (the exact payload the vendor's own install.sh ships), unpacked with `ditto` and moved to
+  `/Applications` (or `~/Applications` when /Applications isn't writable); vendor-script
+  parity: a running Ollama app is quit and an existing `Ollama.app` replaced first. A
+  user-writable `~/.local/bin/ollama` symlink to the app's `Contents/Resources/ollama`
+  stands in for the vendor script's sudo'd `/usr/local/bin` symlink. The app is then
+  launched hidden (`open <app> --args hidden`) — its menu-bar agent owns the server and
+  auto-updates — and the install waits up to 30 s for the server to answer; determinate
+  (Content-Length). Ollama installs only as a piece of the local-model setup (§10 Free local
   AI card, §12 local-model mode) — it is never a harness.
 - **Sign-in help** — `POST /agents/login` `{ id }` → `{ ok, method: browser | terminal }`,
   only for harnesses that need an account and aren't signed in (409 otherwise): Codex — the

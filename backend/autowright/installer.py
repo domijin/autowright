@@ -1,7 +1,8 @@
 """Real harness installers and sign-in help (§19).
 
-Official vendor channels only, into user-writable locations (`~/.local/bin`)
-— no sudo, never Homebrew. One background install per provider at a time;
+Each vendor's own suggested install method — never sudo, never Homebrew
+(CLIs land in user bin dirs; Ollama is the official Mac app plus a
+`~/.local/bin` symlink). One background install per provider at a time;
 progress streams through a publish callback (the API layer forwards it as
 `harness.install` WS events) and the latest snapshot is kept for
 `GET /agents/install/{id}` so a remounted UI can reattach.
@@ -9,12 +10,10 @@ progress streams through a publish callback (the API layer forwards it as
 from __future__ import annotations
 
 import os
-import platform
 import shlex
 import shutil
 import signal
 import subprocess
-import tarfile
 import tempfile
 import threading
 import time
@@ -31,10 +30,10 @@ INSTALL_TIMEOUT_S = 15 * 60
 
 CLAUDE_INSTALLER = "https://claude.ai/install.sh"
 OPENCODE_INSTALLER = "https://opencode.ai/install"
-CODEX_URL = ("https://github.com/openai/codex/releases/latest/download/"
-             "codex-{arch}-apple-darwin.tar.gz")
-OLLAMA_URL = ("https://github.com/ollama/ollama/releases/latest/download/"
-              "ollama-darwin.tgz")
+CODEX_INSTALLER = "https://chatgpt.com/codex/install.sh"
+# The official Mac app archive — the same payload ollama.com's install.sh ships.
+OLLAMA_APP_ZIP = "https://ollama.com/download/Ollama-darwin.zip"
+APPLICATIONS = "/Applications"
 
 _lock = threading.Lock()
 _jobs: dict[str, dict] = {}  # provider id → §19 install snapshot
@@ -194,25 +193,6 @@ def _download(url: str, dest: str, emit, label: str) -> None:
                     emit(line=label, percent=percent)
 
 
-def _install_tarball(url: str, binprefix: str, dest_name: str, emit, label: str) -> None:
-    os.makedirs(LOCAL_BIN, exist_ok=True)
-    with tempfile.TemporaryDirectory() as td:
-        tar_path = os.path.join(td, "pkg.tgz")
-        _download(url, tar_path, emit, label)
-        emit(line="Unpacking…")
-        with tarfile.open(tar_path) as tf:
-            member = next((m for m in tf.getmembers()
-                           if m.isreg() and os.path.basename(m.name).startswith(binprefix)),
-                          None)
-            if member is None:
-                raise RuntimeError("no binary found in the downloaded archive")
-            tf.extract(member, td, filter="data")
-            src = os.path.join(td, member.name)
-        dest = os.path.join(LOCAL_BIN, dest_name)
-        shutil.move(src, dest)
-        os.chmod(dest, 0o755)
-
-
 def _require(binname: str) -> None:
     if harness.resolve_bin(binname) is None:
         raise RuntimeError(f"the installer finished but `{binname}` didn't appear on this Mac")
@@ -226,9 +206,12 @@ def _install_claude(emit) -> None:
 
 
 def _install_opencode(emit) -> None:
+    # The script installs into its own default `~/.opencode/bin` (on the §19
+    # fallback bin-dir list); its documented OPENCODE_INSTALL_DIR is ignored
+    # by the live script, so nothing is passed.
     emit(line="Downloading the OpenCode installer…")
     _stream_shell(["/bin/bash", "-c", f"curl -fsSL {OPENCODE_INSTALLER} | bash"], emit,
-                  "opencode", env_extra={"OPENCODE_INSTALL_DIR": LOCAL_BIN})
+                  "opencode")
     _require("opencode")
 
 
@@ -245,17 +228,52 @@ def _install_gemini(emit) -> None:
 
 
 def _install_codex(emit) -> None:
-    arch = "aarch64" if platform.machine() == "arm64" else "x86_64"
-    _install_tarball(CODEX_URL.format(arch=arch), "codex", "codex", emit,
-                     "Downloading Codex")
+    emit(line="Downloading the Codex installer…")
+    # CODEX_NON_INTERACTIVE: the backend has no TTY to answer its prompts.
+    _stream_shell(["/bin/bash", "-c", f"curl -fsSL {CODEX_INSTALLER} | sh"], emit,
+                  "codex", env_extra={"CODEX_NON_INTERACTIVE": "1"})
     _require("codex")
 
 
+def _install_ollama_app(emit) -> str:
+    """Install the official Mac app the way ollama.com's install.sh does,
+    minus its sudo'd `/usr/local/bin` symlink — a `~/.local/bin` one instead.
+    Returns the installed app path."""
+    apps = APPLICATIONS if os.access(APPLICATIONS, os.W_OK) \
+        else os.path.expanduser("~/Applications")
+    dest = os.path.join(apps, "Ollama.app")
+    with tempfile.TemporaryDirectory() as td:
+        zip_path = os.path.join(td, "Ollama-darwin.zip")
+        _download(OLLAMA_APP_ZIP, zip_path, emit, "Downloading Ollama")
+        emit(line="Installing the Ollama app…")
+        subprocess.run(["/usr/bin/ditto", "-x", "-k", zip_path, td],
+                       check=True, capture_output=True)
+        src = os.path.join(td, "Ollama.app")
+        if not os.path.isdir(src):
+            raise RuntimeError("no Ollama.app found in the downloaded archive")
+        # Vendor-script parity: quit a running app, replace an existing install.
+        if subprocess.run(["pkill", "-x", "Ollama"], capture_output=True).returncode == 0:
+            time.sleep(2)
+        os.makedirs(apps, exist_ok=True)
+        if os.path.exists(dest):
+            shutil.rmtree(dest)
+        shutil.move(src, dest)
+    os.makedirs(LOCAL_BIN, exist_ok=True)
+    link = os.path.join(LOCAL_BIN, "ollama")
+    if os.path.lexists(link):
+        os.remove(link)
+    os.symlink(os.path.join(dest, "Contents", "Resources", "ollama"), link)
+    return dest
+
+
 def _install_ollama(emit) -> None:
-    _install_tarball(OLLAMA_URL, "ollama", "ollama", emit, "Downloading Ollama")
+    app = _install_ollama_app(emit)
     _require("ollama")
     emit(line="Starting the Ollama server…")
-    for _ in range(10):  # ollama_status autostarts `ollama serve` (§19)
+    # The app's menu-bar agent owns the server (and auto-updates) — launch it
+    # hidden like the vendor script does.
+    subprocess.run(["open", app, "--args", "hidden"], capture_output=True, check=False)
+    for _ in range(30):
         if harness.ollama_status()["ready"]:
             return
         time.sleep(1)

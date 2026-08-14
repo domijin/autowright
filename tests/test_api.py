@@ -1632,12 +1632,14 @@ def _wait_pull_done(events, timeout=10):
 
 
 def test_ollama_pull_streams_lines_then_done(client, monkeypatch):
-    # §19: the pull streams raw `ollama pull` output over ollama.pull events —
-    # each carrying the single overall `percent` once one is known — closing
-    # with done/ok/percent 100 and an agents.changed refresh nudge.
+    # §19: with the server not answering, the pull falls back to the CLI and
+    # streams raw `ollama pull` output over ollama.pull events — each carrying
+    # the single overall `percent` once one is known — closing with
+    # done/ok/percent 100 and an agents.changed refresh nudge.
     from autowright import api, harness
 
     events = _capture_events(monkeypatch)
+    monkeypatch.setattr(harness, "_ollama_models", lambda: None)
     monkeypatch.setattr(harness, "ollama_bin", lambda: "/fake/ollama")
 
     lines = [
@@ -1703,20 +1705,78 @@ def test_pull_progress_byte_weights_layers_and_never_goes_backwards():
     assert q.update("pulling c3d4... 3%") == 90
 
 
-def test_ollama_pull_without_binary_reports_not_installed(client, monkeypatch):
+def test_ollama_pull_without_server_or_binary_reports_not_running(client, monkeypatch):
+    # §19: no server answering, no resolvable binary → terminal ok=false with
+    # "Ollama isn't running" (never a Popen on a bare "ollama" guess).
     from autowright import api, harness
 
     events = _capture_events(monkeypatch)
+    monkeypatch.setattr(harness, "_ollama_models", lambda: None)
     monkeypatch.setattr(harness, "ollama_bin", lambda: None)
 
-    def raise_fnf(cmd, **kw):
-        raise FileNotFoundError(cmd[0])
+    def no_popen(cmd, **kw):
+        raise AssertionError("CLI must not be spawned without a resolved binary")
 
-    monkeypatch.setattr(api.subprocess, "Popen", raise_fnf)
+    monkeypatch.setattr(api.subprocess, "Popen", no_popen)
     assert client.post("/ollama/pull", json={"model": "qwen3:8b"}).json() == {"ok": True}
     pulls = _wait_pull_done(events)
-    assert pulls[-1]["line"] == "ollama isn't installed"
+    assert pulls[-1]["line"] == "Ollama isn't running"
     assert pulls[-1]["done"] is True and pulls[-1]["ok"] is False
+
+
+def test_ollama_pull_rides_server_api_when_answering(client, monkeypatch):
+    # §19: /ollama/status reports installed/active from the server answering,
+    # so a pull in that state must succeed with no CLI binary at all — it
+    # rides the server's /api/pull stream. This is the "status says active but
+    # pull says not installed" regression.
+    import json as jsonlib
+
+    from autowright import api, harness
+
+    events = _capture_events(monkeypatch)
+    monkeypatch.setattr(harness, "_ollama_models", lambda: [])  # server answers
+    monkeypatch.setattr(harness, "ollama_bin", lambda: None)    # no CLI anywhere
+
+    stream = [
+        {"status": "pulling manifest"},
+        {"status": "pulling 3f2a", "digest": "sha256:3f2a", "completed": 2.6e9, "total": 5.2e9},
+        {"status": "pulling 3f2a", "digest": "sha256:3f2a", "completed": 5.2e9, "total": 5.2e9},
+        # tiny metadata layer joins the weighting — overall percent must not reset
+        {"status": "pulling ab12", "digest": "sha256:ab12", "completed": 0, "total": 1.2e3},
+        {"status": "verifying sha256 digest"},
+        {"status": "success"},
+    ]
+
+    calls = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def __iter__(self):
+            return iter([(jsonlib.dumps(m) + "\n").encode() for m in stream])
+
+    def fake_urlopen(req, timeout=None):
+        calls["url"] = req.full_url
+        calls["body"] = jsonlib.loads(req.data.decode())
+        return FakeResp()
+
+    monkeypatch.setattr(api.urllib.request, "urlopen", fake_urlopen)
+
+    def no_popen(cmd, **kw):
+        raise AssertionError("CLI must not be spawned when the server answers")
+
+    monkeypatch.setattr(api.subprocess, "Popen", no_popen)
+    assert client.post("/ollama/pull", json={"model": "qwen3:8b"}).json() == {"ok": True}
+    pulls = _wait_pull_done(events)
+    assert calls["url"].endswith("/api/pull")
+    assert calls["body"] == {"model": "qwen3:8b"}
+    assert [e["line"] for e in pulls[:-1]] == [m["status"] for m in stream]
+    assert [e.get("percent") for e in pulls] == [None, 50, 100, 100, 100, 100, 100]
+    assert pulls[-1]["done"] is True and pulls[-1]["ok"] is True
 
 
 # ---------- §4.7/§19 agent record validation ----------

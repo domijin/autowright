@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import secrets as pysecrets
 import subprocess
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -1292,6 +1294,72 @@ class _PullProgress:
             self.percent = max(self.percent or 0, min(pct, 100))
         return self.percent
 
+    def update_layer(self, digest: str | None, completed: float | None,
+                     total: float | None) -> int | None:
+        """Structured variant for the server's `/api/pull` stream (§19)."""
+        if digest and total:
+            self._layers[digest] = (float(completed or 0), float(total))
+            grand = sum(t for _, t in self._layers.values())
+            if grand:
+                pct = int(sum(d for d, _ in self._layers.values()) * 100 / grand)
+                self.percent = max(self.percent or 0, min(pct, 100))
+        return self.percent
+
+
+def _ollama_pull_http(model: str) -> None:
+    """§19: pull through the server's `/api/pull` stream — no CLI involved."""
+    prog = _PullProgress()
+    ok = False
+    err = ""
+    try:
+        req = urllib.request.Request(
+            f"{harness.OLLAMA_URL}/api/pull",
+            data=json.dumps({"model": model}).encode(),
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            for raw in r:
+                try:
+                    msg = json.loads(raw.decode())
+                except ValueError:
+                    continue
+                if msg.get("error"):
+                    err = str(msg["error"])
+                    break
+                status = str(msg.get("status") or "")
+                pct = prog.update_layer(msg.get("digest"), msg.get("completed"),
+                                        msg.get("total"))
+                if status == "success":
+                    ok = True
+                extra = {} if pct is None else {"percent": pct}
+                hub.publish("ollama.pull", model=model, line=status, done=False, **extra)
+    except Exception as e:  # noqa: BLE001
+        err = f"pull failed: {e}"
+    hub.publish("ollama.pull", model=model, line="" if ok else err, done=True, ok=ok,
+                **({"percent": 100} if ok else {}))
+
+
+def _ollama_pull_cli(model: str) -> None:
+    """CLI fallback for when the server isn't answering (§19)."""
+    try:
+        binpath = harness.ollama_bin()
+        if not binpath:
+            raise FileNotFoundError(binpath)
+        proc = subprocess.Popen([binpath, "pull", model], stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True,
+                                env=harness.spawn_env(binpath))
+        prog = _PullProgress()
+        for line in proc.stdout:  # type: ignore[union-attr]
+            stripped = line.strip()
+            pct = prog.update(stripped)
+            extra = {} if pct is None else {"percent": pct}
+            hub.publish("ollama.pull", model=model, line=stripped, done=False, **extra)
+        proc.wait()
+        ok = proc.returncode == 0
+        hub.publish("ollama.pull", model=model, line="", done=True, ok=ok,
+                    **({"percent": 100} if ok else {}))
+    except FileNotFoundError:
+        hub.publish("ollama.pull", model=model, line="Ollama isn't running", done=True, ok=False)
+
 
 @app.post("/ollama/pull", dependencies=[Depends(auth)])
 def ollama_pull(body: models.OllamaPull) -> dict:
@@ -1303,23 +1371,13 @@ def ollama_pull(body: models.OllamaPull) -> dict:
         raise HTTPException(422, "invalid model name")
 
     def pull() -> None:
-        try:
-            binpath = harness.ollama_bin() or "ollama"
-            proc = subprocess.Popen([binpath, "pull", model], stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True,
-                                    env=harness.spawn_env(binpath))
-            prog = _PullProgress()
-            for line in proc.stdout:  # type: ignore[union-attr]
-                stripped = line.strip()
-                pct = prog.update(stripped)
-                extra = {} if pct is None else {"percent": pct}
-                hub.publish("ollama.pull", model=model, line=stripped, done=False, **extra)
-            proc.wait()
-            ok = proc.returncode == 0
-            hub.publish("ollama.pull", model=model, line="", done=True, ok=ok,
-                        **({"percent": 100} if ok else {}))
-        except FileNotFoundError:
-            hub.publish("ollama.pull", model=model, line="ollama isn't installed", done=True, ok=False)
+        # §19: /ollama/status reads installed/active from the server answering,
+        # so the pull must work in exactly that state — ride the server's own
+        # API and never require a resolvable CLI binary alongside it.
+        if harness._ollama_models() is not None:
+            _ollama_pull_http(model)
+        else:
+            _ollama_pull_cli(model)
         hub.publish("agents.changed")
 
     threading.Thread(target=pull, daemon=True).start()

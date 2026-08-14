@@ -503,15 +503,19 @@ def _sync_opencode_ollama_locked(model: str) -> None:
         raise HarnessError(f"couldn't update opencode.json: {e}") from e
 
 
-_OLLAMA_APP_BIN = "/Applications/Ollama.app/Contents/Resources/ollama"
+# §19: the app may sit in the system or the per-user Applications folder.
+_OLLAMA_APP_BINS = tuple(
+    os.path.join(apps, "Ollama.app/Contents/Resources/ollama")
+    for apps in ("/Applications", os.path.expanduser("~/Applications")))
 
 
 def ollama_bin() -> str | None:
     found = resolve_bin("ollama")
     if found:
         return found
-    if os.access(_OLLAMA_APP_BIN, os.X_OK):
-        return _OLLAMA_APP_BIN
+    for path in _OLLAMA_APP_BINS:
+        if os.access(path, os.X_OK):
+            return path
     return None
 
 

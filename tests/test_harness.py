@@ -607,9 +607,9 @@ def test_ollama_bin_falls_back_to_app_bundle(monkeypatch, tmp_path):
     fake = tmp_path / "ollama"
     fake.write_text("#!/bin/sh\n")
     fake.chmod(0o755)
-    monkeypatch.setattr(harness, "_OLLAMA_APP_BIN", str(fake))
+    monkeypatch.setattr(harness, "_OLLAMA_APP_BINS", (str(tmp_path / "missing"), str(fake)))
     assert harness.ollama_bin() == str(fake)
-    monkeypatch.setattr(harness, "_OLLAMA_APP_BIN", str(tmp_path / "missing"))
+    monkeypatch.setattr(harness, "_OLLAMA_APP_BINS", (str(tmp_path / "missing"),))
     assert harness.ollama_bin() is None
 
 

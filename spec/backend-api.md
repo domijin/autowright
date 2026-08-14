@@ -392,17 +392,27 @@ remain plain dicts (§2).
 - Ollama: `GET /ollama/status` → `{ ready, installed,
   models, version }` (`version` from Ollama's `/api/version` when the server answers, else
   null — the §19 Claude Code local-model check gates on it), `POST /ollama/pull` — streams
-  `ollama.pull` WS events `{ model, line, percent?, done, ok? }`. `line` is the raw
-  `ollama pull` output line; `percent` is computed in the backend as **one overall pull
-  progress**: byte-weighted across every layer seen so far in the stream (the
-  `… 2.3 GB/5.2 GB` byte counts), falling back to the line's bare `N%` when no byte counts
-  parse, clamped monotonic (never decreases within one pull), and 100 on the ok terminal
-  event. Raw `ollama pull` restarts its own bar per layer (one multi-GB blob plus small
-  metadata layers, then `verifying sha256 digest`/`writing manifest`) — those per-layer
-  resets must never reach the UI as a bar reset, so clients render `percent` and never parse
-  percents out of `line`. All CLI lookups (detection and harness invocation alike)
+  `ollama.pull` WS events `{ model, line, percent?, done, ok? }`. The pull rides the
+  **server's `/api/pull` HTTP stream whenever the server answers** — never the CLI in that
+  case. `/ollama/status` reports installed/active from the server answering, so a pull must
+  succeed in exactly that state even when no `ollama` binary is resolvable (server reachable
+  but the CLI missing from PATH and the app in a non-standard place — the "says active but
+  pull says not installed" trap). Only when the server doesn't answer does the pull fall back
+  to CLI `ollama pull` via the resolved binary; with neither, the terminal event is
+  `ok: false` with a "Ollama isn't running" line (not "isn't installed" — the server URL may
+  simply be down). `line` is the pull's status line (the HTTP stream's `status` field, or the
+  raw CLI output line); `percent` is computed in the backend as **one overall pull
+  progress**: byte-weighted across every layer seen so far in the stream (the HTTP stream's
+  `completed`/`total` per digest, or the CLI's `… 2.3 GB/5.2 GB` byte counts), falling back
+  to a bare `N%` in a CLI line when no byte counts parse, clamped monotonic (never decreases
+  within one pull), and 100 on the ok terminal event. Raw pull streams restart their bar per
+  layer (one multi-GB blob plus small metadata layers, then
+  `verifying sha256 digest`/`writing manifest`) — those per-layer resets must never reach
+  the UI as a bar reset, so clients render `percent` and never parse percents out of `line`.
+  All CLI lookups (detection and harness invocation alike)
   resolve the binary via PATH plus the usual macOS install locations (`~/.local/bin`,
-  `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; Ollama additionally `Ollama.app`),
+  `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; Ollama additionally `Ollama.app`
+  under both `/Applications` and `~/Applications`),
   because a GUI-launched backend gets a minimal PATH — e.g. `claude` installs to `~/.local/bin`
   by default. Invocation uses the resolved absolute path, and every provider child the backend
   spawns (harness invocations, installs, version/status probes, login helpers, `ollama` pulls)

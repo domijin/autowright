@@ -556,7 +556,8 @@ second; marker changes update immediately. `detail` rides the job (§19 `GET /dr
 that buffers its whole output simply yields no `detail` — the coarse stage labels remain.
 
 Beside the mutable `detail` line the job carries `events` — an append-only activity feed of
-discrete milestones, each entry `{time, text}` (`time` epoch seconds), capped to the newest 200.
+discrete milestones, each entry `{time, text, stage}` (`time` epoch seconds; `stage` the job's
+stage label at append time, so the §11 thread can group the feed by stage), capped to the newest 200.
 Appended: every marker change from the streams above (the `detail` message without its
 ` · N lines` count — never the throttled line-count growth, and never the initial
 `Thinking…`), every tool use on a Claude Code agent (the stream-json `assistant` messages'

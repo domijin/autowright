@@ -11,7 +11,7 @@ import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../
 import {
   type Rev, TRIGGER_SETUP_TEXT, jobStageTitle, mergeDraftTriggers,
   needsMessageTriggerSetup, newEntry, persistChat,
-  seedDrafting, seedEmpty, seedFromPayload, serializeDraft,
+  seedDrafting, seedEmpty, seedFromPayload, serializeDraft, stageDisplayTitle,
 } from './model'
 
 interface PollHandlers {
@@ -72,6 +72,28 @@ export function useDraftJob(d: DraftJobDeps) {
     let lastStage: string | null = null
     let lastDetail: string | null = null
     let lastEvKey = ''
+    // §11 per-stage activity entries: the stages observed so far (chronological
+    // — event stamps first, then the live stage) and the ones already settled
+    // into the thread, so each stage lands exactly one entry.
+    const seenStages: string[] = []
+    const settledStages = new Set<string>()
+    const noteStage = (s: string | null | undefined) => {
+      if (s && !seenStages.includes(s)) seenStages.push(s)
+    }
+    // Builds (and marks settled) one activity entry per given stage, each
+    // carrying its own stage-stamped slice of the feed; only the last stage of
+    // a terminal batch takes the job's outcome — earlier stages finished fine.
+    const settleStages = (
+      mode: 'create' | 'chat' | 'sync', evs: { text: string; stage?: string }[],
+      stages: string[], outcome: 'done' | 'blocked' | 'failed' | null,
+    ) => stages.map((s, i) => {
+      settledStages.add(s)
+      return newEntry({
+        kind: 'activity', title: stageDisplayTitle(s, mode),
+        text: evs.filter((e) => e.stage === s).map((e) => e.text).join('\n'),
+        outcome: outcome && i === stages.length - 1 ? outcome : 'done',
+      })
+    })
     // Staleness guard: a slow in-flight tick may resolve after this job was
     // cancelled/replaced (jobIdRef changed) or after another tick already
     // handled the terminal status (jobIdRef cleared below). Checking the ref
@@ -86,28 +108,48 @@ export function useDraftJob(d: DraftJobDeps) {
           // ("Installing the packages…" after the steps land); `detail` is the
           // finer live-progress line under it, `events` the feed's history.
           const evs = j.events ?? []
+          evs.forEach((e) => noteStage(e.stage))
+          noteStage(j.stage)
           const evKey = evs.length ? `${evs.length}:${evs[evs.length - 1].text}` : ''
           if (j.status === 'building' && (j.stage !== lastStage || (j.detail ?? null) !== lastDetail || evKey !== lastEvKey)) {
             lastStage = j.stage
             lastDetail = j.detail ?? null
             lastEvKey = evKey
-            const texts = evs.map((e) => e.text)
-            setRev((r) => (r ? { ...r, genStage: j.stage, genDetail: lastDetail, genEvents: texts } : r))
+            // §11: a stage the job moved past settles into the thread right
+            // away — its title and feed survive the transition — and the live
+            // progress entry restarts with only the current stage's events.
+            const finished = settleStages(j.mode, evs,
+              seenStages.filter((s) => s !== j.stage && !settledStages.has(s)), null)
+            const texts = evs.filter((e) => !e.stage || e.stage === j.stage).map((e) => e.text)
+            setRev((r) => (r ? {
+              ...r, genStage: j.stage, genDetail: lastDetail, genEvents: texts,
+              ...(finished.length ? { chat: [...r.chat, ...finished] } : {}),
+            } : r))
           }
           if (onSpec && !specDelivered && j.status === 'building' && j.draft?.spec) {
             specDelivered = true
             onSpec(j.draft.spec)
           }
-          // §11 activity entry: a settled job persists its final stage label
-          // (rendered with a check where the spinner was) plus its full event
-          // feed, before the outcome entries the handlers append; a cancelled
-          // job leaves none — its request returns to the input.
+          // §11 activity entries: a settled job persists every stage not yet
+          // settled (rendered with a glyph where the spinner was), each with
+          // its own feed slice, before the outcome entries the handlers
+          // append; only the last takes the job's outcome. A cancelled job
+          // leaves none for its in-flight stage — its request returns to the
+          // input — but already-settled stages stay.
           if (j.status === 'done' || j.status === 'blocked' || j.status === 'failed') {
+            const status = j.status
+            const rest = settleStages(j.mode, evs,
+              seenStages.filter((s) => !settledStages.has(s)), status)
             setRev((r) => {
               if (!r) return r
-              const title = jobStageTitle(r, r.genStage === 'Installing the packages')
-              const feed = newEntry({ kind: 'activity', title, text: evs.map((e) => e.text).join('\n'), outcome: j.status as 'done' | 'blocked' | 'failed' })
-              return { ...r, chat: [...r.chat, feed] }
+              // A payload with no stage at all (belt-and-braces — the backend
+              // always sets one) settles the old way: one entry, busy-flag
+              // title, the whole feed.
+              const entries = rest.length ? rest : [newEntry({
+                kind: 'activity', title: jobStageTitle(r, r.genStage === 'Installing the packages'),
+                text: evs.map((e) => e.text).join('\n'), outcome: status,
+              })]
+              return { ...r, chat: [...r.chat, ...entries] }
             })
           }
           if (j.status === 'done') {

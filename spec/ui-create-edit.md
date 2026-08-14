@@ -44,18 +44,26 @@ applies unchanged; the chat pane never collapses.
   - **user** — the message as a quiet right-aligned bubble (inset background, hairline
     border, ~92% max width).
   - **answer** — the agent's reply rendered through the shared §4.5 Markdown renderer.
-  - **activity** — a settled job's record, persisted when the job ends
-    `done`, `blocked`, or `failed` (a cancelled job leaves none — its request text
-    returns to the input instead): the job's final stage label (`title`) plus its full
-    §8 `events` feed. Renders exactly like the live progress entry it replaces — the
-    stage label kept, an **outcome glyph** in the spinner's 13 px box (same size, so the
-    text never shifts when the spinner settles): a green check when the job ended
-    `done`, an amber check when it ended `blocked` (the trail finished; the blockers
-    entry beneath asks for input), a red X (`fa-xmark`) when it ended `failed` — the dim
-    single-line-ellipsized feed beneath — so the trail of what the agent did survives
-    the job, and a failed job never leads with a green check. The entry's §4.4
-    `outcome` field carries the settled status; an entry persisted before the field
-    existed renders as done. Excluded from the agent's §8 CONVERSATION context (operational noise, §8).
+  - **activity** — a settled stage's record: **one entry per §8 pipeline stage** the job
+    passed through, persisted the moment the stage finishes — mid-job when the next stage
+    begins (that stage's label and feed must survive the transition, never be replaced by
+    the next stage's), and for the last stage when the job ends `done`, `blocked`, or
+    `failed`. Each carries the stage's §11 label (`title`) plus the stage's own slice of
+    the §8 `events` feed (grouped by each event's `stage` stamp). A cancelled job leaves
+    no entry for its in-flight stage — its request text returns to the input instead —
+    but stages that already settled stay in the thread. Renders exactly like the live
+    progress entry it replaces — the stage label kept, an **outcome glyph** in the
+    spinner's 13 px box (same size, so the text never shifts when the spinner settles): a
+    green check for a finished stage (every non-final stage, and the final one of a job
+    that ended `done`), an amber check when the job ended `blocked` at that stage (the
+    trail finished; the blockers entry beneath asks for input), a red X (`fa-xmark`) when
+    it ended `failed` there — the dim single-line-ellipsized feed beneath — so the full
+    trail of what the agent did, stage by stage, survives the job, and a failed job never
+    leads with a green check. The entry's §4.4 `outcome` field carries the status; an
+    entry persisted before the field existed renders as done, and a terminal job payload
+    carrying no stage at all (belt-and-braces — the backend always sets one) settles as
+    one entry with the job's live stage label and the whole feed. Excluded from the
+    agent's §8 CONVERSATION context (operational noise, §8).
   - **rewrite** — a "Spec updated" event: an icon-led event line, the user's request text
     echoed beneath it as dim prose (the §8 payload carries no summary field), the
     out-of-sync note ("The workflow is out of sync — sync the steps before saving."),
@@ -154,10 +162,11 @@ applies unchanged; the chat pane never collapses.
   renders at the bottom of the thread, styled as a left-aligned agent block: a spinner,
   the job's stage label ("Working on the
   request…" / "Writing the spec…" / "Installing the packages…" / "Generating the steps…" /
-  "Rewriting the steps from your spec…"; no title ever carries agent · model attribution —
+  "Rewriting the steps from your spec…"; the install stage shows "Installing the
+  packages…" on sync jobs too; no title ever carries agent · model attribution —
   the composer's picker names the agent; the Build & test panel's coarse
   state-1 label reads "Waiting for the spec…" while call 1 writes), and an **activity feed**
-  beneath it — the job's §8 `events` lines as dim history (all of them, oldest first,
+  beneath it — the **current stage's** §8 `events` lines as dim history (oldest first,
   each single-line with an ellipsis; the §8 per-job event cap bounds the list) above the
   live §8 `detail` line; when `detail` extends the newest
   event (same message, growing ` · N lines` count) that event shows only as the live line,
@@ -165,9 +174,13 @@ applies unchanged; the chat pane never collapses.
   spinner — only the stage label sits beside the spinner, the lines below are not
   indented under it. The entry is **derived editor state, never a persisted thread entry**
   (§4.4 `chat` never carries it): it appears when the job starts and disappears when the
-  job settles, the outcome landing as ordinary thread entries in its place — led by an
-  **activity** entry carrying the job's final stage label and full event feed (entry
-  kinds above), so the label and detail lines outlive the spinner, which settles into a
+  job settles. When the job's stage changes mid-flight, the finished stage settles
+  immediately into the thread as a persisted **activity** entry (its label plus its
+  events, entry kinds above) and the live entry restarts with the new stage's label over
+  an empty feed — every stage's title and details are preserved, none replaced by the
+  next. When the job ends, the outcome lands as ordinary thread entries in the live
+  entry's place — led by the final stage's **activity** entry, so the label and detail
+  lines outlive the spinner, which settles into a
   same-size outcome glyph (entry kinds above). The thread
   auto-pins to the bottom when the entry appears; while the feed grows it follows only
   when the user is already at (or near) the bottom — a user who scrolled up is never

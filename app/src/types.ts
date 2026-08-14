@@ -358,6 +358,9 @@ export interface Blocker {
 export interface DraftEvent {
   time: number
   text: string
+  // §8: the job's stage label when the event was appended — groups the feed
+  // into per-stage §11 activity entries; absent on pre-field payloads
+  stage?: string
 }
 
 export interface DraftJob {

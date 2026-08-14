@@ -456,6 +456,55 @@ describe('CreateFlow blockers thread entries (§11)', () => {
   })
 })
 
+describe('CreateFlow per-stage activity entries (§11)', () => {
+  beforeEach(armPendingPoll)
+
+  it('a create job settles each finished stage as its own activity entry', async () => {
+    storeMod.useStore.setState({ createFrom: 'app' })
+    const spec = [{ kind: 'h1', text: 'Watcher' }, { kind: 'p', text: 'Watches.' }]
+    const specEvent = { time: 1, text: 'Thinking about the spec…', stage: 'Writing the spec' }
+    const stepsEvent = { time: 2, text: 'Writing the manifest…', stage: 'Generating the steps' }
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        id: 'j1', status: 'building', stage: 'Writing the spec', detail: null,
+        error: null, mode: 'create', draft: null, events: [specEvent],
+      })
+      .mockResolvedValueOnce({
+        id: 'j1', status: 'building', stage: 'Generating the steps', detail: null,
+        error: null, mode: 'create', draft: { spec }, events: [specEvent, stepsEvent],
+      })
+      .mockResolvedValue({
+        id: 'j1', status: 'done', stage: 'Generating the steps', detail: null,
+        error: null, mode: 'create',
+        draft: { name: 'Watcher', spec, steps: [], params: [], packages: [] },
+        events: [specEvent, stepsEvent],
+      })
+    render(<CreateFlow />)
+    fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
+      { target: { value: 'Watch my folder' } })
+    fireEvent.click(screen.getByText('Send'))
+    const thread = () => document.querySelector('[data-testid="chat-thread"]') as HTMLElement
+    await waitFor(
+      () => expect(within(thread()).getByText('Draft generated — review the spec and steps, then create it.')).toBeTruthy(),
+      { timeout: 4000 },
+    )
+    // both stage titles survive as settled entries, spec before steps, each
+    // carrying only its own slice of the feed
+    const t = thread()
+    const specEntry = within(t).getByText('Writing the spec…')
+    const stepsEntry = within(t).getByText('Generating the steps…')
+    expect(specEntry.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const feedSpec = within(t).getByText('Thinking about the spec…')
+    const feedSteps = within(t).getByText('Writing the manifest…')
+    expect(specEntry.compareDocumentPosition(feedSpec) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(feedSpec.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(stepsEntry.compareDocumentPosition(feedSteps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // both settled with a green check, no spinner left
+    expect(t.querySelectorAll('.fa-check').length).toBe(2)
+    expect(spinnersIn(t).length).toBe(0)
+  })
+})
+
 describe('CreateFlow chat response application (§11)', () => {
   beforeEach(armPendingPoll)
 

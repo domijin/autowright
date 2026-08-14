@@ -59,8 +59,16 @@ export function persistChat(chat: ChatEntry[]): ChatEntry[] {
 export function jobStageTitle(r: Rev, installing: boolean): string {
   return r.chatBusy ? 'Working on the request…'
     : r.specBusy ? 'Writing the spec…'
-      : r.syncBusy ? 'Rewriting the steps from your spec…'
-        : installing ? 'Installing the packages…' : 'Generating the steps…'
+      : installing ? 'Installing the packages…'
+        : r.syncBusy ? 'Rewriting the steps from your spec…' : 'Generating the steps…'
+}
+
+// §11: display title for a §8 backend stage label — each settled per-stage
+// activity entry reads exactly like the spinner line it replaces (the labels
+// above). Sync jobs re-title the steps stage: the spec is the input there.
+export function stageDisplayTitle(stage: string, mode: 'create' | 'chat' | 'sync'): string {
+  if (stage === 'Generating the steps' && mode === 'sync') return 'Rewriting the steps from your spec…'
+  return `${stage}…`
 }
 
 // §11 trigger-setup reminder: a workflow whose steps read the trigger message

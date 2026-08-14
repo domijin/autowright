@@ -25,7 +25,7 @@ every window state) and end around y ≈ 28, so panel and lights never overlap. 
 (Automations, Executions, Agents, Secrets, Settings), and the About icon pinned at the bottom
 below a flexible spacer — About is meta, not a working surface. While the store holds §9.4
 `updateAvailable` (the §3 update-available event — a known, not-yet-installed update), an
-extra nav row appears directly above About (`data-testid="nav-update"`): fa-circle-down icon
+extra nav row appears directly above About (`data-testid="nav-update"`): fa-download icon
 and "Update available" label, both `--accent`-colored so the icon alone signals in the
 collapsed rail; no count pill, never in the active state. Clicking it navigates to the About
 page, which opens pre-armed (§9.4) — the download itself still starts from that row's

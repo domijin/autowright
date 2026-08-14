@@ -82,7 +82,7 @@ function Sidebar() {
                   color: 'var(--accent)',
                 }}
               >
-                <i className="fa-solid fa-circle-down" style={{ width: 16, fontSize: 12 }} />
+                <i className="fa-solid fa-download" style={{ width: 16, fontSize: 12 }} />
                 <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Update available</span>
               </button>
             )}

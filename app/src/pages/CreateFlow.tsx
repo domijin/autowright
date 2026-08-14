@@ -31,6 +31,7 @@ export {
   stepSecretTags, stepSecretNames, secretRefsOf, instrToMd,
   seedEmpty, seedDrafting, seedFromPayload, seedFromAuto,
   stripTrigger, mergeDraftTriggers, serializeDraft, applyTestValues,
+  needsMessageTriggerSetup,
 } from './createflow/model'
 
 // ---------- the page ----------

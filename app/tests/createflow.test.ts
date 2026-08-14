@@ -12,7 +12,8 @@ vi.mock('../src/api', () => ({
 
 import {
   specToText, textToSpec, amendSpec, stepSecretNames, stepSecretTags, secretRefsOf,
-  instrToMd, mergeDraftTriggers, persistChat, applyTestValues, stripTrigger,
+  instrToMd, mergeDraftTriggers, needsMessageTriggerSetup, persistChat, applyTestValues,
+  stripTrigger,
 } from '../src/pages/CreateFlow'
 
 const step = (over: Partial<Step> = {}): Step =>
@@ -222,6 +223,33 @@ describe('mergeDraftTriggers', () => {
     ])
     // the unmatched existing cron is replaced by the drafted schedule
     expect(merged.some((t) => t.id === 'c1')).toBe(false)
+  })
+})
+
+describe('needsMessageTriggerSetup', () => {
+  const payloadStep = step({ code: 'msg = execution.trigger_payload["text"]' })
+
+  it('true when a step reads trigger_payload and no message trigger exists', () => {
+    expect(needsMessageTriggerSetup([payloadStep], [])).toBe(true)
+    expect(needsMessageTriggerSetup([payloadStep], [
+      { kind: 'cron', enabled: true, expression: '0 8 * * *' },
+      { kind: 'app_start', enabled: true },
+    ])).toBe(true)
+  })
+  it('false when a discord or imessage trigger exists (enabled state irrelevant)', () => {
+    expect(needsMessageTriggerSetup([payloadStep], [
+      { kind: 'discord', enabled: false, channel: '123', secret: 'BOT_TOKEN' },
+    ])).toBe(false)
+    expect(needsMessageTriggerSetup([payloadStep], [
+      { kind: 'imessage', enabled: true, from: '+15550123' },
+    ])).toBe(false)
+  })
+  it('false when no step reads trigger_payload', () => {
+    expect(needsMessageTriggerSetup([step({ code: 'print("hi")' })], [])).toBe(false)
+    expect(needsMessageTriggerSetup([], [])).toBe(false)
+  })
+  it('matches whole identifiers only', () => {
+    expect(needsMessageTriggerSetup([step({ code: 'x = my_trigger_payloads' })], [])).toBe(false)
   })
 })
 

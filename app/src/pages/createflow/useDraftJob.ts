@@ -9,7 +9,8 @@ import { api } from '../../api'
 import { useStore } from '../../store'
 import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../types'
 import {
-  type Rev, jobStageTitle, mergeDraftTriggers, newEntry, persistChat,
+  type Rev, TRIGGER_SETUP_TEXT, jobStageTitle, mergeDraftTriggers,
+  needsMessageTriggerSetup, newEntry, persistChat,
   seedDrafting, seedEmpty, seedFromPayload, serializeDraft,
 } from './model'
 
@@ -185,7 +186,14 @@ export function useDraftJob(d: DraftJobDeps) {
       await startJob({ mode: 'create', text: request, agentId }, {
         onDone: (d) => setRev((r) => ({
           ...seedFromPayload(d, agents, secretNames),
-          chat: [...(r?.chat ?? []), newEntry({ kind: 'system', text: 'Draft generated — review the spec and steps, then create it.' })],
+          chat: [
+            ...(r?.chat ?? []),
+            newEntry({ kind: 'system', text: 'Draft generated — review the spec and steps, then create it.' }),
+            // §11 trigger-setup reminder: the agent omitted a message trigger
+            // it lacked details for — the user adds it on the automation page
+            ...(needsMessageTriggerSetup(d.steps ?? [], d.triggers ?? [])
+              ? [newEntry({ kind: 'system', text: TRIGGER_SETUP_TEXT })] : []),
+          ],
           resolved: r?.resolved ?? [],
           // §11 title: the manifest name replaces the spec-title provisional
           name: d.name || (d.spec ?? []).find((b) => b.kind === 'h1')?.text || 'New automation',
@@ -419,9 +427,14 @@ export function useDraftJob(d: DraftJobDeps) {
           setRev((r) => {
             if (!r) return r
             const steps = dft.steps ?? r.steps
+            const triggers = dft.triggers ? mergeDraftTriggers(r.triggers, dft.triggers) : r.triggers
             const syncedEntry = newEntry({ kind: 'system', text: 'Steps synced with the spec.' })
             const notesEntry = dft.notes != null && dft.notes !== r.notes
               ? newEntry({ kind: 'system' as const, text: 'Notes updated.' }) : null
+            // §11 trigger-setup reminder — only when this sync introduced the
+            // gap, so repeated syncs over an unchanged gap never repeat it
+            const remind = needsMessageTriggerSetup(steps, triggers)
+              && !needsMessageTriggerSetup(r.steps, r.triggers)
             // §8: the manifest's name/description are create-only — a sync never
             // touches them (both are user-owned identity, §4.1).
             return {
@@ -431,7 +444,7 @@ export function useDraftJob(d: DraftJobDeps) {
               ...r, syncBusy: false, genStage: null, dirty: false,
               undo: r.undo ? { ...r.undo, entryId: (notesEntry ?? syncedEntry).id } : r.undo,
               steps, params: dft.params ?? r.params, packages: dft.packages ?? [],
-              triggers: dft.triggers ? mergeDraftTriggers(r.triggers, dft.triggers) : r.triggers,
+              triggers,
               // §8: call 2 may return an updated notes.md beside the manifest
               ...(dft.notes != null && dft.notes !== r.notes ? { notes: dft.notes } : {}),
               // §11: a completed sync collapses any pending blockers entry —
@@ -441,6 +454,7 @@ export function useDraftJob(d: DraftJobDeps) {
                 ...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed ? { ...e, dismissed: true } : e)),
                 syncedEntry,
                 ...(notesEntry ? [notesEntry] : []),
+                ...(remind ? [newEntry({ kind: 'system', text: TRIGGER_SETUP_TEXT })] : []),
               ],
             }
           })

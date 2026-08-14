@@ -63,6 +63,16 @@ export function jobStageTitle(r: Rev, installing: boolean): string {
         : installing ? 'Installing the packages…' : 'Generating the steps…'
 }
 
+// §11 trigger-setup reminder: a workflow whose steps read the trigger message
+// while the trigger list holds no message trigger needs the user to add one on
+// the automation page (§8 rule 9 — the agent never invents a channel id or
+// sender handle; it omits the trigger instead).
+export const TRIGGER_SETUP_TEXT = 'The steps read the trigger message, but no message trigger is set up — add one on the automation page after saving.'
+export function needsMessageTriggerSetup(steps: Step[], triggers: DraftTrigger[]): boolean {
+  return !triggers.some((t) => t.kind === 'discord' || t.kind === 'imessage')
+    && steps.some((s) => /\btrigger_payload\b/.test(s.code))
+}
+
 export interface SecretRef { name: string; steps: number[] }
 export function secretRefsOf(steps: Step[]): SecretRef[] {
   const refs: SecretRef[] = []

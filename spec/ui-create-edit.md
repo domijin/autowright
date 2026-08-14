@@ -71,7 +71,8 @@ applies unchanged; the chat pane never collapses.
     then create it.", the §7 Fix-with-AI failure seed, the
     run-settled entries below, "Build instructions updated.", "Notes updated.",
     "Renamed to `<name>`.", "Description updated.", the Draft-undo entries "Last change
-    undone — the rewrites above no longer apply." and "Nothing to undo.").
+    undone — the rewrites above no longer apply." and "Nothing to undo.", the
+    trigger-setup reminder under the TRIGGERS card below).
   - **error** — a red-tinted left-aligned failure entry (a failed §8 job's message, the
     Failures paragraph below); its "Try again" action, when present, sits in the entry's
     option-button row. Persisted like the other kinds (§4.4), so it survives a reload and
@@ -562,7 +563,16 @@ editors enter with
   v1 gets); in edit mode the saved triggers until a sync lands, then the §4.3 trigger-merge
   preview (drafted crons over the cron subset, drafted message/app-start entries added when
   new, stored non-cron triggers surviving — what saving will store). Empty: "No triggers —
-  executes only via Execute now and the menu bar."
+  executes only via Execute now and the menu bar." **Trigger-setup reminder:** when a
+  settled create or sync leaves the workflow reading the trigger message with no message
+  trigger to deliver one — some step's code references `trigger_payload` while this card's
+  trigger list holds no discord/imessage entry (§8 rule 9: the agent never invents a
+  channel id or sender handle; it omits the trigger, and the user adds it on the
+  automation page) — the thread gets the **system** entry "The steps read the trigger
+  message, but no message trigger is set up — add one on the automation page after
+  saving." right after the job's outcome entries. It appends only when the settling job
+  introduced the gap (the pre-job draft didn't qualify — a fresh create always counts),
+  so repeated syncs over an unchanged gap never repeat the reminder.
 - **PARAMETERS · YOUR AI ASKED FOR THESE** card — display-only in **both** create and edit
   mode, with a "READ-ONLY HERE" tag whenever the draft has params: each row shows the draft
   parameter's name, description, and a read-only **value summary** (the §4.2 one-line summary,

@@ -486,18 +486,34 @@ def parse_envelope(text: str) -> dict[str, str]:
     return files
 
 
-def parse_blockers(text: str) -> list[dict] | None:
-    """§8 blocker envelope. None when the response isn't one; the parsed nonempty
-    blocker list when it is; ValueError when it is one but malformed (which sends
-    it through the normal repair round like any invalid response)."""
+def parse_blockers(text: str) -> tuple[list[dict] | None, str | None]:
+    """§8 blocker envelope → (blockers, notes). (None, None) when the response
+    isn't one; the parsed nonempty blocker list when it is, plus the optional
+    notes.md block's text (§8: a blocker response may carry ONE notes.md beside
+    the envelope — the agent's working knowledge must survive a blocked build;
+    any other file block stays forbidden); ValueError when it is a blocker but
+    malformed (which sends it through the normal repair round like any invalid
+    response)."""
     m = BLOCKED_MARK_RE.search(text)
     if not m:
-        return None
+        return None, None
     endm = END_MARK_RE.search(text, m.end())
     if not endm:
         raise ValueError("blocker response is truncated — no ===END=== marker")
+    notes = None
     if FILE_MARK_RE.search(text):
-        raise ValueError("a blocker envelope must not carry file blocks — return one or the other")
+        # The envelope's own span is cut out, so the remainder must parse as a
+        # plain file envelope holding exactly the optional notes.md.
+        try:
+            files = parse_envelope(text[:m.start()] + text[endm.end():])
+        except ValueError:
+            raise ValueError("a blocker envelope may carry only one notes.md block "
+                             "beside it — close the block with its own ===END===")
+        extras = sorted(f for f in files if f != "notes.md")
+        if extras:
+            raise ValueError("a blocker envelope must not carry file blocks "
+                             f"(only an optional notes.md) — got {extras}")
+        notes = (files.get("notes.md") or "").strip() or None
     try:
         data = yaml.safe_load(text[m.end(): endm.start()])
     except yaml.YAMLError as e:
@@ -517,7 +533,7 @@ def parse_blockers(text: str) -> list[dict] | None:
                 raise ValueError("a blocker's `kind`, when present, must be the literal user-action")
             entry["kind"] = "user-action"
         out.append(entry)
-    return out
+    return out, notes
 
 
 def validate_spec(files: dict[str, str]) -> tuple[dict, list[str]]:
@@ -1036,11 +1052,15 @@ class DraftJobs:
         spec_blocks = None
         if mode == "create":
             # ---- call 1: the spec ----
-            spec, _errors, blockers, diagnosed = self._call_with_repair(
+            spec, _errors, blockers, diagnosed, bnotes = self._call_with_repair(
                 job, agent, build_spec_prompt(user_text, current, grants),
                 validate_spec, "spec")
             if blockers:
-                return self._block(job, "spec", blockers, None, diagnosed=diagnosed)
+                # §8: a blocker response's optional notes.md rides the payload
+                # as draft.notes — the editor applies it like a chat rewrite.
+                return self._block(job, "spec", blockers,
+                                   {"notes": bnotes} if bnotes else None,
+                                   diagnosed=diagnosed)
             spec_md, spec_blocks = spec["md"], spec["blocks"]
             # §11 drafting-on-Review: the validated spec rides the job
             # payload the moment call 1 lands, so the spec card can render
@@ -1052,14 +1072,16 @@ class DraftJobs:
 
         # ---- call 2: steps, params, schedule ----
         self._stage(job, "Generating the steps")
-        draft, _errors, blockers, diagnosed = self._call_with_repair(
+        draft, _errors, blockers, diagnosed, bnotes = self._call_with_repair(
             job, agent, build_steps_prompt(mode, spec_md, current, grants),
             lambda files: validate_steps(files, grants), "steps")
         if blockers:
             # Hand call 1's spec along (create) so the §11 Blocker panel can
             # amend it and rebuild — on sync the caller already holds the spec.
-            return self._block(job, "steps",
-                               blockers, {"spec": spec_blocks} if spec_blocks else None,
+            # The blocker response's optional notes.md rides beside it (§8).
+            payload = {**({"spec": spec_blocks} if spec_blocks else {}),
+                       **({"notes": bnotes} if bnotes else {})}
+            return self._block(job, "steps", blockers, payload or None,
                                diagnosed=diagnosed)
 
         if draft.get("packages"):
@@ -1122,7 +1144,8 @@ class DraftJobs:
                                  "blocked" if outcome == "blocked" else "repaired",
                                  prompt, rounds, None)
         if outcome == "blocked":
-            return self._block(job, "chat", payload, None)
+            return self._block(job, "chat", payload["blockers"],
+                               {"notes": payload["notes"]} if payload.get("notes") else None)
         if not payload:
             return self._fail(job, "The agent returned an empty answer.", [])
         self._settle(job, "done", draft=payload)
@@ -1135,7 +1158,8 @@ class DraftJobs:
         repair). Returns (outcome, payload-or-errors-or-blockers, kept2,
         answer2, failed_names):
 
-        - ("blocked", blockers, …) — a valid blocker envelope, terminal.
+        - ("blocked", {blockers, notes?}, …) — a valid blocker envelope,
+          terminal; `notes` the optional notes.md riding beside it (§8).
         - ("done", payload, …) — payload the terminal { answer?, spec?,
           instructions?, notes?, actions? } dict (empty for an empty response).
         - ("invalid", errors, kept2, answer2, failed) — kept2 the valid blocks
@@ -1151,9 +1175,11 @@ class DraftJobs:
         always an answer, never invalid."""
         kept = kept or {}
         try:
-            blockers = parse_blockers(raw)
+            blockers, bnotes = parse_blockers(raw)
             if blockers is not None:
-                return "blocked", blockers, kept, answer, []
+                # §8: blocked payload = {blockers, notes?} — the optional
+                # notes.md riding the blocker envelope.
+                return "blocked", {"blockers": blockers, "notes": bnotes}, kept, answer, []
         except ValueError as e:
             return "invalid", [str(e)], kept, answer, []
         if not FILE_MARK_RE.search(raw):
@@ -1240,19 +1266,21 @@ class DraftJobs:
         return out
 
     def _call_with_repair(self, job: dict, agent: dict, prompt: str,
-                          validator, call: str) -> tuple[dict, list[str], list[dict] | None, bool]:
+                          validator, call: str
+                          ) -> tuple[dict, list[str], list[dict] | None, bool, str | None]:
         """One harness call + up to §15 AUTOWRIGHT_REPAIR_ROUNDS automatic
         repair rounds against `validator` — each round the same prompt plus the
         newest raw response and its errors — then, when every round is still
         invalid, one §8 build-diagnosis call that turns the failure into
         blockers (returned with diagnosed=True), so a surviving validation
         failure never fails the job. A valid §8 blocker envelope is terminal —
-        returned as-is, no repair. A cancel raises `Cancelled` out of `_invoke`
+        returned as-is, no repair, its optional notes.md text as the last
+        element. A cancel raises `Cancelled` out of `_invoke`
         (checked before every spawn there): a cancel between calls never lets a
         fresh full-timeout harness call start. `call` names the pipeline call
         ("spec"/"steps") for the §5 build-failure record."""
         raw = self._invoke(job, agent, prompt, on_chunk=self._progress_cb(job))
-        result, errors, blockers = self._parse_validate(raw, validator)
+        result, errors, blockers, notes = self._parse_validate(raw, validator)
         rounds: list[dict] = []
         for i in range(1, repair_rounds() + 1):
             if not errors:
@@ -1264,13 +1292,13 @@ class DraftJobs:
             self._event(job, "The response didn't validate — asking for a corrected one…")
             raw = self._invoke(job, agent, repair,
                                on_chunk=self._progress_cb(job, prefix=try_prefix(i)))
-            result, errors, blockers = self._parse_validate(raw, validator)
+            result, errors, blockers, notes = self._parse_validate(raw, validator)
         if errors:
             diag = self._diagnose(job, agent, prompt, raw, errors,
                                   attempts=len(rounds) + 1)
             self._record_failure(job, agent, call, "diagnosed", prompt,
                                  rounds + [{"errors": errors, "response": raw}], diag)
-            return {}, [], diag, True
+            return {}, [], diag, True, None
         if rounds:
             # A repair round settled the call — a fixed envelope or a blocker
             # envelope — but the earlier rounds still failed validation:
@@ -1278,7 +1306,7 @@ class DraftJobs:
             self._record_failure(job, agent, call,
                                  "blocked" if blockers else "repaired",
                                  prompt, rounds, None)
-        return result, errors, blockers, False
+        return result, errors, blockers, False, notes
 
     @staticmethod
     def _record_failure(job: dict, agent: dict, call: str, outcome: str, prompt: str,
@@ -1306,7 +1334,9 @@ class DraftJobs:
         try:
             # A cancel raises `Cancelled` out of `_invoke` — it is not caught
             # below, so a cancelled diagnosis never settles a fallback blocker.
-            blockers = parse_blockers(self._invoke(job, agent, diagnose))
+            # The diagnosis call is never offered the notes.md option — its
+            # optional notes are ignored.
+            blockers, _notes = parse_blockers(self._invoke(job, agent, diagnose))
         except (harness.HarnessError, ValueError) as e:
             log.warning("build-diagnosis call failed: %s", e)
         if not blockers:
@@ -1491,16 +1521,16 @@ class DraftJobs:
                      diagnosed=diagnosed)
 
     @staticmethod
-    def _parse_validate(raw: str, validator) -> tuple[dict, list[str], list[dict] | None]:
+    def _parse_validate(raw: str, validator) -> tuple[dict, list[str], list[dict] | None, str | None]:
         try:
-            blockers = parse_blockers(raw)
+            blockers, notes = parse_blockers(raw)
             if blockers is not None:
-                return {}, [], blockers
+                return {}, [], blockers, notes
             files = parse_envelope(raw)
         except ValueError as e:
-            return {}, [str(e)], None
+            return {}, [str(e)], None, None
         result, errors = validator(files)
-        return result, errors, None
+        return result, errors, None, None
 
 
 draft_jobs = DraftJobs()

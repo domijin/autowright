@@ -350,6 +350,11 @@ showing out of sync. A completed sync collapses any pending blockers entry the s
 its blockers describe steps that no longer exist. No automatic loop cap — the cycle is
 user-driven and Start over/Dismiss always exits.
 
+A blocked job whose payload carries `draft.notes` (the §8 blocker response's optional
+`notes.md`) applies the notes exactly like a chat notes rewrite — the "Notes updated."
+system chip lands right after the blockers entry, and notes never mark the workflow out
+of sync (§4.1). Everything else the blocked job leaves untouched.
+
 **Review.** 1800 px max-width page. Title row: name (single line, shrinks with ellipsis so a long name never pushes the
 buttons out of the window), version dropdown (edit mode), Start over ghost
 (edit: "Discard draft"), a "Keep draft" ghost (edit mode only, rendered once the draft is
@@ -452,7 +457,8 @@ editors enter with
   from the composer's Cancel button leaves the draft untouched (toast "Edit stopped — the
   spec is unchanged."). On failure the §8 error renders as a thread error entry; a `blocked`
   outcome renders a thread blockers entry (source: chat) — either way the draft is
-  untouched. Manual spec/instruction edits are mutually exclusive (one edit at a time), and
+  untouched, except a blocked payload's `draft.notes` (§8 blocker notes), applied like
+  any notes rewrite (Blockers above). Manual spec/instruction edits are mutually exclusive (one edit at a time), and
   both are locked while a chat/sync job runs (inputs lock below).
 - **Draft undo** — one-level **full-draft snapshot** per agent request: when a chat
   response changes the draft, the editor first stashes the draft **whole** — spec, steps,

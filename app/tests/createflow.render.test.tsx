@@ -300,6 +300,17 @@ describe('CreateFlow Build & test panel (§11)', () => {
       { timeout: 3000 },
     )
   })
+
+  it('a blocked sync carrying §8 blocker notes applies them with a "Notes updated." chip', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ...BLOCKED_SYNC, draft: { spec: null, notes: '- the feed needs auth' },
+    })
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByText('Sync with spec'))
+    await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
+    // the notes land like a chat notes rewrite — chip after the blockers entry
+    expect(screen.getByText('Notes updated.')).toBeTruthy()
+  })
 })
 
 describe('CreateFlow blockers thread entries (§11)', () => {

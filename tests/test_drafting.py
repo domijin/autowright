@@ -247,20 +247,21 @@ blockers:
 
 
 def test_parse_blockers_good():
-    assert parse_blockers(BLOCKED) == [{"reason": "Needs physical mail.",
-                                        "fix": "Use a digital source.",
-                                        "details": "Only files and web pages are reachable."}]
+    assert parse_blockers(BLOCKED) == ([{"reason": "Needs physical mail.",
+                                         "fix": "Use a digital source.",
+                                         "details": "Only files and web pages are reachable."}],
+                                       None)
 
 
 def test_parse_blockers_details_optional():
-    bl = parse_blockers(BLOCKED.replace("    details: Only files and web pages are reachable.\n", ""))
+    bl, _ = parse_blockers(BLOCKED.replace("    details: Only files and web pages are reachable.\n", ""))
     assert bl[0]["details"] == ""
 
 
 def test_parse_blockers_none_for_file_envelopes():
     # a normal file-block response isn't a blocker — validation proceeds as usual
-    assert parse_blockers(GOOD_SPEC) is None
-    assert parse_blockers(GOOD_STEPS) is None
+    assert parse_blockers(GOOD_SPEC) == (None, None)
+    assert parse_blockers(GOOD_STEPS) == (None, None)
 
 
 def test_blocker_requires_reason_and_fix():
@@ -274,9 +275,25 @@ def test_blocker_list_must_be_nonempty():
 
 
 def test_blocker_must_not_mix_file_blocks():
-    mixed = BLOCKED.replace("===BLOCKED===", "===FILE: spec.md===\n# Sneaky\n===BLOCKED===")
+    # §8: only notes.md may ride beside a blocker envelope — anything else is
+    # still "one or the other"
+    mixed = BLOCKED + "===FILE: spec.md===\n# Sneaky\n===END===\n"
     with pytest.raises(ValueError, match="must not carry file blocks"):
         parse_blockers(mixed)
+
+
+def test_blocker_carries_optional_notes():
+    # §8: one notes.md block after the envelope's ===END=== rides the parse —
+    # a blocked build keeps what the agent learned
+    bl, notes = parse_blockers(
+        BLOCKED + "===FILE: notes.md===\n## Learned\n- the feed needs auth\n===END===\n")
+    assert bl[0]["reason"] == "Needs physical mail."
+    assert notes == "## Learned\n- the feed needs auth"
+
+
+def test_blocker_empty_notes_reads_absent():
+    bl, notes = parse_blockers(BLOCKED + "===FILE: notes.md===\n\n===END===\n")
+    assert bl and notes is None
 
 
 def test_truncated_blocker_rejected():
@@ -287,7 +304,7 @@ def test_truncated_blocker_rejected():
 def test_blocker_kind_user_action_rides_the_entry():
     # §8: optional `kind: user-action` — the fix is something the USER does on
     # their Mac; the key rides the parsed entry only when present
-    bl = parse_blockers(BLOCKED.replace(
+    bl, _ = parse_blockers(BLOCKED.replace(
         "    details: Only files and web pages are reachable.\n",
         "    details: Only files and web pages are reachable.\n    kind: user-action\n"))
     assert bl == [{"reason": "Needs physical mail.", "fix": "Use a digital source.",
@@ -297,7 +314,7 @@ def test_blocker_kind_user_action_rides_the_entry():
 
 def test_blocker_kind_absent_stays_absent():
     # backward compatibility: no `kind` key in the parsed dict when not sent
-    assert "kind" not in parse_blockers(BLOCKED)[0]
+    assert "kind" not in parse_blockers(BLOCKED)[0][0]
 
 
 def test_blocker_kind_rejects_other_values():
@@ -814,6 +831,46 @@ def test_chat_job_blocker_envelope(monkeypatch):
     assert j["status"] == "blocked", j
     assert j["blockedAt"] == "chat" and not j["diagnosed"]
     assert j["blockers"] == [{"reason": "r", "fix": "f", "details": ""}]
+    assert j["draft"] is None
+
+
+def test_chat_job_blocker_notes_ride_the_payload(monkeypatch):
+    # §8: a blocker response's optional notes.md rides the blocked job's
+    # payload as draft.notes — the agent's working knowledge survives.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setattr(
+        harness, "invoke",
+        lambda agent, prompt, **kw:
+        "===BLOCKED===\nblockers:\n  - reason: r\n    fix: f\n===END===\n"
+        "===FILE: notes.md===\n- the API needs a login\n===END===\n")
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "do the impossible",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "blocked", j
+    assert j["blockers"] == [{"reason": "r", "fix": "f", "details": ""}]
+    assert j["draft"] == {"notes": "- the API needs a login"}
+
+
+def test_create_steps_blocker_keeps_spec_and_notes(monkeypatch):
+    # §8: a create job blocked at the steps call keeps call 1's spec in the
+    # payload AND the blocker response's optional notes.md beside it.
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    def fake_invoke(agent, prompt, **kw):
+        if "Write the SPEC from the USER REQUEST" in prompt:
+            return GOOD_SPEC
+        return ("===BLOCKED===\nblockers:\n  - reason: r\n    fix: f\n===END===\n"
+                "===FILE: notes.md===\n- selector .price is gone\n===END===\n")
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "create", {"harness": "Claude Code"}, "say hello",
+                 None, GRANTS)
+    assert j["status"] == "blocked", j
+    assert j["blockedAt"] == "steps"
+    assert j["draft"]["spec"][0] == {"kind": "h1", "text": "Hello"}
+    assert j["draft"]["notes"] == "- selector .price is gone"
 
 
 def test_chat_job_user_action_blocker_rides_the_payload(monkeypatch):
@@ -1309,7 +1366,7 @@ def test_parse_blockers_ignores_end_before_the_mark():
     text = ("===END===\n===BLOCKED===\nblockers:\n"
             "  - reason: Needs a Discord channel id.\n"
             "    fix: Name the channel in the spec.\n===END===\n")
-    blockers = parse_blockers(text)
+    blockers, _ = parse_blockers(text)
     assert blockers == [{"reason": "Needs a Discord channel id.",
                          "fix": "Name the channel in the spec.", "details": ""}]
 

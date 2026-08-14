@@ -249,7 +249,7 @@ undo or revert the last change ("undo that", "put it back") — never hand-rewri
 documents back from memory when the exact restore is available.
 
 Chat-call validation, by response shape: a valid blocker envelope settles the job `blocked`
-(`blockedAt: chat`); a response with no `===FILE:` marker is an **answer** — the raw
+(`blockedAt: chat`), its optional `notes.md` (Blocker response below) riding `draft.notes`; a response with no `===FILE:` marker is an **answer** — the raw
 response text, trimmed, with payload `draft: { answer }`; the only answer-path failure is
 an empty response ("The agent returned an empty answer.") — no envelope parsing and no
 repair round there. A response containing a `===FILE:` marker parses per the §8 envelope
@@ -466,7 +466,17 @@ blockers:
 
 Validation: YAML with a nonempty `blockers` list; every entry carries a nonempty `reason` and
 `fix` (`details` optional); `kind`, when present, must be the literal `user-action` —
-anything else is a validation error feeding the repair round; no file blocks alongside it.
+anything else is a validation error feeding the repair round; no file blocks alongside it,
+with one exception: the response may carry one optional `notes.md` block **after** the
+envelope's `===END===` — the full updated §4.1 notes document (validated only as present
+text, like call 2's success-path notes), so what the agent learned before hitting the
+blocker survives the blocked build. The instructions require it to start from the NOTES it
+was given and keep everything still true — a blocker's notes extend the document, never
+restart it. Any other file block beside a blocker envelope stays a validation error. The
+notes ride the job payload inside `draft` (`draft.notes`, beside the create-mode spec when
+call 1 landed one) and the editor applies them exactly like a chat notes rewrite ("Notes
+updated." chip, never out-of-sync); the spec and every other document stay untouched — a
+blocker can never rewrite them.
 `fix` and `details` are markdown — §11 renders them through the shared renderer, so
 download links are clickable. A `kind: user-action` blocker says the automation is fine
 but the Mac isn't ready: its text names what to install or start, says why the automation

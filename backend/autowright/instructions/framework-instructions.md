@@ -43,7 +43,12 @@ link when one exists, and close by offering step-by-step install instructions.
 Never use a blocker for mere uncertainty — when in doubt, build your best
 attempt. Never use `user-action` for anything a declared pip package solves.
 Report ALL blockers in one response, in plain words
-the user can act on. Never mix file blocks and a blocker envelope.
+the user can act on. Never mix file blocks and a blocker envelope — with one
+exception: after the envelope's `===END===` you may add one `===FILE: notes.md===`
+block (closed with its own `===END===`) carrying the FULL updated notes document,
+so what you learned before hitting the blocker isn't lost. Start from the NOTES
+you were given and keep everything in them that is still true — extend the
+document, never restart it. No other file may accompany a blocker.
 
 ## How to solve a task
 

@@ -273,7 +273,8 @@ remain plain dicts (§2).
   `blocked` and it carries the §8 `blockers` list — each entry `{ reason, fix, details?,
   kind? }`, `kind` only ever `user-action` (§8) — plus `blockedAt: spec | steps | chat` (a create job
   blocked at the steps call keeps call 1's spec in its payload, so the §11 blockers entry can
-  amend and rebuild it); a `blocked` job whose blockers came from the §8 build-diagnosis call
+  amend and rebuild it; a blocker response's optional `notes.md` — §8 — rides the payload as
+  `draft.notes`, applied by the editor like a chat notes rewrite); a `blocked` job whose blockers came from the §8 build-diagnosis call
   (or its deterministic fallback) additionally carries `diagnosed: true`, and `failed` is
   reserved for harness errors and crashes — a validation double-failure always ends `blocked`
   (§8 failure policy); `DELETE /drafts/{jobId}` cancels

@@ -18,7 +18,9 @@ interface PollHandlers {
   onDone: (d: DraftPayload) => void
   onFail: (msg: string, detail?: string[]) => void
   onCancelled?: () => void
-  onBlocked?: (blockers: Blocker[], at: 'spec' | 'steps' | 'chat', spec: SpecBlock[] | null, diagnosed: boolean) => void
+  // §8: `notes` is the blocker response's optional notes.md — applied by every
+  // handler like a chat notes rewrite, so a blocked build keeps what it learned.
+  onBlocked?: (blockers: Blocker[], at: 'spec' | 'steps' | 'chat', spec: SpecBlock[] | null, diagnosed: boolean, notes: string | null) => void
   onSpec?: (spec: SpecBlock[]) => void // §11: create job's call-1 spec, mid-job
 }
 
@@ -158,7 +160,7 @@ export function useDraftJob(d: DraftJobDeps) {
             else onFail('The agent returned an empty draft.')
           } else if (j.status === 'blocked') {
             stopPoll()
-            if (onBlocked) onBlocked(j.blockers ?? [], j.blockedAt ?? 'steps', j.draft?.spec ?? null, j.diagnosed ?? false)
+            if (onBlocked) onBlocked(j.blockers ?? [], j.blockedAt ?? 'steps', j.draft?.spec ?? null, j.diagnosed ?? false, j.draft?.notes ?? null)
             else onFail(j.error || 'Your AI hit a blocker.')
           } else if (j.status === 'failed') {
             stopPoll()
@@ -176,6 +178,13 @@ export function useDraftJob(d: DraftJobDeps) {
       })()
     }, 700)
   }
+
+  // §8 blocker notes: a blocked job's draft.notes applies exactly like a chat
+  // notes rewrite — state patch plus a "Notes updated." chip after the
+  // blockers entry; notes never mark the workflow out of sync (§4.1).
+  const blockerNotes = (r: Rev, notes: string | null) => (notes != null && notes !== r.notes
+    ? { patch: { notes }, chip: [newEntry({ kind: 'system' as const, text: 'Notes updated.' })] }
+    : { patch: {}, chip: [] })
 
   // The {start} half of the core: POST the job, then arm the poll — unless a
   // cancel landed while the POST was in flight (gen moved), in which case the
@@ -254,16 +263,20 @@ export function useDraftJob(d: DraftJobDeps) {
         onCancelled: () => setRev((r) => r && ({ ...seedEmpty(agents, secretNames), chat: r.chat })),
         // §11 Blockers: a spec-call block is the clarification case, a
         // steps-call block leaves the workflow out of sync — both land as
-        // thread blockers entries.
-        onBlocked: (blockers, at, spec, diagnosed) => setRev((r) => r && (at === 'spec'
-          ? {
-            ...r, specBusy: false, stepsBusy: false,
-            chat: [...r.chat, newEntry({ kind: 'blockers', source: 'spec', blockers, diagnosed, resolved: r.resolved })],
-          }
-          : {
-            ...r, stepsBusy: false, spec: spec ?? r.spec, dirty: true,
-            chat: [...r.chat, newEntry({ kind: 'blockers', source: 'steps', blockers, diagnosed, resolved: r.resolved })],
-          })),
+        // thread blockers entries (plus the §8 blocker notes when carried).
+        onBlocked: (blockers, at, spec, diagnosed, notes) => setRev((r) => {
+          if (!r) return r
+          const bn = blockerNotes(r, notes)
+          return at === 'spec'
+            ? {
+              ...r, specBusy: false, stepsBusy: false, ...bn.patch,
+              chat: [...r.chat, newEntry({ kind: 'blockers', source: 'spec', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
+            }
+            : {
+              ...r, stepsBusy: false, spec: spec ?? r.spec, dirty: true, ...bn.patch,
+              chat: [...r.chat, newEntry({ kind: 'blockers', source: 'steps', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
+            }
+        }),
         onSpec: (spec) => {
           specLanded = true
           setRev((r) => r && ({
@@ -430,11 +443,16 @@ export function useDraftJob(d: DraftJobDeps) {
           chat: [...r.chat, newEntry({ kind: 'error', text: msg || 'The request failed — try again or rephrase.' })],
         })),
         onCancelled: () => setRev((r) => r && ({ ...r, chatBusy: false })),
-        // §11: a blocked chat call lands as a blockers entry — draft untouched.
-        onBlocked: (blockers, _at, _spec, diagnosed) => setRev((r) => r && ({
-          ...r, chatBusy: false,
-          chat: [...r.chat, newEntry({ kind: 'blockers', source: 'chat', blockers, diagnosed, resolved: r.resolved })],
-        })),
+        // §11: a blocked chat call lands as a blockers entry — draft untouched
+        // apart from the §8 blocker notes when carried.
+        onBlocked: (blockers, _at, _spec, diagnosed, notes) => setRev((r) => {
+          if (!r) return r
+          const bn = blockerNotes(r, notes)
+          return {
+            ...r, chatBusy: false, ...bn.patch,
+            chat: [...r.chat, newEntry({ kind: 'blockers', source: 'chat', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
+          }
+        }),
       })
     } catch (e) {
       setRev((r) => r && ({
@@ -507,10 +525,14 @@ export function useDraftJob(d: DraftJobDeps) {
           showToast(`The draft didn’t validate — try again or rephrase.${msg ? ' ' + msg : ''}`, 4500)
         },
         onCancelled: () => setRev((r) => r && ({ ...r, syncBusy: false })),
-        onBlocked: (blockers, _at, _spec, diagnosed) => setRev((r) => r && ({
-          ...r, syncBusy: false,
-          chat: [...r.chat, newEntry({ kind: 'blockers', source: 'sync', blockers, diagnosed, resolved: r.resolved })],
-        })),
+        onBlocked: (blockers, _at, _spec, diagnosed, notes) => setRev((r) => {
+          if (!r) return r
+          const bn = blockerNotes(r, notes)
+          return {
+            ...r, syncBusy: false, ...bn.patch,
+            chat: [...r.chat, newEntry({ kind: 'blockers', source: 'sync', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
+          }
+        }),
       })
     } catch (e) {
       up({ syncBusy: false })

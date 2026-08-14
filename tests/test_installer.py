@@ -128,9 +128,13 @@ def test_download_trickle_hits_wall_clock_deadline(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def local_bin(tmp_path, monkeypatch):
-    """Redirect LOCAL_BIN into tmp; never touch the real ~/.local/bin."""
+    """Redirect LOCAL_BIN into tmp; never touch the real ~/.local/bin, the
+    real /usr/local/bin (nonexistent redirect → the LOCAL_BIN branch runs),
+    or the real shell profile (_ensure_login_path stubbed)."""
     d = tmp_path / "localbin"
     monkeypatch.setattr(installer, "LOCAL_BIN", str(d))
+    monkeypatch.setattr(installer, "USR_LOCAL_BIN", str(tmp_path / "usr-local-bin"))
+    monkeypatch.setattr(installer, "_ensure_login_path", lambda emit: None)
     return d
 
 
@@ -177,6 +181,9 @@ def test_install_ollama_app_places_bundle_and_user_symlink(tmp_path, local_bin,
         shutil.copy(zip_src, dest)
 
     monkeypatch.setattr(installer, "_download", fake_download)
+    ensured = []
+    monkeypatch.setattr(installer, "_ensure_login_path",
+                        lambda emit: ensured.append(True))
     rec = Recorder()
     dest = installer._install_ollama_app(rec)
 
@@ -191,6 +198,36 @@ def test_install_ollama_app_places_bundle_and_user_symlink(tmp_path, local_bin,
     assert "Installing the Ollama app…" in rec.lines
     # a running app would have been quit before the bundle swap
     assert ["pkill", "-x", "Ollama"] in _passthrough_ditto
+    # a ~/.local/bin symlink comes with the §19 terminal-access guarantee
+    assert ensured == [True]
+
+
+def test_install_ollama_app_symlinks_vendor_dir_when_writable(tmp_path, local_bin,
+                                                              monkeypatch,
+                                                              _passthrough_ditto):
+    """§19 install-location principle: a writable /usr/local/bin gets the
+    vendor script's own symlink location — no profile edit needed."""
+    zip_src = tmp_path / "Ollama-darwin.zip"
+    _make_app_zip(zip_src)
+    apps = tmp_path / "Applications"
+    apps.mkdir()
+    monkeypatch.setattr(installer, "APPLICATIONS", str(apps))
+    usr = tmp_path / "usr-local-bin"
+    usr.mkdir()
+    monkeypatch.setattr(installer, "USR_LOCAL_BIN", str(usr))
+    monkeypatch.setattr(installer, "_download",
+                        lambda url, dest, emit, label: shutil.copy(zip_src, dest))
+    ensured = []
+    monkeypatch.setattr(installer, "_ensure_login_path",
+                        lambda emit: ensured.append(True))
+
+    installer._install_ollama_app(Recorder())
+
+    link = usr / "ollama"
+    app_bin = apps / "Ollama.app" / "Contents" / "Resources" / "ollama"
+    assert link.is_symlink() and os.readlink(link) == str(app_bin)
+    assert not (local_bin / "ollama").exists()
+    assert ensured == []  # /usr/local/bin is on every PATH already
 
 
 def test_install_ollama_app_without_bundle_errors(tmp_path, local_bin,
@@ -343,9 +380,14 @@ def test_gemini_with_node_runs_npm_global_into_local_prefix(home, monkeypatch):
     argvs = []
     monkeypatch.setattr(installer, "_stream_shell",
                         lambda cmd, emit, provider_id, env_extra=None: argvs.append(list(cmd)))
+    ensured = []
+    monkeypatch.setattr(installer, "_ensure_login_path",
+                        lambda emit: ensured.append(True))
     installer._install_gemini(Recorder())
     assert argvs == [[fake_npm, "install", "-g", "--prefix",
                       os.path.expanduser("~/.local"), "@google/gemini-cli"]]
+    # the --prefix bin placement is ours → §19 terminal-access guarantee runs
+    assert ensured == [True]
 
 
 def test_claude_recipe_pipes_official_installer_and_requires_binary(monkeypatch):
@@ -358,6 +400,53 @@ def test_claude_recipe_pipes_official_installer_and_requires_binary(monkeypatch)
     assert calls == [["/bin/bash", "-c",
                       f"curl -fsSL {installer.CLAUDE_INSTALLER} | bash"]]
     assert required == ["claude"]
+
+
+# ---------------------------------------------------------------- _ensure_login_path
+
+@pytest.fixture()
+def fake_home(tmp_path, monkeypatch):
+    """Point HOME at tmp so profile writes never touch the real one."""
+    h = tmp_path / "home"
+    h.mkdir()
+    monkeypatch.setenv("HOME", str(h))
+    return h
+
+
+def test_ensure_login_path_noop_when_already_on_login_path(monkeypatch, fake_home):
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    monkeypatch.setattr(installer, "_login_shell_path",
+                        lambda: ["/usr/bin", installer.LOCAL_BIN])
+    installer._ensure_login_path(Recorder())
+    assert not (fake_home / ".zprofile").exists()
+
+
+def test_ensure_login_path_appends_marked_export_to_zprofile(monkeypatch, fake_home):
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    monkeypatch.setattr(installer, "_login_shell_path", lambda: ["/usr/bin"])
+    rec = Recorder()
+    installer._ensure_login_path(rec)
+    text = (fake_home / ".zprofile").read_text()
+    assert installer.PATH_MARKER in text
+    assert 'export PATH="$HOME/.local/bin:$PATH"' in text
+    assert any(".zprofile" in line for line in rec.lines)
+    # idempotent: a second run finds the mention and never duplicates it
+    installer._ensure_login_path(rec)
+    assert (fake_home / ".zprofile").read_text() == text
+
+
+def test_ensure_login_path_respects_existing_profile_mention(monkeypatch, fake_home):
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    profile = fake_home / ".bash_profile"
+    profile.write_text('PATH="$HOME/.local/bin:$PATH"\n')
+    monkeypatch.setattr(installer, "_login_shell_path", lambda: [])
+    installer._ensure_login_path(Recorder())
+    assert profile.read_text() == 'PATH="$HOME/.local/bin:$PATH"\n'
+
+
+def test_login_shell_path_empty_on_probe_failure(monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/false")
+    assert installer._login_shell_path() == []
 
 
 # ---------------------------------------------------------------- _require

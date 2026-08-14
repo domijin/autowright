@@ -328,7 +328,19 @@ remain plain dicts (§2).
   `GET /agents/install/{id}` → `{ state: idle | running | done | failed, percent?, line?, error? }`
   lets a remounted UI reattach. A 15-minute wall-clock cap applies to each install phase
   (installer subprocess run and download): on expiry the job fails with a timeout message —
-  it can never sit `running` forever and block retries. Channels, per provider — each
+  it can never sit `running` forever and block retries. **Install-location principle:**
+  every install lands exactly where the user's own manual install would put the tool — a
+  standard user location, never a directory private to Autowright — and leaves it reachable
+  from the user's terminal, never isolated inside the app. The two installs whose bin
+  placement is Autowright's own mechanics rather than a vendor script's (Gemini CLI's npm
+  `--prefix`, Ollama's CLI symlink) close with a **terminal-access guarantee**: when the bin
+  landed in `~/.local/bin` and that dir isn't already on the login shell's PATH (probed via
+  `$SHELL -l -c`), a guarded `export PATH="$HOME/.local/bin:$PATH"` line under an
+  `# Added by Autowright` marker comment is appended to the user's shell profile
+  (`~/.zprofile` for zsh, `~/.bash_profile` for bash, `~/.profile` otherwise; skipped when
+  the profile already mentions `.local/bin`) — the same PATH setup the vendor scripts
+  perform for their own bin dirs. Best-effort: a profile failure never fails the install.
+  Channels, per provider — each
   vendor's own suggested install method, never sudo, never Homebrew (a vendor script adding
   its bin dir to the shell profile is vendor behavior we accept):
   Claude Code — the official installer script (`curl -fsSL https://claude.ai/install.sh |
@@ -339,7 +351,8 @@ remain plain dicts (§2).
   symlink in `~/.local/bin`, indeterminate ·
   Gemini CLI — `npm install -g --prefix ~/.local @google/gemini-cli` (npm is Google's only
   official channel; the `--prefix` is ours, keeping the install sudo-free — bin lands in
-  `~/.local/bin`); without `npm` on this Mac the install fails fast with "Gemini CLI needs
+  `~/.local/bin`, and the install closes with the terminal-access guarantee above); without
+  `npm` on this Mac the install fails fast with "Gemini CLI needs
   Node.js — install it from nodejs.org first, then try again."; npm runs with the augmented
   PATH below so its `#!/usr/bin/env node` shebang resolves; indeterminate ·
   OpenCode — the official installer script (`curl -fsSL https://opencode.ai/install | bash`),
@@ -349,9 +362,11 @@ remain plain dicts (§2).
   Ollama — the official Mac app: `Ollama-darwin.zip` from `https://ollama.com/download`
   (the exact payload the vendor's own install.sh ships), unpacked with `ditto` and moved to
   `/Applications` (or `~/Applications` when /Applications isn't writable); vendor-script
-  parity: a running Ollama app is quit and an existing `Ollama.app` replaced first. A
-  user-writable `~/.local/bin/ollama` symlink to the app's `Contents/Resources/ollama`
-  stands in for the vendor script's sudo'd `/usr/local/bin` symlink. The app is then
+  parity: a running Ollama app is quit and an existing `Ollama.app` replaced first. The
+  CLI symlink to the app's `Contents/Resources/ollama` goes to the vendor script's own
+  `/usr/local/bin` when that dir is writable without sudo (the exact manual-install
+  location, already on every PATH), else to `~/.local/bin` with the terminal-access
+  guarantee above — either way `ollama` works from the user's terminal. The app is then
   launched hidden (`open <app> --args hidden`) — its menu-bar agent owns the server and
   auto-updates — and the install waits up to 30 s for the server to answer; determinate
   (Content-Length). Ollama installs only as a piece of the local-model setup (§10 Free local

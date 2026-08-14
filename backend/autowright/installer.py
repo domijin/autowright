@@ -1,8 +1,11 @@
 """Real harness installers and sign-in help (§19).
 
-Each vendor's own suggested install method — never sudo, never Homebrew
-(CLIs land in user bin dirs; Ollama is the official Mac app plus a
-`~/.local/bin` symlink). One background install per provider at a time;
+Each vendor's own suggested install method — never sudo, never Homebrew.
+§19 install-location principle: everything lands where a manual install
+would put it (CLIs in standard user bin dirs; Ollama is the official Mac
+app plus the vendor's /usr/local/bin symlink when writable, else
+~/.local/bin), never in an app-private directory, and stays reachable
+from the user's terminal. One background install per provider at a time;
 progress streams through a publish callback (the API layer forwards it as
 `harness.install` WS events) and the latest snapshot is kept for
 `GET /agents/install/{id}` so a remounted UI can reattach.
@@ -22,6 +25,11 @@ import urllib.request
 from . import harness
 
 LOCAL_BIN = os.path.expanduser("~/.local/bin")
+# §19 install-location principle: the vendor script's own symlink target —
+# used when writable without sudo, so the CLI lands exactly where a manual
+# install would put it.
+USR_LOCAL_BIN = "/usr/local/bin"
+PATH_MARKER = "# Added by Autowright — command-line tools it installs live here"
 
 # Wall-clock cap per install phase: a black-holing server or a byte-trickling
 # download would otherwise keep the job "running" forever — and the running
@@ -193,6 +201,45 @@ def _download(url: str, dest: str, emit, label: str) -> None:
                     emit(line=label, percent=percent)
 
 
+def _login_shell_path() -> list[str]:
+    """The user's login-shell PATH entries — the backend's own env doesn't see
+    shell profiles, so ask the shell itself. Empty list on any failure."""
+    shell = os.environ.get("SHELL") or "/bin/zsh"
+    try:
+        out = subprocess.run([shell, "-l", "-c", 'printf %s "$PATH"'],
+                             capture_output=True, text=True, timeout=15)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip().split(os.pathsep)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return []
+
+
+def _ensure_login_path(emit) -> None:
+    """§19 terminal-access guarantee: a bin our own mechanics put in
+    ~/.local/bin (gemini's npm --prefix, ollama's symlink) must be reachable
+    from the user's terminal — when the dir isn't on the login shell's PATH,
+    append a guarded export line to the shell profile, exactly like the vendor
+    scripts do for their own bin dirs. Best-effort: never fails the install."""
+    if LOCAL_BIN in _login_shell_path():
+        return
+    shell = os.path.basename(os.environ.get("SHELL") or "/bin/zsh")
+    profile = {"zsh": "~/.zprofile", "bash": "~/.bash_profile"}.get(shell, "~/.profile")
+    prof = os.path.expanduser(profile)
+    try:
+        existing = ""
+        if os.path.exists(prof):
+            with open(prof, encoding="utf-8", errors="replace") as f:
+                existing = f.read()
+        if ".local/bin" in existing:
+            return
+        with open(prof, "a", encoding="utf-8") as f:
+            f.write(f'\n{PATH_MARKER}\nexport PATH="$HOME/.local/bin:$PATH"\n')
+        emit(line=f"Added ~/.local/bin to your PATH ({profile})")
+    except OSError:
+        pass
+
+
 def _require(binname: str) -> None:
     if harness.resolve_bin(binname) is None:
         raise RuntimeError(f"the installer finished but `{binname}` didn't appear on this Mac")
@@ -225,6 +272,9 @@ def _install_gemini(emit) -> None:
     _stream_shell([npm, "install", "-g", "--prefix", os.path.expanduser("~/.local"),
                    "@google/gemini-cli"], emit, "gemini")
     _require("gemini")
+    # The --prefix bin placement is ours, not npm's default — guarantee the
+    # user's terminal reaches `gemini` too (§19).
+    _ensure_login_path(emit)
 
 
 def _install_codex(emit) -> None:
@@ -236,9 +286,9 @@ def _install_codex(emit) -> None:
 
 
 def _install_ollama_app(emit) -> str:
-    """Install the official Mac app the way ollama.com's install.sh does,
-    minus its sudo'd `/usr/local/bin` symlink — a `~/.local/bin` one instead.
-    Returns the installed app path."""
+    """Install the official Mac app the way ollama.com's install.sh does —
+    the CLI symlink in the vendor's own `/usr/local/bin` when writable
+    without sudo, else `~/.local/bin`. Returns the installed app path."""
     apps = APPLICATIONS if os.access(APPLICATIONS, os.W_OK) \
         else os.path.expanduser("~/Applications")
     dest = os.path.join(apps, "Ollama.app")
@@ -258,11 +308,21 @@ def _install_ollama_app(emit) -> str:
         if os.path.exists(dest):
             shutil.rmtree(dest)
         shutil.move(src, dest)
-    os.makedirs(LOCAL_BIN, exist_ok=True)
-    link = os.path.join(LOCAL_BIN, "ollama")
+    # §19 install-location principle: the vendor script symlinks
+    # /usr/local/bin/ollama (sudo'd) — use that exact location when it's
+    # writable without sudo, so the CLI sits where a manual install puts it;
+    # else ~/.local/bin plus the terminal-access guarantee.
+    if os.path.isdir(USR_LOCAL_BIN) and os.access(USR_LOCAL_BIN, os.W_OK):
+        bin_dir = USR_LOCAL_BIN
+    else:
+        bin_dir = LOCAL_BIN
+        os.makedirs(bin_dir, exist_ok=True)
+    link = os.path.join(bin_dir, "ollama")
     if os.path.lexists(link):
         os.remove(link)
     os.symlink(os.path.join(dest, "Contents", "Resources", "ollama"), link)
+    if bin_dir == LOCAL_BIN:
+        _ensure_login_path(emit)
     return dest
 
 

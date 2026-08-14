@@ -350,7 +350,9 @@ Dev workflow:
   `~/.codex/packages/standalone` payload tree; Gemini via
   `npm uninstall -g --prefix ~/.local @google/gemini-cli` plus its `~/.local/lib/node_modules`
   tree; Ollama quits the app and running server first, then removes `Ollama.app` from
-  `/Applications`/`~/Applications` and the `~/.local/bin/ollama` symlink; OpenCode prefers
+  `/Applications`/`~/Applications` and the `~/.local/bin/ollama` symlink (plus a
+  `/usr/local/bin/ollama` symlink when it points into that app bundle — the §19
+  vendor-location symlink); OpenCode prefers
   the CLI's own `opencode uninstall --force` — with `--keep-config --keep-data` unless
   purging — then removes leftovers in `~/.opencode/bin` and legacy `~/.local/bin`).
   **`--purge`** also deletes the tool's

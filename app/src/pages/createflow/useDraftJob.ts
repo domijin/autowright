@@ -12,7 +12,7 @@ import {
   type Rev, TRIGGER_SETUP_TEXT, answerHeader, applyTriggerOps, chatSinceBoundary, coerceParamValue, jobStageTitle,
   mergeDraftTriggers,
   needsMessageTriggerSetup, newEntry, persistChat,
-  seedDrafting, seedEmpty, seedFromPayload, serializeDraft, stageDisplayTitle,
+  seedDrafting, seedEmpty, seedFromPayload, serializeDraft, stageDisplayTitle, stageDoingBullet,
 } from './model'
 
 interface PollHandlers {
@@ -116,9 +116,9 @@ export function useDraftJob(d: DraftJobDeps) {
         .map((e) => e.text).join('\n')
       return newEntry({
         kind: 'activity', title: stageDisplayTitle(s),
-        // §11: a deciding phase whose stream left no milestones still says
-        // what it did — a settled block is never a bare title
-        text: text || (s === 'Working on the request' ? 'Choosing what to do' : ''),
+        // §11: a stage whose stream left no milestones still says what the
+        // phase does — a settled block is never a bare title
+        text: text || stageDoingBullet(s),
         outcome: outcome && i === stages.length - 1 ? outcome : 'done',
       })
     })
@@ -177,12 +177,12 @@ export function useDraftJob(d: DraftJobDeps) {
               if (!r) return r
               // A payload with no stage at all (belt-and-braces — the backend
               // always sets one) settles the old way: one entry, busy-flag
-              // title, the whole feed. A batch emptied by the neutral-stage
-              // drop rule appends nothing — the stage existed, and was skipped
-              // deliberately.
+              // title, the whole feed — never bare (§11 canned bullet).
+              const title = jobStageTitle(r)
               const entries = (rest.length || pending.length) ? rest : [newEntry({
-                kind: 'activity', title: jobStageTitle(r),
-                text: evs.map((e) => e.text).join('\n'), outcome: status,
+                kind: 'activity', title,
+                text: evs.map((e) => e.text).join('\n') || stageDoingBullet(title),
+                outcome: status,
               })]
               return entries.length ? { ...r, chat: [...r.chat, ...entries] } : r
             })

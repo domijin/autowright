@@ -96,6 +96,18 @@ export function stageDisplayTitle(stage: string): string {
   return `${stage}…`
 }
 
+// §11: canned per-stage description bullets — a block, live or settled,
+// never renders as a bare title. When the stream has produced no feed for a
+// stage, the block says what the phase does instead of sitting empty.
+const STAGE_DOING: Record<string, string> = {
+  'Working on the request': 'Choosing what to do',
+  'Updating the documents': 'Writing the documents',
+  'Syncing the workflow': 'Building the steps from the spec',
+}
+export function stageDoingBullet(titleOrStage: string): string {
+  return STAGE_DOING[titleOrStage.replace(/…$/, '')] ?? 'Working on it'
+}
+
 // §11 trigger-setup reminder: a workflow whose steps read the trigger message
 // while the trigger list holds no message trigger needs the user to add one on
 // the automation page (§8 rule 9 — the agent never invents a channel id or

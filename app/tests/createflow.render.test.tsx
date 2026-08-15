@@ -1083,6 +1083,9 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     // and as the Save hint (one unified stage vocabulary; no agent · model
     // attribution — the composer's picker names the agent)
     expect(screen.getAllByText('Syncing the workflow…').length).toBe(3)
+    // §11: never an empty section — the live entry shows the stage's canned
+    // description bullet until the stream produces a feed
+    expect(screen.getByText('• Building the steps from the spec')).toBeTruthy()
     const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(document.body).length).toBe(1)
     expect(spinnersIn(screen.getByTestId('chat-thread')).length).toBe(1)

@@ -80,10 +80,13 @@ applies unchanged; the chat pane never collapses.
     removed:** the neutral "Working on the request" stage settles on every chat and
     create turn, feed or no feed — the live entry displays that title from the moment
     of send (the pre-poll default), so the editor seeds the stage into the settle list
-    even when the backend flipped before the first poll observed it. A deciding phase
-    whose stream left no milestones settles with the canned bullet "Choosing what to
-    do" beneath its outcome glyph — a settled block is never a bare title — and the
-    flip then reads as the next block starting beneath it, never as a replacement. Renders exactly like the live
+    even when the backend flipped before the first poll observed it. **And a block is
+    never a bare title:** a stage whose stream left no milestones settles with its
+    canned description bullet — "Choosing what to do" (Working on the request) /
+    "Writing the documents" (Updating the documents) / "Building the steps from the
+    spec" (Syncing the workflow) — so every block says what its phase was doing
+    (buffered harnesses and early failures are how feeds end up empty), and the flip
+    reads as the next block starting beneath the last, never as a replacement. Renders exactly like the live
     progress entry it replaces — the stage label kept, an **outcome glyph** in the
     spinner's 13 px box (same size, so the text never shifts when the spinner settles): a
     green check for a finished stage (every non-final stage, and the final one of a job
@@ -346,7 +349,10 @@ applies unchanged; the chat pane never collapses.
   each single-line with an ellipsis; the §8 per-job event cap bounds the list) above the
   live §8 `detail` line; when `detail` extends the newest
   event (same message, growing ` · N lines` count) that event shows only as the live line,
-  never twice. The feed and detail lines render as the operation-block bullets
+  never twice; before the job has produced any event or `detail` at all, the stage's
+  canned description bullet (the per-stage map under the activity entry kind) holds the
+  feed's place — a live block never renders as a bare title either.
+  The feed and detail lines render as the operation-block bullets
   (`• `-prefixed) and run the pane's full width, flush left with the
   spinner — only the stage label sits beside the spinner, the lines below are not
   indented under it. The entry is **derived editor state, never a persisted thread entry**

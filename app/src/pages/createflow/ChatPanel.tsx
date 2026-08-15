@@ -9,7 +9,7 @@ import type { Agent, ChatEntry } from '../../types'
 import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, usePopover } from '../../ui'
 import { devlogOverlayOpen } from '../../devlog'
 import { Markdown } from '../../result'
-import { type Rev, answerHeader, jobStageTitle } from './model'
+import { type Rev, answerHeader, jobStageTitle, stageDoingBullet } from './model'
 
 /** §11 action row — left-aligned wrapping pill row beneath an agent block
     (the turn action row and the per-entry rows share the layout). */
@@ -604,6 +604,11 @@ export function ChatPanel({
                   ))}
                   {rev.genDetail && (
                     <OpBullet text={rev.genDetail} first={hist.length === 0} size={11.5} color="var(--text-muted)" />
+                  )}
+                  {/* §11: never an empty section — before the stream produces
+                      any feed, the stage's canned description holds its place */}
+                  {!rev.genDetail && hist.length === 0 && (
+                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} first size={11.5} color="var(--text-muted)" />
                   )}
                 </>
               )

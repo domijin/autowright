@@ -408,6 +408,10 @@ export interface DraftJob {
   events: DraftEvent[]
   error: string | null
   errorDetail?: string[]
+  // §8 chat flip: the prose streamed before the first rewrite marker — set the
+  // moment the job flips to "Updating the documents", so the §11 thread lands
+  // "The plan" mid-job; the settled payload's `answer` stays authoritative
+  plan?: string
   // On a create job, `draft.spec` carries call 1's validated spec as soon as
   // the spec call completes (§11 drafting-on-Review renders it mid-job); a
   // blocked steps call keeps it there so the Blocker modal can amend it.

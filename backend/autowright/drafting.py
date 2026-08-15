@@ -1639,6 +1639,13 @@ class DraftJobs:
                 # still flips, and a flipped job never flips back.
                 if (fname in self._REWRITE_MARKS
                         and job["stage"] == "Working on the request"):
+                    # §8: the prose before the first marker is the accompanying
+                    # answer and is complete once a marker streams — ride it on
+                    # the job as `plan` (§19) so the §11 thread can land "The
+                    # plan" while the documents phase is still running.
+                    plan = text[: marks[0].start()].strip()
+                    if plan:
+                        job["plan"] = plan
                     self._stage(job, "Updating the documents")
                 shape = fname
                 label = self._CHAT_LABELS.get(fname, f"Writing {fname}")

@@ -336,7 +336,13 @@ the first rewrite marker (`spec.md` / `instructions.md` / `notes.md`) streams �
 ordinary mid-job stage change, so the §11 thread settles the first phase and restarts
 the live entry under the new label. An answer-only, actions-only, or blocker response
 never flips; a repair round flips late when only it streams a rewrite marker; once
-flipped the job stays flipped. The streamed `detail`
+flipped the job stays flipped. At the flip, the prose streamed before the first
+`===FILE:` marker — the accompanying answer, already complete once a marker streams —
+rides the job as `plan` (§19; trimmed, set only when nonempty), so the §11 thread can
+land "The plan" message block while the documents phase is still running. The settled
+payload's `answer` remains authoritative: when a repair round's prose replaced it, the
+editor updates the shown entry's text in place (§11) — never a second entry, never a
+removal. The streamed `detail`
 line is `Thinking…` until text arrives, then per the last streamed marker `Writing the
 spec · N lines` / `Writing the build instructions · N lines` / `Updating the notes · N
 lines` / `Writing the follow-up actions`, else `Writing the answer · N lines` (same 1 s throttle).

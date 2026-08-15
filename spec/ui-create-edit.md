@@ -68,7 +68,15 @@ applies unchanged; the chat pane never collapses.
     trimmed text ends with `?`) — `fa-circle-question`, "Question for you"; any other
     reply — `fa-message`, "From your AI". An entry persisted before the fields existed
     derives the same header at render time (the question check, else the plain
-    header) — old threads gain the layout, nothing is dropped.
+    header) — old threads gain the layout, nothing is dropped. **The plan lands at the
+    flip:** the moment a chat job flips to "Updating the documents", its §19 `plan` —
+    the prose streamed before the first rewrite marker — lands as this entry (the
+    "The plan" header: rewrites follow by definition), beneath the just-settled
+    deciding block and above the restarted live entry, so the user reads what the
+    agent decided while the documents are still being written. The settle dedups
+    against it (turn order below: no second entry; an in-place text update when a
+    repair round changed the prose), and once shown it stays through every outcome —
+    a cancel or a late blocker included — per the never-removed rule.
   - **activity** — a settled stage's record: **one entry per §8 pipeline stage** the job
     passed through, persisted the moment the stage finishes — mid-job when the next stage
     begins (that stage's label and feed must survive the transition, never be replaced by
@@ -255,7 +263,9 @@ applies unchanged; the chat pane never collapses.
   execution output (success and failure) without any extra ceremony. The
   response decides the outcome (§8) — one response may combine an answer with rewrites and
   actions, applied in this order:
-  - an **answer** appends an answer entry (first, when rewrites follow);
+  - an **answer** appends an answer entry (first, when rewrites follow) — unless the
+    job's mid-flight `plan` (§8/§19) already landed it: the settle then appends nothing,
+    updating the shown entry's text in place when a repair round changed the prose;
   - a **spec rewrite** replaces the spec exactly like a manual spec edit — out-of-sync
     marking, toast "Spec updated — the workflow is out of sync. Sync the steps before
     saving.", the full-draft undo snapshot stashed (one snapshot for the whole response —

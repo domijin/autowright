@@ -23,6 +23,7 @@ interface PollHandlers {
   // handler like a chat notes rewrite, so a blocked build keeps what it learned.
   onBlocked?: (blockers: Blocker[], at: 'spec' | 'steps' | 'chat', spec: SpecBlock[] | null, diagnosed: boolean, notes: string | null) => void
   onSpec?: (spec: SpecBlock[]) => void // §11: create job's call-1 spec, mid-job
+  onPlan?: (plan: string) => void // §11: chat job's pre-marker prose, at the flip
 }
 
 export interface DraftJobDeps {
@@ -84,10 +85,11 @@ export function useDraftJob(d: DraftJobDeps) {
   // ---- polling ----
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
-  const startPoll = (jobId: string, { onDone, onFail, onCancelled, onBlocked, onSpec }: PollHandlers) => {
+  const startPoll = (jobId: string, { onDone, onFail, onCancelled, onBlocked, onSpec, onPlan }: PollHandlers) => {
     stopPoll()
     jobIdRef.current = jobId
     let specDelivered = false
+    let planDelivered = false
     let lastStage: string | null = null
     let lastDetail: string | null = null
     let lastEvKey = ''
@@ -162,6 +164,15 @@ export function useDraftJob(d: DraftJobDeps) {
           if (onSpec && !specDelivered && j.status === 'building' && j.draft?.spec) {
             specDelivered = true
             onSpec(j.draft.spec)
+          }
+          // §11: a chat job's plan lands the moment the flip is observed —
+          // beneath the just-settled deciding block, above the restarted live
+          // entry. A job that settles before any building poll saw the plan
+          // skips this and lands the answer at settle as always (onDone dedups
+          // against a landed plan, so both paths yield exactly one entry).
+          if (onPlan && !planDelivered && j.status === 'building' && j.plan) {
+            planDelivered = true
+            onPlan(j.plan)
           }
           // §11 activity entries: a settled job persists every stage not yet
           // settled (rendered with a glyph where the spinner was), each with
@@ -362,6 +373,9 @@ export function useDraftJob(d: DraftJobDeps) {
     const history = chatSinceBoundary(persistChat(rev.chat))
     const current = serializeDraft(rev)
     const genCancelled = cancelStepsGen()
+    // §11: the plan entry landed at the flip, when one did — the settle then
+    // updates it in place instead of appending a second answer entry.
+    let planEntryId: string | null = null
     setRev((r) => r && ({
       ...r,
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // one edit at a time
@@ -393,11 +407,21 @@ export function useDraftJob(d: DraftJobDeps) {
             let next: Rev = { ...r, chatBusy: false }
             const chat = [...r.chat]
             // §11 answer header: stamped at creation — a reply arriving with
-            // rewrites or actions is the plan; a question gets its own glyph
-            if (dft.answer) chat.push(newEntry({
-              kind: 'answer', text: dft.answer,
-              ...answerHeader(dft.answer, rewrote || Object.keys(actions).length > 0),
-            }))
+            // rewrites or actions is the plan; a question gets its own glyph.
+            // A plan that already landed at the flip dedups here: no second
+            // entry, an in-place text update when a repair round changed the
+            // prose (a shown block is never removed).
+            const planIdx = planEntryId ? chat.findIndex((e) => e.id === planEntryId) : -1
+            if (dft.answer) {
+              if (planIdx >= 0) {
+                if (chat[planIdx].text !== dft.answer) chat[planIdx] = { ...chat[planIdx], text: dft.answer }
+              } else {
+                chat.push(newEntry({
+                  kind: 'answer', text: dft.answer,
+                  ...answerHeader(dft.answer, rewrote || Object.keys(actions).length > 0),
+                }))
+              }
+            }
             // §8 undo action: arrives alone (validation) — run the §11
             // restore exactly like the undo row's button, or say there is
             // nothing left to undo
@@ -543,6 +567,13 @@ export function useDraftJob(d: DraftJobDeps) {
           chat: [...r.chat, newEntry({ kind: 'error', text: msg || 'The request failed — try again or rephrase.' })],
         })),
         onCancelled: () => setRev((r) => r && ({ ...r, chatBusy: false })),
+        // §11: the flip's plan lands mid-job as "The plan" (rewrites follow by
+        // definition), beneath the just-settled deciding block.
+        onPlan: (plan) => {
+          const entry = newEntry({ kind: 'answer', text: plan, ...answerHeader(plan, true) })
+          planEntryId = entry.id
+          setRev((r) => r && ({ ...r, chat: [...r.chat, entry] }))
+        },
         // §11: a blocked chat call lands as a blockers entry — draft untouched
         // apart from the §8 blocker notes when carried.
         onBlocked: (blockers, _at, _spec, diagnosed, notes) => setRev((r) => {

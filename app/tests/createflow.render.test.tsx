@@ -638,6 +638,30 @@ describe('CreateFlow chat response application (§11)', () => {
     expect(screen.getByText('Question for you')).toBeTruthy()
   })
 
+  it('the plan lands mid-job at the flip; the settle updates it in place (§8/§11)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({
+        id: 'j1', status: 'building', stage: 'Updating the documents', detail: null,
+        error: null, mode: 'chat', draft: null, events: [],
+        plan: 'I will add weekends to the schedule.',
+      })
+      .mockResolvedValue(done({
+        spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Now with weekends.' }],
+        answer: 'I will add weekends and Fridays.',
+      }))
+    render(<CreateFlow />)
+    send('Also weekends')
+    // §11: "The plan" message block renders while the job is still building
+    await waitFor(() => expect(screen.getByText('I will add weekends to the schedule.')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('The plan')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
+    // the settle appended no second answer entry — the shown plan's text was
+    // updated in place to the settled payload's answer (repair-round prose)
+    expect(screen.getAllByText('The plan').length).toBe(1)
+    expect(screen.queryByText('I will add weekends to the schedule.')).toBeNull()
+    expect(screen.getByText('I will add weekends and Fridays.')).toBeTruthy()
+  })
+
   it('turn action row: Test draft when in sync; Sync now + Undo after a rewrite (§11)', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({ answer: 'All good.' }))
     render(<CreateFlow />)

@@ -1780,6 +1780,37 @@ def test_chat_progress_detail_labels():
     assert [e["stage"] for e in job["events"]] == ["Updating the documents"] * 5
 
 
+def test_chat_flip_captures_plan():
+    # spec/agent-pipeline.md: at the flip, the prose streamed before the first
+    # marker — the accompanying answer, complete once a marker streams — rides
+    # the job as `plan`, so the §11 thread lands "The plan" mid-job.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "p1", "status": "building", "stage": "Working on the request",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._chat_cb(job)
+    cb("Here is the plan.\n\n")
+    assert "plan" not in job  # prose alone never flips, so no plan yet
+    cb("===FILE: spec.md===\n# T\n")
+    assert job["stage"] == "Updating the documents"
+    assert job["plan"] == "Here is the plan."
+
+
+def test_chat_flip_without_prose_sets_no_plan():
+    # A response opening straight with a rewrite marker flips with nothing to
+    # land — `plan` stays unset (never an empty string).
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "p2", "status": "building", "stage": "Working on the request",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._chat_cb(job)
+    cb("===FILE: spec.md===\n# T\n")
+    assert job["stage"] == "Updating the documents"
+    assert "plan" not in job
+
+
 def test_chat_progress_detail_repair_prefix():
     # §8: the repair round's stream keeps the label, lowercased behind the prefix.
     from autowright.drafting import DraftJobs

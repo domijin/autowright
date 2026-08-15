@@ -317,7 +317,9 @@ remain plain dicts (§2).
   configured agents and the secrets grant to **all** stored secrets — matching the all-on
   seeds the Review page starts from; clients track progress by polling
   `GET /drafts/{jobId}` → state (`status`, `stage`, live §8 `detail` line, the §8 `events`
-  activity feed — each entry stage-stamped, §8) + validated §8 draft payload — on a create job the payload
+  activity feed — each entry stage-stamped, §8; on a chat job that flipped stages, `plan` —
+  the §8 pre-marker prose, set at the flip so the §11 thread lands "The plan" mid-job) +
+  validated §8 draft payload — on a create job the payload
   carries call 1's validated spec as soon as the spec call completes (the §11 spec card renders
   it while the steps call is still working); a `blocked` job's state is
   `blocked` and it carries the §8 `blockers` list — each entry `{ reason, fix, details?,

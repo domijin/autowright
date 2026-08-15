@@ -157,12 +157,12 @@ applies unchanged; the chat pane never collapses.
     `--text-muted` live detail line.
   No entry hand-picks sizes outside these roles — a new entry kind joins one of the
   three.
-- **Thread spacing — one group gap.** A uniform **14 px** separates any two distinct
+- **Thread spacing — one group gap.** A uniform **12 px** separates any two distinct
   groups: turns (any gap touching a user bubble), operation block ↔ message block in
   either order, two consecutive message blocks, and every gap around a §4.4 boundary
-  marker — 14 px above its chip (overriding the family gap), 14 px between the marker
+  marker — 12 px above its chip (overriding the family gap), 12 px between the marker
   group (chip + explainer bullet) and its divider rule when one renders (entry-kind
-  list above), and 14 px between the rule and the entry after it. Consecutive
+  list above), and 12 px between the rule and the entry after it. Consecutive
   **operation blocks** chain **flush (0 px)** — one response often lands several (stage
   trails, the rewrite entry, its "Renamed to …" / "Description updated." system chips),
   and they read as one continuous block, exactly like an activity entry's own feed
@@ -170,10 +170,10 @@ applies unchanged; the chat pane never collapses.
   its own top padding, where a kind has one, provide the breathing room). The transient
   progress entry is an operation block and follows the same rules: flush when it
   restarts beneath a just-settled **activity** entry (the same job's trail chains as
-  one block), 14 px after anything else. A boundary marker never chains flush — it is
+  one block), 12 px after anything else. A boundary marker never chains flush — it is
   its own group even among operation blocks. The turn action row sits 10 px beneath
   the entry it follows — attached to the group it closes, deliberately tighter than
-  the 14 px group gap.
+  the 12 px group gap.
 - **Turn action row** — the thread's one suggestion surface: a standalone left-aligned
   wrapping pill row (icon-led `.ad-btn-pill.action` pills — the composer pills' small
   look in the §14 sans action face) rendered beneath the thread's **last agent-side

@@ -127,7 +127,9 @@ remain plain dicts (§2).
   model — no all-on seed), with one narrow default: when `stepAgents` is **omitted
   entirely**, the store seeds it with the drafting agent (`[agentId]`, empty without one) —
   an explicit empty list lands empty. Success consumes the §4.4
-  pending create-mode slot (`<root>/draft/` is deleted on success)
+  pending create-mode slot (`<root>/draft/` is emptied on success), first migrating the
+  slot's `chat.jsonl` into the new automation's container and appending the §4.4
+  "Created as v1." boundary marker there (thread-lifetime rules, §4.4)
 - `POST /automations/{id}/versions` `{ draft, name?, agentId?, stepAgents?, allowedSecrets?, paramValues?, concurrency? }`
   — save edit as vN+1; the optional identity/grant fields, when sent, are applied to the
   automation as a patch after the version lands — the §20 push grant model rides this
@@ -141,7 +143,10 @@ remain plain dicts (§2).
   the sent draft's versioned content — spec, steps, instructions, notes, param
   definitions, packages — equals the current version's over the stored serialization, no
   version is minted; the triggers replacement, `paramValues`, `concurrency`, and the identity/grant patch
-  still apply, and the response is the same automation JSON either way
+  still apply, and the response is the same automation JSON either way. Saving settles the
+  draft (the container is deleted) and appends the §4.4 boundary marker to the
+  automation's thread — "Draft saved as vN." when a version was minted, "Changes saved —
+  no new version." on the operational-only save
 - **Server-side step validation** — `POST /automations` and `POST /automations/{id}/versions`
   run the §8 step validators (`ast.parse`, the §6.2 import allowlist, manifest schema and
   step-file ordering, the timeout/retry rules) on the sent draft and answer 422 with the
@@ -160,8 +165,8 @@ remain plain dicts (§2).
   key; `concurrency` the §8 chat-staged concurrency object, stored as the draft-only
   `concurrency` key; `testValues` the §8 drafted test-value map, stored as the draft-only `test_values`
   key) and echoed back on the
-  automation's `draft` object (or on `GET /draft/pending`), and its `chat` list (the §11
-  thread) is stored as the container's `chat.jsonl` (§5) and echoed back the same way; for
+  automation's `draft` object (or on `GET /draft/pending`); the §11 chat thread is **not**
+  part of the draft payload — it lives on the `/chat/{owner}` surface below; for
   the `pending` owner the payload additionally carries the identity fields no automation
   record exists to hold (name and triggers ride the payload; `agentId` beside it). `GET` →
   `{ draft: payload | null, agentId }` (`draft: null` when the container is empty or
@@ -169,9 +174,20 @@ remain plain dicts (§2).
   `memory/`) exist, never touching contents already there — the create flow calls it on
   open so the pending slot exists before any drafting or test. For an automation owner, PUT
   and DELETE answer 409 while a Draft-version execution is running (rewriting/pruning the
-  draft's step scripts mid-run would break the per-step sha record). The §8 drafting-job
+  draft's step scripts mid-run would break the per-step sha record). `DELETE` settles the
+  draft but **never deletes the thread** (§4.4 thread lifetime): it appends the "Draft
+  discarded." boundary marker to the owner's `chat.jsonl` and, for the pending owner,
+  empties the slot's draft contents while leaving `chat.jsonl` in place. The §8 drafting-job
   endpoints (`POST /drafts`, below) are a different thing — jobs, not containers — and are
   unrelated to this surface
+- `GET/PUT /chat/{owner}` — the §11 chat-thread surface (§4.4 thread lifetime): `owner` is
+  an automation id or the literal `pending`, resolved exactly like `/draft/{owner}` (404
+  on an unknown automation). `GET` → `{ chat: [...] }` — the owner's `chat.jsonl` entries
+  (`[]` when none). `PUT` `{ chat: [...] }` rewrites the file whole (the editor's debounced
+  thread persist and §11 Clear chat); an empty list unlinks the file. Independent of the
+  draft container: no draft needs to exist, and no Draft-execution 409 (the thread never
+  feeds a running execution). The §4.4 boundary markers are appended by the settle
+  endpoints themselves (save, create, draft DELETE), never through this surface
 - `POST /automations/{id}/restore` `{ version }` — restore vX as vN+1, written through the
   §5 version-folder writer (manifest last as the commit point — never a tree copy)
 - `GET /automations/{id}/export?values=0|1` — the §5.1 transfer archive as `application/zip`
@@ -273,7 +289,9 @@ remain plain dicts (§2).
   fall back to the stored automation's for the §8 AUTOMATION section, and absent
   `concurrency` falls back to the stored automation's — else the 1/0 defaults — for the
   §8 CURRENT-concurrency section) plus
-  `chat` (the recent §11 thread entries for the §8 CONVERSATION section); the backend
+  `chat` (the recent §11 thread entries for the §8 CONVERSATION section — the editor sends
+  only entries after the newest §4.4 boundary marker, and the backend clips at the newest
+  boundary again before building the section, §8); the backend
   assembles the §8 RECENT RUNS and PACKAGES context itself (`runId`, optional, names an
   execution to include in full detail — the §11 Fix-with-AI entry; unknown ids are
   ignored), and the terminal

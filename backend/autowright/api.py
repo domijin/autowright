@@ -487,6 +487,11 @@ def create_auto(body: models.AutomationCreate) -> dict:
     if conc := (body.concurrency.model_dump(exclude_unset=True)
                 if body.concurrency is not None else None):
         store.patch_automation(a, conc)
+    # §4.4 thread lifetime: the slot's chat moves onto the new automation —
+    # the conversation continues on its edit page — behind the boundary
+    # marker, so the pre-create session never reaches a later chat's agent.
+    store.migrate_pending_chat(a)
+    store.append_chat_marker(a, "Created as v1.")
     # §4.4: Create consumes the pending create-mode slot — settled drafts are
     # never resurrected.
     store.delete_draft(None)
@@ -521,10 +526,8 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         # §4.4 operational-only save: unchanged versioned content mints no
         # version — the triggers/values/grants patch below still applies.
         cur = a["versions"].get(a["current_version"]) or {}
-        if _version_content(ver) != _version_content(cur):
-            n = store.save_new_version(a, ver)
-        else:
-            n = a["current_version"]
+        minted = _version_content(ver) != _version_content(cur)
+        n = store.save_new_version(a, ver) if minted else a["current_version"]
         patch = {k: sent[k] for k in ("agentId", "stepAgents", "allowedSecrets", "name") if k in sent}
         if triggers is not None:
             patch["triggers"] = triggers
@@ -539,6 +542,10 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         if patch:
             store.patch_automation(a, patch)
         store.delete_draft(a)
+        # §4.4 boundary marker: saving settles the draft — the thread stays,
+        # split so the settled session never reaches a later chat's agent.
+        store.append_chat_marker(a, f"Draft saved as v{n}." if minted
+                                 else "Changes saved — no new version.")
     if triggers is not None:
         # §6: same rule as the PATCH — the saved version's trigger list may have
         # dropped or disabled the trigger some waiting entry came from.
@@ -609,11 +616,11 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
             # §19: the pending payload also carries the identity fields no
             # automation record exists to hold (name, triggers; agentId beside).
             store.save_draft(None, ver, name=d.get("name"), agent_id=body.agentId,
-                             triggers=d.get("triggers") or [], chat=d.get("chat"))
+                             triggers=d.get("triggers") or [])
         else:
             _reject_live_draft_exec(a)
             ver["triggers"] = d.get("triggers")
-            store.save_draft(a, ver, chat=d.get("chat"))
+            store.save_draft(a, ver)
     _publish_draft_changed(a)
     return {"ok": True}
 
@@ -625,7 +632,27 @@ def delete_draft_container(owner: str) -> dict:
         if a is not None:
             _reject_live_draft_exec(a)
         store.delete_draft(a)
+        # §4.4 thread lifetime: discarding settles the draft but keeps the
+        # thread — behind the boundary marker, appended server-side so a
+        # settled session never reaches a later chat's agent.
+        store.append_chat_marker(a, "Draft discarded.")
     _publish_draft_changed(a)
+    return {"ok": True}
+
+
+# §19: the §11 chat-thread surface — GET/PUT /chat/{owner}, resolved like
+# /draft/{owner}. The thread lives at the container root (§4.4 thread
+# lifetime) and outlives the draft; the §4.4 boundary markers are appended by
+# the settle endpoints above, never through this surface.
+@app.get("/chat/{owner}", dependencies=[Depends(auth)])
+def get_chat_thread(owner: str) -> dict:
+    a = _draft_owner(owner)
+    return {"chat": store.chat_json(store.chat_dir(a))}
+
+
+@app.put("/chat/{owner}", dependencies=[Depends(auth)])
+def put_chat_thread(owner: str, body: models.ChatPut) -> dict:
+    store.save_chat(_draft_owner(owner), body.chat)
     return {"ok": True}
 
 

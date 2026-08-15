@@ -118,7 +118,9 @@ applies unchanged; the chat pane never collapses.
     the TRIGGERS card below) `fa-clock`; Draft undo ("Last change undone — the rewrites
     above no longer apply.", "Nothing to undo.") `fa-rotate-left`; tests (the
     run-settled entries below) `fa-vial`; the §7 Fix-with-AI failure seed
-    `fa-circle-exclamation`.
+    `fa-circle-exclamation`; the §4.4 boundary markers ("Draft saved as vN." /
+    "Changes saved — no new version." / "Draft discarded." / "Created as v1." —
+    backend-appended on settle, Thread lifetime below) `fa-flag-checkered`.
   - **error** — a failure entry (a failed §8 job's message, the
     Failures paragraph below), a message block: `fa-circle-xmark` red glyph beside the
     13 px/600 title "Something went wrong", the failure message as body prose beneath;
@@ -224,7 +226,9 @@ applies unchanged; the chat pane never collapses.
   typed content only, so a wrapped placeholder would clip). Sending with no spec yet starts the §8 **create** job with the text as the
   description; otherwise it starts a §8 **chat** job with the in-editor draft as `current`
   (spec + steps + instructions + notes), the in-editor grant arrays, and the recent thread
-  (§19 `chat`) — answers and rewrites match what's on screen, unsaved edits included; the
+  (§19 `chat` — only entries after the newest §4.4 boundary marker: a settled draft
+  session's conversation never reaches the agent, §8) — answers and rewrites match what's
+  on screen, unsaved edits included; the
   backend adds the §8 RECENT RUNS and PACKAGES context itself, so the agent reads test and
   execution output (success and failure) without any extra ceremony. The
   response decides the outcome (§8) — one response may combine an answer with rewrites and
@@ -346,13 +350,33 @@ applies unchanged; the chat pane never collapses.
   the others are fa-solid). The Discord chip promotes the §4.3 Discord trigger: its text
   describes a message-triggered automation. Clicking a chip fills the input (it never sends). Footer reassurance
   line: "Your AI writes the steps — Autowright still executes everything on this Mac."
+  Both empty states render only while the thread is empty: a kept thread (Thread
+  lifetime below — e.g. after Start over, or reopening the create flow with a slot
+  thread) shows the thread instead, the composer placeholder ("Describe the job — one
+  sentence is enough." while no spec) carrying the prompt.
   Edit-mode empty state (no stored thread): "Ask anything, or describe a change — your AI
   answers here and rewrites the spec when you ask for changes."
-- **Thread lifetime:** the thread rides the draft (§4.4 `chat` → §5 `chat.jsonl`): kept on
-  every draft-keep path, restored when a draft resumes, deleted when the draft settles
-  (discard, save, Create, Start over). The thread progress entry is transient editor state,
+- **Thread lifetime:** the thread **outlives the draft** (§4.4 thread lifetime; §5
+  `chat.jsonl` at the container root; §19 `GET/PUT /chat/{owner}`): the editor loads it on
+  open, persists it with its own debounced PUT (independent of the draft persist — a pure
+  Q&A keeps no draft but still keeps its thread), and **settling the draft (discard, save,
+  Create, Start over) keeps the thread** — the settle endpoint appends the §4.4 **boundary
+  marker**, an ordinary system chip (`fa-flag-checkered`, `boundary: true`; "Draft saved as
+  vN." / "Changes saved — no new version." / "Draft discarded." / "Created as v1.") that
+  splits the thread into history and the current draft session. Everything at or before
+  the newest marker stays visible in the thread but never reaches the agent (§8
+  CONVERSATION clips there — the composer sends only post-boundary entries), and the
+  marker stamps open blockers entries `dismissed` (they describe a settled draft, so they
+  collapse to their summaries and stop counting as open clarifications). Create migrates
+  the pending slot's thread onto the new automation, so the conversation continues on its
+  edit page; the settle paths that stay in or re-enter the editor (Start over; reopening
+  after a discard or save) show the kept thread with the marker as its last entry. The
+  thread is deleted only by **Clear chat** or with its automation — never by a settle.
+  Any settle-armed editor write (the settle flows await the in-flight thread PUT, exactly
+  like the draft's `putInFlight` rule) lands before the marker, never after it. The
+  thread progress entry is transient editor state,
   never persisted. **Clear chat** (the composer button above) empties the thread only:
-  `chat` serializes as `[]` and the next draft persist unlinks §5 `chat.jsonl`. It also
+  the thread PUTs as `[]`, which unlinks §5 `chat.jsonl`. It also
   clears the Draft-undo snapshot (its anchor row leaves with the thread — a dangling
   snapshot would allow an invisible undo, Draft undo below) and takes open blockers
   entries with it; the draft documents, the dirty/out-of-sync state, and the session's
@@ -364,7 +388,9 @@ renders in a drafting state and fills in as the pipeline delivers, driven by the
 
 - **Title row** — name shows the placeholder "New automation…" until the spec lands, then the
   spec's `#` title as the provisional name; call 2's manifest `name` replaces it. The Start
-  over ghost cancels any in-flight job, deletes the pending slot (thread included), and
+  over ghost cancels any in-flight job, deletes the pending slot's draft (the thread stays,
+  behind the "Draft discarded." boundary marker — Thread lifetime above; the editor
+  refetches it so the marker shows), and
   returns the editor to the create empty state with the description back in the input.
 - **Spec card** — force-open, static "Writing the spec…" line (agent label, no spinner —
   the live surface is the thread progress entry). The moment call 1

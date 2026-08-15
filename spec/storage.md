@@ -38,8 +38,11 @@ harness/                       # per-provider workspaces for provider CLI childr
                                #   probes, login helpers) — created on demand, kept empty by
                                #   the app; keeps startup scans out of TCC-protected folders
 draft/                         # THE pending create-mode draft (§4.4) — a single slot: created
-                               # (with an empty memory/) the moment the create flow opens,
-                               # deleted when Create or Start over settles it; same
+                               # (with an empty memory/) the moment the create flow opens.
+                               # Settling deletes the draft contents but never chat.jsonl —
+                               # Create migrates the thread into the new automation's
+                               # container; Start over / the §9.1 New-automation confirm
+                               # leave it in the slot behind a §4.4 boundary marker; same
                                # container shape as automations/<uuid>/draft/ below — both
                                # are read and written by ONE shared draft serializer behind
                                # the §19 /draft/{owner} surface (owner `pending` here, the
@@ -55,8 +58,21 @@ draft/                         # THE pending create-mode draft (§4.4) — a sin
   automation/                  #   the working copy (version-folder shape)
   memory/                      #   scratch memory copied by §11 tests; starts empty
   test.yaml                    #   §11 last-test summary — same shape as the edit-mode one
-  chat.jsonl                   #   §11 chat thread — same shape as the edit-mode one
+  chat.jsonl                   #   §11 chat thread — same shape as the edit-mode one; lives
+                               #   at the slot root and OUTLIVES the draft (§4.4 thread
+                               #   lifetime): written via §19 PUT /chat/pending, kept when
+                               #   the slot settles, moved into the new automation's
+                               #   container by Create
 automations/<uuid>/
+  chat.jsonl                   # §11 chat thread — one JSON object per line, the §4.4 entry
+                               # shape ({id, kind, text?, title?, icon?, outcome?, boundary?,
+                               # blockers?, source?, diagnosed?, dismissed?, resolved?, at});
+                               # rewritten whole by §19 PUT /chat/{id}. Lives at the
+                               # container root, NOT in draft/ — the thread outlives the
+                               # draft (§4.4): settling (discard, save) keeps it and appends
+                               # the §4.4 boundary marker; it is deleted only by §11 Clear
+                               # chat (empty list unlinks the file) or with the automation.
+                               # Transient entries (progress spinners) are never persisted.
   automation.yaml              # unversioned, mutable — user/operational state: id, name,
                                # description (§4.1: seeded from the create manifest, user-owned
                                # thereafter),
@@ -115,12 +131,6 @@ automations/<uuid>/
                                # last outcome and link to the test's execution page. The
                                # test's workspace/result/logs live on its execution record
                                # (§4.5 test executions), not in this container.
-    chat.jsonl                 # §11 chat thread — one JSON object per line, the §4.4 entry
-                               # shape ({id, kind, text?, blockers?, source?, diagnosed?,
-                               # dismissed?, resolved?, at}); rides the draft
-                               # payload as `chat`, rewritten whole on every draft save,
-                               # deleted with the draft. Transient entries (progress
-                               # spinners) are never persisted.
   versions/vN/                 # one folder per version — immutable once written
     automation.yaml            # when, note, param definitions (§4.2: name, kind,
                                # label, help, default, …) + ordered steps manifest:

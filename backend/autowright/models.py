@@ -43,7 +43,7 @@ class StepIn(BaseModel):
 class DraftIn(BaseModel):
     """A §4.4 draft payload. Only `steps` is typed (each entry must be an
     object — the camelCase flag boundary above); the rest (name, description,
-    spec, params, packages, triggers, chat, stepAgents, allowedSecrets, …)
+    spec, params, packages, triggers, stepAgents, allowedSecrets, …)
     passes through untouched for the handler's semantic checks. `plain()`
     preserves key presence — a handler's `"triggers" in d` still works."""
 
@@ -125,6 +125,14 @@ class DraftPut(BaseModel):
 
     draft: DraftIn
     agentId: StrictStr | None = None
+
+
+class ChatPut(BaseModel):
+    """PUT /chat/{owner} — the §11 thread, rewritten whole (§4.4 thread
+    lifetime); an empty list unlinks the file (§11 Clear chat). Entry shapes
+    are checked semantically by the store (kind-less entries are dropped)."""
+
+    chat: list[dict[str, Any]]
 
 
 class TriggersPreview(BaseModel):

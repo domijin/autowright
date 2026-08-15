@@ -22,6 +22,9 @@ vi.mock('../src/api', () => ({
     deleteDraft: vi.fn(async () => ({})),
     getDraft: vi.fn(async () => ({ draft: null, agentId: null })),
     openDraft: vi.fn(async () => ({})),
+    // §19/§4.4 chat-thread surface — the thread outlives the draft
+    getChat: vi.fn(async () => ({ chat: [] })),
+    putChat: vi.fn(async () => ({})),
     checkPackages: vi.fn(async () => ({ packages: [] })),
     outdatedPackages: vi.fn(async () => ({ packages: [] })),
     postTest: vi.fn(async () => ({ executionId: 'e1' })),

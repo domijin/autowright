@@ -12,7 +12,7 @@ vi.mock('../src/api', () => ({
 
 import {
   specToText, textToSpec, amendSpec, stepSecretNames, stepSecretTags, secretRefsOf,
-  instrToMd, mergeDraftTriggers, needsMessageTriggerSetup, persistChat, applyTestValues,
+  instrToMd, mergeDraftTriggers, needsMessageTriggerSetup, persistChat, chatSinceBoundary, applyTestValues,
   applyTriggerOps, coerceParamValue,
   stripTrigger,
 } from '../src/pages/CreateFlow'
@@ -541,12 +541,23 @@ describe('serializeDraft (§4.4 draft payload)', () => {
     expect(serializeDraft(r).packages).toEqual([{ pip: 'pandas', import: 'pandas' }])
   })
 
-  it('carries the thread as `chat`, error entries included (§4.4)', () => {
+  it('never carries the thread — chat persists via /chat/{owner} (§4.4 thread lifetime)', () => {
     const r = {
       ...seedDrafting(AGENTS, SECRETS),
       chat: [entry('user'), entry('error'), entry('answer')],
     }
-    expect(serializeDraft(r).chat?.map((e) => e.kind)).toEqual(['user', 'error', 'answer'])
+    expect(serializeDraft(r)).not.toHaveProperty('chat')
+  })
+
+  it('chatSinceBoundary clips at the newest boundary marker (§4.4/§8)', () => {
+    const marker = { ...entry('system'), boundary: true }
+    const tail = entry('user')
+    expect(chatSinceBoundary([entry('user'), marker, entry('answer'), marker, tail])).toEqual([tail])
+    // no marker → the whole thread travels
+    const all = [entry('user'), entry('answer')]
+    expect(chatSinceBoundary(all)).toEqual(all)
+    // marker last → nothing travels: the next session's agent starts clean
+    expect(chatSinceBoundary([entry('user'), marker])).toEqual([])
   })
 
   it('round-trips the drafted §8 test-value map as testValues (§4.4 draft-only key)', () => {

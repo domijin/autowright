@@ -256,11 +256,18 @@ def _conversation_lines(chat: list | None) -> str:
     rewrite/blockers/system entries (a blocker keeps its clipped details, so a
     build-diagnosis failure's specifics reach later chats). Transient progress
     entries never travel, and §11 `activity` entries (a settled job's event
-    feed) are deliberately skipped — operational noise, not conversation."""
+    feed) are deliberately skipped — operational noise, not conversation.
+    Everything at or before the newest §4.4 boundary marker is a settled draft
+    session's history and NEVER reaches the agent — clipped here again even
+    though the editor already sends only post-boundary entries, so the
+    guarantee holds against any client."""
+    entries = [e for e in (chat or []) if isinstance(e, dict)]
+    for i in range(len(entries) - 1, -1, -1):
+        if entries[i].get("boundary"):
+            entries = entries[i + 1:]
+            break
     lines: list[str] = []
-    for e in (chat or [])[-20:]:
-        if not isinstance(e, dict):
-            continue
+    for e in entries[-20:]:
         kind = e.get("kind")
         text = str(e.get("text") or "").strip()
         if kind == "user":

@@ -967,56 +967,105 @@ def test_edit_draft_snapshot_carries_triggers(client):
     assert store.autos[a["id"]]["triggers"] == []
 
 
-def test_edit_draft_snapshot_carries_chat_thread(client, home):
-    # §4.4/§5: the §11 thread rides the draft payload as `chat` and lands as
-    # the container's chat.jsonl; transient keys are stripped, the rest echoes
-    # back on the automation's draft object.
+def test_chat_thread_outlives_draft_with_boundary_marker(client, home):
+    # §4.4 thread lifetime: the thread lives at the container root through
+    # GET/PUT /chat/{owner}, never rides the draft payload, and survives the
+    # draft's settle behind a backend-appended boundary marker.
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Chatty", "mock")
     chat = [
         {"id": "e1", "kind": "user", "text": "add weekends", "at": "2026-08-01T00:00:00+00:00"},
-        {"id": "e2", "kind": "rewrite", "text": "add weekends", "junk": "dropped"},
-        {"id": "e3", "kind": "blockers", "source": "sync", "dismissed": True,
-         "blockers": [{"reason": "r", "fix": "f"}], "resolved": ["r — f"]},
+        {"id": "e2", "kind": "blockers", "source": "sync",
+         "blockers": [{"reason": "r", "fix": "f"}], "junk": "dropped"},
         {"kind": ""},  # no kind → skipped
     ]
-    r = client.put(f"/draft/{a['id']}", json={"draft": {**make_version(), "chat": chat}})
-    assert r.status_code == 200
-    f = home / "automations" / a["id"] / "draft" / "chat.jsonl"
+    assert client.put(f"/chat/{a['id']}", json={"chat": chat}).status_code == 200
+    f = home / "automations" / a["id"] / "chat.jsonl"
     assert f.exists()
     assert "junk" not in f.read_text(encoding="utf-8")
-    d = client.get(f"/automations/{a['id']}").json()["draft"]
-    assert [e["id"] for e in d["chat"]] == ["e1", "e2", "e3"]
-    assert d["chat"][2]["dismissed"] is True
-    assert d["chat"][2]["blockers"] == [{"reason": "r", "fix": "f"}]
-    # the container GET echoes the same payload as the automation's draft object
-    assert client.get(f"/draft/{a['id']}").json() == {"draft": d, "agentId": "mock"}
-    # a re-save without the key leaves the thread untouched
+    assert [e["id"] for e in client.get(f"/chat/{a['id']}").json()["chat"]] == ["e1", "e2"]
+    # the draft payload never carries the thread (§4.4: decoupled lifetimes)
     client.put(f"/draft/{a['id']}", json={"draft": make_version()})
-    assert client.get(f"/automations/{a['id']}").json()["draft"]["chat"][0]["id"] == "e1"
-    # an empty list clears it
-    client.put(f"/draft/{a['id']}", json={"draft": {**make_version(), "chat": []}})
-    assert not f.exists()
     assert "chat" not in client.get(f"/automations/{a['id']}").json()["draft"]
-    # the thread dies with the draft
-    client.put(f"/draft/{a['id']}", json={"draft": {**make_version(), "chat": chat[:1]}})
+    # discarding the draft keeps the thread and appends the boundary marker;
+    # open blockers entries collapse — they describe a draft that no longer exists
     client.delete(f"/draft/{a['id']}")
+    got = client.get(f"/chat/{a['id']}").json()["chat"]
+    assert [e["id"] for e in got[:2]] == ["e1", "e2"]
+    marker = got[2]
+    assert marker["kind"] == "system" and marker["boundary"] is True
+    assert marker["text"] == "Draft discarded."
+    assert marker["icon"] == "fa-flag-checkered" and marker["id"] and marker["at"]
+    assert got[1]["dismissed"] is True
+    # a settle on a marker-terminated thread appends no second marker
+    client.post(f"/draft/{a['id']}/open")
+    client.put(f"/draft/{a['id']}", json={"draft": make_version()})
+    client.delete(f"/draft/{a['id']}")
+    assert len(client.get(f"/chat/{a['id']}").json()["chat"]) == 3
+    # §11 Clear chat: an empty list unlinks the file …
+    client.put(f"/chat/{a['id']}", json={"chat": []})
     assert not f.exists()
+    assert client.get(f"/chat/{a['id']}").json() == {"chat": []}
+    # … and an empty thread gets no marker on settle
+    client.delete(f"/draft/{a['id']}")
+    assert client.get(f"/chat/{a['id']}").json() == {"chat": []}
 
 
-def test_pending_draft_carries_chat_thread(client):
-    # §4.4: the create-mode slot persists the thread the same way.
+def test_save_version_appends_boundary_marker(client):
+    # §4.4/§19: saving settles the draft — "Draft saved as vN." when a version
+    # was minted, "Changes saved — no new version." on the operational-only save.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Saver", "mock")
+    client.put(f"/chat/{a['id']}", json={"chat": [{"id": "u1", "kind": "user", "text": "hi"}]})
+    changed = make_version(spec=[{"kind": "h1", "text": "Changed"}])
+    r = client.post(f"/automations/{a['id']}/versions", json={"draft": changed})
+    n = r.json()["version"]
+    assert n == 2
+    chat = client.get(f"/chat/{a['id']}").json()["chat"]
+    assert chat[-1]["boundary"] is True and chat[-1]["text"] == f"Draft saved as v{n}."
+    # unchanged versioned content → the operational-only marker
+    client.put(f"/chat/{a['id']}", json={"chat": [{"id": "u2", "kind": "user", "text": "again"}]})
+    r = client.post(f"/automations/{a['id']}/versions", json={"draft": changed})
+    assert r.json()["version"] == n
+    chat = client.get(f"/chat/{a['id']}").json()["chat"]
+    assert chat[-1]["boundary"] is True
+    assert chat[-1]["text"] == "Changes saved — no new version."
+
+
+def test_pending_chat_thread_and_create_migration(client, home):
+    # §4.4: the create-mode slot's thread lives at the slot root, survives
+    # Start over (draft DELETE) behind a marker, and Create migrates it onto
+    # the new automation.
     client.post("/draft/pending/open")
-    r = client.put("/draft/pending", json={"draft": {
-        **make_version(), "name": "Pending chat",
-        "chat": [{"id": "c1", "kind": "user", "text": "hello"}],
-    }, "agentId": "mock"})
-    assert r.status_code == 200
-    d = client.get("/draft/pending").json()["draft"]
-    assert d["chat"] == [{"id": "c1", "kind": "user", "text": "hello"}]
+    client.put("/chat/pending", json={"chat": [{"id": "c1", "kind": "user", "text": "hello"}]})
+    client.put("/draft/pending", json={"draft": {**make_version(), "name": "Pending chat"},
+                                       "agentId": "mock"})
+    # Start over: the draft dies, the thread stays behind the marker
     client.delete("/draft/pending")
     assert client.get("/draft/pending").json()["draft"] is None
+    got = client.get("/chat/pending").json()["chat"]
+    assert [e["id"] for e in got[:1]] == ["c1"]
+    assert got[1]["boundary"] is True and got[1]["text"] == "Draft discarded."
+    # Create: the slot's thread moves onto the new automation, marker appended
+    # after the new session's entries (a create always follows a user message)
+    client.put("/chat/pending", json={"chat": [*got, {"id": "c2", "kind": "user",
+                                                      "text": "make it daily"}]})
+    auto = client.post("/automations", json={"draft": make_version(),
+                                             "agentId": "mock"}).json()
+    assert not (home / "draft" / "chat.jsonl").exists()
+    assert client.get("/chat/pending").json() == {"chat": []}
+    chat = client.get(f"/chat/{auto['id']}").json()["chat"]
+    assert [e["id"] for e in chat[:1]] == ["c1"]
+    assert chat[2]["id"] == "c2"
+    assert chat[-1]["boundary"] is True and chat[-1]["text"] == "Created as v1."
+
+
+def test_chat_owner_resolution(client):
+    # §19: /chat/{owner} resolves like /draft/{owner} — unknown automation 404s.
+    assert client.get("/chat/nope").status_code == 404
+    assert client.put("/chat/nope", json={"chat": []}).status_code == 404
 
 
 def test_draft_container_surface_uniform_across_owners(client):

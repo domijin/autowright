@@ -16,7 +16,7 @@ import { BtnPrimary, ConfirmModal, HeaderActions, PULSE, PopMenu, ScrollArea, Sp
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import {
   type Rev, amendSpec, analyzeTestMessage, blockerLine, holdsDraftEdits, instructionCache, loadVersionInto,
-  newEntry, secretRefsOf, seedEmpty, seedFromAuto, seedFromPayload, serializeDraft,
+  newEntry, persistChat, secretRefsOf, seedEmpty, seedFromAuto, seedFromPayload, serializeDraft,
 } from './createflow/model'
 import { useDraftJob } from './createflow/useDraftJob'
 import { ChatPanel } from './createflow/ChatPanel'
@@ -27,7 +27,7 @@ import { LeftColumn, RightCards } from './createflow/SectionCards'
 // step-secret scanners) — re-exported here so the unit tests and any older
 // imports keep one stable import path.
 export {
-  specToText, textToSpec, amendSpec, newEntry, persistChat,
+  specToText, textToSpec, amendSpec, newEntry, persistChat, chatSinceBoundary,
   stepSecretTags, stepSecretNames, secretRefsOf, instrToMd,
   seedEmpty, seedDrafting, seedFromPayload, seedFromAuto,
   stripTrigger, mergeDraftTriggers, serializeDraft, applyTestValues,
@@ -72,10 +72,34 @@ export default function CreateFlow() {
   // continuous-persist PUT, awaited before any draft DELETE so an in-flight
   // write can't land after the discard on a slow backend.
   const putInFlight = useRef<Promise<unknown>>(Promise.resolve())
+  // §4.4 thread lifetime: the thread persists on its own (§19 /chat/{owner}),
+  // decoupled from the draft. chatLoaded gates every write — a PUT before the
+  // stored thread merged in would clobber it (an empty one would unlink it);
+  // chatGen invalidates armed debounce timers across a Start over, so a stale
+  // pre-discard write can't land over the backend-appended boundary marker.
+  const chatLoaded = useRef(false)
+  const chatGen = useRef(0)
+  const chatPutInFlight = useRef<Promise<unknown>>(Promise.resolve())
+  const chatOwner = () => (isEdit ? autoRef.current?.id ?? automationId ?? null : 'pending')
+  // The settle flows call this before their settle endpoint: the in-flight
+  // debounced PUT is awaited and the current thread written now, so every
+  // entry lands BEFORE the §4.4 boundary marker the endpoint appends.
+  const flushChat = async () => {
+    await chatPutInFlight.current
+    const r = revRef.current
+    const owner = chatOwner()
+    if (!chatLoaded.current || !r || !owner) return
+    try { await api.putChat(owner, persistChat(r.chat)) } catch { /* backend restarting */ }
+  }
   useEffect(() => () => {
     const r = revRef.current
     const a = autoRef.current
     if (draftSettled.current) return
+    // §4.4: the thread flushes on every exit path, like the draft below.
+    if (chatLoaded.current && r) {
+      const owner = isEdit ? a?.id : 'pending'
+      if (owner) void api.putChat(owner, persistChat(r.chat)).catch(() => { /* backend restarting */ })
+    }
     if (isEdit) {
       if (!a) return
       if (r && holdsDraftEdits(r, a)) {
@@ -87,6 +111,46 @@ export default function CreateFlow() {
       void api.putDraft('pending', serializeDraft(r), agentIdRef.current).catch(() => { /* backend restarting */ })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // §4.4 thread load: fetch the stored thread once and prepend it to whatever
+  // the editor already appended (the §7 Fix-with-AI seed can land first) —
+  // only then do the thread writers arm.
+  const [chatMergeTick, setChatMergeTick] = useState(0)
+  const pendingStoredChat = useRef<ChatEntry[] | null>(null)
+  useEffect(() => {
+    const owner = isEdit ? automationId : 'pending'
+    if (!owner) return
+    let dead = false
+    void api.getChat(owner).then(({ chat }) => {
+      if (dead) return
+      pendingStoredChat.current = chat
+      setChatMergeTick((t) => t + 1)
+    }).catch(() => { /* backend restarting; the thread renders empty, writers stay off */ })
+    return () => { dead = true }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!rev || pendingStoredChat.current == null) return
+    const stored = pendingStoredChat.current
+    pendingStoredChat.current = null
+    chatLoaded.current = true
+    if (stored.length) setRev((r) => (r ? { ...r, chat: [...stored, ...r.chat] } : r))
+  }, [rev != null, chatMergeTick]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // §4.4 continuous thread persistence — the thread's own debounced PUT,
+  // independent of the draft persist (a pure Q&A keeps no draft but still
+  // keeps its thread). Settling stops it; the settle flows flush explicitly.
+  useEffect(() => {
+    if (!rev || !chatLoaded.current || draftSettled.current) return
+    const gen = chatGen.current
+    const t = setTimeout(() => {
+      if (draftSettled.current || gen !== chatGen.current) return
+      const r = revRef.current
+      const owner = chatOwner()
+      if (!r || !owner) return
+      chatPutInFlight.current = api.putChat(owner, persistChat(r.chat)).catch(() => { /* backend restarting */ })
+    }, 1000)
+    return () => clearTimeout(t)
+  }, [rev?.chat, chatMergeTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §4.4 continuous persistence: once the draft holds anything worth keeping,
   // write it with a debounced PUT ~1 s after the last change — quitting the app
@@ -289,17 +353,25 @@ export default function CreateFlow() {
 
   const selAgent = agents.find((g) => g.id === agentId) ?? agents.find((g) => g.default) ?? agents[0] ?? null
 
-  // §11 Start over (create): cancel any job, discard the pending slot (thread
-  // included), return to the empty state with the description in the input.
+  // §11 Start over (create): cancel any job, discard the pending slot's draft,
+  // return to the empty state with the description in the input. The thread
+  // stays (§4.4 thread lifetime) behind the backend-appended "Draft
+  // discarded." boundary marker — refetched so the marker shows.
   const resetCreate = async () => {
     jobs.cancelJob()
-    // §4.4: Start over discards the pending slot — after any in-flight
-    // continuous-persist PUT, which would otherwise resurrect it.
+    // §4.4: Start over discards the pending slot's draft — after any in-flight
+    // continuous-persist PUT, which would otherwise resurrect it. The thread
+    // flushes first so every entry lands before the boundary marker; bumping
+    // chatGen kills armed debounce timers that would clobber the marker.
+    chatGen.current++
+    await flushChat()
     await putInFlight.current
-    void api.deleteDraft('pending').catch(() => { /* none kept */ })
+    try { await api.deleteDraft('pending') } catch { /* none kept */ }
+    let chat: ChatEntry[] = []
+    try { chat = (await api.getChat('pending')).chat } catch { /* backend restarting */ }
     setNameEdit(null)
     setDescEdit(null)
-    setRev(seedEmpty(agents, secrets.map((s) => s.name)))
+    setRev({ ...seedEmpty(agents, secrets.map((s) => s.name)), chat })
     setChatText((cur) => cur || jobs.lastCreateRef.current)
   }
 
@@ -365,12 +437,14 @@ export default function CreateFlow() {
     void jobs.submitCreate(specBlock ? `${jobs.lastCreateRef.current.trim()}\n\n${request}` : request)
   }
 
-  // §11 Clear chat: empties the thread only — the debounced draft persist
-  // serializes `chat: []`, which unlinks chat.jsonl backend-side. The undo
-  // snapshot clears with it (its anchor row leaves with the thread); the
-  // draft documents and dirty state are untouched.
+  // §11 Clear chat: empties the thread only — the debounced thread persist
+  // PUTs `[]`, which unlinks chat.jsonl backend-side (§4.4 thread lifetime:
+  // Clear chat is the one user delete). The undo snapshot clears with it (its
+  // anchor row leaves with the thread); the draft documents and dirty state
+  // are untouched — the thread is no longer draft state, so nothing is marked
+  // touched.
   const clearChat = () => {
-    setRev((r) => r && ({ ...r, chat: [], undo: null, touched: true }))
+    setRev((r) => r && ({ ...r, chat: [], undo: null }))
   }
 
   // §11 draft undo: restore the full pre-request snapshot — the draft looks
@@ -543,7 +617,10 @@ export default function CreateFlow() {
   // run-settled system entry, so the conversation picks up where the run left off.
   const draftRunSeeded = useRef(false)
   useEffect(() => {
-    if (!isEdit || !rev || draftRunSeeded.current) return
+    // Waits for the stored thread to merge (§4.4 thread load above) — seeding
+    // against an unmerged (empty) thread would re-append a run the stored
+    // thread already recorded.
+    if (!isEdit || !rev || !chatLoaded.current || draftRunSeeded.current) return
     draftRunSeeded.current = true
     const lastAt = rev.chat.length ? Date.parse(rev.chat[rev.chat.length - 1].at ?? '') || 0 : 0
     const dr = executions
@@ -558,7 +635,7 @@ export default function CreateFlow() {
         ? `Draft execution failed${dr.error?.step ? ` at step ${dr.error.step}` : ''} — ${dr.error?.message ?? 'see the run'}`
         : 'Draft execution succeeded.',
     })
-  }, [rev != null]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rev != null, chatMergeTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- version menu (edit mode) ----
   const [verOpen, setVerOpen, verRef] = usePopover()
@@ -590,6 +667,9 @@ export default function CreateFlow() {
       void api.cancelDraftJob(jobs.jobIdRef.current).catch(() => { /* already gone */ })
       jobs.jobIdRef.current = null
     }
+    // §4.4 thread lifetime: the thread flushes on every exit path — the keep
+    // branches below set draftSettled, which mutes the unmount flush.
+    await flushChat()
     if (isEdit && auto) {
       if (rev && holdsDraftEdits(rev, auto)) {
         try { await api.putDraft(auto.id, serializeDraft(rev)) } catch { /* backend restarting */ }
@@ -613,9 +693,11 @@ export default function CreateFlow() {
   const startOver = async () => {
     if (isEdit && auto) {
       // Discard draft → back to detail. Settle BEFORE the awaits — the 1 s
-      // debounce timer checks the flag at fire time, and a PUT landing after
-      // the DELETE would resurrect the discarded draft (§4.4).
+      // debounce timers check the flag at fire time, and a PUT landing after
+      // the DELETE would resurrect the discarded draft (§4.4) or clobber the
+      // boundary marker the DELETE appends to the kept thread.
       draftSettled.current = true
+      await flushChat()
       await putInFlight.current
       try { await api.deleteDraft(auto.id) } catch { /* none saved yet */ }
       draftSnap.current = null
@@ -631,6 +713,10 @@ export default function CreateFlow() {
     if (!rev || saveBlocked) return
     try {
       draftSettled.current = true
+      // §4.4 thread lifetime: every entry lands before the boundary marker
+      // the save/create endpoint appends; the settle flag above mutes the
+      // debounced writers so nothing clobbers the marker after.
+      await flushChat()
       if (isEdit && auto) {
         if (typeof rev.viewing === 'number' && rev.viewing !== auto.version) {
           const { version } = await api.restore(auto.id, rev.viewing)

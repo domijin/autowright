@@ -37,8 +37,9 @@ export function amendSpec(spec: SpecBlock[], blockers: Blocker[]): SpecBlock[] {
 
 export const blockerLine = (b: Blocker) => `${b.reason.trim()} — ${b.fix.trim()}`
 
-// §11 thread entries — persisted with the draft (§4.4 `chat` → §5 chat.jsonl).
-// The transient progress entry is rendered from job state, never stored.
+// §11 thread entries — persisted through §19 /chat/{owner} (§4.4 thread
+// lifetime: the thread outlives the draft; §5 chat.jsonl at the container
+// root). The transient progress entry is rendered from job state, never stored.
 export function newEntry(e: Omit<ChatEntry, 'id' | 'at'>): ChatEntry {
   return { id: crypto.randomUUID(), at: new Date().toISOString(), ...e }
 }
@@ -59,6 +60,16 @@ export function answerHeader(text: string, withWork: boolean): { icon: string; t
 const PERSIST_KINDS = new Set(['user', 'answer', 'activity', 'rewrite', 'blockers', 'system', 'error'])
 export function persistChat(chat: ChatEntry[]): ChatEntry[] {
   return chat.filter((e) => PERSIST_KINDS.has(e.kind))
+}
+
+// §4.4/§8: everything at or before the newest boundary marker is a settled
+// draft session's history — rendered in the thread, never sent to the agent.
+// The backend clips at the boundary again (§8 belt-and-braces).
+export function chatSinceBoundary(chat: ChatEntry[]): ChatEntry[] {
+  for (let i = chat.length - 1; i >= 0; i--) {
+    if (chat[i].boundary) return chat.slice(i + 1)
+  }
+  return chat
 }
 
 // §11: one stage label per job kind — shared by the live thread progress
@@ -281,7 +292,6 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
       : agents.map((g) => g.id),
     allowedSecrets: d.allowedSecrets ?? secretNames,
     lastTest: d.test ?? null,
-    chat: d.chat ?? [],
     // §4.4/§11: restore the persisted dirty-gate state — resuming a kept
     // out-of-sync draft must not unlock Save around the gate.
     dirty: !!d.outOfSync,
@@ -313,7 +323,6 @@ export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string
     enabledAgents: (a.draft?.stepAgents ?? a.stepAgents).filter((id) => agents.some((x) => x.id === id)),
     allowedSecrets: (a.draft?.allowedSecrets ?? a.allowedSecrets).filter((n) => secretNames.includes(n)),
     lastTest: a.draft?.test ?? null,
-    chat: a.draft?.chat ?? [],
     touched: !!a.draft,
     // §4.4/§11: restore the persisted dirty-gate state — resuming a kept
     // out-of-sync draft must not unlock Save around the gate.
@@ -428,9 +437,9 @@ export function serializeDraft(r: Rev): DraftPayload {
     stepAgents: r.enabledAgents,
     allowedSecrets: r.allowedSecrets,
     // §4.4/§11: the dirty-gate state rides the snapshot — a kept out-of-sync
-    // draft must resume with saving still locked.
+    // draft must resume with saving still locked. The chat thread is NOT part
+    // of the draft payload — it persists through §19 /chat/{owner} (§4.4).
     ...(r.dirty ? { outOfSync: true } : {}),
-    chat: persistChat(r.chat),
   }
 }
 

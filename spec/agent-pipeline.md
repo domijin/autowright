@@ -153,7 +153,11 @@ fixing the automation from it (there is no separate analysis call). Prompt secti
 order: `framework-instructions.md`, the call-2 grants context (available agents + available
 secrets, same yaml lists), the build instructions, **NOTES** — the §4.1 notes document when
 nonempty ("your own working knowledge from earlier sessions — trust it before rediscovering"),
-**CONVERSATION** — the most recent §11 thread entries (capped at the last 20; user text,
+**CONVERSATION** — the most recent §11 thread entries **after the newest §4.4 boundary
+marker** (entries at or before a `boundary: true` entry belong to a settled draft session
+and NEVER reach the agent — the editor already sends only post-boundary entries, and the
+backend clips at the newest boundary again before building the section, so the guarantee
+holds even against a stale client; then capped at the last 20; user text,
 answer text, error-entry text, and one-line summaries of rewrite/blocker/system entries — a
 blocker summary keeps its clipped `details` and prefixes "(needs user action)" when the
 blocker carries `kind: user-action`, so a build-diagnosis failure's specifics and a

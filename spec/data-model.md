@@ -401,12 +401,13 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   `test_values` key, so a resumed draft still seeds its test setup, §11), the editor's
   step-agents + allowed-secrets grant selections (stored as
   draft-only `step_agents` / `allowed_secrets` keys in `draft/automation/automation.yaml`, §5),
-  the §11 out-of-sync state (`outOfSync` on the payload → draft-only `out_of_sync` key —
+  and the §11 out-of-sync state (`outOfSync` on the payload → draft-only `out_of_sync` key —
   a kept draft whose steps lag its spec must resume with saving still locked, §11 dirty
-  gating), and the §11 chat thread (`chat` on the payload → the container's `chat.jsonl`, §5).
+  gating). The §11 chat thread is **not** part of the draft payload: it persists on its
+  own, decoupled from the draft's lifetime (thread lifetime below).
   Persisted thread entries: `{ id: uuid, kind: user | answer | activity | rewrite |
   blockers | system
-  | error, text?, title?, icon?, outcome?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
+  | error, text?, title?, icon?, outcome?, boundary?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
   `icon` an optional Font Awesome class stamped at creation, driving the §11 block
   glyph on system and answer entries (`title` doubles as the §11 answer header on
   answer entries); entries without them fall back per §11 —
@@ -423,6 +424,25 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   quiet status chip, `error` a red failure entry (a failed §8 job's message, §11) — persisted
   so a later chat's CONVERSATION context still names the failure. The §11 thread progress
   entry (live job progress) is editor state only, never persisted.
+- **Thread lifetime & boundary markers.** The thread lives at the container root
+  (`chat.jsonl` beside `automation.yaml`; for the create-mode slot, at the slot root — §5),
+  read and written through the §19 `GET/PUT /chat/{owner}` surface (owner: automation id or
+  `pending`), decoupled from the draft: **settling the draft never deletes the thread** —
+  it is deleted only by §11 Clear chat (empty list unlinks the file) or with its
+  automation. Instead, every settle **appends a boundary marker** — a `system` entry with
+  `boundary: true`, `icon: fa-flag-checkered`, and the settle's text ("Draft saved as vN." ·
+  "Changes saved — no new version." for the §4.4 operational-only save · "Draft discarded." ·
+  "Created as v1.") — written **backend-side by the settle endpoint itself** (§19: save,
+  draft-container DELETE, create), never left to the client, so a crashed or stale editor
+  can't leave a settled draft's conversation unmarked. Appending a marker also stamps
+  `dismissed: true` on the thread's open `blockers` entries (they describe a draft that no
+  longer exists) and is skipped when the thread is empty or its last entry is already a
+  boundary marker. Everything at or before the newest boundary marker is **history**: still
+  rendered in the thread, but never sent to the agent (§8 CONVERSATION clips there) — a new
+  draft session's AI starts clean. Create migrates the pending slot's thread into the new
+  automation's container (marker appended after the move), so the conversation continues on
+  that automation's edit page. Restore-as-vN+1 is not a settle (the stored draft survives
+  it, §11) and appends no marker.
   Resuming restores the grant checkboxes from the draft; the automation's live
   stepAgents/allowedSecrets stay untouched until the draft is saved as vN+1. A Draft
   execution honors the draft's grants when present, not the live ones.
@@ -444,9 +464,12 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   triggers). Opening the create flow while the slot exists resumes it straight on the
   Review page (toast: "Resumed your unsaved draft — Start over discards it."); the §9.1
   list header surfaces the slot as a Resume draft button, and its New automation button
-  confirms then deletes the slot to start fresh. Start over
-  (and Back to Ask) deletes the slot. Create consumes it: `versions/v1` is written from
-  the sent draft and `<root>/draft/` is deleted — a settled draft is never resurrected.
+  confirms then deletes the slot's draft to start fresh. Start over
+  (and Back to Ask) deletes the slot's draft. Create consumes it: `versions/v1` is written
+  from the sent draft and `<root>/draft/` is emptied — a settled draft is never
+  resurrected. In every settle case the slot's `chat.jsonl` survives per the thread-lifetime
+  rules above (Create moves it to the new automation; the others leave it in the slot
+  behind a boundary marker — a slot holding only `chat.jsonl` reads as "no pending draft").
   One pending draft at a time: every keep overwrites the slot. Leaving with nothing
   landed just leaves the empty container behind; the next open reuses it.
 - In edit mode the review footer shows a **Keep draft** bordered button placed directly to

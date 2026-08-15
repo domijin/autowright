@@ -659,17 +659,22 @@ def test_chat_json_skips_bad_lines_and_unreadable_file(tmp_path):
     assert Store.chat_json(d2) == []                          # undecodable file
 
 
-def test_save_chat_keeps_activity_title(store, tmp_path):
-    """§4.4: activity entries persist their stage-label `title` through
-    save_chat's key filter; unknown keys are still dropped."""
-    d = tmp_path / "container"
-    store.save_chat(d, [{"id": "c1", "kind": "activity", "at": "t",
-                         "title": "Generating the steps…",
-                         "text": "Writing 01-check.py…", "junk": "dropped"}])
+def test_save_chat_keeps_activity_title(store):
+    """§4.4: activity entries persist their stage-label `title` (and the
+    outcome/icon/boundary fields) through save_chat's key filter; unknown keys
+    are still dropped. The thread lives at the owner's container root (§4.4
+    thread lifetime) — here the pending slot."""
+    store.save_chat(None, [{"id": "c1", "kind": "activity", "at": "t",
+                            "title": "Generating the steps…", "outcome": "done",
+                            "text": "Writing 01-check.py…", "junk": "dropped"},
+                           {"id": "c2", "kind": "system", "icon": "fa-flag-checkered",
+                            "boundary": True, "text": "Draft discarded."}])
     from autowright.storage import Store
-    [e] = Store.chat_json(d)
+    e, m = Store.chat_json(store.chat_dir(None))
     assert e["title"] == "Generating the steps…"
+    assert e["outcome"] == "done"
     assert "junk" not in e
+    assert m["boundary"] is True and m["icon"] == "fa-flag-checkered"
 
 
 def test_default_agent_pointer_self_heals_on_load(home):

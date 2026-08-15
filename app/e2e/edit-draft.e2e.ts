@@ -101,5 +101,13 @@ describe('edit draft e2e', () => {
     await page.getByText('v1', { exact: true }).first().waitFor()
     expect((await backend.api('GET', `/automations/${id}`) as { version: number }).version).toBe(1)
     await shot(page, 'edit-draft-discarded.png')
+
+    // §4.4 thread lifetime: the thread outlives the discarded draft — the
+    // editor reopens with the earlier chips still there, behind the
+    // backend-appended "Draft discarded." boundary marker.
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await page.getByText('Test succeeded.', { exact: true }).waitFor({ timeout: 10_000 })
+    await page.getByText('Draft discarded.', { exact: true }).waitFor()
+    await shot(page, 'edit-draft-thread-kept.png')
   }, 120_000)
 })

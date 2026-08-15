@@ -694,8 +694,7 @@ class Store:
                 shutil.rmtree(stale, ignore_errors=True)
 
     def save_draft(self, a: dict | None, ver: dict, *, name: str | None = None,
-                   agent_id: str | None = None, triggers: list | None = None,
-                   chat: list | None = None) -> None:
+                   agent_id: str | None = None, triggers: list | None = None) -> None:
         """§19: ONE write path for both /draft/{owner} owners (a=None →
         pending). §5: draft/ is a container — only the automation/ working
         copy is replaced; memory/ (§4.4) survives re-saves from the editor.
@@ -727,28 +726,65 @@ class Store:
             shutil.rmtree(old, ignore_errors=True)
             if a is not None:
                 a["draft"] = self._load_version_folder(dd)
-            self.save_chat(container, chat)
 
-    # ---------- §11 chat thread (§5 chat.jsonl in the draft container) ----------
-    _CHAT_KEYS = ("id", "kind", "text", "title", "blockers", "source", "diagnosed",
-                  "dismissed", "resolved", "at")
+    # ---------- §11 chat thread (§4.4 thread lifetime; §5 chat.jsonl at the
+    # container root — it outlives the draft) ----------
+    _CHAT_KEYS = ("id", "kind", "text", "title", "icon", "outcome", "boundary",
+                  "blockers", "source", "diagnosed", "dismissed", "resolved", "at")
 
-    def save_chat(self, container: Path, chat: list | None) -> None:
-        """§4.4/§5: the thread rides the draft payload as `chat` and lands as
-        the container's chat.jsonl, rewritten whole on every draft save. None
-        leaves the file untouched (a caller that didn't send the key); an
-        empty list deletes it."""
+    def chat_dir(self, a: dict | None) -> Path:
+        """§4.4/§5: where the owner's chat.jsonl lives — the automation's
+        container root, or the pending slot root. NOT the draft container:
+        the thread outlives the draft."""
+        return paths.pending_draft_dir() if a is None else self.auto_dir(a)
+
+    def save_chat(self, a: dict | None, chat: list | None) -> None:
+        """§19 PUT /chat/{owner}: the owner's chat.jsonl, rewritten whole.
+        None leaves the file untouched (a caller without the key); an empty
+        list deletes it (§11 Clear chat)."""
         if chat is None:
             return
-        f = container / "chat.jsonl"
-        entries = [{k: e[k] for k in self._CHAT_KEYS if k in e}
-                   for e in chat if isinstance(e, dict) and e.get("kind")]
-        if not entries:
-            f.unlink(missing_ok=True)
-            return
-        container.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(f, "".join(json.dumps(e, ensure_ascii=False) + "\n"
-                                     for e in entries))
+        with self.lock:
+            container = self.chat_dir(a)
+            f = container / "chat.jsonl"
+            entries = [{k: e[k] for k in self._CHAT_KEYS if k in e}
+                       for e in chat if isinstance(e, dict) and e.get("kind")]
+            if not entries:
+                f.unlink(missing_ok=True)
+                return
+            container.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(f, "".join(json.dumps(e, ensure_ascii=False) + "\n"
+                                         for e in entries))
+
+    def append_chat_marker(self, a: dict | None, text: str) -> None:
+        """§4.4 boundary marker — appended by the settle endpoints (save,
+        create, draft DELETE) so a settled draft session's conversation is
+        history the §8 CONVERSATION context never sends, whatever the client
+        did. Skipped when the thread is empty or already ends on a marker;
+        also stamps open blockers entries dismissed — they describe a draft
+        that no longer exists."""
+        with self.lock:
+            chat = self.chat_json(self.chat_dir(a))
+            if not chat or chat[-1].get("boundary"):
+                return
+            for e in chat:
+                if e.get("kind") == "blockers" and not e.get("dismissed"):
+                    e["dismissed"] = True
+            chat.append({"id": str(uuid.uuid4()), "kind": "system",
+                         "icon": "fa-flag-checkered", "boundary": True,
+                         "text": text, "at": timefmt.now_iso()})
+            self.save_chat(a, chat)
+
+    def migrate_pending_chat(self, a: dict) -> None:
+        """§4.4/§19 Create: the pending slot's thread moves onto the new
+        automation — the conversation continues on its edit page."""
+        with self.lock:
+            src = paths.pending_draft_dir() / "chat.jsonl"
+            if not src.exists():
+                return
+            dst_dir = self.auto_dir(a)
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            src.rename(dst_dir / "chat.jsonl")
 
     @staticmethod
     def chat_json(container: Path) -> list[dict]:
@@ -796,10 +832,21 @@ class Store:
     def delete_draft(self, a: dict | None) -> None:
         """§19: ONE delete path for both /draft/{owner} owners. Settles the
         container (discard, save, Create, or Start over); §11 test records die
-        with it (automationId null for the pending owner)."""
+        with it (automationId null for the pending owner). The §11 chat thread
+        never dies with the draft (§4.4 thread lifetime): an automation's
+        chat.jsonl lives outside draft/, and the pending slot's — at the slot
+        root — is deliberately spared here."""
         with self.lock:
-            shutil.rmtree(self.draft_dir(a), ignore_errors=True)
-            if a is not None:
+            dd = self.draft_dir(a)
+            if a is None:
+                for child in list(dd.iterdir()) if dd.exists() else ():
+                    if child.name != "chat.jsonl":
+                        (shutil.rmtree(child, ignore_errors=True) if child.is_dir()
+                         else child.unlink(missing_ok=True))
+                if dd.exists() and not any(dd.iterdir()):
+                    dd.rmdir()  # no thread kept → the slot vanishes whole, as before
+            else:
+                shutil.rmtree(dd, ignore_errors=True)
                 a["draft"] = None
             self.delete_test_execs(a["id"] if a is not None else None)
 
@@ -1511,8 +1558,6 @@ class Store:
             container = self.draft_dir(a)
             if t := self.draft_test_json(container):
                 out["test"] = t
-            if c := self.chat_json(container):
-                out["chat"] = c
             return out
 
     def draft_test_json(self, container: Path) -> dict | None:

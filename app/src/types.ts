@@ -92,7 +92,8 @@ export interface VersionInfo {
   packages: PackageDep[]
 }
 
-// §4.4/§11 chat-thread entry — persisted in the draft container (chat.jsonl).
+// §4.4/§11 chat-thread entry — persisted at the container root (chat.jsonl,
+// §19 /chat/{owner}); the thread outlives the draft (§4.4 thread lifetime).
 // Transient progress entries are editor state only and never use this shape.
 export interface ChatEntry {
   id: string
@@ -105,6 +106,10 @@ export interface ChatEntry {
   // activity: the job's settled status, driving the §11 outcome glyph — a
   // pre-field entry has none and renders as done
   outcome?: 'done' | 'blocked' | 'failed'
+  // §4.4 boundary marker (backend-appended system entry on settle): entries at
+  // or before the newest one are a settled draft session's history — rendered,
+  // never sent to the agent (§8 CONVERSATION clips there)
+  boundary?: boolean
   blockers?: Blocker[]
   // blockers entries: which call produced them — decides headline + primary action
   source?: 'chat' | 'spec' | 'steps' | 'sync'
@@ -366,7 +371,6 @@ export interface DraftPayload {
   // must resume with saving still locked
   outOfSync?: boolean
   test?: DraftTest  // §11: last-test summary, GET responses only — never sent back
-  chat?: ChatEntry[] // §11: the persisted thread — rides the draft both ways
   answer?: string        // §8 chat call: prose answer / accompanying message
   actions?: ChatActions  // §8 chat call: validated follow-up actions
 }

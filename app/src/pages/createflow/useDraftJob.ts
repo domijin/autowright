@@ -9,7 +9,7 @@ import { api } from '../../api'
 import { useStore } from '../../store'
 import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../types'
 import {
-  type Rev, TRIGGER_SETUP_TEXT, answerHeader, applyTriggerOps, coerceParamValue, jobStageTitle,
+  type Rev, TRIGGER_SETUP_TEXT, answerHeader, applyTriggerOps, chatSinceBoundary, coerceParamValue, jobStageTitle,
   mergeDraftTriggers,
   needsMessageTriggerSetup, newEntry, persistChat,
   seedDrafting, seedEmpty, seedFromPayload, serializeDraft, stageDisplayTitle,
@@ -184,7 +184,9 @@ export function useDraftJob(d: DraftJobDeps) {
   // notes rewrite — state patch plus a "Notes updated." chip after the
   // blockers entry; notes never mark the workflow out of sync (§4.1).
   const blockerNotes = (r: Rev, notes: string | null) => (notes != null && notes !== r.notes
-    ? { patch: { notes }, chip: [newEntry({ kind: 'system' as const, icon: 'fa-note-sticky', text: 'Notes updated.' })] }
+    // §4.4: an applied notes rewrite is a draft change — it marks touched
+    // (the thread itself no longer rides the draft)
+    ? { patch: { notes, touched: true }, chip: [newEntry({ kind: 'system' as const, icon: 'fa-note-sticky', text: 'Notes updated.' })] }
     : { patch: {}, chip: [] })
 
   // The {start} half of the core: POST the job, then arm the poll — unless a
@@ -323,7 +325,9 @@ export function useDraftJob(d: DraftJobDeps) {
     // §8 undo action: inputs lock while the job runs, so the snapshot at send
     // time is the snapshot at apply time — decides the restore toast below
     const hadSnap = !!rev.undo
-    const history = persistChat(rev.chat) // the thread BEFORE this message
+    // §8/§4.4: the thread BEFORE this message, clipped at the newest boundary
+    // marker — a settled draft session's conversation never reaches the agent
+    const history = chatSinceBoundary(persistChat(rev.chat))
     const current = serializeDraft(rev)
     const genCancelled = cancelStepsGen()
     setRev((r) => r && ({
@@ -335,7 +339,10 @@ export function useDraftJob(d: DraftJobDeps) {
       // open — their Apply button remains useful until a sync lands
       chat: [...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed
         && (e.source === 'chat' || e.source === 'spec') ? { ...e, dismissed: true } : e)), entry],
-      chatBusy: true, genStage: null, genDetail: null, genEvents: [], touched: true,
+      // §4.4 thread lifetime: the thread no longer rides the draft, so sending
+      // alone doesn't touch it — a pure Q&A keeps no draft. The response
+      // handler marks touched when it actually changes the draft.
+      chatBusy: true, genStage: null, genDetail: null, genEvents: [],
       ...(genCancelled ? { stepsBusy: false, dirty: true } : {}),
     }))
     try {
@@ -449,6 +456,11 @@ export function useDraftJob(d: DraftJobDeps) {
               anchorId = entry.id
               chat.push(entry)
             }
+            // §4.4: a response that changed the draft marks it touched — an
+            // answer-only reply leaves the draft (and the keep paths) alone.
+            // anchorId covers every doc rewrite and staged chip; the undo
+            // restore counts only when a snapshot actually restored.
+            if (anchorId || (actions.undo && r.undo)) next = { ...next, touched: true }
             // an answer-only response leaves the existing snapshot untouched
             if (anchorId) {
               next = {
@@ -467,7 +479,7 @@ export function useDraftJob(d: DraftJobDeps) {
             // effect (Build & test panel) fires them against fresh state.
             if (actions.sync || (actions.test && next.dirty)) next = { ...next, pendingSync: true }
             if (actions.test) next = { ...next, pendingTest: { values: actions.testValues ?? null } }
-            return { ...next, chat, touched: true }
+            return { ...next, chat }
           })
           // §4.1: name/description are user-owned identity — edit mode applies them
           // immediately via PATCH, exactly like the pencil edits.

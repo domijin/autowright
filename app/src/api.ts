@@ -131,6 +131,10 @@ export const api = {
     req('PUT', `/draft/${owner}`, { draft, ...(agentId !== undefined ? { agentId } : {}) }),
   openDraft: (owner: string) => req('POST', `/draft/${owner}/open`),
   deleteDraft: (owner: string) => req('DELETE', `/draft/${owner}`),
+  // §19/§4.4 the chat-thread surface — the thread lives at the container root
+  // and outlives the draft; an empty list unlinks it (§11 Clear chat).
+  getChat: (owner: string) => req<{ chat: import('./types').ChatEntry[] }>('GET', `/chat/${owner}`),
+  putChat: (owner: string, chat: import('./types').ChatEntry[]) => req('PUT', `/chat/${owner}`, { chat }),
   restore: (automationId: string, v: number) => req<{ version: number }>('POST', `/automations/${automationId}/restore`, { version: v }),
   // §19 test: starts a §4.5 test execution record of the sent draft's steps;
   // progress via the ordinary exec.* events, cancel via POST /executions/{id}/cancel

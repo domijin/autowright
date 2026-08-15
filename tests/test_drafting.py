@@ -1810,6 +1810,30 @@ def test_chat_prompt_conversation_cap_and_clipping():
     assert "not a dict" not in p
 
 
+def test_chat_prompt_clips_at_boundary_marker():
+    # §4.4/§8: everything at or before the newest boundary marker is a settled
+    # draft session's history — it never reaches the agent, whatever the
+    # client sent; the 20-entry cap applies after the clip.
+    cur = {"spec": "# T\n\nbody", "params": [], "steps": []}
+    marker = {"kind": "system", "boundary": True, "text": "Draft discarded."}
+    chat = [{"kind": "user", "text": "old secret plan"},
+            {"kind": "answer", "text": "old reply"},
+            marker,
+            {"kind": "user", "text": "fresh start"}]
+    p = build_chat_prompt("x", cur, GRANTS, chat)
+    assert "old secret plan" not in p and "old reply" not in p
+    assert "Draft discarded." not in p  # the marker itself never travels
+    assert "user: fresh start" in p
+    # marker last → no CONVERSATION section at all: the agent starts clean
+    p = build_chat_prompt("x", cur, GRANTS, chat[:3])
+    assert "=== CONVERSATION" not in p
+    # the newest marker wins — an older one doesn't resurrect history
+    p = build_chat_prompt("x", cur, GRANTS,
+                          [marker, {"kind": "user", "text": "mid"}, marker,
+                           {"kind": "user", "text": "newest"}])
+    assert "user: mid" not in p and "user: newest" in p
+
+
 def test_chat_prompt_skips_activity_entries():
     # §11 activity entries (a settled job's event feed) never reach the
     # CONVERSATION context — operational noise, not conversation

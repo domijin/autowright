@@ -1721,14 +1721,16 @@ def test_chat_progress_detail_labels():
     # a name outside the four chat blocks falls back to the generic label
     cb("===FILE: 01-a.py===\nx = 1\n")
     assert job["detail"] == "Writing 01-a.py · 1 line"
-    # §8 activity feed: count-less milestones, one per shape change — but
-    # "Writing the answer" is detail-only (the answer entry is the record;
-    # a milestone would keep the neutral stage alive as a noise bullet)
+    # §8 activity feed: count-less milestones, one per shape change —
+    # "Writing the answer" included (a sub-task line once shown persists as
+    # feed history; only the Thinking… placeholder stays detail-only), stamped
+    # with the pre-flip stage since the prose streams before the first marker.
     assert [e["text"] for e in job["events"]] == [
-        "Writing the spec", "Writing the build instructions",
+        "Writing the answer", "Writing the spec", "Writing the build instructions",
         "Updating the notes", "Writing the follow-up actions", "Writing 01-a.py",
     ]
-    assert [e["stage"] for e in job["events"]] == ["Updating the documents"] * 5
+    assert [e["stage"] for e in job["events"]] == (
+        ["Working on the request"] + ["Updating the documents"] * 5)
 
 
 def test_chat_flip_captures_plan():

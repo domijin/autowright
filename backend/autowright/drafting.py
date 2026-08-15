@@ -1601,11 +1601,10 @@ class DraftJobs:
             if shape != state["shape"]:
                 state["shape"] = shape
                 state["last"] = now
-                # §8: "Writing the answer" is detail-only, never an event —
-                # the answer entry itself is the persistent record, and a
-                # milestone for it would keep the neutral stage alive as a
-                # noise bullet on nearly every real turn.
-                if shape not in ("Thinking…", "answer"):
+                # §8: a sub-task line once shown persists — every shape change
+                # is a milestone, "Writing the answer" included; only the
+                # `Thinking…` placeholder stays detail-only.
+                if shape != "Thinking…":
                     self._append_event(job, label)
                 self._detail(job, detail)
             elif now - state["last"] >= 1.0:

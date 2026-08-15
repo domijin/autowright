@@ -663,8 +663,10 @@ Beside the mutable `detail` line the job carries `events` — an append-only act
 discrete milestones, each entry `{time, text, stage}` (`time` epoch seconds; `stage` the job's
 stage label at append time, so the §11 thread can group the feed by stage), capped to the newest 200.
 Appended: every marker change from the streams above (the `detail` message without its
-` · N lines` count — never the throttled line-count growth, and never the initial
-`Thinking…`), every tool use on a Claude Code agent (the stream-json `assistant` messages'
+` · N lines` count — never the throttled line-count growth, never the initial
+`Thinking…`, and never the chat call's `Writing the answer`, which is detail-only: the
+answer entry itself is the persistent record, and a milestone for it would keep the
+neutral stage alive as a noise bullet on nearly every turn), every tool use on a Claude Code agent (the stream-json `assistant` messages'
 `tool_use` blocks → `Reading <url>…` for WebFetch, `Searching the web for “<query>”…` for
 WebSearch, `Using <name>…` otherwise — clipped inputs; other harnesses report no tool use),
 the retry / repair / diagnosis notices, and each `Installing <pip spec>…` line. Every

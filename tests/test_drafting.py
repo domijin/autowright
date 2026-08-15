@@ -1770,14 +1770,14 @@ def test_chat_progress_detail_labels():
     # a name outside the four chat blocks falls back to the generic label
     cb("===FILE: 01-a.py===\nx = 1\n")
     assert job["detail"] == "Writing 01-a.py · 1 line"
-    # §8 activity feed: count-less milestones, one per shape change; events
-    # before the flip carry the neutral stage stamp, later ones the new stage
+    # §8 activity feed: count-less milestones, one per shape change — but
+    # "Writing the answer" is detail-only (the answer entry is the record;
+    # a milestone would keep the neutral stage alive as a noise bullet)
     assert [e["text"] for e in job["events"]] == [
-        "Writing the answer", "Writing the spec", "Writing the build instructions",
+        "Writing the spec", "Writing the build instructions",
         "Updating the notes", "Writing the follow-up actions", "Writing 01-a.py",
     ]
-    assert [e["stage"] for e in job["events"]] == (
-        ["Working on the request"] + ["Updating the documents"] * 5)
+    assert [e["stage"] for e in job["events"]] == ["Updating the documents"] * 5
 
 
 def test_chat_progress_detail_repair_prefix():

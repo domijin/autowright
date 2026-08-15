@@ -89,6 +89,7 @@ class AutomationCreate(BaseModel):
     agentId: StrictStr | None = None
     stepAgents: list[StrictStr] = None
     allowedSecrets: list[StrictStr] = None
+    paramValues: dict[StrictStr, Any] = None  # §4.2 staged values — lenient name+kind match
 
 
 class VersionSave(BaseModel):
@@ -99,6 +100,7 @@ class VersionSave(BaseModel):
     agentId: StrictStr | None = None
     stepAgents: list[StrictStr] = None
     allowedSecrets: list[StrictStr] = None
+    paramValues: dict[StrictStr, Any] = None  # §4.2 staged values — lenient name+kind match
 
 
 class VersionRestore(BaseModel):

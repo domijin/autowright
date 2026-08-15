@@ -9,7 +9,8 @@ import { api } from '../../api'
 import { useStore } from '../../store'
 import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../types'
 import {
-  type Rev, TRIGGER_SETUP_TEXT, jobStageTitle, mergeDraftTriggers,
+  type Rev, TRIGGER_SETUP_TEXT, applyTriggerOps, coerceParamValue, jobStageTitle,
+  mergeDraftTriggers,
   needsMessageTriggerSetup, newEntry, persistChat,
   seedDrafting, seedEmpty, seedFromPayload, serializeDraft, stageDisplayTitle,
 } from './model'
@@ -362,7 +363,8 @@ export function useDraftJob(d: DraftJobDeps) {
                 next = {
                   ...next,
                   spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-                  triggers: snap.triggers, instructions: snap.instructions, notes: snap.notes,
+                  triggers: snap.triggers, paramValues: snap.paramValues,
+                  instructions: snap.instructions, notes: snap.notes,
                   dirty: snap.dirty, undo: null,
                 }
                 chat.push(newEntry({ kind: 'system', text: 'Last change undone — the rewrites above no longer apply.' }))
@@ -407,13 +409,39 @@ export function useDraftJob(d: DraftJobDeps) {
               next = { ...next, description: actions.description }
               chat.push(entry)
             }
+            // §8 `param_values`: stage stored values (§4.2) — coerced against
+            // today's defs; a name today's defs don't hold stays raw in the
+            // map and re-checks after the chained sync lands (§11).
+            if (actions.paramValues) {
+              const staged = { ...next.paramValues }
+              for (const [n, v] of Object.entries(actions.paramValues)) {
+                const def = r.params.find((p) => p.name === n)
+                staged[n] = def ? coerceParamValue(def, v) : v
+                const entry = newEntry({ kind: 'system', text: `Parameter “${n}” staged — applies when you save.` })
+                anchorId = entry.id
+                chat.push(entry)
+              }
+              next = { ...next, paramValues: staged }
+            }
+            // §8 `triggers` ops: edit the editor's trigger list (staged like a
+            // sync's §4.3 preview — lands only at save), one chip per op.
+            if (actions.triggers?.length) {
+              const applied = applyTriggerOps(next.triggers, actions.triggers)
+              next = { ...next, triggers: applied.triggers }
+              for (const text of applied.chips) {
+                const entry = newEntry({ kind: 'system', text })
+                anchorId = entry.id
+                chat.push(entry)
+              }
+            }
             // an answer-only response leaves the existing snapshot untouched
             if (anchorId) {
               next = {
                 ...next,
                 undo: {
                   spec: r.spec, steps: r.steps, params: r.params, packages: r.packages,
-                  triggers: r.triggers, instructions: r.instructions, notes: r.notes,
+                  triggers: r.triggers, paramValues: r.paramValues,
+                  instructions: r.instructions, notes: r.notes,
                   dirty: r.dirty, entryId: anchorId,
                 },
               }
@@ -488,9 +516,19 @@ export function useDraftJob(d: DraftJobDeps) {
             if (!r) return r
             const steps = dft.steps ?? r.steps
             const triggers = dft.triggers ? mergeDraftTriggers(r.triggers, dft.triggers) : r.triggers
+            const params = dft.params ?? r.params
+            // §11: the staged value map re-checks against the rebuilt params —
+            // names no drafted param matches are dropped with a chip, the rest
+            // re-coerce to the (possibly re-kinded) definitions.
+            const stale = Object.keys(r.paramValues).filter((n) => !params.some((p) => p.name === n))
+            const paramValues = Object.fromEntries(Object.entries(r.paramValues)
+              .filter(([n]) => !stale.includes(n))
+              .map(([n, v]) => [n, coerceParamValue(params.find((p) => p.name === n)!, v)]))
             const syncedEntry = newEntry({ kind: 'system', text: 'Steps synced with the spec.' })
             const notesEntry = dft.notes != null && dft.notes !== r.notes
               ? newEntry({ kind: 'system' as const, text: 'Notes updated.' }) : null
+            const dropEntries = stale.map((n) => newEntry({
+              kind: 'system' as const, text: `Value for “${n}” dropped — no such parameter after the rebuild.` }))
             // §11 trigger-setup reminder — only when this sync introduced the
             // gap, so repeated syncs over an unchanged gap never repeat it
             const remind = needsMessageTriggerSetup(steps, triggers)
@@ -502,8 +540,8 @@ export function useDraftJob(d: DraftJobDeps) {
               // reverts the whole request, chained-sync steps included — and
               // re-anchors the undo row below the sync's own chips
               ...r, syncBusy: false, genStage: null, dirty: false,
-              undo: r.undo ? { ...r.undo, entryId: (notesEntry ?? syncedEntry).id } : r.undo,
-              steps, params: dft.params ?? r.params, packages: dft.packages ?? [],
+              undo: r.undo ? { ...r.undo, entryId: (dropEntries.at(-1) ?? notesEntry ?? syncedEntry).id } : r.undo,
+              steps, params, paramValues, packages: dft.packages ?? [],
               triggers,
               // §8: call 2 may return an updated notes.md beside the manifest
               ...(dft.notes != null && dft.notes !== r.notes ? { notes: dft.notes } : {}),
@@ -514,6 +552,7 @@ export function useDraftJob(d: DraftJobDeps) {
                 ...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed ? { ...e, dismissed: true } : e)),
                 syncedEntry,
                 ...(notesEntry ? [notesEntry] : []),
+                ...dropEntries,
                 ...(remind ? [newEntry({ kind: 'system', text: TRIGGER_SETUP_TEXT })] : []),
               ],
             }

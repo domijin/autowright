@@ -273,7 +273,9 @@ Sections top to bottom:
   trigger's values (kind picker included; the mention checkbox reflects the stored value, not
   the checked-by-default for new triggers); the submit button reads **Save** instead of Add,
   and saving replaces the trigger in place — `id` and on/off state kept — via the same §19
-  PATCH, toast "Trigger updated — `<short>`."; Cancel restores the row unchanged. The
+  PATCH, toast "Trigger updated — `<short>`."; Cancel restores the row unchanged. A cron
+  added or edited here lands `source: user` (§4.3 — hand-set schedules survive later
+  syncs). The
   editor:
   kind picker (Cron / One time / App start / Discord / iMessage — each chip leads with the
   same kind icon its trigger row uses) then either a

@@ -12,7 +12,7 @@ import { StepList } from '../../steps'
 import type { Agent, SecretMeta } from '../../types'
 import { BtnPrimary, Caret, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
 import { Markdown, SpecMarkdown } from '../../result'
-import { type Rev, type SecretRef, instrToMd, instructionCache, specToText, stepList, textToSpec } from './model'
+import { type Rev, type SecretRef, applyTestValues, instrToMd, instructionCache, specToText, stepList, textToSpec } from './model'
 
 export const cardStyle: React.CSSProperties = {
   background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden',
@@ -793,7 +793,7 @@ export function RightCards({
             ))}
             <span style={{ font: "400 11.5px var(--sans)", color: 'var(--text-faint)' }}>
               {rev.triggers.length > 0
-                ? 'Executes even when the app is closed. The schedule follows the spec — one-shots and on/off live on the automation page.'
+                ? 'Executes even when the app is closed. Ask the AI in chat to change these, or use the automation page — chat changes apply when you save.'
                 : 'No triggers — executes only via Execute now and the menu bar.'}
             </span>
           </div>
@@ -819,14 +819,22 @@ export function RightCards({
           <>
             {rev.params.map((p) => {
               // §16: value summary — edit mode shows the live value (§5 name+kind
-              // match), create mode the drafted default
+              // match), create mode the drafted default; a chat-staged value
+              // (§8 param_values) overrides either, marked so an unsaved value
+              // is never mistaken for a stored one
               const live = liveParams?.find((q) => q.name === p.name && q.kind === p.kind)
+              const staged = p.name in rev.paramValues
+                ? applyTestValues([live ?? p], { [p.name]: rev.paramValues[p.name] })[0]
+                : null
               return (
                 <div key={p.name} style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
                     <div style={{ font: "600 12.5px var(--sans)" }}>{p.label}</div>
                     <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
-                      {paramSummary(live ?? p)}
+                      {staged && (
+                        <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--accent)', marginRight: 8 }}>STAGED</span>
+                      )}
+                      {paramSummary(staged ?? live ?? p)}
                     </div>
                   </div>
                   <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 2 }}>{p.help}</div>
@@ -834,7 +842,7 @@ export function RightCards({
               )
             })}
             <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
-              Values aren’t part of a version — set them on the automation page after saving. For a test, set test-only values in the Build & test panel — or ask your AI, which can change the parameter definitions and set test values when it runs a test.
+              Values aren’t part of a version — set them on the automation page, or ask your AI here (staged values apply when you save). For a test, set test-only values in the Build & test panel — or ask your AI, which can also change the parameter definitions and set test values when it runs a test.
             </div>
           </>
         )}

@@ -169,6 +169,37 @@ def _check_param_values(a: dict, values: dict) -> None:
                 422, f"paramValues[{name!r}] doesn't match the param's kind ({defs[name]})")
 
 
+def _staged_values(a: dict, values: dict) -> dict:
+    """§4.2 chat-staged map on save/create: entries matched by name AND kind
+    against the current version's definitions land as stored values; unmatched
+    entries drop silently (the lenient §5 matching — the definitions may have
+    just been rebuilt, so a stale name is expected here, never a 422)."""
+    defs = {p["name"]: p.get("kind")
+            for p in a["versions"].get(a["current_version"], {}).get("params") or []}
+    return {k: v for k, v in values.items() if k in defs and _kind_ok(defs[k], v)}
+
+
+def _version_content(v: dict) -> dict:
+    """§4.4 operational-only save: the versioned content, canonicalized so the
+    stored serialization compares equal to a draft round-trip — falsy step and
+    package keys drop (the serialized shape carries `agents: []`/nulls the
+    manifest dialect omits), and param definitions compare without their
+    resolved value fields (`on`/`lines`/`rows`/`value` — values are §4.2
+    operational state, not versioned content)."""
+    def strip(d: dict) -> dict:
+        return {k: x for k, x in d.items() if x}
+
+    def pdef(p: dict) -> dict:
+        return {k: x for k, x in p.items() if k not in ("on", "lines", "rows", "value")}
+
+    return {"params": [pdef(p) for p in v.get("params") or []],
+            "packages": [strip(p) for p in v.get("packages") or []],
+            "steps": [strip(s) for s in v.get("steps") or []],
+            "spec": v.get("spec") or [],
+            "instructions": v.get("instructions") or "",
+            "notes": v.get("notes") or ""}
+
+
 def _validate_draft_steps(d: dict) -> None:
     """§19 server-side step validation: POST /automations and /versions run
     the §8 step validators (`drafting.validate_steps` — ast.parse, the §6.2
@@ -446,6 +477,11 @@ def create_auto(body: models.AutomationCreate) -> dict:
         enabled_agents=body.stepAgents,
         allowed_secrets=body.allowedSecrets,
     )
+    # §4.2/§19: the chat-staged value map applies after v1 lands — matched by
+    # name+kind against v1's definitions, unmatched entries dropped silently.
+    if body.paramValues:
+        if matched := _staged_values(a, body.paramValues):
+            store.patch_automation(a, {"paramValues": matched})
     # §4.4: Create consumes the pending create-mode slot — settled drafts are
     # never resurrected.
     store.delete_draft(None)
@@ -472,14 +508,26 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         if err:
             raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
+    ver = _draft_to_version(d)
     with store.lock:
         # Same guard as PUT/DELETE draft: saving deletes the draft container,
         # and a live Draft execution reads its step scripts lazily mid-run.
         _reject_live_draft_exec(a)
-        n = store.save_new_version(a, _draft_to_version(d))
+        # §4.4 operational-only save: unchanged versioned content mints no
+        # version — the triggers/values/grants patch below still applies.
+        cur = a["versions"].get(a["current_version"]) or {}
+        if _version_content(ver) != _version_content(cur):
+            n = store.save_new_version(a, ver)
+        else:
+            n = a["current_version"]
         patch = {k: sent[k] for k in ("agentId", "stepAgents", "allowedSecrets", "name") if k in sent}
         if triggers is not None:
             patch["triggers"] = triggers
+        # §4.2: staged values land after the version — matched name+kind
+        # against the landing definitions, unmatched dropped silently.
+        if body.paramValues:
+            if matched := _staged_values(a, body.paramValues):
+                patch["paramValues"] = matched
         if patch:
             store.patch_automation(a, patch)
         store.delete_draft(a)
@@ -539,6 +587,8 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
     ver = _draft_to_version(d)
     ver["step_agents"] = d.get("stepAgents")
     ver["allowed_secrets"] = d.get("allowedSecrets")
+    # §4.2: the chat-staged value map rides the snapshot as a draft-only key.
+    ver["param_values"] = d.get("paramValues")
     # §4.4/§11: the dirty-gate state rides the snapshot — stored only when set,
     # so a resumed out-of-sync draft keeps saving locked.
     ver["out_of_sync"] = bool(d.get("outOfSync")) or None

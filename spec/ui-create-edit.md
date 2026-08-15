@@ -165,7 +165,26 @@ applies unchanged; the chat pane never collapses.
     appends a system entry ("Notes updated.");
   - **actions** (§8 `actions.yaml`) run after the rewrites land: `name`/`description` apply like
     the pencil edits (create: the draft's fields; edit: the immediate §19 PATCH) with a
-    system entry; `sync: true` arms a **pending sync**: a watcher fires it as soon as no
+    system entry; `param_values` stages stored values (§4.2): entries naming a current
+    param (name + kind, the §4.2/§5 matching rule, values coerced like `test_values`)
+    land in the draft's staged map — one system entry per applied name, "Parameter
+    “url” staged — applies when you save." — and the Parameters card shows the staged
+    summary; when the response also rebuilds the steps, the whole map stays staged and
+    re-checks after the sync lands — names no drafted param matches are then dropped
+    with the system entry "Value for “X” dropped — no such parameter after the rebuild.";
+    `triggers` ops edit the editor's trigger list (the TRIGGERS card) exactly like the
+    §4.3 staged state a sync produces — applied in op order, indexes always meaning the
+    CURRENT-triggers numbering the agent saw (an earlier `remove` never shifts a later
+    op onto a neighbor; an op naming an already-removed entry is inert), each with a
+    system entry
+    ("Trigger added." / "Trigger 2 updated." / "Trigger 3 removed." / "Trigger 1 turned
+    off." — details live on the card, which re-labels through §19 `/triggers/preview`);
+    an `add` whose entry matches an existing trigger on the §4.3 identity fields is a
+    **no-op** with the system entry "That trigger already exists." (a backstop, not a
+    repair round — the §8 policy has the agent answer in prose instead); ops touch only
+    the entries they name — nothing else in the list moves. Both staged kinds mark the
+    draft touched, never out of sync, and land only at save (§4.4);
+    `sync: true` arms a **pending sync**: a watcher fires it as soon as no
     §8 job or draft test is running — immediately when the panel is idle (exactly as if
     the user pressed Sync now), otherwise automatically the moment the running work
     finishes. While the user is viewing an old version the watcher instead clears both
@@ -360,7 +379,14 @@ buttons out of the window), version dropdown (edit mode), Start over ghost
 (edit: "Discard draft"), a "Keep draft" ghost (edit mode only, rendered once the draft is
 touched or a stored draft exists — leaves the editor on the §4.4 draft-keep path, toast
 "Draft kept — resume it from this automation anytime."), primary Create/Save — labeled "Create automation" in create mode,
-"Save as vN+1" in edit mode, and "Restore vX as vN+1" while viewing an old version. The title is the plain automation name in both
+"Save as vN+1" in edit mode, and "Restore vX as vN+1" while viewing an old version. Save
+and Create send the chat-staged `param_values` map beside the draft (§19) so staged values
+land with the version; a save whose versioned content is unchanged (only staged
+values/triggers/grants moved) still goes through the same button and endpoint — the
+backend applies the operational state without minting a version (§4.4), announced by
+the toast "Changes saved — triggers and values updated, no new version needed."
+(recognized by the response returning the unchanged version number) — and a
+touched-but-in-sync draft (staged changes only) saves without any sync. The title is the plain automation name in both
 modes — never an "Edit …" framing. It is editable in place: a small pencil sits beside it,
 always visible on this page (no hover reveal — `.ad-title-rename.always`); clicking the
 pencil — only the pencil, never the title text itself — swaps the title to a single-line
@@ -462,9 +488,11 @@ editors enter with
   both are locked while a chat/sync job runs (inputs lock below).
 - **Draft undo** — one-level **full-draft snapshot** per agent request: when a chat
   response changes the draft, the editor first stashes the draft **whole** — spec, steps,
-  parameter definitions, packages, triggers, build instructions, notes, and the dirty flag
+  parameter definitions, packages, triggers, the staged `param_values` map (§4.2),
+  build instructions, notes, and the dirty flag
   of that moment (an answer-only response leaves the existing snapshot untouched; grants
-  and name/description are user-owned, never agent-rewritten, and stay out). One ghost **Undo**
+  and name/description are user-owned, never agent-rewritten, and stay out — chat-staged
+  trigger ops and values are draft state, so the restore covers them). One ghost **Undo**
   restores it all, so the draft looks **exactly as it did before that request** — including
   steps a chained `sync: true` action rewrote, which is why a completed sync does **not**
   clear the snapshot. The Undo is a **standalone thread row** — a left-aligned
@@ -474,8 +502,8 @@ editors enter with
   lighter than the `.ad-btn-soft` option buttons — those are the agent's
   suggested next steps, undo is an escape hatch. Rendered directly beneath
   the **last** thread entry the request produced (the snapshot's anchor): the response's
-  final rewrite/system chip — doc rewrites and the "Renamed to …" / "Description updated."
-  chips included — and, when a sync lands while the snapshot exists (chained or manual),
+  final rewrite/system chip — doc rewrites, the "Renamed to …" / "Description updated."
+  chips, and the staged parameter/trigger chips included — and, when a sync lands while the snapshot exists (chained or manual),
   the anchor moves below that sync's "Steps synced with the spec." / "Notes updated."
   chips, so the row always sits **below everything the request changed**. It is
   deliberately its own row, never an action inside the
@@ -608,18 +636,25 @@ editors enter with
   trigger missing its detail field (no channel / no sender) renders the placeholder "missing" in
   its place — surfacing a broken trigger before a save can 422 on it. Chips keep the footer
   "Executes even when
-  the app is closed. The schedule follows the spec — one-shots and on/off live on the
-  automation page." Display-only: in create mode it shows call 2's drafted triggers (the ones
-  v1 gets); in edit mode the saved triggers until a sync lands, then the §4.3 trigger-merge
-  preview (drafted crons over the cron subset, drafted message/app-start entries added when
-  new, stored non-cron triggers surviving — what saving will store). Empty: "No triggers —
+  the app is closed. Ask the AI in chat to change these, or use the automation page —
+  chat changes apply when you save." No hands-on editing here (the detail page keeps the
+  §9.2 editor): the list shows, in create mode, call 2's drafted triggers plus any chat
+  ops applied on top (the ones
+  v1 gets); in edit mode the saved triggers until a chat op or sync changes them, then
+  the staged list — the §4.3 trigger-merge
+  preview after a sync (drafted crons over the spec-sourced cron subset, drafted
+  message/app-start entries added when
+  new, stored non-cron and `source: user` triggers surviving), with chat `triggers` ops
+  applied in place (§8) — what saving will store. Empty: "No triggers —
   executes only via Execute now and the menu bar." **Trigger-setup reminder:** when a
   settled create or sync leaves the workflow reading the trigger message with no message
   trigger to deliver one — some step's code references `trigger_payload` while this card's
   trigger list holds no discord/imessage entry (§8 rule 9: the agent never invents a
   channel id or sender handle; it omits the trigger, and the user adds it on the
-  automation page) — the thread gets the **system** entry "The steps read the trigger
-  message, but no message trigger is set up — add one on the automation page after
+  automation page or hands the chat the details, §8 `triggers` ops) — the thread gets the
+  **system** entry "The steps read the trigger
+  message, but no message trigger is set up — tell your AI the channel or sender details,
+  or add one on the automation page after
   saving." right after the job's outcome entries. It appends only when the settling job
   introduced the gap (the pre-job draft didn't qualify — a fresh create always counts),
   so repeated syncs over an unchanged gap never repeat the reminder.
@@ -629,12 +664,17 @@ editors enter with
   right-aligned, ellipsized) — never inline editors. The summary's source: in create mode the
   drafted definition's default (the initial values v1 seeds — e.g. a URL the AI captured from
   the prompt); in edit mode the automation's live value, matched by name and kind (§5), so a
-  drafted param without a stored match falls back to its default. Footer: "Values
-  aren't part of a version — set them on the automation page after saving. For a test, set
-  test-only values in the Build & test panel — or ask your AI, which can change the
+  drafted param without a stored match falls back to its default — and in both modes a
+  chat-staged value (§8 `param_values`, matched name + kind) overrides the summary, with a
+  small "staged" hint beside it so an unsaved value is never mistaken for a stored one.
+  Footer: "Values
+  aren't part of a version — set them on the automation page, or ask your AI here (staged
+  values apply when you save). For a test, set
+  test-only values in the Build & test panel — or ask your AI, which can also change the
   parameter definitions and set test values when it runs a test." (The AI changes
   definitions only through the spec + sync, and never sets a test trigger message — the
-  §8 actions carry `test_values` only; the message mock stays a panel-only input.)
+  §8 actions carry `test_values` / `param_values`; the message mock stays a panel-only
+  input.)
   Value input lives on the §9.2 detail page
   (§4.2 edit behaviors) and, test-only, in the Build & test panel at the top of the column.
   Empty state:

@@ -281,8 +281,10 @@ def write_workdir(d: Path, auto: dict) -> list[str]:
 
 def merge_draft_triggers(stored: list[dict], drafted: list[dict]) -> list[dict]:
     """§4.3 trigger merge, client-side like the editor: drafted crons replace
-    the cron subset ((expression, timezone) matches keep id and enabled state, new entries
-    arrive enabled, unmatched stored crons drop); drafted message/app-start
+    the spec-sourced cron subset ((expression, timezone) matches keep id, enabled
+    state, and source, new entries arrive enabled with source: spec, unmatched
+    spec-sourced stored crons drop — `source: user` crons always survive);
+    drafted message/app-start
     entries add only when no stored trigger matches their identity fields;
     stored non-cron triggers always survive."""
     def same_non_cron(a: dict, b: dict) -> bool:
@@ -300,12 +302,15 @@ def merge_draft_triggers(stored: list[dict], drafted: list[dict]) -> list[dict]:
                     and (a.get("author") or []) == (b.get("author") or []))
         return False
 
-    out = [t for t in stored if t["kind"] != "cron"]
+    out = [t for t in stored if t["kind"] != "cron" or t.get("source") == "user"]
     for d in drafted:
         if d["kind"] == "cron":
             kept = next((t for t in stored if t["kind"] == "cron"
                          and t["expression"] == d["expression"] and t.get("timezone") == d.get("timezone")), None)
-            out.append(kept or d)
+            if kept is None:
+                out.append(d)
+            elif kept not in out:  # a matched user cron already survived above
+                out.append(kept)
         elif d["kind"] != "time" and not any(same_non_cron(t, d) for t in stored):
             out.append(d)
     return out
@@ -718,7 +723,9 @@ def cmd_trigger_add(c: Client, args) -> None:
     elif args.at:
         entry = {"kind": "time", "at": args.at, "enabled": True}
     elif args.expression:
-        entry = {"kind": "cron", "expression": args.expression, "enabled": True}
+        # §4.3: a hand-added cron is user-sourced — it survives later syncs/pushes.
+        entry = {"kind": "cron", "expression": args.expression, "enabled": True,
+                 "source": "user"}
     else:
         sys.exit("give a cron expression, --at for a one-shot, --app-start, "
                  "--discord for a Discord message trigger, or --imessage for "

@@ -148,6 +148,12 @@ URL validity: `/^https?:\/\/\S+\.\S+/`.
 Every definition carries a default: `toggle` → off, `number` → its `min`, `text`/`list`/`kv` →
 empty. Definitions are versioned with the automation; values live in the top-level
 `automation.yaml` and are matched by name and kind at execution/restore time (§5). The
+§11 editor's chat can **stage** stored-value changes (§8 `param_values` action): the staged
+name → value map rides the draft as the draft-only `param_values` key (§4.4) and is applied
+to the automation's stored values only at save/create (§19 — matched by name **and kind**
+against the landing version's definitions, unmatched entries dropped); until then the
+automation's values are untouched, and Discard draft drops the staged map. `test_values`
+stays test-only (§8). The
 value-merged serialization (the automation JSON's `params`, execution records) is the full
 definition — `default` included — plus the resolved value field, so definitions survive a
 round-trip through the editor (edit mode seeds the draft's params from the automation JSON;
@@ -158,13 +164,23 @@ default).
 
 An automation carries an ordered list of **triggers** — independent conditions that each start
 an execution. Triggers are user-owned operational state (§5): editing them on the detail page
-never mints a version and never involves the AI. The list additionally follows the spec via
+never mints a version and never involves the AI. In the §11 editor the chat can edit the
+**editor's** trigger list through §8 `triggers` ops (add/edit/enable/remove) — staged like
+any editor trigger change, landing only when the draft saves. **Cron provenance
+(`source`)**: a cron trigger carries `source: "spec" | "user"` — `spec` for crons the §8
+sync derived from the spec, `user` for crons the user minted directly (the §9.2 detail-page
+editor, a §8 chat `triggers` op, §20 `trigger add`). A stored cron without the field (legacy
+data) reads as `spec`. Only cron triggers carry `source`; the field round-trips through the
+API and drafts like any stored field. The list additionally follows the spec via
 the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-derived triggers
 (§8 rule 9) into the stored list:
 
-- **Crons replace the cron subset**: a drafted cron matching a stored one on (`expression`, `timezone`)
-  keeps that trigger's `id` and `enabled` state; other drafted crons arrive enabled with fresh
-  ids; stored crons the draft no longer derives are dropped.
+- **Crons replace the spec-sourced cron subset**: a drafted cron matching a stored one
+  (either source) on (`expression`, `timezone`)
+  keeps that trigger's `id`, `enabled` state, and `source`; other drafted crons arrive
+  enabled with fresh ids and `source: spec`; **`source: spec`** crons the draft no longer
+  derives are dropped, while **`source: user`** crons always survive — a schedule the user
+  set by hand (detail page, chat op, CLI) is never silently removed by a sync.
 - **Message and app-start entries are additive**: a drafted `discord`/`imessage`/`app_start`
   entry matching a stored trigger of the same kind on its identity fields (discord:
   `channel`, `secret`, `pattern`, `mention`, `author`; imessage: `from`, `pattern`; app_start: the kind
@@ -181,7 +197,7 @@ strings `label` and `short`. The backend assigns `id` to entries that arrive wit
 
 | kind | fields | fires | label / short |
 |---|---|---|---|
-| `cron` | `expression`: 5-field cron expression · optional `timezone` | at every match | humanized when simple (below), else the raw expression in mono |
+| `cron` | `expression`: 5-field cron expression · optional `timezone` · optional `source`: `"spec"` \| `"user"` (provenance, above; absent reads as `spec`) | at every match | humanized when simple (below), else the raw expression in mono |
 | `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `timezone` | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
 | `app_start` | — | at every desktop-app launch (§6 firing path) | "On app start" / "App start" |
 | `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: name of the §4.8 secret holding the bot token · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a list of Discord user ids (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
@@ -345,8 +361,16 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
 - Saving an edit creates version N+1 (on disk: a fresh `versions/vN+1/` folder, then the
   `current_version` pointer flip, per §5), applies spec/steps/instructions/stepAgents/allowedSecrets/
   agentId, merges the draft's trigger list into the automation's (§4.3 trigger merge —
-  triggers themselves stay unversioned), sets `specMeta` to "vN · updated Today".
-  Prior versions are untouched.
+  triggers themselves stay unversioned), applies the draft's staged `param_values` to the
+  automation's stored values (§4.2 — name+kind matched against the landing version's
+  definitions, unmatched entries dropped), sets `specMeta` to "vN · updated Today".
+  Prior versions are untouched. **Operational-only save skips the version mint**: when the
+  sent draft's versioned content — spec, steps, instructions, notes, param definitions,
+  packages — equals the current version's (compared over the stored serialization, ids and
+  timestamps aside), the save applies only the operational state (trigger list, staged
+  param values, grants, identity patch) and mints no version — a chat session that only
+  changed a schedule or a value must not litter the Version menu with identical versions.
+  The response is the same automation JSON either way.
 - Leaving the editor with unsaved touched changes snapshots a **draft** onto the automation
   (toast: "Draft kept — resume it from this automation anytime."). Every exit path
   persists it — the header back button, system back/forward navigation, anything that closes
@@ -361,7 +385,9 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
 - The draft snapshot carries the **full working state**: spec, steps, instructions, notes
   (§4.1), params,
   packages, the editor's trigger list (stored as a draft-only `triggers` key — the §4.3
-  merged preview, so a resumed draft keeps a synced schedule change), the editor's
+  merged preview, so a resumed draft keeps a synced schedule change), the chat-staged
+  stored-value map when nonempty (§4.2 — stored as a draft-only `param_values` key, so a
+  resumed draft keeps staged values), the editor's
   step-agents + allowed-secrets grant selections (stored as
   draft-only `step_agents` / `allowed_secrets` keys in `draft/automation/automation.yaml`, §5),
   the §11 out-of-sync state (`outOfSync` on the payload → draft-only `out_of_sync` key —

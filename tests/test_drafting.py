@@ -92,7 +92,9 @@ def test_triggers_key_is_parsed():
         "note: Created\n", 'note: Created\ntriggers:\n  - cron: "30 7 * * 2"\n')
     draft, errors = validate_steps(parse_envelope(withtrig))
     assert errors == []
-    assert draft["triggers"] == [{"kind": "cron", "expression": "30 7 * * 2", "enabled": True}]
+    # §4.3 provenance: drafted crons land source: spec — the merge's replaceable subset
+    assert draft["triggers"] == [{"kind": "cron", "expression": "30 7 * * 2", "enabled": True,
+                                  "source": "spec"}]
 
 
 def test_triggers_bad_entries_rejected():
@@ -423,9 +425,11 @@ def test_chat_prompt_section_order_and_content():
     assert "name: Manga watcher" in p and "description: Checks my manga list." in p
     # §8 CURRENT parameters — the names test_values keys must use, values included
     assert "name: sources" in p and "https://a.example" in p
-    assert "test_values keys must be these names" in p
-    # §8 CURRENT triggers — rule-9 dialect, off entries marked, context only
+    assert "test_values and param_values keys must be these names" in p
+    # §8 CURRENT triggers — rule-9 dialect, off entries marked, 1-based indexes
+    # (the handle `triggers` ops name entries by)
     assert "cron: 0 8 * * *" in p and "'off': true" in p
+    assert "index: 1" in p and "index: 2" in p
     assert "user: earlier request" in p
     assert "assistant: earlier answer" in p
     assert "[spec updated] added weekends" in p
@@ -435,6 +439,9 @@ def test_chat_prompt_section_order_and_content():
     # §8: error entries travel too — a harness failure is answerable later
     assert "[error] The agent call failed: gemini exited 1." in p
     assert "Decide what the USER REQUEST" in p.split("=== TASK ===")[-1]
+    # §8 ask-for-missing rule: a change missing a user-only detail is asked
+    # for in prose — never guessed, never a blocker
+    assert "ask for it in plain prose" in p.split("=== TASK ===")[-1]
     # no conversation → no section
     bare = build_chat_prompt("x", cur, GRANTS, None)
     assert "=== CONVERSATION" not in bare
@@ -462,7 +469,7 @@ def test_steps_prompt_sync_embeds_current_files():
     p = build_steps_prompt("sync", "# T\n\nBody.", cur, GRANTS)
     assert "=== MODE ===\nsync" in p
     assert 'log("old")' in p
-    assert "CURRENT triggers" not in p  # no triggers key → no reference section
+    assert "=== CURRENT triggers" not in p  # no triggers key → no reference section
 
 
 def test_steps_prompt_sync_embeds_current_triggers():
@@ -1003,6 +1010,61 @@ def test_validate_actions_checks_test_value_names():
     # no param_names (unknown context) → no check
     ok, errs = validate_actions("test: true\ntest_values: { anything: 1 }\n")
     assert errs == []
+
+
+def test_validate_actions_param_values():
+    # §8: param_values follows test_values' key rule and lands camelCase.
+    ok, errs = validate_actions("param_values: { url: 'https://x' }\n", ["url"])
+    assert errs == [] and ok == {"paramValues": {"url": "https://x"}}
+    _, errs = validate_actions("param_values: { ulr: 'https://x' }\n", ["url"])
+    assert any("param_values names unknown params" in e for e in errs)
+    _, errs = validate_actions("param_values: [a]\n", ["url"])
+    assert any("param_values must be a mapping" in e for e in errs)
+    # sync: true → the rebuild may create the param; check skipped
+    ok, errs = validate_actions("sync: true\nparam_values: { new_p: 1 }\n", ["url"])
+    assert errs == []
+
+
+def test_validate_actions_trigger_ops():
+    # §8 `triggers` ops — normalized §4.3 entries, crons land source: user,
+    # one-shot `time` allowed here (unlike rule 9's drafted dialect).
+    ok, errs = validate_actions(
+        "triggers:\n"
+        "  - add: { cron: '0 9 * * *' }\n"
+        "  - add: { time: '2999-01-01T09:00' }\n"
+        "  - edit: { index: 1, cron: '30 8 * * *', timezone: Asia/Tokyo }\n"
+        "  - enable: { index: 2, enabled: false }\n"
+        "  - remove: { index: 2 }\n", ["url"], 2)
+    assert errs == []
+    assert ok["triggers"] == [
+        {"op": "add", "trigger": {"kind": "cron", "expression": "0 9 * * *",
+                                  "enabled": True, "source": "user"}},
+        {"op": "add", "trigger": {"kind": "time", "at": "2999-01-01T09:00", "enabled": True}},
+        {"op": "edit", "index": 1,
+         "trigger": {"kind": "cron", "expression": "30 8 * * *", "enabled": True,
+                     "source": "user", "timezone": "Asia/Tokyo"}},
+        {"op": "enable", "index": 2, "enabled": False},
+        {"op": "remove", "index": 2},
+    ]
+
+
+def test_validate_actions_trigger_ops_errors():
+    # out-of-range index, unknown op, malformed shapes, invalid entries — all
+    # validation errors that feed the repair round.
+    _, errs = validate_actions("triggers:\n  - remove: { index: 3 }\n", None, 2)
+    assert any("out of range" in e for e in errs)
+    _, errs = validate_actions("triggers:\n  - remove: { index: 0 }\n", None, 2)
+    assert any("out of range" in e for e in errs)
+    _, errs = validate_actions("triggers:\n  - drop: { index: 1 }\n", None, 2)
+    assert any("unknown triggers op" in e for e in errs)
+    _, errs = validate_actions("triggers:\n  - enable: { index: 1 }\n", None, 2)
+    assert any("enable" in e for e in errs)
+    _, errs = validate_actions("triggers:\n  - add: { cron: 'not cron' }\n", None, 2)
+    assert any("cron" in e.lower() for e in errs)
+    _, errs = validate_actions("triggers: {}\n", None, 2)
+    assert any("nonempty list" in e for e in errs)
+    _, errs = validate_actions("triggers:\n  - edit: { cron: '0 9 * * *' }\n", None, 2)
+    assert any("needs an index" in e for e in errs)
 
 
 def test_validate_chat_skips_test_value_check_on_spec_rewrite():

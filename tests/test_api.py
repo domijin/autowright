@@ -712,7 +712,7 @@ def test_save_version_and_restore(client):
 
     a = store.create_automation(make_version(), "Versioner", "mock")
     r = client.post(f"/automations/{a['id']}/versions",
-                    json={"draft": make_version(description="second", note="Change")})
+                    json={"draft": make_version(notes="second", note="Change")})
     assert r.json()["version"] == 2
     r = client.post(f"/automations/{a['id']}/restore", json={"version": 1})
     assert r.json()["version"] == 3
@@ -729,7 +729,7 @@ def test_save_version_applies_draft_triggers(client):
     # §4.3 cron-subset replace: sent list (the editor's merge) replaces whole;
     # sent ids survive, new entries get one assigned
     r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
-        **make_version(description="second"),
+        **make_version(notes="second"),
         "triggers": [{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False},
                      {"kind": "cron", "expression": "30 9 * * 1", "enabled": True},
                      {"id": "t2", "kind": "time", "at": "2999-01-01T00:00", "enabled": True}],
@@ -751,6 +751,97 @@ def test_save_version_applies_draft_triggers(client):
     r = client.post(f"/automations/{a['id']}/versions", json={"draft": make_version()})
     assert r.status_code == 200
     assert [t["id"] for t in r.json()["automation"]["triggers"]] == ["t1", trigs[1]["id"], "t2"]
+
+
+def test_save_version_applies_staged_param_values(client):
+    # §4.2/§19: the chat-staged map lands after the version — matched by name
+    # AND kind against the landing definitions, unmatched dropped silently.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Valued", "mock")
+    r = client.post(f"/automations/{a['id']}/versions", json={
+        "draft": make_version(notes="second"),
+        "paramValues": {"greeting": "hi there", "count": "not a number", "nope": "x"},
+    })
+    assert r.status_code == 200
+    vals = store.autos[a["id"]]["param_values"]
+    assert vals == {"greeting": "hi there"}  # kind-mismatched count + unknown nope dropped
+
+
+def test_create_applies_staged_param_values(client):
+    from autowright.storage import store
+
+    r = client.post("/automations", json={
+        "draft": make_version(), "name": "Created",
+        "paramValues": {"count": 7, "nope": "x"},
+    })
+    assert r.status_code == 200
+    assert store.autos[r.json()["id"]]["param_values"] == {"count": 7}
+
+
+def test_operational_only_save_skips_version_mint(client):
+    # §4.4: unchanged versioned content mints nothing — the trigger replace and
+    # staged values still apply, and the response shape is unchanged.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Quiet", "mock",
+                                triggers=[{"id": "t1", "kind": "cron", "expression": "0 8 * * *",
+                                           "enabled": True, "source": "spec"}])
+    r = client.post(f"/automations/{a['id']}/versions", json={
+        "draft": {**make_version(),
+                  "triggers": [{"id": "t1", "kind": "cron", "expression": "0 8 * * *",
+                                "enabled": True, "source": "spec"},
+                               {"kind": "cron", "expression": "0 9 * * *", "enabled": True,
+                                "source": "user"}]},
+        "paramValues": {"greeting": "staged"},
+    })
+    assert r.status_code == 200
+    assert r.json()["version"] == 1  # no mint
+    assert store.autos[a["id"]]["current_version"] == 1
+    trigs = r.json()["automation"]["triggers"]
+    assert [t["expression"] for t in trigs] == ["0 8 * * *", "0 9 * * *"]
+    assert trigs[1]["source"] == "user"
+    assert store.autos[a["id"]]["param_values"] == {"greeting": "staged"}
+    # a param-definition change is real content — it mints
+    ver2 = make_version()
+    ver2["params"] = ver2["params"] + [
+        {"name": "extra", "kind": "text", "label": "Extra", "help": "", "default": ""}]
+    r = client.post(f"/automations/{a['id']}/versions", json={"draft": ver2})
+    assert r.json()["version"] == 2
+    # a value-field-only delta on an unchanged definition is operational, not content
+    ver3 = {**ver2, "params": [{**p, "value": "typed"} if p["name"] == "greeting" else p
+                               for p in ver2["params"]]}
+    r = client.post(f"/automations/{a['id']}/versions", json={"draft": ver3})
+    assert r.json()["version"] == 2
+
+
+def test_trigger_source_validates_and_round_trips(client):
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Sourced", "mock")
+    r = client.patch(f"/automations/{a['id']}", json={"triggers": [
+        {"kind": "cron", "expression": "0 8 * * *", "enabled": True, "source": "user"}]})
+    assert r.status_code == 200
+    assert r.json()["triggers"][0]["source"] == "user"
+    r = client.patch(f"/automations/{a['id']}", json={"triggers": [
+        {"kind": "cron", "expression": "0 8 * * *", "enabled": True, "source": "wat"}]})
+    assert r.status_code == 422
+
+
+def test_edit_draft_snapshot_carries_param_values(client):
+    # §4.2/§4.4: the staged map rides the snapshot as the draft-only
+    # `param_values` key and echoes back camelCase.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Staged", "mock")
+    r = client.put(f"/draft/{a['id']}", json={"draft": {
+        **make_version(), "paramValues": {"greeting": "staged"},
+    }})
+    assert r.status_code == 200
+    d = client.get(f"/automations/{a['id']}").json()["draft"]
+    assert d["paramValues"] == {"greeting": "staged"}
+    # the automation's stored values stay untouched until the draft is saved
+    assert store.autos[a["id"]]["param_values"] == {}
 
 
 def test_edit_draft_snapshot_carries_triggers(client):
@@ -1904,9 +1995,10 @@ def test_norm_steps_camel_boundary_on_create_and_save_version(client):
     j = client.get(f"/automations/{auto['id']}").json()
     assert j["steps"][0]["noTimeout"] is True and j["steps"][0]["infiniteRetries"] is True
 
-    # POST /automations/{id}/versions goes through the same boundary
+    # POST /automations/{id}/versions goes through the same boundary (notes
+    # delta so the §4.4 operational-only rule still mints)
     r = client.post(f"/automations/{auto['id']}/versions",
-                    json={"draft": {"steps": _flagged_steps()}})
+                    json={"draft": {"steps": _flagged_steps(), "notes": "v2"}})
     assert r.status_code == 200 and r.json()["version"] == 2
     _assert_snake_only(a["versions"][2]["steps"][0])
 

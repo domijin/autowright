@@ -31,6 +31,7 @@ export {
   stepSecretTags, stepSecretNames, secretRefsOf, instrToMd,
   seedEmpty, seedDrafting, seedFromPayload, seedFromAuto,
   stripTrigger, mergeDraftTriggers, serializeDraft, applyTestValues,
+  applyTriggerOps, coerceParamValue,
   needsMessageTriggerSetup,
 } from './createflow/model'
 
@@ -370,7 +371,8 @@ export default function CreateFlow() {
       return {
         ...r,
         spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-        triggers: snap.triggers, instructions: snap.instructions, notes: snap.notes,
+        triggers: snap.triggers, paramValues: snap.paramValues,
+        instructions: snap.instructions, notes: snap.notes,
         dirty: snap.dirty, undo: null, touched: true,
         // §11: the thread records the rollback — persisted, so the agent's §8
         // CONVERSATION context never assumes the undone rewrites still stand
@@ -624,17 +626,25 @@ export default function CreateFlow() {
           const { version } = await api.saveVersion(auto.id, {
             draft: serializeDraft(rev), agentId,
             stepAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
+            // §4.2/§19: staged values land beside the draft — matched
+            // name+kind against the landing version's definitions.
+            ...(Object.keys(rev.paramValues).length ? { paramValues: rev.paramValues } : {}),
           })
           setSurface('app')
           go('automation')
-          showToast(auto.live.length
-            ? `Version ${version} saved. ${auto.live.length === 1 ? 'The execution in progress finishes' : `The ${auto.live.length} executions in progress finish`} on v${version - 1} — v${version} applies from the next execution.`
-            : `Version ${version} saved — earlier versions are in the Version menu when you edit.`, 3200)
+          // §4.4 operational-only save: same version back means nothing was
+          // minted — the staged schedule/value changes still landed.
+          showToast(version === auto.version
+            ? 'Changes saved — triggers and values updated, no new version needed.'
+            : auto.live.length
+              ? `Version ${version} saved. ${auto.live.length === 1 ? 'The execution in progress finishes' : `The ${auto.live.length} executions in progress finish`} on v${version - 1} — v${version} applies from the next execution.`
+              : `Version ${version} saved — earlier versions are in the Version menu when you edit.`, 3200)
         }
       } else {
         const created = await api.createAutomation({
           draft: serializeDraft(rev), name: rev.name, agentId,
           stepAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
+          ...(Object.keys(rev.paramValues).length ? { paramValues: rev.paramValues } : {}),
         })
         // The detail page guards against unknown ids — make sure the store
         // knows the new automation before navigating (WS refresh may lag).

@@ -70,12 +70,12 @@ also served to the create/edit page via §19 `GET /instructions`):
   when a change makes them stale — while grants and save/create stay the user's alone.
   The section carries the **action policy** (the when-to-request rules under
   "actions.yaml" below), so deferral phrasing like "don't build yet" is honored.
-  The section also carries the **stored-values redirect**: the editor cannot set the
-  automation's stored parameter values (`test_values` affects a test only) — when the
-  user asks for a stored-value change, the agent says so plainly and points them at the
-  automation page, while offering what it can do from the editor: change the parameter
-  definitions and triggers through a spec rewrite + sync, and set test-only values for a
-  test run.
+  The section also carries the **staged-changes contract**: the chat can stage stored
+  parameter values (`param_values`) and trigger edits (`triggers` ops) — both apply to the
+  draft and land only when the user saves, so the agent says so plainly ("staged — takes
+  effect when you save") and, when the user wants immediate effect, points at the
+  automation page where the same edit applies instantly. Parameter **definitions** still
+  change only through a spec rewrite + sync; `test_values` affects a test only.
   The section also carries the **memory-visibility note**: memory contents never travel in
   any drafting call (only run logs do) — when a diagnosis genuinely needs them, the agent
   says so and points the user at the §9.2 MEMORY card's Show in Finder or the §20
@@ -167,11 +167,15 @@ carries none — like triggers), headed with the rule that renaming or redescrib
 only through `actions.yaml`, so the agent edits what is really there, the in-editor spec
 (as markdown), **CURRENT parameters** — the §4.2 param definitions with their in-editor
 values as a yaml list (the same rendering the sync call's CURRENT section uses), headed as
-the names `test_values` keys must use, **CURRENT triggers** — the automation's trigger list
-rendered in the rule-9 dialect with `off`/`time` entries marked (the same rendering and
-sourcing as the sync call's reference section: the editor's `current.triggers`, else the
-stored list; present whenever the key travels, `none` when empty; context only — chat can
-answer "when does this run?" but triggers change through sync or the automation page), every
+the names `test_values` and `param_values` keys must use, **CURRENT triggers** — the
+automation's trigger list
+rendered in the rule-9 dialect with `off`/`time` entries marked, each entry prefixed with
+its **1-based index** (the same index `trigger list` prints, §20 — the handle `triggers`
+ops name entries by; the same sourcing as the sync call's reference section: the editor's
+`current.triggers`, else the
+stored list; present whenever the key travels, `none` when empty; editable through the
+`triggers` action ops below — the heading says so, and that edits are staged until the
+user saves), every
 current step (file, name, code — the same rendering the sync call's CURRENT sections use),
 the closing **USER REQUEST** (the message text), and a TASK directive stating the response
 contract:
@@ -186,6 +190,12 @@ contract:
   failed and why; keep it a terse cheat sheet, not a log), `actions.yaml` (follow-up
   actions, below). Prose before the first marker is the accompanying chat message shown to
   the user (optional).
+- **A change missing something only the user can supply** — a channel id, a sender
+  handle, which secret holds a token, which account or folder is meant — → **ask for it
+  in plain prose** and return no rewrites and no actions: never guess the missing piece,
+  and never a blocker for it (asking is a chat answer, not an impossibility — the user's
+  next message carries the detail through the CONVERSATION context and completes the
+  request).
 - The blocker envelope stays reserved for genuine impossibility and for fixes that are
   user action outside the app (`kind: user-action` — e.g. a missing desktop dependency a
   failed run reveals; Blocker response below).
@@ -212,6 +222,12 @@ rewrites (§11 owns the choreography). Schema — unknown keys are validation er
 sync: true                  # rebuild the steps from the (possibly just-rewritten) spec
 test: true                  # start a §11 draft test once the workflow is in sync
 test_values: { url: "…" }   # §19 paramValues for that test only (param name → value)
+param_values: { url: "…" }  # stage stored values (§4.2 — applied when the user saves)
+triggers:                   # stage trigger edits (§4.3 — applied when the user saves)
+  - add: { cron: "0 9 * * *" }        # a rule-9 dialect entry; `time` allowed here
+  - edit: { index: 1, cron: "30 8 * * *" }   # replace entry 1's fields (id + enabled kept)
+  - enable: { index: 2, enabled: false }     # flip an entry on/off
+  - remove: { index: 3 }                     # delete an entry
 name: New automation name   # rename — §4.1 user-owned identity, applied like the pencil
 description: One-line description  # ditto for the description
 undo: true                  # run the §11 draft-undo restore — back to before the last request
@@ -230,10 +246,22 @@ response neither rewrites the spec nor requests `sync` (i.e. the test runs again
 steps), its keys must each name a current param, and an unknown name is a validation error
 that feeds the repair round instead of silently testing with defaults (a response that
 rebuilds the steps may name params the rebuild will create, so the check is skipped there);
+`param_values` a mapping under the same key rule as `test_values` (current param names,
+check skipped when the response rebuilds the steps — the §11 apply drops staged names that
+never materialize); `triggers` a list of single-op mappings — each op exactly one of
+`add`/`edit`/`enable`/`remove`; `add` and `edit` carry one rule-9 dialect entry (`edit`
+with `index` beside it; unlike rule 9, one-shot `time` entries are allowed here — the user
+asked for them directly); `enable` carries `index` + boolean `enabled`; `index` is the
+1-based position in the CURRENT triggers section and must be within the current list; a
+malformed op, unknown op name, or out-of-range index is a validation error feeding the
+repair round. A message-trigger `add`/`edit` follows rule 9's detail rule with one
+extension: identifying details (channel id, token-secret name, sender handle) may come
+from the spec **or the user's own conversation text** — never invented;
 `name`/`description` nonempty strings. `test: true` implies the sync whenever the workflow is out
 of sync once the rewrites land (§11). Grants are **not** actions: the agent may suggest
 enabling an agent or secret in prose but can never do it, and there is no save/create
-action — the final commit stays the user's (§11 hard boundaries).
+action — the final commit stays the user's (§11 hard boundaries; staged `param_values` /
+`triggers` land only when the user saves, so they never breach it).
 
 **Action policy** — when the agent requests `sync`/`test` (stated in
 `framework-instructions.md`'s editing-sessions section, so the agent honors deferral
@@ -246,7 +274,18 @@ the user asks for a test or the change fixes a failed run and needs verifying �
 speculatively. Stacked spec-only rewrites then build once at the end, instead of one
 steps build per message. Request `undo: true` only when the user explicitly asks to
 undo or revert the last change ("undo that", "put it back") — never hand-rewrite the
-documents back from memory when the exact restore is available.
+documents back from memory when the exact restore is available. `param_values` only when
+the user explicitly states a value ("set url to X") — never guessed; a value that looks
+like a password or token is refused in prose and pointed at §4.8 secrets instead.
+`triggers` ops only on an explicit trigger request ("run at 9 instead", "pause the
+schedule", "delete the Discord trigger") — a trigger the agent merely judges missing keeps
+going through the spec + sync (rule 9), never an op. Before an `add`, check the CURRENT
+triggers list: when a matching entry (§4.3 identity fields) already exists, answer in
+prose with no op — unless it exists but is off, where the right response is the `enable`
+op the user actually wants. A **pure schedule change** ("9 instead of 8") is a `triggers`
+op alone — no spec rewrite, no sync, no steps rebuild (§4.3 `source: user` keeps the
+edited cron safe from later syncs); rewrite the spec's schedule words only when the
+request also changes behavior, and then let the sync derive the crons as usual.
 
 Chat-call validation, by response shape: a valid blocker envelope settles the job `blocked`
 (`blockedAt: chat`), its optional `notes.md` (Blocker response below) riding `draft.notes`; a response with no `===FILE:` marker is an **answer** — the raw
@@ -439,11 +478,15 @@ notes rewrite (§11).
    sender handle) must come from the spec or build instructions, never invented: when they
    are absent the agent omits the trigger and writes the steps against
    `execution.trigger_payload` as before (the user adds the trigger on the automation page,
-   §9.2). One-shot `time` triggers are never drafted. The key is omitted when the automation
+   §9.2, or asks the chat with the details — the chat call's `triggers` ops accept details
+   from the user's conversation text). One-shot `time` triggers are never drafted. The key
+   is omitted when the automation
    needs no trigger (executes only via Execute now / menu bar). Applied when creating (v1's
    triggers, each `enabled: true`, shown on Review) and, via the **§4.3 trigger merge**, when a
-   synced edit is saved as vN+1: drafted crons replace the cron subset (matched entries keep
-   `id`/`enabled`), drafted message/app-start entries add only when no stored trigger matches
+   synced edit is saved as vN+1: drafted crons land `source: spec` and replace the
+   spec-sourced cron subset (matched entries keep
+   `id`/`enabled`/`source`; `source: user` crons always survive, §4.3), drafted
+   message/app-start entries add only when no stored trigger matches
    their identity fields, and stored non-cron triggers always survive. Between saves the
    stored triggers stay user-owned (§5).
 

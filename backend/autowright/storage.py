@@ -411,7 +411,9 @@ class Store:
             elif isinstance(t, dict) and _valid(t):
                 out.append({"id": t.get("id") or new_id(), "kind": t["kind"],
                             "enabled": bool(t.get("enabled", True)),
-                            **({"expression": t["expression"]} if t["kind"] == "cron" else
+                            **({"expression": t["expression"],
+                                **({"source": t["source"]} if t.get("source") in ("spec", "user") else {})}
+                               if t["kind"] == "cron" else
                                {"at": t["at"]} if t["kind"] == "time" else
                                {"channel": t["channel"], "secret": t["secret"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {}),
@@ -462,6 +464,7 @@ class Store:
             "step_agents": meta.get("step_agents"),
             "allowed_secrets": meta.get("allowed_secrets"),
             "triggers": meta.get("triggers"),
+            "param_values": meta.get("param_values"),
             "out_of_sync": bool(meta.get("out_of_sync")) or None,
         }
 
@@ -590,6 +593,7 @@ class Store:
             **({"step_agents": ver["step_agents"]} if ver.get("step_agents") is not None else {}),
             **({"allowed_secrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
             **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {}),
+            **({"param_values": ver["param_values"]} if ver.get("param_values") is not None else {}),
             **({"out_of_sync": True} if ver.get("out_of_sync") else {}),
             "steps": manifest_steps,
             **(extra or {}),
@@ -1495,6 +1499,7 @@ class Store:
                 **({"stepAgents": ver["step_agents"]} if ver.get("step_agents") is not None else {}),
                 **({"allowedSecrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
                 **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {}),
+                **({"paramValues": ver["param_values"]} if ver.get("param_values") is not None else {}),
                 **({"outOfSync": True} if ver.get("out_of_sync") else {}),
             }
             container = self.draft_dir(a)

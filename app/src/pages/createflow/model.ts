@@ -2,7 +2,7 @@
 // seeds, draft serialization, the §4.3 trigger merge, spec-text helpers, and
 // the chat-thread/blocker helpers. No React here — everything is plain data
 // in/data out, unit-tested via the CreateFlow page's re-exports.
-import type { Agent, Automation, Blocker, ChatEntry, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, VersionInfo } from '../../types'
+import type { Agent, Automation, Blocker, ChatEntry, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, TriggerOp, VersionInfo } from '../../types'
 import { stepSecretNames, stepSecretTags } from '../../steps'
 
 // The step-secret scanners live in the shared step-list module (../../steps)
@@ -75,7 +75,7 @@ export function stageDisplayTitle(stage: string, mode: 'create' | 'chat' | 'sync
 // while the trigger list holds no message trigger needs the user to add one on
 // the automation page (§8 rule 9 — the agent never invents a channel id or
 // sender handle; it omits the trigger instead).
-export const TRIGGER_SETUP_TEXT = 'The steps read the trigger message, but no message trigger is set up — add one on the automation page after saving.'
+export const TRIGGER_SETUP_TEXT = 'The steps read the trigger message, but no message trigger is set up — tell your AI the channel or sender details, or add one on the automation page after saving.'
 export function needsMessageTriggerSetup(steps: Step[], triggers: DraftTrigger[]): boolean {
   return !triggers.some((t) => t.kind === 'discord' || t.kind === 'imessage')
     && steps.some((s) => /\btrigger_payload\b/.test(s.code))
@@ -125,6 +125,8 @@ export interface Rev {
   spec: SpecBlock[]
   steps: Step[]
   params: NonNullable<DraftPayload['params']>
+  // §4.2 chat-staged stored values (§8 `param_values`) — land only at save/create
+  paramValues: Record<string, unknown>
   packages: PackageDep[]    // §6.2 declared packages — display-only, the pipeline owns the list
   triggers: DraftTrigger[]  // §11 TRIGGERS card preview — what saving stores (§4.3 cron-subset replace)
   instructions: string
@@ -144,7 +146,8 @@ export interface Rev {
   // editor-state only, never serialized into the draft.
   undo: {
     spec: SpecBlock[]; steps: Step[]; params: Rev['params']; packages: PackageDep[]
-    triggers: DraftTrigger[]; instructions: string; notes: string; dirty: boolean; entryId: string
+    triggers: DraftTrigger[]; paramValues: Record<string, unknown>
+    instructions: string; notes: string; dirty: boolean; entryId: string
   } | null
   instrEdit: boolean
   instrDraft: string | null
@@ -217,7 +220,7 @@ export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
   return {
     ...revDefaults,
     name: 'New automation', description: '', note: '',
-    spec: [], steps: [], params: [], packages: [],
+    spec: [], steps: [], params: [], paramValues: {}, packages: [],
     triggers: [],
     instructions: instructionCache.defaultBuild,
     notes: '',
@@ -238,6 +241,7 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
     ...revDefaults,
     name: d.name || 'New automation', description: d.description || '', note: d.note || '',
     spec: d.spec ?? [], steps: d.steps ?? [], params: d.params ?? [],
+    paramValues: d.paramValues ?? {},
     packages: d.packages ?? [],
     triggers: d.triggers ?? [],
     // Backend seeds instructions from default-build-instructions.md; the §19
@@ -272,6 +276,7 @@ export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string
     spec: (src.spec ?? []).map((b) => ({ ...b })),
     steps: (src.steps ?? []).map((s) => ({ ...s })),
     params: (src.params ?? a.params ?? []).map((p) => ({ ...p })),
+    paramValues: { ...(a.draft?.paramValues ?? {}) },
     packages: (src.packages ?? []).map((p) => ({ ...p })),
     triggers: (a.draft?.triggers ?? a.triggers).map(stripTrigger),
     instructions: src.instructions || '',
@@ -327,7 +332,7 @@ export function holdsDraftEdits(r: Rev, a: Automation): boolean {
 export function stripTrigger(t: Trigger | DraftTrigger): DraftTrigger {
   const base = { ...(t.id ? { id: t.id } : {}), enabled: t.enabled }
   switch (t.kind) {
-    case 'cron': return { ...base, kind: 'cron', expression: t.expression, ...(t.timezone ? { timezone: t.timezone } : {}) }
+    case 'cron': return { ...base, kind: 'cron', expression: t.expression, ...(t.timezone ? { timezone: t.timezone } : {}), ...(t.source ? { source: t.source } : {}) }
     case 'time': return { ...base, kind: 'time', at: t.at, ...(t.timezone ? { timezone: t.timezone } : {}) }
     case 'app_start': return { ...base, kind: 'app_start' }
     case 'discord': return {
@@ -367,9 +372,12 @@ export function mergeDraftTriggers(cur: DraftTrigger[], drafted: DraftTrigger[])
     used.add(i)
     return crons[i]
   })
+  // §4.3 provenance: only spec-sourced crons are the sync's replaceable subset —
+  // an unmatched `source: user` cron (detail page, chat op, CLI) always survives.
+  const userCrons = crons.filter((c, j) => !used.has(j) && c.source === 'user')
   const added = drafted.filter((d) =>
     d.kind !== 'cron' && d.kind !== 'time' && !cur.some((c) => sameNonCron(c, d)))
-  return [...next, ...cur.filter((t) => t.kind !== 'cron'), ...added.map((d) => ({ ...d, enabled: true }))]
+  return [...next, ...userCrons, ...cur.filter((t) => t.kind !== 'cron'), ...added.map((d) => ({ ...d, enabled: true }))]
 }
 
 export function serializeDraft(r: Rev): DraftPayload {
@@ -382,6 +390,8 @@ export function serializeDraft(r: Rev): DraftPayload {
     instructions: r.instructions,
     notes: r.notes,
     triggers: r.triggers,
+    // §4.2: the staged value map rides the snapshot only when nonempty
+    ...(Object.keys(r.paramValues).length ? { paramValues: r.paramValues } : {}),
     stepAgents: r.enabledAgents,
     allowedSecrets: r.allowedSecrets,
     // §4.4/§11: the dirty-gate state rides the snapshot — a kept out-of-sync
@@ -407,4 +417,72 @@ export function applyTestValues(ps: ParamDef[], vals: Record<string, unknown>): 
     if (p.kind === 'number') return { ...p, value: typeof v === 'number' ? v : Number(v) || (p.min ?? 0) }
     return { ...p, value: String(v) }
   })
+}
+
+// §8 `param_values` staging: raw yaml value → the §4.2 stored value shape for
+// the def's kind (the same tolerance applyTestValues uses), so the staged map
+// survives the save endpoint's strict name+kind match.
+export function coerceParamValue(p: ParamDef, v: unknown): unknown {
+  if (p.kind === 'toggle') return !!v
+  if (p.kind === 'list') return Array.isArray(v) ? v.map(String) : [String(v)]
+  if (p.kind === 'kv') {
+    if (Array.isArray(v)) return (v as { key: string; value: string }[]).map((r) => ({ key: String(r?.key ?? ''), value: String(r?.value ?? '') }))
+    if (v && typeof v === 'object') return Object.entries(v as Record<string, unknown>).map(([key, val]) => ({ key, value: String(val) }))
+    return []
+  }
+  if (p.kind === 'number') return typeof v === 'number' ? v : Number(v) || (p.min ?? 0)
+  return String(v)
+}
+
+// §11 chat `triggers` ops — applied to the editor's trigger list in op order,
+// each yielding the system-chip text the thread shows. An `add` matching an
+// existing trigger on the §4.3 identity fields is a no-op backstop chip
+// ("already exists"); ops touch only the entries they name. Indexes are
+// 1-based over the CURRENT triggers list the agent saw — a handle table keeps
+// them meaningful even after an earlier op removes or edits an entry, so a
+// multi-op response can never hit a shifted neighbor.
+export function applyTriggerOps(triggers: DraftTrigger[], ops: TriggerOp[]): { triggers: DraftTrigger[]; chips: string[] } {
+  const sameTrigger = (a: DraftTrigger, b: DraftTrigger): boolean => {
+    if (a.kind === 'cron' && b.kind === 'cron') {
+      return a.expression === b.expression && (a.timezone ?? '') === (b.timezone ?? '')
+    }
+    if (a.kind === 'time' && b.kind === 'time') {
+      return a.at === b.at && (a.timezone ?? '') === (b.timezone ?? '')
+    }
+    return sameNonCron(a, b)
+  }
+  // handles[i] = the current object for original index i+1 (null once removed)
+  const handles: (DraftTrigger | null)[] = [...triggers]
+  let list = [...triggers]
+  const chips: string[] = []
+  for (const op of ops) {
+    if (op.op === 'add') {
+      const dup = list.find((t) => sameTrigger(t, op.trigger))
+      if (dup) {
+        chips.push('That trigger already exists.')
+      } else {
+        list = [...list, { ...op.trigger, enabled: true }]
+        chips.push('Trigger added.')
+      }
+      continue
+    }
+    const target = handles[op.index - 1]
+    if (!target) continue // removed by an earlier op — nothing to touch
+    if (op.op === 'edit') {
+      const edited = { ...op.trigger, ...(target.id ? { id: target.id } : {}), enabled: target.enabled }
+      list = list.map((t) => (t === target ? edited : t))
+      handles[op.index - 1] = edited
+      chips.push(`Trigger ${op.index} updated.`)
+    } else if (op.op === 'enable') {
+      const flipped = { ...target, enabled: op.enabled }
+      list = list.map((t) => (t === target ? flipped : t))
+      handles[op.index - 1] = flipped
+      chips.push(`Trigger ${op.index} turned ${op.enabled ? 'on' : 'off'}.`)
+    } else {
+      list = list.filter((t) => t !== target)
+      handles[op.index - 1] = null
+      chips.push(`Trigger ${op.index} removed.`)
+    }
+  }
+  return { triggers: list, chips }
 }

@@ -148,8 +148,10 @@ the package ensure.
 
 **Trigger semantics on push** — the §4.3 trigger merge, performed client-side exactly
 like the editor: the manifest's cron entries are matched against the stored list on
-(`expression`, `timezone`) — matches keep their `id` and `enabled` state, new entries arrive enabled, stored
-crons the manifest no longer lists are dropped; the manifest's `discord`/`imessage`/
+(`expression`, `timezone`) — matches keep their `id`, `enabled` state, and `source`, new
+entries arrive enabled with `source: spec`, stored
+**spec-sourced** crons the manifest no longer lists are dropped (`source: user` crons
+always survive, §4.3); the manifest's `discord`/`imessage`/
 `app_start` entries add only when no stored trigger matches their §4.3 identity fields; and
 stored non-cron triggers always survive untouched. `pull` writes the stored crons into the
 manifest, so an untouched manifest round-trips the schedule unchanged. Between pushes, `trigger add` (cron by default,
@@ -160,7 +162,9 @@ trigger (`--author` repeats and each value may be comma-separated — all ids co
 the trigger's one `author` list), or `--imessage <from>
 [--pattern <text>]` for a §4.3 imessage trigger), `trigger on|off <n>`, and
 `trigger remove <n>`
-edit the stored list directly (1-based indexes as printed by `trigger list`) via the §19 PATCH.
+edit the stored list directly (1-based indexes as printed by `trigger list`) via the §19
+PATCH; a cron minted by `trigger add` lands `source: user` (§4.3 — user-minted crons
+survive later syncs and pushes).
 
 **Param values** — `param set <ref> NAME=VALUE …` PATCHes `paramValues`, parsed by the
 definition's kind: toggle `on|off|true|false` → bool · number → int · text → string · list →

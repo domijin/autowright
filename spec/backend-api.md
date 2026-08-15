@@ -50,7 +50,9 @@ remain plain dicts (§2).
   past `time`, a `time` whose `at` carries a UTC offset (the zone belongs in `timezone`; naive
   local ISO only), a second `app_start`, or a discord/imessage entry failing the §4.3 field
   rules
-  answers 422 and nothing is stored; serialized discord and imessage triggers carry the
+  answers 422 and nothing is stored; a cron entry's optional §4.3 `source` must be `"spec"`
+  or `"user"` (422 otherwise) and is stored as sent — absent stays absent (legacy reads as
+  `spec`, §4.3); serialized discord and imessage triggers carry the
   derived §4.3
   `connection` state), param
   values, agentId, stepAgents, allowedSecrets, snapshotSettings (the §6.3 automatic-snapshot
@@ -110,23 +112,32 @@ remain plain dicts (§2).
   show the Automation consent prompt if the user has never answered it (and may launch
   Messages.app); the result updates the remembered `automation` state above. Called by the §9
   checklist's Grant button; blocks until the user answers the prompt
-- `POST /automations` `{ draft, name?, agentId?, stepAgents?, allowedSecrets? }` → the new
+- `POST /automations` `{ draft, name?, agentId?, stepAgents?, allowedSecrets?, paramValues? }` → the new
   automation's bare §4 automation JSON — create v1 from the sent draft (the §11 Create
   button). The draft must hold steps (422 otherwise); its `triggers` list is validated and
   normalized exactly like the PATCH (422 aborts, nothing written), and the §8 step validators
-  run server-side (rule below). `name` falls back to the draft's name, then "New automation";
+  run server-side (rule below). `paramValues` (the §4.2 chat-staged map) applies after v1
+  lands: entries matched by name **and kind** against v1's definitions land as stored
+  values, unmatched entries are dropped silently (the §4.2 lenient matching rule — never a
+  422; the definitions were just rebuilt and a stale name is expected). `name` falls back to the draft's name, then "New automation";
   `stepAgents`/`allowedSecrets` land as the automation's grants exactly as sent (§20 grant
   model — no all-on seed), with one narrow default: when `stepAgents` is **omitted
   entirely**, the store seeds it with the drafting agent (`[agentId]`, empty without one) —
   an explicit empty list lands empty. Success consumes the §4.4
   pending create-mode slot (`<root>/draft/` is deleted on success)
-- `POST /automations/{id}/versions` `{ draft, name?, agentId?, stepAgents?, allowedSecrets? }`
+- `POST /automations/{id}/versions` `{ draft, name?, agentId?, stepAgents?, allowedSecrets?, paramValues? }`
   — save edit as vN+1; the optional identity/grant fields, when sent, are applied to the
   automation as a patch after the version lands — the §20 push grant model rides this
   (the CLI sends the draft plus its computed `stepAgents`/`allowedSecrets` in the one call).
   The draft's `triggers`
   list (when the key is sent) replaces the automation's trigger list whole, validated and
-  normalized like the PATCH (422 aborts the save; entries keep their `id`, new ones get one)
+  normalized like the PATCH (422 aborts the save; entries keep their `id`, new ones get
+  one). `paramValues` applies like the create endpoint's — name+kind matched against the
+  landing version's definitions, unmatched dropped. **Operational-only save** (§4.4): when
+  the sent draft's versioned content — spec, steps, instructions, notes, param
+  definitions, packages — equals the current version's over the stored serialization, no
+  version is minted; the triggers replacement, `paramValues`, and the identity/grant patch
+  still apply, and the response is the same automation JSON either way
 - **Server-side step validation** — `POST /automations` and `POST /automations/{id}/versions`
   run the §8 step validators (`ast.parse`, the §6.2 import allowlist, manifest schema and
   step-file ordering, the timeout/retry rules) on the sent draft and answer 422 with the
@@ -139,7 +150,9 @@ remain plain dicts (§2).
   shared draft serializer for both owners — only the on-disk location differs (§5,
   unchanged). An automation `owner` that doesn't resolve answers 404. `PUT`
   `{ draft, agentId? }` stores the §4.4 snapshot: the payload's
-  stepAgents/allowedSecrets/triggers/outOfSync are stored as draft-only keys and echoed back on the
+  stepAgents/allowedSecrets/triggers/paramValues/outOfSync are stored as draft-only keys
+  (`paramValues` the §4.2 chat-staged value map, stored as the draft-only `param_values`
+  key) and echoed back on the
   automation's `draft` object (or on `GET /draft/pending`), and its `chat` list (the §11
   thread) is stored as the container's `chat.jsonl` (§5) and echoed back the same way; for
   the `pending` owner the payload additionally carries the identity fields no automation

@@ -239,6 +239,9 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             return "the iMessage message pattern must be a nonempty text"
         return None
     if kind == "cron":
+        # §4.3 provenance: absent reads as "spec" (legacy); anything else is a 422.
+        if t.get("source") not in (None, "spec", "user"):
+            return 'a cron trigger\'s source must be "spec" or "user"'
         if err := tz_error(t.get("timezone")):
             return err
         try:
@@ -286,6 +289,8 @@ def normalize_triggers(raw: list,
                    "kind": t["kind"], "enabled": bool(t.get("enabled", True))}
         if t["kind"] == "cron":
             n["expression"] = t["expression"].strip()
+            if t.get("source") in ("spec", "user"):  # §4.3: stored as sent, absent stays absent
+                n["source"] = t["source"]
         elif t["kind"] == "time":
             n["at"] = t["at"]
         elif t["kind"] == "discord":

@@ -13,6 +13,7 @@ vi.mock('../src/api', () => ({
 import {
   specToText, textToSpec, amendSpec, stepSecretNames, stepSecretTags, secretRefsOf,
   instrToMd, mergeDraftTriggers, needsMessageTriggerSetup, persistChat, applyTestValues,
+  applyTriggerOps, coerceParamValue,
   stripTrigger,
 } from '../src/pages/CreateFlow'
 
@@ -223,6 +224,93 @@ describe('mergeDraftTriggers', () => {
     ])
     // the unmatched existing cron is replaced by the drafted schedule
     expect(merged.some((t) => t.id === 'c1')).toBe(false)
+  })
+
+  it('user-sourced crons survive a sync that no longer drafts them (§4.3 provenance)', () => {
+    const cur: DraftTrigger[] = [
+      cron({ id: 'c1', expression: '0 8 * * *', source: 'spec' }),
+      cron({ id: 'c2', expression: '0 21 * * *', source: 'user', enabled: false }),
+    ]
+    const merged = mergeDraftTriggers(cur, [cron({ expression: '0 9 * * *', source: 'spec' })])
+    expect(merged).toEqual([
+      { kind: 'cron', enabled: true, expression: '0 9 * * *', source: 'spec' },
+      cur[1], // the user cron survives, enabled state intact
+    ])
+  })
+
+  it('a drafted cron matching a user cron keeps the one stored entry — no duplicate', () => {
+    const cur: DraftTrigger[] = [cron({ id: 'c2', expression: '0 21 * * *', source: 'user' })]
+    const merged = mergeDraftTriggers(cur, [cron({ expression: '0 21 * * *', source: 'spec' })])
+    expect(merged).toEqual([cur[0]])
+  })
+})
+
+describe('applyTriggerOps (§8 chat trigger ops)', () => {
+  const cron = (over: Partial<DraftTrigger>): DraftTrigger =>
+    ({ kind: 'cron', enabled: true, ...over })
+  const base: DraftTrigger[] = [
+    cron({ id: 'c1', expression: '0 8 * * *', source: 'spec' }),
+    { id: 'd1', kind: 'discord', channel: '123', secret: 'BOT', enabled: true },
+  ]
+
+  it('add appends enabled and leaves the rest untouched', () => {
+    const { triggers, chips } = applyTriggerOps(base, [
+      { op: 'add', trigger: cron({ expression: '0 9 * * *', source: 'user', enabled: false }) },
+    ])
+    expect(triggers.slice(0, 2)).toEqual(base)
+    expect(triggers[2]).toEqual({ kind: 'cron', enabled: true, expression: '0 9 * * *', source: 'user' })
+    expect(chips).toEqual(['Trigger added.'])
+  })
+
+  it('an add matching an existing trigger on identity fields is a no-op backstop', () => {
+    const { triggers, chips } = applyTriggerOps(base, [
+      { op: 'add', trigger: cron({ expression: '0 8 * * *', source: 'user' }) },
+      { op: 'add', trigger: { kind: 'discord', channel: '123', secret: 'BOT', enabled: true } },
+    ])
+    expect(triggers).toEqual(base)
+    expect(chips).toEqual(['That trigger already exists.', 'That trigger already exists.'])
+  })
+
+  it('edit replaces the entry fields, keeping id and enabled state', () => {
+    const { triggers, chips } = applyTriggerOps(
+      [cron({ id: 'c1', expression: '0 8 * * *', enabled: false, source: 'spec' })],
+      [{ op: 'edit', index: 1, trigger: cron({ expression: '30 8 * * *', source: 'user' }) }])
+    expect(triggers).toEqual([
+      { kind: 'cron', expression: '30 8 * * *', source: 'user', id: 'c1', enabled: false },
+    ])
+    expect(chips).toEqual(['Trigger 1 updated.'])
+  })
+
+  it('enable flips on/off; remove deletes; ops run in order over the evolving list', () => {
+    const { triggers, chips } = applyTriggerOps(base, [
+      { op: 'enable', index: 1, enabled: false },
+      { op: 'remove', index: 2 },
+    ])
+    expect(triggers).toEqual([{ ...base[0], enabled: false }])
+    expect(chips).toEqual(['Trigger 1 turned off.', 'Trigger 2 removed.'])
+  })
+
+  it('indexes keep meaning the CURRENT-triggers numbering after an earlier remove', () => {
+    // remove 1 then flip 2: "2" is still the discord entry the agent saw, not
+    // a shifted neighbor; an op naming an already-removed entry is inert
+    const { triggers, chips } = applyTriggerOps(base, [
+      { op: 'remove', index: 1 },
+      { op: 'enable', index: 2, enabled: false },
+      { op: 'remove', index: 1 },
+    ])
+    expect(triggers).toEqual([{ ...base[1], enabled: false }])
+    expect(chips).toEqual(['Trigger 1 removed.', 'Trigger 2 turned off.'])
+  })
+})
+
+describe('coerceParamValue (§8 param_values staging)', () => {
+  it('coerces raw yaml values to the def kind so the save-time strict match holds', () => {
+    expect(coerceParamValue({ name: 'a', kind: 'toggle', label: '', help: '' }, 'yes')).toBe(true)
+    expect(coerceParamValue({ name: 'a', kind: 'number', label: '', help: '', min: 1 }, '5')).toBe(5)
+    expect(coerceParamValue({ name: 'a', kind: 'text', label: '', help: '' }, 42)).toBe('42')
+    expect(coerceParamValue({ name: 'a', kind: 'list', label: '', help: '' }, 'one')).toEqual(['one'])
+    expect(coerceParamValue({ name: 'a', kind: 'kv', label: '', help: '' }, { k: 'v' }))
+      .toEqual([{ key: 'k', value: 'v' }])
   })
 })
 

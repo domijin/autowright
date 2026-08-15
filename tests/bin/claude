@@ -91,6 +91,14 @@ def respond(prompt: str) -> str:
             # §8 undo action — always alone (no rewrites, no other actions)
             return ("Rolling the draft back.\n"
                     "===FILE: actions.yaml===\nundo: true\n===END===\n")
+        if "stage-actions" in user.lower():
+            # §8 param_values + triggers ops — staged, land when the user saves
+            return ("Staged the value and the evening schedule — they apply when you save.\n"
+                    "===FILE: actions.yaml===\n"
+                    "param_values: { notify_only_on_changes: false }\n"
+                    "triggers:\n"
+                    "  - add: { cron: \"0 21 * * *\" }\n"
+                    "===END===\n")
         if "fix-and-test" in user.lower():
             spec = SPEC_ENVELOPE.format(title="Fixed automation",
                                         desc="Fixed by the mock agent.").split("===END===")[0]

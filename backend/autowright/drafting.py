@@ -144,12 +144,20 @@ The FULL updated notes — your own working knowledge for this automation: selec
 sync: true                  # rebuild the steps from the spec right away (after your rewrites apply)
 test: true                  # run a draft test once the steps match the spec (implies sync when they don't)
 test_values: { url: "…" }   # parameter values for that test only (name → value, names from CURRENT parameters)
+param_values: { url: "…" }  # stage stored values (same names rule) — they apply when the user saves
+triggers:                   # stage trigger edits — applied when the user saves; ops touch only what they name
+  - add: { cron: "0 9 * * *" }             # a Triggers-dialect entry; { time: "2026-07-20T15:00" } allowed here
+  - edit: { index: 1, cron: "30 8 * * *" } # replace entry 1's fields (id and on/off state kept)
+  - enable: { index: 2, enabled: false }   # flip an entry on/off
+  - remove: { index: 3 }                   # delete an entry (indexes from CURRENT triggers)
 name: New automation name   # rename the automation (current name under AUTOMATION above)
 description: One-line description  # rewrite its one-line description
 undo: true                  # restore the draft to before the last request — exact revert, one level
 ===END===
 
-Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
+- A change missing something only the user can supply (a channel id, a sender handle, which secret holds a token, which account or folder is meant) → ask for it in plain prose — no file blocks, no actions, no blocker. Never guess the missing piece; ask for everything missing in one message, and the user's next message completes the request.
+
+Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, secret name, sender handle) may come from the spec or from what the user typed in this conversation, never invented. Staged values and trigger edits land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
 - A failure the user can't fix by changing the automation → when the RECENT RUNS show the failure comes from the user's Mac, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
 
@@ -316,20 +324,22 @@ def build_chat_prompt(user_text: str | None, current: dict | None,
                                       sort_keys=False, allow_unicode=True).strip())
     parts.append("=== SPEC (spec.md) ===\n" + spec_as_md(current))
     # §8 CURRENT parameters — definitions + in-editor values; the only names
-    # actions.yaml `test_values` keys may use.
+    # actions.yaml `test_values` / `param_values` keys may use.
     if params := (current or {}).get("params"):
         parts.append("=== CURRENT parameters (definitions and values — actions.yaml "
-                     "test_values keys must be these names) ===\n"
+                     "test_values and param_values keys must be these names) ===\n"
                      + yaml.safe_dump(params, sort_keys=False, allow_unicode=True).strip())
-    # §8 CURRENT triggers — context only, so chat can answer "when does this
-    # run?"; triggers change through a sync or the automation page, never chat.
+    # §8 CURRENT triggers — indexed: the handle actions.yaml `triggers` ops
+    # name entries by; edits are staged and land when the user saves.
     trigs = (current or {}).get("triggers")
     if trigs is not None:
         parts.append(
-            "=== CURRENT triggers (context only — the schedule and message triggers "
-            "as they exist today, `off` and one-shot `time` entries marked; triggers "
-            "change through a sync or the automation page, never through chat files) ===\n"
-            + (yaml.safe_dump([_trigger_ref(t) for t in trigs],
+            "=== CURRENT triggers (the schedule and message triggers as they exist "
+            "today, `index` first — the 1-based handle actions.yaml `triggers` ops "
+            "name; `off` and one-shot `time` entries marked; staged edits land when "
+            "the user saves) ===\n"
+            + (yaml.safe_dump([{"index": i, **_trigger_ref(t)}
+                               for i, t in enumerate(trigs, 1)],
                               sort_keys=False, allow_unicode=True).strip()
                if trigs else "none"))
     for s in (current or {}).get("steps", []):
@@ -384,7 +394,8 @@ def build_steps_prompt(mode: str, spec_md: str, current: dict | None,
                 # the agent drafts against this to see what already exists.
                 parts.append(
                     "=== CURRENT triggers (reference — user-owned; your drafted crons "
-                    "replace the cron entries below, message/app-start entries only add "
+                    "replace the spec-derived cron entries below (schedules the user set "
+                    "by hand survive), message/app-start entries only add "
                     "when not already present; `time` and `off` entries are context, "
                     "never drafted) ===\n"
                     + (yaml.safe_dump([_trigger_ref(t) for t in trigs],
@@ -560,14 +571,73 @@ def validate_spec(files: dict[str, str]) -> tuple[dict, list[str]]:
 CHAT_FILES = ("spec.md", "instructions.md", "notes.md", "actions.yaml")
 
 
-def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[dict, list[str]]:
+def parse_dialect_entry(t, allow_time: bool = False,
+                        cron_source: str | None = None) -> tuple[dict | None, str | None]:
+    """One §8 rule-9 dialect entry → (normalized §4.3 stored trigger, None) or
+    (None, error). Shared by the manifest's `triggers` key (crons land
+    `source: spec`) and the chat call's `triggers` ops (crons land
+    `source: user`; `allow_time` admits the `{ time: at }` form the user may
+    ask for directly — never drafted by judgment, §8 rule 9)."""
+    if not isinstance(t, dict):
+        return None, f"triggers entry {t!r} must be an object"
+    keys = set(t)
+    if keys == {"cron"} or keys == {"cron", "timezone"}:
+        entry = {"kind": "cron", "expression": str(t["cron"]).strip(), "enabled": True,
+                 **({"source": cron_source} if cron_source else {})}
+        if "timezone" in t:
+            entry["timezone"] = str(t["timezone"])
+            if err := triggerlib.tz_error(entry["timezone"]):
+                return None, f"triggers: {err}"
+        try:
+            triggerlib.parse_cron(entry["expression"])
+        except triggerlib.CronError as e:
+            return None, f"triggers: {e}"
+        return entry, None
+    if allow_time and "time" in keys and keys <= {"time", "timezone"}:
+        entry = {"kind": "time", "at": str(t["time"]).strip(), "enabled": True,
+                 **({"timezone": str(t["timezone"])} if t.get("timezone") else {})}
+        if err := triggerlib.validate_trigger(entry):
+            return None, f"triggers: {err}"
+        return entry, None
+    if "imessage" in keys and keys <= {"imessage", "pattern"}:
+        entry = {"kind": "imessage",
+                 "from": triggerlib.normalize_handle(str(t["imessage"])), "enabled": True,
+                 **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {})}
+        if err := triggerlib.validate_trigger(entry):
+            return None, f"triggers: {err}"
+        return entry, None
+    if "discord" in keys and keys <= {"discord", "secret", "pattern", "mention", "author"}:
+        # author: scalar accepted as shorthand for a one-element list (§8)
+        au = t.get("author")
+        au = au if isinstance(au, list) else [au] if au else []
+        entry = {"kind": "discord", "channel": str(t["discord"]).strip(),
+                 "secret": str(t.get("secret", "")).strip(), "enabled": True,
+                 **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {}),
+                 **({"mention": True} if t.get("mention") is True else {}),
+                 **({"author": triggerlib.normalize_authors(au)} if au else {})}
+        if err := triggerlib.validate_trigger(entry):
+            return None, f"triggers: {err}"
+        return entry, None
+    if t == {"app_start": True}:
+        return {"kind": "app_start", "enabled": True}, None
+    return None, (
+        f"triggers entry {t!r} must be {{ cron: expression[, timezone] }}, "
+        + ("{ time: local-ISO-timestamp[, timezone] }, " if allow_time else "")
+        + "{ imessage: handle[, pattern] }, "
+        "{ discord: channel-id, secret: NAME[, pattern, mention, author] }, "
+        "or app_start: true")
+
+
+def validate_actions(text: str, param_names: list[str] | None = None,
+                     triggers_count: int | None = None) -> tuple[dict, list[str]]:
     """§8 actions.yaml — the chat call's follow-up actions. Returns the
     validated mapping in the §4.1 camelCase serialization, or errors. Grants
     and save/create are never actions (§8 hard boundaries) — an unknown key is
     a validation error, not a silent drop. `param_names` (when given) are the
-    only keys `test_values` may use — a misremembered name is a validation
-    error that feeds the repair round, never a test that silently runs with
-    defaults."""
+    only keys `test_values`/`param_values` may use — a misremembered name is a
+    validation error that feeds the repair round, never a test that silently
+    runs with defaults. `triggers_count` is the CURRENT triggers list's length
+    — the range `triggers` op indexes must fall in."""
     try:
         data = yaml.safe_load(text)
     except yaml.YAMLError as e:
@@ -577,7 +647,8 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
     errors: list[str] = []
     out: dict = {}
     for k in data:
-        if k not in ("sync", "test", "test_values", "name", "description", "undo"):
+        if k not in ("sync", "test", "test_values", "param_values", "triggers",
+                     "name", "description", "undo"):
             errors.append(f"actions.yaml: unknown key {k!r}")
     # §8: undo is exclusive — undoing and acting/rewriting in one response is
     # contradictory (the rewrite-block half is enforced in validate_chat)
@@ -590,19 +661,26 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
                 errors.append(f"actions.yaml: {k} must be true when present")
             else:
                 out[k] = True
-    if "test_values" in data:
-        if not isinstance(data["test_values"], dict):
-            errors.append("actions.yaml: test_values must be a mapping of param name → value")
-        else:
-            # A response that also requests a sync may name params the rebuild
-            # will create — only a test against today's steps is checkable.
-            if param_names is not None and data.get("sync") is not True:
-                bad = sorted(str(k) for k in data["test_values"] if k not in param_names)
-                if bad:
-                    errors.append(
-                        f"actions.yaml: test_values names unknown params {bad} — "
-                        f"the automation's params are {sorted(param_names) or 'none'}")
-            out["testValues"] = data["test_values"]
+    # A response that also requests a sync may name params the rebuild will
+    # create — only a map applied against today's params is checkable (§8).
+    checkable = param_names is not None and data.get("sync") is not True
+    for key, dest in (("test_values", "testValues"), ("param_values", "paramValues")):
+        if key in data:
+            if not isinstance(data[key], dict):
+                errors.append(f"actions.yaml: {key} must be a mapping of param name → value")
+            else:
+                if checkable:
+                    bad = sorted(str(k) for k in data[key] if k not in param_names)
+                    if bad:
+                        errors.append(
+                            f"actions.yaml: {key} names unknown params {bad} — "
+                            f"the automation's params are {sorted(param_names) or 'none'}")
+                out[dest] = data[key]
+    if "triggers" in data:
+        ops, errs = _validate_trigger_ops(data["triggers"], triggers_count or 0)
+        errors += errs
+        if not errs:
+            out["triggers"] = ops
     for k in ("name", "description"):
         if k in data:
             if not isinstance(data[k], str) or not data[k].strip():
@@ -614,14 +692,81 @@ def validate_actions(text: str, param_names: list[str] | None = None) -> tuple[d
     return ({}, errors) if errors else (out, [])
 
 
+def _validate_trigger_ops(raw, count: int) -> tuple[list[dict], list[str]]:
+    """§8 `triggers` action — a list of single-op mappings (add / edit /
+    enable / remove), indexes 1-based over the CURRENT triggers list. Returns
+    the ops with their dialect entries normalized to the §4.3 stored shape
+    (crons land `source: user` — user-asked schedules survive later syncs,
+    §4.3), or the validation errors that feed the repair round."""
+    if not isinstance(raw, list) or not raw:
+        return [], ["actions.yaml: triggers must be a nonempty list of "
+                    "add/edit/enable/remove ops"]
+    errors: list[str] = []
+    ops: list[dict] = []
+
+    def op_index(val) -> int | None:
+        if not isinstance(val, int) or isinstance(val, bool) or not 1 <= val <= count:
+            errors.append(
+                f"actions.yaml: triggers op index {val!r} is out of range — the "
+                f"CURRENT triggers list has {count} "
+                + ("entry" if count == 1 else "entries"))
+            return None
+        return val
+
+    for op in raw:
+        if not isinstance(op, dict) or len(op) != 1:
+            errors.append(f"actions.yaml: triggers entry {op!r} must be exactly one of "
+                          "add: {…}, edit: {…}, enable: {…}, remove: {…}")
+            continue
+        (name, val), = op.items()
+        if name == "add":
+            entry, err = parse_dialect_entry(val, allow_time=True, cron_source="user")
+            if err:
+                errors.append(f"actions.yaml: {err}")
+            else:
+                ops.append({"op": "add", "trigger": entry})
+        elif name == "edit":
+            if not isinstance(val, dict) or "index" not in val:
+                errors.append(f"actions.yaml: triggers edit {val!r} needs an index "
+                              "beside the trigger fields")
+                continue
+            idx = op_index(val["index"])
+            entry, err = parse_dialect_entry({k: v for k, v in val.items() if k != "index"},
+                                             allow_time=True, cron_source="user")
+            if err:
+                errors.append(f"actions.yaml: {err}")
+            elif idx is not None:
+                ops.append({"op": "edit", "index": idx, "trigger": entry})
+        elif name == "enable":
+            if not isinstance(val, dict) or set(val) != {"index", "enabled"} \
+                    or not isinstance(val.get("enabled"), bool):
+                errors.append(f"actions.yaml: triggers enable {val!r} must be "
+                              "{ index: N, enabled: true|false }")
+                continue
+            if (idx := op_index(val["index"])) is not None:
+                ops.append({"op": "enable", "index": idx, "enabled": val["enabled"]})
+        elif name == "remove":
+            if not isinstance(val, dict) or set(val) != {"index"}:
+                errors.append(f"actions.yaml: triggers remove {val!r} must be {{ index: N }}")
+                continue
+            if (idx := op_index(val["index"])) is not None:
+                ops.append({"op": "remove", "index": idx})
+        else:
+            errors.append(f"actions.yaml: unknown triggers op {name!r} — use "
+                          "add, edit, enable, or remove")
+    return (ops, []) if not errors else ([], errors)
+
+
 def validate_chat_files(files: dict[str, str],
-                        param_names: list[str] | None = None
+                        param_names: list[str] | None = None,
+                        triggers_count: int | None = None
                         ) -> tuple[dict, list[str], set[str]]:
     """§8 chat-call blocks → (payload sans answer, errors, failed block names).
     Every error attributes to exactly one block — an unknown block name to
     itself, the undo-with-rewrite conflict to actions.yaml — so the per-block
     repair can keep the valid blocks and re-ask only for the failed ones.
-    `param_names` gates actions.yaml test_values keys."""
+    `param_names` gates actions.yaml test_values/param_values keys;
+    `triggers_count` the triggers-op index range."""
     errors: list[str] = []
     bad: set[str] = set()
     extras = sorted(f for f in files if f not in CHAT_FILES)
@@ -645,7 +790,8 @@ def validate_chat_files(files: dict[str, str],
         # A spec rewrite means the params will be re-derived — test_values
         # keys are only checkable when today's params stay authoritative.
         actions, errs = validate_actions(files["actions.yaml"],
-                                         None if "spec.md" in files else param_names)
+                                         None if "spec.md" in files else param_names,
+                                         triggers_count)
         errors += errs
         # §8: undo is exclusive of rewrites too — restoring the draft and
         # rewriting it in one response is contradictory.
@@ -664,12 +810,13 @@ def validate_chat_files(files: dict[str, str],
 
 
 def validate_chat(raw: str, files: dict[str, str],
-                  param_names: list[str] | None = None) -> tuple[dict, list[str]]:
+                  param_names: list[str] | None = None,
+                  triggers_count: int | None = None) -> tuple[dict, list[str]]:
     """§8 chat-call response with file blocks → terminal payload
     { answer?, spec?, instructions?, notes?, actions? }. Prose before the first
     marker is the accompanying chat message; only the four CHAT_FILES names
     are allowed."""
-    payload, errors, _ = validate_chat_files(files, param_names)
+    payload, errors, _ = validate_chat_files(files, param_names, triggers_count)
     if errors:
         return {}, errors
     m = FILE_MARK_RE.search(raw)
@@ -873,55 +1020,16 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
     else:
         for t in trigs:
             # §8 rule 9 dialect: cron / imessage / discord / app_start —
-            # one-shot `time` triggers are never drafted.
-            if not isinstance(t, dict):
-                errors.append(f"triggers entry {t!r} must be an object")
-                continue
-            keys = set(t)
-            if keys == {"cron"} or keys == {"cron", "timezone"}:
-                entry = {"kind": "cron", "expression": str(t["cron"]).strip(), "enabled": True}
-                if "timezone" in t:
-                    entry["timezone"] = str(t["timezone"])
-                    if err := triggerlib.tz_error(entry["timezone"]):
-                        errors.append(f"triggers: {err}")
-                        continue
-                try:
-                    triggerlib.parse_cron(entry["expression"])
-                    norm_trigs.append(entry)
-                except triggerlib.CronError as e:
-                    errors.append(f"triggers: {e}")
-            elif "imessage" in keys and keys <= {"imessage", "pattern"}:
-                entry = {"kind": "imessage",
-                         "from": triggerlib.normalize_handle(str(t["imessage"])), "enabled": True,
-                         **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {})}
-                if err := triggerlib.validate_trigger(entry):
-                    errors.append(f"triggers: {err}")
-                else:
-                    norm_trigs.append(entry)
-            elif "discord" in keys and keys <= {"discord", "secret", "pattern", "mention", "author"}:
-                # author: scalar accepted as shorthand for a one-element list (§8)
-                au = t.get("author")
-                au = au if isinstance(au, list) else [au] if au else []
-                entry = {"kind": "discord", "channel": str(t["discord"]).strip(),
-                         "secret": str(t.get("secret", "")).strip(), "enabled": True,
-                         **({"pattern": str(t["pattern"]).strip()} if t.get("pattern") else {}),
-                         **({"mention": True} if t.get("mention") is True else {}),
-                         **({"author": triggerlib.normalize_authors(au)} if au else {})}
-                if err := triggerlib.validate_trigger(entry):
-                    errors.append(f"triggers: {err}")
-                else:
-                    norm_trigs.append(entry)
-            elif t == {"app_start": True}:
-                if any(x["kind"] == "app_start" for x in norm_trigs):
-                    errors.append("triggers: only one app_start entry")
-                else:
-                    norm_trigs.append({"kind": "app_start", "enabled": True})
+            # one-shot `time` triggers are never drafted; drafted crons land
+            # `source: spec` (§4.3 provenance — the merge's replaceable subset).
+            entry, err = parse_dialect_entry(t, cron_source="spec")
+            if err:
+                errors.append(err)
+            elif entry["kind"] == "app_start" and any(
+                    x["kind"] == "app_start" for x in norm_trigs):
+                errors.append("triggers: only one app_start entry")
             else:
-                errors.append(
-                    f"triggers entry {t!r} must be {{ cron: expression[, timezone] }}, "
-                    f"{{ imessage: handle[, pattern] }}, "
-                    f"{{ discord: channel-id, secret: NAME[, pattern, mention, author] }}, "
-                    f"or app_start: true")
+                norm_trigs.append(entry)
     if errors:
         return {}, errors
     # No triggers key -> no triggers (manual / menu bar only).
@@ -1117,11 +1225,13 @@ class DraftJobs:
         cancel raises `Cancelled` out of `_invoke`."""
         prompt = build_chat_prompt(user_text, current, grants, chat_history,
                                    runs=runs, pkg_state=pkg_state)
-        # §8: actions.yaml test_values keys must name the draft's params
+        # §8: actions.yaml test_values/param_values keys must name the draft's
+        # params; triggers-op indexes must fall in the CURRENT triggers list.
         pnames = [str(p.get("name")) for p in (current or {}).get("params") or []
                   if p.get("name")]
+        tcount = len((current or {}).get("triggers") or [])
         raw = self._invoke(job, agent, prompt, on_chunk=self._chat_cb(job))
-        outcome, payload, kept, answer, failed = self._chat_classify(raw, pnames)
+        outcome, payload, kept, answer, failed = self._chat_classify(raw, pnames, tcount)
         rounds: list[dict] = []
         for i in range(1, repair_rounds() + 1):
             if outcome != "invalid":
@@ -1132,7 +1242,7 @@ class DraftJobs:
             raw = self._invoke(job, agent, repair,
                                on_chunk=self._chat_cb(job, prefix=try_prefix(i)))
             outcome, payload, kept, answer, failed = self._chat_classify(
-                raw, pnames, kept, answer)
+                raw, pnames, tcount, kept, answer)
         if outcome == "invalid":
             diag = self._diagnose(job, agent, prompt, raw, payload,
                                   attempts=len(rounds) + 1)
@@ -1152,6 +1262,7 @@ class DraftJobs:
 
     @staticmethod
     def _chat_classify(raw: str, param_names: list[str] | None = None,
+                       triggers_count: int | None = None,
                        kept: dict[str, str] | None = None, answer: str = ""):
         """Classify a chat-call response (§8), merging its blocks over `kept` —
         the valid blocks carried forward from earlier rounds (per-block
@@ -1195,7 +1306,7 @@ class DraftJobs:
             merged = {**kept, **files}
             m = FILE_MARK_RE.search(raw)
             prose = raw[:m.start()].strip()
-        payload, errors, bad = validate_chat_files(merged, param_names)
+        payload, errors, bad = validate_chat_files(merged, param_names, triggers_count)
         answer = prose or answer
         if errors:
             good = {k: v for k, v in merged.items()

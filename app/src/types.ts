@@ -115,7 +115,7 @@ export interface ChatEntry {
 // fields, so the compiler enforces the pairing the backend validates with 422.
 // pubsub is a reserved kind the API refuses to store ("coming soon").
 export type TriggerKindFields =
-  | { kind: 'cron'; expression: string; timezone?: string }       // 5-field expression; timezone = §4.3 IANA zone
+  | { kind: 'cron'; expression: string; timezone?: string; source?: 'spec' | 'user' } // §4.3 provenance: absent reads as 'spec'
   | { kind: 'time'; at: string; timezone?: string }         // one-shot wall-clock ISO timestamp
   | { kind: 'app_start' }
   | { kind: 'discord'; channel: string; secret: string; pattern?: string; mention?: boolean; author?: string[] }
@@ -307,10 +307,20 @@ export interface Settings {
 
 // §8 chat-call follow-up actions (actions.yaml, validated backend-side) —
 // the editor performs them after applying the response's rewrites (§11).
+// §8 `triggers` action ops — entries normalized to the §4.3 stored shape by
+// the backend's validation (chat-op crons arrive `source: 'user'`).
+export type TriggerOp =
+  | { op: 'add'; trigger: DraftTrigger }
+  | { op: 'edit'; index: number; trigger: DraftTrigger }
+  | { op: 'enable'; index: number; enabled: boolean }
+  | { op: 'remove'; index: number }
+
 export interface ChatActions {
   sync?: boolean
   test?: boolean
   testValues?: Record<string, unknown>
+  paramValues?: Record<string, unknown> // §4.2 staged stored values — land at save
+  triggers?: TriggerOp[]                // §4.3 staged trigger edits — land at save
   name?: string
   description?: string
   undo?: boolean // §8: always alone — runs the §11 draft-undo restore
@@ -333,6 +343,9 @@ export interface DraftPayload {
   // §4.4: grant selections carried by the draft snapshot
   stepAgents?: string[]
   allowedSecrets?: string[]
+  // §4.2: the chat-staged stored-value map — rides the draft snapshot, lands
+  // only at save/create
+  paramValues?: Record<string, unknown>
   // §4.4/§11: the dirty-gate state rides the draft — a kept out-of-sync draft
   // must resume with saving still locked
   outOfSync?: boolean

@@ -491,6 +491,26 @@ def test_merge_draft_triggers_drops_unlisted_and_adds_new():
         ("time", "2027-01-01T09:00"), ("discord", "1"), ("cron", "0 9 * * 1")]
 
 
+def test_merge_draft_triggers_user_crons_survive():
+    # §4.3 provenance: only spec-sourced crons are the replaceable subset — a
+    # user-minted cron survives a push that no longer lists it, and a matched
+    # user cron isn't duplicated.
+    from autowright import cli
+
+    stored = [{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": True,
+               "source": "spec"},
+              {"id": "t2", "kind": "cron", "expression": "0 21 * * *", "enabled": False,
+               "source": "user"}]
+    merged = cli.merge_draft_triggers(
+        stored, [{"kind": "cron", "expression": "0 9 * * *", "enabled": True, "source": "spec"}])
+    assert [(t.get("id"), t["expression"]) for t in merged] == [
+        ("t2", "0 21 * * *"), (None, "0 9 * * *")]
+    # a drafted cron matching the user cron keeps the one stored entry
+    merged = cli.merge_draft_triggers(
+        stored, [{"kind": "cron", "expression": "0 21 * * *", "enabled": True, "source": "spec"}])
+    assert [t.get("id") for t in merged if t["kind"] == "cron"] == ["t2"]
+
+
 def test_merge_draft_triggers_message_entries_additive():
     from autowright import cli
 

@@ -48,7 +48,8 @@ draft/                         # THE pending create-mode draft (§4.4) — a sin
                                # (name, description, agent_id, triggers, created_at, updated_at —
                                # no automation record exists yet to hold them); the grant
                                # selections ride the same draft-only step_agents /
-                               # allowed_secrets keys (and the §4.4 out_of_sync flag) as the
+                               # allowed_secrets / param_values keys (and the §4.4
+                               # out_of_sync flag) as the
                                # edit-mode container below —
                                # there is no enabled_agents key anywhere in the slot:
   automation/                  #   the working copy (version-folder shape)
@@ -97,8 +98,9 @@ automations/<uuid>/
                                # a mix; loads and saves repair a half-finished swap first);
                                # its automation.yaml also holds
                                # draft-only step_agents / allowed_secrets / triggers /
-                               # out_of_sync keys (§4.4 — the editor's grant selections,
-                               # trigger list, and §11 dirty-gate state;
+                               # param_values / out_of_sync keys (§4.4 — the editor's grant
+                               # selections, trigger list, §4.2 chat-staged value map, and
+                               # §11 dirty-gate state;
                                # never written for real versions)
     memory/                    # the draft's own working memory: created on the first Draft
                                # execution as a copy of memory/, reused by every later Draft
@@ -421,7 +423,7 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
 automation/                  # exactly the §5 version-folder shape; import copies it
   automation.yaml            #   description, param definitions, steps manifest, packages —
                              #   no when/note (import stamps v1 fresh), never the
-                             #   draft-only step_agents/allowed_secrets/triggers keys
+                             #   draft-only step_agents/allowed_secrets/triggers/param_values keys
   spec.md                    #   verbatim
   instructions.md            #   verbatim; absent when none
   notes.md                   #   verbatim; absent when empty (§4.1 notes)

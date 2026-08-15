@@ -604,7 +604,9 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
                   kind, from: fromNorm,
                   ...(pattern.trim() ? { pattern: pattern.trim() } : {}),
                 }
-              : { ...(kind === 'cron' ? { kind, expression: expression.trim() } : { kind, at }), ...(timezone ? { timezone } : {}) })
+              // §4.3 provenance: a hand-set cron is user-sourced — it
+              // survives later syncs' cron-subset replace
+              : { ...(kind === 'cron' ? { kind, expression: expression.trim(), source: 'user' as const } : { kind, at }), ...(timezone ? { timezone } : {}) })
           }}
           disabled={!canAdd}
           style={{ flex: 'none' }}

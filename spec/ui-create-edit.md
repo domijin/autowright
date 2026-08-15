@@ -103,7 +103,8 @@ applies unchanged; the chat pane never collapses.
   - **blockers** — the §8 blocker list rendered as agent output (Blockers below).
   - **system** — a quiet one-line left-aligned status chip, rendered as an operation
     block: a per-operation glyph (faint) beside the chip's text as its title — no
-    description bullets. The glyph is stamped on the entry at creation (§4.4 `icon`, a
+    description bullets, with one exception: a §4.4 boundary marker renders the derived
+    history explainer as a dim bullet beneath its title (Thread lifetime below). The glyph is stamped on the entry at creation (§4.4 `icon`, a
     Font Awesome class); an entry without one (older persisted threads, backend-seeded
     entries) falls back to `fa-circle-info`. The map, by operation: sync
     ("Steps synced with the spec.", "Test skipped — the steps aren't in sync with the
@@ -363,11 +364,23 @@ applies unchanged; the chat pane never collapses.
   Create, Start over) keeps the thread** — the settle endpoint appends the §4.4 **boundary
   marker**, an ordinary system chip (`fa-flag-checkered`, `boundary: true`; "Draft saved as
   vN." / "Changes saved — no new version." / "Draft discarded." / "Created as v1.") that
-  splits the thread into history and the current draft session. Everything at or before
+  splits the thread into history and the current draft session. The marker is the one
+  system chip with a description bullet: beneath its title it renders the derived (never
+  persisted) explainer "The messages above are from that draft — your AI starts fresh
+  and no longer reads them." — the reader learns in place that the history above belongs
+  to a saved or discarded draft. Everything at or before
   the newest marker stays visible in the thread but never reaches the agent (§8
   CONVERSATION clips there — the composer sends only post-boundary entries), and the
   marker stamps open blockers entries `dismissed` (they describe a settled draft, so they
-  collapse to their summaries and stop counting as open clarifications). Create migrates
+  collapse to their summaries and stop counting as open clarifications). **History is
+  inert**: entries at or before the newest marker offer no actions — the settled draft
+  they belonged to can't be acted on. A history blockers entry renders as its dismissed
+  one-line summary whatever its stored flag says (belt-and-braces over the marker's
+  dismiss stamp), a history error entry hides its Try-again pill, and the turn action
+  row never renders when the thread's last agent-side entry is a boundary marker (no
+  Undo/Sync/Test/Analyze pills dangle under a settled session — they return with the
+  next current-session entry); the rewrite entry's out-of-sync note likewise anchors to
+  the last **post-boundary** rewrite only. Create migrates
   the pending slot's thread onto the new automation, so the conversation continues on its
   edit page; the settle paths that stay in or re-enter the editor (Start over; reopening
   after a discard or save) show the kept thread with the marker as its last entry. The

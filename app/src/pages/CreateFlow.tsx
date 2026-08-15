@@ -15,7 +15,8 @@ import type { Agent, ChatEntry } from '../types'
 import { BtnPrimary, ConfirmModal, HeaderActions, PULSE, PopMenu, ScrollArea, Spinner, usePopover } from '../ui'
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import {
-  type Rev, amendSpec, analyzeTestMessage, blockerLine, holdsDraftEdits, instructionCache, loadVersionInto,
+  type Rev, amendSpec, analyzeTestMessage, blockerLine, chatSinceBoundary, holdsDraftEdits, instructionCache,
+  loadVersionInto,
   newEntry, persistChat, secretRefsOf, seedEmpty, seedFromAuto, seedFromPayload, serializeDraft,
 } from './createflow/model'
 import { useDraftJob } from './createflow/useDraftJob'
@@ -422,7 +423,8 @@ export default function CreateFlow() {
     const isCreate = !isEdit && rev.spec.length === 0 && rev.steps.length === 0
     if (!isCreate) { void jobs.sendChat(); return }
     setChatText('')
-    const specBlock = [...rev.chat].reverse()
+    // §11 history-inert rule: only the current session's clarification counts
+    const specBlock = [...chatSinceBoundary(rev.chat)].reverse()
       .find((e) => e.kind === 'blockers' && !e.dismissed && e.source === 'spec')
     const entry = newEntry({ kind: 'user', text: request })
     jobs.createEntryRef.current = entry.id
@@ -769,7 +771,9 @@ export default function CreateFlow() {
   // pane shows the headline + example chips and the first message creates.
   const isCreateEmpty = !isEdit && !!rev && rev.spec.length === 0 && rev.steps.length === 0 && !drafting
   const inputDisabled = anyJobBusy || testLive || viewingOld
-  const lastRewriteId = rev ? [...rev.chat].reverse().find((e) => e.kind === 'rewrite')?.id : undefined
+  // §11 history-inert rule: the out-of-sync note anchors only to the current
+  // session's last rewrite — a settled session's rewrite never carries it.
+  const lastRewriteId = rev ? [...chatSinceBoundary(rev.chat)].reverse().find((e) => e.kind === 'rewrite')?.id : undefined
 
   return (
     <div style={{

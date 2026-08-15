@@ -1268,3 +1268,56 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     expect(pick.disabled).toBe(true)
   })
 })
+
+describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () => {
+  beforeEach(armPendingPoll)
+  const getChatMock = () => mockedApi.getChat as ReturnType<typeof vi.fn>
+
+  it('renders the marker with the history explainer; a marker-terminated thread offers no actions', async () => {
+    getChatMock().mockResolvedValueOnce({ chat: [
+      { id: 'h1', kind: 'user', text: 'old request' },
+      { id: 'h2', kind: 'blockers', source: 'steps', blockers: [{ reason: 'r', fix: 'f' }] },
+      { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft saved as v2.' },
+    ] })
+    render(<CreateFlow />)
+    // the stored thread merges in with the marker as its last entry
+    await screen.findByText('Draft saved as v2.')
+    // §11: the marker is the one system chip with a description bullet — the
+    // derived history explainer
+    screen.getByText(/The messages above are from that draft — your AI starts fresh/)
+    // §11 history-inert: the turn action row never renders under a settled
+    // session — the in-sync draft would otherwise offer the Test-draft pill
+    expect(screen.queryByTestId('chat-turn-actions')).toBeNull()
+    // a history blockers entry collapses to its dismissed summary whatever its
+    // stored flag says — its Dismiss/Apply buttons are gone with it
+    screen.getByText('1 blocker — dismissed')
+    expect(screen.queryByText('Your AI hit a blocker')).toBeNull()
+    expect(screen.queryByText('Apply to the spec & sync')).toBeNull()
+  })
+
+  it('entries after the marker act normally — the turn action row returns with the new session', async () => {
+    getChatMock().mockResolvedValueOnce({ chat: [
+      { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft discarded.' },
+      { id: 'n1', kind: 'system', icon: 'fa-vial', text: 'Draft execution succeeded.' },
+    ] })
+    render(<CreateFlow />)
+    await screen.findByText('Draft discarded.')
+    // post-boundary entry at the end → the in-sync draft's Test pill is back
+    await waitFor(() => expect(screen.getByTestId('chat-turn-actions')).toBeTruthy())
+    screen.getByTestId('chat-test-draft')
+  })
+
+  it('create mode: a history spec error hides Try again; a current one keeps it', async () => {
+    storeMod.useStore.setState({ createFrom: 'new', automationId: null })
+    getChatMock().mockResolvedValueOnce({ chat: [
+      { id: 'e1', kind: 'error', source: 'spec', text: 'old failure' },
+      { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft discarded.' },
+      { id: 'e2', kind: 'error', source: 'spec', text: 'fresh failure' },
+    ] })
+    render(<CreateFlow />)
+    await screen.findByText('fresh failure')
+    screen.getByText('old failure') // history stays visible…
+    // …but only the current session's failure offers the retry
+    expect(screen.getAllByText('Try again')).toHaveLength(1)
+  })
+})

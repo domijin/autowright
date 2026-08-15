@@ -108,6 +108,10 @@ describe('edit draft e2e', () => {
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
     await page.getByText('Test succeeded.', { exact: true }).waitFor({ timeout: 10_000 })
     await page.getByText('Draft discarded.', { exact: true }).waitFor()
+    // the marker explains the history, and the marker-terminated thread offers
+    // no action pills (§11 history-inert rule — no dangling Test-draft pill)
+    await page.getByText(/The messages above are from that draft/).waitFor()
+    expect(await page.getByTestId('chat-turn-actions').count()).toBe(0)
     await shot(page, 'edit-draft-thread-kept.png')
   }, 120_000)
 })

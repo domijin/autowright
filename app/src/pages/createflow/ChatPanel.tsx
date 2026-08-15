@@ -259,14 +259,23 @@ export function ChatPanel({
         : e.source === 'steps' ? 'It couldn’t build the steps as the spec asks.'
           : 'It couldn’t sync the steps with the spec.'
 
+  // §4.4/§11 history is inert: entries at or before the newest boundary
+  // marker belong to a settled draft — they render, but offer no actions.
+  let lastBoundaryIdx = -1
+  for (let i = rev.chat.length - 1; i >= 0; i--) {
+    if (rev.chat[i].boundary) { lastBoundaryIdx = i; break }
+  }
+
   // §11 turn action row — the thread's one suggestion surface: pills beneath
-  // the last agent-side entry while nothing runs; hides when no pill applies.
+  // the last agent-side entry while nothing runs; hides when no pill applies
+  // and when the thread ends on a boundary marker (§11 history-inert rule:
+  // no Undo/Sync/Test/Analyze pills dangle under a settled session).
   const rowsAllowed = !anyJobBusy && !viewingOld && !testLive
   const lastEntry = rev.chat.length ? rev.chat[rev.chat.length - 1] : null
   const undoAtEnd = rowsAllowed && !!rev.undo && !!lastEntry && rev.undo.entryId === lastEntry.id
   const showSyncPill = outOfSync && rev.dirty && !syncDisabled && !rev.pendingSync
   const showTestPill = !outOfSync && rev.steps.length > 0 && !drafting && !rev.pendingSync && !rev.pendingTest
-  const showTurnRow = rowsAllowed && !!lastEntry && lastEntry.kind !== 'user'
+  const showTurnRow = rowsAllowed && !!lastEntry && lastEntry.kind !== 'user' && !lastEntry.boundary
     && (undoAtEnd || showSyncPill || showTestPill || !!analyzeFailure)
   const pillGlyph: React.CSSProperties = { fontSize: 9, color: 'var(--text-faint)' }
 
@@ -321,6 +330,8 @@ export function ChatPanel({
           // family boundaries (around message blocks), 0 between operation blocks
           const prev = i > 0 ? rev.chat[i - 1] : null
           const mt = familyGap(prev, e)
+          // §11 history-inert rule: at or before the newest boundary marker
+          const history = i <= lastBoundaryIdx
           // §11 draft undo: at the thread's end the pill leads the turn action
           // row (below the map); when later answer-only turns pushed the
           // snapshot's anchor off the end, it renders as its own row beneath
@@ -407,7 +418,9 @@ export function ChatPanel({
           }
           if (e.kind === 'blockers') {
             const blockers = e.blockers ?? []
-            if (e.dismissed) {
+            // §11: a history blockers entry always collapses to its summary,
+            // whatever its stored flag says — the draft it blocked is settled
+            if (e.dismissed || history) {
               return (
                 <div key={e.id} style={{ marginTop: mt, display: 'flex', alignItems: 'center', gap: 10, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                   <GlyphBox><i className="fa-solid fa-ban" style={{ fontSize: 10, color: 'var(--text-faint)' }} /></GlyphBox>
@@ -482,7 +495,8 @@ export function ChatPanel({
               <div key={e.id} style={{ marginTop: mt }}>
                 <MsgHeader icon="fa-circle-xmark" color="var(--red)" title="Something went wrong" />
                 <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-2)', overflowWrap: 'break-word' }}>{e.text}</div>
-                {e.source === 'spec' && !anyJobBusy && !isEdit && (
+                {/* §11 history-inert rule: no Try again on a settled session's failure */}
+                {e.source === 'spec' && !anyJobBusy && !isEdit && !history && (
                   <ActionRow style={{ marginTop: 8 }}>
                     <button className="ad-btn-pill action" onClick={() => void submitCreate(lastCreateRef.current)}>
                       Try again
@@ -494,7 +508,9 @@ export function ChatPanel({
           }
           // §11 system chip — an operation block: per-op glyph (stamped at
           // creation, `fa-circle-info` fallback) beside the chip's text as its
-          // title; the undo row renders beneath it when it anchors the snapshot
+          // title; the undo row renders beneath it when it anchors the snapshot.
+          // A §4.4 boundary marker is the one chip with a description bullet:
+          // the derived history explainer (never persisted).
           return (
             <React.Fragment key={e.id}>
             <div style={{ marginTop: mt, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
@@ -505,6 +521,14 @@ export function ChatPanel({
                 {e.text}
               </div>
             </div>
+            {e.boundary && (
+              <OpBullet
+                first
+                size={11.5}
+                color="var(--text-faint)"
+                text="The messages above are from that draft — your AI starts fresh and no longer reads them."
+              />
+            )}
             {undoRow}
             </React.Fragment>
           )

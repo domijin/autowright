@@ -429,9 +429,13 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   read and written through the §19 `GET/PUT /chat/{owner}` surface (owner: automation id or
   `pending`), decoupled from the draft: **settling the draft never deletes the thread** —
   it is deleted only by §11 Clear chat (empty list unlinks the file), with its
-  automation, or by the §9.1 discard-and-start-new confirm (which follows the slot's
+  automation, by the §9.1 discard-and-start-new confirm (which follows the slot's
   draft DELETE with a `PUT /chat/pending` of `[]`, so the fresh create session opens
-  with an empty thread). Instead, every settle **appends a boundary marker** — a `system` entry with
+  with an empty thread), or by the §11 **fresh-entry clear**: opening the create flow
+  when the pending slot holds no draft to resume discards the leftover slot thread
+  (the editor drops the fetched thread and PUTs `[]`) — a new automation always opens
+  on the §11 create empty state, and the slot thread survives entry only beside a
+  kept draft. Instead, every settle **appends a boundary marker** — a `system` entry with
   `boundary: true`, `icon: fa-flag-checkered`, and the settle's text ("Draft saved as vN." ·
   "Changes saved — no new version." for the §4.4 operational-only save · "Draft discarded." ·
   "Created as v1.") — written **backend-side by the settle endpoint itself** (§19: save,

@@ -1422,7 +1422,12 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
   it('create mode: persisted error entries render with no Try again anywhere', async () => {
     // The removed create pipeline's spec-call errors carried a Try-again pill;
     // unified chat failures never do — legacy persisted entries render plain.
+    // A pending draft resumes here, so the slot thread merges (§4.4).
     storeMod.useStore.setState({ createFrom: 'new', automationId: null })
+    ;(mockedApi.getDraft as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      draft: { spec: [{ kind: 'h1', text: 'Kept' }, { kind: 'p', text: 'Body.' }], steps: [] },
+      agentId: null,
+    })
     getChatMock().mockResolvedValueOnce({ chat: [
       { id: 'e1', kind: 'error', source: 'spec', text: 'old failure' },
       { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft discarded.' },
@@ -1433,5 +1438,35 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     screen.getByText('old failure') // history stays visible…
     // …and neither session's failure offers a retry pill
     expect(screen.queryByText('Try again')).toBeNull()
+  })
+
+  it('fresh create entry discards a leftover slot thread — the suggestions stay (§4.4 fresh-entry clear)', async () => {
+    // No pending draft to resume: the settled session's thread must never
+    // replay over the create empty state — it is dropped and unlinked.
+    storeMod.useStore.setState({ createFrom: 'new', automationId: null })
+    getChatMock().mockResolvedValueOnce({ chat: [
+      { id: 'a1', kind: 'activity', title: 'Working on the request…', text: 'Choosing what to do', outcome: 'done' },
+      { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft discarded.' },
+    ] })
+    render(<CreateFlow />)
+    await waitFor(() => expect(mockedApi.putChat).toHaveBeenCalledWith('pending', []))
+    // the empty state stands; nothing from the old session renders
+    screen.getByRole('heading', { name: 'What should Autowright do for you?' })
+    expect(screen.queryByText('Working on the request…')).toBeNull()
+    expect(screen.queryByText('Draft discarded.')).toBeNull()
+  })
+
+  it('a resumed pending draft keeps its slot thread (§4.4 — the clear is entry-without-draft only)', async () => {
+    storeMod.useStore.setState({ createFrom: 'new', automationId: null })
+    ;(mockedApi.getDraft as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      draft: { spec: [{ kind: 'h1', text: 'Kept' }, { kind: 'p', text: 'Body.' }], steps: [] },
+      agentId: null,
+    })
+    getChatMock().mockResolvedValueOnce({ chat: [
+      { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft discarded.' },
+    ] })
+    render(<CreateFlow />)
+    await screen.findByText('Draft discarded.')
+    expect(mockedApi.putChat).not.toHaveBeenCalledWith('pending', [])
   })
 })

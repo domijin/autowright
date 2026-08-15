@@ -406,9 +406,12 @@ applies unchanged; the chat pane never collapses.
   describes a message-triggered automation. Clicking a chip fills the input (it never sends). Footer reassurance
   line: "Your AI writes the steps — Autowright still executes everything on this Mac."
   Both empty states render only while the thread is empty: a kept thread (Thread
-  lifetime below — e.g. after Start over, or reopening the create flow with a slot
-  thread) shows the thread instead, the composer placeholder ("Describe the job — one
-  sentence is enough." while no spec) carrying the prompt.
+  lifetime below — after an in-session Start over, or when the slot's draft resumes)
+  shows the thread instead, the composer placeholder ("Describe the job — one
+  sentence is enough." while no spec) carrying the prompt. **A new automation always
+  opens on this empty state:** entering the create flow when the pending slot holds
+  no draft to resume discards any leftover slot thread (the §4.4 fresh-entry clear) —
+  a settled session's conversation never replays over the suggestions.
   Edit-mode empty state (no stored thread): "Ask anything, or describe a change — your AI
   answers here and rewrites the spec when you ask for changes."
 - **Thread lifetime:** the thread **outlives the draft** (§4.4 thread lifetime; §5
@@ -439,9 +442,15 @@ applies unchanged; the chat pane never collapses.
   next current-session entry); the rewrite entry's out-of-sync note likewise anchors to
   the last **post-boundary** rewrite only. Create migrates
   the pending slot's thread onto the new automation, so the conversation continues on its
-  edit page; the settle paths that stay in or re-enter the editor (Start over; reopening
-  after a discard or save) show the kept thread with the marker as its last entry. The
-  thread is deleted only by **Clear chat**, with its automation, or by the §9.1
+  edit page; the settle paths that stay in the editor (Start over) or re-enter it in edit
+  mode (reopening after a discard or save) show the kept thread with the marker as its
+  last entry. **Fresh create entry clears the slot thread:** opening the create flow when
+  the pending slot holds no draft to resume discards any leftover slot thread — the
+  editor holds the stored-thread merge until the §19 `GET /draft/pending` answer, and
+  with nothing to resume it drops the fetched thread and PUTs `[]` (unlinking
+  `chat.jsonl`) instead of rendering it — so a new automation always opens on the create
+  empty state; the slot thread survives entry only beside a kept draft. The
+  thread is otherwise deleted only by **Clear chat**, with its automation, or by the §9.1
   discard-and-start-new confirm (which clears the pending slot's thread right after the
   discard, so the fresh create flow opens with an empty thread) — never by any other
   settle.

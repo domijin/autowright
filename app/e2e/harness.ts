@@ -233,7 +233,9 @@ export async function closeApp(h: AppHandle | null): Promise<void> {
  * for the hover-expanded rail to collapse — otherwise the 212px overlay keeps
  * covering later click targets near the left edge. */
 export async function clickNav(page: Page, label: string): Promise<void> {
-  await page.getByText(label, { exact: true }).click()
+  // Scoped to the rail: page text can legitimately repeat a rail label (the
+  // editor's back button says "Automations" too).
+  await page.getByTestId('nav-rail').getByText(label, { exact: true }).click()
   await page.mouse.move(640, 300)
   await waitFor(async () => {
     const w = await page.getByTestId('nav-rail').evaluate((el) => el.getBoundingClientRect().width)

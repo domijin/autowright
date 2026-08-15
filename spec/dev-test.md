@@ -135,6 +135,10 @@ everything finer-grained belongs to the unit/integration tiers:
 - list → detail → execute → result on a seeded-via-API home
 - the create-flow journey: request → AI draft via the fake CLI through the real §8 chat +
   chained-sync pipeline → Test draft run → Create → execute → execution page
+- a new automation always opens on the create empty state: the suggestion headline shows
+  and stays on fresh entry, and re-entering after a settled session (send → build →
+  Start over → leave) shows the suggestions again — the §4.4 fresh-entry clear, never
+  the old session's thread
 - adding a config-only agent; adding a placeholder secret, then editing and deleting it;
   adding a cron trigger, seeing its humanized chip, and toggling it off
 - an execution whose step writes a result file, rendered in the execution page's result view;

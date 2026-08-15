@@ -118,6 +118,10 @@ export default function CreateFlow() {
   // only then do the thread writers arm.
   const [chatMergeTick, setChatMergeTick] = useState(0)
   const pendingStoredChat = useRef<ChatEntry[] | null>(null)
+  // §4.4 fresh-entry clear: in create mode the stored-thread merge waits for
+  // the pending-draft answer — null until GET /draft/pending resolves, then
+  // whether a draft resumed. Edit mode always merges.
+  const slotResume = useRef<boolean | null>(isEdit ? true : null)
   useEffect(() => {
     const owner = isEdit ? automationId : 'pending'
     if (!owner) return
@@ -131,9 +135,19 @@ export default function CreateFlow() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!rev || pendingStoredChat.current == null) return
+    // §4.4 fresh-entry clear: don't merge (or arm the writers) until the
+    // slot's resume answer is known — a failed GET keeps the writers off,
+    // exactly like a failed thread fetch.
+    if (slotResume.current == null) return
     const stored = pendingStoredChat.current
     pendingStoredChat.current = null
     chatLoaded.current = true
+    if (!isEdit && slotResume.current === false) {
+      // No draft to resume — a new automation always opens on the create
+      // empty state: drop the settled session's leftover thread and unlink it.
+      if (stored.length) void api.putChat('pending', []).catch(() => { /* backend restarting */ })
+      return
+    }
     if (stored.length) setRev((r) => (r ? { ...r, chat: [...stored, ...r.chat] } : r))
   }, [rev != null, chatMergeTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -192,7 +206,13 @@ export default function CreateFlow() {
     void api.openDraft('pending').catch(() => { /* backend restarting */ })
     let dead = false
     void api.getDraft('pending').then(({ draft, agentId: gid }) => {
-      if (dead || !draft || seededRef.current) return
+      if (dead) return
+      // §4.4 fresh-entry clear: the thread merge above waits on this answer.
+      if (slotResume.current == null) {
+        slotResume.current = !!draft
+        setChatMergeTick((t) => t + 1)
+      }
+      if (!draft || seededRef.current) return
       const cur = revRef.current
       // Only the untouched empty seed may be replaced — never in-flight work.
       if (cur && (cur.touched || cur.chatBusy || cur.syncBusy || cur.chat.length > 0 || cur.spec.length > 0)) return

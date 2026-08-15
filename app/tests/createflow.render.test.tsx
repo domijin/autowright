@@ -566,11 +566,15 @@ describe('CreateFlow per-stage activity entries (§11)', () => {
       () => expect(within(thread()).getByText('Draft generated — review the spec and steps, then create it.')).toBeTruthy(),
       { timeout: 4000 },
     )
-    // both stage titles survive as settled entries, spec before steps, each
-    // carrying only its own slice of the feed
+    // every displayed stage survives as a settled entry — the seeded neutral
+    // deciding phase (with its canned bullet) first, then documents, then
+    // workflow — each carrying only its own slice of the feed
     const t = thread()
+    const neutralEntry = within(t).getByText('Working on the request…')
+    expect(within(t).getByText('• Choosing what to do')).toBeTruthy()
     const specEntry = within(t).getByText('Updating the documents…')
     const stepsEntry = within(t).getByText('Syncing the workflow…')
+    expect(neutralEntry.compareDocumentPosition(specEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(specEntry.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // §11 operation blocks: feed lines render as flush-left `• ` bullets
     const feedSpec = within(t).getByText('• Thinking about the spec…')
@@ -578,8 +582,8 @@ describe('CreateFlow per-stage activity entries (§11)', () => {
     expect(specEntry.compareDocumentPosition(feedSpec) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(feedSpec.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(stepsEntry.compareDocumentPosition(feedSteps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // both settled with a green check, no spinner left
-    expect(t.querySelectorAll('.fa-check').length).toBe(2)
+    // all settled with a green check, no spinner left
+    expect(t.querySelectorAll('.fa-check').length).toBe(3)
     expect(spinnersIn(t).length).toBe(0)
   })
 })

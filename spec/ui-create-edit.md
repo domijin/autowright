@@ -76,13 +76,14 @@ applies unchanged; the chat pane never collapses.
     `failed`. Each carries the stage's §11 label (`title`) plus the stage's own slice of
     the §8 `events` feed (grouped by each event's `stage` stamp). A cancelled job leaves
     no entry for its in-flight stage — its request text returns to the input instead —
-    but stages that already settled stay in the thread. One deliberate skip: the
-    neutral "Working on the request" stage (chat and create jobs alike) settles
-    **only when its feed has at least one event or it carries a blocked/failed
-    outcome** — an empty, cleanly finished deciding phase lands no entry, so a small
-    edit turn (or a create that goes straight to writing) starts at
-    "Updating the documents", while a research trail always persists and a blocked or
-    failed first phase always keeps a home for its outcome glyph. Renders exactly like the live
+    but stages that already settled stay in the thread. **A shown block is never
+    removed:** the neutral "Working on the request" stage settles on every chat and
+    create turn, feed or no feed — the live entry displays that title from the moment
+    of send (the pre-poll default), so the editor seeds the stage into the settle list
+    even when the backend flipped before the first poll observed it. A deciding phase
+    whose stream left no milestones settles with the canned bullet "Choosing what to
+    do" beneath its outcome glyph — a settled block is never a bare title — and the
+    flip then reads as the next block starting beneath it, never as a replacement. Renders exactly like the live
     progress entry it replaces — the stage label kept, an **outcome glyph** in the
     spinner's 13 px box (same size, so the text never shifts when the spinner settles): a
     green check for a finished stage (every non-final stage, and the final one of a job

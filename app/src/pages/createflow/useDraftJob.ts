@@ -102,22 +102,26 @@ export function useDraftJob(d: DraftJobDeps) {
     // Builds (and marks settled) one activity entry per given stage, each
     // carrying its own stage-stamped slice of the feed; only the last stage of
     // a terminal batch takes the job's outcome — earlier stages finished fine.
-    // §11: a chat job's neutral deciding stage settles only when its feed has
-    // events or it carries a blocked/failed outcome — an empty, cleanly
-    // finished "Working on the request" lands no entry.
+    // §11: every stage that was on screen settles — a shown block is never
+    // removed, even when its feed is empty (a bare title + check is the
+    // record that the phase ran).
     const settleStages = (
       mode: 'create' | 'chat' | 'sync', evs: { text: string; stage?: string }[],
       stages: string[], outcome: 'done' | 'blocked' | 'failed' | null,
     ) => stages.map((s, i) => {
       settledStages.add(s)
+      // §8 stamps every event; a stampless one (older payloads) belongs to
+      // the batch's first stage rather than vanishing
+      const text = evs.filter((e) => e.stage === s || (!e.stage && i === 0))
+        .map((e) => e.text).join('\n')
       return newEntry({
         kind: 'activity', title: stageDisplayTitle(s),
-        text: evs.filter((e) => e.stage === s).map((e) => e.text).join('\n'),
+        // §11: a deciding phase whose stream left no milestones still says
+        // what it did — a settled block is never a bare title
+        text: text || (s === 'Working on the request' ? 'Choosing what to do' : ''),
         outcome: outcome && i === stages.length - 1 ? outcome : 'done',
       })
-    }).filter((en) => !((mode === 'chat' || mode === 'create')
-      && en.title === 'Working on the request…'
-      && !en.text && en.outcome === 'done'))
+    })
     // Staleness guard: a slow in-flight tick may resolve after this job was
     // cancelled/replaced (jobIdRef changed) or after another tick already
     // handled the terminal status (jobIdRef cleared below). Checking the ref
@@ -132,6 +136,11 @@ export function useDraftJob(d: DraftJobDeps) {
           // (the unified three-phase set); `detail` is the
           // finer live-progress line under it, `events` the feed's history.
           const evs = j.events ?? []
+          // §11: chat/create jobs display "Working on the request…" from the
+          // moment of send (the pre-poll default title) — seed it first so the
+          // shown block always settles, even when the backend flipped stages
+          // before the first poll ever observed the neutral one.
+          if (j.mode !== 'sync') noteStage('Working on the request')
           evs.forEach((e) => noteStage(e.stage))
           noteStage(j.stage)
           const evKey = evs.length ? `${evs.length}:${evs[evs.length - 1].text}` : ''

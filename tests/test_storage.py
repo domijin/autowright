@@ -21,6 +21,50 @@ def test_create_and_reload_roundtrip(store, home):
     assert ver["spec"][0] == {"kind": "h1", "text": "Test automation"}
 
 
+def test_concurrency_defaults_and_floors(store, home):
+    """§4.1/§6: new automations run one at a time and skip on busy
+    (maxParallel 1, maxQueued 0) — parallel runs and queueing are opt-in.
+    The floors hold everywhere: never below 1 / below 0, even for
+    hand-edited or missing automation.yaml values (clamped at load, never
+    dropping the automation)."""
+    from autowright.storage import (DEFAULT_MAX_PARALLEL, DEFAULT_MAX_QUEUED,
+                                    Store, clamp_max_parallel, clamp_max_queued,
+                                    load_yaml, save_yaml)
+
+    assert DEFAULT_MAX_PARALLEL == 1 and DEFAULT_MAX_QUEUED == 0
+    a = store.create_automation(make_version(), "Defaults", "agent-1")
+    assert a["max_parallel"] == 1 and a["max_queued"] == 0
+    assert store.auto_json(a)["maxParallel"] == 1
+    assert store.auto_json(a)["maxQueued"] == 0
+
+    # absent keys (pre-concurrency data) load as the defaults
+    top_path = home / "automations" / a["id"] / "automation.yaml"
+    top = load_yaml(top_path)
+    del top["max_parallel"], top["max_queued"]
+    save_yaml(top_path, top)
+    s2 = Store()
+    s2.load_all()
+    b = s2.autos[a["id"]]
+    assert b["max_parallel"] == 1 and b["max_queued"] == 0
+
+    # hand-edited below-floor / garbage values clamp at load
+    top = load_yaml(top_path)
+    top["max_parallel"], top["max_queued"] = 0, -5
+    save_yaml(top_path, top)
+    s3 = Store()
+    s3.load_all()
+    c = s3.autos[a["id"]]
+    assert c["max_parallel"] == 1 and c["max_queued"] == 0
+
+    # the clamps themselves: floors 1 and 0, unusable values → the defaults
+    assert clamp_max_parallel(0) == 1 and clamp_max_parallel(-3) == 1
+    assert clamp_max_parallel(4) == 4
+    assert clamp_max_queued(-1) == 0 and clamp_max_queued(0) == 0
+    assert clamp_max_queued(7) == 7
+    assert clamp_max_parallel("junk") == 1 and clamp_max_parallel(None) == 1
+    assert clamp_max_queued("junk") == 0 and clamp_max_queued(None) == 0
+
+
 def test_no_triggers_roundtrip(store, home):
     from autowright.storage import Store
 

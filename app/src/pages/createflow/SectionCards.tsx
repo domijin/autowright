@@ -805,35 +805,6 @@ export function RightCards({
         )}
       </div>
 
-      {/* CONCURRENCY — display-only (§11): the §4.1 settings; number inputs
-          live on the automation page, chat stages changes (§8 `concurrency`).
-          Always the two rows — no empty state, no collapse. */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
-          <Eyebrow>CONCURRENCY</Eyebrow>
-        </div>
-        {([
-          { label: 'Run at once', key: 'maxParallel' as const, fallback: 1 },
-          { label: 'Queue when busy', key: 'maxQueued' as const, fallback: 0 },
-        ]).map(({ label, key, fallback }) => {
-          const staged = rev.concurrency?.[key]
-          return (
-            <div key={key} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
-              <div style={{ font: "600 12.5px var(--sans)" }}>{label}</div>
-              <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                {staged != null && (
-                  <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--accent)', marginRight: 8 }}>STAGED</span>
-                )}
-                {staged ?? liveConcurrency?.[key] ?? fallback}
-              </div>
-            </div>
-          )
-        })}
-        <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
-          Not part of a version — change these on the automation page, or ask your AI here (staged changes apply when you save).
-        </div>
-      </div>
-
       {/* PARAMETERS — display-only (§16): value input lives on the automation page,
           test-only values in the Test card */}
       <div style={cardStyle}>
@@ -880,6 +851,35 @@ export function RightCards({
             </div>
           </>
         )}
+      </div>
+
+      {/* CONCURRENCY — display-only (§11): the §4.1 settings; number inputs
+          live on the automation page, chat stages changes (§8 `concurrency`).
+          Always the two rows — no empty state, no collapse. */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
+          <Eyebrow>CONCURRENCY</Eyebrow>
+        </div>
+        {([
+          { label: 'Run at once', key: 'maxParallel' as const, fallback: 1 },
+          { label: 'Queue when busy', key: 'maxQueued' as const, fallback: 0 },
+        ]).map(({ label, key, fallback }) => {
+          const staged = rev.concurrency?.[key]
+          return (
+            <div key={key} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+              <div style={{ font: "600 12.5px var(--sans)" }}>{label}</div>
+              <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                {staged != null && (
+                  <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--accent)', marginRight: 8 }}>STAGED</span>
+                )}
+                {staged ?? liveConcurrency?.[key] ?? fallback}
+              </div>
+            </div>
+          )
+        })}
+        <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
+          Not part of a version — change these on the automation page, or ask your AI here (staged changes apply when you save).
+        </div>
       </div>
 
       {/* PACKAGES · PYTHON LIBRARIES (§6.2) — display-only, right column like

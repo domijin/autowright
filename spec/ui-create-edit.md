@@ -513,7 +513,7 @@ vN+1 takes over from the next execution (`<short label of the next trigger>`)." 
 agents, secrets, instructions, framework — the spec and the agent's working notes on top, the
 grant cards under them, the standing-rules cards last: build instructions second-last, the
 read-only framework reference closing the column; right column: the Build & test panel on top,
-then steps, triggers, concurrency, parameters, packages). Motion on this page follows §14: every collapsible card
+then steps, triggers, parameters, concurrency, packages). Motion on this page follows §14: every collapsible card
 animates open/closed through the Collapse primitive — the body **and** the collapsed hint,
 which hand off as a crossfade per the §14 collapsible motion (content fades while the rows
 resize; open decelerates at `--t-enter`, close accelerates at `--t-exit`) — never clipped
@@ -755,17 +755,7 @@ editors enter with
   saving." right after the job's outcome entries. It appends only when the settling job
   introduced the gap (the pre-job draft didn't qualify — a fresh create always counts),
   so repeated syncs over an unchanged gap never repeat the reminder.
-- **CONCURRENCY** card — display-only in both modes, directly below the TRIGGERS card: the
-  §4.1 settings as two summary rows in the §9.2 card's language — **"Run at once"**
-  (`maxParallel`) and **"Queue when busy"** (`maxQueued`), each with the value
-  right-aligned like the Parameters card's value summaries. The value's source: in edit
-  mode the automation's stored settings, in create mode the defaults (1 / 0) — and in
-  both modes a chat-staged value (§8 `concurrency` action) overrides its row, with the
-  same small "staged" hint the Parameters card uses, so an unsaved value is never
-  mistaken for a stored one. No inline editors (the §9.2 detail page keeps the number
-  inputs). Footer: "Not part of a version — change these on the automation page, or ask
-  your AI here (staged changes apply when you save)." The card is not collapsible and has
-  no empty state — the two rows always render.
+- **PARAMETERS · YOUR AI ASKED FOR THESE** card — display-only in **both** create and edit
   mode, with a "READ-ONLY HERE" tag whenever the draft has params: each row shows the draft
   parameter's name, description, and a read-only **value summary** (the §4.2 one-line summary,
   right-aligned, ellipsized) — never inline editors. The summary's source: in create mode the
@@ -786,6 +776,17 @@ editors enter with
   (§4.2 edit behaviors) and, test-only, in the Build & test panel at the top of the column.
   Empty state:
   "No settings needed — your AI didn't ask for any."
+- **CONCURRENCY** card — display-only in both modes, directly below the Parameters card: the
+  §4.1 settings as two summary rows in the §9.2 card's language — **"Run at once"**
+  (`maxParallel`) and **"Queue when busy"** (`maxQueued`), each with the value
+  right-aligned like the Parameters card's value summaries. The value's source: in edit
+  mode the automation's stored settings, in create mode the defaults (1 / 0) — and in
+  both modes a chat-staged value (§8 `concurrency` action) overrides its row, with the
+  same small "staged" hint the Parameters card uses, so an unsaved value is never
+  mistaken for a stored one. No inline editors (the §9.2 detail page keeps the number
+  inputs). Footer: "Not part of a version — change these on the automation page, or ask
+  your AI here (staged changes apply when you save)." The card is not collapsible and has
+  no empty state — the two rows always render.
 - **Steps** — readable scripts with per-step read-only tags (same tag language as the §9.2
   detail page — never menus, every tag carries a plain-language tooltip — the §14 Tag
   tooltip bubble, custom, not the native `title`; every tooltip follows one shape — what
@@ -855,7 +856,7 @@ editors enter with
   either way; the collapsed line lists the allowed secret names (explainer when none is
   allowed, status-aware rule above) — forced open while a warning shows (same pattern as the
   agents and Packages cards).
-- **PACKAGES** card — in the **right column**, below the Parameters card: display-only like
+- **PACKAGES** card — in the **right column**, below the Concurrency card: display-only like
   Triggers and Parameters — the drafting pipeline owns the list; the user's only write is the
   §6.2 package update below.
   One row per §6.2 declared package — the distribution name in mono, followed by the

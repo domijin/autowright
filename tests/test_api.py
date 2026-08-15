@@ -792,12 +792,14 @@ def test_save_version_applies_staged_concurrency(client):
     assert r.status_code == 200
     auto = store.autos[a["id"]]
     assert auto["max_parallel"] == 2 and auto["max_queued"] == 0  # partial: unsent key stays
-    r = client.post(f"/automations/{a['id']}/versions", json={
-        "draft": make_version(notes="third"),
-        "concurrency": {"maxParallel": 0},
-    })
-    assert r.status_code == 422
-    assert store.autos[a["id"]]["max_parallel"] == 2  # nothing stored on 422
+    # floors: maxParallel never below 1, maxQueued never below 0 — 422, nothing stored
+    for bad in ({"maxParallel": 0}, {"maxParallel": -1}, {"maxQueued": -1}):
+        r = client.post(f"/automations/{a['id']}/versions", json={
+            "draft": make_version(notes="third"), "concurrency": bad,
+        })
+        assert r.status_code == 422
+    auto = store.autos[a["id"]]
+    assert auto["max_parallel"] == 2 and auto["max_queued"] == 0  # nothing stored on 422
 
 
 def test_create_applies_staged_concurrency(client):
@@ -810,11 +812,14 @@ def test_create_applies_staged_concurrency(client):
     assert r.status_code == 200
     auto = store.autos[r.json()["id"]]
     assert auto["max_parallel"] == 3 and auto["max_queued"] == 5
-    # invalid values 422 like the PATCH — nothing is created
-    r = client.post("/automations", json={
-        "draft": make_version(), "concurrency": {"maxQueued": -1},
-    })
-    assert r.status_code == 422
+    # floors 422 like the PATCH — nothing is created
+    before = len(store.autos)
+    for bad in ({"maxQueued": -1}, {"maxParallel": 0}):
+        r = client.post("/automations", json={
+            "draft": make_version(), "concurrency": bad,
+        })
+        assert r.status_code == 422
+    assert len(store.autos) == before
 
 
 def test_operational_only_save_skips_version_mint(client):

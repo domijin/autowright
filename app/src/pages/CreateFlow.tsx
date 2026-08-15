@@ -15,7 +15,7 @@ import type { Agent, ChatEntry } from '../types'
 import { BtnPrimary, ConfirmModal, HeaderActions, PULSE, PopMenu, ScrollArea, Spinner, usePopover } from '../ui'
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import {
-  type Rev, amendSpec, blockerLine, holdsDraftEdits, instructionCache, loadVersionInto,
+  type Rev, amendSpec, analyzeTestMessage, blockerLine, holdsDraftEdits, instructionCache, loadVersionInto,
   newEntry, secretRefsOf, seedEmpty, seedFromAuto, seedFromPayload, serializeDraft,
 } from './createflow/model'
 import { useDraftJob } from './createflow/useDraftJob'
@@ -241,6 +241,18 @@ export default function CreateFlow() {
     anyJobBusy, testLive, viewingOld,
   })
 
+  // §11 turn action row wiring: the Test-the-draft pill opens the Build & test
+  // panel's setup disclosure (signal consumed there); the Analyze-the-failure
+  // pill sends the canned message exactly like the panel's button — null while
+  // the tracked test didn't settle failed, hiding the pill.
+  const [testSetupSignal, setTestSetupSignal] = useState(0)
+  const analyzeFailure = test && testExec?.status === 'failed'
+    ? () => {
+        if (anyJobBusy || testLive || viewingOld) return
+        void jobs.sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId)
+      }
+    : null
+
   // ---- guards + edit-mode seeding ----
   useEffect(() => {
     if (agents.length === 0) {
@@ -376,7 +388,7 @@ export default function CreateFlow() {
         dirty: snap.dirty, undo: null, touched: true,
         // §11: the thread records the rollback — persisted, so the agent's §8
         // CONVERSATION context never assumes the undone rewrites still stand
-        chat: [...r.chat, newEntry({ kind: 'system', text: 'Last change undone — the rewrites above no longer apply.' })],
+        chat: [...r.chat, newEntry({ kind: 'system', icon: 'fa-rotate-left', text: 'Last change undone — the rewrites above no longer apply.' })],
       }
     })
     showToast('Last change undone.', 3200)
@@ -518,7 +530,7 @@ export default function CreateFlow() {
     const failure = ex?.error
       ? `Execution failed at step ${ex.error.step ?? '?'} — ${ex.error.message}`
       : 'The execution failed.'
-    appendEntry({ kind: 'system', text: failure })
+    appendEntry({ kind: 'system', icon: 'fa-circle-exclamation', text: failure })
     if (anyJobBusy || testLive || !ex || ex.status !== 'failed') return
     // The seed entry above already names the failing step — don't repeat it here.
     void jobs.sendChat('This execution failed — figure out why. If the automation is at fault, change it so it won’t happen again; if the fix is something I need to do on this Mac (install or start an app, sign in), tell me what to do and how instead.', fx)
@@ -539,6 +551,7 @@ export default function CreateFlow() {
     if (!dr || Math.max(dr.endedMs, dr.startedMs) <= lastAt) return
     appendEntry({
       kind: 'system',
+      icon: 'fa-vial',
       text: dr.status === 'failed'
         ? `Draft execution failed${dr.error?.step ? ` at step ${dr.error.step}` : ''} — ${dr.error?.message ?? 'see the run'}`
         : 'Draft execution succeeded.',
@@ -699,6 +712,8 @@ export default function CreateFlow() {
             lastCreateRef={jobs.lastCreateRef}
             undoDraft={undoDraft}
             runSync={() => void jobs.runSync()}
+            openTestSetup={() => setTestSetupSignal((s) => s + 1)}
+            analyzeFailure={analyzeFailure}
             patchEntry={patchEntry}
             applyBlockersEntry={applyBlockersEntry}
             clearChat={clearChat}
@@ -977,6 +992,7 @@ export default function CreateFlow() {
                   lockStyle={lockStyle}
                   runSync={() => void jobs.runSync()}
                   sendChat={jobs.sendChat}
+                  openSetupSignal={testSetupSignal}
                 />
                 <RightCards
                   rev={rev}

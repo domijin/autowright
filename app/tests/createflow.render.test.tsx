@@ -506,8 +506,9 @@ describe('CreateFlow per-stage activity entries (§11)', () => {
     const specEntry = within(t).getByText('Writing the spec…')
     const stepsEntry = within(t).getByText('Generating the steps…')
     expect(specEntry.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    const feedSpec = within(t).getByText('Thinking about the spec…')
-    const feedSteps = within(t).getByText('Writing the manifest…')
+    // §11 operation blocks: feed lines render as flush-left `• ` bullets
+    const feedSpec = within(t).getByText('• Thinking about the spec…')
+    const feedSteps = within(t).getByText('• Writing the manifest…')
     expect(specEntry.compareDocumentPosition(feedSpec) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(feedSpec.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(stepsEntry.compareDocumentPosition(feedSteps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -548,6 +549,47 @@ describe('CreateFlow chat response application (§11)', () => {
       .toBe('Spec updated — the workflow is out of sync. Sync the steps before saving.')
   })
 
+  it('answer headers: The plan beside rewrites, Question for you on a question (§11)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Now with weekends.' }],
+      answer: 'Here is what I changed.',
+    }))
+    render(<CreateFlow />)
+    send('Also weekends')
+    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    // a reply arriving with a rewrite is the plan
+    expect(screen.getByText('The plan')).toBeTruthy()
+    // a plain question response gets the question header
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      answer: 'Which folder should I watch?',
+    }))
+    send('Watch stuff')
+    await waitFor(() => expect(screen.getByText('Which folder should I watch?')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('Question for you')).toBeTruthy()
+  })
+
+  it('turn action row: Test the draft when in sync; Sync now + Undo after a rewrite (§11)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({ answer: 'All good.' }))
+    render(<CreateFlow />)
+    send('Anything to improve?')
+    await waitFor(() => expect(screen.getByText('All good.')).toBeTruthy(), { timeout: 3000 })
+    // in sync with steps → the Test pill; no sync or undo to offer
+    const row = screen.getByTestId('chat-turn-actions')
+    expect(within(row).getByText('Test the draft')).toBeTruthy()
+    expect(within(row).queryByText('Sync now')).toBeNull()
+    expect(within(row).queryByText('Undo this change')).toBeNull()
+    // a rewrite pulls the workflow out of sync → Sync now + Undo, Test hidden
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten.' }],
+    }))
+    send('Rewrite it')
+    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    const row2 = screen.getByTestId('chat-turn-actions')
+    expect(within(row2).getByTestId('chat-sync-now')).toBeTruthy()
+    expect(within(row2).getByText('Undo this change')).toBeTruthy()
+    expect(within(row2).queryByText('Test the draft')).toBeNull()
+  })
+
   it('a settled job persists its event feed as an activity entry before the outcome', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
       ...done({ answer: 'Looked into it.' }),
@@ -560,9 +602,9 @@ describe('CreateFlow chat response application (§11)', () => {
     expect(screen.getByText('Working on the request…')).toBeTruthy()
     expect(spinnersIn(document.body).length).toBe(0)
     expect(document.querySelector('[data-testid="chat-thread"] .fa-check')).toBeTruthy()
-    // the feed lines survive too, dim history above the answer
-    const feedLine = screen.getByText('Reading https://example.com/docs…')
-    expect(screen.getByText('Writing the reply…')).toBeTruthy()
+    // the feed lines survive too, dim `• ` bullets above the answer (§11)
+    const feedLine = screen.getByText('• Reading https://example.com/docs…')
+    expect(screen.getByText('• Writing the reply…')).toBeTruthy()
     expect(feedLine.compareDocumentPosition(screen.getByText('Looked into it.')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
@@ -579,7 +621,7 @@ describe('CreateFlow chat response application (§11)', () => {
     const thread = document.querySelector('[data-testid="chat-thread"]')!
     expect(thread.querySelector('.fa-xmark')).toBeTruthy()
     expect(thread.querySelector('.fa-check')).toBeNull()
-    expect(screen.getByText('Reading the spec…')).toBeTruthy()
+    expect(screen.getByText('• Reading the spec…')).toBeTruthy()
   })
 
   it('a notes rewrite applies without marking the workflow out of sync (§4.1)', async () => {
@@ -917,7 +959,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect(screen.getAllByText('Writing the spec…').length).toBeGreaterThan(0)
     // the spec lands mid-job → steps stage plus the finer detail line
     await waitFor(() => expect(screen.getAllByText('Generating the steps…').length).toBeGreaterThan(0), { timeout: 3000 })
-    expect(screen.getByText('Writing step 1 of 2')).toBeTruthy()
+    expect(screen.getByText('• Writing step 1 of 2')).toBeTruthy()
     // the job's install stage flips the label
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(
       building('Installing the packages', null))

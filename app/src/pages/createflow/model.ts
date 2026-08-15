@@ -42,6 +42,16 @@ export const blockerLine = (b: Blocker) => `${b.reason.trim()} — ${b.fix.trim(
 export function newEntry(e: Omit<ChatEntry, 'id' | 'at'>): ChatEntry {
   return { id: crypto.randomUUID(), at: new Date().toISOString(), ...e }
 }
+
+// §11 answer header — a reply arriving with rewrites or actions is the plan;
+// a question gets its own glyph. Stamped on the entry at creation; ChatPanel
+// derives the same header at render time for entries persisted before the
+// fields existed.
+export function answerHeader(text: string, withWork: boolean): { icon: string; title: string } {
+  return withWork ? { icon: 'fa-list-check', title: 'The plan' }
+    : text.trim().endsWith('?') ? { icon: 'fa-circle-question', title: 'Question for you' }
+      : { icon: 'fa-message', title: 'From your AI' }
+}
 // §4.4: error entries persist too, so a later chat's CONVERSATION context
 // still names a harness failure the user saw in the thread; activity entries
 // (a settled job's event feed) persist for the user but are skipped by the
@@ -75,6 +85,11 @@ export function stageDisplayTitle(stage: string, mode: 'create' | 'chat' | 'sync
 // while the trigger list holds no message trigger needs the user to add one on
 // the automation page (§8 rule 9 — the agent never invents a channel id or
 // sender handle; it omits the trigger instead).
+// §11 canned analyze chat message — sent as an ordinary §8 chat job by the
+// panel's Analyze-the-failure button and the thread's turn-action pill alike.
+export const analyzeTestMessage = (stepName?: string | null) =>
+  `The test failed${stepName ? ` at step ${stepName}` : ''} — figure out why. If the automation is at fault, fix it; if it’s something I need to do on this Mac, tell me what to do and how instead.`
+
 export const TRIGGER_SETUP_TEXT = 'The steps read the trigger message, but no message trigger is set up — tell your AI the channel or sender details, or add one on the automation page after saving.'
 export function needsMessageTriggerSetup(steps: Step[], triggers: DraftTrigger[]): boolean {
   return !triggers.some((t) => t.kind === 'discord' || t.kind === 'imessage')

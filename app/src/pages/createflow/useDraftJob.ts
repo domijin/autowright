@@ -9,7 +9,7 @@ import { api } from '../../api'
 import { useStore } from '../../store'
 import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../types'
 import {
-  type Rev, TRIGGER_SETUP_TEXT, applyTriggerOps, coerceParamValue, jobStageTitle,
+  type Rev, TRIGGER_SETUP_TEXT, answerHeader, applyTriggerOps, coerceParamValue, jobStageTitle,
   mergeDraftTriggers,
   needsMessageTriggerSetup, newEntry, persistChat,
   seedDrafting, seedEmpty, seedFromPayload, serializeDraft, stageDisplayTitle,
@@ -184,7 +184,7 @@ export function useDraftJob(d: DraftJobDeps) {
   // notes rewrite — state patch plus a "Notes updated." chip after the
   // blockers entry; notes never mark the workflow out of sync (§4.1).
   const blockerNotes = (r: Rev, notes: string | null) => (notes != null && notes !== r.notes
-    ? { patch: { notes }, chip: [newEntry({ kind: 'system' as const, text: 'Notes updated.' })] }
+    ? { patch: { notes }, chip: [newEntry({ kind: 'system' as const, icon: 'fa-note-sticky', text: 'Notes updated.' })] }
     : { patch: {}, chip: [] })
 
   // The {start} half of the core: POST the job, then arm the poll — unless a
@@ -240,11 +240,11 @@ export function useDraftJob(d: DraftJobDeps) {
           ...seedFromPayload(d, agents, secretNames),
           chat: [
             ...(r?.chat ?? []),
-            newEntry({ kind: 'system', text: 'Draft generated — review the spec and steps, then create it.' }),
+            newEntry({ kind: 'system', icon: 'fa-wand-magic-sparkles', text: 'Draft generated — review the spec and steps, then create it.' }),
             // §11 trigger-setup reminder: the agent omitted a message trigger
             // it lacked details for — the user adds it on the automation page
             ...(needsMessageTriggerSetup(d.steps ?? [], d.triggers ?? [])
-              ? [newEntry({ kind: 'system', text: TRIGGER_SETUP_TEXT })] : []),
+              ? [newEntry({ kind: 'system', icon: 'fa-clock', text: TRIGGER_SETUP_TEXT })] : []),
           ],
           resolved: r?.resolved ?? [],
           // §11 title: the manifest name replaces the spec-title provisional
@@ -353,7 +353,12 @@ export function useDraftJob(d: DraftJobDeps) {
             if (!r) return r
             let next: Rev = { ...r, chatBusy: false }
             const chat = [...r.chat]
-            if (dft.answer) chat.push(newEntry({ kind: 'answer', text: dft.answer }))
+            // §11 answer header: stamped at creation — a reply arriving with
+            // rewrites or actions is the plan; a question gets its own glyph
+            if (dft.answer) chat.push(newEntry({
+              kind: 'answer', text: dft.answer,
+              ...answerHeader(dft.answer, rewrote || Object.keys(actions).length > 0),
+            }))
             // §8 undo action: arrives alone (validation) — run the §11
             // restore exactly like the undo row's button, or say there is
             // nothing left to undo
@@ -367,9 +372,9 @@ export function useDraftJob(d: DraftJobDeps) {
                   instructions: snap.instructions, notes: snap.notes,
                   dirty: snap.dirty, undo: null,
                 }
-                chat.push(newEntry({ kind: 'system', text: 'Last change undone — the rewrites above no longer apply.' }))
+                chat.push(newEntry({ kind: 'system', icon: 'fa-rotate-left', text: 'Last change undone — the rewrites above no longer apply.' }))
               } else {
-                chat.push(newEntry({ kind: 'system', text: 'Nothing to undo.' }))
+                chat.push(newEntry({ kind: 'system', icon: 'fa-rotate-left', text: 'Nothing to undo.' }))
               }
             }
             // §11 draft undo: a draft-changing response stashes the full
@@ -384,27 +389,27 @@ export function useDraftJob(d: DraftJobDeps) {
               chat.push(entry)
             }
             if (dft.instructions != null && dft.instructions !== r.instructions) {
-              const entry = newEntry({ kind: 'system', text: 'Build instructions updated.' })
+              const entry = newEntry({ kind: 'system', icon: 'fa-list-check', text: 'Build instructions updated.' })
               anchorId = entry.id
               // like a manual Build-instructions save — same dirty gating (§11)
               next = { ...next, instructions: dft.instructions, dirty: true }
               chat.push(entry)
             }
             if (dft.notes != null && dft.notes !== r.notes) {
-              const entry = newEntry({ kind: 'system', text: 'Notes updated.' })
+              const entry = newEntry({ kind: 'system', icon: 'fa-note-sticky', text: 'Notes updated.' })
               anchorId = entry.id
               // notes never mark the workflow out of sync (§4.1)
               next = { ...next, notes: dft.notes }
               chat.push(entry)
             }
             if (actions.name && actions.name !== r.name) {
-              const entry = newEntry({ kind: 'system', text: `Renamed to “${actions.name}”.` })
+              const entry = newEntry({ kind: 'system', icon: 'fa-pen', text: `Renamed to “${actions.name}”.` })
               if (anchorId) anchorId = entry.id // the row sits below every chip the request produced
               next = { ...next, name: actions.name }
               chat.push(entry)
             }
             if (actions.description && actions.description !== r.description) {
-              const entry = newEntry({ kind: 'system', text: 'Description updated.' })
+              const entry = newEntry({ kind: 'system', icon: 'fa-pen', text: 'Description updated.' })
               if (anchorId) anchorId = entry.id
               next = { ...next, description: actions.description }
               chat.push(entry)
@@ -417,7 +422,7 @@ export function useDraftJob(d: DraftJobDeps) {
               for (const [n, v] of Object.entries(actions.paramValues)) {
                 const def = r.params.find((p) => p.name === n)
                 staged[n] = def ? coerceParamValue(def, v) : v
-                const entry = newEntry({ kind: 'system', text: `Parameter “${n}” staged — applies when you save.` })
+                const entry = newEntry({ kind: 'system', icon: 'fa-sliders', text: `Parameter “${n}” staged — applies when you save.` })
                 anchorId = entry.id
                 chat.push(entry)
               }
@@ -429,7 +434,7 @@ export function useDraftJob(d: DraftJobDeps) {
               const applied = applyTriggerOps(next.triggers, actions.triggers)
               next = { ...next, triggers: applied.triggers }
               for (const text of applied.chips) {
-                const entry = newEntry({ kind: 'system', text })
+                const entry = newEntry({ kind: 'system', icon: 'fa-clock', text })
                 anchorId = entry.id
                 chat.push(entry)
               }
@@ -524,11 +529,11 @@ export function useDraftJob(d: DraftJobDeps) {
             const paramValues = Object.fromEntries(Object.entries(r.paramValues)
               .filter(([n]) => !stale.includes(n))
               .map(([n, v]) => [n, coerceParamValue(params.find((p) => p.name === n)!, v)]))
-            const syncedEntry = newEntry({ kind: 'system', text: 'Steps synced with the spec.' })
+            const syncedEntry = newEntry({ kind: 'system', icon: 'fa-rotate', text: 'Steps synced with the spec.' })
             const notesEntry = dft.notes != null && dft.notes !== r.notes
-              ? newEntry({ kind: 'system' as const, text: 'Notes updated.' }) : null
+              ? newEntry({ kind: 'system' as const, icon: 'fa-note-sticky', text: 'Notes updated.' }) : null
             const dropEntries = stale.map((n) => newEntry({
-              kind: 'system' as const, text: `Value for “${n}” dropped — no such parameter after the rebuild.` }))
+              kind: 'system' as const, icon: 'fa-sliders', text: `Value for “${n}” dropped — no such parameter after the rebuild.` }))
             // §11 trigger-setup reminder — only when this sync introduced the
             // gap, so repeated syncs over an unchanged gap never repeat it
             const remind = needsMessageTriggerSetup(steps, triggers)
@@ -553,7 +558,7 @@ export function useDraftJob(d: DraftJobDeps) {
                 syncedEntry,
                 ...(notesEntry ? [notesEntry] : []),
                 ...dropEntries,
-                ...(remind ? [newEntry({ kind: 'system', text: TRIGGER_SETUP_TEXT })] : []),
+                ...(remind ? [newEntry({ kind: 'system', icon: 'fa-clock', text: TRIGGER_SETUP_TEXT })] : []),
               ],
             }
           })

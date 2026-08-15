@@ -37,14 +37,38 @@ applies unchanged; the chat pane never collapses.
   thread reads as a user ↔ agent conversation: **user** entries are the only bubbles —
   quiet, right-aligned — and **every agent-side entry renders left-aligned in the
   Claude-output style**: full-width markdown/prose blocks, no bubbles, no centered text
-  anywhere in the thread. Suggested actions render as a left-aligned quiet
-  **option-button row** (`.ad-btn-soft` buttons, wrapping flex row) beneath the agent
-  block they belong to; one response may land several consecutive agent blocks. Entry
+  anywhere in the thread. Agent-side entries split into **two visual families**, each
+  with one fixed layout — no entry hand-rolls its own shape:
+  - **Operation blocks** (`activity`, `rewrite`, `system`, the transient progress
+    entry) — the record of what the agent **did**. Layout: a glyph in a 13 px box
+    beside a one-line title, and beneath them the entry's description lines as
+    `• `-prefixed bullets running the pane's full width **flush left with the glyph —
+    never indented under the title** (the activity-feed flush rule, now for every
+    operation block). An entry with no description renders the header row alone.
+  - **Message blocks** (`answer`, `blockers`, `error`) — the agent **talking to the
+    user**: questions, plans, blockers, failures. Layout: a header row — glyph in the
+    same 13 px box beside a 13 px/600 title — then the body as full-width paragraphs at
+    the body scale, flush left (no indent under the header).
+  The redesign removes or replaces nothing: every entry kind keeps rendering, and a
+  block once shown stays in the thread (dismissed blockers still collapse to their
+  one-line summary — a collapse, not a removal). Suggested next steps render as
+  icon-led `.ad-btn-pill.action` pills in the **turn action row** (below); only a
+  blockers entry's Dismiss / "Apply to the spec & sync" keep their ghost/primary
+  weight — they are the entry's real resolution controls, not suggestions. One
+  response may land several consecutive agent blocks. Entry
   kinds (persisted shapes per §4.4; progress is transient editor state):
   - **user** — the message as a quiet right-aligned bubble (inset background, hairline
     border, ~92% max width).
-  - **answer** — the agent's reply rendered through the shared §4.5 Markdown renderer
-    (its compact `.ad-md-sm` variant — thread type scale below).
+  - **answer** — the agent's reply, a message block: a header row then the reply
+    rendered through the shared §4.5 Markdown renderer
+    (its compact `.ad-md-sm` variant — thread type scale below). The header names what
+    kind of message it is, stamped on the entry at creation (§4.4 `icon` + `title`)
+    from the response that produced it: a reply arriving **with** rewrites or actions
+    is the agent's plan — `fa-list-check`, "The plan"; a reply that is a question (its
+    trimmed text ends with `?`) — `fa-circle-question`, "Question for you"; any other
+    reply — `fa-message`, "From your AI". An entry persisted before the fields existed
+    derives the same header at render time (the question check, else the plain
+    header) — old threads gain the layout, nothing is dropped.
   - **activity** — a settled stage's record: **one entry per §8 pipeline stage** the job
     passed through, persisted the moment the stage finishes — mid-job when the next stage
     begins (that stage's label and feed must survive the transition, never be replaced by
@@ -58,60 +82,107 @@ applies unchanged; the chat pane never collapses.
     green check for a finished stage (every non-final stage, and the final one of a job
     that ended `done`), an amber check when the job ended `blocked` at that stage (the
     trail finished; the blockers entry beneath asks for input), a red X (`fa-xmark`) when
-    it ended `failed` there — the dim single-line-ellipsized feed beneath — so the full
+    it ended `failed` there — the dim single-line-ellipsized feed beneath as the
+    operation block's bullets — so the full
     trail of what the agent did, stage by stage, survives the job, and a failed job never
     leads with a green check. The entry's §4.4 `outcome` field carries the status; an
     entry persisted before the field existed renders as done, and a terminal job payload
     carrying no stage at all (belt-and-braces — the backend always sets one) settles as
     one entry with the job's live stage label and the whole feed. Excluded from the
     agent's §8 CONVERSATION context (operational noise, §8).
-  - **rewrite** — a "Spec updated" event: an icon-led event line, the user's request text
-    echoed beneath it as dim prose (the §8 payload carries no summary field), the
-    out-of-sync note ("The workflow is out of sync — sync the steps before saving."),
-    and — while the workflow is still out of sync — **Sync now** in the entry's
-    option-button row (the same §8 sync call and gating as the panel's button), so the
-    most common next step sits on the event itself. No card chrome — the entry is a
+  - **rewrite** — a "Spec updated" event: an operation block — `fa-file-pen` accent
+    glyph beside the 12.5 px/600 title, the user's request text echoed beneath as a dim
+    bullet (the §8 payload carries no summary field), and — while the workflow is still
+    out of sync — the amber out-of-sync note ("The workflow is out of sync — sync the
+    steps before saving.") as a further bullet. **Sync now** no longer sits on the
+    entry — it lives in the turn action row (below), which follows the response's last
+    entry anyway. No card chrome — the entry is a
     left-aligned agent block like the rest. The entry carries no Undo of its own — undo
-    restores the whole draft, not just the spec, so it lives on the standalone undo row
+    restores the whole draft, not just the spec, so it lives on the turn action row
     (Draft undo below).
   - **blockers** — the §8 blocker list rendered as agent output (Blockers below).
-  - **system** — a quiet one-line left-aligned status line ("Steps synced with the
-    spec.", the create-completion entry "Draft generated — review the spec and steps,
-    then create it.", the §7 Fix-with-AI failure seed, the
-    run-settled entries below, "Build instructions updated.", "Notes updated.",
-    "Renamed to `<name>`.", "Description updated.", the Draft-undo entries "Last change
-    undone — the rewrites above no longer apply." and "Nothing to undo.", the
-    trigger-setup reminder under the TRIGGERS card below).
-  - **error** — a red-tinted left-aligned failure entry (a failed §8 job's message, the
-    Failures paragraph below); its "Try again" action, when present, sits in the entry's
-    option-button row. Persisted like the other kinds (§4.4), so it survives a reload and
+  - **system** — a quiet one-line left-aligned status chip, rendered as an operation
+    block: a per-operation glyph (faint) beside the chip's text as its title — no
+    description bullets. The glyph is stamped on the entry at creation (§4.4 `icon`, a
+    Font Awesome class); an entry without one (older persisted threads, backend-seeded
+    entries) falls back to `fa-circle-info`. The map, by operation: sync
+    ("Steps synced with the spec.", "Test skipped — the steps aren't in sync with the
+    spec.") `fa-rotate`; create completion ("Draft generated — review the spec and
+    steps, then create it.") `fa-wand-magic-sparkles`; instructions ("Build
+    instructions updated.") `fa-list-check`; notes ("Notes updated.")
+    `fa-note-sticky`; identity ("Renamed to `<name>`.", "Description updated.")
+    `fa-pen`; parameters ("Parameter "X" staged — applies when you save.", "Value for
+    "X" dropped — no such parameter after the rebuild.") `fa-sliders`; triggers (the
+    trigger-op chips, "That trigger already exists.", the trigger-setup reminder under
+    the TRIGGERS card below) `fa-clock`; Draft undo ("Last change undone — the rewrites
+    above no longer apply.", "Nothing to undo.") `fa-rotate-left`; tests (the
+    run-settled entries below) `fa-vial`; the §7 Fix-with-AI failure seed
+    `fa-circle-exclamation`.
+  - **error** — a failure entry (a failed §8 job's message, the
+    Failures paragraph below), a message block: `fa-circle-xmark` red glyph beside the
+    13 px/600 title "Something went wrong", the failure message as body prose beneath;
+    its "Try again" action, when present, sits beneath the body as an
+    `.ad-btn-pill.action` pill. Persisted like the other kinds (§4.4), so it survives a
+    reload and
     reaches the agent's CONVERSATION context.
 - **Thread type scale** — one scale across every entry kind, three roles (all sans;
   §14 tokens for the colors):
   - **Body prose** — 12.5 px / 1.6 `--text-2`: user bubbles, answer markdown (the §4.5
-    compact variant pins its paragraphs and list items here), blocker Reason / How to
+    compact variant pins its paragraphs and list items here), the blockers explainer,
+    blocker Reason / How to
     fix / Details bodies, and error entry text. Markdown headings stay within
     12.5–13.5 px (the compact variant's cap).
-  - **Entry titles** — one-line, beside the entry's glyph: the blockers headline is the
-    thread's loudest line at 13 px / 600 `--text`; the rewrite "Spec updated" title is
-    12.5 px / 600 `--text`; activity/progress stage titles 12.5 px / 500 `--text-muted`.
-  - **Secondary & feed** — supporting prose (blockers explainer, the rewrite entry's
-    echoed request, system lines, the dismissed-blockers summary, "Previously resolved")
+  - **Entry titles** — one-line, beside the entry's glyph. Message-block headers are
+    the thread's loudest lines at 13 px / 600 `--text` (the blockers headline, the
+    answer header, the error "Something went wrong"). Operation-block titles: the
+    rewrite "Spec updated" is
+    12.5 px / 600 `--text`; activity/progress stage titles and system chip text are
+    12.5 px / 500 `--text-muted` (the chip's text is its title — the redesign promotes
+    system chips from the secondary role into this one).
+  - **Secondary & feed** — the operation blocks' bullets and supporting prose (the
+    rewrite entry's
+    echoed request, the dismissed-blockers summary, "Previously resolved")
     is 11.5 px / 1.5–1.6, `--text-muted` or `--text-faint` by weight of the information;
     activity/progress feed history lines are 11 px `--text-faint` under an 11.5 px
     `--text-muted` live detail line.
   No entry hand-picks sizes outside these roles — a new entry kind joins one of the
   three.
-- **Thread spacing — one gap, at turn boundaries only.** 14 px separates turns: any gap
-  that touches a user bubble. Consecutive agent-side entries chain **flush (0 px)** — one
-  response often lands several entries (stage trails, the rewrite entry, its "Renamed
+- **Thread spacing — three gaps, by boundary.** 14 px separates turns: any gap that
+  touches a user bubble. 10 px separates the families: any agent-side gap that touches
+  a **message block** (operation block ↔ message block in either order, and two
+  consecutive message blocks) — the agent's record of work and its words to the user
+  read as distinct groups. Consecutive **operation blocks** chain **flush (0 px)** — one
+  response often lands several (stage trails, the rewrite entry, its "Renamed
   to …" / "Description updated." system chips), and they read as one continuous block,
   exactly like an activity entry's own feed lines, not as blank-line-separated
   paragraphs (each entry's internal line-height and its own top padding, where a kind has
-  one, provide the breathing room). The transient progress entry follows the same rule:
+  one, provide the breathing room). The transient progress entry is an operation block
+  and follows the same rules:
   flush when it restarts beneath a just-settled **activity** entry (the same job's trail
-  chains as one block), 14 px otherwise. The standalone undo row sits 10 px beneath its
-  anchor — slightly detached from the group it escapes.
+  chains as one block), 10 px after a message block, 14 px after a user bubble. The
+  turn action row sits 10 px beneath the entry it follows — slightly detached from the
+  group it closes.
+- **Turn action row** — the thread's one suggestion surface: a standalone left-aligned
+  wrapping pill row (icon-led `.ad-btn-pill.action` pills — the composer pills' small
+  look in the §14 sans action face) rendered beneath the thread's **last agent-side
+  entry**, only while no §8 job is in flight, no draft test is executing, and no old
+  version is viewed. It holds every applicable pill, in this order, and hides entirely
+  when none applies:
+  - **Undo this change** (`fa-rotate-left`) — while the Draft-undo snapshot exists and
+    its anchor is the thread's last agent-side entry. When later answer-only turns have
+    landed beneath the anchor, the undo pill instead renders as its own row 10 px
+    beneath the anchor — the Draft-undo anchor rule (below) is unchanged, so the pill
+    always sits below everything the request changed. It never shows without a
+    snapshot: a response that changed nothing offers no undo.
+  - **Sync now** (`fa-rotate`) — while the workflow is dirty and out of sync, sync is
+    not disabled, and no pending sync is armed; the same §8 sync call and gating as the
+    panel's button (this pill replaces the one the rewrite entry used to carry).
+  - **Test the draft** (`fa-vial`) — while the workflow is in sync, steps exist, and
+    nothing is drafting; it opens the Build & test panel's test-setup disclosure (the
+    same toggle — it never starts a test) and scrolls the panel into view.
+  - **Analyze the failure** (`fa-magnifying-glass`) — while the draft's tracked test
+    settled failed; sends the canned analyze chat message exactly like the panel's
+    button, with the same gating.
 - **Input:** pinned footer composer, two stacked rows. Top row: a full-width auto-growing
   textarea — the **ask-box pattern** referenced throughout this spec: sized to its
   content, never scrolls, no manual resize handle, Enter sends (the primary send path),
@@ -218,7 +289,8 @@ applies unchanged; the chat pane never collapses.
   each single-line with an ellipsis; the §8 per-job event cap bounds the list) above the
   live §8 `detail` line; when `detail` extends the newest
   event (same message, growing ` · N lines` count) that event shows only as the live line,
-  never twice. The feed and detail lines run the pane's full width, flush left with the
+  never twice. The feed and detail lines render as the operation-block bullets
+  (`• `-prefixed) and run the pane's full width, flush left with the
   spinner — only the stage label sits beside the spinner, the lines below are not
   indented under it. The entry is **derived editor state, never a persisted thread entry**
   (§4.4 `chat` never carries it): it appears when the job starts and disappears when the
@@ -311,13 +383,16 @@ renders in a drafting state and fills in as the pipeline delivers, driven by the
   cannot save until steps exist and are in sync.
 
 **Blockers.** When a §8 job ends `blocked`, the
-blockers render as **one thread entry** — never a modal, never inline in a card. Headline:
+blockers render as **one thread entry** — never a modal, never inline in a card — a
+message block headed by an amber `fa-ban` glyph (the block icon) beside the 13 px/600
+headline. Headline:
 "Your AI hit a blocker" ("Your AI hit N blockers" when several); a job carrying
 `diagnosed: true` (§8 build-diagnosis blockers — the build failed validation rather than
 the agent refusing) instead headlines "The build failed — your AI suggests these fixes";
 an entry whose blockers are all §8 `kind: user-action` instead headlines "Your AI needs
 you to do something first".
-Beneath it an explanatory line by source: spec call — "It couldn't write a spec for this
+Beneath it an explanatory line at the body scale, flush left (a message-block
+paragraph, never indented under the header), by source: spec call — "It couldn't write a spec for this
 request. Reply below — your answer is added to the request and the spec is rewritten.";
 chat — "Reply below — your answer is sent back and the spec is rewritten."; steps call —
 "It couldn't build the steps as the spec asks."; sync — "It couldn't sync the steps with
@@ -329,7 +404,8 @@ eyebrow labels — install instructions read as
 prose and download links are clickable — and only when the list has several blockers does
 each block carry a "BLOCKER N" eyebrow header. There are no editable fields: the user
 answers through the composer like any other message. Each blockers entry closes with a
-left-aligned option-button row — a quiet **Dismiss** plus, by source and kind:
+left-aligned resolution row (ghost/primary buttons — the entry's real controls, exempt
+from the turn action row's pill styling) — a quiet **Dismiss** plus, by source and kind:
 
 - **Spec call** (create) and **chat** — the clarification case: no primary button. The
   user replies in the composer; **sending any message auto-dismisses the entry** (the
@@ -363,7 +439,8 @@ entry stays readable as its one-line summary). Steps/sync entries stay open — 
 Apply button remains useful until a sync lands.
 
 Dismiss collapses the entry to a one-line muted summary ("N blockers — dismissed";
-singular "1 blocker — dismissed"; left-aligned like all agent output) and, for
+singular "1 blocker — dismissed"; led by a faint `fa-ban` glyph, left-aligned like all
+agent output) and, for
 steps/sync blocks, leaves the workflow out of sync with the spec editable and the panel
 showing out of sync. A completed sync collapses any pending blockers entry the same way —
 its blockers describe steps that no longer exist. No automatic loop cap — the cycle is
@@ -495,19 +572,19 @@ editors enter with
   trigger ops and values are draft state, so the restore covers them). One ghost **Undo**
   restores it all, so the draft looks **exactly as it did before that request** — including
   steps a chained `sync: true` action rewrote, which is why a completed sync does **not**
-  clear the snapshot. The Undo is a **standalone thread row** — a left-aligned
-  row holding a quiet **"Undo this change"** tag: an `.ad-btn-pill.action` (the
+  clear the snapshot. The Undo is the quiet **"Undo this change"** pill on the **turn
+  action row** (Thread spacing above): an `.ad-btn-pill.action` (the
   composer pills' small look in the §14 sans action face — an action phrase, not
-  metadata, so never the mono face) led by a rotate-left glyph, deliberately
-  lighter than the `.ad-btn-soft` option buttons — those are the agent's
-  suggested next steps, undo is an escape hatch. Rendered directly beneath
+  metadata, so never the mono face) led by a rotate-left glyph — first on the row, the
+  escape hatch ahead of the suggested next steps. Its position follows
   the **last** thread entry the request produced (the snapshot's anchor): the response's
   final rewrite/system chip — doc rewrites, the "Renamed to …" / "Description updated."
   chips, and the staged parameter/trigger chips included — and, when a sync lands while the snapshot exists (chained or manual),
   the anchor moves below that sync's "Steps synced with the spec." / "Notes updated."
-  chips, so the row always sits **below everything the request changed**. It is
-  deliberately its own row, never an action inside the
-  "Spec updated" entry: the restore covers the whole draft, not just the spec. The row is
+  chips, so the pill always sits **below everything the request changed**. It is
+  deliberately a row-level pill, never an action inside the
+  "Spec updated" entry: the restore covers the whole draft, not just the spec. The pill
+  is
   the page's only undo affordance; it renders only while the snapshot exists and hides
   while any §8 job is in flight, while viewing an old version, and while a test executes.
   The restore is also agent-reachable: a chat response may carry the §8 `undo: true`

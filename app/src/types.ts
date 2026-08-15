@@ -98,7 +98,10 @@ export interface ChatEntry {
   id: string
   kind: 'user' | 'answer' | 'activity' | 'rewrite' | 'blockers' | 'system' | 'error'
   text?: string
-  title?: string         // activity: the settled job's final stage label (§11)
+  title?: string         // activity: the settled job's final stage label; answer: the §11 message-block header
+  // §11 block glyph, a Font Awesome class stamped at creation (system chips and
+  // answer headers); an entry without one falls back per §11
+  icon?: string
   // activity: the job's settled status, driving the §11 outcome glyph — a
   // pre-field entry has none and renders as done
   outcome?: 'done' | 'blocked' | 'failed'

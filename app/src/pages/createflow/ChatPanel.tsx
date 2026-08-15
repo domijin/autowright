@@ -9,15 +9,67 @@ import type { Agent, ChatEntry } from '../../types'
 import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, usePopover } from '../../ui'
 import { devlogOverlayOpen } from '../../devlog'
 import { Markdown } from '../../result'
-import { type Rev, jobStageTitle } from './model'
+import { type Rev, answerHeader, jobStageTitle } from './model'
 
-/** §11 option-button row — left-aligned quiet actions beneath an agent block. */
+/** §11 action row — left-aligned wrapping pill row beneath an agent block
+    (the turn action row and the per-entry rows share the layout). */
 function ActionRow({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, justifyContent: 'flex-start', ...style }}>
       {children}
     </div>
   )
+}
+
+/** §11 block glyph box — the 13px box every block header leads with, so
+    titles align across kinds and a glyph swap never shifts the text. */
+function GlyphBox({ children }: { children: React.ReactNode }) {
+  return (
+    <span style={{ width: 13, height: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {children}
+    </span>
+  )
+}
+
+/** §11 operation-block bullet — `• `-prefixed description line running the
+    pane's full width, flush left with the glyph (never indented under the
+    title). `ellipsis` keeps activity-feed lines single-line. */
+function OpBullet({ text, first, ellipsis, size, color }: {
+  text: string; first: boolean; ellipsis?: boolean; size?: number; color?: string
+}) {
+  return (
+    <div style={{
+      font: `400 ${size ?? 11}px/1.5 var(--sans)`, color: color ?? 'var(--text-faint)',
+      marginTop: first ? 3 : 0,
+      ...(ellipsis ? { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' } : { overflowWrap: 'break-word' as const }),
+    }}>
+      • {text}
+    </div>
+  )
+}
+
+/** §11 message-block header — glyph beside the thread's loudest title line. */
+function MsgHeader({ icon, color, title }: { icon: string; color: string; title: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+      <GlyphBox><i className={`fa-solid ${icon}`} style={{ fontSize: 11, color }} /></GlyphBox>
+      <span style={{ font: "600 13px var(--sans)", color: 'var(--text)' }}>{title}</span>
+    </div>
+  )
+}
+
+/** §11 two block families: operation blocks (the record of what the agent
+    did) vs message blocks (the agent talking to the user) — drives the
+    boundary spacing (14px turns / 10px around message blocks / 0 between ops). */
+const entryFamily = (e: ChatEntry): 'user' | 'msg' | 'op' =>
+  e.kind === 'user' ? 'user'
+    : e.kind === 'answer' || e.kind === 'blockers' || e.kind === 'error' ? 'msg' : 'op'
+const familyGap = (prev: ChatEntry | null, cur: ChatEntry): number => {
+  if (!prev) return 0
+  const a = entryFamily(prev); const b = entryFamily(cur)
+  if (a === 'user' || b === 'user') return 14
+  if (a === 'msg' || b === 'msg') return 10
+  return 0
 }
 
 /** Drafting-agent picker — lives in the chat pane composer (§11); menu opens
@@ -93,6 +145,11 @@ export interface ChatPanelProps {
   lastCreateRef: React.MutableRefObject<string>
   undoDraft: () => void
   runSync: () => void
+  // §11 turn action row: opens the Build & test panel's test-setup disclosure
+  openTestSetup: () => void
+  // §11 turn action row: sends the canned analyze message — null while the
+  // draft's tracked test didn't settle failed (the pill hides)
+  analyzeFailure: (() => void) | null
   patchEntry: (id: string, patch: Partial<ChatEntry>) => void
   applyBlockersEntry: (entry: ChatEntry) => void
   clearChat: () => void
@@ -108,7 +165,7 @@ export function ChatPanel({
   rev, agents, selAgent, isEdit, isCreateEmpty, anyJobBusy, busyRewrite, drafting,
   installingPkgs, testLive, viewingOld, inputDisabled, outOfSync, syncDisabled,
   lastRewriteId, chatText, setChatText, sendMessage, submitCreate, lastCreateRef,
-  undoDraft, runSync, patchEntry,
+  undoDraft, runSync, openTestSetup, analyzeFailure, patchEntry,
   applyBlockersEntry, clearChat, cancelChat, cancelCreate, cancelSync, setAgentId, up, showToast,
 }: ChatPanelProps) {
   // §11 thread auto-scroll: newest at the bottom, scrolled on new content and
@@ -201,6 +258,17 @@ export function ChatPanel({
         : e.source === 'steps' ? 'It couldn’t build the steps as the spec asks.'
           : 'It couldn’t sync the steps with the spec.'
 
+  // §11 turn action row — the thread's one suggestion surface: pills beneath
+  // the last agent-side entry while nothing runs; hides when no pill applies.
+  const rowsAllowed = !anyJobBusy && !viewingOld && !testLive
+  const lastEntry = rev.chat.length ? rev.chat[rev.chat.length - 1] : null
+  const undoAtEnd = rowsAllowed && !!rev.undo && !!lastEntry && rev.undo.entryId === lastEntry.id
+  const showSyncPill = outOfSync && rev.dirty && !syncDisabled && !rev.pendingSync
+  const showTestPill = !outOfSync && rev.steps.length > 0 && !drafting && !rev.pendingSync && !rev.pendingTest
+  const showTurnRow = rowsAllowed && !!lastEntry && lastEntry.kind !== 'user'
+    && (undoAtEnd || showSyncPill || showTestPill || !!analyzeFailure)
+  const pillGlyph: React.CSSProperties = { fontSize: 9, color: 'var(--text-faint)' }
+
   return (
     <div style={{
       width: 'clamp(340px, 26vw, 420px)', flex: 'none', alignSelf: 'flex-start',
@@ -248,15 +316,15 @@ export function ChatPanel({
           </div>
         ))}
         {rev.chat.map((e, i) => {
-          // §11 thread spacing: 14px turns (any gap touching a user bubble);
-          // consecutive agent-side entries chain flush, one block per response
+          // §11 thread spacing: 14px turns (touching a user bubble), 10px at
+          // family boundaries (around message blocks), 0 between operation blocks
           const prev = i > 0 ? rev.chat[i - 1] : null
-          const mt = !prev ? 0 : e.kind === 'user' || prev.kind === 'user' ? 14 : 0
-          // §11 draft undo: the standalone undo row — the page's only
-          // undo affordance — beneath the snapshot's anchor entry
-          // §11: tag-style pill — lighter than the option buttons; an
-          // escape hatch, not a suggested next step
-          const undoRow = e.id === rev.undo?.entryId && !anyJobBusy && !viewingOld && !testLive ? (
+          const mt = familyGap(prev, e)
+          // §11 draft undo: at the thread's end the pill leads the turn action
+          // row (below the map); when later answer-only turns pushed the
+          // snapshot's anchor off the end, it renders as its own row beneath
+          // the anchor — below everything the request changed
+          const undoRow = e.id === rev.undo?.entryId && !undoAtEnd && rowsAllowed ? (
             <ActionRow style={{ marginTop: 10 }}>
               <button className="ad-btn-pill action" onClick={undoDraft}>
                 <i className="fa-solid fa-rotate-left" style={{ fontSize: 9, color: 'var(--text-faint)' }} />
@@ -278,8 +346,12 @@ export function ChatPanel({
             )
           }
           if (e.kind === 'answer') {
+            // §11 message block: header stamped at creation (§4.4 icon/title);
+            // older entries derive it at render time — question check, else plain
+            const hdr = e.icon && e.title ? { icon: e.icon, title: e.title } : answerHeader(e.text ?? '', false)
             return (
               <div key={e.id} style={{ marginTop: mt }}>
+                <MsgHeader icon={hdr.icon} color="var(--accent)" title={hdr.title} />
                 <Markdown small text={e.text ?? ''} />
               </div>
             )
@@ -297,44 +369,35 @@ export function ChatPanel({
               <div key={e.id} style={{ marginTop: mt }}>
                 {e.title && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ width: 13, height: 13, flex: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <GlyphBox>
                       <i className={`fa-solid ${failed ? 'fa-xmark' : 'fa-check'}`} style={{ fontSize: 11, color: glyphColor }} />
-                    </span>
+                    </GlyphBox>
                     <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>{e.title}</div>
                   </div>
                 )}
                 {lines.map((t, i) => (
-                  <div key={`${i}-${t}`} style={{ font: "400 11px/1.5 var(--sans)", color: 'var(--text-faint)', marginTop: i === 0 ? 3 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>
+                  <OpBullet key={`${i}-${t}`} text={t} first={i === 0} ellipsis />
                 ))}
               </div>
             )
           }
           if (e.kind === 'rewrite') {
-            // §11: left-aligned agent event block — no card chrome
+            // §11 operation block — glyph + title, the echoed request and the
+            // out-of-sync note as flush-left bullets; Sync now lives on the
+            // turn action row, never on the entry
             return (
               <React.Fragment key={e.id}>
               <div className="ad-anim-item" style={{ marginTop: mt }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <i className="fa-solid fa-file-pen" style={{ fontSize: 10, color: 'var(--accent)' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <GlyphBox><i className="fa-solid fa-file-pen" style={{ fontSize: 10, color: 'var(--accent)' }} /></GlyphBox>
                   <span style={{ font: "600 12.5px var(--sans)", color: 'var(--text)', flex: 1, minWidth: 0 }}>Spec updated</span>
                 </div>
-                {e.text && (
-                  <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 3, overflowWrap: 'break-word' }}>{e.text}</div>
-                )}
+                {e.text && <OpBullet text={e.text} first size={11.5} color="var(--text-muted)" />}
                 {e.id === lastRewriteId && outOfSync && rev.dirty && (
-                  <>
-                    <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--amber)', marginTop: 3 }}>
-                      The workflow is out of sync — sync the steps before saving.
-                    </div>
-                    {/* §11: the most common next step sits on the event itself */}
-                    {!syncDisabled && !rev.pendingSync && (
-                      <ActionRow style={{ marginTop: 8 }}>
-                        <button className="ad-btn-soft" data-testid="chat-sync-now" onClick={runSync}>
-                          Sync now
-                        </button>
-                      </ActionRow>
-                    )}
-                  </>
+                  <OpBullet
+                    text="The workflow is out of sync — sync the steps before saving."
+                    first={!e.text} size={11.5} color="var(--amber)"
+                  />
                 )}
               </div>
               {undoRow}
@@ -345,8 +408,9 @@ export function ChatPanel({
             const blockers = e.blockers ?? []
             if (e.dismissed) {
               return (
-                <div key={e.id} style={{ marginTop: mt, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
-                  {blockers.length} blocker{blockers.length === 1 ? '' : 's'} — dismissed
+                <div key={e.id} style={{ marginTop: mt, display: 'flex', alignItems: 'center', gap: 10, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
+                  <GlyphBox><i className="fa-solid fa-ban" style={{ fontSize: 10, color: 'var(--text-faint)' }} /></GlyphBox>
+                  <span>{blockers.length} blocker{blockers.length === 1 ? '' : 's'} — dismissed</span>
                 </div>
               )
             }
@@ -363,12 +427,9 @@ export function ChatPanel({
             )
             return (
               <div key={e.id} className="ad-anim-item" style={{ marginTop: mt, textAlign: 'left' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)', flex: 'none' }} />
-                  <span style={{ font: "600 13px var(--sans)", color: 'var(--text)' }}>{blockersHeadline(e)}</span>
-                </div>
+                <MsgHeader icon="fa-ban" color="var(--amber)" title={blockersHeadline(e)} />
                 {!allUserAction && (
-                  <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: '0 0 10px 15px' }}>
+                  <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: '0 0 10px' }}>
                     {blockersExplainer(e)}
                   </div>
                 )}
@@ -414,15 +475,15 @@ export function ChatPanel({
             )
           }
           if (e.kind === 'error') {
+            // §11 message block — red glyph + title, the failure message as
+            // body prose, Try again as a pill beneath it
             return (
               <div key={e.id} style={{ marginTop: mt }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', flex: 'none', marginTop: 5 }} />
-                  <span style={{ flex: 1, minWidth: 0, font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-2)', overflowWrap: 'break-word' }}>{e.text}</span>
-                </div>
+                <MsgHeader icon="fa-circle-xmark" color="var(--red)" title="Something went wrong" />
+                <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-2)', overflowWrap: 'break-word' }}>{e.text}</div>
                 {e.source === 'spec' && !anyJobBusy && !isEdit && (
-                  <ActionRow style={{ marginTop: 8, marginLeft: 15 }}>
-                    <button className="ad-btn-soft" onClick={() => void submitCreate(lastCreateRef.current)}>
+                  <ActionRow style={{ marginTop: 8 }}>
+                    <button className="ad-btn-pill action" onClick={() => void submitCreate(lastCreateRef.current)}>
                       Try again
                     </button>
                   </ActionRow>
@@ -430,26 +491,63 @@ export function ChatPanel({
               </div>
             )
           }
-          // system line — left-aligned like all agent output; the standalone
-          // undo row renders beneath it when it anchors the snapshot (a
-          // response that rewrote instructions or notes without touching the
-          // spec, §11)
+          // §11 system chip — an operation block: per-op glyph (stamped at
+          // creation, `fa-circle-info` fallback) beside the chip's text as its
+          // title; the undo row renders beneath it when it anchors the snapshot
           return (
             <React.Fragment key={e.id}>
-            <div style={{ marginTop: mt, font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-faint)', overflowWrap: 'break-word' }}>
-              {e.text}
+            <div style={{ marginTop: mt, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ width: 13, height: 13, flex: 'none', marginTop: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <i className={`fa-solid ${e.icon ?? 'fa-circle-info'}`} style={{ fontSize: 10, color: 'var(--text-faint)' }} />
+              </span>
+              <div style={{ flex: 1, minWidth: 0, font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-muted)', overflowWrap: 'break-word' }}>
+                {e.text}
+              </div>
             </div>
             {undoRow}
             </React.Fragment>
           )
         })}
+        {/* §11 turn action row — pills beneath the thread's last agent-side
+            entry: Undo first (the escape hatch), then the suggested next steps */}
+        {showTurnRow && (
+          <div data-testid="chat-turn-actions">
+            <ActionRow style={{ marginTop: 10 }}>
+              {undoAtEnd && (
+                <button className="ad-btn-pill action" onClick={undoDraft}>
+                  <i className="fa-solid fa-rotate-left" style={pillGlyph} />
+                  Undo this change
+                </button>
+              )}
+              {showSyncPill && (
+                <button className="ad-btn-pill action" data-testid="chat-sync-now" onClick={runSync}>
+                  <i className="fa-solid fa-rotate" style={pillGlyph} />
+                  Sync now
+                </button>
+              )}
+              {showTestPill && (
+                <button className="ad-btn-pill action" data-testid="chat-test-draft" onClick={openTestSetup}>
+                  <i className="fa-solid fa-vial" style={pillGlyph} />
+                  Test the draft
+                </button>
+              )}
+              {analyzeFailure && (
+                <button className="ad-btn-pill action" data-testid="chat-analyze-failure" onClick={analyzeFailure}>
+                  <i className="fa-solid fa-magnifying-glass" style={pillGlyph} />
+                  Analyze the failure
+                </button>
+              )}
+            </ActionRow>
+          </div>
+        )}
         {/* §11 thread progress entry — the page's only live job surface:
             transient (derived from the job, never persisted), rendered as a
             left-aligned agent block at the bottom of the thread */}
         {anyJobBusy && (
-          // §11 thread spacing: restarting beneath a just-settled activity
-          // entry chains the same job's trail flush, else a turn gap
-          <div data-testid="chat-progress" style={{ marginTop: rev.chat.length === 0 ? 0 : rev.chat[rev.chat.length - 1].kind === 'activity' ? 0 : 14 }}>
+          // §11 thread spacing: an operation block — flush beneath a
+          // just-settled op entry (the same job's trail chains), 10px after a
+          // message block, 14px after a user bubble
+          <div data-testid="chat-progress" style={{ marginTop: rev.chat.length === 0 ? 0 : familyGap(rev.chat[rev.chat.length - 1], { kind: 'activity' } as ChatEntry) }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Spinner size={13} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
@@ -458,19 +556,20 @@ export function ChatPanel({
             </div>
             {(() => {
               // §11 activity feed: the full dim event history over the live
-              // detail line (the backend caps events per job), flush left
-              // with the spinner; the newest event hides when detail extends
-              // it (same message, growing line count) so it never shows twice.
+              // detail line (the backend caps events per job), as flush-left
+              // operation-block bullets; the newest event hides when detail
+              // extends it (same message, growing line count) so it never
+              // shows twice.
               const evs = rev.genEvents
               const last = evs.length ? evs[evs.length - 1] : null
               const hist = rev.genDetail && last && rev.genDetail.startsWith(last) ? evs.slice(0, -1) : evs
               return (
                 <>
                   {hist.map((t, i) => (
-                    <div key={`${i}-${t}`} style={{ font: "400 11px/1.5 var(--sans)", color: 'var(--text-faint)', marginTop: i === 0 ? 3 : 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t}</div>
+                    <OpBullet key={`${i}-${t}`} text={t} first={i === 0} ellipsis />
                   ))}
                   {rev.genDetail && (
-                    <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: hist.length ? 0 : 3 }}>{rev.genDetail}</div>
+                    <OpBullet text={rev.genDetail} first={hist.length === 0} size={11.5} color="var(--text-muted)" />
                   )}
                 </>
               )

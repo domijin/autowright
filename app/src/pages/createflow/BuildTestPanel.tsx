@@ -11,7 +11,7 @@ import { useTriggerPreview } from '../../triggers'
 import { ParamValueEditor } from '../../steps'
 import type { Agent, Automation, ChatEntry, DraftTrigger, ParamDef } from '../../types'
 import { Eyebrow, GreenCheck, ProgressBar, Spinner } from '../../ui'
-import { type Rev, applyTestValues, serializeDraft } from './model'
+import { type Rev, analyzeTestMessage, applyTestValues, serializeDraft } from './model'
 import { cardStyle } from './SectionCards'
 
 // ---------- param value editor wrapper (§4.2 kinds — §11 test values) ----------
@@ -89,12 +89,15 @@ export interface BuildTestPanelProps {
   lockStyle?: React.CSSProperties
   runSync: () => void
   sendChat: (text?: string, runId?: string) => Promise<void>
+  // §11 turn action row: the chat's Test-the-draft pill bumps this counter —
+  // the panel opens its test-setup disclosure and scrolls into view
+  openSetupSignal: number
 }
 
 export function BuildTestPanel({
   rev, up, appendEntry, isEdit, auto,
   drafting, outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
-  agentGap, stageLabel, lockStyle, runSync, sendChat,
+  agentGap, stageLabel, lockStyle, runSync, sendChat, openSetupSignal,
 }: BuildTestPanelProps) {
   const { executions, executionFull, go, showToast, test, beginTest } = useStore()
 
@@ -233,11 +236,17 @@ export function BuildTestPanel({
   // an ordinary §8 chat job reading the failing run's RECENT RUNS context.
   const runAnalyze = () => {
     if (!rev || !test || anyJobBusy || testLive || viewingOld) return
-    const stepName = testExec?.error?.step
-    void sendChat(
-      `The test failed${stepName ? ` at step ${stepName}` : ''} — figure out why. If the automation is at fault, fix it; if it’s something I need to do on this Mac, tell me what to do and how instead.`,
-      test.executionId)
+    void sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId)
   }
+
+  // §11 turn action row: the chat's Test-the-draft pill — open the setup
+  // disclosure (same toggle, never starts a test) and bring the panel on screen.
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!openSetupSignal) return
+    if (!testOpen) toggleTestSetup()
+    rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [openSetupSignal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11 chat-action chaining (§8 actions.yaml): pendingSync fires as soon as
   // nothing runs; pendingTest fires once the workflow is in sync (right away,
@@ -255,7 +264,7 @@ export function BuildTestPanel({
     if (outOfSync) {
       // chained sync failed / blocked / cancelled, or something rewrote first
       up({ pendingTest: null })
-      appendEntry({ kind: 'system', text: 'Test skipped — the steps aren’t in sync with the spec.' })
+      appendEntry({ kind: 'system', icon: 'fa-rotate', text: 'Test skipped — the steps aren’t in sync with the spec.' })
       return
     }
     if (rev.steps.length === 0) { up({ pendingTest: null }); return }
@@ -273,17 +282,18 @@ export function BuildTestPanel({
     const prev = prevTestStatus.current
     prevTestStatus.current = st
     if (!rev || !st || st === prev || prev !== 'executing') return
-    if (st === 'succeeded') appendEntry({ kind: 'system', text: 'Test succeeded.' })
+    if (st === 'succeeded') appendEntry({ kind: 'system', icon: 'fa-vial', text: 'Test succeeded.' })
     else if (st === 'failed') {
       appendEntry({
         kind: 'system',
+        icon: 'fa-vial',
         text: `Test failed${testExec?.error?.step ? ` at step ${testExec.error.step}` : ''} — ${testExec?.error?.message ?? 'see the run'}.`,
       })
     }
   }, [testExec?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div style={cardStyle}>
+    <div ref={rootRef} style={cardStyle}>
       <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
         <Eyebrow>BUILD &amp; TEST</Eyebrow>
       </div>

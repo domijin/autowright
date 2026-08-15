@@ -395,7 +395,10 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   gating), and the §11 chat thread (`chat` on the payload → the container's `chat.jsonl`, §5).
   Persisted thread entries: `{ id: uuid, kind: user | answer | activity | rewrite |
   blockers | system
-  | error, text?, title?, outcome?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
+  | error, text?, title?, icon?, outcome?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
+  `icon` an optional Font Awesome class stamped at creation, driving the §11 block
+  glyph on system and answer entries (`title` doubles as the §11 answer header on
+  answer entries); entries without them fall back per §11 —
   `user` a
   message, `answer` the agent's markdown reply, `activity` a settled §8 job's record
   (`title` = its final stage label, text = one event per line, `outcome` = the job's

@@ -783,6 +783,23 @@ describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () 
     expect(d.triggers.map((t) => [t.id, t.enabled])).toEqual([['t1', true], ['t2', false]])
   })
 
+  it('a disabled trigger renders its chip grayed out — enabled ones keep the accent pair', async () => {
+    storeMod.useStore.setState({
+      automations: [{
+        ...TRIGGERED,
+        triggers: [TRIGGERED.triggers[0], { ...TRIGGERED.triggers[1], enabled: false }],
+      } as unknown as Automation],
+    })
+    render(<CreateFlow />)
+    await waitFor(() => expect(screen.getByText('123')).toBeTruthy(), { timeout: 3000 })
+    const off = screen.getByText('123') as HTMLElement
+    expect(off.style.color).toBe('var(--text-faint)')
+    expect(off.style.background).toBe('var(--hairline-dim)')
+    const on = screen.getByText('0 8 * * *') as HTMLElement
+    expect(on.style.color).toBe('var(--accent)')
+    expect(on.style.background).toBe('var(--accent-chip-bg)')
+  })
+
   it('param_values stage in the draft only — no PATCH, stored defs untouched, save carries the map', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
       actions: { paramValues: { greeting: 'hi' } },

@@ -719,7 +719,10 @@ editors enter with
   visible in the editor: cron/time show their schedule words; message triggers show their detail
   fields — "Discord · `<channel>`[ · “pattern”]", "iMessage · `<from>`[ · “pattern”]". A message
   trigger missing its detail field (no channel / no sender) renders the placeholder "missing" in
-  its place — surfacing a broken trigger before a save can 422 on it. Chips keep the footer
+  its place — surfacing a broken trigger before a save can 422 on it. A disabled trigger
+  (`enabled: false`, §4.3) renders its chip grayed out — faint text on the dim hairline
+  background (`--text-faint` on `--hairline-dim`) instead of the accent pair, matching the
+  §9.2 off-state — so the editor shows which triggers won't fire. Chips keep the footer
   "Executes even when
   the app is closed. Ask the AI in chat to change these, or use the automation page —
   chat changes apply when you save." No hands-on editing here (the detail page keeps the

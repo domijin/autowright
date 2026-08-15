@@ -783,9 +783,11 @@ export function RightCards({
           <div style={{ padding: '13px 20px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>Triggers appear here once the build finishes.</div>
         ) : (
           <div style={{ padding: '13px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            {rev.triggers.map((_, i) => trigPreviews[i] && (
+            {rev.triggers.map((t, i) => trigPreviews[i] && (
               <span key={i} style={{
-                font: "500 12px var(--mono)", color: 'var(--accent)', background: 'var(--accent-chip-bg)',
+                font: "500 12px var(--mono)",
+                color: t.enabled ? 'var(--accent)' : 'var(--text-faint)',
+                background: t.enabled ? 'var(--accent-chip-bg)' : 'var(--hairline-dim)',
                 borderRadius: 6, padding: '3px 9px', whiteSpace: 'nowrap',
               }}>
                 {trigPreviews[i].label}

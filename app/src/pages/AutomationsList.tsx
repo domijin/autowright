@@ -389,10 +389,14 @@ export default function AutomationsList() {
   const [imported, setImported] = useState<{ name: string; automationId: string; summary: ImportSummary } | null>(null)
 
   // §4.4/§9.1: with a kept pending draft, New automation starts fresh —
-  // confirm, delete the slot, then open the create flow empty.
+  // confirm, delete the slot, clear its chat thread, then open the create
+  // flow empty (the one discard that deletes the thread).
   const startFresh = async () => {
     setConfirmFresh(false)
-    try { await api.deleteDraft('pending') } catch { /* backend restarting */ }
+    try {
+      await api.deleteDraft('pending')
+      await api.putChat('pending', [])
+    } catch { /* backend restarting */ }
     setSurface('create', 'app')
   }
 
@@ -456,7 +460,13 @@ export default function AutomationsList() {
       {automations.length === 0 && (
         <EmptyState
           text="No automations yet. Describe a job in plain words — your AI writes it as scripts you can read, and Autowright executes them on your schedule."
-          cta={<BtnPrimary onClick={() => setSurface('create', 'app')}>Create your first automation</BtnPrimary>}
+          cta={(
+            <BtnPrimary
+              onClick={() => (pendingDraft ? setConfirmFresh(true) : setSurface('create', 'app'))}
+            >
+              Create your first automation
+            </BtnPrimary>
+          )}
         />
       )}
     </div>

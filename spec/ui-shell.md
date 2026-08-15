@@ -137,7 +137,9 @@ to the left of the primary **New automation** button — which then starts fresh
 confirm (title "Start a new automation?", body "Your unsaved draft “`<name>`” will be
 discarded. This can't be undone." — the draft's name in curly quotes, omitted when the
 draft has none; confirm button "Discard and start new") deletes the slot
-(`DELETE /draft/pending`) before opening the create flow. Without a
+(`DELETE /draft/pending`) and then clears the slot's chat thread (`PUT /chat/pending`
+with `[]` — the one discard that deletes the thread, §4.4 thread lifetime) before opening
+the create flow, so the fresh session starts with an empty thread. Without a
 pending draft, the single New automation button opens the create flow directly. Left of
 these sits a ghost **Import…** button (always present): it opens the **import modal**
 (§5.2 two-phase import). Input step: title "Import automation" over a one-line muted intro
@@ -182,7 +184,9 @@ menu bar. The card name stays on one line — ellipsized with the full name as a
 tooltip (same treatment as the detail-page title), so long names never wrap and desync card
 heights across a grid row. Empty state (dashed card):
 "No automations yet. Describe a job in plain words — your AI writes it as scripts you can read,
-and Autowright executes them on your schedule." with accent CTA "Create your first automation".
+and Autowright executes them on your schedule." with accent CTA "Create your first automation" —
+the CTA behaves exactly like the header New automation button: with a pending draft it shows
+the same discard confirm (delete slot + clear chat) before opening the create flow.
 
 ### 9.2 Automation detail
 

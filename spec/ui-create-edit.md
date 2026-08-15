@@ -431,7 +431,10 @@ applies unchanged; the chat pane never collapses.
   the pending slot's thread onto the new automation, so the conversation continues on its
   edit page; the settle paths that stay in or re-enter the editor (Start over; reopening
   after a discard or save) show the kept thread with the marker as its last entry. The
-  thread is deleted only by **Clear chat** or with its automation — never by a settle.
+  thread is deleted only by **Clear chat**, with its automation, or by the §9.1
+  discard-and-start-new confirm (which clears the pending slot's thread right after the
+  discard, so the fresh create flow opens with an empty thread) — never by any other
+  settle.
   Any settle-armed editor write (the settle flows await the in-flight thread PUT, exactly
   like the draft's `putInFlight` rule) lands before the marker, never after it. The
   thread progress entry is transient editor state,

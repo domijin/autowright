@@ -427,8 +427,10 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   (`chat.jsonl` beside `automation.yaml`; for the create-mode slot, at the slot root — §5),
   read and written through the §19 `GET/PUT /chat/{owner}` surface (owner: automation id or
   `pending`), decoupled from the draft: **settling the draft never deletes the thread** —
-  it is deleted only by §11 Clear chat (empty list unlinks the file) or with its
-  automation. Instead, every settle **appends a boundary marker** — a `system` entry with
+  it is deleted only by §11 Clear chat (empty list unlinks the file), with its
+  automation, or by the §9.1 discard-and-start-new confirm (which follows the slot's
+  draft DELETE with a `PUT /chat/pending` of `[]`, so the fresh create session opens
+  with an empty thread). Instead, every settle **appends a boundary marker** — a `system` entry with
   `boundary: true`, `icon: fa-flag-checkered`, and the settle's text ("Draft saved as vN." ·
   "Changes saved — no new version." for the §4.4 operational-only save · "Draft discarded." ·
   "Created as v1.") — written **backend-side by the settle endpoint itself** (§19: save,
@@ -463,12 +465,15 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   triggers). Opening the create flow while the slot exists resumes it straight on the
   Review page (toast: "Resumed your unsaved draft — Start over discards it."); the §9.1
   list header surfaces the slot as a Resume draft button, and its New automation button
-  confirms then deletes the slot's draft to start fresh. Start over
+  (and the empty-state CTA) confirms then deletes the slot's draft **and clears its chat
+  thread** to start fresh. Start over
   (and Back to Ask) deletes the slot's draft. Create consumes it: `versions/v1` is written
   from the sent draft and `<root>/draft/` is emptied — a settled draft is never
   resurrected. In every settle case the slot's `chat.jsonl` survives per the thread-lifetime
   rules above (Create moves it to the new automation; the others leave it in the slot
-  behind a boundary marker — a slot holding only `chat.jsonl` reads as "no pending draft").
+  behind a boundary marker — a slot holding only `chat.jsonl` reads as "no pending draft"),
+  with one exception: the §9.1 discard-and-start-new confirm clears the slot's thread
+  right after the discard, so the next create session starts empty.
   One pending draft at a time: every keep overwrites the slot. Leaving with nothing
   landed just leaves the empty container behind; the next open reuses it.
 - In edit mode the review footer shows a **Keep draft** bordered button placed directly to

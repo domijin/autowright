@@ -62,7 +62,8 @@ draft/                         # THE pending create-mode draft (§4.4) — a sin
                                #   at the slot root and OUTLIVES the draft (§4.4 thread
                                #   lifetime): written via §19 PUT /chat/pending, kept when
                                #   the slot settles, moved into the new automation's
-                               #   container by Create
+                               #   container by Create; the §9.1 discard-and-start-new
+                               #   confirm clears it (PUT of []) right after the discard
 automations/<uuid>/
   chat.jsonl                   # §11 chat thread — one JSON object per line, the §4.4 entry
                                # shape ({id, kind, text?, title?, icon?, outcome?, boundary?,

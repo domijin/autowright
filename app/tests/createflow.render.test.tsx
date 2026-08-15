@@ -1311,6 +1311,9 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     // §11: the marker is the one system chip with a description bullet — the
     // derived history explainer
     screen.getByText(/The messages above are from that draft — your AI starts fresh/)
+    // §11: no divider while the marker is the thread's last entry — the rule
+    // only sits between a settled conversation and the next one
+    expect(screen.queryByTestId('chat-boundary-divider')).toBeNull()
     // §11 history-inert: the turn action row never renders under a settled
     // session — the in-sync draft would otherwise offer the Test-draft pill
     expect(screen.queryByTestId('chat-turn-actions')).toBeNull()
@@ -1328,6 +1331,9 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     ] })
     render(<CreateFlow />)
     await screen.findByText('Draft discarded.')
+    // an entry follows the marker → the divider renders, and only under the
+    // marker (the plain system chip after it carries none)
+    expect(screen.getAllByTestId('chat-boundary-divider')).toHaveLength(1)
     // post-boundary entry at the end → the in-sync draft's Test pill is back
     await waitFor(() => expect(screen.getByTestId('chat-turn-actions')).toBeTruthy())
     screen.getByTestId('chat-test-draft')

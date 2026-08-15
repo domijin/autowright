@@ -104,7 +104,13 @@ applies unchanged; the chat pane never collapses.
   - **system** — a quiet one-line left-aligned status chip, rendered as an operation
     block: a per-operation glyph (faint) beside the chip's text as its title — no
     description bullets, with one exception: a §4.4 boundary marker renders the derived
-    history explainer as a dim bullet beneath its title (Thread lifetime below). The glyph is stamped on the entry at creation (§4.4 `icon`, a
+    history explainer as a dim bullet beneath its title, and — only when an entry
+    follows it — closes with a full-width 1 px `--hairline` divider rule beneath the
+    group: the marker ends the history it describes, and the rule sits between that
+    settled conversation and the next one. A marker that is the thread's last entry
+    shows no rule — there is nothing to fence off yet; the rule appears when the next
+    session's first entry lands (spacing in the thread-spacing rule below; Thread
+    lifetime below). The glyph is stamped on the entry at creation (§4.4 `icon`, a
     Font Awesome class); an entry without one (older persisted threads, backend-seeded
     entries) falls back to `fa-circle-info`. The map, by operation: sync
     ("Steps synced with the spec.", "Test skipped — the steps aren't in sync with the
@@ -165,7 +171,12 @@ applies unchanged; the chat pane never collapses.
   flush when it restarts beneath a just-settled **activity** entry (the same job's trail
   chains as one block), 10 px after a message block, 14 px after a user bubble. The
   turn action row sits 10 px beneath the entry it follows — slightly detached from the
-  group it closes.
+  group it closes. One exception to the three gaps: a §4.4 **boundary marker** never
+  chains flush — its chip sits a fixed 18 px beneath whatever precedes it (overriding
+  the family gap); when an entry follows the marker, its divider rule (entry-kind list
+  above) sits 10 px beneath the marker group (chip + explainer bullet) and the entry
+  after the rule opens with 10 px instead of chaining flush, so the settled session
+  closes on its own band and the fence sits between it and the current session.
 - **Turn action row** — the thread's one suggestion surface: a standalone left-aligned
   wrapping pill row (icon-led `.ad-btn-pill.action` pills — the composer pills' small
   look in the §14 sans action face) rendered beneath the thread's **last agent-side
@@ -368,7 +379,10 @@ applies unchanged; the chat pane never collapses.
   system chip with a description bullet: beneath its title it renders the derived (never
   persisted) explainer "The messages above are from that draft — your AI starts fresh
   and no longer reads them." — the reader learns in place that the history above belongs
-  to a saved or discarded draft. Everything at or before
+  to a saved or discarded draft. It is also the one chip with chrome: the fixed gaps
+  around it and — once the next session's first entry lands — the divider rule beneath
+  its group (entry-kind list and thread-spacing rule above) make the split between
+  conversations visible at a glance. Everything at or before
   the newest marker stays visible in the thread but never reaches the agent (§8
   CONVERSATION clips there — the composer sends only post-boundary entries), and the
   marker stamps open blockers entries `dismissed` (they describe a settled draft, so they

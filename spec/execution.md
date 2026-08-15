@@ -214,7 +214,7 @@ On a failed non-test execution whose automation still exists, the notice also ca
 quiet **"Fix with AI"** button: it opens the automation's §11 editor, seeds the chat thread
 with a system entry naming the failure ("Execution failed at step `<name>` — `<message>`"),
 and sends the §11 canned analyze chat message as a §8 chat job carrying this execution's id
-as the §19 `runId` — the RECENT RUNS context includes the run's error and log tails, and
+as the §19 `executionId` — the RECENT EXECUTIONS context includes the run's error and log tails, and
 the agent's answer, rewrites, and follow-up actions land in the thread (§11).
 Test executions never show it — draft iteration already lives in the editor.
 The LOGS pane shows the selected step's log (header: step name, or "Setup log" for the

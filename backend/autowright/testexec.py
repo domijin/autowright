@@ -5,7 +5,7 @@ engine path a real execution takes — record, workspace/result/logs, and the
 scripts land in the record's steps/ dir, memory is a scratch copy discarded at
 the end, one test record per draft container (409 while one is live, previous
 record deleted at start), and the last-test summary lands in the container's
-test.yaml. This module also builds the §8 chat call's RECENT RUNS context —
+test.yaml. This module also builds the §8 chat call's RECENT EXECUTIONS context —
 failure analysis is an ordinary chat job reading it (there is no separate
 analysis call)."""
 from __future__ import annotations
@@ -21,9 +21,9 @@ from .events import hub
 from .storage import exec_ver_label, is_test, safe_step_filename, store
 from .yamlio import save_yaml
 
-LOG_TAIL = 40      # lines per step handed to the §8 RECENT RUNS section
-RUNS_CAP = 5       # §8: newest settled runs included, across all §4.5 kinds
-RESULT_EXCERPT = 2000  # chars of result.md shown for a detailed successful run
+LOG_TAIL = 40      # lines per step handed to the §8 RECENT EXECUTIONS section
+EXECUTIONS_CAP = 5  # §8: newest settled executions included, across all §4.5 kinds
+RESULT_EXCERPT = 2000  # chars of result.md shown for a detailed successful execution
 
 
 def start(engine: Engine, draft: dict, auto: dict | None,
@@ -125,7 +125,7 @@ def _run(engine: Engine, shadow: dict, ver: dict, h: dict, state: dict,
     if h["status"] in ("succeeded", "failed"):
         # §5 test.yaml — the last-test summary a resumed draft's Test card
         # shows; deleted with the draft. A failed test is NOT analyzed here —
-        # analysis is a user-sent §8 chat message reading runs_context.
+        # analysis is a user-sent §8 chat message reading executions_context.
         save_yaml(dbase / "test.yaml", {
             "status": h["status"],
             "when": timefmt.now_iso(),
@@ -142,24 +142,24 @@ def _log_tail(h: dict, idx: int) -> list[str]:
     return [l.get("text", "") for l in lines][-LOG_TAIL:]
 
 
-def runs_context(auto: dict | None, current_steps: list[dict],
-                 run_id: str | None = None) -> str | None:
-    """§8 RECENT RUNS: the newest settled executions of this automation/draft
+def executions_context(auto: dict | None, current_steps: list[dict],
+                       execution_id: str | None = None) -> str | None:
+    """§8 RECENT EXECUTIONS: the newest settled executions of this automation/draft
     (all §4.5 kinds — the draft's test record, Draft executions, version
-    executions), newest first, capped at RUNS_CAP. The newest run — and the
-    `run_id` one (§19, the Fix-with-AI entry), however old — carries full
-    detail: per-step outcomes, the error, log tails, the result. Every run is
+    executions), newest first, capped at EXECUTIONS_CAP. The newest execution — and the
+    `execution_id` one (§19, the Fix-with-AI entry), however old — carries full
+    detail: per-step outcomes, the error, log tails, the result. Every execution is
     marked against the in-editor step code (§4.5 per-step sha) so the agent
-    never reads stale output as current behavior. None when no run exists."""
+    never reads stale output as current behavior. None when no execution exists."""
     container_id = auto["id"] if auto else None
     with store.lock:
         hs = [h for h in store.execs.values()
               if h["automation_id"] == container_id
               and h["status"] not in ("executing", "queued")]
         hs.sort(key=lambda h: h.get("started_at") or "", reverse=True)
-        picked = hs[:RUNS_CAP]
-        if run_id and all(h["id"] != run_id for h in picked):
-            f = store.execs.get(run_id)
+        picked = hs[:EXECUTIONS_CAP]
+        if execution_id and all(h["id"] != execution_id for h in picked):
+            f = store.execs.get(execution_id)
             if (f and f["automation_id"] == container_id
                     and f["status"] not in ("executing", "queued")):
                 picked.append(f)
@@ -169,12 +169,12 @@ def runs_context(auto: dict | None, current_steps: list[dict],
     blocks = []
     for i, h in enumerate(picked):
         full = store.exec_full(h["id"]) or h
-        detail = i == 0 or (run_id is not None and h["id"] == run_id)
-        blocks.append(_run_block(full, cur_shas, detail))
+        detail = i == 0 or (execution_id is not None and h["id"] == execution_id)
+        blocks.append(_execution_block(full, cur_shas, detail))
     return "\n\n".join(blocks)
 
 
-def _run_block(h: dict, cur_shas: list[str], detail: bool) -> str:
+def _execution_block(h: dict, cur_shas: list[str], detail: bool) -> str:
     steps = h.get("steps") or []
     shas = [s.get("sha") for s in steps]
     stale = ("steps match the current draft" if shas == cur_shas
@@ -182,7 +182,7 @@ def _run_block(h: dict, cur_shas: list[str], detail: bool) -> str:
     started = ""
     if h.get("started_at"):
         started = timefmt.started_label(timefmt.parse_local(h["started_at"]))
-    head = (f"--- {exec_ver_label(h)} run · {h.get('status')} · started {started} · "
+    head = (f"--- {exec_ver_label(h)} execution · {h.get('status')} · started {started} · "
             f"trigger {h.get('trigger')} · {stale} ---")
     lines = [head]
     err = h.get("error") or {}

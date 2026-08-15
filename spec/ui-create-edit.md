@@ -267,7 +267,7 @@ applies unchanged; the chat pane never collapses.
   (§19 `chat` — only entries after the newest §4.4 boundary marker: a settled draft
   session's conversation never reaches the agent, §8) — answers and rewrites match what's
   on screen, unsaved edits included; the
-  backend adds the §8 RECENT RUNS and PACKAGES context itself, so the agent reads test and
+  backend adds the §8 RECENT EXECUTIONS and PACKAGES context itself, so the agent reads test and
   execution output (success and failure) without any extra ceremony. The
   response decides the outcome (§8) — one response may combine an answer with rewrites and
   actions, applied in this order:
@@ -400,7 +400,7 @@ applies unchanged; the chat pane never collapses.
   Cancel anywhere. The draft **test** is not a §8 job and never appears here: while a test
   is executing the input stays, disabled with the hint "Wait for the test to finish." (a
   rewrite would pull the workflow out from under the running test), and the test's live
-  controls (progress, Cancel, View run) stay in the Build & test panel.
+  controls (progress, Cancel, View execution) stay in the Build & test panel.
 - **Create empty state:** headline "What should Autowright do for you?" over the thread
   area, the sub-line "Describe the job in plain words. Your AI writes it as scripts — you
   review everything before it executes." beneath it, then an "OR START FROM AN EXAMPLE"
@@ -1022,7 +1022,7 @@ editors enter with
   **Sync now** while out of sync. Every other panel button is a compact borderless **text
   button** (the card-header treatment above — never a bordered or filled box): the state's
   main actions (the Test draft setup toggle, the setup section's Run
-  test, a live test's Cancel) muted, every other action (View run, Analyze failure,
+  test, a live test's Cancel) muted, every other action (View execution, Analyze failure,
   Sync spec) faint — the test controls included: a failed test never blocks saving,
   so testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
   space runs out — a panel button is never clipped.
@@ -1052,12 +1052,12 @@ editors enter with
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
   3. **In sync, test executing** — the live status line, progress bar, and the action row
-     Cancel + the disabled faint **Sync spec** (below) + View run; the test-setup
+     Cancel + the disabled faint **Sync spec** (below) + View execution; the test-setup
      section stays hidden while the test executes.
   4. **In sync, test settled** — the outcome line over the action row faint **Sync with
      spec** / **Test draft** and, on failure, **Analyze failure**, which sends
      the canned analyze chat message (below). Test draft is the same setup toggle as
-     state 5 — reopening shows the values the last test used — and **View run** lives
+     state 5 — reopening shows the values the last test used — and **View execution** lives
      only inside the setup section's run row, not on the action row.
   5. **In sync, never tested** — one action row: the faint **Sync spec** directly
      beside the muted **Test draft** setup toggle — always side by side, nothing
@@ -1150,12 +1150,12 @@ editors enter with
   send, files move, notifications post per settings) and the card says so plainly.
   **The panel stays compact — status + progress, no logs:** while the test executes it
   shows a status line ("Executing — step 2 of 5 · <step name>"), a progress bar (terminal
-  steps over total), and a **"View run"** button opening the test's §7 execution page, where
+  steps over total), and a **"View execution"** button opening the test's §7 execution page, where
   the live step timeline, streaming logs, and (when finished) the full result views are the
   ordinary execution-page surfaces — one run UI everywhere instead of a second, smaller one
   in the panel. When the test finishes the panel shows the outcome line ("Test succeeded —
   the memory copy was discarded." green / "Test failed." amber / "Test cancelled." faint);
-  View run then lives only in the setup section's run row. Navigating
+  View execution then lives only in the setup section's run row. Navigating
   away from the editor no longer cancels a live test — it is a real record, visible and
   cancellable from its execution page; re-entering the editor re-attaches the card to a
   still-executing test. **The outcome is never thrown away with the editing session:** a
@@ -1165,7 +1165,7 @@ editors enter with
   §4.1 started-label, executionId }) — on the automation's `draft` object and on `GET /draft/pending` —
   and a resumed draft's panel renders it in place of the never-tested row: a status line
   ("Last test succeeded — <when>." green / "Last test failed — <when>." amber); the setup
-  section's run row shows View run while the record still exists (retention may outlive
+  section's run row shows View execution while the record still exists (retention may outlive
   it — the button hides when the record is gone). A live test always
   takes over the panel. **When a test settles the thread hears about it:** the editor
   appends a run-settled **system** entry — "Test succeeded." / "Test failed at step
@@ -1176,7 +1176,7 @@ editors enter with
   out why. If the automation is at fault, fix it; if it's something I need to do on this
   Mac, tell me what to do and how instead." as an ordinary §8 chat job
   (gated exactly like the chat input, so it disables while any §8 job is in flight): the
-  §8 RECENT RUNS context carries the failing run's error and log tails, and the response —
+  §8 RECENT EXECUTIONS context carries the failing run's error and log tails, and the response —
   an explanation, a spec rewrite, actions that resync and retest — lands in the thread
   like any chat outcome. Build-time blockers and execution-time failures stay one
   convergent repair loop in one place, the chat thread. Advisory: a failed test never
@@ -1191,7 +1191,7 @@ If the automation is at fault, change it so it won't happen again; if the fix is
 something I need to do on this Mac (install or start an app, sign in), tell me what to do
 and how instead." (the step is not repeated — the
 system entry directly above already names it) as a §8 chat job
-carrying the execution's id as the §19 `runId`, so the RECENT RUNS context includes that
+carrying the execution's id as the §19 `executionId`, so the RECENT EXECUTIONS context includes that
 run in full detail however old it is. The outcome lands like any chat outcome. While
 another §8 job is already in flight the message is not sent — only the system entry is
 appended, and the user asks when the job settles.

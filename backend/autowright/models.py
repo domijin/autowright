@@ -209,7 +209,7 @@ class DraftJobStart(BaseModel):
     spec: Any = None                      # sync sends spec markdown; edit sends blocks
     current: DraftIn | None = None        # the in-editor draft (camel steps normalized)
     chat: list[dict[str, Any]] | None = None
-    runId: StrictStr | None = None
+    executionId: StrictStr | None = None
     agentId: StrictStr | None = None
     enabledAgents: list[StrictStr] = None
     allowedSecrets: list[StrictStr] = None

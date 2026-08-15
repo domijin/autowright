@@ -1315,7 +1315,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
     const body = draftBody(0)
     expect(body.mode).toBe('chat')
-    expect(body.runId).toBe('e9')
+    expect(body.executionId).toBe('e9')
     expect(body.text).toBe('The test failed at step Fetch pages — figure out why. If the automation is at fault, fix it; if it’s something I need to do on this Mac, tell me what to do and how instead.')
     // the canned message lands as a user entry in the thread
     expect(screen.getByText(body.text as string)).toBeTruthy()

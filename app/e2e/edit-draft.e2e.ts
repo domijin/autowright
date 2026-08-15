@@ -56,10 +56,10 @@ describe('edit draft e2e', () => {
     await page.getByText('Test succeeded.', { exact: true }).waitFor()
     await shot(page, 'edit-draft-test.png')
 
-    // The test is a real execution record: View run (inside the reopened setup
+    // The test is a real execution record: View execution (inside the reopened setup
     // section's run row) shows the step's log line.
     await page.getByTestId('test-draft-toggle').click()
-    await page.getByRole('button', { name: 'View run' }).click()
+    await page.getByRole('button', { name: 'View execution' }).click()
     await page.getByText('Draft test').waitFor({ timeout: 10_000 })
     await page.getByText('edit-draft distinctive log line').waitFor({ timeout: 20_000 })
     await shot(page, 'edit-draft-test-run.png')

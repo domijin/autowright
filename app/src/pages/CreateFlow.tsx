@@ -588,8 +588,8 @@ export default function CreateFlow() {
 
   // §7/§9.2 Fix with AI: the editor opened from a failed execution seeds the
   // thread with the failure and sends the §11 canned analyze chat message —
-  // an ordinary §8 chat job whose RECENT RUNS context carries this execution
-  // in full detail (§19 runId). While another job is already in flight only
+  // an ordinary §8 chat job whose RECENT EXECUTIONS context carries this execution
+  // in full detail (§19 executionId). While another job is already in flight only
   // the seed lands; the user asks when it settles.
   const fixConsumed = useRef(false)
   useEffect(() => {

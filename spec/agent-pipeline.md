@@ -160,7 +160,7 @@ blocker summary keeps its clipped `details` and prefixes "(needs user action)" w
 blocker carries `kind: user-action`, so a build-diagnosis failure's specifics and a
 pending install ask both reach
 later chats — context only, so a follow-up request reads naturally; §11 `activity`
-entries are skipped — a job's event feed is operational noise, not conversation), **RECENT RUNS** (below), **PACKAGES** — present when the
+entries are skipped — a job's event feed is operational noise, not conversation), **RECENT EXECUTIONS** (below), **PACKAGES** — present when the
 draft declares §6.2 packages: the fast §6.2 installed-check's per-package status and version
 as a yaml list, so install trouble is answerable, **AUTOMATION** — the automation's current
 name and one-line description as yaml (§4.1 user-owned identity; the §19 `current` body's
@@ -215,14 +215,14 @@ contract:
   (a `#` title, two `##` sections with bullets). Clarifications and blockers follow the
   same rules as any other chat turn — there is no special first-message flow.
 
-**RECENT RUNS section** — assembled by the backend from the §5 execution store, never sent
+**RECENT EXECUTIONS section** — assembled by the backend from the §5 execution store, never sent
 by the editor: the most recent settled executions of this automation/draft, newest first,
 capped at 5 across all §4.5 kinds — the draft's test record, Draft executions, and (edit
 mode) version executions. Every run carries its kind label ("Test" / "Draft" / "vN"),
 status, started label, trigger, and a staleness marker — "steps match the current draft"
 when every per-step `sha` (§4.5) matches the in-editor step code, else "ran older steps" —
 so the agent never fixes an already-fixed failure or reads stale output as current
-behavior. The newest run (and the run named by the §19 `runId` body field — the §11
+behavior. The newest run (and the run named by the §19 `executionId` body field — the §11
 Fix-with-AI entry — regardless of age) additionally carries full detail: per-step statuses
 and durations, the §4.5 error (message + reason), the failing step's log tail plus earlier
 steps' log tails (the cause is often upstream), and on success the result chip plus a
@@ -692,13 +692,13 @@ the stage label is its own field. `events` rides the job beside `stage`/`detail`
 backs the §11 thread progress entry's activity feed.
 
 **Failed-run analysis is a chat message.** There is no separate issue-analysis call:
-the chat call's RECENT RUNS section already carries a failed run's error and log tails, so
+the chat call's RECENT EXECUTIONS section already carries a failed run's error and log tails, so
 "why did it fail" and "fix it" are ordinary chat jobs — the §11 "Analyze failure"
 button and the §7/§9.2 Fix-with-AI entry just send canned chat messages (the latter naming
-the execution via the §19 `runId` body field). One call shape, one repair loop, one thread.
+the execution via the §19 `executionId` body field). One call shape, one repair loop, one thread.
 Secret values never travel: the log tails are the already-redacted execution output (§6).
 The canned messages permit both outcomes — fix the automation, or tell the user what to
-do — and the CHAT task directs the diagnosis: when the RECENT RUNS show the failure comes
+do — and the CHAT task directs the diagnosis: when the RECENT EXECUTIONS show the failure comes
 from the user's Mac rather than the steps — a missing desktop app or a daemon that isn't
 running (a §6 pre-flight error, `ConnectionRefusedError` to a local service, "command not
 found" on a binary) — the agent returns a `kind: user-action` blocker with instructions

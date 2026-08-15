@@ -532,7 +532,7 @@ def test_test_resolves_default_after_editor_roundtrip(client, monkeypatch):
 
 def test_test_failure_never_analyzes_by_itself(client, monkeypatch):
     # §11/§8: there is no analysis call at all — a failed test just settles;
-    # failure analysis is a user-sent chat job reading the RECENT RUNS context.
+    # failure analysis is a user-sent chat job reading the RECENT EXECUTIONS context.
     # Seam, not a sleep: every agent call reaches harness.invoke, so zero
     # recorded calls at finish proves nothing analyzed by itself.
     from autowright import harness
@@ -555,8 +555,8 @@ def test_test_failure_never_analyzes_by_itself(client, monkeypatch):
     assert calls == []  # nothing analyzed by itself
 
 
-def test_failed_run_rides_chat_runs_context(client, monkeypatch):
-    # §8/§19: a chat job's RECENT RUNS context (assembled by the backend)
+def test_failed_run_rides_chat_executions_context(client, monkeypatch):
+    # §8/§19: a chat job's RECENT EXECUTIONS context (assembled by the backend)
     # carries the failed test's status and error, marked against the sent steps.
     from autowright import testexec
 
@@ -565,13 +565,13 @@ def test_failed_run_rides_chat_runs_context(client, monkeypatch):
                             "code": "raise KeyError('missing')\n"}])
     eid = client.post("/tests", json={"draft": d}).json()["executionId"]
     _until_finished(events, eid)
-    runs = testexec.runs_context(None, d["steps"], None)
-    assert runs is not None
-    assert "Test run · failed" in runs
-    assert "KeyError" in runs
-    assert "steps match the current draft" in runs
+    executions = testexec.executions_context(None, d["steps"], None)
+    assert executions is not None
+    assert "Test execution · failed" in executions
+    assert "KeyError" in executions
+    assert "steps match the current draft" in executions
     # different in-editor code → the run is flagged as historical
-    stale = testexec.runs_context(None, [{**d["steps"][0], "code": "pass\n"}], None)
+    stale = testexec.executions_context(None, [{**d["steps"][0], "code": "pass\n"}], None)
     assert "ran older steps" in stale
 
 
@@ -1168,9 +1168,9 @@ def test_draft_container_surface_uniform_across_owners(client):
         assert client.get(f"/draft/{owner}").json()["draft"] is None
 
 
-def test_runs_context_covers_real_executions_and_run_id(client, monkeypatch):
-    # §8/§19: the chat RECENT RUNS context includes an automation's real
-    # executions, and `runId` forces a specific run into the section.
+def test_executions_context_covers_real_executions_and_execution_id(client, monkeypatch):
+    # §8/§19: the chat RECENT EXECUTIONS context includes an automation's real
+    # executions, and `executionId` forces a specific run into the section.
     from autowright import testexec
     from autowright.storage import store
 
@@ -1182,11 +1182,11 @@ def test_runs_context_covers_real_executions_and_run_id(client, monkeypatch):
     a = store.create_automation(ver, "Real fail", "mock")
     eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
     assert _until_finished(events, eid)["execution"]["status"] == "failed"
-    runs = testexec.runs_context(a, ver["steps"], eid)
-    assert runs is not None
-    assert "v1 run · failed" in runs
-    assert "KeyError" in runs
-    assert "log tail (failing step)" in runs
+    executions = testexec.executions_context(a, ver["steps"], eid)
+    assert executions is not None
+    assert "v1 execution · failed" in executions
+    assert "KeyError" in executions
+    assert "log tail (failing step)" in executions
 
 
 def test_delete_agent_reassigns_default(client):
@@ -2392,9 +2392,9 @@ def test_delete_last_agent_clears_pointer_and_automation_agents(client):
 
 # ---------- §8/§19 chat runs/pkg_state server-side assembly ----------
 
-def test_chat_assembles_recent_runs_and_run_id_forces_detail(client, monkeypatch):
-    """§8/§19: the backend assembles RECENT RUNS for a chat job; only the newest
-    run carries full detail (log tails) — `runId` forces an older run's full
+def test_chat_assembles_recent_executions_and_execution_id_forces_detail(client, monkeypatch):
+    """§8/§19: the backend assembles RECENT EXECUTIONS for a chat job; only the newest
+    run carries full detail (log tails) — `executionId` forces an older run's full
     detail in. Checked at the fake-CLI prompt via the app log."""
     from autowright import paths
     from autowright.storage import store
@@ -2416,21 +2416,21 @@ def test_chat_assembles_recent_runs_and_run_id_forces_detail(client, monkeypatch
     new_eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
     assert _until_finished(events, new_eid)["execution"]["status"] == "failed"
 
-    # without runId: the newest run alone carries its log tail
+    # without executionId: the newest run alone carries its log tail
     r = client.post("/drafts", json={"mode": "chat", "automationId": a["id"], "agentId": "mock",
                                      "text": "Why did the last run fail?"})
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
     logged = paths.app_log().read_text(encoding="utf-8")
-    assert "=== RECENT RUNS" in logged
-    assert "v2 run · failed" in logged and "v1 run · failed" in logged
+    assert "=== RECENT EXECUTIONS" in logged
+    assert "v2 execution · failed" in logged and "v1 execution · failed" in logged
     assert "NEW-TAIL-MARK" in logged
     assert "OLD-TAIL-MARK" not in logged   # older run stays summary-only
 
-    # runId (the §11 Fix-with-AI entry) forces the old run in, in full detail
+    # executionId (the §11 Fix-with-AI entry) forces the old run in, in full detail
     r = client.post("/drafts", json={"mode": "chat", "automationId": a["id"], "agentId": "mock",
                                      "text": "Why did that older run fail?",
-                                     "runId": old_eid})
+                                     "executionId": old_eid})
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
     logged = paths.app_log().read_text(encoding="utf-8")

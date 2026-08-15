@@ -93,7 +93,7 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   (`executions.db`, the §5 list/filter index over execution headers — any `SCHEMA_VERSION` bump
   drops the table and startup's yaml reconcile rebuilds it), `reqlog.py` (§5 per-request log
   files + build-failure records, developerMode-gated), `testexec.py` (§11 draft test executions
-  through the real engine path, plus the §8 chat call's RECENT RUNS context), `specmd.py`
+  through the real engine path, plus the §8 chat call's RECENT EXECUTIONS context), `specmd.py`
   (spec.md ↔ §4.1 block-list conversion), `events.py` (in-process pubsub hub feeding the §19
   WebSocket), and the small utilities `keychain.py` (§4.8 Keychain values via keyring),
   `notify.py` (osascript notifications), `paths.py` (§5 filesystem locations,

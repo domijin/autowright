@@ -146,7 +146,7 @@ everything finer-grained belongs to the unit/integration tiers:
   real Finder window)
 - memory snapshots from the detail page — create, list, restore
 - an edit-mode draft Test on an existing automation: run Test from the editor, the §11 test
-  record succeeds while live memory stays untouched, its View run opens the execution page;
+  record succeeds while live memory stays untouched, its View execution opens the execution page;
   the settled test also lands as a quiet system chip in the chat thread; editing the spec
   locks Test until Sync; Discard drops the draft
 - failed execution → §7 diagnostics on the execution page → Retry in place → attempt 2

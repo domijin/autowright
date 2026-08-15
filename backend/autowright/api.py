@@ -1096,18 +1096,18 @@ def post_draft(body: models.DraftJobStart) -> dict:
         "agents": [_agent_grant(g) for g in store.agents if g["id"] in enabled_ids],
         "secrets": [_secret_grant(n) for n in allowed],
     }
-    runs = pkg_state = None
+    executions = pkg_state = None
     if mode == "chat":
-        # §8/§19: the backend assembles the RECENT RUNS and PACKAGES context —
-        # the editor never sends run output. `runId` (the §11 Fix-with-AI
+        # §8/§19: the backend assembles the RECENT EXECUTIONS and PACKAGES context —
+        # the editor never sends run output. `executionId` (the §11 Fix-with-AI
         # entry) forces that execution into the section in full detail.
-        runs = testexec.runs_context(auto, (current or {}).get("steps") or [],
-                                     body.runId)
+        executions = testexec.executions_context(auto, (current or {}).get("steps") or [],
+                                                 body.executionId)
         if pkgs := (current or {}).get("packages"):
             pkg_state = pkglib.check([{"pip": p.get("pip"), "import": p.get("import")}
                                       for p in pkgs])
     job_id = draft_jobs.start(mode, agent, body.text, current, grants,
-                              chat_history=body.chat, runs=runs,
+                              chat_history=body.chat, executions=executions,
                               pkg_state=pkg_state)
     return {"jobId": job_id}
 

@@ -418,7 +418,7 @@ the job** (Transmission for torrents, the Discord desktop app, …) with a deter
 **pre-flight** that fails in plain words when the tool is absent — `shutil.which` for a
 CLI, a quick connect for a local daemon — raising an error that names the tool, says it
 isn't installed or running, and includes the download URL, so the failure reads as user
-instructions and reaches later §8 chat calls verbatim via RECENT RUNS. A dependency the
+instructions and reaches later §8 chat calls verbatim via RECENT EXECUTIONS. A dependency the
 agent already **knows** is missing (the user said so; a run proved it) yields a §8
 `kind: user-action` blocker instead of steps that will fail.
 Future escalation, to build only when a real automation is blocked on a binary with no wheel:

@@ -2,7 +2,7 @@
 
 The `chat` call is every editor turn (§11 chat column): framework instructions +
 grants + build instructions + the agent's NOTES, the recent CONVERSATION, the
-RECENT RUNS (test/draft/version output with log tails, assembled by the API
+RECENT EXECUTIONS (test/draft/version output with log tails, assembled by the API
 layer), the package install state, and the current draft (spec + steps) — and
 the RESPONSE SHAPE decides the outcome: any subset of spec.md / instructions.md /
 notes.md / actions.yaml blocks is a rewrite-plus-actions (validated per block),
@@ -119,7 +119,7 @@ STEPS_REMINDER = ("=== RESPONSE REMINDER ===\n"
 CHAT_TASK = """=== TASK ===
 Decide what the USER REQUEST above needs:
 
-- A question → answer it in plain markdown prose written for the user — no file blocks, no envelope, no yaml. Ground the answer in the SPEC, the CURRENT steps, and the RECENT RUNS shown above; when something isn't decided there, say so plainly.
+- A question → answer it in plain markdown prose written for the user — no file blocks, no envelope, no yaml. Ground the answer in the SPEC, the CURRENT steps, and the RECENT EXECUTIONS shown above; when something isn't decided there, say so plainly.
 
 - A NEW automation (the SPEC above is empty) → the USER REQUEST is the automation's description: return the FULL spec.md written from it (don't promise AI judgment unless the enabled-agents list is nonempty), plus actions.yaml carrying `name`, `description`, and `sync: true` so the steps build in the same turn — unless the request is a question or asks you to hold off. Clarifications work like any other turn: when something only the user can supply is missing, ask in plain prose instead. A fresh spec's shape and tone, for example:
 
@@ -163,7 +163,7 @@ undo: true                  # restore the draft to before the last request — e
 
 Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, secret name, sender handle) may come from the spec or from what the user typed in this conversation, never invented. Use `concurrency` only when the user explicitly asks for parallel runs or queueing ("let two run at once", "queue messages when it's busy") — never speculatively; the defaults (max_parallel 1, max_queued 0) stay unless the user names different numbers or words you can map to them ("a couple at once" → 2). Staged values, trigger edits, and concurrency changes land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
-- A failure the user can't fix by changing the automation → when the RECENT RUNS show the failure comes from the user's Mac, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
+- A failure the user can't fix by changing the automation → when the RECENT EXECUTIONS show the failure comes from the user's Mac, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
 
 Use the blocker envelope when a requested change is genuinely impossible, or when the real fix is user action outside this app (`kind: user-action`)."""
 
@@ -270,7 +270,7 @@ def _notes_section(current: dict | None, hint: str) -> str | None:
 
 def build_chat_prompt(user_text: str | None, current: dict | None,
                       grants: dict, chat: list | None = None,
-                      runs: str | None = None,
+                      executions: str | None = None,
                       pkg_state: list[dict] | None = None) -> str:
     """§8 chat call — the ordinary context stack (framework + grants + build
     instructions) plus the agent's NOTES, the recent CONVERSATION, the RECENT
@@ -286,10 +286,10 @@ def build_chat_prompt(user_text: str | None, current: dict | None,
     if convo:
         parts.append("=== CONVERSATION (recent messages in this editing session — "
                      "context only, never returned) ===\n" + convo)
-    if runs:
-        parts.append("=== RECENT RUNS (newest first — test/draft/version executions of this "
-                     "automation with their output; a run marked 'ran older steps' predates "
-                     "the current draft) ===\n" + runs)
+    if executions:
+        parts.append("=== RECENT EXECUTIONS (newest first — test/draft/version executions of this "
+                     "automation with their output; an execution marked 'ran older steps' predates "
+                     "the current draft) ===\n" + executions)
     if pkg_state:
         parts.append("=== PACKAGES (declared §6.2 packages and their install state) ===\n"
                      + yaml.safe_dump(pkg_state, sort_keys=False, allow_unicode=True).strip())
@@ -1103,7 +1103,7 @@ class DraftJobs:
 
     def start(self, mode: str, agent: dict, user_text: str | None,
               current: dict | None, grants: dict,
-              chat_history: list | None = None, runs: str | None = None,
+              chat_history: list | None = None, executions: str | None = None,
               pkg_state: list[dict] | None = None) -> str:
         job_id = str(uuid.uuid4())
         # §8 unified stage set: every job enters at the phase where its real
@@ -1124,7 +1124,7 @@ class DraftJobs:
             self.jobs[job_id] = job
         t = threading.Thread(target=self._run,
                              args=(job, mode, agent, user_text, current, grants,
-                                   chat_history, runs, pkg_state),
+                                   chat_history, executions, pkg_state),
                              daemon=True)
         t.start()
         return job_id
@@ -1171,10 +1171,10 @@ class DraftJobs:
 
     def _run(self, job: dict, mode: str, agent: dict, user_text: str | None,
              current: dict | None, grants: dict, chat_history: list | None,
-             runs: str | None = None, pkg_state: list[dict] | None = None) -> None:
+             executions: str | None = None, pkg_state: list[dict] | None = None) -> None:
         try:
             self._pipeline(job, mode, agent, user_text, current, grants,
-                           chat_history, runs, pkg_state)
+                           chat_history, executions, pkg_state)
         except Cancelled:
             # cancel() already made the job terminal under the lock — this
             # settle is the no-op belt-and-braces (it never overwrites).
@@ -1189,13 +1189,13 @@ class DraftJobs:
 
     def _pipeline(self, job: dict, mode: str, agent: dict, user_text: str | None,
                   current: dict | None, grants: dict,
-                  chat_history: list | None = None, runs: str | None = None,
+                  chat_history: list | None = None, executions: str | None = None,
                   pkg_state: list[dict] | None = None) -> None:
         """Makes the mode's calls; sets job status. A cancel raises `Cancelled`
         out of `_invoke` — caught once in `_run`."""
         if mode == "chat":
             return self._chat_call(job, agent, user_text, current, grants, chat_history,
-                                   runs, pkg_state)
+                                   executions, pkg_state)
 
         # ---- sync: steps, params, schedule — the provided spec IS the input ----
         spec_md = spec_as_md(current)
@@ -1226,7 +1226,7 @@ class DraftJobs:
 
     def _chat_call(self, job: dict, agent: dict, user_text: str | None,
                    current: dict | None, grants: dict,
-                   chat_history: list | None, runs: str | None = None,
+                   chat_history: list | None, executions: str | None = None,
                    pkg_state: list[dict] | None = None) -> None:
         """§8 chat call: one call whose response shape decides the outcome —
         plain prose is an answer, file blocks are rewrites/actions
@@ -1238,7 +1238,7 @@ class DraftJobs:
         ones (latest wins) before the merged set revalidates as a whole. A
         cancel raises `Cancelled` out of `_invoke`."""
         prompt = build_chat_prompt(user_text, current, grants, chat_history,
-                                   runs=runs, pkg_state=pkg_state)
+                                   executions=executions, pkg_state=pkg_state)
         # §8: actions.yaml test_values/param_values keys must name the draft's
         # params; triggers-op indexes must fall in the CURRENT triggers list.
         pnames = [str(p.get("name")) for p in (current or {}).get("params") or []

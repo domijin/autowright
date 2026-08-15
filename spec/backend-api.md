@@ -272,9 +272,9 @@ remain plain dicts (§2).
   `/executions/*` endpoints; cancel and skip-step are `POST /executions/{id}/cancel` and
   `/skip-step` like any execution (retry answers 409 — the draft may have changed). A
   failed execution is **not** analyzed automatically — and there is no analysis endpoint:
-  failure analysis is an ordinary `chat` drafting job whose §8 RECENT RUNS context carries
+  failure analysis is an ordinary `chat` drafting job whose §8 RECENT EXECUTIONS context carries
   the run's error and log tails (the §11 canned analyze messages; Fix-with-AI names the
-  execution via the `/drafts` `runId` field). A finished test writes the §11 last-test summary
+  execution via the `/drafts` `executionId` field). A finished test writes the §11 last-test summary
   (`test.yaml`, §5) into the draft container; it rides the draft payload as `test`
   ({ status: succeeded | failed, when, executionId }) on the automation's `draft` object and on
   `GET /draft/pending`.
@@ -292,7 +292,7 @@ remain plain dicts (§2).
   import, status: installed | failed, version?, error? }] }` — `pip install --upgrade` for
   each named distribution in the shared directory (§6.2: wheels only, serialized); no
   manifest writes; a malformed name → 422
-- `POST /drafts` `{ mode: chat|sync, automationId?, text?, spec?, current?, chat?, runId?,
+- `POST /drafts` `{ mode: chat|sync, automationId?, text?, spec?, current?, chat?, executionId?,
   agentId?, enabledAgents?, allowedSecrets? }` → `{ jobId }` — `chat` requires a nonempty
   `text` (422 otherwise), takes the in-editor draft as `current` (name + description + spec +
   params + steps + instructions + notes + concurrency; in chat mode with an `automationId`, absent `name`/`description`
@@ -302,7 +302,7 @@ remain plain dicts (§2).
   `chat` (the recent §11 thread entries for the §8 CONVERSATION section — the editor sends
   only entries after the newest §4.4 boundary marker, and the backend clips at the newest
   boundary again before building the section, §8); the backend
-  assembles the §8 RECENT RUNS and PACKAGES context itself (`runId`, optional, names an
+  assembles the §8 RECENT EXECUTIONS and PACKAGES context itself (`executionId`, optional, names an
   execution to include in full detail — the §11 Fix-with-AI entry; unknown ids are
   ignored), and the terminal
   payload is `draft: { answer?, spec?, instructions?, notes?, actions? }` — the §8 chat call's

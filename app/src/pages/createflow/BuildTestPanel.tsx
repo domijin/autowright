@@ -89,7 +89,7 @@ export interface BuildTestPanelProps {
   // §11 hold-and-flush: lands any held workflow chips when the old-version
   // watcher clears the pending sync silently — receipts still reach the thread
   flushHeldChips: () => void
-  sendChat: (text?: string, runId?: string) => Promise<void>
+  sendChat: (text?: string, executionId?: string) => Promise<void>
   // §11 turn action row: the chat's Test-the-draft pill bumps this counter —
   // the panel starts a draft test (the panel's current setup values, seeded
   // defaults otherwise) and scrolls into view
@@ -246,7 +246,7 @@ export function BuildTestPanel({
     if (test && testLive) void api.cancelExecution(test.executionId).catch(() => { /* already done */ })
   }
   // §11: analysis runs only when asked, as the canned analyze chat message —
-  // an ordinary §8 chat job reading the failing run's RECENT RUNS context.
+  // an ordinary §8 chat job reading the failing run's RECENT EXECUTIONS context.
   const runAnalyze = () => {
     if (!rev || !test || anyJobBusy || testLive || viewingOld) return
     void sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId)
@@ -421,9 +421,9 @@ export function BuildTestPanel({
                     )}
                     <div style={{ ...panelRowStyle, marginTop: 8 }}>
                       {/* §11 state 4: Sync spec, then the Test draft
-                          setup toggle — Run test and View run live in the
+                          setup toggle — Run test and View execution live in the
                           expanded setup section; only a live test keeps
-                          View run on the action row (the setup is hidden) */}
+                          View execution on the action row (the setup is hidden) */}
                       {testLive ? (
                         <>
                           <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
@@ -435,7 +435,7 @@ export function BuildTestPanel({
                             onClick={() => go('execution', { executionId: test.executionId })}
                             style={panelBtnStyle}
                           >
-                            <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
+                            <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View execution
                           </button>
                         </>
                       ) : (
@@ -490,7 +490,7 @@ export function BuildTestPanel({
           </div>
           {/* §11 run row — opens the setup section, above the option
               sub-blocks so it's never buried under a long param list:
-              Run test is the only control that starts a test; View run
+              Run test is the only control that starts a test; View execution
               rides beside it when a test record exists */}
           {testOpen && !testLive && (
             <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', padding: '8px 20px 10px', ...lockStyle }}>
@@ -509,7 +509,7 @@ export function BuildTestPanel({
                     onClick={() => go('execution', { executionId: test ? test.executionId : rev.lastTest!.executionId! })}
                     style={panelBtnStyle}
                   >
-                    <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
+                    <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View execution
                   </button>
                 )}
               </div>

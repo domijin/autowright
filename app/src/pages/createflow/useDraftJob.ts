@@ -254,12 +254,12 @@ export function useDraftJob(d: DraftJobDeps) {
 
   // §11: a chat message starts one §8 `chat` job — the drafting agent gets the
   // in-editor draft (spec + steps + build instructions + notes), the grants
-  // context, and the recent thread; the backend adds the RECENT RUNS and
+  // context, and the recent thread; the backend adds the RECENT EXECUTIONS and
   // PACKAGES context itself. One response may combine an answer with rewrites
   // (spec / build instructions / notes) and follow-up actions (sync, test,
   // rename) — applied in that order (§11), with the sync/test chain armed as
   // pending flags a watcher effect fires.
-  const sendChat = async (textArg?: string, runId?: string) => {
+  const sendChat = async (textArg?: string, executionId?: string) => {
     if (!rev || anyJobBusy || testLive || viewingOld) return
     const request = (textArg ?? chatText).trim()
     if (!request) return
@@ -299,7 +299,7 @@ export function useDraftJob(d: DraftJobDeps) {
     try {
       await startJob({
         mode: 'chat', text: request, ...(isEdit && auto ? { automationId: auto.id } : {}),
-        ...(runId ? { runId } : {}),
+        ...(executionId ? { executionId } : {}),
         agentId, current, chat: history,
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
       }, {

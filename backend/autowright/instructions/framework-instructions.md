@@ -490,7 +490,7 @@ follow them in everything you write; never return that file.
 
 Once an automation exists, user requests arrive as editing-session messages
 carrying the current automation — its name and description (the AUTOMATION
-section), spec, parameters, triggers, steps, notes, and recent runs. The request's TASK
+section), spec, parameters, triggers, steps, notes, and recent executions. The request's TASK
 defines the exact response shape. Beyond rewriting the spec, build
 instructions, and notes, its actions file lets you rebuild the steps (`sync`),
 run a draft test (`test`, with `test_values` setting test-only parameter

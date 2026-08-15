@@ -142,6 +142,10 @@ export interface Rev {
   params: NonNullable<DraftPayload['params']>
   // §4.2 chat-staged stored values (§8 `param_values`) — land only at save/create
   paramValues: Record<string, unknown>
+  // §8/§11 drafted test values (call 2's manifest `test_values`) — seed the
+  // Build & test setup editors and the closed-section test runs; draft state,
+  // replaced when a later create/sync payload carries a new map
+  testValues: Record<string, unknown> | null
   packages: PackageDep[]    // §6.2 declared packages — display-only, the pipeline owns the list
   triggers: DraftTrigger[]  // §11 TRIGGERS card preview — what saving stores (§4.3 cron-subset replace)
   instructions: string
@@ -162,6 +166,7 @@ export interface Rev {
   undo: {
     spec: SpecBlock[]; steps: Step[]; params: Rev['params']; packages: PackageDep[]
     triggers: DraftTrigger[]; paramValues: Record<string, unknown>
+    testValues: Record<string, unknown> | null
     instructions: string; notes: string; dirty: boolean; entryId: string
   } | null
   instrEdit: boolean
@@ -235,7 +240,7 @@ export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
   return {
     ...revDefaults,
     name: 'New automation', description: '', note: '',
-    spec: [], steps: [], params: [], paramValues: {}, packages: [],
+    spec: [], steps: [], params: [], paramValues: {}, testValues: null, packages: [],
     triggers: [],
     instructions: instructionCache.defaultBuild,
     notes: '',
@@ -257,6 +262,7 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
     name: d.name || 'New automation', description: d.description || '', note: d.note || '',
     spec: d.spec ?? [], steps: d.steps ?? [], params: d.params ?? [],
     paramValues: d.paramValues ?? {},
+    testValues: d.testValues ?? null,
     packages: d.packages ?? [],
     triggers: d.triggers ?? [],
     // Backend seeds instructions from default-build-instructions.md; the §19
@@ -292,6 +298,7 @@ export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string
     steps: (src.steps ?? []).map((s) => ({ ...s })),
     params: (src.params ?? a.params ?? []).map((p) => ({ ...p })),
     paramValues: { ...(a.draft?.paramValues ?? {}) },
+    testValues: a.draft?.testValues ?? null,
     packages: (src.packages ?? []).map((p) => ({ ...p })),
     triggers: (a.draft?.triggers ?? a.triggers).map(stripTrigger),
     instructions: src.instructions || '',
@@ -407,6 +414,9 @@ export function serializeDraft(r: Rev): DraftPayload {
     triggers: r.triggers,
     // §4.2: the staged value map rides the snapshot only when nonempty
     ...(Object.keys(r.paramValues).length ? { paramValues: r.paramValues } : {}),
+    // §8/§11: the drafted test-value map rides the snapshot when present, so a
+    // kept draft resumes with its test setup still seeded
+    ...(r.testValues && Object.keys(r.testValues).length ? { testValues: r.testValues } : {}),
     stepAgents: r.enabledAgents,
     allowedSecrets: r.allowedSecrets,
     // §4.4/§11: the dirty-gate state rides the snapshot — a kept out-of-sync

@@ -342,6 +342,8 @@ editor applies the whole outcome (§11).
      - { discord: "1234567890", secret: DISCORD_BOT }   # ditto; + optional pattern/mention/author
    params:                           # full definitions per §4.2, each with a default
      - { name: sources, kind: list, label: Manga URLs, help: ..., validate: true }
+   test_values:                      # optional — best-effort draft-test values (policy below)
+     sources: ["https://example.com/manga"]
    packages:                         # §6.2 declared packages — beyond curated only, bare
      - { pip: pandas, import: pandas,    # distribution name, no version; omit the key when none are needed
          why: one line — what the steps use the package for }
@@ -371,6 +373,15 @@ editor applies the whole outcome (§11).
    ...python source...
    ===END===
    ```
+
+   The optional **`test_values`** manifest key carries best-effort values for the §11 draft
+   test — a param-name → value map grounded in the SPEC or build instructions (the URL the
+   request names, the folder it mentions), so the first test can run right after generation
+   without hand-filling the setup section. The agent fills **only the params it can set
+   confidently**: a param whose realistic value it cannot determine from the material at
+   hand is omitted — never guessed — and the test falls back to that param's default.
+   Secret-like values (passwords, tokens) never appear here (they belong in §4.8 secrets).
+   The TASK directive states this policy beside the shape.
 3. **Grants** — one section: enabled agents and allowed secrets, both rendered as the same
    yaml lists as call 1 (`agent: true` steps allowed only if the agent list is nonempty;
    secrets referenced by `secrets.NAME`), closing with the selection rule: when the SPEC or
@@ -412,6 +423,10 @@ notes rewrite (§11).
    (above) is allowed and excluded from the step-file matching.
 3. `manifest.yaml` is schema-valid: kinds from §4.2 only, every param carries a default, steps
    nonempty, `steps[].file` ↔ file blocks match 1:1, filenames follow `NN-name.py` ordering.
+   `test_values`, when present, must be a mapping whose keys each name a manifest param —
+   an unknown name is a validation error feeding the repair round. Values ride the draft
+   payload as `testValues` untouched; the editor coerces them per the §4.2 kind with the
+   same tolerance as the chat call's `test_values` (§11 owns the seeding and the test run).
 4. Every step file passes `ast.parse`; imports ⊆ stdlib + curated packages + `autowright` + the
    manifest's declared package imports (§6.2).
 5. `packages` is optional: a list of `{ pip, import, why }` entries — `pip` a bare distribution

@@ -549,6 +549,25 @@ describe('serializeDraft (§4.4 draft payload)', () => {
     expect(serializeDraft(r).chat?.map((e) => e.kind)).toEqual(['user', 'error', 'answer'])
   })
 
+  it('round-trips the drafted §8 test-value map as testValues (§4.4 draft-only key)', () => {
+    const r = { ...seedDrafting(AGENTS, SECRETS), testValues: { city: 'Bergen' } }
+    expect(serializeDraft(r).testValues).toEqual({ city: 'Bergen' })
+    // absent / empty maps drop the key
+    expect('testValues' in serializeDraft(seedDrafting(AGENTS, SECRETS))).toBe(false)
+    expect('testValues' in serializeDraft({ ...seedDrafting(AGENTS, SECRETS), testValues: {} })).toBe(false)
+    // both resume paths restore it
+    expect(seedFromPayload({ testValues: { city: 'Bergen' } } as unknown as DraftPayload, AGENTS, SECRETS).testValues)
+      .toEqual({ city: 'Bergen' })
+    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRETS).testValues).toBeNull()
+    const a = seedFromAuto({
+      name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
+      triggers: [], stepAgents: ['g1'], allowedSecrets: [],
+      agentId: null,
+      draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '', testValues: { city: 'Bergen' } },
+    } as unknown as Automation, AGENTS, SECRETS)
+    expect(a.testValues).toEqual({ city: 'Bergen' })
+  })
+
   it('round-trips the §11 dirty gate as outOfSync — resume must not unlock Save (§4.4)', () => {
     const dirty = { ...seedDrafting(AGENTS, SECRETS), dirty: true }
     expect(serializeDraft(dirty).outOfSync).toBe(true)

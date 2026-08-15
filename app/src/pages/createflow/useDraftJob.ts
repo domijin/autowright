@@ -368,7 +368,7 @@ export function useDraftJob(d: DraftJobDeps) {
                 next = {
                   ...next,
                   spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-                  triggers: snap.triggers, paramValues: snap.paramValues,
+                  triggers: snap.triggers, paramValues: snap.paramValues, testValues: snap.testValues,
                   instructions: snap.instructions, notes: snap.notes,
                   dirty: snap.dirty, undo: null,
                 }
@@ -445,7 +445,7 @@ export function useDraftJob(d: DraftJobDeps) {
                 ...next,
                 undo: {
                   spec: r.spec, steps: r.steps, params: r.params, packages: r.packages,
-                  triggers: r.triggers, paramValues: r.paramValues,
+                  triggers: r.triggers, paramValues: r.paramValues, testValues: r.testValues,
                   instructions: r.instructions, notes: r.notes,
                   dirty: r.dirty, entryId: anchorId,
                 },
@@ -547,6 +547,9 @@ export function useDraftJob(d: DraftJobDeps) {
               ...r, syncBusy: false, genStage: null, dirty: false,
               undo: r.undo ? { ...r.undo, entryId: (dropEntries.at(-1) ?? notesEntry ?? syncedEntry).id } : r.undo,
               steps, params, paramValues, packages: dft.packages ?? [],
+              // §8/§11: a sync's drafted test values replace the map; absent
+              // one, the old map stays (unmatched names simply seed nothing)
+              ...(dft.testValues ? { testValues: dft.testValues } : {}),
               triggers,
               // §8: call 2 may return an updated notes.md beside the manifest
               ...(dft.notes != null && dft.notes !== r.notes ? { notes: dft.notes } : {}),

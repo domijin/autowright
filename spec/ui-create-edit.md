@@ -178,8 +178,13 @@ applies unchanged; the chat pane never collapses.
     not disabled, and no pending sync is armed; the same §8 sync call and gating as the
     panel's button (this pill replaces the one the rewrite entry used to carry).
   - **Test the draft** (`fa-vial`) — while the workflow is in sync, steps exist, and
-    nothing is drafting; it opens the Build & test panel's test-setup disclosure (the
-    same toggle — it never starts a test) and scrolls the panel into view.
+    nothing is drafting; it **starts a draft test immediately** — the same run the
+    panel's Run test starts, using the panel's current setup values (the seeded
+    values — drafted §8 `test_values` included — when the setup section was never
+    opened) — and scrolls the Build & test
+    panel into view, where the live test takes over as usual. Unlike the panel's
+    same-named disclosure toggle (which only opens the setup section), the pill runs
+    the test; the setup section stays where fine-tuning lives.
   - **Analyze the failure** (`fa-magnifying-glass`) — while the draft's tracked test
     settled failed; sends the canned analyze chat message exactly like the panel's
     button, with the same gating.
@@ -264,7 +269,9 @@ applies unchanged; the chat pane never collapses.
     `test: true` arms a **pending test** that starts the moment the workflow is in sync —
     immediately when it already is, after the chained sync succeeds otherwise (`test: true`
     implies the sync when the workflow is out of sync, §8) — using `test_values` as the
-    test's §19 `paramValues` (they also pre-fill the panel's expanded test-value editors);
+    test's §19 `paramValues` (they also pre-fill the panel's expanded test-value editors;
+    absent `test_values`, the test runs on the panel's seeded values like the
+    Test-the-draft pill — drafted §8 manifest `test_values` included);
     the pending test is dropped, with the system entry "Test skipped — the steps aren't in
     sync with the spec.", when the sync fails, blocks, or is
     cancelled, or when anything else rewrites the workflow first. `undo: true` (§8:
@@ -565,7 +572,8 @@ editors enter with
   both are locked while a chat/sync job runs (inputs lock below).
 - **Draft undo** — one-level **full-draft snapshot** per agent request: when a chat
   response changes the draft, the editor first stashes the draft **whole** — spec, steps,
-  parameter definitions, packages, triggers, the staged `param_values` map (§4.2),
+  parameter definitions, packages, triggers, the staged `param_values` map (§4.2), the
+  drafted test-value map (`testValues`, test-setup section below),
   build instructions, notes, and the dirty flag
   of that moment (an answer-only response leaves the existing snapshot untouched; grants
   and name/description are user-owned, never agent-rewritten, and stay out — chat-staged
@@ -965,10 +973,21 @@ editors enter with
   - When the draft has params: the `PARAMETER VALUES · THIS TEST ONLY` eyebrow, then one
     editor per param (§4.2 kinds), prefilled in edit mode with the automation's current
     values (draft default when a param is new) and in create mode with the draft
-    defaults. The values ride the §19 `paramValues` body field and apply to this test
+    defaults — and, over that base in both modes, the draft's **drafted test values**
+    (the §8 call-2 manifest `test_values`, riding the create/sync payload as
+    `testValues`): the agent that just built the steps entered them, so they are the
+    freshest signal, and the user edits them freely like any prefill. The values ride
+    the §19 `paramValues` body field and apply to this test
     only — nothing is stored, and the read-only Parameters card is untouched. Untouched
-    prefills send the same values a closed section would use — the automation's stored
-    values (edit) or the draft defaults (create), exactly like executing the draft.
+    prefills send the same values a closed section would use — the seeded values above
+    (stored values / draft defaults, drafted test values on top), exactly like
+    executing the draft.
+    **Drafted test values are draft state:** kept on the editor's working copy, replaced
+    whenever a later create or sync payload carries a `testValues` map (kept when it
+    doesn't — a name no current param matches simply seeds nothing), covered by the
+    Draft-undo snapshot, persisted with the draft as the §4.4 draft-only `test_values`
+    key (a kept draft resumes with them), and gone when the draft settles — they ride
+    the draft, never the automation.
   - When the editor's trigger list (the TRIGGERS card list) holds a message trigger
     (§4.3 discord/imessage, `enabled` state irrelevant): the `TRIGGER MESSAGE · THIS TEST
     ONLY` eyebrow, a trigger picker when the list holds several message triggers (the

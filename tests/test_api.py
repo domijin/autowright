@@ -844,6 +844,25 @@ def test_edit_draft_snapshot_carries_param_values(client):
     assert store.autos[a["id"]]["param_values"] == {}
 
 
+def test_edit_draft_snapshot_carries_test_values(client):
+    # §8/§4.4: the drafted test-value map rides the snapshot as the draft-only
+    # `test_values` key and echoes back camelCase — never the stored values.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Drafted tv", "mock")
+    r = client.put(f"/draft/{a['id']}", json={"draft": {
+        **make_version(), "testValues": {"greeting": "from the agent"},
+    }})
+    assert r.status_code == 200
+    d = client.get(f"/automations/{a['id']}").json()["draft"]
+    assert d["testValues"] == {"greeting": "from the agent"}
+    assert store.autos[a["id"]]["param_values"] == {}
+    # a snapshot without the map drops the key
+    r = client.put(f"/draft/{a['id']}", json={"draft": make_version()})
+    assert r.status_code == 200
+    assert "testValues" not in client.get(f"/automations/{a['id']}").json()["draft"]
+
+
 def test_staged_draft_values_never_affect_executions(client):
     # §4.2: the chat-staged map is draft state only — a version execution keeps
     # resolving from the automation's stored values while the draft holds a

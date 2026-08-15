@@ -349,6 +349,9 @@ export interface DraftPayload {
   // §4.2: the chat-staged stored-value map — rides the draft snapshot, lands
   // only at save/create
   paramValues?: Record<string, unknown>
+  // §8/§11: call 2's drafted best-effort test values (manifest `test_values`) —
+  // seed the Build & test setup and the closed-section test runs; draft-only
+  testValues?: Record<string, unknown>
   // §4.4/§11: the dirty-gate state rides the draft — a kept out-of-sync draft
   // must resume with saving still locked
   outOfSync?: boolean

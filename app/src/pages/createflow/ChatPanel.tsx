@@ -145,8 +145,9 @@ export interface ChatPanelProps {
   lastCreateRef: React.MutableRefObject<string>
   undoDraft: () => void
   runSync: () => void
-  // §11 turn action row: opens the Build & test panel's test-setup disclosure
-  openTestSetup: () => void
+  // §11 turn action row: starts a draft test through the Build & test panel —
+  // the same run as its Run test button
+  runDraftTest: () => void
   // §11 turn action row: sends the canned analyze message — null while the
   // draft's tracked test didn't settle failed (the pill hides)
   analyzeFailure: (() => void) | null
@@ -165,7 +166,7 @@ export function ChatPanel({
   rev, agents, selAgent, isEdit, isCreateEmpty, anyJobBusy, busyRewrite, drafting,
   installingPkgs, testLive, viewingOld, inputDisabled, outOfSync, syncDisabled,
   lastRewriteId, chatText, setChatText, sendMessage, submitCreate, lastCreateRef,
-  undoDraft, runSync, openTestSetup, analyzeFailure, patchEntry,
+  undoDraft, runSync, runDraftTest, analyzeFailure, patchEntry,
   applyBlockersEntry, clearChat, cancelChat, cancelCreate, cancelSync, setAgentId, up, showToast,
 }: ChatPanelProps) {
   // §11 thread auto-scroll: newest at the bottom, scrolled on new content and
@@ -526,7 +527,7 @@ export function ChatPanel({
                 </button>
               )}
               {showTestPill && (
-                <button className="ad-btn-pill action" data-testid="chat-test-draft" onClick={openTestSetup}>
+                <button className="ad-btn-pill action" data-testid="chat-test-draft" onClick={runDraftTest}>
                   <i className="fa-solid fa-vial" style={pillGlyph} />
                   Test the draft
                 </button>

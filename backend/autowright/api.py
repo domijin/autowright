@@ -589,6 +589,8 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
     ver["allowed_secrets"] = d.get("allowedSecrets")
     # §4.2: the chat-staged value map rides the snapshot as a draft-only key.
     ver["param_values"] = d.get("paramValues")
+    # §8/§11: the drafted test-value map rides the snapshot as a draft-only key.
+    ver["test_values"] = d.get("testValues")
     # §4.4/§11: the dirty-gate state rides the snapshot — stored only when set,
     # so a resumed out-of-sync draft keeps saving locked.
     ver["out_of_sync"] = bool(d.get("outOfSync")) or None

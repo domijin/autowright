@@ -130,6 +130,38 @@ def test_triggers_message_and_app_start_parsed():
         {"kind": "app_start", "enabled": True}]
 
 
+def test_manifest_test_values_ride_payload():
+    # §8: call 2's optional best-effort draft-test values ride the draft
+    # payload as testValues, untouched (the editor coerces per §4.2 kind).
+    ok = GOOD_STEPS.replace("note: Created\n",
+                            "note: Created\ntest_values: { on_off: false }\n")
+    draft, errors = validate_steps(parse_envelope(ok))
+    assert errors == []
+    assert draft["testValues"] == {"on_off": False}
+
+
+def test_manifest_test_values_absent_key_absent_from_payload():
+    draft, errors = validate_steps(parse_envelope(GOOD_STEPS))
+    assert errors == []
+    assert "testValues" not in draft
+
+
+def test_manifest_test_values_unknown_name_rejected():
+    # §8: a key naming no manifest param feeds the repair round — never a
+    # silent test with defaults.
+    bad = GOOD_STEPS.replace("note: Created\n",
+                             "note: Created\ntest_values: { nope: 1 }\n")
+    _, errors = validate_steps(parse_envelope(bad))
+    assert any("test_values names unknown params" in e for e in errors)
+
+
+def test_manifest_test_values_must_be_mapping():
+    bad = GOOD_STEPS.replace("note: Created\n",
+                             "note: Created\ntest_values: [1, 2]\n")
+    _, errors = validate_steps(parse_envelope(bad))
+    assert any("test_values must be a mapping" in e for e in errors)
+
+
 def test_step_timeout_fields_parsed():
     ok = (GOOD_STEPS
           .replace("name: A, description: d }", "name: A, description: d, timeout: 60 }")

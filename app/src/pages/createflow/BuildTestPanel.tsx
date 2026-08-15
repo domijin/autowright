@@ -90,14 +90,15 @@ export interface BuildTestPanelProps {
   runSync: () => void
   sendChat: (text?: string, runId?: string) => Promise<void>
   // §11 turn action row: the chat's Test-the-draft pill bumps this counter —
-  // the panel opens its test-setup disclosure and scrolls into view
-  openSetupSignal: number
+  // the panel starts a draft test (the panel's current setup values, seeded
+  // defaults otherwise) and scrolls into view
+  runTestSignal: number
 }
 
 export function BuildTestPanel({
   rev, up, appendEntry, isEdit, auto,
   drafting, outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
-  agentGap, stageLabel, lockStyle, runSync, sendChat, openSetupSignal,
+  agentGap, stageLabel, lockStyle, runSync, sendChat, runTestSignal,
 }: BuildTestPanelProps) {
   const { executions, executionFull, go, showToast, test, beginTest } = useStore()
 
@@ -120,15 +121,19 @@ export function BuildTestPanel({
 
   // ---- test (§11: create and edit mode) — executes the draft's REAL steps ----
   // §11 test values: seed from the automation's current values (draft default when a param
-  // is new to the draft; create mode has no automation, so pure draft defaults) — edited
+  // is new to the draft; create mode has no automation, so pure draft defaults), then the
+  // drafted §8 test values (call 2's manifest `test_values`) over that base — edited
   // copies live only in this card.
-  const seedTestParams = (): ParamDef[] => (rev?.params ?? []).map((d) => {
-    const cur = (auto?.params ?? []).find((p) => p.name === d.name && p.kind === d.kind)
-    if (d.kind === 'toggle') return { ...d, on: cur ? !!cur.on : !!d.default }
-    if (d.kind === 'list') return { ...d, lines: cur?.lines ?? (Array.isArray(d.default) ? d.default as string[] : []) }
-    if (d.kind === 'kv') return { ...d, rows: cur?.rows ?? (Array.isArray(d.default) ? d.default as { key: string; value: string }[] : []) }
-    return { ...d, value: cur?.value ?? (d.default as string | number | undefined) }
-  })
+  const seedTestParams = (): ParamDef[] => {
+    const base = (rev?.params ?? []).map((d) => {
+      const cur = (auto?.params ?? []).find((p) => p.name === d.name && p.kind === d.kind)
+      if (d.kind === 'toggle') return { ...d, on: cur ? !!cur.on : !!d.default }
+      if (d.kind === 'list') return { ...d, lines: cur?.lines ?? (Array.isArray(d.default) ? d.default as string[] : []) }
+      if (d.kind === 'kv') return { ...d, rows: cur?.rows ?? (Array.isArray(d.default) ? d.default as { key: string; value: string }[] : []) }
+      return { ...d, value: cur?.value ?? (d.default as string | number | undefined) }
+    })
+    return rev?.testValues ? applyTestValues(base, rev.testValues) : base
+  }
   // A synced/reloaded draft may rename or retype params — collapse the setup
   // section and drop its values.
   useEffect(() => { setTestOpen(false); setTestParams(null) }, [rev.params])
@@ -206,7 +211,13 @@ export function BuildTestPanel({
     // never stale ones (out of sync) and never mid-build.
     if (!rev || rev.steps.length === 0 || testLive || busyRewrite || outOfSync || drafting) return
     try {
-      const values = valuesOverride ?? (testParams ? testParamValues(testParams) : undefined)
+      // §11: with the setup section never opened, drafted §8 test values still
+      // apply — the closed-section run sends the seeded values (drafted map on
+      // top of the stored/default base); without them the backend resolves as
+      // before (stored values in edit mode, draft defaults in create).
+      const values = valuesOverride ?? (testParams ? testParamValues(testParams)
+        : rev.testValues && Object.keys(rev.testValues).length ? testParamValues(seedTestParams())
+          : undefined)
       const mock = testMock ? testTriggerMock(testMock) : undefined
       // §11: a typed message with a blanked From must not silently run
       // without the mock — the user believes it was delivered.
@@ -239,14 +250,16 @@ export function BuildTestPanel({
     void sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId)
   }
 
-  // §11 turn action row: the chat's Test-the-draft pill — open the setup
-  // disclosure (same toggle, never starts a test) and bring the panel on screen.
+  // §11 turn action row: the chat's Test-the-draft pill — start the test
+  // right away (the same run as Run test, with the panel's current setup
+  // values or the seeded defaults) and bring the panel on screen so its live
+  // test UI takes over.
   const rootRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
-    if (!openSetupSignal) return
-    if (!testOpen) toggleTestSetup()
+    if (!runTestSignal) return
+    void runTest()
     rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }, [openSetupSignal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [runTestSignal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11 chat-action chaining (§8 actions.yaml): pendingSync fires as soon as
   // nothing runs; pendingTest fires once the workflow is in sync (right away,

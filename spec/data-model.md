@@ -153,7 +153,9 @@ name → value map rides the draft as the draft-only `param_values` key (§4.4) 
 to the automation's stored values only at save/create (§19 — matched by name **and kind**
 against the landing version's definitions, unmatched entries dropped); until then the
 automation's values are untouched, and Discard draft drops the staged map. `test_values`
-stays test-only (§8). The
+stays test-only (§8 — the chat action and call 2's drafted manifest key alike; the drafted
+map rides the draft as the draft-only `test_values` key, §4.4/§11, never the stored
+values). The
 value-merged serialization (the automation JSON's `params`, execution records) is the full
 definition — `default` included — plus the resolved value field, so definitions survive a
 round-trip through the editor (edit mode seeds the draft's params from the automation JSON;
@@ -387,7 +389,9 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   packages, the editor's trigger list (stored as a draft-only `triggers` key — the §4.3
   merged preview, so a resumed draft keeps a synced schedule change), the chat-staged
   stored-value map when nonempty (§4.2 — stored as a draft-only `param_values` key, so a
-  resumed draft keeps staged values), the editor's
+  resumed draft keeps staged values), the drafted test-value map when the pipeline
+  delivered one (§8 call-2 manifest `test_values` → payload `testValues` → draft-only
+  `test_values` key, so a resumed draft still seeds its test setup, §11), the editor's
   step-agents + allowed-secrets grant selections (stored as
   draft-only `step_agents` / `allowed_secrets` keys in `draft/automation/automation.yaml`, §5),
   the §11 out-of-sync state (`outOfSync` on the payload → draft-only `out_of_sync` key —

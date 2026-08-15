@@ -85,6 +85,11 @@ description: One-line description
 note: One-line version note for the history menu
 params:                                # each param MUST carry a default
   - { name: snake_case_name, kind: toggle|list|kv|number|text, label: ..., help: ..., default: ... }
+test_values:                           # OPTIONAL — best-effort values for the user's first draft test
+  snake_case_name: value               # only params you can set confidently from the SPEC or BUILD
+                                       # INSTRUCTIONS (a URL or folder they name); OMIT any param whose
+                                       # realistic value you can't determine — never guess, its default
+                                       # is used; never passwords or tokens (those belong in secrets)
 packages:                              # extra PyPI packages beyond the allowed list (see Allowed imports);
   - { pip: pandas, import: pandas,     # bare distribution name, NO version; omit the key when none are needed
       why: one line — what the steps use the package for }
@@ -856,6 +861,22 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         if p["kind"] == "number" and "min" not in p:
             p["min"] = 0
 
+    # §8: optional best-effort draft-test values — keys must name manifest
+    # params (a misremembered name is a repair-round error, never a silent
+    # test with defaults); values ride the payload untouched, the editor
+    # coerces per §4.2 kind like the chat call's test_values.
+    test_values = manifest.get("test_values")
+    if test_values is not None:
+        if not isinstance(test_values, dict):
+            errors.append("test_values must be a mapping of param name → value")
+            test_values = None
+        else:
+            names = {p.get("name") for p in params if isinstance(p, dict)}
+            bad = sorted(str(k) for k in test_values if k not in names)
+            if bad:
+                errors.append(f"test_values names unknown params {bad} — "
+                              "use names from this manifest's params")
+
     # §6.2/§8: declared packages — {pip, import, why}, bare distribution name,
     # beyond stdlib/curated only. Their import names extend the step allowlist below.
     raw_pkgs = manifest.get("packages") or []
@@ -1042,6 +1063,7 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         "packages": norm_pkgs,
         "steps": norm_steps,
         "secretReferences": sorted({m for st in norm_steps for m in SECRET_REF_RE.findall(st["code"])}),
+        **({"testValues": test_values} if test_values else {}),
     }
     if (files.get("notes.md") or "").strip():
         draft["notes"] = files["notes.md"].strip()

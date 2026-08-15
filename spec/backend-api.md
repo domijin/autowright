@@ -150,8 +150,10 @@ remain plain dicts (§2).
   shared draft serializer for both owners — only the on-disk location differs (§5,
   unchanged). An automation `owner` that doesn't resolve answers 404. `PUT`
   `{ draft, agentId? }` stores the §4.4 snapshot: the payload's
-  stepAgents/allowedSecrets/triggers/paramValues/outOfSync are stored as draft-only keys
+  stepAgents/allowedSecrets/triggers/paramValues/testValues/outOfSync are stored as
+  draft-only keys
   (`paramValues` the §4.2 chat-staged value map, stored as the draft-only `param_values`
+  key; `testValues` the §8 drafted test-value map, stored as the draft-only `test_values`
   key) and echoed back on the
   automation's `draft` object (or on `GET /draft/pending`), and its `chat` list (the §11
   thread) is stored as the container's `chat.jsonl` (§5) and echoed back the same way; for

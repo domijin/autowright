@@ -241,11 +241,12 @@ export default function CreateFlow() {
     anyJobBusy, testLive, viewingOld,
   })
 
-  // §11 turn action row wiring: the Test-the-draft pill opens the Build & test
-  // panel's setup disclosure (signal consumed there); the Analyze-the-failure
-  // pill sends the canned message exactly like the panel's button — null while
-  // the tracked test didn't settle failed, hiding the pill.
-  const [testSetupSignal, setTestSetupSignal] = useState(0)
+  // §11 turn action row wiring: the Test-the-draft pill starts a draft test
+  // through the Build & test panel (signal consumed there — same run as its
+  // Run test button); the Analyze-the-failure pill sends the canned message
+  // exactly like the panel's button — null while the tracked test didn't
+  // settle failed, hiding the pill.
+  const [testRunSignal, setTestRunSignal] = useState(0)
   const analyzeFailure = test && testExec?.status === 'failed'
     ? () => {
         if (anyJobBusy || testLive || viewingOld) return
@@ -383,7 +384,7 @@ export default function CreateFlow() {
       return {
         ...r,
         spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-        triggers: snap.triggers, paramValues: snap.paramValues,
+        triggers: snap.triggers, paramValues: snap.paramValues, testValues: snap.testValues,
         instructions: snap.instructions, notes: snap.notes,
         dirty: snap.dirty, undo: null, touched: true,
         // §11: the thread records the rollback — persisted, so the agent's §8
@@ -712,7 +713,7 @@ export default function CreateFlow() {
             lastCreateRef={jobs.lastCreateRef}
             undoDraft={undoDraft}
             runSync={() => void jobs.runSync()}
-            openTestSetup={() => setTestSetupSignal((s) => s + 1)}
+            runDraftTest={() => setTestRunSignal((s) => s + 1)}
             analyzeFailure={analyzeFailure}
             patchEntry={patchEntry}
             applyBlockersEntry={applyBlockersEntry}
@@ -992,7 +993,7 @@ export default function CreateFlow() {
                   lockStyle={lockStyle}
                   runSync={() => void jobs.runSync()}
                   sendChat={jobs.sendChat}
-                  openSetupSignal={testSetupSignal}
+                  runTestSignal={testRunSignal}
                 />
                 <RightCards
                   rev={rev}

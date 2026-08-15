@@ -271,6 +271,43 @@ describe('CreateFlow Build & test panel (§11)', () => {
     expect(within(panel).queryByText('Run test')).toBeNull()
   })
 
+  it('drafted §8 test_values drive a closed-section run and seed the setup editors', async () => {
+    armPendingPoll()
+    storeMod.useStore.setState({
+      automations: [{
+        ...AUTO,
+        params: [{ name: 'city', kind: 'text', label: 'City', help: '', value: 'Oslo' }],
+      } as unknown as Automation],
+    })
+    render(<CreateFlow />)
+    // a sync delivers steps + params + the drafted best-effort test values
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'sync',
+      draft: {
+        steps: [{ file: '01-a.py', name: 'Fetch', description: '', code: 'log("a")' }],
+        params: [{ name: 'city', kind: 'text', label: 'City', help: '', default: '' }],
+        packages: [],
+        testValues: { city: 'Bergen' },
+      },
+    })
+    fireEvent.click(screen.getByText('Sync with spec'))
+    await waitFor(() => expect(screen.getByText('Steps synced with the spec.')).toBeTruthy(), { timeout: 3000 })
+    // §11 turn action row: the Test-the-draft pill starts the test with the
+    // setup section never opened — the drafted values still ride the run
+    const row = screen.getByTestId('chat-turn-actions')
+    fireEvent.click(within(row).getByText('Test the draft'))
+    await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    const body = (mockedApi.postTest as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(body.paramValues).toEqual({ city: 'Bergen' })
+    // §11 setup seeding: the drafted value lands over the stored/default base
+    await waitFor(() => expect(storeMod.useStore.getState().test).toBeTruthy())
+    storeMod.useStore.setState({ test: null })
+    const panel = cardOf(screen.getByText('BUILD & TEST'))
+    await waitFor(() => expect(within(panel).getByText('Test the draft')).toBeTruthy())
+    fireEvent.click(within(panel).getByText('Test the draft'))
+    expect(within(panel).getByDisplayValue('Bergen')).toBeTruthy()
+  })
+
   it('a diagnosed blocked sync lands a thread blockers entry with the build-failure headline', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'j1', status: 'blocked', stage: null, detail: null, error: null, draft: null,
@@ -575,9 +612,13 @@ describe('CreateFlow chat response application (§11)', () => {
     await waitFor(() => expect(screen.getByText('All good.')).toBeTruthy(), { timeout: 3000 })
     // in sync with steps → the Test pill; no sync or undo to offer
     const row = screen.getByTestId('chat-turn-actions')
-    expect(within(row).getByText('Test the draft')).toBeTruthy()
     expect(within(row).queryByText('Sync now')).toBeNull()
     expect(within(row).queryByText('Undo this change')).toBeNull()
+    // the pill starts a draft test right away (§11) — same run as Run test
+    fireEvent.click(within(row).getByText('Test the draft'))
+    await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    // let the tracked test settle out of the way before the rewrite half
+    storeMod.useStore.setState({ test: null })
     // a rewrite pulls the workflow out of sync → Sync now + Undo, Test hidden
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
       spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten.' }],

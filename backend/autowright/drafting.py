@@ -1137,9 +1137,12 @@ class DraftJobs:
               chat_history: list | None = None, runs: str | None = None,
               pkg_state: list[dict] | None = None) -> str:
         job_id = str(uuid.uuid4())
-        stage = ("Working on the request" if mode == "chat"
-                 else "Writing the spec" if mode == "create"
-                 else "Generating the steps")
+        # §8 unified stage set: every job enters at the phase where its real
+        # work starts — sync at the workflow phase, chat/create at the neutral
+        # deciding phase (create flips to the documents phase on call 1's
+        # spec.md marker, exactly like a chat rewrite).
+        stage = ("Syncing the workflow" if mode == "sync"
+                 else "Working on the request")
         job = {"id": job_id, "status": "building", "stage": stage, "detail": None,
                "events": [], "error": None, "draft": None, "mode": mode,
                "_cancel": False, "_proc": {}}
@@ -1247,7 +1250,7 @@ class DraftJobs:
             spec_md = spec_as_md(current)
 
         # ---- call 2: steps, params, schedule ----
-        self._stage(job, "Generating the steps")
+        self._stage(job, "Syncing the workflow")
         draft, _errors, blockers, diagnosed, bnotes = self._call_with_repair(
             job, agent, build_steps_prompt(mode, spec_md, current, grants),
             lambda files: validate_steps(files, grants), "steps")
@@ -1265,8 +1268,9 @@ class DraftJobs:
             # user learns about an install failure on the edit page, not when a
             # trigger fires. A failure never fails the job (§6.2): the statuses
             # ride the draft payload and render in the §11 Packages card.
-            self._check_cancel(job)  # a cancel must never start the install stage
-            self._stage(job, "Installing the packages")
+            # §8: installs are not a stage — the `Installing …` events land
+            # under "Syncing the workflow", where the packages belong.
+            self._check_cancel(job)  # a cancel must never start the installs
             draft["packages"] = pkglib.ensure(
                 draft["packages"],
                 on_progress=lambda spec: self._event(job, f"Installing {spec}…"))
@@ -1541,26 +1545,44 @@ class DraftJobs:
             state["text"] += chunk
             text = state["text"]
             marks = list(FILE_MARK_RE.finditer(text))
-            if not marks:
+            blocked_at = text.rfind("===BLOCKED===")
+            if blocked_at > (marks[-1].end() if marks else -1):
+                # §8: the agent is writing its blocker envelope — say so
+                # (count-less) instead of mislabeling the stream
+                shape = "blocked"
+                label = detail = "Describing a blocker"
+            elif not marks:
                 shape = label = detail = "Thinking…"
             else:
                 m = marks[-1]
                 fname = m.group(1).strip()
+                # §8 stage flip: call 1's spec marker moves a create job from
+                # the neutral deciding phase to the documents phase — the same
+                # rewrite-marker rule the chat call uses
+                if (fname == "spec.md"
+                        and job["stage"] == "Working on the request"):
+                    self._stage(job, "Updating the documents")
                 shape = fname
                 if fname == "manifest.yaml":
                     label = detail = "Writing the manifest — name, triggers, parameters, step list"
                 else:
                     lines = len(text[m.end():].strip("\n").splitlines())
-                    if fname == "spec.md":
-                        name = "the spec"
-                    else:
-                        total = self._steps_total(state, text, marks)
-                        sm = STEP_FILE_RE.match(fname)
-                        name = (f"step {int(sm.group(1))} of {total} — {fname}"
-                                if sm and total else fname)
                     count = f" · {lines} line{'s' if lines != 1 else ''}" if lines else ""
-                    label = f"Writing {name}"
-                    detail = label + count
+                    if fname == "notes.md":
+                        # §8: call 2's notes block reads like the chat call's
+                        label = "Updating the notes"
+                        detail = label + count
+                        shape = fname
+                    else:
+                        if fname == "spec.md":
+                            name = "the spec"
+                        else:
+                            total = self._steps_total(state, text, marks)
+                            sm = STEP_FILE_RE.match(fname)
+                            name = (f"step {int(sm.group(1))} of {total} — {fname}"
+                                    if sm and total else fname)
+                        label = f"Writing {name}"
+                        detail = label + count
             if prefix:
                 label = prefix + label[0].lower() + label[1:]
                 detail = prefix + detail[0].lower() + detail[1:]
@@ -1603,7 +1625,14 @@ class DraftJobs:
             state["text"] += chunk
             text = state["text"]
             marks = list(FILE_MARK_RE.finditer(text))
-            if marks:
+            blocked_at = text.rfind("===BLOCKED===")
+            if blocked_at > (marks[-1].end() if marks else -1):
+                # §8: the blocker envelope is not an answer — label it as what
+                # it is (count-less). Never flips the stage: a blocker turn
+                # lives entirely in the deciding phase.
+                shape = "blocked"
+                label = detail = "Describing a blocker"
+            elif marks:
                 fname = marks[-1].group(1).strip()
                 # §8 stage flip — checked against the job, not the round's local
                 # state, so a repair round that first streams a rewrite marker

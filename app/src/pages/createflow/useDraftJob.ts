@@ -111,11 +111,12 @@ export function useDraftJob(d: DraftJobDeps) {
     ) => stages.map((s, i) => {
       settledStages.add(s)
       return newEntry({
-        kind: 'activity', title: stageDisplayTitle(s, mode),
+        kind: 'activity', title: stageDisplayTitle(s),
         text: evs.filter((e) => e.stage === s).map((e) => e.text).join('\n'),
         outcome: outcome && i === stages.length - 1 ? outcome : 'done',
       })
-    }).filter((en) => !(mode === 'chat' && en.title === 'Working on the request…'
+    }).filter((en) => !((mode === 'chat' || mode === 'create')
+      && en.title === 'Working on the request…'
       && !en.text && en.outcome === 'done'))
     // Staleness guard: a slow in-flight tick may resolve after this job was
     // cancelled/replaced (jobIdRef changed) or after another tick already
@@ -128,7 +129,7 @@ export function useDraftJob(d: DraftJobDeps) {
           if (jobIdRef.current !== jobId) return
           if (j.status !== 'building') jobIdRef.current = null
           // §8/§11: the job's live stage drives the skeleton + save-hint labels
-          // ("Installing the packages…" after the steps land); `detail` is the
+          // (the unified three-phase set); `detail` is the
           // finer live-progress line under it, `events` the feed's history.
           const evs = j.events ?? []
           evs.forEach((e) => noteStage(e.stage))
@@ -171,7 +172,7 @@ export function useDraftJob(d: DraftJobDeps) {
               // drop rule appends nothing — the stage existed, and was skipped
               // deliberately.
               const entries = (rest.length || pending.length) ? rest : [newEntry({
-                kind: 'activity', title: jobStageTitle(r, r.genStage === 'Installing the packages'),
+                kind: 'activity', title: jobStageTitle(r),
                 text: evs.map((e) => e.text).join('\n'), outcome: status,
               })]
               return entries.length ? { ...r, chat: [...r.chat, ...entries] } : r

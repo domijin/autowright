@@ -77,20 +77,22 @@ export function chatSinceBoundary(chat: ChatEntry[]): ChatEntry[] {
 // exactly like the spinner line it replaces. No agent · model attribution:
 // the composer's picker already names the agent, and naming it in one title
 // only would read as if a different agent handled the other jobs.
-export function jobStageTitle(r: Rev, installing: boolean): string {
-  // §8 chat-job stage flip: the live stage drives the title once the backend
-  // moves the job into the documents phase
-  return r.chatBusy ? (r.genStage === 'Updating the documents' ? 'Updating the documents…' : 'Working on the request…')
-    : r.specBusy ? 'Writing the spec…'
-      : installing ? 'Installing the packages…'
-        : r.syncBusy ? 'Syncing the workflow…' : 'Generating the steps…'
+export function jobStageTitle(r: Rev): string {
+  // §8 unified stage set — the live backend stage drives the title. Chat and
+  // create jobs open at the neutral deciding phase and flip to the documents
+  // phase on the first rewrite marker; every steps call (create's call 2,
+  // sync) is the workflow phase. Package installs are bullets, never a title.
+  if (r.chatBusy || r.specBusy) {
+    return r.genStage === 'Updating the documents'
+      ? 'Updating the documents…' : 'Working on the request…'
+  }
+  return 'Syncing the workflow…'
 }
 
 // §11: display title for a §8 backend stage label — each settled per-stage
-// activity entry reads exactly like the spinner line it replaces (the labels
-// above). Sync jobs re-title the steps stage: the workflow is what it rebuilds.
-export function stageDisplayTitle(stage: string, mode: 'create' | 'chat' | 'sync'): string {
-  if (stage === 'Generating the steps' && mode === 'sync') return 'Syncing the workflow…'
+// activity entry reads exactly like the spinner line it replaces (§8 sends
+// the unified labels, so this is a plain ellipsis suffix).
+export function stageDisplayTitle(stage: string): string {
   return `${stage}…`
 }
 

@@ -720,12 +720,67 @@ def test_progress_detail_spec_call_and_repair_prefix():
     from autowright.drafting import DraftJobs
 
     jobs = DraftJobs()
-    job = {"id": "j2", "status": "building", "stage": "Writing the spec",
+    job = {"id": "j2", "status": "building", "stage": "Updating the documents",
            "detail": None, "events": [], "_cancel": False}
     cb = jobs._progress_cb(job, prefix="Second try — ")
     cb("===FILE: spec.md===\n# Title\n\n- a bullet\n")
     assert job["detail"] == "Second try — writing the spec · 3 lines"
     assert [e["text"] for e in job["events"]] == ["Second try — writing the spec"]
+
+
+def test_progress_create_flips_stage_on_spec_marker():
+    # §8 unified stages: a create job opens at the neutral deciding stage and
+    # flips to the documents stage when call 1's spec.md marker streams —
+    # research tool-use events before it stay stamped with the neutral stage.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "j3", "status": "building", "stage": "Working on the request",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._progress_cb(job)
+    cb("thinking about the request")
+    assert job["stage"] == "Working on the request"
+    cb("\n===FILE: spec.md===\n# Title\n")
+    assert job["stage"] == "Updating the documents"
+    assert job["events"][-1]["stage"] == "Updating the documents"
+    # a repair round never flips back
+    cb("more spec text\n")
+    assert job["stage"] == "Updating the documents"
+
+
+def test_progress_call2_notes_and_blocker_labels():
+    # §8: call 2's notes.md block reads like the chat call's ("Updating the
+    # notes"), and a streamed ===BLOCKED=== past the last marker shows the
+    # count-less "Describing a blocker".
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "j4", "status": "building", "stage": "Syncing the workflow",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._progress_cb(job)
+    cb("===FILE: notes.md===\n- learned a thing\n- and another\n")
+    assert job["detail"] == "Updating the notes · 2 lines"
+    cb("===BLOCKED===\nblockers:\n  - reason: r\n")
+    assert job["detail"] == "Describing a blocker"
+    # the optional notes.md AFTER the envelope wins the label back
+    cb("===END===\n===FILE: notes.md===\n- kept learning\n")
+    assert job["detail"].startswith("Updating the notes")
+    assert [e["text"] for e in job["events"]] == [
+        "Updating the notes", "Describing a blocker", "Updating the notes"]
+
+
+def test_chat_blocker_stream_label_never_flips():
+    # §8: a chat response streaming a blocker envelope shows "Describing a
+    # blocker" (not "Writing the answer") and stays in the deciding stage.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "c3", "status": "building", "stage": "Working on the request",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._chat_cb(job)
+    cb("===BLOCKED===\nblockers:\n  - reason: impossible\n")
+    assert job["detail"] == "Describing a blocker"
+    assert job["stage"] == "Working on the request"
 
 
 def test_step_agents_and_secrets_validate_against_grants():
@@ -1241,7 +1296,9 @@ def test_cancel_between_calls_never_starts_next_harness_call(monkeypatch):
     assert j["error"] is None
     assert len(calls) == 1                       # call 2 never started
     assert j["draft"] is None                    # no payload write after cancel
-    assert j["stage"] == "Writing the spec"      # never advanced to call 2
+    # never advanced to call 2 — the buffered fake never streams a marker, so
+    # the create job stays at its neutral opening stage (§8 unified stages)
+    assert j["stage"] == "Working on the request"
     assert len(j["events"]) == events_before     # no events after cancel
 
 

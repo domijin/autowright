@@ -16,7 +16,7 @@ import { BtnPrimary, ConfirmModal, HeaderActions, PULSE, PopMenu, ScrollArea, Sp
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import {
   type Rev, amendSpec, analyzeTestMessage, blockerLine, chatSinceBoundary, holdsDraftEdits, instructionCache,
-  loadVersionInto,
+  jobStageTitle, loadVersionInto,
   newEntry, persistChat, secretRefsOf, seedEmpty, seedFromAuto, seedFromPayload, serializeDraft,
 } from './createflow/model'
 import { useDraftJob } from './createflow/useDraftJob'
@@ -407,10 +407,9 @@ export default function CreateFlow() {
     up({ description })
     if (isEdit && auto) void api.patchAutomation(auto.id, { description }).catch((e) => showToast((e as Error).message))
   }
-  // Build & test panel stage label — §11 drafting stages
-  const installingPkgs = rev?.genStage === 'Installing the packages'
-  const stageLabel = rev?.specBusy ? 'Waiting for the spec…'
-    : installingPkgs ? 'Installing the packages…' : 'Generating the steps…'
+  // Build & test panel stage label — §11 drafting states: waiting on call 1,
+  // then the workflow phase (installs are bullets in the thread, not a label)
+  const stageLabel = rev?.specBusy ? 'Waiting for the spec…' : 'Syncing the workflow…'
 
   // §11 chat input send: with no spec or steps yet (fresh create), the message
   // is the description and starts the create job; otherwise it's a chat job.
@@ -809,7 +808,6 @@ export default function CreateFlow() {
             anyJobBusy={anyJobBusy}
             busyRewrite={busyRewrite}
             drafting={drafting}
-            installingPkgs={installingPkgs}
             testLive={testLive}
             viewingOld={viewingOld}
             inputDisabled={inputDisabled}
@@ -977,12 +975,10 @@ export default function CreateFlow() {
               <HeaderActions>
                 {saveBlocked && !isCreateEmpty && (
                   <span style={{ font: "400 12px var(--sans)", color: 'var(--amber)' }}>
-                    {rev.specBusy ? 'Writing the spec…'
-                      : rev.stepsBusy ? (installingPkgs ? 'Installing the packages…' : 'Generating the steps…')
-                        : rev.syncBusy ? (installingPkgs ? 'Installing the packages…' : 'Syncing steps…')
-                          : rev.chatBusy ? 'Working on the request…'
-                            : rev.specEdit ? 'Finish editing the spec first — save or cancel your edits'
-                              : 'Sync and review the steps before saving'}
+                    {rev.specBusy || rev.stepsBusy || rev.syncBusy || rev.chatBusy
+                      ? jobStageTitle(rev)
+                      : rev.specEdit ? 'Finish editing the spec first — save or cancel your edits'
+                        : 'Sync and review the steps before saving'}
                   </span>
                 )}
                 <button className="ad-btn-text dim" disabled={busyRewrite} onClick={() => void startOver()}>

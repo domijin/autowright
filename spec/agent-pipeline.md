@@ -618,11 +618,17 @@ degrades to the old fixed timeout. On top of the window sits a **total wall-cloc
 30 minutes by default (§15 `AUTOWRIGHT_AGENT_HARD_CAP_S`), so even a call that never stops
 streaming still ends. Both kills raise the same retryable timeout error; cancelling
 the job (Start over, or an edit that supersedes an in-flight steps call, §11) kills the harness
-process. The job's `stage` tracks the pipeline ("Writing the spec" → "Generating the steps" →
-"Installing the packages" — the §11 drafting labels; sync jobs start at the second, chat
-jobs run the "Working on the request" → "Updating the documents" pair (the flip fires
-only when a rewrite marker streams — see the chat call above), and the install stage only appears when
-the manifest declares packages). On
+process. The job's `stage` tracks the pipeline through **one unified stage set** — the
+§11 three-phase turn model: "Working on the request" (deciding/research) → "Updating the
+documents" (writing spec/instructions/notes) → "Syncing the workflow" (the steps call plus
+any package installs). Each job kind enters at the phase where its real work starts and
+shows only the phases it runs: a **create** job opens at "Working on the request", flips
+to "Updating the documents" when call 1's `spec.md` marker streams (the same marker-flip
+rule as chat; a buffered harness never flips), and moves to "Syncing the workflow" for
+call 2; a **sync** job opens directly at "Syncing the workflow"; a **chat** job runs the
+first two (the flip fires only when a rewrite marker streams — see the chat call above)
+and any chained sync is its own job. Package installs are **not a stage**: the §6.2
+ensure's `Installing <pip spec>…` lines land as events under "Syncing the workflow". On
 a create job, call 1's validated spec rides the job payload as soon as the spec call completes
 (§19), so the §11 spec card can render it while the steps call is still working. Every
 invocation's full prompt and raw response are logged to the app log as a §5 BEGIN/END-framed
@@ -638,11 +644,16 @@ The drafting job scans the accumulated partial text for the envelope's `===FILE:
 sets `detail` accordingly: `Thinking…` before the first marker; `Writing the spec · N lines`
 during call 1; `Writing the manifest — name, triggers, parameters, step list` and then
 `Writing step i of n — NN-name.py · N lines` during call 2 (`i of n` comes from the
-already-streamed manifest block once it parses as yaml; without it, just the file name); on a
+already-streamed manifest block once it parses as yaml; without it, just the file name), and
+`Updating the notes · N lines` for a call-2 `notes.md` block (same label as the chat call's,
+so the fact reads the same in every phase); a streamed `===BLOCKED===` past the last file
+marker shows `Describing a blocker` (count-less, both drafting calls and the chat call — the
+agent is writing its blocker envelope, not an answer); on a
 repair round, `The response didn't validate — asking for a corrected one…` and then the same
 messages prefixed with the round's try label — `Second try — ` on the first repair round,
 `Third try — `, `Fourth try — `, … on later ones — with the message's first letter lowercased
-(`Second try — writing the spec · 3 lines`); during the install stage, `Installing <pip spec>…` per
+(`Second try — writing the spec · 3 lines`); during the package installs (inside the
+"Syncing the workflow" stage), `Installing <pip spec>…` per
 package (the §6.2 ensure's progress hook). Line-count updates throttle to one update per
 second; marker changes update immediately. `detail` rides the job (§19 `GET /drafts`, beside
 `stage`) and resets at each stage boundary. A harness

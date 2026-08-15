@@ -129,7 +129,6 @@ export interface ChatPanelProps {
   anyJobBusy: boolean
   busyRewrite: boolean
   drafting: boolean
-  installingPkgs: boolean
   testLive: boolean
   viewingOld: boolean
   inputDisabled: boolean
@@ -162,7 +161,7 @@ export interface ChatPanelProps {
 
 export function ChatPanel({
   rev, agents, selAgent, isEdit, isCreateEmpty, anyJobBusy, busyRewrite, drafting,
-  installingPkgs, testLive, viewingOld, inputDisabled, outOfSync, syncDisabled,
+  testLive, viewingOld, inputDisabled, outOfSync, syncDisabled,
   lastRewriteId, chatText, setChatText, sendMessage, submitCreate, lastCreateRef,
   undoDraft, runSync, runDraftTest, analyzeFailure, patchEntry,
   applyBlockersEntry, clearChat, cancelChat, cancelCreate, cancelSync, setAgentId, up, showToast,
@@ -586,7 +585,7 @@ export function ChatPanel({
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Spinner size={13} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
-                {jobStageTitle(rev, installingPkgs)}
+                {jobStageTitle(rev)}
               </div>
             </div>
             {(() => {

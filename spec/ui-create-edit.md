@@ -76,10 +76,11 @@ applies unchanged; the chat pane never collapses.
     `failed`. Each carries the stage's §11 label (`title`) plus the stage's own slice of
     the §8 `events` feed (grouped by each event's `stage` stamp). A cancelled job leaves
     no entry for its in-flight stage — its request text returns to the input instead —
-    but stages that already settled stay in the thread. One deliberate skip: a chat
-    job's neutral "Working on the request" stage settles **only when its feed has at
-    least one event or it carries a blocked/failed outcome** — an empty, cleanly
-    finished deciding phase lands no entry, so a small edit turn starts straight at
+    but stages that already settled stay in the thread. One deliberate skip: the
+    neutral "Working on the request" stage (chat and create jobs alike) settles
+    **only when its feed has at least one event or it carries a blocked/failed
+    outcome** — an empty, cleanly finished deciding phase lands no entry, so a small
+    edit turn (or a create that goes straight to writing) starts at
     "Updating the documents", while a research trail always persists and a blocked or
     failed first phase always keeps a home for its outcome glyph. Renders exactly like the live
     progress entry it replaces — the stage label kept, an **outcome glyph** in the
@@ -333,11 +334,11 @@ applies unchanged; the chat pane never collapses.
   **Thread progress entry — the page's only live job surface.** While any §8 job is in
   flight (create, chat, or sync, however started), a **transient agent-activity entry**
   renders at the bottom of the thread, styled as a left-aligned agent block: a spinner,
-  the job's stage label ("Working on the
-  request…" / "Updating the documents…" (the §8 chat-job flip, mid-job) / "Writing the
-  spec…" / "Installing the packages…" / "Generating the steps…" /
-  "Syncing the workflow…" (the sync job's steps stage); the install stage shows "Installing the
-  packages…" on sync jobs too; no title ever carries agent · model attribution —
+  the job's stage label — the §8 unified stage set, "Working on the request…" /
+  "Updating the documents…" (the mid-job marker flip) / "Syncing the workflow…" — each
+  job showing only the phases it runs (§8: create opens at the first and flips like
+  chat; sync opens at the third; package installs are bullets under the third, never a
+  stage of their own); no title ever carries agent · model attribution —
   the composer's picker names the agent; the Build & test panel's coarse
   state-1 label reads "Waiting for the spec…" while call 1 writes), and an **activity feed**
   beneath it — the **current stage's** §8 `events` lines as dim history (oldest first,
@@ -511,7 +512,7 @@ from the turn action row's pill styling) — a quiet **Dismiss** plus, by source
   gated). It writes each blocker into the
   in-editor spec under a `## Constraints & resolutions` section (created on first use,
   extended after), one bullet per blocker — "`reason` — `fix`" — then runs a §8 `sync`
-  against the amended spec and the Build & test panel re-enters "Generating the steps". The
+  against the amended spec and the Build & test panel re-enters "Syncing the workflow". The
   resolutions live in the spec document itself, so they survive later edits and syncs and
   version like any spec text. If the rebuild blocks again the new entry carries a muted
   "Previously resolved" list of this session's earlier resolutions, so a fix that didn't
@@ -651,7 +652,8 @@ editors enter with
   in-editor draft and grants) replaces the spec and marks the workflow out of sync exactly
   like a manual spec edit (toast "Spec updated — the workflow is out of sync. Sync the steps
   before saving."), and the Build & test panel's "Sync now" rebuilds the steps later; while
-  the chat job is in flight the Save hint reads "Working on the request…", and cancelling it
+  the chat job is in flight the Save hint shows its live §8 stage title ("Working on the
+  request…" / "Updating the documents…"), and cancelling it
   from the composer's Cancel button leaves the draft untouched (toast "Edit stopped — the
   spec is unchanged."). On failure the §8 error renders as a thread error entry; a `blocked`
   outcome renders a thread blockers entry (source: chat) — either way the draft is
@@ -796,8 +798,8 @@ editors enter with
   primary amends the in-editor spec (same `## Constraints & resolutions` rule) and
   repeats the sync; dismissing it leaves the workflow out of sync with
   the panel still showing it. Disabled Save shows an amber hint ("Sync and review the steps before saving" /
-  "Finish editing the spec first…" / "Syncing steps…" / "Working on the request…" /
-  "Writing the spec…" / "Generating the steps…" / "Installing the packages…"); saving is also
+  "Finish editing the spec first…" / the running job's live §8 stage title —
+  "Working on the request…" / "Updating the documents…" / "Syncing the workflow…"); saving is also
   blocked while any §8 job is in flight, and the panel's sync button disables while one is.
   Disabling an enabled agent that steps still call locks saving
   through the derived grant gap above (toast "Steps X, Y are out of sync — `<agent>` is no
@@ -1012,9 +1014,9 @@ editors enter with
   test zone owns every test control — the test button never sits in the header: the test
   button with its hint / outcome / progress and their action rows, laid out per state
   below. Both zones share the card's 20 px side padding. States, first match wins:
-  1. **Drafting** (create job in flight) — the coarse §8 stage label ("Waiting for the
-     spec…" while call 1 writes, then "Installing the packages…" / "Generating the
-     steps…") as static text over a plain faint dot (no spinner). The live `detail` line
+  1. **Drafting** (create job in flight) — the coarse label ("Waiting for the
+     spec…" while call 1 works, then "Syncing the
+     workflow…") as static text over a plain faint dot (no spinner). The live `detail` line
      lives in the thread progress entry
      (Drafting on Review above), and the other right-column cards show their static
      placeholders.

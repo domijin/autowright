@@ -480,7 +480,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     // call 1 lands the spec mid-job (building tick), then the steps call blocks
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
-        id: 'j1', status: 'building', stage: 'Generating the steps', detail: null,
+        id: 'j1', status: 'building', stage: 'Syncing the workflow', detail: null,
         error: null, mode: 'create', draft: { spec },
       })
       .mockResolvedValue({
@@ -540,19 +540,19 @@ describe('CreateFlow per-stage activity entries (§11)', () => {
   it('a create job settles each finished stage as its own activity entry', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
     const spec = [{ kind: 'h1', text: 'Watcher' }, { kind: 'p', text: 'Watches.' }]
-    const specEvent = { time: 1, text: 'Thinking about the spec…', stage: 'Writing the spec' }
-    const stepsEvent = { time: 2, text: 'Writing the manifest…', stage: 'Generating the steps' }
+    const specEvent = { time: 1, text: 'Thinking about the spec…', stage: 'Updating the documents' }
+    const stepsEvent = { time: 2, text: 'Writing the manifest…', stage: 'Syncing the workflow' }
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
-        id: 'j1', status: 'building', stage: 'Writing the spec', detail: null,
+        id: 'j1', status: 'building', stage: 'Updating the documents', detail: null,
         error: null, mode: 'create', draft: null, events: [specEvent],
       })
       .mockResolvedValueOnce({
-        id: 'j1', status: 'building', stage: 'Generating the steps', detail: null,
+        id: 'j1', status: 'building', stage: 'Syncing the workflow', detail: null,
         error: null, mode: 'create', draft: { spec }, events: [specEvent, stepsEvent],
       })
       .mockResolvedValue({
-        id: 'j1', status: 'done', stage: 'Generating the steps', detail: null,
+        id: 'j1', status: 'done', stage: 'Syncing the workflow', detail: null,
         error: null, mode: 'create',
         draft: { name: 'Watcher', spec, steps: [], params: [], packages: [] },
         events: [specEvent, stepsEvent],
@@ -569,8 +569,8 @@ describe('CreateFlow per-stage activity entries (§11)', () => {
     // both stage titles survive as settled entries, spec before steps, each
     // carrying only its own slice of the feed
     const t = thread()
-    const specEntry = within(t).getByText('Writing the spec…')
-    const stepsEntry = within(t).getByText('Generating the steps…')
+    const specEntry = within(t).getByText('Updating the documents…')
+    const stepsEntry = within(t).getByText('Syncing the workflow…')
     expect(specEntry.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // §11 operation blocks: feed lines render as flush-left `• ` bullets
     const feedSpec = within(t).getByText('• Thinking about the spec…')
@@ -1075,9 +1075,10 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
   it('sync job: thread and panel share the sync line; spinner in the thread, Cancel in the composer', () => {
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('Sync spec'))
-    // the same live line renders in the thread and as the panel's status text
-    // (no agent · model attribution — the composer's picker names the agent)
-    expect(screen.getAllByText('Syncing the workflow…').length).toBe(2)
+    // the same live line renders in the thread, as the panel's status text,
+    // and as the Save hint (one unified stage vocabulary; no agent · model
+    // attribution — the composer's picker names the agent)
+    expect(screen.getAllByText('Syncing the workflow…').length).toBe(3)
     const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(document.body).length).toBe(1)
     expect(spinnersIn(screen.getByTestId('chat-thread')).length).toBe(1)
@@ -1088,27 +1089,30 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect((within(panel).getByText('Sync spec').closest('button')!).disabled).toBe(true)
   })
 
-  it('create job: stage labels walk spec → steps → packages', async () => {
+  it('create job: the unified stage walk — request → workflow, installs as bullets', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
     const building = (stage: string, detail: string | null) => ({
       id: 'j1', status: 'building', stage, detail, error: null, mode: 'create',
       draft: { spec: [{ kind: 'h1', text: 'Folder watcher' }] },
     })
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(
-      building('Generating the steps', 'Writing step 1 of 2'))
+      building('Syncing the workflow', 'Writing step 1 of 2'))
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
-    // call 1 in flight — the thread (and spec card) show the spec stage
+    // call 1 opens at the neutral deciding stage; the spec card keeps its
+    // own static "Writing the spec…" card copy
+    expect(screen.getByTestId('chat-progress').textContent).toContain('Working on the request…')
     expect(screen.getAllByText('Writing the spec…').length).toBeGreaterThan(0)
-    // the spec lands mid-job → steps stage plus the finer detail line
-    await waitFor(() => expect(screen.getAllByText('Generating the steps…').length).toBeGreaterThan(0), { timeout: 3000 })
+    // the spec lands mid-job → the workflow stage plus the finer detail line
+    await waitFor(() => expect(screen.getAllByText('Syncing the workflow…').length).toBeGreaterThan(0), { timeout: 3000 })
     expect(screen.getByText('• Writing step 1 of 2')).toBeTruthy()
-    // the job's install stage flips the label
+    // §8: installs are bullets under the workflow stage, never a stage label
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(
-      building('Installing the packages', null))
-    await waitFor(() => expect(screen.getAllByText('Installing the packages…').length).toBeGreaterThan(0), { timeout: 3000 })
+      building('Syncing the workflow', 'Installing requests…'))
+    await waitFor(() => expect(screen.getByText('• Installing requests…')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.queryByText('Installing the packages…')).toBeNull()
   })
 
   it('Esc cancels a chat job like the composer Cancel and returns the prompt to the input', () => {

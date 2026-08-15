@@ -412,13 +412,10 @@ export interface DraftJob {
   // moment the job flips to "Updating the documents", so the §11 thread lands
   // "The plan" mid-job; the settled payload's `answer` stays authoritative
   plan?: string
-  // On a create job, `draft.spec` carries call 1's validated spec as soon as
-  // the spec call completes (§11 drafting-on-Review renders it mid-job); a
-  // blocked steps call keeps it there so the Blocker modal can amend it.
   draft: DraftPayload | null
-  mode: 'create' | 'chat' | 'sync'
-  // blocked jobs only: which call blocked
-  blockedAt?: 'spec' | 'steps' | 'chat'
+  mode: 'chat' | 'sync'
+  // blocked jobs only: which call blocked (`steps` on a sync call)
+  blockedAt?: 'steps' | 'chat'
   blockers?: Blocker[]
   // §8 build diagnosis: true when the blockers came from a validation
   // double-failure (agent diagnosis or deterministic fallback), not a refusal

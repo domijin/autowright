@@ -29,20 +29,18 @@ Every day at 8:00.
 """
 
 STEPS_ENVELOPE = """===FILE: manifest.yaml===
-name: {title}
-desc: {desc}
 note: Drafted by the mock agent
 params:
-  - {{ name: notify_only_on_changes, kind: toggle, label: Notify only on changes, help: Skip the notification when nothing is new., default: true }}
+  - { name: notify_only_on_changes, kind: toggle, label: Notify only on changes, help: Skip the notification when nothing is new., default: true }
 steps:
-  - {{ file: 01-check.py, name: Check for changes, desc: Looks for anything new since the last run. }}
-  - {{ file: 02-report.py, name: Build the result, desc: Summarizes what it found. }}
+  - { file: 01-check.py, name: Check for changes, desc: Looks for anything new since the last run. }
+  - { file: 02-report.py, name: Build the result, desc: Summarizes what it found. }
 ===FILE: 01-check.py===
 from autowright import log, memory
 
 found = []
 log("checked — nothing to do in mock mode")
-memory.save("last_check", {{"found": len(found)}})
+memory.save("last_check", {"found": len(found)})
 ===FILE: 02-report.py===
 from autowright import notify, params, result
 
@@ -115,24 +113,28 @@ def respond(prompt: str) -> str:
         if user.endswith("?"):
             return ("The workflow has two steps: **Check for changes** looks for anything new "
                     "since the last run, and **Build the result** summarizes what it found.")
+        # §8 new-automation rule: an empty SPEC section marks a fresh draft —
+        # write the spec, name the automation via actions, and chain the sync.
+        sm = re.search(r"=== SPEC \(spec\.md\) ===\n(.*?)(?:\n=== |\Z)", prompt, re.S)
         title = user.rstrip(".")[:48].capitalize() or "New automation"
+        if not (sm.group(1).strip() if sm else ""):
+            spec = SPEC_ENVELOPE.format(
+                title=title, desc=f"{title} — drafted by the mock agent.").split("===END===")[0]
+            return ("Drafting the spec and building the steps.\n"
+                    + spec
+                    + "===FILE: actions.yaml===\n"
+                    + f"name: {title}\n"
+                    + f"description: {title} — drafted by the mock agent.\n"
+                    + "sync: true\n===END===\n")
         return SPEC_ENVELOPE.format(title=title, desc=f"{title} — rewritten by the mock agent.")
-    # §8 blocker envelope on demand: "blocked-spec" blocks call 1,
-    # "blocked-steps" blocks call 2 (it reaches call 2 via the spec title).
-    if "blocked-spec" in prompt.lower() and "Write the SPEC from the USER REQUEST" in prompt:
-        return BLOCKED_ENVELOPE
+    # §8 blocker envelope on demand: "blocked-steps" blocks the sync call
+    # (it reaches the sync via the spec title).
     if "blocked-steps" in prompt.lower() and "Build the automation that implements the SPEC" in prompt:
         return BLOCKED_ENVELOPE
     if "Build the automation that implements the SPEC" in prompt:
-        # §8 call 2 — title comes from the SPEC's # heading
-        m = re.search(r"^# (.+)$", prompt.rsplit("=== SPEC", 1)[-1], re.M)
-        title = (m.group(1).strip() if m else "New automation")[:48]
-        return STEPS_ENVELOPE.format(title=title, desc=f"{title} — drafted by the mock agent.")
-    # §8 call 1 — title comes from the USER REQUEST section
-    m = re.search(r"=== USER REQUEST ===\n(.+)", prompt)
-    user = m.group(1) if m else "New automation"
-    title = user.strip().rstrip(".")[:48].capitalize() or "New automation"
-    return SPEC_ENVELOPE.format(title=title, desc=f"{title} — drafted by the mock agent.")
+        # §8 sync call — manifest + step files (no name/description keys)
+        return STEPS_ENVELOPE
+    return "Mock answer: nothing to do."
 
 
 def main() -> None:

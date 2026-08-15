@@ -1,5 +1,5 @@
 // §15 e2e: the §11 editor chat pane — the one agent surface. Three journeys
-// through the real two-call pipeline against the fake claude: a prose answer,
+// through the real §8 chat pipeline against the fake claude: a prose answer,
 // a chat-driven spec rewrite synced from the thread entry and saved as v2,
 // the actions.yaml chain (rewrite → auto-sync → auto-test → settled chip),
 // and §7 Fix with AI seeding the thread from a failed execution.

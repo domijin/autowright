@@ -1,5 +1,5 @@
-"""Live-backend drafting (§8/§19): the real subprocess runs the two-call
-pipeline against the fake `claude` CLI on PATH (tests/bin, prepended by the
+"""Live-backend drafting (§8/§19): the real subprocess runs the chat call
+against the fake `claude` CLI on PATH (tests/bin, prepended by the
 root conftest and inherited by the child). Covers the §11 grant toggles
 end to end: explicit empty grant arrays reach the authoring prompt as the
 literal `none`, and the unchecked secret's name never travels.
@@ -25,7 +25,7 @@ def test_draft_create_over_live_backend_honors_unchecked_grants(backend, client)
     assert client.put("/secrets/LIVE_KEY",
                       json={"value": "", "description": "placeholder only"}).status_code == 200
 
-    r = client.post("/drafts", json={"mode": "create",
+    r = client.post("/drafts", json={"mode": "chat",
                                      "text": "Watch a page for changes",
                                      "agentId": ag["id"],
                                      "enabledAgents": [], "allowedSecrets": []})
@@ -33,25 +33,27 @@ def test_draft_create_over_live_backend_honors_unchecked_grants(backend, client)
     j = wait_for(lambda: _settled_job(client, r.json()["jobId"]), 90,
                  "draft job to settle")
     assert j["status"] == "done", j
-    assert j["draft"]["steps"] and j["draft"]["spec"]
+    # §8 new-automation rule: the fresh-draft chat call lands the spec plus
+    # the name/description/sync actions.
+    assert j["draft"]["spec"] and j["draft"]["actions"]["sync"] is True
 
     # §8: every invocation's prompt is logged to the app log — the grant
     # sections must carry the literal `none`, and the unchecked secret's
     # name must not appear anywhere in the prompt.
     log = (backend.home / "logs" / "app.log").read_text(encoding="utf-8")
-    assert "pick the most appropriate entries yourself) ===\nnone" in log
-    assert "otherwise pick by judgment) ===\nnone" in log
+    assert "allowed only if nonempty):\nnone" in log
+    assert "reference by secrets.NAME):\nnone" in log
     assert "LIVE_KEY" not in log
 
 
 def test_draft_create_defaults_grant_everything(backend, client):
-    # §19: absent grant arrays in create mode → all agents + all secrets, the
-    # same all-on seed the Review page starts from.
+    # §19: absent grant arrays with no automationId → all agents + all
+    # secrets, the same all-on seed the Review page starts from.
     ag = client.post("/agents", json={"harness": "Claude Code", "mode": "default",
                                       "name": "Mock writer"}).json()
     client.put("/secrets/GRANTED_KEY", json={"value": "", "description": "placeholder"})
 
-    r = client.post("/drafts", json={"mode": "create", "text": "Watch the weather",
+    r = client.post("/drafts", json={"mode": "chat", "text": "Watch the weather",
                                      "agentId": ag["id"]})
     j = wait_for(lambda: _settled_job(client, r.json()["jobId"]), 90,
                  "draft job to settle")

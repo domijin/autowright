@@ -1,16 +1,17 @@
-"""Agent drafting pipeline (§8): two calls — write the spec, then build the steps.
+"""Agent drafting pipeline (§8): one conversational pipeline, two call shapes.
 
-Call 1 (create): framework instructions + available agents + available secrets +
-build instructions + the user's request → spec.md; step code never travels here.
-Call 2 (create/sync; sync starts here): framework instructions + build
-instructions + the spec → manifest.yaml (params, triggers) + step files.
-`chat` makes one call of its own shape (§11 chat column): the same context stack
-plus the agent's NOTES, the recent CONVERSATION, the RECENT RUNS (test/draft/
-version output with log tails, assembled by the API layer), the package install
-state, and the current steps — and the RESPONSE SHAPE decides the outcome: any
-subset of spec.md / instructions.md / notes.md / actions.yaml blocks is a
-rewrite-plus-actions (validated per block), plain prose is an answer, a blocker
-envelope blocks. Each envelope-shaped call is
+The `chat` call is every editor turn (§11 chat column): framework instructions +
+grants + build instructions + the agent's NOTES, the recent CONVERSATION, the
+RECENT RUNS (test/draft/version output with log tails, assembled by the API
+layer), the package install state, and the current draft (spec + steps) — and
+the RESPONSE SHAPE decides the outcome: any subset of spec.md / instructions.md /
+notes.md / actions.yaml blocks is a rewrite-plus-actions (validated per block),
+plain prose is an answer, a blocker envelope blocks. A fresh draft's first
+message is a chat call like any other — the §8 new-automation rule has the agent
+write the spec, set name/description actions, and chain the build with
+`sync: true`. The `sync` call builds the steps from the provided spec:
+framework instructions + build instructions + the spec → manifest.yaml (params,
+triggers) + step files. There is no create mode. Each envelope-shaped call is
 followed by deterministic validation with up to AUTOWRIGHT_REPAIR_ROUNDS (§15,
 default 1) automatic repair rounds — chat repairs are per-block: valid blocks are
 kept and only the failed ones are re-asked-for, merged latest-wins; a valid
@@ -61,27 +62,10 @@ _FRAMEWORK_SECTION = "=== FRAMEWORK INSTRUCTIONS ===\n" + CONTRACT_PREAMBLE
 
 # ---------- prompts ----------
 
-SPEC_TASK = """=== TASK ===
-Write the SPEC from the USER REQUEST above. Return exactly one file block, spec.md — the full spec: markdown (# title first, then ## sections, - bullets, paragraphs) written for the user in plain words — no code, no yaml, no file names. Shape and tone, for example:
-
-===FILE: spec.md===
-# Track new manga chapters
-
-## What it does
-- Every morning at 8, check each manga page on my list for a new chapter.
-- Only genuinely new chapters count — reprints and reissues don't.
-
-## What I see
-- A notification naming the new chapters, only on days something new appeared.
-- The result lists each new chapter with its title and date.
-===END==="""
-
 STEPS_TASK = """=== TASK ===
-Build the automation that implements the SPEC below, following the BUILD INSTRUCTIONS. Derive the triggers, every parameter (each with a default), and the steps from the SPEC — and add any trigger or parameter you judge the automation is missing (see Triggers and Parameters above; message-trigger details come from the SPEC only). Return manifest.yaml plus one file block per step — no spec.md:
+Build the automation that implements the SPEC below, following the BUILD INSTRUCTIONS. Derive the triggers, every parameter (each with a default), and the steps from the SPEC — and add any trigger or parameter you judge the automation is missing (see Triggers and Parameters above; message-trigger details come from the SPEC only). Return manifest.yaml plus one file block per step — no spec.md (and no name/description keys — identity changes only through the chat call's actions):
 
 ===FILE: manifest.yaml===
-name: Suggested automation name        # create mode only
-description: One-line description
 note: One-line version note for the history menu
 params:                                # each param MUST carry a default
   - { name: snake_case_name, kind: toggle|list|kv|number|text, label: ..., help: ..., default: ... }
@@ -137,6 +121,20 @@ Decide what the USER REQUEST above needs:
 
 - A question → answer it in plain markdown prose written for the user — no file blocks, no envelope, no yaml. Ground the answer in the SPEC, the CURRENT steps, and the RECENT RUNS shown above; when something isn't decided there, say so plainly.
 
+- A NEW automation (the SPEC above is empty) → the USER REQUEST is the automation's description: return the FULL spec.md written from it (don't promise AI judgment unless the enabled-agents list is nonempty), plus actions.yaml carrying `name`, `description`, and `sync: true` so the steps build in the same turn — unless the request is a question or asks you to hold off. Clarifications work like any other turn: when something only the user can supply is missing, ask in plain prose instead. A fresh spec's shape and tone, for example:
+
+===FILE: spec.md===
+# Track new manga chapters
+
+## What it does
+- Every morning at 8, check each manga page on my list for a new chapter.
+- Only genuinely new chapters count — reprints and reissues don't.
+
+## What I see
+- A notification naming the new chapters, only on days something new appeared.
+- The result lists each new chapter with its title and date.
+===END===
+
 - A change to the automation → return file blocks, any subset of these four (prose before the first block is shown to the user as your message):
 
 ===FILE: spec.md===
@@ -187,8 +185,7 @@ def _grants_yaml(entries: list[dict]) -> str:
 
 
 def _common_context(current: dict | None, grants: dict) -> list[str]:
-    """Grants + build instructions — the steps call's shared context (call 1
-    builds its own sections in its own order)."""
+    """Grants + build instructions — the context stack both call shapes share."""
     parts = [
         "=== GRANTS FOR THIS AUTOMATION ===\n"
         "Enabled agents (yaml: name, description, harness, model; agent: true steps "
@@ -201,42 +198,12 @@ def _common_context(current: dict | None, grants: dict) -> list[str]:
         "entries yourself."
     ]
     # §8: instructions travel with every call as context only — never returned by
-    # the agent. In create mode the API seeds DEFAULT_INSTRUCTIONS when none given.
+    # the agent. With no automation, the API seeds DEFAULT_INSTRUCTIONS when
+    # none are given (belt-and-braces — the editor normally sends them).
     if (current or {}).get("instructions"):
         parts.append("=== BUILD INSTRUCTIONS (the user's standing rules — follow them; "
                      "never return this file) ===\n" + current["instructions"].strip())
     return parts
-
-
-def build_spec_prompt(user_text: str | None, current: dict | None,
-                      grants: dict) -> str:
-    """§8 call 1 (create) — framework instructions + available agents + available
-    secrets + build instructions + user request → spec.md. Role first, task last.
-    Step code never travels here; the closing TASK just asks to write the spec
-    from the request."""
-    parts = [
-        _FRAMEWORK_SECTION,
-        "=== AVAILABLE AGENTS (yaml: name, description, harness, model — they can power "
-        "judgment steps when the automation is later built; don't promise AI judgment in "
-        "the spec unless this list is nonempty. When the user or the BUILD INSTRUCTIONS "
-        "name which agent to use, follow that; otherwise pick the most appropriate "
-        "entries yourself) ===\n"
-        f"{_grants_yaml(grants.get('agents', []))}",
-        "=== AVAILABLE SECRETS (yaml: name, description — same rule: a secret named by "
-        "the user or the BUILD INSTRUCTIONS wins; otherwise pick by judgment) ===\n"
-        f"{_grants_yaml(grants.get('secrets', []))}",
-    ]
-    if (current or {}).get("instructions"):
-        parts.append("=== BUILD INSTRUCTIONS (the user's standing rules — follow them; "
-                     "never return this file) ===\n" + current["instructions"].strip())
-    # §8: a resumed create draft can hold notes from an earlier steps call — a
-    # blocker-driven re-create shouldn't rediscover what that round learned.
-    if notes := _notes_section(current, " — context only, never returned here"):
-        parts.append(notes)
-    if user_text:
-        parts.append("=== USER REQUEST ===\n" + user_text.strip())
-    parts.append(SPEC_TASK)
-    return "\n\n".join(parts)
 
 
 def _step_head(s: dict) -> str:
@@ -396,36 +363,37 @@ def _trigger_ref(t: dict) -> dict:
     return d
 
 
-def build_steps_prompt(mode: str, spec_md: str, current: dict | None,
+def build_steps_prompt(spec_md: str, current: dict | None,
                        grants: dict) -> str:
-    """§8 call 2 — framework + build instructions + spec → manifest + step files."""
+    """§8 sync call — framework + build instructions + spec → manifest + step
+    files. The draft's current implementation travels as reference when it
+    holds any (a fresh draft's first build has none and simply omits it)."""
     parts = [_FRAMEWORK_SECTION, STEPS_TASK, *_common_context(current, grants)]
     if notes := _notes_section(
             current, " — context; you may return an updated notes.md beside the manifest"):
         parts.append(notes)
-    if mode == "create":
-        parts.append("=== MODE ===\ncreate — include a suggested `name` in manifest.yaml.")
-    else:
-        parts.append(f"=== MODE ===\n{mode} — the CURRENT files below are today's implementation; "
+    has_ref = bool(current and (current.get("params") or current.get("steps")
+                                or current.get("triggers")))
+    if has_ref:
+        parts.append("=== MODE ===\nsync — the CURRENT files below are today's implementation; "
                      "rewrite them to match the SPEC, changing no more than the spec demands.")
-        if current:
-            parts.append("=== CURRENT param definitions ===\n"
-                         + yaml.safe_dump(current.get("params", []), sort_keys=False))
-            trigs = current.get("triggers")
-            if trigs is not None:
-                # §8: reference only — the §4.3 merge keeps user-added entries;
-                # the agent drafts against this to see what already exists.
-                parts.append(
-                    "=== CURRENT triggers (reference — user-owned; your drafted crons "
-                    "replace the spec-derived cron entries below (schedules the user set "
-                    "by hand survive), message/app-start entries only add "
-                    "when not already present; `time` and `off` entries are context, "
-                    "never drafted) ===\n"
-                    + (yaml.safe_dump([_trigger_ref(t) for t in trigs],
-                                      sort_keys=False, allow_unicode=True).strip()
-                       if trigs else "none"))
-            for s in current.get("steps", []):
-                parts.append(f"=== CURRENT step {_step_head(s)} ===\n{s.get('code', '')}")
+        parts.append("=== CURRENT param definitions ===\n"
+                     + yaml.safe_dump(current.get("params", []), sort_keys=False))
+        trigs = current.get("triggers")
+        if trigs is not None:
+            # §8: reference only — the §4.3 merge keeps user-added entries;
+            # the agent drafts against this to see what already exists.
+            parts.append(
+                "=== CURRENT triggers (reference — user-owned; your drafted crons "
+                "replace the spec-derived cron entries below (schedules the user set "
+                "by hand survive), message/app-start entries only add "
+                "when not already present; `time` and `off` entries are context, "
+                "never drafted) ===\n"
+                + (yaml.safe_dump([_trigger_ref(t) for t in trigs],
+                                  sort_keys=False, allow_unicode=True).strip()
+                   if trigs else "none"))
+        for s in current.get("steps", []):
+            parts.append(f"=== CURRENT step {_step_head(s)} ===\n{s.get('code', '')}")
     parts.append("=== SPEC (spec.md — implement this exactly) ===\n" + (spec_md or "").strip())
     parts.append(STEPS_REMINDER)
     return "\n\n".join(parts)
@@ -571,7 +539,8 @@ def parse_blockers(text: str) -> tuple[list[dict] | None, str | None]:
 
 
 def validate_spec(files: dict[str, str]) -> tuple[dict, list[str]]:
-    """§8 call-1 validation. Returns ({md, blocks}, errors)."""
+    """§8 spec-document validation (chat rewrites, CLI workdirs). Returns
+    ({md, blocks}, errors)."""
     errors: list[str] = []
     if "spec.md" not in files:
         errors.append("spec.md is missing")
@@ -878,7 +847,7 @@ def validate_chat(raw: str, files: dict[str, str],
 
 
 def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[dict, list[str]]:
-    """§8 call-2 validation. Returns (draft dict sans spec, errors). `grants`
+    """§8 sync-call validation. Returns (draft dict sans spec, errors). `grants`
     holds the call's agent/secret grant entries — per-step `agents`/`secrets`
     lists must name entries from them."""
     errors: list[str] = []
@@ -957,7 +926,7 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         if not isinstance(s, dict):
             errors.append(f"steps entry must be a mapping with file/name/description — got {s!r}")
     listed = [s.get("file", "") for s in steps if isinstance(s, dict)]
-    # §8: call 2 may return an optional notes.md beside the manifest — the
+    # §8: the sync call may return an optional notes.md beside the manifest — the
     # agent's updated working-knowledge doc, excluded from step-file matching.
     blocks = [f for f in files if f not in ("manifest.yaml", "notes.md")]
     if sorted(listed) != sorted(blocks):
@@ -1125,8 +1094,8 @@ class Cancelled(Exception):
 
 
 class DraftJobs:
-    """§19 POST /drafts — the two-call pipeline as a background job, one
-    automatic repair round per call (§8)."""
+    """§19 POST /drafts — the §8 chat/sync calls as background jobs, with
+    automatic repair rounds per call (§8)."""
 
     def __init__(self) -> None:
         self.jobs: dict[str, dict] = {}
@@ -1138,9 +1107,9 @@ class DraftJobs:
               pkg_state: list[dict] | None = None) -> str:
         job_id = str(uuid.uuid4())
         # §8 unified stage set: every job enters at the phase where its real
-        # work starts — sync at the workflow phase, chat/create at the neutral
-        # deciding phase (create flips to the documents phase on call 1's
-        # spec.md marker, exactly like a chat rewrite).
+        # work starts — sync at the workflow phase, chat at the neutral
+        # deciding phase (flipping to the documents phase on the first
+        # streamed rewrite marker).
         stage = ("Syncing the workflow" if mode == "sync"
                  else "Working on the request")
         job = {"id": job_id, "status": "building", "stage": stage, "detail": None,
@@ -1228,39 +1197,17 @@ class DraftJobs:
             return self._chat_call(job, agent, user_text, current, grants, chat_history,
                                    runs, pkg_state)
 
-        spec_blocks = None
-        if mode == "create":
-            # ---- call 1: the spec ----
-            spec, _errors, blockers, diagnosed, bnotes = self._call_with_repair(
-                job, agent, build_spec_prompt(user_text, current, grants),
-                validate_spec, "spec")
-            if blockers:
-                # §8: a blocker response's optional notes.md rides the payload
-                # as draft.notes — the editor applies it like a chat rewrite.
-                return self._block(job, "spec", blockers,
-                                   {"notes": bnotes} if bnotes else None,
-                                   diagnosed=diagnosed)
-            spec_md, spec_blocks = spec["md"], spec["blocks"]
-            # §11 drafting-on-Review: the validated spec rides the job
-            # payload the moment call 1 lands, so the spec card can render
-            # it while the steps call is still working (§19).
-            job["draft"] = {"spec": spec_blocks}
-        else:
-            # sync: the provided spec IS the input — no spec call
-            spec_md = spec_as_md(current)
-
-        # ---- call 2: steps, params, schedule ----
+        # ---- sync: steps, params, schedule — the provided spec IS the input ----
+        spec_md = spec_as_md(current)
         self._stage(job, "Syncing the workflow")
         draft, _errors, blockers, diagnosed, bnotes = self._call_with_repair(
-            job, agent, build_steps_prompt(mode, spec_md, current, grants),
+            job, agent, build_steps_prompt(spec_md, current, grants),
             lambda files: validate_steps(files, grants), "steps")
         if blockers:
-            # Hand call 1's spec along (create) so the §11 Blocker panel can
-            # amend it and rebuild — on sync the caller already holds the spec.
-            # The blocker response's optional notes.md rides beside it (§8).
-            payload = {**({"spec": spec_blocks} if spec_blocks else {}),
-                       **({"notes": bnotes} if bnotes else {})}
-            return self._block(job, "steps", blockers, payload or None,
+            # The blocker response's optional notes.md rides the payload (§8) —
+            # the caller already holds the spec, a sync never changes it.
+            return self._block(job, "steps", blockers,
+                               {"notes": bnotes} if bnotes else None,
                                diagnosed=diagnosed)
 
         if draft.get("packages"):
@@ -1275,11 +1222,6 @@ class DraftJobs:
                 draft["packages"],
                 on_progress=lambda spec: self._event(job, f"Installing {spec}…"))
 
-        draft["spec"] = spec_blocks  # None on sync — the spec never changes there
-        if mode == "create":
-            # Hand the (seeded or user-given) instructions back so the
-            # Review card arrives pre-filled — agents never return them.
-            draft["instructions"] = (current or {}).get("instructions") or ""
         self._settle(job, "done", draft=draft)
 
     def _chat_call(self, job: dict, agent: dict, user_text: str | None,
@@ -1461,7 +1403,7 @@ class DraftJobs:
         element. A cancel raises `Cancelled` out of `_invoke`
         (checked before every spawn there): a cancel between calls never lets a
         fresh full-timeout harness call start. `call` names the pipeline call
-        ("spec"/"steps") for the §5 build-failure record."""
+        ("steps") for the §5 build-failure record."""
         raw = self._invoke(job, agent, prompt, on_chunk=self._progress_cb(job))
         result, errors, blockers, notes = self._parse_validate(raw, validator)
         rounds: list[dict] = []
@@ -1556,12 +1498,6 @@ class DraftJobs:
             else:
                 m = marks[-1]
                 fname = m.group(1).strip()
-                # §8 stage flip: call 1's spec marker moves a create job from
-                # the neutral deciding phase to the documents phase — the same
-                # rewrite-marker rule the chat call uses
-                if (fname == "spec.md"
-                        and job["stage"] == "Working on the request"):
-                    self._stage(job, "Updating the documents")
                 shape = fname
                 if fname == "manifest.yaml":
                     label = detail = "Writing the manifest — name, triggers, parameters, step list"
@@ -1569,18 +1505,15 @@ class DraftJobs:
                     lines = len(text[m.end():].strip("\n").splitlines())
                     count = f" · {lines} line{'s' if lines != 1 else ''}" if lines else ""
                     if fname == "notes.md":
-                        # §8: call 2's notes block reads like the chat call's
+                        # §8: the sync call's notes block reads like the chat call's
                         label = "Updating the notes"
                         detail = label + count
                         shape = fname
                     else:
-                        if fname == "spec.md":
-                            name = "the spec"
-                        else:
-                            total = self._steps_total(state, text, marks)
-                            sm = STEP_FILE_RE.match(fname)
-                            name = (f"step {int(sm.group(1))} of {total} — {fname}"
-                                    if sm and total else fname)
+                        total = self._steps_total(state, text, marks)
+                        sm = STEP_FILE_RE.match(fname)
+                        name = (f"step {int(sm.group(1))} of {total} — {fname}"
+                                if sm and total else fname)
                         label = f"Writing {name}"
                         detail = label + count
             if prefix:

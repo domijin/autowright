@@ -456,7 +456,7 @@ describe('stripTrigger (§4.4 draft-only trigger shape)', () => {
 
 // ---- §8/§11 grant plumbing: seeds + draft serialization ----
 import {
-  seedDrafting, seedFromPayload, seedFromAuto, serializeDraft,
+  seedEmpty, seedFromPayload, seedFromAuto, serializeDraft,
 } from '../src/pages/CreateFlow'
 import type { Agent, Automation, DraftPayload } from '../src/types'
 
@@ -468,7 +468,7 @@ const SECRETS = ['MAIL_PASSWORD', 'CRM_API_KEY']
 
 describe('grant seeds (§11 Review checkboxes)', () => {
   it('a fresh drafting Rev starts all-on — every agent enabled, every secret allowed', () => {
-    const r = seedDrafting(AGENTS, SECRETS)
+    const r = seedEmpty(AGENTS, SECRETS)
     expect(r.enabledAgents).toEqual(['g1', 'g2'])
     expect(r.allowedSecrets).toEqual(SECRETS)
   })
@@ -527,7 +527,7 @@ describe('seedFromAuto packages (§4.1 curated deps)', () => {
 
 describe('serializeDraft (§4.4 draft payload)', () => {
   it('maps the editor grant state onto stepAgents/allowedSecrets — unchecked entries gone', () => {
-    const r = { ...seedDrafting(AGENTS, SECRETS), enabledAgents: ['g2'], allowedSecrets: [] }
+    const r = { ...seedEmpty(AGENTS, SECRETS), enabledAgents: ['g2'], allowedSecrets: [] }
     const d = serializeDraft(r)
     expect(d.stepAgents).toEqual(['g2'])
     expect(d.allowedSecrets).toEqual([])
@@ -535,15 +535,15 @@ describe('serializeDraft (§4.4 draft payload)', () => {
 
   it('strips package status fields down to { pip, import } declarations', () => {
     const r = {
-      ...seedDrafting(AGENTS, SECRETS),
+      ...seedEmpty(AGENTS, SECRETS),
       packages: [{ pip: 'pandas', import: 'pandas', status: 'installed', version: '2.2' }],
-    } as ReturnType<typeof seedDrafting>
+    } as ReturnType<typeof seedEmpty>
     expect(serializeDraft(r).packages).toEqual([{ pip: 'pandas', import: 'pandas' }])
   })
 
   it('never carries the thread — chat persists via /chat/{owner} (§4.4 thread lifetime)', () => {
     const r = {
-      ...seedDrafting(AGENTS, SECRETS),
+      ...seedEmpty(AGENTS, SECRETS),
       chat: [entry('user'), entry('error'), entry('answer')],
     }
     expect(serializeDraft(r)).not.toHaveProperty('chat')
@@ -561,11 +561,11 @@ describe('serializeDraft (§4.4 draft payload)', () => {
   })
 
   it('round-trips the drafted §8 test-value map as testValues (§4.4 draft-only key)', () => {
-    const r = { ...seedDrafting(AGENTS, SECRETS), testValues: { city: 'Bergen' } }
+    const r = { ...seedEmpty(AGENTS, SECRETS), testValues: { city: 'Bergen' } }
     expect(serializeDraft(r).testValues).toEqual({ city: 'Bergen' })
     // absent / empty maps drop the key
-    expect('testValues' in serializeDraft(seedDrafting(AGENTS, SECRETS))).toBe(false)
-    expect('testValues' in serializeDraft({ ...seedDrafting(AGENTS, SECRETS), testValues: {} })).toBe(false)
+    expect('testValues' in serializeDraft(seedEmpty(AGENTS, SECRETS))).toBe(false)
+    expect('testValues' in serializeDraft({ ...seedEmpty(AGENTS, SECRETS), testValues: {} })).toBe(false)
     // both resume paths restore it
     expect(seedFromPayload({ testValues: { city: 'Bergen' } } as unknown as DraftPayload, AGENTS, SECRETS).testValues)
       .toEqual({ city: 'Bergen' })
@@ -580,10 +580,10 @@ describe('serializeDraft (§4.4 draft payload)', () => {
   })
 
   it('round-trips the §8 staged concurrency object (§4.4 draft-only key)', () => {
-    const r = { ...seedDrafting(AGENTS, SECRETS), concurrency: { maxParallel: 2 } }
+    const r = { ...seedEmpty(AGENTS, SECRETS), concurrency: { maxParallel: 2 } }
     expect(serializeDraft(r).concurrency).toEqual({ maxParallel: 2 })
     // nothing staged drops the key
-    expect('concurrency' in serializeDraft(seedDrafting(AGENTS, SECRETS))).toBe(false)
+    expect('concurrency' in serializeDraft(seedEmpty(AGENTS, SECRETS))).toBe(false)
     // both resume paths restore it
     expect(seedFromPayload({ concurrency: { maxQueued: 5 } } as unknown as DraftPayload, AGENTS, SECRETS).concurrency)
       .toEqual({ maxQueued: 5 })
@@ -598,9 +598,9 @@ describe('serializeDraft (§4.4 draft payload)', () => {
   })
 
   it('round-trips the §11 dirty gate as outOfSync — resume must not unlock Save (§4.4)', () => {
-    const dirty = { ...seedDrafting(AGENTS, SECRETS), dirty: true }
+    const dirty = { ...seedEmpty(AGENTS, SECRETS), dirty: true }
     expect(serializeDraft(dirty).outOfSync).toBe(true)
-    expect('outOfSync' in serializeDraft(seedDrafting(AGENTS, SECRETS))).toBe(false)
+    expect('outOfSync' in serializeDraft(seedEmpty(AGENTS, SECRETS))).toBe(false)
     // both resume paths restore it
     expect(seedFromPayload({ outOfSync: true } as DraftPayload, AGENTS, SECRETS).dirty).toBe(true)
     expect(seedFromPayload({} as DraftPayload, AGENTS, SECRETS).dirty).toBe(false)

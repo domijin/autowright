@@ -128,7 +128,6 @@ export interface ChatPanelProps {
   isCreateEmpty: boolean
   anyJobBusy: boolean
   busyRewrite: boolean
-  drafting: boolean
   testLive: boolean
   viewingOld: boolean
   inputDisabled: boolean
@@ -138,8 +137,6 @@ export interface ChatPanelProps {
   chatText: string
   setChatText: (v: string) => void
   sendMessage: () => void
-  submitCreate: (request: string) => Promise<void>
-  lastCreateRef: React.MutableRefObject<string>
   undoDraft: () => void
   runSync: () => void
   // §11 turn action row: starts a draft test through the Build & test panel —
@@ -152,7 +149,6 @@ export interface ChatPanelProps {
   applyBlockersEntry: (entry: ChatEntry) => void
   clearChat: () => void
   cancelChat: () => void
-  cancelCreate: () => void
   cancelSync: () => void
   setAgentId: (id: string) => void
   up: (patch: Partial<Rev>) => void
@@ -160,11 +156,11 @@ export interface ChatPanelProps {
 }
 
 export function ChatPanel({
-  rev, agents, selAgent, isEdit, isCreateEmpty, anyJobBusy, busyRewrite, drafting,
+  rev, agents, selAgent, isEdit, isCreateEmpty, anyJobBusy, busyRewrite,
   testLive, viewingOld, inputDisabled, outOfSync, syncDisabled,
-  lastRewriteId, chatText, setChatText, sendMessage, submitCreate, lastCreateRef,
+  lastRewriteId, chatText, setChatText, sendMessage,
   undoDraft, runSync, runDraftTest, analyzeFailure, patchEntry,
-  applyBlockersEntry, clearChat, cancelChat, cancelCreate, cancelSync, setAgentId, up, showToast,
+  applyBlockersEntry, clearChat, cancelChat, cancelSync, setAgentId, up, showToast,
 }: ChatPanelProps) {
   // §11 thread auto-scroll: newest at the bottom, scrolled on new content and
   // when the transient progress entry appears (a job starts).
@@ -192,7 +188,6 @@ export function ChatPanel({
     focusAfterCancelRef.current = true
     if (rev.chatBusy) cancelChat()
     else if (rev.syncBusy) cancelSync()
-    else cancelCreate()
   }
 
   // §11 Esc-to-cancel: a keyboard shortcut for the composer's Cancel while a §8
@@ -206,7 +201,7 @@ export function ChatPanel({
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [anyJobBusy, rev.chatBusy, rev.syncBusy, cancelChat, cancelSync, cancelCreate])
+  }, [anyJobBusy, rev.chatBusy, rev.syncBusy, cancelChat, cancelSync])
 
   // Chat-input auto-grow (ask-box pattern). Runs when the text changes and once
   // when the textarea attaches (it mounts after `rev` loads and again whenever a
@@ -250,11 +245,12 @@ export function ChatPanel({
     if (e.diagnosed) return 'The build failed — your AI suggests these fixes'
     return bl.length > 1 ? `Your AI hit ${bl.length} blockers` : 'Your AI hit a blocker'
   }
+  // §11: two live sources — chat (clarification) and sync; the legacy `spec`
+  // and `steps` values (the removed create pipeline) render like them.
   const blockersExplainer = (e: ChatEntry) =>
-    e.source === 'spec' ? 'It couldn’t write a spec for this request. Reply below — your answer is added to the request and the spec is rewritten.'
-      : e.source === 'chat' ? 'Reply below — your answer is sent back and the spec is rewritten.'
-        : e.source === 'steps' ? 'It couldn’t build the steps as the spec asks.'
-          : 'It couldn’t sync the steps with the spec.'
+    e.source === 'chat' || e.source === 'spec'
+      ? 'Reply below — your answer is sent back and the spec is rewritten.'
+      : 'It couldn’t sync the steps with the spec.'
 
   // §4.4/§11 history is inert: entries at or before the newest boundary
   // marker belong to a settled draft — they render, but offer no actions.
@@ -271,7 +267,7 @@ export function ChatPanel({
   const lastEntry = rev.chat.length ? rev.chat[rev.chat.length - 1] : null
   const undoAtEnd = rowsAllowed && !!rev.undo && !!lastEntry && rev.undo.entryId === lastEntry.id
   const showSyncPill = outOfSync && rev.dirty && !syncDisabled && !rev.pendingSync
-  const showTestPill = !outOfSync && rev.steps.length > 0 && !drafting && !rev.pendingSync && !rev.pendingTest
+  const showTestPill = !outOfSync && rev.steps.length > 0 && !rev.pendingSync && !rev.pendingTest
   const showTurnRow = rowsAllowed && !!lastEntry && lastEntry.kind !== 'user' && !lastEntry.boundary
     && (undoAtEnd || showSyncPill || showTestPill || !!analyzeFailure)
   const pillGlyph: React.CSSProperties = { fontSize: 9, color: 'var(--text-faint)' }
@@ -484,14 +480,6 @@ export function ChatPanel({
               <div key={e.id} style={{ marginTop: mt }}>
                 <MsgHeader icon="fa-circle-xmark" color="var(--red)" title="Something went wrong" />
                 <div style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-2)', overflowWrap: 'break-word' }}>{e.text}</div>
-                {/* §11 history-inert rule: no Try again on a settled session's failure */}
-                {e.source === 'spec' && !anyJobBusy && !isEdit && !history && (
-                  <ActionRow style={{ marginTop: 8 }}>
-                    <button className="ad-btn-pill action" onClick={() => void submitCreate(lastCreateRef.current)}>
-                      Try again
-                    </button>
-                  </ActionRow>
-                )}
               </div>
             )
           }
@@ -643,7 +631,7 @@ export function ChatPanel({
               <AgentPick
                 agents={agents} selected={selAgent} disabled={busyRewrite}
                 onPick={(g) => {
-                  if (busyRewrite || drafting) { showToast('Wait for the current rewrite to finish first.'); return }
+                  if (busyRewrite) { showToast('Wait for the current rewrite to finish first.'); return }
                   if (selAgent && selAgent.id === g.id) return
                   setAgentId(g.id)
                   if (isEdit) up({ touched: true })

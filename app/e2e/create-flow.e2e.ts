@@ -1,4 +1,4 @@
-// §15 e2e: the create-flow journey — request → real §8 two-call drafting
+// §15 e2e: the create-flow journey — request → real §8 chat + chained-sync
 // pipeline (fake `claude` answers both calls) → Test (real §11 draft
 // execution) → Create → Execute now → execution page with steps, logs, result.
 import { afterEach, describe, it } from 'vitest'
@@ -29,14 +29,15 @@ describe('create flow e2e', () => {
     await page.getByRole('button', { name: 'Create your first automation' }).click()
     await page.getByRole('heading', { name: 'What should Autowright do for you?' }).waitFor({ timeout: 10_000 })
 
-    // The chat input — the first message is the description and starts the
-    // create job. The fake claude titles the draft from this exact text
-    // (call 1's USER REQUEST section).
+    // The chat input — the first message is an ordinary §8 chat job (the
+    // new-automation rule). The fake claude names the automation from this
+    // exact text via the actions.yaml `name`.
     await page.getByPlaceholder('Describe the job — one sentence is enough.').fill('Track manga chapters e2e')
     await page.getByRole('button', { name: 'Send' }).click()
     await shot(page, 'create-drafting.png')
 
-    // Call 1 lands the spec (fixed fake envelope), call 2 the steps + param.
+    // The chat call lands the spec (fixed fake envelope) and arms the chained
+    // sync, which delivers the steps + param.
     await page.getByText('Every day at 8:00.').waitFor({ timeout: 60_000 })
     await page.getByText('Check for changes').waitFor({ timeout: 60_000 })
     await page.getByText('Build the result').waitFor()

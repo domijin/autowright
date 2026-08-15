@@ -203,7 +203,7 @@ class SnapshotRename(BaseModel):
 class DraftJobStart(BaseModel):
     """POST /drafts (§19) — a §8 drafting job."""
 
-    mode: Literal["create", "chat", "sync"]
+    mode: Literal["chat", "sync"]
     automationId: StrictStr | None = None
     text: StrictStr | None = None
     spec: Any = None                      # sync sends spec markdown; edit sends blocks

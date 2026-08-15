@@ -1,5 +1,5 @@
 // §8/§11 job orchestration for the create/edit editor: one hook owning the
-// POST /drafts + poll lifecycle for all three job modes (create, chat, sync)
+// POST /drafts + poll lifecycle for both job modes (chat, sync)
 // and every cancel path. All jobs run through one {start, cancel} core sharing
 // jobIdRef / cancelGenRef / stopPoll, so the gen-guard (a cancel landing while
 // the POST is in flight), the staleness guard on slow poll ticks, and the
@@ -7,12 +7,12 @@
 import { useEffect, useRef } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
-import type { Agent, Automation, Blocker, ChatEntry, DraftPayload, SpecBlock } from '../../types'
+import type { Automation, Blocker, ChatEntry, DraftPayload, SpecBlock } from '../../types'
 import {
   type Rev, TRIGGER_SETUP_TEXT, answerHeader, applyTriggerOps, chatSinceBoundary, coerceParamValue, jobStageTitle,
   mergeDraftTriggers,
   needsMessageTriggerSetup, newEntry, persistChat,
-  seedDrafting, seedEmpty, seedFromPayload, serializeDraft, stageDisplayTitle, stageDoingBullet,
+  serializeDraft, stageDisplayTitle, stageDoingBullet,
 } from './model'
 
 interface PollHandlers {
@@ -21,8 +21,7 @@ interface PollHandlers {
   onCancelled?: () => void
   // §8: `notes` is the blocker response's optional notes.md — applied by every
   // handler like a chat notes rewrite, so a blocked build keeps what it learned.
-  onBlocked?: (blockers: Blocker[], at: 'spec' | 'steps' | 'chat', spec: SpecBlock[] | null, diagnosed: boolean, notes: string | null) => void
-  onSpec?: (spec: SpecBlock[]) => void // §11: create job's call-1 spec, mid-job
+  onBlocked?: (blockers: Blocker[], at: 'steps' | 'chat', spec: SpecBlock[] | null, diagnosed: boolean, notes: string | null) => void
   onPlan?: (plan: string) => void // §11: chat job's pre-marker prose, at the flip
 }
 
@@ -30,16 +29,12 @@ export interface DraftJobDeps {
   rev: Rev | null
   setRev: React.Dispatch<React.SetStateAction<Rev | null>>
   up: (patch: Partial<Rev>) => void
-  agents: Agent[]
-  secretNames: string[]
   isEdit: boolean
   auto: Automation | null
   agentId: string | null
   showToast: (msg: string, ms?: number) => void
   chatText: string
   setChatText: React.Dispatch<React.SetStateAction<string>>
-  setNameEdit: (v: string | null) => void
-  setDescEdit: (v: string | null) => void
   // §11 gating, derived by the page: one agent job at a time, rewrites lock
   // while a test executes, old versions are read-only.
   anyJobBusy: boolean
@@ -49,8 +44,8 @@ export interface DraftJobDeps {
 
 export function useDraftJob(d: DraftJobDeps) {
   const {
-    rev, setRev, up, agents, secretNames, isEdit, auto, agentId, showToast,
-    chatText, setChatText, setNameEdit, setDescEdit, anyJobBusy, testLive, viewingOld,
+    rev, setRev, up, isEdit, auto, agentId, showToast,
+    chatText, setChatText, anyJobBusy, testLive, viewingOld,
   } = d
 
   const jobIdRef = useRef<string | null>(null)
@@ -59,10 +54,9 @@ export function useDraftJob(d: DraftJobDeps) {
   // flight, the flow cancels the freshly created job instead of arming the
   // poll — otherwise a cancel that lands mid-POST is silently ignored.
   const cancelGenRef = useRef(0)
-  // §11 chat pane input + the description that started the create job (Try
-  // again / blocker answers re-run against it).
-  const lastCreateRef = useRef('')
-  const createEntryRef = useRef<string | null>(null)
+  // §11: the request that started the fresh draft's first chat turn — Start
+  // over returns it to the input.
+  const firstRequestRef = useRef('')
   const chatReqRef = useRef<{ text: string; entryId: string } | null>(null)
   const dirtyBeforeSync = useRef(false)
   // §11 workflow chip group (hold-and-flush): a chat response arming a sync
@@ -85,10 +79,9 @@ export function useDraftJob(d: DraftJobDeps) {
   // ---- polling ----
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const stopPoll = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null } }
-  const startPoll = (jobId: string, { onDone, onFail, onCancelled, onBlocked, onSpec, onPlan }: PollHandlers) => {
+  const startPoll = (jobId: string, { onDone, onFail, onCancelled, onBlocked, onPlan }: PollHandlers) => {
     stopPoll()
     jobIdRef.current = jobId
-    let specDelivered = false
     let planDelivered = false
     let lastStage: string | null = null
     let lastDetail: string | null = null
@@ -108,7 +101,7 @@ export function useDraftJob(d: DraftJobDeps) {
     // removed, even when its feed is empty (a bare title + check is the
     // record that the phase ran).
     const settleStages = (
-      mode: 'create' | 'chat' | 'sync', evs: { text: string; stage?: string }[],
+      evs: { text: string; stage?: string }[],
       stages: string[], outcome: 'done' | 'blocked' | 'failed' | null,
     ) => stages.map((s, i) => {
       settledStages.add(s)
@@ -138,7 +131,7 @@ export function useDraftJob(d: DraftJobDeps) {
           // (the unified three-phase set); `detail` is the
           // finer live-progress line under it, `events` the feed's history.
           const evs = j.events ?? []
-          // §11: chat/create jobs display "Working on the request…" from the
+          // §11: chat jobs display "Working on the request…" from the
           // moment of send (the pre-poll default title) — seed it first so the
           // shown block always settles, even when the backend flipped stages
           // before the first poll ever observed the neutral one.
@@ -153,17 +146,13 @@ export function useDraftJob(d: DraftJobDeps) {
             // §11: a stage the job moved past settles into the thread right
             // away — its title and feed survive the transition — and the live
             // progress entry restarts with only the current stage's events.
-            const finished = settleStages(j.mode, evs,
+            const finished = settleStages(evs,
               seenStages.filter((s) => s !== j.stage && !settledStages.has(s)), null)
             const texts = evs.filter((e) => !e.stage || e.stage === j.stage).map((e) => e.text)
             setRev((r) => (r ? {
               ...r, genStage: j.stage, genDetail: lastDetail, genEvents: texts,
               ...(finished.length ? { chat: [...r.chat, ...finished] } : {}),
             } : r))
-          }
-          if (onSpec && !specDelivered && j.status === 'building' && j.draft?.spec) {
-            specDelivered = true
-            onSpec(j.draft.spec)
           }
           // §11: a chat job's plan lands the moment the flip is observed —
           // beneath the just-settled deciding block, above the restarted live
@@ -183,7 +172,7 @@ export function useDraftJob(d: DraftJobDeps) {
           if (j.status === 'done' || j.status === 'blocked' || j.status === 'failed') {
             const status = j.status
             const pending = seenStages.filter((s) => !settledStages.has(s))
-            const rest = settleStages(j.mode, evs, pending, status)
+            const rest = settleStages(evs, pending, status)
             setRev((r) => {
               if (!r) return r
               // A payload with no stage at all (belt-and-braces — the backend
@@ -263,94 +252,6 @@ export function useDraftJob(d: DraftJobDeps) {
     useStore.getState().clearTest()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ---- create job (§11: the first chat message drafts the automation) ----
-  // The review pane empties right away; the spec card spins on call 1, renders
-  // the spec the moment it validates (onSpec, mid-job), and the right column
-  // stays skeleton until call 2 delivers the steps. The thread survives.
-  const submitCreate = async (request: string) => {
-    lastCreateRef.current = request
-    setNameEdit(null)
-    setDescEdit(null)
-    setRev((r) => ({
-      ...seedDrafting(agents, secretNames),
-      chat: r?.chat ?? [], resolved: r?.resolved ?? [],
-    }))
-    // Tracks whether call 1 already landed the spec: a failure before that is
-    // a spec-call failure, and §11 returns the description to the input (same
-    // restore as cancelCreate).
-    let specLanded = false
-    try {
-      await startJob({ mode: 'create', text: request, agentId }, {
-        onDone: (d) => setRev((r) => ({
-          ...seedFromPayload(d, agents, secretNames),
-          chat: [
-            ...(r?.chat ?? []),
-            newEntry({ kind: 'system', icon: 'fa-wand-magic-sparkles', text: 'Draft generated — review the spec and steps, then create it.' }),
-            // §11 trigger-setup reminder: the agent omitted a message trigger
-            // it lacked details for — the user adds it on the automation page
-            ...(needsMessageTriggerSetup(d.steps ?? [], d.triggers ?? [])
-              ? [newEntry({ kind: 'system', icon: 'fa-clock', text: TRIGGER_SETUP_TEXT })] : []),
-          ],
-          resolved: r?.resolved ?? [],
-          // §11 title: the manifest name replaces the spec-title provisional
-          name: d.name || (d.spec ?? []).find((b) => b.kind === 'h1')?.text || 'New automation',
-        })),
-        onFail: (msg, detail) => {
-          // §11: a spec-call failure lands in the thread — red-tinted error
-          // entry with Try again (the description also returns to the input).
-          if (!specLanded) setChatText((cur) => cur || lastCreateRef.current)
-          setRev((r) => r && (r.specBusy
-            ? {
-              ...r, specBusy: false,
-              chat: [...r.chat, newEntry({ kind: 'error', source: 'spec', text: msg || 'The spec didn’t validate — try again or rephrase.' })],
-            }
-            : { ...r, stepsBusy: false, stepsErr: { msg, detail } }))
-        },
-        onCancelled: () => setRev((r) => r && ({ ...seedEmpty(agents, secretNames), chat: r.chat })),
-        // §11 Blockers: a spec-call block is the clarification case, a
-        // steps-call block leaves the workflow out of sync — both land as
-        // thread blockers entries (plus the §8 blocker notes when carried).
-        onBlocked: (blockers, at, spec, diagnosed, notes) => setRev((r) => {
-          if (!r) return r
-          const bn = blockerNotes(r, notes)
-          return at === 'spec'
-            ? {
-              ...r, specBusy: false, stepsBusy: false, ...bn.patch,
-              chat: [...r.chat, newEntry({ kind: 'blockers', source: 'spec', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
-            }
-            : {
-              ...r, stepsBusy: false, spec: spec ?? r.spec, dirty: true, ...bn.patch,
-              chat: [...r.chat, newEntry({ kind: 'blockers', source: 'steps', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
-            }
-        }),
-        onSpec: (spec) => {
-          specLanded = true
-          setRev((r) => r && ({
-            ...r, specBusy: false, stepsBusy: true, spec,
-            name: spec.find((b) => b.kind === 'h1')?.text || r.name,
-          }))
-        },
-      })
-    } catch (e) {
-      // POST failed — still the spec call, so the description returns too.
-      setChatText((cur) => cur || lastCreateRef.current)
-      setRev((r) => r && ({
-        ...r, specBusy: false,
-        chat: [...r.chat, newEntry({ kind: 'error', source: 'spec', text: (e as Error).message })],
-      }))
-    }
-  }
-
-  // §11: any spec / instruction / agent-ask / grant change while the steps are
-  // still generating cancels the in-flight steps call — the landed spec is
-  // kept and the standard sync panel rebuilds the steps. Returns true when a
-  // steps call was cancelled (callers add stepsBusy:false + dirty to their patch).
-  const cancelStepsGen = (): boolean => {
-    if (!rev?.stepsBusy) return false
-    cancelJob()
-    return true
-  }
-
   // §11: a chat message starts one §8 `chat` job — the drafting agent gets the
   // in-editor draft (spec + steps + build instructions + notes), the grants
   // context, and the recent thread; the backend adds the RECENT RUNS and
@@ -363,6 +264,11 @@ export function useDraftJob(d: DraftJobDeps) {
     const request = (textArg ?? chatText).trim()
     if (!request) return
     if (textArg === undefined) setChatText('')
+    // §11: a fresh draft's first message is the automation's description —
+    // Start over returns it to the input (the §8 new-automation rule; the
+    // job itself is an ordinary chat job).
+    const freshDraft = !isEdit && rev.spec.length === 0 && rev.steps.length === 0
+    if (freshDraft) firstRequestRef.current = request
     const entry = newEntry({ kind: 'user', text: request })
     chatReqRef.current = { text: request, entryId: entry.id }
     // §8 undo action: inputs lock while the job runs, so the snapshot at send
@@ -372,7 +278,6 @@ export function useDraftJob(d: DraftJobDeps) {
     // marker — a settled draft session's conversation never reaches the agent
     const history = chatSinceBoundary(persistChat(rev.chat))
     const current = serializeDraft(rev)
-    const genCancelled = cancelStepsGen()
     // §11: the plan entry landed at the flip, when one did — the settle then
     // updates it in place instead of appending a second answer entry.
     let planEntryId: string | null = null
@@ -381,7 +286,8 @@ export function useDraftJob(d: DraftJobDeps) {
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // one edit at a time
       notesDraft: null, notesEdit: false,
       // §11 auto-dismiss on reply: a sent message answers any open
-      // clarification blockers (spec/chat source); steps/sync entries stay
+      // clarification blockers (chat source — legacy `spec` entries render
+      // the same way); sync entries stay
       // open — their Apply button remains useful until a sync lands
       chat: [...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed
         && (e.source === 'chat' || e.source === 'spec') ? { ...e, dismissed: true } : e)), entry],
@@ -389,7 +295,6 @@ export function useDraftJob(d: DraftJobDeps) {
       // alone doesn't touch it — a pure Q&A keeps no draft. The response
       // handler marks touched when it actually changes the draft.
       chatBusy: true, genStage: null, genDetail: null, genEvents: [],
-      ...(genCancelled ? { stepsBusy: false, dirty: true } : {}),
     }))
     try {
       await startJob({
@@ -451,6 +356,12 @@ export function useDraftJob(d: DraftJobDeps) {
               anchorId = entry.id
               next = { ...next, spec: dft.spec, dirty: true }
               chat.push(entry)
+              // §11 provisional name (create): the spec `#` title stands in
+              // until the response's `name` action replaces it
+              if (!isEdit && (!r.name || r.name === 'New automation') && !actions.name) {
+                const h1 = dft.spec.find((b) => b.kind === 'h1')?.text
+                if (h1) next = { ...next, name: h1 }
+              }
             }
             if (dft.instructions != null && dft.instructions !== r.instructions) {
               const entry = newEntry({ kind: 'system', icon: 'fa-list-check', text: 'Build instructions updated.' })
@@ -604,7 +515,7 @@ export function useDraftJob(d: DraftJobDeps) {
     up({
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // discard unsaved edits
       notesDraft: null, notesEdit: false,
-      syncBusy: true, genStage: null, genDetail: null, genEvents: [], touched: true, stepsErr: null,
+      syncBusy: true, genStage: null, genDetail: null, genEvents: [], touched: true,
       // §11 draft undo: a repair amend replaces the spec outside the undo flow
       ...(specOverride ? { spec: specOverride, undo: null } : {}),
     })
@@ -703,9 +614,7 @@ export function useDraftJob(d: DraftJobDeps) {
   }
 
   // §11: Cancel on the footer action block — kill the running job. A chat
-  // cancel drops the pending user entry and returns the text to the input; a
-  // create cancel returns to the empty state (spec call) or keeps the landed
-  // spec out of sync (steps call).
+  // cancel drops the pending user entry and returns the text to the input.
   const cancelChat = () => {
     if (!rev?.chatBusy) return
     cancelJob()
@@ -717,23 +626,6 @@ export function useDraftJob(d: DraftJobDeps) {
     }))
     if (req) setChatText((cur) => cur || req.text)
     showToast('Edit stopped — the spec is unchanged.', 4200)
-  }
-  const cancelCreate = () => {
-    if (!rev) return
-    if (rev.stepsBusy) {
-      // steps call only — the landed spec is kept and sync rebuilds later
-      if (cancelStepsGen()) up({ stepsBusy: false, dirty: true })
-      return
-    }
-    if (!rev.specBusy) return
-    cancelJob()
-    const entryId = createEntryRef.current
-    createEntryRef.current = null
-    setRev((r) => r && ({
-      ...seedEmpty(agents, secretNames),
-      chat: entryId ? r.chat.filter((e) => e.id !== entryId) : r.chat,
-    }))
-    setChatText((cur) => cur || lastCreateRef.current)
   }
 
   // §11: sync Cancel (footer action block) — kill the job, keep the steps
@@ -749,8 +641,8 @@ export function useDraftJob(d: DraftJobDeps) {
   }
 
   return {
-    submitCreate, sendChat, runSync, flushHeldChips,
-    cancelChat, cancelCreate, cancelSync, cancelStepsGen, cancelJob,
-    stopPoll, jobIdRef, lastCreateRef, createEntryRef,
+    sendChat, runSync, flushHeldChips,
+    cancelChat, cancelSync, cancelJob,
+    stopPoll, jobIdRef, firstRequestRef,
   }
 }

@@ -4,7 +4,7 @@
 // This file is the page shell: store wiring, draft persistence, the derived
 // dirty-gating block, the title row / lede / banners, and the version menu.
 // The pieces live under ./createflow/: model.ts (the pure Rev model + helpers),
-// useDraftJob.ts (§8 job orchestration — create/chat/sync + every cancel path),
+// useDraftJob.ts (§8 job orchestration — chat/sync + every cancel path),
 // ChatPanel.tsx (thread + composer), BuildTestPanel.tsx (sync state + draft
 // test), SectionCards.tsx (the left/right review cards). The step list and
 // param editors are shared with the detail page via ../steps.
@@ -30,7 +30,7 @@ import { LeftColumn, RightCards } from './createflow/SectionCards'
 export {
   specToText, textToSpec, amendSpec, newEntry, persistChat, chatSinceBoundary,
   stepSecretTags, stepSecretNames, secretRefsOf, instrToMd,
-  seedEmpty, seedDrafting, seedFromPayload, seedFromAuto,
+  seedEmpty, seedFromPayload, seedFromAuto,
   stripTrigger, mergeDraftTriggers, serializeDraft, applyTestValues,
   applyTriggerOps, coerceParamValue,
   needsMessageTriggerSetup,
@@ -108,7 +108,7 @@ export default function CreateFlow() {
       }
       return
     }
-    if (r && !r.specBusy && (r.spec.length || r.steps.length)) {
+    if (r && (r.spec.length || r.steps.length)) {
       void api.putDraft('pending', serializeDraft(r), agentIdRef.current).catch(() => { /* backend restarting */ })
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -161,7 +161,7 @@ export default function CreateFlow() {
     if (!rev || draftSettled.current) return
     const worthKeeping = isEdit
       ? !!auto && holdsDraftEdits(rev, auto)
-      : !rev.specBusy && (rev.spec.length > 0 || rev.steps.length > 0)
+      : rev.spec.length > 0 || rev.steps.length > 0
     if (!worthKeeping) return
     const t = setTimeout(() => {
       if (draftSettled.current) return // settled after the timer armed — never write
@@ -174,7 +174,7 @@ export default function CreateFlow() {
         }
         return
       }
-      if (!r.specBusy && (r.spec.length || r.steps.length)) {
+      if (r.spec.length || r.steps.length) {
         putInFlight.current = api.putDraft('pending', serializeDraft(r), agentIdRef.current).catch(() => { /* backend restarting */ })
       }
     }, 1000)
@@ -195,7 +195,7 @@ export default function CreateFlow() {
       if (dead || !draft || seededRef.current) return
       const cur = revRef.current
       // Only the untouched empty seed may be replaced — never in-flight work.
-      if (cur && (cur.touched || cur.specBusy || cur.stepsBusy || cur.chat.length > 0 || cur.spec.length > 0)) return
+      if (cur && (cur.touched || cur.chatBusy || cur.syncBusy || cur.chat.length > 0 || cur.spec.length > 0)) return
       seededRef.current = true
       const seeded = seedFromPayload(draft, agents, secrets.map((s) => s.name))
       // A draft kept mid-steps-generation resumes spec-only — mark it out of
@@ -256,10 +256,10 @@ export default function CreateFlow() {
     return { availAgents, agentStepIdx, agNotEnabled, agMissing, agFallbackIdx, agNone, secNotAllowed, secMissing, agWarn, secWarn, agentGap, secretGap }
   }, [rev?.steps, rev?.enabledAgents, rev?.allowedSecrets, agents, secrets, secRefs]) // eslint-disable-line react-hooks/exhaustive-deps
   const { availAgents, agentStepIdx, agNotEnabled, agMissing, agFallbackIdx, agNone, secNotAllowed, secMissing, agWarn, secWarn, agentGap, secretGap } = derived
-  // §11: the spec card defaults open and is force-open while the spec is
-  // writing or being edited; the agents and secrets cards default collapsed
+  // §11: the spec card defaults open and is force-open while being edited;
+  // the agents and secrets cards default collapsed
   // and are forced open while their warnings show (Packages pattern).
-  const specOpenEff = !!rev?.specEdit || !!rev?.specBusy
+  const specOpenEff = !!rev?.specEdit
     || ((rev?.specSecOpen ?? null) == null ? true : !!rev?.specSecOpen)
   const agSecOpenEff = !!rev?.agSecOpen || agWarn
   const secSecOpenEff = !!rev?.secSecOpen || secWarn
@@ -275,34 +275,33 @@ export default function CreateFlow() {
   // §5: permissions are never versioned — a grant gap never blocks restoring an
   // old version; it fails at execution time instead (the cards still warn).
   const outOfSync = !!rev && (rev.dirty || (!viewingOld && (agentGap || secretGap)))
-  const drafting = !!rev && (rev.specBusy || rev.stepsBusy)
   const saveBlocked = !!rev && (outOfSync || rev.syncBusy || rev.chatBusy || rev.specEdit
-    || drafting || (!isEdit && rev.steps.length === 0))
+    || (!isEdit && rev.steps.length === 0))
   const busyRewrite = !!rev && (rev.syncBusy || rev.chatBusy)
   // §11: one agent job at a time — the chat input and every job starter gate on this.
-  const anyJobBusy = !!rev && (rev.specBusy || rev.stepsBusy || rev.syncBusy || rev.chatBusy)
+  const anyJobBusy = busyRewrite
   // §11: the tracked test is an ordinary execution record — steps/status render
   // off it (executionFull carries the body; the header list covers the gap before
   // loadExecution lands).
   const testExec = test ? executionFull[test.executionId] ?? executions.find((e) => e.id === test.executionId) : undefined
   const testLive = testExec?.status === 'executing'
-  // Sync panel: the button disables (never hides) while any §8 job runs, while
-  // drafting, while viewing an old version, while a draft test is executing
+  // Sync panel: the button disables (never hides) while any §8 job runs,
+  // while viewing an old version, while a draft test is executing
   // (§11 rewrites-lock: nothing rewrites the workflow under a running test),
   // and while steps AND spec are both
-  // empty — a spec-only draft (cancelled steps generation, resumed spec-only
+  // empty — a spec-only draft (a resumed spec-only
   // pending draft) must always be able to rebuild its steps here (§11).
-  const syncDisabled = !rev || busyRewrite || drafting || viewingOld || testLive
+  const syncDisabled = !rev || busyRewrite || viewingOld || testLive
     || (rev.steps.length === 0 && rev.spec.length === 0)
   // §11 inputs-lock: while a sync or spec rewrite runs, every input disables —
   // buttons get `disabled`, non-button rows get this style. One shared look.
   const lockStyle: React.CSSProperties | undefined = busyRewrite ? { opacity: 0.45, pointerEvents: 'none' } : undefined
 
-  // ---- §8 job orchestration (create / chat / sync + every cancel path) ----
+  // ---- §8 job orchestration (chat / sync + every cancel path) ----
   const jobs = useDraftJob({
-    rev, setRev, up, agents, secretNames: secrets.map((s) => s.name),
+    rev, setRev, up,
     isEdit, auto, agentId, showToast,
-    chatText, setChatText, setNameEdit, setDescEdit,
+    chatText, setChatText,
     anyJobBusy, testLive, viewingOld,
   })
 
@@ -373,22 +372,22 @@ export default function CreateFlow() {
     setNameEdit(null)
     setDescEdit(null)
     setRev({ ...seedEmpty(agents, secrets.map((s) => s.name)), chat })
-    setChatText((cur) => cur || jobs.lastCreateRef.current)
+    setChatText((cur) => cur || jobs.firstRequestRef.current)
   }
 
   // §11 title rename — hidden while any job runs and, in edit mode, while
   // viewing anything but the draft (Restore never renames). Create mode:
-  // renaming becomes available once drafting has produced a revision — a
-  // pre-draft rename would be wiped when the create job seeds and lands.
-  const canRename = !!rev && !drafting && !busyRewrite
+  // renaming becomes available once the draft holds content — a
+  // pre-draft rename would be wiped when the first turn's rewrites land.
+  const canRename = !!rev && !busyRewrite
     && (isEdit ? rev.viewing === 'draft' : rev.spec.length > 0 || rev.steps.length > 0)
-  // Create mode: the spec `#` title stands in until the manifest name lands (§11)
+  // Create mode: the spec `#` title stands in until the `name` action lands (§11)
   const draftName = !rev ? ''
     : !isEdit && rev.name === 'New automation' && rev.spec.find((b) => b.kind === 'h1')?.text
       ? rev.spec.find((b) => b.kind === 'h1')!.text
       : rev.name
   const titleText = !rev ? ''
-    : !isEdit && rev.specBusy ? 'New automation…' : draftName
+    : !isEdit && rev.spec.length === 0 && anyJobBusy ? 'New automation…' : draftName
   const commitTitleRename = () => {
     const name = (nameEdit ?? '').trim()
     setNameEdit(null)
@@ -407,35 +406,11 @@ export default function CreateFlow() {
     up({ description })
     if (isEdit && auto) void api.patchAutomation(auto.id, { description }).catch((e) => showToast((e as Error).message))
   }
-  // Build & test panel stage label — §11 drafting states: waiting on call 1,
-  // then the workflow phase (installs are bullets in the thread, not a label)
-  const stageLabel = rev?.specBusy ? 'Waiting for the spec…' : 'Syncing the workflow…'
-
-  // §11 chat input send: with no spec or steps yet (fresh create), the message
-  // is the description and starts the create job; otherwise it's a chat job.
-  // A reply while a spec-source blockers entry is open is the clarification
-  // answer: it joins the original description and a new create job starts.
+  // §11 chat input send: every message is one §8 chat job — a fresh draft's
+  // first message included (the §8 new-automation rule: the agent writes the
+  // spec, names the automation through actions, and chains the sync).
   const sendMessage = () => {
-    if (!rev || anyJobBusy || testLive || viewingOld) return
-    const request = chatText.trim()
-    if (!request) return
-    const isCreate = !isEdit && rev.spec.length === 0 && rev.steps.length === 0
-    if (!isCreate) { void jobs.sendChat(); return }
-    setChatText('')
-    // §11 history-inert rule: only the current session's clarification counts
-    const specBlock = [...chatSinceBoundary(rev.chat)].reverse()
-      .find((e) => e.kind === 'blockers' && !e.dismissed && e.source === 'spec')
-    const entry = newEntry({ kind: 'user', text: request })
-    jobs.createEntryRef.current = entry.id
-    setRev((r) => r && ({
-      ...r,
-      // §11 auto-dismiss on reply: the answer settles the clarification
-      chat: [...r.chat.map((e) => (specBlock && e.id === specBlock.id ? { ...e, dismissed: true } : e)), entry],
-    }))
-    // NOTE: lastCreateRef is a ref — a spec-blocked create that left the page
-    // loses it, but a spec-blocked draft holds no spec and is never kept, so
-    // the entry cannot outlive the ref (pre-existing limitation).
-    void jobs.submitCreate(specBlock ? `${jobs.lastCreateRef.current.trim()}\n\n${request}` : request)
+    void jobs.sendChat()
   }
 
   // §11 Clear chat: empties the thread only — the debounced thread persist
@@ -679,11 +654,6 @@ export default function CreateFlow() {
   // ---- leave / start over / save ----
   const close = async () => {
     jobs.stopPoll()
-    // Leaving create mid-generation abandons the job — kill the harness.
-    if (!isEdit && jobs.jobIdRef.current && drafting) {
-      void api.cancelDraftJob(jobs.jobIdRef.current).catch(() => { /* already gone */ })
-      jobs.jobIdRef.current = null
-    }
     // §4.4 thread lifetime: the thread flushes on every exit path — the keep
     // branches below set draftSettled, which mutes the unmount flush.
     await flushChat()
@@ -698,7 +668,7 @@ export default function CreateFlow() {
       return
     }
     // §4.4: leaving create mode after a draft landed keeps the pending slot.
-    if (!isEdit && rev && !rev.specBusy && (rev.spec.length || rev.steps.length)) {
+    if (!isEdit && rev && (rev.spec.length || rev.steps.length)) {
       try { await api.putDraft('pending', serializeDraft(rev), agentId) } catch { /* backend restarting */ }
       draftSettled.current = true
       showToast('Draft kept — Resume draft picks it up anytime.', 3400)
@@ -782,9 +752,10 @@ export default function CreateFlow() {
 
   // ---------- render ----------
   const backLabel = isEdit ? (auto?.name ?? 'Automation') : 'Automations'
-  // §11 create empty state: no spec, no steps, nothing drafting — the chat
-  // pane shows the headline + example chips and the first message creates.
-  const isCreateEmpty = !isEdit && !!rev && rev.spec.length === 0 && rev.steps.length === 0 && !drafting
+  // §11 create empty state: no spec, no steps yet — the chat pane shows the
+  // headline + example chips (only while the thread is empty and nothing
+  // runs) and the review cards their placeholders.
+  const isCreateEmpty = !isEdit && !!rev && rev.spec.length === 0 && rev.steps.length === 0
   const inputDisabled = anyJobBusy || testLive || viewingOld
   // §11 history-inert rule: the out-of-sync note anchors only to the current
   // session's last rewrite — a settled session's rewrite never carries it.
@@ -807,7 +778,6 @@ export default function CreateFlow() {
             isCreateEmpty={isCreateEmpty}
             anyJobBusy={anyJobBusy}
             busyRewrite={busyRewrite}
-            drafting={drafting}
             testLive={testLive}
             viewingOld={viewingOld}
             inputDisabled={inputDisabled}
@@ -817,8 +787,6 @@ export default function CreateFlow() {
             chatText={chatText}
             setChatText={setChatText}
             sendMessage={sendMessage}
-            submitCreate={jobs.submitCreate}
-            lastCreateRef={jobs.lastCreateRef}
             undoDraft={undoDraft}
             runSync={() => void jobs.runSync()}
             runDraftTest={() => setTestRunSignal((s) => s + 1)}
@@ -827,7 +795,6 @@ export default function CreateFlow() {
             applyBlockersEntry={applyBlockersEntry}
             clearChat={clearChat}
             cancelChat={jobs.cancelChat}
-            cancelCreate={jobs.cancelCreate}
             cancelSync={jobs.cancelSync}
             setAgentId={setAgentId}
             up={up}
@@ -973,9 +940,9 @@ export default function CreateFlow() {
               )}
               <div style={{ flex: 1 }} />
               <HeaderActions>
-                {saveBlocked && !isCreateEmpty && (
+                {saveBlocked && !(isCreateEmpty && !anyJobBusy) && (
                   <span style={{ font: "400 12px var(--sans)", color: 'var(--amber)' }}>
-                    {rev.specBusy || rev.stepsBusy || rev.syncBusy || rev.chatBusy
+                    {rev.syncBusy || rev.chatBusy
                       ? jobStageTitle(rev)
                       : rev.specEdit ? 'Finish editing the spec first — save or cancel your edits'
                         : 'Sync and review the steps before saving'}
@@ -997,11 +964,11 @@ export default function CreateFlow() {
               </HeaderActions>
             </div>
             {/* lede: the automation's description (§4.1) — editable like the name; create mode
-                shows the static drafting lede until drafting settles. The row is
+                shows the static drafting lede until the draft holds a spec. The row is
                 height-stable: every state shares one fixed-height box. The drafting-agent
                 picker lives in the chat pane composer, not here. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, height: 26, minWidth: 0, margin: '0 0 20px' }}>
-              {!isEdit && drafting ? (
+              {!isEdit && rev.spec.length === 0 ? (
                 <p style={{
                   font: "400 13.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: 0, minWidth: 0,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -1086,7 +1053,6 @@ export default function CreateFlow() {
                 viewingOld={viewingOld}
                 testLive={testLive}
                 lockStyle={lockStyle}
-                selAgent={selAgent}
                 agents={agents}
                 secrets={secrets}
                 availAgents={availAgents}
@@ -1105,7 +1071,6 @@ export default function CreateFlow() {
                 secSecOpenEff={secSecOpenEff}
                 instrOpenEff={instrOpenEff}
                 notesOpenEff={notesOpenEff}
-                cancelStepsGen={jobs.cancelStepsGen}
                 showToast={showToast}
                 setConfirmSpecCancel={setConfirmSpecCancel}
               />
@@ -1118,14 +1083,12 @@ export default function CreateFlow() {
                   appendEntry={appendEntry}
                   isEdit={isEdit}
                   auto={auto}
-                  drafting={drafting}
                   outOfSync={outOfSync}
                   anyJobBusy={anyJobBusy}
                   busyRewrite={busyRewrite}
                   viewingOld={viewingOld}
                   syncDisabled={syncDisabled}
                   agentGap={agentGap}
-                  stageLabel={stageLabel}
                   lockStyle={lockStyle}
                   runSync={() => void jobs.runSync()}
                   flushHeldChips={jobs.flushHeldChips}
@@ -1137,13 +1100,12 @@ export default function CreateFlow() {
                   up={up}
                   liveParams={auto?.params}
                   liveConcurrency={auto ? { maxParallel: auto.maxParallel, maxQueued: auto.maxQueued } : undefined}
-                  drafting={drafting}
-                  isCreateEmpty={isCreateEmpty}
+                  drafting={!isEdit && anyJobBusy && rev.steps.length === 0}
+                  isCreateEmpty={isCreateEmpty && !anyJobBusy}
                   outOfSync={outOfSync}
                   busyRewrite={busyRewrite}
                   availAgents={availAgents}
                   pkgSecOpenEff={pkgSecOpenEff}
-                  runSync={() => void jobs.runSync()}
                   updatePkgs={(pips) => void updatePkgs(pips)}
                   installPkgs={() => void installPkgs()}
                 />

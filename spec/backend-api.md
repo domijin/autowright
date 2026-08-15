@@ -292,7 +292,7 @@ remain plain dicts (§2).
   import, status: installed | failed, version?, error? }] }` — `pip install --upgrade` for
   each named distribution in the shared directory (§6.2: wheels only, serialized); no
   manifest writes; a malformed name → 422
-- `POST /drafts` `{ mode: create|chat|sync, automationId?, text?, spec?, current?, chat?, runId?,
+- `POST /drafts` `{ mode: chat|sync, automationId?, text?, spec?, current?, chat?, runId?,
   agentId?, enabledAgents?, allowedSecrets? }` → `{ jobId }` — `chat` requires a nonempty
   `text` (422 otherwise), takes the in-editor draft as `current` (name + description + spec +
   params + steps + instructions + notes + concurrency; in chat mode with an `automationId`, absent `name`/`description`
@@ -308,24 +308,24 @@ remain plain dicts (§2).
   payload is `draft: { answer?, spec?, instructions?, notes?, actions? }` — the §8 chat call's
   response shape decides which keys are present; an `automationId` that doesn't resolve
   answers 404 (like the stale-`automationId` 404 on `/tests`) — never a silent fall-back to
-  the create-mode grant defaults below; the job's agent is the explicit `agentId` when sent,
+  the no-automation grant defaults below; the job's agent is the explicit `agentId` when sent,
   else the default agent — 404 when neither resolves to a configured agent (including the
   zero-agents case); the grant arrays, when present, override
   the stored automation's for the §8 grants context; when `enabledAgents` / `allowedSecrets`
-  is absent and no stored automation exists (create mode — no `automationId` sent), the
+  is absent and no stored automation exists (no `automationId` sent — a fresh create-flow
+  draft), the
   agents grant defaults to **all**
   configured agents and the secrets grant to **all** stored secrets — matching the all-on
-  seeds the Review page starts from; clients track progress by polling
+  seeds the Review page starts from; a chat or sync body carrying no `automationId` and no
+  `current.instructions` gets the §8 default build instructions substituted into the
+  prompt context (belt-and-braces — the editor normally seeds and sends them); clients track progress by polling
   `GET /drafts/{jobId}` → state (`status`, `stage`, live §8 `detail` line, the §8 `events`
   activity feed — each entry stage-stamped, §8; on a chat job that flipped stages, `plan` —
   the §8 pre-marker prose, set at the flip so the §11 thread lands "The plan" mid-job) +
-  validated §8 draft payload — on a create job the payload
-  carries call 1's validated spec as soon as the spec call completes (the §11 spec card renders
-  it while the steps call is still working); a `blocked` job's state is
+  validated §8 draft payload; a `blocked` job's state is
   `blocked` and it carries the §8 `blockers` list — each entry `{ reason, fix, details?,
-  kind? }`, `kind` only ever `user-action` (§8) — plus `blockedAt: spec | steps | chat` (a create job
-  blocked at the steps call keeps call 1's spec in its payload, so the §11 blockers entry can
-  amend and rebuild it; a blocker response's optional `notes.md` — §8 — rides the payload as
+  kind? }`, `kind` only ever `user-action` (§8) — plus `blockedAt: steps | chat` (`steps`
+  on a sync call; a blocker response's optional `notes.md` — §8 — rides the payload as
   `draft.notes`, applied by the editor like a chat notes rewrite); a `blocked` job whose blockers came from the §8 build-diagnosis call
   (or its deterministic fallback) additionally carries `diagnosed: true`, and `failed` is
   reserved for harness errors and crashes — a validation double-failure always ends `blocked`

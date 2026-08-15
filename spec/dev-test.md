@@ -133,8 +133,8 @@ everything finer-grained belongs to the unit/integration tiers:
 
 - onboarding on an empty home, real agent detection (fake CLI)
 - list → detail → execute → result on a seeded-via-API home
-- the create-flow journey: request → AI draft via the fake CLI through the real two-call
-  pipeline → Test draft run → Create → execute → execution page
+- the create-flow journey: request → AI draft via the fake CLI through the real §8 chat +
+  chained-sync pipeline → Test draft run → Create → execute → execution page
 - adding a config-only agent; adding a placeholder secret, then editing and deleting it;
   adding a cron trigger, seeing its humanized chip, and toggling it off
 - an execution whose step writes a result file, rendered in the execution page's result view;
@@ -184,7 +184,7 @@ deterministic under test, and the §17 createflow module (`app/src/pages/createf
 exports its pure helpers
 (`specToText`, `textToSpec`, `amendSpec`, `stepSecretNames`, `secretRefsOf`, `instrToMd`,
 `mergeDraftTriggers`, `persistChat`, `applyTestValues`, and the seed/serialization helpers
-`seedDrafting`, `seedFromPayload`, `seedFromAuto`, `serializeDraft`) and `result.tsx`
+`seedEmpty`, `seedFromPayload`, `seedFromAuto`, `serializeDraft`) and `result.tsx`
 exports `SpecMarkdown`/`Markdown` and `ext`/`fileKind` for the Vitest suite.
 
 **Selector policy.** An element an e2e test targets carries a stable `data-testid` (or is

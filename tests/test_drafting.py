@@ -1,6 +1,6 @@
 import pytest
 
-from autowright.drafting import (build_chat_prompt, build_spec_prompt, build_steps_prompt,
+from autowright.drafting import (build_chat_prompt, build_steps_prompt,
                                parse_blockers, parse_envelope, spec_as_md, validate_actions,
                                validate_chat, validate_spec, validate_steps)
 
@@ -35,7 +35,7 @@ trailing prose ignored too
 GRANTS = {"agents": [], "secrets": []}
 
 
-# ---------- call 1: the spec ----------
+# ---------- spec-document validation (chat rewrites, CLI workdirs) ----------
 
 def test_parse_and_validate_spec_good():
     files = parse_envelope(GOOD_SPEC)
@@ -68,7 +68,7 @@ def test_truncated_envelope_rejected():
         parse_envelope(GOOD_STEPS.replace("===END===", ""))
 
 
-# ---------- call 2: steps, params, triggers ----------
+# ---------- the sync call: steps, params, triggers ----------
 
 def test_parse_and_validate_steps_good():
     files = parse_envelope(GOOD_STEPS)
@@ -360,12 +360,18 @@ def test_blocker_kind_rejects_other_values():
 
 # ---------- prompts ----------
 
-def test_spec_prompt_carries_framework_instructions_and_request():
-    p = build_spec_prompt("Watch a product price", None, GRANTS)
+def test_chat_prompt_carries_new_automation_rule():
+    # §8 new-automation rule: a fresh draft's first message is an ordinary
+    # chat call — the TASK carries the fresh-draft contract (write the spec,
+    # set name/description actions, chain the sync) and pins the format with
+    # the example spec.
+    p = build_chat_prompt("Watch a product price", None, GRANTS)
     assert "automation writer inside Autowright" in p   # framework-instructions.md
-    assert "=== TASK ===\nWrite the SPEC" in p
     assert "=== USER REQUEST ===\nWatch a product price" in p
-    assert "# Track new manga chapters" in p    # the example spec in SPEC_TASK
+    task = p.split("=== TASK ===")[-1]
+    assert "A NEW automation (the SPEC above is empty)" in task
+    assert "sync: true" in task
+    assert "# Track new manga chapters" in task    # the example spec
 
 
 def test_prompts_carry_grants_yaml():
@@ -377,8 +383,8 @@ def test_prompts_carry_grants_yaml():
                          {"name": "Local", "harness": "OpenCode", "model": "gemma4:e4b"}],
               "secrets": [{"name": "MAIL_PASSWORD", "description": "Gmail app password"},
                           {"name": "CRM_API_KEY"}]}
-    for p in (build_spec_prompt("x", None, grants),
-              build_steps_prompt("sync", "# T\n\nBody.", None, grants)):
+    for p in (build_chat_prompt("x", None, grants),
+              build_steps_prompt("# T\n\nBody.", None, grants)):
         assert ("- name: Claude Code\n  description: Best for coding judgment\n"
                 "  harness: Claude Code\n  model: harness default\n"
                 "- name: Local\n  harness: OpenCode\n  model: gemma4:e4b") in p
@@ -390,39 +396,24 @@ def test_prompts_carry_grants_yaml():
 def test_prompts_carry_blocker_contract():
     # §8: framework-instructions travel with every call — blocker envelope,
     # the user-action kind, and the straightforward-first dependency policy
-    for p in (build_spec_prompt("x", None, GRANTS),
-              build_steps_prompt("sync", "# T\n\nBody.", None, GRANTS)):
+    for p in (build_chat_prompt("x", None, GRANTS),
+              build_steps_prompt("# T\n\nBody.", None, GRANTS)):
         assert "===BLOCKED===" in p
         assert "kind: user-action" in p
         assert "canonical tool" in p and "pre-flight" in p
 
 
-def test_spec_prompt_section_order():
-    # §8 call 1 (create): framework, agents, secrets, build instructions,
-    # user request, then the TASK ask — role first, task last.
-    cur = {"instructions": "Never touch the Documents folder.", "params": [], "steps": []}
-    p = build_spec_prompt("watch prices", cur, GRANTS)
-    order = [p.index("=== FRAMEWORK INSTRUCTIONS ==="), p.index("=== AVAILABLE AGENTS"),
-             p.index("=== AVAILABLE SECRETS"), p.index("=== BUILD INSTRUCTIONS"),
-             p.index("=== USER REQUEST"), p.index("=== TASK ===")]
-    assert order == sorted(order)
-
-
-def test_spec_prompt_embeds_no_step_code():
-    # §8 call 1: step code never travels in the spec call.
-    cur = {"params": [], "steps": [{"file": "01-a.py", "name": "A", "code": 'from autowright import log\nlog("old")'}]}
-    p = build_spec_prompt("also check weekends", cur, GRANTS)
-    assert "=== TASK ===\nWrite the SPEC" in p
-    assert 'log("old")' not in p
-
-
-def test_spec_prompt_carries_notes_when_present():
-    # §8 call 1: a resumed create draft's notes travel as context, so a
-    # blocker-driven re-create doesn't rediscover what an earlier round learned.
-    cur = {"params": [], "steps": [], "notes": "- The RSS feed 404s — use the sitemap."}
-    p = build_spec_prompt("track the blog", cur, GRANTS)
-    assert "=== NOTES" in p and "use the sitemap" in p
-    assert "=== NOTES" not in build_spec_prompt("track the blog", None, GRANTS)
+def test_chat_prompt_fresh_draft_shape():
+    # §8: a fresh draft's chat prompt renders an empty SPEC section and no
+    # CURRENT sections beyond the always-present concurrency — the empty spec
+    # is exactly what the new-automation rule keys on.
+    p = build_chat_prompt("watch prices", None, GRANTS)
+    assert "=== SPEC (spec.md) ===" in p
+    import re as _re
+    m = _re.search(r"=== SPEC \(spec\.md\) ===\n(.*?)(?:\n=== |\Z)", p, _re.S)
+    assert m and m.group(1).strip() == ""
+    assert "=== CURRENT parameters" not in p and "=== CURRENT step" not in p
+    assert "=== CURRENT concurrency" in p
 
 
 def test_chat_prompt_section_order_and_content():
@@ -492,24 +483,26 @@ def test_chat_prompt_section_order_and_content():
 
 
 def test_steps_prompt_embeds_spec_and_framework():
-    p = build_steps_prompt("create", "# Raw\n\nString spec body.", None, GRANTS)
+    p = build_steps_prompt("# Raw\n\nString spec body.", None, GRANTS)
     assert "automation writer inside Autowright" in p
     assert "=== TASK ===\nBuild the automation" in p
     assert "String spec body." in p
-    # §8 call 2 ends with the envelope reminder, after the SPEC
+    # a fresh draft's first build has no current implementation — no reference
+    assert "=== MODE ===" not in p
+    # §8 the sync call ends with the envelope reminder, after the SPEC
     assert p.endswith("ending with ===END=== exactly.")
 
 
-def test_steps_prompt_sync_embeds_current_files():
+def test_steps_prompt_embeds_current_files():
     cur = {"params": [{"name": "n", "kind": "number", "default": 1}],
            "steps": [{"file": "01-a.py", "name": "A", "code": 'from autowright import log\nlog("old")'}]}
-    p = build_steps_prompt("sync", "# T\n\nBody.", cur, GRANTS)
+    p = build_steps_prompt("# T\n\nBody.", cur, GRANTS)
     assert "=== MODE ===\nsync" in p
     assert 'log("old")' in p
     assert "=== CURRENT triggers" not in p  # no triggers key → no reference section
 
 
-def test_steps_prompt_sync_embeds_current_triggers():
+def test_steps_prompt_embeds_current_triggers():
     # §8: the stored trigger list travels as a reference, rendered in the
     # rule-9 dialect with off / one-shot entries marked as context only.
     cur = {"params": [], "steps": [],
@@ -517,13 +510,19 @@ def test_steps_prompt_sync_embeds_current_triggers():
                {"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": True},
                {"id": "t2", "kind": "imessage", "from": "+15551234567", "enabled": False},
                {"id": "t3", "kind": "time", "at": "2030-01-01T09:00", "enabled": True}]}
-    p = build_steps_prompt("sync", "# T\n\nBody.", cur, GRANTS)
+    p = build_steps_prompt("# T\n\nBody.", cur, GRANTS)
     assert "=== CURRENT triggers" in p
     assert "cron: 0 8 * * *" in p
     assert "imessage: '+15551234567'" in p and "'off': true" in p
     assert "time: 2030-01-01T09:00" in p
-    empty = build_steps_prompt("sync", "# T\n\nBody.", {**cur, "triggers": []}, GRANTS)
-    assert "=== CURRENT triggers" in empty and "none" in empty
+    # an empty trigger list beside existing steps still renders the section, as none
+    withsteps = {"params": [], "triggers": [],
+                 "steps": [{"file": "01-a.py", "name": "A", "code": "x = 1"}]}
+    p2 = build_steps_prompt("# T\n\nBody.", withsteps, GRANTS)
+    assert "=== CURRENT triggers" in p2 and "none" in p2
+    # a wholly empty draft (the first build) sends no reference sections at all
+    empty = build_steps_prompt("# T\n\nBody.", {**cur, "triggers": []}, GRANTS)
+    assert "=== CURRENT triggers" not in empty and "=== MODE ===" not in empty
 
 
 def test_spec_as_md_accepts_blocks_and_strings():
@@ -536,65 +535,39 @@ def test_spec_as_md_accepts_blocks_and_strings():
 
 
 def test_prompts_carry_build_instructions_in_every_mode():
-    # §8: build instructions travel with BOTH calls, in every mode.
+    # §8: build instructions travel with BOTH call shapes.
     cur = {"instructions": "Never touch the Documents folder.", "spec": "# T", "params": [], "steps": []}
-    for p in (build_spec_prompt("do the thing", cur, GRANTS),
-              build_chat_prompt("do the thing", cur, GRANTS)):
-        assert "BUILD INSTRUCTIONS" in p and "Never touch the Documents folder." in p
-    for mode in ("create", "chat", "sync"):
-        p = build_steps_prompt(mode, "# T\n\nBody.", cur, GRANTS)
+    for p in (build_chat_prompt("do the thing", cur, GRANTS),
+              build_steps_prompt("# T\n\nBody.", cur, GRANTS)):
         assert "BUILD INSTRUCTIONS" in p and "Never touch the Documents folder." in p
 
 
 def test_no_instructions_section_when_absent():
-    p = build_spec_prompt("do the thing", None, GRANTS)
+    p = build_chat_prompt("do the thing", None, GRANTS)
     assert "BUILD INSTRUCTIONS (the user's standing rules" not in p
 
 
 # ---------- fake claude CLI (tests/bin) drives the full pipeline ----------
 
-def test_fake_cli_two_phase_validates():
+def test_fake_cli_chat_then_sync_validates():
+    # §8: the create journey is a chat call (new-automation rule — spec +
+    # name/description/sync actions) followed by the chained sync call.
     from autowright import harness
 
-    spec_raw = harness.invoke({"harness": "Claude Code"},
-                              build_spec_prompt("Track my packages", None, GRANTS))
-    spec, errors = validate_spec(parse_envelope(spec_raw))
+    chat_raw = harness.invoke({"harness": "Claude Code"},
+                              build_chat_prompt("Track my packages", None, GRANTS))
+    payload, errors = validate_chat(chat_raw, parse_envelope(chat_raw))
     assert errors == []
+    assert payload["spec"][0]["kind"] == "h1"
+    assert payload["actions"]["sync"] is True
+    assert payload["actions"]["name"] == "Track my packages"
+    assert payload["actions"]["description"]
     steps_raw = harness.invoke({"harness": "Claude Code"},
-                               build_steps_prompt("create", spec["md"], None, GRANTS))
+                               build_steps_prompt(spec_as_md({"spec": payload["spec"]}),
+                                                  None, GRANTS))
     draft, errors = validate_steps(parse_envelope(steps_raw))
     assert errors == []
-    assert draft["steps"] and draft["name"] == "Track my packages"
-
-
-def test_create_job_payload_carries_spec_mid_job(monkeypatch):
-    # §11 drafting-on-Review / §19: on create, call 1's validated spec rides
-    # the job payload before the steps call runs, so the spec card can render
-    # it while the steps are still generating.
-    import time
-
-    from autowright import harness
-    from autowright.drafting import DraftJobs
-
-    jobs = DraftJobs()
-    seen = {}
-
-    def fake_invoke(agent, prompt, timeout=300, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
-        if "Write the SPEC from the USER REQUEST" in prompt:
-            return GOOD_SPEC
-        seen["mid"] = next(iter(jobs.jobs.values())).get("draft")
-        return GOOD_STEPS
-
-    monkeypatch.setattr(harness, "invoke", fake_invoke)
-    job_id = jobs.start("create", {"harness": "Claude Code"}, "Say hello", None, GRANTS)
-    for _ in range(100):
-        j = jobs.get(job_id)
-        if j["status"] in ("done", "failed", "blocked"):
-            break
-        time.sleep(0.05)
-    assert j["status"] == "done", j
-    assert seen["mid"] and seen["mid"]["spec"][0] == {"kind": "h1", "text": "Hello"}
+    assert draft["steps"]
 
 
 import time as _time
@@ -716,41 +689,21 @@ def test_progress_detail_from_streamed_markers():
     ]
 
 
-def test_progress_detail_spec_call_and_repair_prefix():
+def test_progress_detail_repair_prefix():
     from autowright.drafting import DraftJobs
 
     jobs = DraftJobs()
     job = {"id": "j2", "status": "building", "stage": "Updating the documents",
            "detail": None, "events": [], "_cancel": False}
     cb = jobs._progress_cb(job, prefix="Second try — ")
-    cb("===FILE: spec.md===\n# Title\n\n- a bullet\n")
-    assert job["detail"] == "Second try — writing the spec · 3 lines"
-    assert [e["text"] for e in job["events"]] == ["Second try — writing the spec"]
+    cb("===FILE: 01-a.py===\nx = 1\ny = 2\nz = 3\n")
+    assert job["detail"] == "Second try — writing 01-a.py · 3 lines"
+    assert [e["text"] for e in job["events"]] == ["Second try — writing 01-a.py"]
 
 
-def test_progress_create_flips_stage_on_spec_marker():
-    # §8 unified stages: a create job opens at the neutral deciding stage and
-    # flips to the documents stage when call 1's spec.md marker streams —
-    # research tool-use events before it stay stamped with the neutral stage.
-    from autowright.drafting import DraftJobs
-
-    jobs = DraftJobs()
-    job = {"id": "j3", "status": "building", "stage": "Working on the request",
-           "detail": None, "events": [], "_cancel": False}
-    cb = jobs._progress_cb(job)
-    cb("thinking about the request")
-    assert job["stage"] == "Working on the request"
-    cb("\n===FILE: spec.md===\n# Title\n")
-    assert job["stage"] == "Updating the documents"
-    assert job["events"][-1]["stage"] == "Updating the documents"
-    # a repair round never flips back
-    cb("more spec text\n")
-    assert job["stage"] == "Updating the documents"
-
-
-def test_progress_call2_notes_and_blocker_labels():
-    # §8: call 2's notes.md block reads like the chat call's ("Updating the
-    # notes"), and a streamed ===BLOCKED=== past the last marker shows the
+def test_progress_sync_notes_and_blocker_labels():
+    # §8: the sync call's notes.md block reads like the chat call's ("Updating
+    # the notes"), and a streamed ===BLOCKED=== past the last marker shows the
     # count-less "Describing a blocker".
     from autowright.drafting import DraftJobs
 
@@ -951,25 +904,23 @@ def test_chat_job_blocker_notes_ride_the_payload(monkeypatch):
     assert j["draft"] == {"notes": "- the API needs a login"}
 
 
-def test_create_steps_blocker_keeps_spec_and_notes(monkeypatch):
-    # §8: a create job blocked at the steps call keeps call 1's spec in the
-    # payload AND the blocker response's optional notes.md beside it.
+def test_sync_steps_blocker_keeps_notes(monkeypatch):
+    # §8: a sync job blocked at the steps call carries the blocker response's
+    # optional notes.md in the payload (the caller already holds the spec —
+    # a sync never changes it).
     from autowright import harness
     from autowright.drafting import DraftJobs
 
-    def fake_invoke(agent, prompt, **kw):
-        if "Write the SPEC from the USER REQUEST" in prompt:
-            return GOOD_SPEC
-        return ("===BLOCKED===\nblockers:\n  - reason: r\n    fix: f\n===END===\n"
-                "===FILE: notes.md===\n- selector .price is gone\n===END===\n")
-
-    monkeypatch.setattr(harness, "invoke", fake_invoke)
-    j = _run_job(DraftJobs(), "create", {"harness": "Claude Code"}, "say hello",
-                 None, GRANTS)
+    monkeypatch.setattr(
+        harness, "invoke",
+        lambda agent, prompt, **kw:
+        "===BLOCKED===\nblockers:\n  - reason: r\n    fix: f\n===END===\n"
+        "===FILE: notes.md===\n- selector .price is gone\n===END===\n")
+    j = _run_job(DraftJobs(), "sync", {"harness": "Claude Code"}, None,
+                 {"spec": "# T\n\nBody."}, GRANTS)
     assert j["status"] == "blocked", j
     assert j["blockedAt"] == "steps"
-    assert j["draft"]["spec"][0] == {"kind": "h1", "text": "Hello"}
-    assert j["draft"]["notes"] == "- selector .price is gone"
+    assert j["draft"] == {"notes": "- selector .price is gone"}
 
 
 def test_chat_job_user_action_blocker_rides_the_payload(monkeypatch):
@@ -1231,7 +1182,7 @@ def test_chat_prompt_carries_notes_runs_and_packages():
     bare = build_chat_prompt("x", {"spec": "# T", "params": [], "steps": []}, GRANTS)
     assert "=== NOTES" not in bare and "=== RECENT RUNS" not in bare and "=== PACKAGES" not in bare
     # call 2 sees the notes too — a sync must not retry disproved approaches
-    sp = build_steps_prompt("sync", "# T\n\nBody.", cur, GRANTS)
+    sp = build_steps_prompt("# T\n\nBody.", cur, GRANTS)
     assert "=== NOTES" in sp and "the RSS feed 404s" in sp
 
 
@@ -1254,11 +1205,11 @@ def test_draft_jobs_cancel_building_and_terminal_noop():
     assert jobs.cancel("never-existed") is False
 
 
-def test_cancel_between_calls_never_starts_next_harness_call(monkeypatch):
-    # §8 cancel semantics: a cancel that lands while call 1's response is in
-    # hand raises Cancelled out of _invoke (post-return check) — call 2 never
-    # spawns, no further events or payload writes happen, the job stays
-    # cancelled with no error.
+def test_cancel_after_call_never_starts_next_harness_call(monkeypatch):
+    # §8 cancel semantics: a cancel that lands while the chat call's response
+    # is in hand raises Cancelled out of _invoke (post-return check) — no
+    # repair/diagnosis call ever spawns, no further events or payload writes
+    # happen, the job stays cancelled with no error.
     import threading
 
     from autowright import harness
@@ -1272,12 +1223,12 @@ def test_cancel_between_calls_never_starts_next_harness_call(monkeypatch):
     def fake_invoke(agent, prompt, **kw):
         calls.append(prompt)
         in_call.set()
-        assert release.wait(5)  # hold call 1 open until the test cancels
+        assert release.wait(5)  # hold the chat call open until the test cancels
         return GOOD_SPEC
 
     monkeypatch.setattr(harness, "invoke", fake_invoke)
-    job_id = jobs.start("create", {"harness": "Claude Code"}, "Say hello",
-                        None, GRANTS)
+    job_id = jobs.start("chat", {"harness": "Claude Code"}, "Say hello",
+                        {"spec": "# T\n\nbody"}, GRANTS)
     assert in_call.wait(5)
     events_before = len(jobs.jobs[job_id]["events"])
     assert jobs.cancel(job_id) is True
@@ -1294,10 +1245,10 @@ def test_cancel_between_calls_never_starts_next_harness_call(monkeypatch):
     j = jobs.get(job_id)
     assert j["status"] == "cancelled"
     assert j["error"] is None
-    assert len(calls) == 1                       # call 2 never started
+    assert len(calls) == 1                       # no second call ever started
     assert j["draft"] is None                    # no payload write after cancel
-    # never advanced to call 2 — the buffered fake never streams a marker, so
-    # the create job stays at its neutral opening stage (§8 unified stages)
+    # the buffered fake never streams a marker, so the chat job stays at its
+    # neutral opening stage (§8 unified stages)
     assert j["stage"] == "Working on the request"
     assert len(j["events"]) == events_before     # no events after cancel
 
@@ -1323,8 +1274,8 @@ def test_cancel_before_first_spawn(monkeypatch):
         return real_pipeline(self, job, *a, **kw)
 
     monkeypatch.setattr(DraftJobs, "_pipeline", gated_pipeline)
-    job_id = jobs.start("create", {"harness": "Claude Code"}, "Say hello",
-                        None, GRANTS)
+    job_id = jobs.start("chat", {"harness": "Claude Code"}, "Say hello",
+                        {"spec": "# T\n\nbody"}, GRANTS)
     assert jobs.cancel(job_id) is True
     gate.set()
     _real_sleep(0.3)  # let the worker thread hit the pre-spawn check
@@ -1457,12 +1408,10 @@ def test_validate_steps_package_blocks_and_number_min():
 def test_empty_grants_render_literal_none_in_every_prompt():
     # §8: an unchecked agents/secrets list reaches the prompt as the literal
     # `none` — the drafting agent is told explicitly there is nothing to use.
-    spec_p = build_spec_prompt("x", None, GRANTS)
-    assert "pick the most appropriate entries yourself) ===\nnone" in spec_p
-    assert "otherwise pick by judgment) ===\nnone" in spec_p
-    steps_p = build_steps_prompt("create", "# T\n\nBody.", None, GRANTS)
-    assert "allowed only if nonempty):\nnone" in steps_p
-    assert "reference by secrets.NAME):\nnone" in steps_p
+    for p in (build_chat_prompt("x", None, GRANTS),
+              build_steps_prompt("# T\n\nBody.", None, GRANTS)):
+        assert "allowed only if nonempty):\nnone" in p
+        assert "reference by secrets.NAME):\nnone" in p
 
 
 # ---------- §8 envelope tolerance: per-block END, fences, clipping ----------
@@ -1576,7 +1525,7 @@ blockers:
 def test_drafting_calls_run_web_enabled(monkeypatch):
     # §6/§8: every drafting call passes web=True so the harness's web-read
     # tools are on at drafting time. All drafting prompts funnel through the
-    # one wrapper, so a create job (both calls) covers every shape; runtime
+    # one wrapper, so one job of each shape covers everything; runtime
     # agent.ask calls never pass the flag (see test_executor).
     from autowright import harness
     from autowright.drafting import DraftJobs
@@ -1585,14 +1534,16 @@ def test_drafting_calls_run_web_enabled(monkeypatch):
 
     def fake_invoke(agent, prompt, web=False, **kw):
         webs.append(web)
-        return GOOD_SPEC if "Write the SPEC from the USER REQUEST" in prompt \
-            else GOOD_STEPS
+        return GOOD_STEPS if "Build the automation" in prompt else GOOD_SPEC
 
     monkeypatch.setattr(harness, "invoke", fake_invoke)
-    j = _run_job(DraftJobs(), "create", {"harness": "Claude Code"}, "Say hello",
-                 None, GRANTS)
+    j = _run_job(DraftJobs(), "sync", {"harness": "Claude Code"}, None,
+                 {"spec": "# T\n\nBody."}, GRANTS)
     assert j["status"] == "done", j
-    assert len(webs) == 2 and all(webs)  # spec call + steps call, both web-on
+    j2 = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "tweak it",
+                  {"spec": "# T\n\nbody"}, GRANTS)
+    assert j2["status"] == "done", j2
+    assert len(webs) == 2 and all(webs)  # sync call + chat call, both web-on
 
 
 def test_transient_harness_error_retried_once(monkeypatch):
@@ -1973,9 +1924,8 @@ def test_prompts_carry_untrusted_input_and_web_policy_sections():
     # framework-instructions.md travels with every drafting call — the §6
     # untrusted-input and web-read policy sections must never fall out of it.
     cur = {"spec": "# T\n\nbody", "params": [], "steps": []}
-    for p in (build_spec_prompt("x", None, GRANTS),
-              build_chat_prompt("x", cur, GRANTS),
-              build_steps_prompt("create", "# T\n\nBody.", None, GRANTS)):
+    for p in (build_chat_prompt("x", cur, GRANTS),
+              build_steps_prompt("# T\n\nBody.", None, GRANTS)):
         assert "## Untrusted inputs" in p
         assert "## Reading the web while drafting" in p
 

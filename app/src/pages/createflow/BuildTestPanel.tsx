@@ -1,6 +1,6 @@
 // §11 BUILD & TEST panel — the top card of the right column, merging the
-// workflow's sync state (build zone, states 1–3) and the draft test (test
-// zone, states 4–6) into one build→test surface. Owns the test-setup state
+// workflow's sync state (build zone, states 1–2) and the draft test (test
+// zone, states 3–5) into one build→test surface. Owns the test-setup state
 // (the disclosure toggle, the test-only param values, the trigger-message
 // mock), the §8 pendingSync/pendingTest action chaining, and the run-settled
 // thread entries. Quiet when fine, loud only when blocking.
@@ -78,14 +78,12 @@ export interface BuildTestPanelProps {
   appendEntry: (e: Omit<ChatEntry, 'id' | 'at'>) => void
   isEdit: boolean
   auto: Automation | null
-  drafting: boolean
   outOfSync: boolean
   anyJobBusy: boolean
   busyRewrite: boolean
   viewingOld: boolean
   syncDisabled: boolean
   agentGap: boolean
-  stageLabel: string
   lockStyle?: React.CSSProperties
   runSync: () => void
   // §11 hold-and-flush: lands any held workflow chips when the old-version
@@ -100,8 +98,8 @@ export interface BuildTestPanelProps {
 
 export function BuildTestPanel({
   rev, up, appendEntry, isEdit, auto,
-  drafting, outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
-  agentGap, stageLabel, lockStyle, runSync, flushHeldChips, sendChat, runTestSignal,
+  outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
+  agentGap, lockStyle, runSync, flushHeldChips, sendChat, runTestSignal,
 }: BuildTestPanelProps) {
   const { executions, executionFull, go, showToast, test, beginTest } = useStore()
 
@@ -213,7 +211,7 @@ export function BuildTestPanel({
   const runTest = async (valuesOverride?: Record<string, unknown>) => {
     // §11 Build & test panel: a test always runs steps that match the spec —
     // never stale ones (out of sync) and never mid-build.
-    if (!rev || rev.steps.length === 0 || testLive || busyRewrite || outOfSync || drafting) return
+    if (!rev || rev.steps.length === 0 || testLive || busyRewrite || outOfSync) return
     try {
       // §11: with the setup section never opened, drafted §8 test values still
       // apply — the closed-section run sends the seeded values (drafted map on
@@ -270,7 +268,7 @@ export function BuildTestPanel({
   // or after the chained sync lands) and is dropped with a system chip when
   // the sync didn't — a chat-armed test never runs stale steps.
   useEffect(() => {
-    if (!rev || anyJobBusy || testLive || drafting) return
+    if (!rev || anyJobBusy || testLive) return
     if (!rev.pendingSync && !rev.pendingTest) return
     if (viewingOld) { up({ pendingSync: false, pendingTest: null }); flushHeldChips(); return }
     if (rev.pendingSync) {
@@ -289,7 +287,7 @@ export function BuildTestPanel({
     up({ pendingTest: null })
     if (values) setTestParams(applyTestValues(seedTestParams(), values)) // §11: pre-fill the panel's editors
     void runTest(values ?? undefined)
-  }, [rev, anyJobBusy, testLive, drafting, viewingOld, outOfSync]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rev, anyJobBusy, testLive, viewingOld, outOfSync]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11 test-settled thread anchor: when the tracked test finishes, a
   // run-settled system entry lands so follow-up chat has the run in context.
@@ -314,9 +312,9 @@ export function BuildTestPanel({
       <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
         <Eyebrow>BUILD &amp; TEST</Eyebrow>
       </div>
-      {/* build zone — states 1–3 only (drafting, sync in flight, out of
+      {/* build zone — states 1–2 only (sync in flight, out of
           sync); an in-sync workflow shows no indicator at all */}
-      {(drafting || rev.syncBusy || outOfSync) && (
+      {(rev.syncBusy || outOfSync) && (
       <div style={{ padding: '12px 20px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* the indicator sits in an 18px box matching the title's line-height,
@@ -326,22 +324,21 @@ export function BuildTestPanel({
               {/* §11: never a spinner here (the live surface is the chat
                   footer's action block) and never green — a faint dot
                   marks a job, amber marks out of sync */}
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: rev.syncBusy || drafting ? 'var(--text-faint)' : 'var(--amber)' }} />
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: rev.syncBusy ? 'var(--text-faint)' : 'var(--amber)' }} />
             </span>
             <span style={{
               minWidth: 0,
               font: "500 12.5px/18px var(--sans)",
-              color: rev.syncBusy || drafting ? 'var(--text-muted)' : 'var(--text)',
+              color: rev.syncBusy ? 'var(--text-muted)' : 'var(--text)',
             }}>
-              {drafting ? stageLabel
-                : rev.syncBusy
-                  ? 'Syncing the workflow…'
-                  : (rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
-                    : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
-                      : 'The workflow is out of sync — steps use a secret that isn’t allowed.')}
+              {rev.syncBusy
+                ? 'Syncing the workflow…'
+                : (rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
+                  : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
+                    : 'The workflow is out of sync — steps use a secret that isn’t allowed.')}
             </span>
           </div>
-          {!rev.syncBusy && !drafting && outOfSync && (
+          {!rev.syncBusy && outOfSync && (
             <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', margin: '2px 0 0 16px' }}>
               {rev.dirty ? 'Sync the steps to the new spec, then review them. Saving is locked until you do — nothing ships unreviewed.'
                 : agentGap ? 'Re-enable the agent, or sync the steps so they only call agents available here. Saving is locked until you do.'
@@ -363,7 +360,7 @@ export function BuildTestPanel({
       )}
       {/* §11 test zone, out of sync: the test button disabled beside the
           sync-first hint — but a still-executing test keeps its Cancel */}
-      {!rev.syncBusy && !drafting && outOfSync && (
+      {!rev.syncBusy && outOfSync && (
         <div style={{ padding: '12px 20px 14px', borderTop: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 12 }}>
           {testLive ? (
             <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
@@ -383,7 +380,7 @@ export function BuildTestPanel({
           the Test draft disclosure on the action row
           expands the test-setup section (Run test, then param editors and
           trigger message) as sub-blocks over dim dividers. */}
-      {!drafting && !rev.syncBusy && !outOfSync && (
+      {!rev.syncBusy && !outOfSync && (
         <>
           {/* §11: no build zone in sync — the header hairline opens the
               single test zone directly */}
@@ -423,7 +420,7 @@ export function BuildTestPanel({
                       </div>
                     )}
                     <div style={{ ...panelRowStyle, marginTop: 8 }}>
-                      {/* §11 state 5: Sync spec, then the Test draft
+                      {/* §11 state 4: Sync spec, then the Test draft
                           setup toggle — Run test and View run live in the
                           expanded setup section; only a live test keeps
                           View run on the action row (the setup is hidden) */}

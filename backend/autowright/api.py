@@ -1042,7 +1042,7 @@ def post_draft(body: models.DraftJobStart) -> dict:
                           or (store.agents[0]["id"] if store.agents else ""))
     # §19: an automationId that doesn't resolve answers 404 (like the
     # stale-automationId 404 on /tests) — never a silent fall-back to the
-    # create-mode grant defaults below.
+    # no-automation grant defaults below.
     auto = _auto_or_404(body.automationId) if body.automationId else None
     current = body.current.plain() if body.current is not None else None
     if auto and current is None:
@@ -1073,22 +1073,24 @@ def post_draft(body: models.DraftJobStart) -> dict:
         current["spec"] = body.spec
     # (§4.1 spelling boundary: the request model already normalized `current`'s
     # camelCase step flags to snake_case.)
-    if mode == "create" and not (current or {}).get("instructions"):
-        # §8: new automations draft against the default best-practice build
-        # instructions; the draft payload carries them back to pre-fill Review.
+    if not body.automationId and not (current or {}).get("instructions"):
+        # §8: with no automation, drafting falls back to the default
+        # best-practice build instructions — belt-and-braces; the editor
+        # normally seeds and sends them with the fresh draft.
         current = dict(current or {})
         current["instructions"] = drafting.DEFAULT_INSTRUCTIONS
     # §8/§19: in-editor grant arrays in the body win over the stored automation's —
     # the editor's live toggles are the truth while a draft is being worked on.
     enabled_ids = body.enabledAgents
     if enabled_ids is None:
-        # §19: edit/sync fall back to the stored grants; create defaults to every
-        # configured agent — the same all-enabled seed the Review page starts from.
+        # §19: with an automation, fall back to the stored grants; without one
+        # (a fresh create-flow draft), every configured agent — the same
+        # all-enabled seed the Review page starts from.
         enabled_ids = auto["enabled_agents"] if auto else [a["id"] for a in store.agents]
     allowed = body.allowedSecrets
     if allowed is None:
-        # create defaults to every stored secret — the same all-on seed the
-        # Review page's secrets card starts from
+        # no automation defaults to every stored secret — the same all-on seed
+        # the Review page's secrets card starts from
         allowed = auto["allowed_secrets"] if auto else [s["name"] for s in store.secrets]
     grants = {
         "agents": [_agent_grant(g) for g in store.agents if g["id"] in enabled_ids],

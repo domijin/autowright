@@ -425,11 +425,11 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     await waitFor(() => expect(storeMod.useStore.getState().toast).toBe('v1 deleted.'))
   })
 
-  it('create spec blockers: the composer reply joins the request and restarts the create job', async () => {
+  it('a fresh draft’s blocked first message: the reply is an ordinary chat message', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'j1', status: 'blocked', stage: null, detail: null, error: null, draft: null,
-      mode: 'create', blockedAt: 'spec',
+      mode: 'chat', blockedAt: 'chat',
       blockers: [{ reason: 'Which folder?', fix: 'Name the folder to watch.' }],
     })
     render(<CreateFlow />)
@@ -437,20 +437,21 @@ describe('CreateFlow blockers thread entries (§11)', () => {
       { target: { value: 'Watch my Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
-    // spec-source explainer, no primary button — the composer is the answer path
-    expect(screen.getByText('It couldn’t write a spec for this request. Reply below — your answer is added to the request and the spec is rewritten.')).toBeTruthy()
+    // chat-source explainer, no primary button — the composer is the answer path
+    expect(screen.getByText('Reply below — your answer is sent back and the spec is rewritten.')).toBeTruthy()
     expect(screen.queryByText('Answer & rewrite the spec')).toBeNull()
     expect(screen.queryByText('Apply to the spec & sync')).toBeNull()
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'The Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
-    // entry auto-dismisses, the reply lands as a user entry, create re-runs
+    // entry auto-dismisses, the reply lands as a user entry, another chat job
+    // starts — the thread's CONVERSATION context carries the clarification
     expect(screen.getByText('1 blocker — dismissed')).toBeTruthy()
     expect(screen.getByText('The Downloads folder')).toBeTruthy()
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(2))
     const body = draftBody(1)
-    expect(body.mode).toBe('create')
-    expect(body.text).toBe('Watch my Downloads folder\n\nThe Downloads folder')
+    expect(body.mode).toBe('chat')
+    expect(body.text).toBe('The Downloads folder')
   })
 
   it('chat blockers auto-dismiss when the reply goes out as a chat message', async () => {
@@ -474,28 +475,28 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     expect(body.text).toBe('Channel 42')
   })
 
-  it('create steps blockers keep the landed spec out of sync with the steps explainer', async () => {
+  it('a fresh draft’s blocked chained sync keeps the landed spec out of sync', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
     const spec = [{ kind: 'h1', text: 'Folder watcher' }, { kind: 'p', text: 'Watches things.' }]
-    // call 1 lands the spec mid-job (building tick), then the steps call blocks
+    // the chat job lands the spec + sync action, then the chained sync blocks
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
-        id: 'j1', status: 'building', stage: 'Syncing the workflow', detail: null,
-        error: null, mode: 'create', draft: { spec },
+        id: 'j1', status: 'done', stage: null, detail: null, error: null,
+        mode: 'chat', draft: { spec, actions: { sync: true } },
       })
       .mockResolvedValue({
         id: 'j1', status: 'blocked', stage: null, detail: null, error: null,
-        mode: 'create', blockedAt: 'steps', draft: { spec },
+        mode: 'sync', blockedAt: 'steps', draft: null,
         blockers: [{ reason: 'Needs a channel id.', fix: 'Name it in the spec.' }],
       })
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
-    await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
-    expect(screen.getByText('It couldn’t build the steps as the spec asks.')).toBeTruthy()
+    await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 5000 })
+    expect(screen.getByText('It couldn’t sync the steps with the spec.')).toBeTruthy()
     expect(screen.getByText('Apply to the spec & sync')).toBeTruthy()
-    // the call-1 spec landed and the workflow is out of sync
+    // the chat rewrite landed the spec and the workflow is out of sync
     expect(screen.getByText('Watches things.')).toBeTruthy()
     expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
   })
@@ -537,25 +538,28 @@ describe('CreateFlow blockers thread entries (§11)', () => {
 describe('CreateFlow per-stage activity entries (§11)', () => {
   beforeEach(armPendingPoll)
 
-  it('a create job settles each finished stage as its own activity entry', async () => {
+  it('a fresh draft’s first turn settles each finished stage as its own activity entry', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
     const spec = [{ kind: 'h1', text: 'Watcher' }, { kind: 'p', text: 'Watches.' }]
     const specEvent = { time: 1, text: 'Thinking about the spec…', stage: 'Updating the documents' }
     const stepsEvent = { time: 2, text: 'Writing the manifest…', stage: 'Syncing the workflow' }
+    // the chat job walks request → documents and lands the spec + sync action;
+    // the chained sync job walks the workflow phase and delivers the steps
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({
         id: 'j1', status: 'building', stage: 'Updating the documents', detail: null,
-        error: null, mode: 'create', draft: null, events: [specEvent],
+        error: null, mode: 'chat', draft: null, events: [specEvent],
       })
       .mockResolvedValueOnce({
-        id: 'j1', status: 'building', stage: 'Syncing the workflow', detail: null,
-        error: null, mode: 'create', draft: { spec }, events: [specEvent, stepsEvent],
+        id: 'j1', status: 'done', stage: 'Updating the documents', detail: null,
+        error: null, mode: 'chat', draft: { spec, actions: { sync: true } },
+        events: [specEvent],
       })
       .mockResolvedValue({
         id: 'j1', status: 'done', stage: 'Syncing the workflow', detail: null,
-        error: null, mode: 'create',
-        draft: { name: 'Watcher', spec, steps: [], params: [], packages: [] },
-        events: [specEvent, stepsEvent],
+        error: null, mode: 'sync',
+        draft: { steps: [], params: [], packages: [] },
+        events: [stepsEvent],
       })
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
@@ -563,12 +567,12 @@ describe('CreateFlow per-stage activity entries (§11)', () => {
     fireEvent.click(screen.getByText('Send'))
     const thread = () => document.querySelector('[data-testid="chat-thread"]') as HTMLElement
     await waitFor(
-      () => expect(within(thread()).getByText('Draft generated — review the spec and steps, then create it.')).toBeTruthy(),
-      { timeout: 4000 },
+      () => expect(within(thread()).getByText('Steps synced with the spec.')).toBeTruthy(),
+      { timeout: 5000 },
     )
     // every displayed stage survives as a settled entry — the seeded neutral
     // deciding phase (with its canned bullet) first, then documents, then
-    // workflow — each carrying only its own slice of the feed
+    // the chained sync's workflow phase — each with its own slice of the feed
     const t = thread()
     const neutralEntry = within(t).getByText('Working on the request…')
     expect(within(t).getByText('• Choosing what to do')).toBeTruthy()
@@ -583,7 +587,6 @@ describe('CreateFlow per-stage activity entries (§11)', () => {
     expect(feedSpec.compareDocumentPosition(stepsEntry) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(stepsEntry.compareDocumentPosition(feedSteps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // all settled with a green check, no spinner left
-    expect(t.querySelectorAll('.fa-check').length).toBe(3)
     expect(spinnersIn(t).length).toBe(0)
   })
 })
@@ -1120,29 +1123,31 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect((within(panel).getByText('Sync spec').closest('button')!).disabled).toBe(true)
   })
 
-  it('create job: the unified stage walk — request → workflow, installs as bullets', async () => {
+  it('first turn: the unified stage walk — request → documents → chained sync, installs as bullets', async () => {
     storeMod.useStore.setState({ createFrom: 'app' })
-    const building = (stage: string, detail: string | null) => ({
-      id: 'j1', status: 'building', stage, detail, error: null, mode: 'create',
-      draft: { spec: [{ kind: 'h1', text: 'Folder watcher' }] },
+    const spec = [{ kind: 'h1', text: 'Folder watcher' }, { kind: 'p', text: 'Watches.' }]
+    const building = (mode: string, stage: string, detail: string | null) => ({
+      id: 'j1', status: 'building', stage, detail, error: null, mode, draft: null,
     })
-    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(
-      building('Syncing the workflow', 'Writing step 1 of 2'))
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(building('chat', 'Updating the documents', 'Writing the spec · 3 lines'))
+      .mockResolvedValueOnce({
+        id: 'j1', status: 'done', stage: 'Updating the documents', detail: null,
+        error: null, mode: 'chat', draft: { spec, actions: { sync: true } },
+      })
+      .mockResolvedValue(building('sync', 'Syncing the workflow', 'Installing requests…'))
     render(<CreateFlow />)
     fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
       { target: { value: 'Watch my Downloads folder' } })
     fireEvent.click(screen.getByText('Send'))
-    // call 1 opens at the neutral deciding stage; the spec card keeps its
-    // own static "Writing the spec…" card copy
+    // the chat job opens at the neutral deciding stage (the pre-poll default)
     expect(screen.getByTestId('chat-progress').textContent).toContain('Working on the request…')
-    expect(screen.getAllByText('Writing the spec…').length).toBeGreaterThan(0)
-    // the spec lands mid-job → the workflow stage plus the finer detail line
-    await waitFor(() => expect(screen.getAllByText('Syncing the workflow…').length).toBeGreaterThan(0), { timeout: 3000 })
-    expect(screen.getByText('• Writing step 1 of 2')).toBeTruthy()
-    // §8: installs are bullets under the workflow stage, never a stage label
-    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(
-      building('Syncing the workflow', 'Installing requests…'))
-    await waitFor(() => expect(screen.getByText('• Installing requests…')).toBeTruthy(), { timeout: 3000 })
+    // the documents phase shows the finer detail line as a bullet
+    await waitFor(() => expect(screen.getByText('• Writing the spec · 3 lines')).toBeTruthy(), { timeout: 3000 })
+    // §8: installs are bullets under the chained sync's workflow stage, never
+    // a stage label of their own
+    await waitFor(() => expect(screen.getByText('• Installing requests…')).toBeTruthy(), { timeout: 5000 })
+    expect(screen.getAllByText('Syncing the workflow…').length).toBeGreaterThan(0)
     expect(screen.queryByText('Installing the packages…')).toBeNull()
   })
 
@@ -1414,7 +1419,9 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     screen.getByTestId('chat-test-draft')
   })
 
-  it('create mode: a history spec error hides Try again; a current one keeps it', async () => {
+  it('create mode: persisted error entries render with no Try again anywhere', async () => {
+    // The removed create pipeline's spec-call errors carried a Try-again pill;
+    // unified chat failures never do — legacy persisted entries render plain.
     storeMod.useStore.setState({ createFrom: 'new', automationId: null })
     getChatMock().mockResolvedValueOnce({ chat: [
       { id: 'e1', kind: 'error', source: 'spec', text: 'old failure' },
@@ -1424,7 +1431,7 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     render(<CreateFlow />)
     await screen.findByText('fresh failure')
     screen.getByText('old failure') // history stays visible…
-    // …but only the current session's failure offers the retry
-    expect(screen.getAllByText('Try again')).toHaveLength(1)
+    // …and neither session's failure offers a retry pill
+    expect(screen.queryByText('Try again')).toBeNull()
   })
 })

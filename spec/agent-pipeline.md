@@ -4,10 +4,12 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 
 ## 8. Agent drafting pipeline (decided)
 
-Drafting is a **two-call pipeline**: the backend first asks the agent to write the **spec**,
-then — in a second, independent call — to build the **steps, parameters, and triggers** from
-that spec. Each mode makes the calls it needs (see Modes below); `chat` makes one call of its
-own shape and `sync` makes only the steps call. Both calls carry the same two
+Drafting is **one conversational pipeline with two call shapes**: every editor turn is a
+**chat call** — one call whose response shape decides the outcome (answer, rewrites,
+actions, or a blocker) — and the **sync call** builds the steps, parameters, and triggers
+from the spec. There is no separate create pipeline and no create job mode: the first
+message of a fresh draft is an ordinary chat call (the **new-automation rule** below) whose
+`sync: true` action chains the first steps build. Both call shapes carry the same two
 instruction files, invoke the chosen agent harness headless through a per-harness adapter
 (`claude -p`, `gemini -p`, `codex exec`, `opencode run` — with `--model ollama/<model>` for a
 local-model agent), and
@@ -62,14 +64,17 @@ also served to the create/edit page via §19 `GET /instructions`):
   data, tolerate old or missing shapes through `memory.load` defaults, and upgrade old data
   in place on first load; the §6.3 automatic pre-version snapshot is the restore path when
   a migration goes wrong, never a license to skip one),
-  all five §6 policy sections, and the **editing-sessions section**: once an automation
-  exists, requests arrive as chat calls carrying the current automation (name + description,
-  parameters, spec, steps, notes, runs); beyond the spec / build-instructions / notes
+  all five §6 policy sections, and the **editing-sessions section**: every request arrives
+  as a chat call carrying the current draft (name + description,
+  parameters, spec, steps, notes, runs — a fresh draft arrives with an empty spec, the
+  new-automation rule below); beyond the spec / build-instructions / notes
   rewrites, the TASK's actions file lets the agent sync, test (with test-only parameter
   values), rename the automation, and rewrite its one-line description — keep both honest
   when a change makes them stale — while grants and save/create stay the user's alone.
   The section carries the **action policy** (the when-to-request rules under
-  "actions.yaml" below), so deferral phrasing like "don't build yet" is honored.
+  "actions.yaml" below), so deferral phrasing like "don't build yet" is honored, and the
+  **new-automation rule** (the chat call's fresh-draft contract below), so the first
+  message of a fresh draft yields a spec, a name, and a chained build in one turn.
   The section also carries the **staged-changes contract**: the chat can stage stored
   parameter values (`param_values`), trigger edits (`triggers` ops), and concurrency
   settings (`concurrency`) — all apply to the
@@ -95,54 +100,47 @@ also served to the create/edit page via §19 `GET /instructions`):
   step retries by default, `infinite_retries` + `no_timeout` for persistent/listening steps
   with durable state in `memory/` — the §8 rule-8 retry policy, and keep the automation's
   name and description accurate — update them via the chat actions when a change makes them
-  stale). In `create` mode, when
-  the user gave none, the backend seeds `instructions` from this file; the validated create draft
-  carries `instructions` back so the Review card arrives pre-filled — the user edits or deletes the
-  rules freely, and they version like any instructions.
+  stale). A fresh create draft's Build-instructions card arrives pre-filled with this
+  file's text — §11 seeds it from §19 `GET /instructions` when the create flow opens, so
+  the rules travel with every chat/sync call like any instructions and the user edits or
+  deletes them freely (they version like any instructions). Belt-and-braces, the backend
+  substitutes this file's text into the prompt context when a call's `current` carries no
+  instructions and no `automationId` was sent (a stale client or bare CLI call).
 
-**Modes:** `create` (both calls, from the user's description) · `chat` (one call — a §11 chat
-message about the in-editor draft: answer a question, rewrite the spec / build instructions /
-notes, and/or request follow-up actions (sync, test, rename); the **response shape decides**
-— see "Chat call" below. A spec rewrite leaves the steps untouched and a later `sync`
-rebuilds them — unless the response's actions request the sync) · `sync` (call 2 only:
-regenerate steps to match the provided spec; the spec itself must not change).
+**Modes:** `chat` (one call — a §11 chat message about the in-editor draft: answer a
+question, rewrite the spec / build instructions / notes, and/or request follow-up actions
+(sync, test, rename); the **response shape decides** — see "Chat call" below. A spec
+rewrite leaves the steps untouched and a later `sync` rebuilds them — unless the response's
+actions request the sync. A fresh draft's first message is a chat call like any other —
+the new-automation rule below) · `sync` (the steps call: regenerate steps to match the
+provided spec; the spec itself must not change). There is no `create` mode — the removed
+two-call create pipeline is subsumed by a chat call that rewrites the spec and chains the
+sync.
 
-**Call 1 — write the spec** (`create` only; skipped on `sync` — the chat call below shares
-its response envelope and validation). Step code never travels in
-this call; the prompt just asks to update the spec from the user request. Both calls open with
-`framework-instructions.md` (the role) and close with the task material — role first, task
+**Prompt conventions & grants context** (both call shapes). Every call opens with
+`framework-instructions.md` (the role) and closes with the task material — role first, task
 last. Every prompt section opens with a `=== NAME ===` header line — one dialect throughout,
 visually distinct from the response envelope's `===FILE: …===`/`===END===` markers (spaces
-around the name, plain words). Sections in order:
+around the name, plain words). The **grants context** travels in every call, two sections:
 
-1. `framework-instructions.md` (verbatim).
-2. **Available agents** — the enabled agents as a yaml list, one entry per agent with `name`
-   (falling back to the harness name), `description` (the §4.7 description, omitted when empty),
-   `harness`, and `model` (the literal `harness default` when the §4.7 model is null). An empty
-   list renders the literal `none`. The header states its intent for the spec call: these
-   agents can power judgment steps when the automation is later built — the spec must not
-   promise AI judgment when the list is empty — and states the §8 selection rule (choices
-   named in the spec or build instructions win; otherwise the drafting agent's own judgment).
-   The same yaml rendering applies to the call-2 grants context.
-3. **Available secrets** — the allowed secrets as a yaml list, one entry per secret with
-   `name` and `description` (the §4.8 description, omitted when empty) — never values, memory
-   contents, or execution logs; empty list renders `none`. The header states the same
-   selection rule for secrets. For both grant lists the
-   §19 body's grant arrays (the in-editor toggles) win over the stored automation's; absent
-   both, the drafting agent's own entry and no secrets.
-4. **Build instructions** — the user's standing rules (or the seeded default), context only;
-   the agent never returns this file.
-5. **NOTES** — the §4.1 notes document when nonempty (a resumed create draft can hold one
-   from an earlier steps call), headed as the agent's own working knowledge — context only,
-   so a blocker-driven re-create doesn't rediscover what a previous round learned.
-6. **USER REQUEST** — the description.
-7. **TASK directive** — write the SPEC from the USER REQUEST and return exactly one file
-   block, the full `spec.md` (markdown, `#` title first, plain words, no code/yaml/file
-   names). Ends with a short example spec (a `#` title, two `##` sections with
-   bullets) pinning the expected format and tone.
+- **Available agents** — the enabled agents as a yaml list, one entry per agent with `name`
+  (falling back to the harness name), `description` (the §4.7 description, omitted when empty),
+  `harness`, and `model` (the literal `harness default` when the §4.7 model is null). An empty
+  list renders the literal `none`. The header states its intent: these
+  agents can power judgment steps when the automation is built — a spec must not
+  promise AI judgment when the list is empty — and states the §8 selection rule (choices
+  named in the spec or build instructions win; otherwise the drafting agent's own judgment).
+- **Available secrets** — the allowed secrets as a yaml list, one entry per secret with
+  `name` and `description` (the §4.8 description, omitted when empty) — never values, memory
+  contents, or execution logs; empty list renders `none`. The header states the same
+  selection rule for secrets. For both grant lists the
+  §19 body's grant arrays (the in-editor toggles) win over the stored automation's; absent
+  both, the §19 defaults apply (the stored automation's grants; with no automation, all
+  configured agents and all stored secrets — the Review page's all-on seeds).
 
-Response: exactly one file block, `spec.md`. Validation: block present with no extras; must
-start with an `# title`; must have body content. The parsed §5 blocks become the draft's spec.
+**Spec-document rules** (every `spec.md` a response returns — the chat rewrite): markdown,
+`#` title first, plain words — no code, yaml, or file names. Validation: must start with an
+`# title` and have body content; the parsed §5 blocks become the draft's spec.
 
 **Chat call** (`chat` mode — the §11 chat column's one job shape). One call, and the backend
 writes nothing — every returned change is applied by the editor like the matching manual
@@ -150,8 +148,7 @@ edit. The chat call is the editor's universal agent surface: with the context be
 answers questions, rewrites the spec / build instructions / notes, and requests follow-up
 actions (sync, test, rename) — including reading a failed or succeeded run's output and
 fixing the automation from it (there is no separate analysis call). Prompt sections in
-order: `framework-instructions.md`, the call-2 grants context (available agents + available
-secrets, same yaml lists), the build instructions, **NOTES** — the §4.1 notes document when
+order: `framework-instructions.md`, the grants context (above), the build instructions, **NOTES** — the §4.1 notes document when
 nonempty ("your own working knowledge from earlier sessions — trust it before rediscovering"),
 **CONVERSATION** — the most recent §11 thread entries **after the newest §4.4 boundary
 marker** (entries at or before a `boundary: true` entry belong to a settled draft session
@@ -192,7 +189,7 @@ contract:
 - **A question** → answer in plain markdown prose for the user — no file blocks, no
   envelope, no yaml — grounded in the spec, steps, and runs above.
 - **A change** → file blocks, any subset, in one response: `spec.md` (the full updated
-  spec — call 1's rules: `#` title first, plain words, keep everything the request doesn't
+  spec — the spec-document rules above, keeping everything the request doesn't
   touch unchanged; never return step files — the steps are rebuilt from the spec later),
   `instructions.md` (the full updated build instructions), `notes.md` (the full updated
   notes document — record discovered selectors, endpoints, quirks, and approaches that
@@ -208,6 +205,15 @@ contract:
 - The blocker envelope stays reserved for genuine impossibility and for fixes that are
   user action outside the app (`kind: user-action` — e.g. a missing desktop dependency a
   failed run reveals; Blocker response below).
+- **A fresh draft — the new-automation rule.** When the CURRENT spec is empty (a new
+  automation, the §11 create flow's first message), the USER REQUEST is the automation's
+  description: write the full `spec.md` from it (the spec-document rules above; never
+  promise AI judgment when the agents list is empty), suggest the automation's identity
+  through the `name` and `description` actions, and request `sync: true` so the steps
+  build in the same turn — unless the message is a question or defers the build (the
+  action policy below). The TASK pins the spec format and tone with a short example spec
+  (a `#` title, two `##` sections with bullets). Clarifications and blockers follow the
+  same rules as any other chat turn — there is no special first-message flow.
 
 **RECENT RUNS section** — assembled by the backend from the §5 execution store, never sent
 by the editor: the most recent settled executions of this automation/draft, newest first,
@@ -278,7 +284,9 @@ action — the final commit stays the user's (§11 hard boundaries; staged `para
 
 **Action policy** — when the agent requests `sync`/`test` (stated in
 `framework-instructions.md`'s editing-sessions section, so the agent honors deferral
-phrasing): request `sync: true` when the message reads as a complete change request;
+phrasing): request `sync: true` when the message reads as a complete change request — a
+fresh draft's first message normally is one (the new-automation rule: spec plus chained
+build in one turn);
 omit it when the user signals more changes are coming or asks for a spec-only edit
 ("don't build the steps yet", "first change X — I'll add more after") — a deferred
 build is never invisible: the §11 out-of-sync state, the rewrite entry's inline Sync
@@ -311,7 +319,7 @@ an empty response ("The agent returned an empty answer.") — no envelope parsin
 repair round there. A response containing a `===FILE:` marker parses per the §8 envelope
 rules; the allowed block names are exactly `spec.md`, `instructions.md`, `notes.md`,
 `actions.yaml` — anything else (a step file, say) is a validation error; `spec.md`
-validates like call 1; `actions.yaml` must parse as a yaml mapping matching the schema
+validates per the spec-document rules above; `actions.yaml` must parse as a yaml mapping matching the schema
 above; prose before the first marker becomes the payload's `answer`. The truncation rule
 and the failure policy's repair rounds (then build diagnosis) apply — and a chat repair
 is **per-block**: every validation error attributes to exactly one block (an unknown
@@ -350,7 +358,8 @@ Same timeout cap, same cancel semantics, same app-log logging as every drafting 
 chat job never touches the draft container, the dirty flag, or any stored file — the
 editor applies the whole outcome (§11).
 
-**Call 2 — build the steps** (`create`/`sync`; `sync` starts here with the provided spec — a
+**The sync call — build the steps** (mode `sync` — the §11 chained sync a chat response
+arms, the panel's Sync now, a repair-block apply: always against the provided spec — a
 `spec` in the §19 body wins over the stored version's). Prompt sections in order:
 
 1. `framework-instructions.md` (verbatim).
@@ -362,9 +371,9 @@ editor applies the whole outcome (§11).
 
    ```
    ===FILE: manifest.yaml===
-   name: Suggested automation name   # create only (ignored on sync)
-   description: One-line description        # create only (ignored on sync) — user-owned after create (§4.1)
    note: Version note for the history menu (§4.4)
+                                     # name/description are never manifest keys — identity
+                                     # changes only through the chat call's actions (§4.1)
    triggers:                         # rule-9 dialect; omit the whole key when the automation
      - cron: "0 8 * * *"             # needs no trigger (manual/menu bar only)
      - { cron: "0 9 * * 1", timezone: Asia/Tokyo }   # timezone optional — only when the spec names a zone
@@ -412,27 +421,29 @@ editor applies the whole outcome (§11).
    hand is omitted — never guessed — and the test falls back to that param's default.
    Secret-like values (passwords, tokens) never appear here (they belong in §4.8 secrets).
    The TASK directive states this policy beside the shape.
-3. **Grants** — one section: enabled agents and allowed secrets, both rendered as the same
-   yaml lists as call 1 (`agent: true` steps allowed only if the agent list is nonempty;
+3. **Grants** — one section: enabled agents and allowed secrets, both rendered as the
+   grants-context yaml lists above (`agent: true` steps allowed only if the agent list is nonempty;
    secrets referenced by `secrets.NAME`), closing with the selection rule: when the SPEC or
    build instructions name which agent or secret a step should use, follow them; otherwise
    pick the most appropriate granted entries by judgment.
-4. **Build instructions** — as in call 1.
+4. **Build instructions** — the user's standing rules (or the seeded default), context
+   only; the agent never returns this file.
 5. **Notes** — the §4.1 notes document when nonempty, headed as the agent's own working
    knowledge from earlier sessions (dead ends included), so a sync never retries what a
    previous build or test already disproved.
-6. **Mode** — `create`: include a suggested `name`; `sync`: current param
-   definitions and step scripts travel as reference ("rewrite them to match the SPEC, changing
-   no more than the spec demands"), along with the automation's current trigger list rendered
+6. **Current implementation (reference)** — the draft's current param definitions and step
+   scripts, when it holds any ("rewrite them to match the SPEC, changing no more than the
+   spec demands" — a fresh draft's first build holds none and simply omits them), along
+   with the automation's current trigger list rendered
    in the rule-9 dialect (`off` state and one-shot `time` entries marked — reference only), so
    the agent sees what already exists before judging a trigger missing (§19: the editor's
    `current.triggers` wins; absent that, the backend attaches the stored list).
-7. **SPEC** — call 1's validated `spec.md` (`create`) or the provided spec (`sync`).
+7. **SPEC** — the provided spec.
 8. **Closing envelope reminder** — one final line restating the response shape (return
    `manifest.yaml` plus one file block per step, no `spec.md`, end with `===END===`), so the
    format sits at the end of the prompt as well as in the TASK directive near the top.
 
-Call 2 may additionally return one optional `notes.md` block — the full updated §4.1 notes
+The sync call may additionally return one optional `notes.md` block — the full updated §4.1 notes
 document recording what it learned while building (any markdown; validated only as present
 text). It rides the draft payload as `notes` and the editor applies it exactly like a chat
 notes rewrite (§11).
@@ -448,8 +459,8 @@ notes rewrite (§11).
    A response with no `===END===` at or after the last `===FILE:` marker is treated as
    truncated and invalid. The blocker envelope's yaml body follows the same rule: it ends at
    the first `===END===` **after** the `===BLOCKED===` marker.
-2. Call 2 must return `manifest.yaml` and every file listed in `steps` — a `spec.md` block in
-   call 2 is a validation error (the spec is already settled); an optional `notes.md` block
+2. The sync call must return `manifest.yaml` and every file listed in `steps` — a `spec.md` block in
+   its response is a validation error (the spec is already settled); an optional `notes.md` block
    (above) is allowed and excluded from the step-file matching.
 3. `manifest.yaml` is schema-valid: kinds from §4.2 only, every param carries a default, steps
    nonempty, `steps[].file` ↔ file blocks match 1:1, filenames follow `NN-name.py` ordering.
@@ -557,12 +568,11 @@ Validation: YAML with a nonempty `blockers` list; every entry carries a nonempty
 anything else is a validation error feeding the repair round; no file blocks alongside it,
 with one exception: the response may carry one optional `notes.md` block **after** the
 envelope's `===END===` — the full updated §4.1 notes document (validated only as present
-text, like call 2's success-path notes), so what the agent learned before hitting the
+text, like the sync call's success-path notes), so what the agent learned before hitting the
 blocker survives the blocked build. The instructions require it to start from the NOTES it
 was given and keep everything still true — a blocker's notes extend the document, never
 restart it. Any other file block beside a blocker envelope stays a validation error. The
-notes ride the job payload inside `draft` (`draft.notes`, beside the create-mode spec when
-call 1 landed one) and the editor applies them exactly like a chat notes rewrite ("Notes
+notes ride the job payload inside `draft` (`draft.notes`) and the editor applies them exactly like a chat notes rewrite ("Notes
 updated." chip, never out-of-sync); the spec and every other document stay untouched — a
 blocker can never rewrite them.
 `fix` and `details` are markdown — §11 renders them through the shared renderer, so
@@ -601,7 +611,8 @@ response, the validation errors, and a TASK asking the agent to diagnose why the
 couldn't be built and answer with **exactly one blocker envelope** (the same `===BLOCKED===`
 format and parser as every blocker envelope; `fix` holds the spec change or clarification
 that would let the build succeed; no repair round for the diagnosis call itself). A valid
-envelope settles the job `blocked` at the failing call (`blockedAt: spec | steps`); when the
+envelope settles the job `blocked` at the failing call (`blockedAt: steps` on a sync,
+`blockedAt: chat` on a chat call); when the
 diagnosis call itself fails or returns anything else, the job still settles `blocked` with one
 deterministic fallback blocker — reason "The draft didn't build — the agent's response failed
 validation twice." (the same twice/N-times/single-attempt wording rule as the detail line),
@@ -628,15 +639,11 @@ process. The job's `stage` tracks the pipeline through **one unified stage set**
 §11 three-phase turn model: "Working on the request" (deciding/research) → "Updating the
 documents" (writing spec/instructions/notes) → "Syncing the workflow" (the steps call plus
 any package installs). Each job kind enters at the phase where its real work starts and
-shows only the phases it runs: a **create** job opens at "Working on the request", flips
-to "Updating the documents" when call 1's `spec.md` marker streams (the same marker-flip
-rule as chat; a buffered harness never flips), and moves to "Syncing the workflow" for
-call 2; a **sync** job opens directly at "Syncing the workflow"; a **chat** job runs the
+shows only the phases it runs: a **chat** job runs the
 first two (the flip fires only when a rewrite marker streams — see the chat call above)
-and any chained sync is its own job. Package installs are **not a stage**: the §6.2
-ensure's `Installing <pip spec>…` lines land as events under "Syncing the workflow". On
-a create job, call 1's validated spec rides the job payload as soon as the spec call completes
-(§19), so the §11 spec card can render it while the steps call is still working. Every
+and any chained sync is its own job; a **sync** job opens directly at "Syncing the
+workflow". Package installs are **not a stage**: the §6.2
+ensure's `Installing <pip spec>…` lines land as events under "Syncing the workflow". Every
 invocation's full prompt and raw response are logged to the app log as a §5 BEGIN/END-framed
 block (never to execution logs) for debugging.
 
@@ -647,13 +654,14 @@ stream-json --include-partial-messages --verbose` (text deltas as they generate;
 text still comes from the terminal `result` event, falling back to the joined deltas), and the
 other CLIs are read line-by-line from stdout as they print.
 The drafting job scans the accumulated partial text for the envelope's `===FILE:` markers and
-sets `detail` accordingly: `Thinking…` before the first marker; `Writing the spec · N lines`
-during call 1; `Writing the manifest — name, triggers, parameters, step list` and then
-`Writing step i of n — NN-name.py · N lines` during call 2 (`i of n` comes from the
+sets `detail` accordingly: `Thinking…` before the first marker; the chat call's per-marker
+messages (the chat-call section above — `Writing the spec · N lines` and kin);
+`Writing the manifest — name, triggers, parameters, step list` and then
+`Writing step i of n — NN-name.py · N lines` during the sync call (`i of n` comes from the
 already-streamed manifest block once it parses as yaml; without it, just the file name), and
-`Updating the notes · N lines` for a call-2 `notes.md` block (same label as the chat call's,
+`Updating the notes · N lines` for a sync-call `notes.md` block (same label as the chat call's,
 so the fact reads the same in every phase); a streamed `===BLOCKED===` past the last file
-marker shows `Describing a blocker` (count-less, both drafting calls and the chat call — the
+marker shows `Describing a blocker` (count-less, both call shapes — the
 agent is writing its blocker envelope, not an answer); on a
 repair round, `The response didn't validate — asking for a corrected one…` and then the same
 messages prefixed with the round's try label — `Second try — ` on the first repair round,

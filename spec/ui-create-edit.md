@@ -85,8 +85,8 @@ applies unchanged; the chat pane never collapses.
     the §8 `events` feed (grouped by each event's `stage` stamp). A cancelled job leaves
     no entry for its in-flight stage — its request text returns to the input instead —
     but stages that already settled stay in the thread. **A shown block is never
-    removed:** the neutral "Working on the request" stage settles on every chat and
-    create turn, feed or no feed — the live entry displays that title from the moment
+    removed:** the neutral "Working on the request" stage settles on every chat turn,
+    feed or no feed — the live entry displays that title from the moment
     of send (the pre-poll default), so the editor seeds the stage into the settle list
     even when the backend flipped before the first poll observed it. **And a block is
     never a bare title:** a stage whose stream left no milestones settles with its
@@ -137,8 +137,7 @@ applies unchanged; the chat pane never collapses.
     Font Awesome class); an entry without one (older persisted threads, backend-seeded
     entries) falls back to `fa-circle-info`. The map, by operation: sync
     ("Steps synced with the spec.", "Test skipped — the steps aren't in sync with the
-    spec.") `fa-rotate`; create completion ("Draft generated — review the spec and
-    steps, then create it.") `fa-wand-magic-sparkles`; instructions ("Build
+    spec.") `fa-rotate`; instructions ("Build
     instructions updated.") `fa-list-check`; notes ("Notes updated.")
     `fa-note-sticky`; identity ("Renamed to `<name>`.", "Description updated.")
     `fa-pen`; parameters ("Parameter "X" staged — applies when you save.", "Value for
@@ -231,9 +230,8 @@ applies unchanged; the chat pane never collapses.
   inside the pane; the pill shrinks and truncates its label with an ellipsis rather
   than overlap the send button when the agent name is long) lives in the composer — the agent is a property of the message being
   sent (it answers chat, writes the spec, generates the steps), so it is chosen where the
-  message is written. The picker disables only while a rewrite is in flight (a §8 sync or
-  chat job — the inputs lock below); during a create job it stays enabled, but picking then
-  only fires the toast "Wait for the current rewrite to finish first." and changes nothing.
+  message is written. The picker disables while a rewrite is in flight (a §8 sync or
+  chat job — the inputs lock below).
   Otherwise picking an agent shows the confirmation toast "`<name> · <model>` now writes
   the spec and steps here." and, in edit mode, marks the draft touched. The send button is
   a quiet secondary affordance (Enter is primary): borderless, pill-height — the same
@@ -253,8 +251,11 @@ applies unchanged; the chat pane never collapses.
   "Back to the draft to edit or ask." (and while a test executes, "Wait for the test to
   finish." — the busy hint below). Placeholders stay on one line — they truncate with an
   ellipsis rather than wrap when the pane is at its narrow end (the auto-grow sizes to
-  typed content only, so a wrapped placeholder would clip). Sending with no spec yet starts the §8 **create** job with the text as the
-  description; otherwise it starts a §8 **chat** job with the in-editor draft as `current`
+  typed content only, so a wrapped placeholder would clip). **Every send starts a §8
+  `chat` job** — one process, no separate create pipeline: a fresh draft's first message
+  simply travels with an empty draft, and the §8 new-automation rule has the agent write
+  the spec, name the automation through the `name`/`description` actions, and normally
+  chain the first steps build with `sync: true`. The job carries the in-editor draft as `current`
   (spec + steps + instructions + notes), the in-editor grant arrays, and the recent thread
   (§19 `chat` — only entries after the newest §4.4 boundary marker: a settled draft
   session's conversation never reaches the agent, §8) — answers and rewrites match what's
@@ -346,15 +347,14 @@ applies unchanged; the chat pane never collapses.
   - a **blocked** job appends a blockers entry (source: chat).
 
   **Thread progress entry — the page's only live job surface.** While any §8 job is in
-  flight (create, chat, or sync, however started), a **transient agent-activity entry**
+  flight (chat or sync, however started), a **transient agent-activity entry**
   renders at the bottom of the thread, styled as a left-aligned agent block: a spinner,
   the job's stage label — the §8 unified stage set, "Working on the request…" /
   "Updating the documents…" (the mid-job marker flip) / "Syncing the workflow…" — each
-  job showing only the phases it runs (§8: create opens at the first and flips like
-  chat; sync opens at the third; package installs are bullets under the third, never a
+  job showing only the phases it runs (§8: a chat job runs the first two;
+  sync opens at the third; package installs are bullets under the third, never a
   stage of their own); no title ever carries agent · model attribution —
-  the composer's picker names the agent; the Build & test panel's coarse
-  state-1 label reads "Waiting for the spec…" while call 1 writes), and an **activity feed**
+  the composer's picker names the agent), and an **activity feed**
   beneath it — the **current stage's** §8 `events` lines as dim history (oldest first,
   each single-line with an ellipsis; the §8 per-job event cap bounds the list) above the
   live §8 `detail` line; when `detail` extends the newest
@@ -380,7 +380,7 @@ applies unchanged; the chat pane never collapses.
   yanked back down. Meanwhile the composer keeps its two-row shape — the textarea stays
   visible but disabled, the agent picker stays in place — and in the toolbar row the send
   button is replaced by a **Cancel** button at the same pill height
-  (`DELETE /drafts/{jobId}`; cancelling a chat/create job returns the request text to the
+  (`DELETE /drafts/{jobId}`; cancelling a chat job returns the request text to the
   input for editing, sync-cancel semantics under Dirty gating below). A composer cancel
   (the button or Esc) also moves focus to the re-enabled input with the caret at the end,
   and the restored text sizes the box through the ask-box auto-grow — editing the request
@@ -455,43 +455,38 @@ applies unchanged; the chat pane never collapses.
   entries with it; the draft documents, the dirty/out-of-sync state, and the session's
   "Previously resolved" list are untouched, so no sync or save gate is bypassed.
 
-**Drafting on Review.** The first chat message starts the §8 create job; the review pane
-renders in a drafting state and fills in as the pipeline delivers, driven by the job's
-`stage` polled from `GET /drafts/{jobId}`:
+**The first build on Review.** A fresh draft's first chat message is an ordinary §8 chat
+turn — the new-automation rule: the chat job lands the spec rewrite, the `name` /
+`description` actions, and normally arms the chained sync that builds the steps, with the
+same apply order and hold-and-flush choreography as every other turn. There is no create
+job and no separate drafting state — while the first turn runs:
 
-- **Title row** — name shows the placeholder "New automation…" until the spec lands, then the
-  spec's `#` title as the provisional name; call 2's manifest `name` replaces it. The Start
-  over ghost cancels any in-flight job, deletes the pending slot's draft (the thread stays,
-  behind the "Draft discarded." boundary marker — Thread lifetime above; the editor
-  refetches it so the marker shows), and
-  returns the editor to the create empty state with the description back in the input.
-- **Spec card** — force-open, static "Writing the spec…" line (agent label, no spinner —
-  the live surface is the thread progress entry). The moment call 1
-  validates, the spec renders — while the steps are still generating — and is readable and
-  editable right away.
-- **Right column** (steps, triggers, parameters, packages) — static placeholder cards: plain
-  text, no spinner and no stage label, one line per card — "Steps appear here once the build
-  finishes." / "Triggers appear here once the build finishes." / "Parameters appear here once
-  the build finishes." / "Packages appear here once the build finishes.".
+- **Title row** — name shows the placeholder "New automation…" until the draft holds a
+  spec, then the spec's `#` title as the provisional name; the response's `name` action
+  replaces it (the §8 new-automation rule has the agent set one). The Start over ghost
+  cancels any in-flight job, deletes the pending slot's draft (the thread stays, behind
+  the "Draft discarded." boundary marker — Thread lifetime above; the editor refetches it
+  so the marker shows), and returns the editor to the create empty state with the
+  description back in the input.
+- **Review cards** — while a §8 job is in flight and the draft holds no steps yet, the
+  right-column cards (steps, triggers, parameters, packages) show static placeholder
+  lines: plain text, no spinner and no stage label, one line per card — "Steps appear here
+  once the build finishes." / "Triggers appear here once the build finishes." /
+  "Parameters appear here once the build finishes." / "Packages appear here once the
+  build finishes.". The spec card keeps its ordinary states: empty until the chat settle
+  lands the rewrite, then rendered — readable and editable — while the chained sync
+  builds the steps.
 - **Live progress** — the thread progress entry (Input above) is the only live drafting
-  surface: the §8 stage label with the activity feed beneath it (recent §8 `events` as dim
+  surface: the §8 stage labels with the activity feed beneath (recent §8 `events` as dim
   history over the live `detail` line), so a minutes-long call never looks stuck and web
-  reads / retries stay visible. The spec card shows its static "Writing the spec…" line
-  while call 1 writes, and the Build & test panel shows only the coarse stage label (state
-  1 under the panel's spec below). No detail (a non-streaming harness) leaves just the
+  reads / retries stay visible. No detail (a non-streaming harness) leaves just the
   stage label.
-- **Editing while the steps generate** — any spec / build-instruction / chat-rewrite / grant
-  change cancels the in-flight steps call (`DELETE /drafts/{jobId}`), keeps the landed spec,
-  and marks the workflow out of sync; the Build & test panel rebuilds the steps. Catching a
-  bad spec early costs nothing.
 - **Failures** — a `failed` job means a harness error or crash (§8: a validation
   double-failure never ends `failed` — it settles `blocked` with diagnosed blockers, handled
-  under Blockers below). A spec-call or chat-call failure renders in the thread as a
-  red-tinted error entry with the §8 failure message and, for a spec-call failure, a
-  **Try again** action (new create job, same description — the text also returns to the
-  input). A steps-call failure renders in the Steps card
-  with the failure message and **"Rebuild the steps"**, which runs a §8 `sync` against the
-  landed spec.
+  under Blockers below). A failed chat job renders in the thread as a red-tinted error
+  entry with the §8 failure message — the user resends or rephrases from the composer. A
+  failed chained sync leaves the landed spec with the workflow out of sync — the panel's
+  Sync now rebuilds the steps (an empty-steps draft can always rebuild; never a dead end).
 - **Saving** — blocked while any §8 job is in flight (Dirty gating below); a create draft
   cannot save until steps exist and are in sync.
 
@@ -505,12 +500,11 @@ the agent refusing) instead headlines "The build failed — your AI suggests the
 an entry whose blockers are all §8 `kind: user-action` instead headlines "Your AI needs
 you to do something first".
 Beneath it an explanatory line at the body scale, flush left (a message-block
-paragraph, never indented under the header), by source: spec call — "It couldn't write a spec for this
-request. Reply below — your answer is added to the request and the spec is rewritten.";
-chat — "Reply below — your answer is sent back and the spec is rewritten."; steps call —
-"It couldn't build the steps as the spec asks."; sync — "It couldn't sync the steps with
-the spec." (user-action entries drop the source explainer — the blocker text itself says
-what to do). The blockers themselves render as **agent output, not editable cards**:
+paragraph, never indented under the header), by source:
+chat — "Reply below — your answer is sent back and the spec is rewritten."; sync —
+"It couldn't sync the steps with the spec." (user-action entries drop the source explainer —
+the blocker text itself says what to do; entries persisted by the removed create pipeline —
+source `spec` or `steps` — render with the chat and sync explainers respectively). The blockers themselves render as **agent output, not editable cards**:
 per blocker, the **Reason** / **How to fix** / **Details** texts render through the
 shared §4.5 Markdown renderer (compact variant, thread type scale above) under small
 eyebrow labels — install instructions read as
@@ -520,14 +514,14 @@ answers through the composer like any other message. Each blockers entry closes 
 left-aligned resolution row (ghost/primary buttons — the entry's real controls, exempt
 from the turn action row's pill styling) — a quiet **Dismiss** plus, by source and kind:
 
-- **Spec call** (create) and **chat** — the clarification case: no primary button. The
+- **Chat** — the clarification case: no primary button. The
   user replies in the composer; **sending any message auto-dismisses the entry** (the
-  question is answered — stated gating below). On a spec-call block the reply is appended
-  to the original description and a new create job starts ("`description` + blank line +
-  `reply`"); on a chat block the reply goes out as an ordinary chat message — the thread
+  question is answered — stated gating below). The reply goes out as an ordinary chat
+  message — the thread
   already carries the blocker entry into the agent's §8 CONVERSATION context, so the
-  agent rewrites with the answer in hand.
-- **Steps call** (create) and **blocked `sync`** — primary **"Apply to the spec & sync"**
+  agent rewrites with the answer in hand (a fresh draft's blocked first message works
+  the same way — the reply completes the request through the CONVERSATION context).
+- **Blocked `sync`** — primary **"Apply to the spec & sync"**
   (disabled while any §8 job is in flight or an old version is viewed; Dismiss is never
   gated). It writes each blocker into the
   in-editor spec under a `## Constraints & resolutions` section (created on first use,
@@ -539,22 +533,22 @@ from the turn action row's pill styling) — a quiet **Dismiss** plus, by source
   take is visible.
 - **Any blocker with §8 `kind: user-action`** — the Mac isn't ready, the automation is
   fine: the entry offers **Dismiss only** (never "Apply to the spec & sync", even on a
-  steps/sync block — there is nothing to amend). The blocker body carries the agent's
+  sync block — there is nothing to amend). The blocker body carries the agent's
   instructions (what to install or start, why, a clickable download link, the offer of
   step-by-step help); the user acts on them, then replies or re-runs. A mixed entry
   (user-action and ordinary blockers together) keeps the source's primary button — it
   applies only the ordinary blockers' resolutions.
 
-Auto-dismiss on reply: sending a chat/create message from the composer marks open
-**spec/chat-source** blockers entries dismissed — the reply answers the clarification
+Auto-dismiss on reply: sending a message from the composer marks open
+**chat-source** blockers entries dismissed — the reply answers the clarification
 (deliberately even when the message is unrelated: Dismiss is non-destructive and the
-entry stays readable as its one-line summary). Steps/sync entries stay open — their
+entry stays readable as its one-line summary). Sync entries stay open — their
 Apply button remains useful until a sync lands.
 
 Dismiss collapses the entry to a one-line muted summary ("N blockers — dismissed";
 singular "1 blocker — dismissed"; led by a faint `fa-ban` glyph, left-aligned like all
 agent output) and, for
-steps/sync blocks, leaves the workflow out of sync with the spec editable and the panel
+sync blocks, leaves the workflow out of sync with the spec editable and the panel
 showing out of sync. A completed sync collapses any pending blockers entry the same way —
 its blockers describe steps that no longer exist. No automatic loop cap — the cycle is
 user-driven and Start over/Dismiss always exits.
@@ -592,8 +586,8 @@ name). Either way a rename never marks the workflow out of sync or gates Save: n
 user-owned identity (§4.1), not versioned content. The rename affordance hides while a
 drafting/sync/agent-rewrite job is in flight and, in edit mode, while viewing anything but
 the draft in the Version menu (Restore never renames). In create mode the usual
-provisional-name flow (spec `#` title, then the manifest name) still runs — renaming becomes
-available once drafting has finished.
+provisional-name flow (spec `#` title, replaced by the response's `name` action) still
+runs — renaming is available whenever no §8 job is in flight.
 Lede line, under the title: the automation's `description` (§4.1). (The drafting-agent picker
 lives in the chat pane composer, not here.) The description is editable in place with the same
 pattern as the name (always-visible pencil as the only click target, single-line input,
@@ -602,10 +596,10 @@ viewing an old version). The lede row is height-stable: the rendered text and th
 input live in one fixed-height row, so entering or leaving description edit never shifts the page
 below. A
 blank commit clears the description (it is optional); with no description the line shows the
-muted empty state "No description yet — press the pencil to add one." Create mode: until drafting has
-finished, the lede instead reads the static drafting lede "Read what your AI wrote. Change
-anything — nothing executes until you create it."; once drafting settles it becomes the
-editable description. Edit mode: a description edit applies immediately through the §19 PATCH (like
+muted empty state "No description yet — press the pencil to add one." Create mode: until the
+draft holds a spec, the lede instead reads the static drafting lede "Read what your AI wrote. Change
+anything — nothing executes until you create it."; once a spec lands it becomes the
+editable description (the §8 `description` action normally fills it on the first turn). Edit mode: a description edit applies immediately through the §19 PATCH (like
 the name — independent of the draft); create mode: it updates the draft's `description`, persists
 with the §4.4 pending slot, and lands on Create. Sync never touches name or description (§8: both
 are create-only manifest keys). When an execution is live during an edit, a cyan pulsing banner
@@ -652,8 +646,7 @@ in-card notices (grant warnings, failed-test status) and the expanded test-param
 editors enter with
 `.ad-anim-item`; thread entries enter the same way:
 - **Spec** — collapsible card (fully-clickable header row like the other cards; defaults open on create — it is
-  the drafting surface — and on edit; force-open while the spec is writing
-  or being edited, and the Edit/Cancel/Save
+  the drafting surface — and on edit; force-open while being edited, and the Edit/Cancel/Save
   buttons + body hide when collapsed; collapsed, a faint one-line hint shows in their
   place — "What the automation should do, in plain words. The AI regenerates the steps from
   this document when it changes." — and clicking it expands the card, same as the other
@@ -773,9 +766,7 @@ editors enter with
   saves directly; check-then-uncheck is a no-op; unchecking a grant steps use locks saving, and
   either re-checking it (instant, no sync) or a sync (steps rewritten without it) unlocks.
   Checking an agent shows a passive hint toast ("`<agent>` is now available to steps — Sync
-  with spec if the steps should be rewritten to use it."). One exception: a grant toggle while
-  the steps are still generating cancels the in-flight steps call (see above) and therefore
-  marks the workflow out of sync — the kept spec no longer has finished steps. While viewing an
+  with spec if the steps should be rewritten to use it."). While viewing an
   old version, grant gaps never lock Restore — permissions are not versioned (§5) and a vX step
   needing a now-revoked grant fails at execution time instead; the cards still warn. An old
   version is browsed read-only: the spec card's Edit button and the thread's undo row
@@ -785,7 +776,7 @@ editors enter with
   state lives in the **Build & test panel** (its own section below) at the top of the right
   column, **above** the Steps card rather than inside it, because a sync rewrites the steps and
   the parameter definitions, not just the step list. Outside a sync the panel's sync button is disabled
-  (never hidden) while any other §8 job is in flight, while drafting, while viewing an old
+  (never hidden) while any other §8 job is in flight, while viewing an old
   version, while a draft test is executing (below), and while the steps list AND the spec
   are both empty — a spec-only draft (steps
   generation was cancelled by an edit, or a resumed spec-only pending draft) must always be
@@ -809,7 +800,7 @@ editors enter with
   rewriting the steps, and while an agent spec rewrite is in flight. The Steps card header carries no in-sync badge (no "in sync with
   spec" check) — sync state lives only in the panel. The composer's
   **Cancel** button cancels the in-flight sync (`DELETE /drafts/{jobId}`) no matter
-  how it was started (the panel, a repair-block apply, "Rebuild the steps"): the steps and spec
+  how it was started (the panel, a repair-block apply, a chat-armed pending sync): the steps and spec
   are left untouched and the workflow returns to its pre-sync state, announced by a toast
   (never a system chip) — "Sync stopped — the workflow is still out of sync." when it was
   out of sync when the sync started, "Sync stopped — nothing changed." when it wasn't (an
@@ -838,7 +829,7 @@ editors enter with
   "Executes even when
   the app is closed. Ask the AI in chat to change these, or use the automation page —
   chat changes apply when you save." No hands-on editing here (the detail page keeps the
-  §9.2 editor): the list shows, in create mode, call 2's drafted triggers plus any chat
+  §9.2 editor): the list shows, in create mode, the chained sync's drafted triggers plus any chat
   ops applied on top (the ones
   v1 gets); in edit mode the saved triggers until a chat op or sync changes them, then
   the staged list — the §4.3 trigger-merge
@@ -847,7 +838,7 @@ editors enter with
   new, stored non-cron and `source: user` triggers surviving), with chat `triggers` ops
   applied in place (§8) — what saving will store. Empty: "No triggers —
   executes only via Execute now and the menu bar." **Trigger-setup reminder:** when a
-  settled create or sync leaves the workflow reading the trigger message with no message
+  settled sync leaves the workflow reading the trigger message with no message
   trigger to deliver one — some step's code references `trigger_payload` while this card's
   trigger list holds no discord/imessage entry (§8 rule 9: the agent never invents a
   channel id or sender handle; it omits the trigger, and the user adds it on the
@@ -856,7 +847,7 @@ editors enter with
   message, but no message trigger is set up — tell your AI the channel or sender details,
   or add one on the automation page after
   saving." right after the job's outcome entries. It appends only when the settling job
-  introduced the gap (the pre-job draft didn't qualify — a fresh create always counts),
+  introduced the gap (the pre-job draft didn't qualify — a fresh draft's first build always counts),
   so repeated syncs over an unchanged gap never repeat the reminder.
 - **PARAMETERS · YOUR AI ASKED FOR THESE** card — display-only in **both** create and edit
   mode, with a "READ-ONLY HERE" tag whenever the draft has params: each row shows the draft
@@ -980,8 +971,8 @@ editors enter with
   these Python packages for the steps. They install automatically — nothing for you to run."
   Empty state (like the Parameters card's): "No extra packages — the steps use only the
   built-in libraries." While drafting, the card shows its static placeholder line like
-  Triggers/Parameters (Drafting on Review above). In edit mode the page checks statuses once on load
-  (§19 `POST /packages/check`); during a create/sync job the card fills from the job's draft
+  Triggers/Parameters (The first build on Review, above). In edit mode the page checks statuses once on load
+  (§19 `POST /packages/check`); during a sync job the card fills from the job's draft
   payload statuses (§8). An install failure never blocks saving — executions self-heal (§7) —
   so the card carries the warning without gating Save.
   **Updates (§6.2 semantics):** on load the page also asks PyPI once per package list
@@ -1021,48 +1012,44 @@ editors enter with
   so testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
   space runs out — a panel button is never clipped.
   **Layout.** The header row holds only the `BUILD & TEST` eyebrow, never a button. In
-  states 1–3 (drafting, sync in flight, out of sync) a **build zone** renders below it:
+  states 1–2 (sync in flight, out of sync) a **build zone** renders below it:
   the indicator dot + status line, the explainer line beneath it indented to the status
   text's left edge, and the sync control right-aligned at the zone's top — accent-primary
-  **Sync now** while out of sync, a faint disabled text button while drafting or syncing;
+  **Sync now** while out of sync, a faint disabled text button while syncing;
   disabled per Dirty gating (including while its own sync
   runs — cancelling lives in the composer's Cancel button), never hidden — with the **test
-  zone** under a hairline. In the in-sync states (4–6) the build zone disappears and the
+  zone** under a hairline. In the in-sync states (3–5) the build zone disappears and the
   panel is a **single test zone** under the header hairline; sync access stays as a faint
   **Sync spec** text button riding the test zone's action row (the same §8 `sync`
   call on demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
   test zone owns every test control — the test button never sits in the header: the test
   button with its hint / outcome / progress and their action rows, laid out per state
-  below. Both zones share the card's 20 px side padding. States, first match wins:
-  1. **Drafting** (create job in flight) — the coarse label ("Waiting for the
-     spec…" while call 1 works, then "Syncing the
-     workflow…") as static text over a plain faint dot (no spinner). The live `detail` line
-     lives in the thread progress entry
-     (Drafting on Review above), and the other right-column cards show their static
-     placeholders.
-  2. **Sync in flight** — static line "Syncing the workflow…"
+  below. Both zones share the card's 20 px side padding. (There is no drafting state —
+  during a chat job the panel keeps its current state with its controls disabled per the
+  inputs lock, and the live surface is the thread progress entry.) States, first match wins:
+  1. **Sync in flight** — static line "Syncing the workflow…"
      over a faint dot; the live `detail` line lives in the thread progress entry and the
      **Cancel** in the composer (cancel semantics under Dirty gating above).
-  3. **Out of sync** — build zone: amber dot, the reason line and saving-is-locked
+  2. **Out of sync** — build zone: amber dot, the reason line and saving-is-locked
      explainer (Dirty gating above), primary **Sync now**; the test zone shows the test
      button disabled beside the muted hint "Sync first — a test executes the steps as
      generated from the spec." — a test always runs steps that match the spec, never stale
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
-  4. **In sync, test executing** — the live status line, progress bar, and the action row
+  3. **In sync, test executing** — the live status line, progress bar, and the action row
      Cancel + the disabled faint **Sync spec** (below) + View run; the test-setup
      section stays hidden while the test executes.
-  5. **In sync, test settled** — the outcome line over the action row faint **Sync with
+  4. **In sync, test settled** — the outcome line over the action row faint **Sync with
      spec** / **Test draft** and, on failure, **Analyze failure**, which sends
      the canned analyze chat message (below). Test draft is the same setup toggle as
-     state 6 — reopening shows the values the last test used — and **View run** lives
+     state 5 — reopening shows the values the last test used — and **View run** lives
      only inside the setup section's run row, not on the action row.
-  6. **In sync, never tested** — one action row: the faint **Sync spec** directly
+  5. **In sync, never tested** — one action row: the faint **Sync spec** directly
      beside the muted **Test draft** setup toggle — always side by side, nothing
      between them — with the plain-words status-and-side-effects line — "In sync with
      the spec. A test executes the real steps on this Mac — emails send, files move;
      memory is a scratch copy." — wrapping below the buttons when space runs out.
-  The test-setup section (below) renders only in the in-sync states (4–6) and never
+  The test-setup section (below) renders only in the in-sync states (3–5) and never
   while a test is executing. **Run test** is additionally gated on steps existing and no
   §8 job being in flight (inputs-lock above); the setup toggle disables under the same
   inputs-lock.
@@ -1109,7 +1096,7 @@ editors enter with
     editor per param (§4.2 kinds), prefilled in edit mode with the automation's current
     values (draft default when a param is new) and in create mode with the draft
     defaults — and, over that base in both modes, the draft's **drafted test values**
-    (the §8 call-2 manifest `test_values`, riding the create/sync payload as
+    (the §8 sync-call manifest `test_values`, riding the sync payload as
     `testValues`): the agent that just built the steps entered them, so they are the
     freshest signal, and the user edits them freely like any prefill. The values ride
     the §19 `paramValues` body field and apply to this test
@@ -1118,7 +1105,7 @@ editors enter with
     (stored values / draft defaults, drafted test values on top), exactly like
     executing the draft.
     **Drafted test values are draft state:** kept on the editor's working copy, replaced
-    whenever a later create or sync payload carries a `testValues` map (kept when it
+    whenever a later sync payload carries a `testValues` map (kept when it
     doesn't — a name no current param matches simply seeds nothing), covered by the
     Draft-undo snapshot, persisted with the draft as the §4.4 draft-only `test_values`
     key (a kept draft resumes with them), and gone when the draft settles — they ride

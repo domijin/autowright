@@ -78,11 +78,11 @@ export function chatSinceBoundary(chat: ChatEntry[]): ChatEntry[] {
 // the composer's picker already names the agent, and naming it in one title
 // only would read as if a different agent handled the other jobs.
 export function jobStageTitle(r: Rev): string {
-  // §8 unified stage set — the live backend stage drives the title. Chat and
-  // create jobs open at the neutral deciding phase and flip to the documents
-  // phase on the first rewrite marker; every steps call (create's call 2,
-  // sync) is the workflow phase. Package installs are bullets, never a title.
-  if (r.chatBusy || r.specBusy) {
+  // §8 unified stage set — the live backend stage drives the title. A chat
+  // job opens at the neutral deciding phase and flips to the documents phase
+  // on the first rewrite marker; the sync call is the workflow phase.
+  // Package installs are bullets, never a title.
+  if (r.chatBusy) {
     return r.genStage === 'Updating the documents'
       ? 'Updating the documents…' : 'Working on the request…'
   }
@@ -224,12 +224,6 @@ export interface Rev {
   genDetail: string | null
   // §8 activity feed: the newest event texts (thread progress entry's dim history)
   genEvents: string[]
-  // §11 drafting-on-Review (create): call-1/call-2 in-flight flags drive the
-  // spec-card spinner and the right-column skeletons; blockers and spec-call
-  // failures land as thread entries (§11 Blockers).
-  specBusy: boolean
-  stepsBusy: boolean
-  stepsErr: { msg: string; detail?: string[] } | null
   // §11 "Previously resolved": the session's applied resolutions, stamped onto
   // new blockers entries so a fix that didn't take stays visible.
   resolved: string[]
@@ -257,8 +251,6 @@ const revDefaults = {
   syncBusy: false, chatBusy: false,
   pkgBusy: false, genStage: null as string | null, genDetail: null as string | null,
   genEvents: [] as string[],
-  specBusy: false, stepsBusy: false,
-  stepsErr: null as Rev['stepsErr'],
   resolved: [] as string[],
   lastTest: null as DraftTest | null,
   viewing: 'draft' as Rev['viewing'],
@@ -266,7 +258,8 @@ const revDefaults = {
 }
 
 // §11: the editor mounts on the create empty state — empty thread, placeholder
-// cards; the first chat message starts the §8 create job (seedDrafting below).
+// cards, the default build instructions pre-filled; the first chat message is
+// an ordinary §8 chat job (the new-automation rule).
 export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
   return {
     ...revDefaults,
@@ -280,13 +273,6 @@ export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
   }
 }
 
-// §11 drafting-on-Review: the review pane empties the moment the create job
-// starts — the spec card spins on call 1 and the right column shows skeletons
-// until call 2 delivers. The thread survives (the caller carries it over).
-export function seedDrafting(agents: Agent[], secretNames: string[]): Rev {
-  return { ...seedEmpty(agents, secretNames), specBusy: true }
-}
-
 export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: string[]): Rev {
   return {
     ...revDefaults,
@@ -297,7 +283,7 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
     testValues: d.testValues ?? null,
     packages: d.packages ?? [],
     triggers: d.triggers ?? [],
-    // Backend seeds instructions from default-build-instructions.md; the §19
+    // §8: a fresh draft pre-fills from default-build-instructions.md; the §19
     // shared draft serializer answers "" when the container holds none.
     instructions: d.instructions || instructionCache.defaultBuild,
     notes: d.notes ?? '',

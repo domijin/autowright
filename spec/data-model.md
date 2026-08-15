@@ -418,8 +418,9 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list —
   each blocker `{ reason, fix, details?, kind? }`, `kind` only ever the literal
   `user-action` (§8 blocker response) —
-  (`source`: chat | spec | steps | sync — which call produced it; `spec` is the create-flow
-  spec call, §11 — `error` entries from that call carry the same `source`), `system` a
+  (`source`: chat | sync — which call produced it; the legacy values `spec` and `steps`,
+  written by the removed create pipeline, still render — like chat and sync respectively,
+  §11 — and `error` entries may carry a legacy `source` the same way), `system` a
   quiet status chip, `error` a red failure entry (a failed §8 job's message, §11) — persisted
   so a later chat's CONVERSATION context still names the failure. The §11 thread progress
   entry (live job progress) is editor state only, never persisted.

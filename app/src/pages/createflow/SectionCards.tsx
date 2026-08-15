@@ -205,7 +205,6 @@ export interface LeftColumnProps {
   viewingOld: boolean
   testLive: boolean
   lockStyle?: React.CSSProperties
-  selAgent: Agent | null
   agents: Agent[]
   secrets: SecretMeta[]
   availAgents: Agent[]
@@ -224,18 +223,17 @@ export interface LeftColumnProps {
   secSecOpenEff: boolean
   instrOpenEff: boolean
   notesOpenEff: boolean
-  cancelStepsGen: () => boolean
   showToast: (msg: string, ms?: number) => void
   setConfirmSpecCancel: (v: boolean) => void
 }
 
 export function LeftColumn({
   rev, up, fw, isEdit, isCreateEmpty, busyRewrite, viewingOld, testLive, lockStyle,
-  selAgent, agents, secrets, availAgents, agentStepIdx,
+  agents, secrets, availAgents, agentStepIdx,
   agWarn, agNone, agNotEnabled, agMissing, agFallbackIdx,
   secWarn, secNotAllowed, secMissing, secRefs,
   specOpenEff, agSecOpenEff, secSecOpenEff, instrOpenEff, notesOpenEff,
-  cancelStepsGen, showToast, setConfirmSpecCancel,
+  showToast, setConfirmSpecCancel,
 }: LeftColumnProps) {
   // §11 Secrets card New secret modal — a secret saved here is auto-allowed.
   const [secretModal, setSecretModal] = useState(false)
@@ -251,11 +249,11 @@ export function LeftColumn({
       <SectionCard
         eyebrow="SPEC"
         open={specOpenEff}
-        // §11: inert while the card is force-open writing or editing
-        inert={rev.specEdit || rev.specBusy}
+        // §11: inert while the card is force-open being edited
+        inert={rev.specEdit}
         onToggle={(o) => up({ specSecOpen: o })}
         hint="What the automation should do, in plain words. The AI regenerates the steps from this document when it changes."
-        right={specOpenEff && !rev.specBusy && (!rev.specEdit ? (
+        right={specOpenEff && (!rev.specEdit ? (
             <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
             <button
               // §11: an old version is browsed read-only — editing
@@ -266,16 +264,11 @@ export function LeftColumn({
               onClick={(e) => {
                 e.stopPropagation()
                 if (busyRewrite || viewingOld || testLive) return
-                // §11: starting a spec edit while the steps are still
-                // generating cancels the steps call — sync rebuilds later.
-                const genCancelled = cancelStepsGen()
                 const t = specToText(rev.spec)
                 up({
                   instrDraft: null, instrEdit: false, notesDraft: null, notesEdit: false,
                   specText: t, specTextOrig: t, specEdit: true,
-                  ...(genCancelled ? { stepsBusy: false, dirty: true } : {}),
                 })
-                if (genCancelled) showToast('Step generation stopped — sync the steps when you finish editing.', 4200)
               }}
             >
               Edit
@@ -311,16 +304,7 @@ export function LeftColumn({
             </div>
           ))}
       >
-        {/* §11 drafting-on-Review: call 1 in flight — static text only;
-            the live surface is the chat footer's action block */}
-        {rev.specBusy ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '46px 20px 50px' }}>
-            <span style={{ font: "500 13px var(--sans)", color: 'var(--text-muted)' }}>Writing the spec…</span>
-            <span style={{ font: "500 11px var(--mono)", color: 'var(--text-muted)' }}>
-              {selAgent ? `${agName(selAgent)} · ${dispModel(selAgent)}` : 'No agent'}
-            </span>
-          </div>
-        ) : rev.specEdit ? (
+        {rev.specEdit ? (
           <>
             <div className="ad-scrollwrap" style={{ position: 'relative' }}>
               <textarea
@@ -471,14 +455,11 @@ export function LeftColumn({
                   key={g.id}
                   onClick={() => {
                     if (busyRewrite) return
-                    if (rev.specBusy) { showToast('Wait for the spec first.'); return }
-                    const genCancelled = cancelStepsGen() // §11: grant changes cancel an in-flight steps call
-                    const genPatch = genCancelled ? { stepsBusy: false as const, dirty: true } : {}
                     if (on) {
-                      up({ ...genPatch, enabledAgents: rev.enabledAgents.filter((z) => z !== g.id), ...(isEdit ? { touched: true } : {}) })
+                      up({ enabledAgents: rev.enabledAgents.filter((z) => z !== g.id), ...(isEdit ? { touched: true } : {}) })
                       if (used.length) showToast(`Step${used.length > 1 ? 's' : ''} ${stepList(used)} ${used.length > 1 ? 'are' : 'is'} out of sync — ${agName(g)} is no longer available here. Re-enable it or sync the steps before saving.`, 5000)
                     } else {
-                      up({ ...genPatch, enabledAgents: [...rev.enabledAgents, g.id], ...(isEdit ? { touched: true } : {}) })
+                      up({ enabledAgents: [...rev.enabledAgents, g.id], ...(isEdit ? { touched: true } : {}) })
                       showToast(`${agName(g)} is now available to steps — Sync spec if the steps should be rewritten to use it.`, 3600)
                     }
                   }}
@@ -532,14 +513,11 @@ export function LeftColumn({
                   key={s.name}
                   onClick={() => {
                     if (busyRewrite) return
-                    if (rev.specBusy) { showToast('Wait for the spec first.'); return }
-                    const genCancelled = cancelStepsGen() // §11: grant changes cancel an in-flight steps call
-                    const genPatch = genCancelled ? { stepsBusy: false as const, dirty: true } : {}
                     if (on) {
-                      up({ ...genPatch, allowedSecrets: rev.allowedSecrets.filter((z) => z !== s.name), ...(isEdit ? { touched: true } : {}) })
+                      up({ allowedSecrets: rev.allowedSecrets.filter((z) => z !== s.name), ...(isEdit ? { touched: true } : {}) })
                       if (ref) showToast(`Step${ref.steps.length > 1 ? 's' : ''} ${stepList(ref.steps)} use${ref.steps.length > 1 ? '' : 's'} ${s.name} — re-allow it or sync the steps before saving.`, 4500)
                     } else {
-                      up({ ...genPatch, allowedSecrets: [...rev.allowedSecrets, s.name], ...(isEdit ? { touched: true } : {}) })
+                      up({ allowedSecrets: [...rev.allowedSecrets, s.name], ...(isEdit ? { touched: true } : {}) })
                     }
                   }}
                   className="ad-btn-bare ad-focus-inset ad-hover-row"
@@ -588,9 +566,7 @@ export function LeftColumn({
           modal={{ mode: 'add' }}
           onClose={() => setSecretModal(false)}
           onSaved={(name) => {
-            const genCancelled = cancelStepsGen() // §11: grant changes cancel an in-flight steps call
-            const genPatch = genCancelled ? { stepsBusy: false as const, dirty: true } : {}
-            up({ ...genPatch, allowedSecrets: [...rev.allowedSecrets, name], ...(isEdit ? { touched: true } : {}) })
+            up({ allowedSecrets: [...rev.allowedSecrets, name], ...(isEdit ? { touched: true } : {}) })
           }}
         />
       )}
@@ -613,14 +589,10 @@ export function LeftColumn({
               onClick={(e) => {
                 e.stopPropagation()
                 if (busyRewrite || viewingOld || testLive) return
-                if (rev.specBusy) { showToast('Wait for the spec first.'); return }
-                const genCancelled = cancelStepsGen() // §11: instruction edits cancel an in-flight steps call
                 up({
                   specEdit: false, specText: '', specTextOrig: '', notesDraft: null, notesEdit: false,
                   instrDraft: rev.instructions, instrEdit: true, instrSecOpen: true,
-                  ...(genCancelled ? { stepsBusy: false, dirty: true } : {}),
                 })
-                if (genCancelled) showToast('Step generation stopped — sync the steps when you finish editing.', 4200)
               }}
               style={{ flex: 'none' }}
             >
@@ -721,14 +693,13 @@ export interface RightCardsProps {
   busyRewrite: boolean
   availAgents: Agent[]
   pkgSecOpenEff: boolean
-  runSync: () => void
   updatePkgs: (pips: string[]) => void
   installPkgs: () => void
 }
 
 export function RightCards({
   rev, up, liveParams, liveConcurrency, drafting, isCreateEmpty, outOfSync, busyRewrite,
-  availAgents, pkgSecOpenEff, runSync, updatePkgs, installPkgs,
+  availAgents, pkgSecOpenEff, updatePkgs, installPkgs,
 }: RightCardsProps) {
   // §19: the §11 draft-trigger chips label through POST /triggers/preview —
   // the renderer keeps no local trigger-math mirror (§4.3)
@@ -740,34 +711,11 @@ export function RightCards({
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
           <Eyebrow>STEPS · GENERATED</Eyebrow>
         </div>
-        {/* §11 drafting-on-Review: static placeholder — drafting progress
+        {/* §11 first build on Review: static placeholder — drafting progress
             lives in the thread; also shown on the create empty state */}
         {(drafting || isCreateEmpty) && (
           <div style={{ padding: '14px 20px 16px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>
             Steps appear here once the build finishes.
-          </div>
-        )}
-        {/* §11: a steps-call failure renders here; Rebuild runs a §8 sync against the landed spec */}
-        {rev.stepsErr && !rev.syncBusy && (
-          <div className="ad-anim-item" style={{
-            background: 'var(--notice-red-bg)', border: '1px solid var(--notice-red-border)',
-            borderRadius: 10, padding: '11px 14px', margin: '12px 14px',
-            display: 'flex', alignItems: 'flex-start', gap: 9,
-          }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', flex: 'none', marginTop: 5 }} />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ font: "500 12.5px var(--sans)", color: 'var(--text)' }}>
-                {rev.stepsErr.msg || 'The steps didn’t validate — try again or rephrase.'}
-              </div>
-              {(rev.stepsErr.detail ?? []).length > 0 && (
-                <div style={{ font: "400 11px/1.6 var(--mono)", color: 'var(--text-muted)', marginTop: 4 }}>
-                  {(rev.stepsErr.detail ?? []).map((d, i) => <div key={i}>{d}</div>)}
-                </div>
-              )}
-            </div>
-            <button className="ad-btn-soft" onClick={runSync} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-              Rebuild the steps
-            </button>
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', opacity: outOfSync || busyRewrite ? 0.45 : 1, transition: 'opacity var(--t-hover) var(--ease-enter)', marginBottom: -1 }}>

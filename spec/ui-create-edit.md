@@ -110,7 +110,7 @@ applies unchanged; the chat pane never collapses.
     agent's §8 CONVERSATION context (operational noise, §8).
   - **rewrite** — a "Spec updated." receipt, rendered exactly like a system chip: faint
     `fa-file-pen` glyph beside the chip text "Spec updated." in the system-chip role
-    (12.5 px/500 `--text-muted`). The §4.4 entry still stores the user's request text —
+    (11.5 px/400 `--text-faint`, the secondary role — see the thread type scale below). The §4.4 entry still stores the user's request text —
     it feeds the agent's §8 CONVERSATION summary — but the thread no longer echoes it
     (the user bubble above already shows the request), and old persisted rewrite
     entries render the same chip way. The entry keeps anchoring the draft-undo
@@ -125,8 +125,12 @@ applies unchanged; the chat pane never collapses.
     below).
   - **blockers** — the §8 blocker list rendered as agent output (Blockers below).
   - **system** — a quiet one-line left-aligned status chip, rendered as an operation
-    block: a per-operation glyph (faint) beside the chip's text as its title — no
-    description bullets, with one exception: a §4.4 boundary marker renders the derived
+    block: a per-operation glyph (faint) beside the chip's text as its title, set in the
+    secondary role (11.5 px/400 `--text-faint`) so receipts read quieter than the stage
+    titles that anchor the feed. One chip opts out of the demotion: a §4.4 boundary
+    marker keeps the operation-title role (12.5 px/500 `--text-muted`) — a structural
+    milestone, not a receipt, and its explainer bullet must stay subordinate to it. No
+    description bullets, with one exception: that same boundary marker renders the derived
     history explainer as a dim bullet beneath its title, and — only when an entry
     follows it — closes with a full-width 1 px `--hairline` divider rule beneath the
     group: the marker ends the history it describes, and the rule sits between that
@@ -167,10 +171,13 @@ applies unchanged; the chat pane never collapses.
   - **Entry titles** — one-line, beside the entry's glyph. Message-block headers are
     the thread's loudest lines at 13 px / 600 `--text` (the blockers headline, the
     answer header, the error "Something went wrong"). Operation-block titles:
-    activity/progress stage titles and chip text — system chips and the rewrite chip
-    alike — are 12.5 px / 500 `--text-muted` (the chip's text is its title — the
-    redesign promotes system chips from the secondary role into this one).
-  - **Secondary & feed** — the operation blocks' bullets and supporting prose (the
+    activity/progress stage titles and the boundary-marker chip are
+    12.5 px / 500 `--text-muted` — these anchor the feed, so result receipts do not
+    share the role.
+  - **Secondary & feed** — the system and rewrite chips (11.5 px / 400 `--text-faint`;
+    the chip's text is its title, demoted beneath the stage titles so receipts like
+    "Description updated." never read as the next stage), and the operation blocks'
+    bullets and supporting prose (the
     dismissed-blockers summary, "Previously resolved")
     is 11.5 px / 1.5–1.6, `--text-muted` or `--text-faint` by weight of the information;
     activity/progress feed history lines are 11 px `--text-faint` under an 11.5 px

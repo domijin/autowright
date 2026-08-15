@@ -395,7 +395,7 @@ export function ChatPanel({
               <React.Fragment key={e.id}>
               <div className="ad-anim-item" style={{ marginTop: mt, display: 'flex', alignItems: 'center', gap: 10 }}>
                 <GlyphBox><i className="fa-solid fa-file-pen" style={{ fontSize: 10, color: 'var(--text-faint)' }} /></GlyphBox>
-                <div style={{ flex: 1, minWidth: 0, font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>Spec updated.</div>
+                <div style={{ flex: 1, minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-faint)' }}>Spec updated.</div>
               </div>
               {undoRow}
               </React.Fragment>
@@ -485,21 +485,25 @@ export function ChatPanel({
           }
           // §11 system chip — an operation block: per-op glyph (stamped at
           // creation, `fa-circle-info` fallback) beside the chip's text as its
-          // title; the undo row renders beneath it when it anchors the snapshot.
-          // A §4.4 boundary marker is the one chip with a description bullet
-          // (the derived history explainer, never persisted) and the one with
-          // chrome: 12px top gap (overriding the family gap) and, only when an
-          // entry follows it, a hairline divider rule beneath its group — the
+          // title, in the secondary role so receipts read quieter than the
+          // stage titles that anchor the feed; the undo row renders beneath it
+          // when it anchors the snapshot.
+          // A §4.4 boundary marker is the one chip that keeps the operation-
+          // title role (a milestone, not a receipt — its explainer bullet must
+          // stay subordinate), the one with a description bullet (the derived
+          // history explainer, never persisted) and the one with chrome: 12px
+          // top gap (overriding the family gap) and, only when an entry
+          // follows it, a hairline divider rule beneath its group — the
           // marker closes the history it describes, the rule sits between that
           // settled conversation and the next one (no rule while the marker is
           // the thread's last entry — nothing to fence off yet).
           return (
             <React.Fragment key={e.id}>
             <div style={{ marginTop: e.boundary ? 12 : mt, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <span style={{ width: 13, height: 13, flex: 'none', marginTop: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: 13, height: 13, flex: 'none', marginTop: e.boundary ? 3 : 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className={`fa-solid ${e.icon ?? 'fa-circle-info'}`} style={{ fontSize: 10, color: 'var(--text-faint)' }} />
               </span>
-              <div style={{ flex: 1, minWidth: 0, font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-muted)', overflowWrap: 'break-word' }}>
+              <div style={{ flex: 1, minWidth: 0, font: e.boundary ? "500 12.5px/1.5 var(--sans)" : "400 11.5px/1.5 var(--sans)", color: e.boundary ? 'var(--text-muted)' : 'var(--text-faint)', overflowWrap: 'break-word' }}>
                 {e.text}
               </div>
             </div>

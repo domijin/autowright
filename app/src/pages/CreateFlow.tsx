@@ -384,7 +384,8 @@ export default function CreateFlow() {
       return {
         ...r,
         spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-        triggers: snap.triggers, paramValues: snap.paramValues, testValues: snap.testValues,
+        triggers: snap.triggers, paramValues: snap.paramValues, concurrency: snap.concurrency,
+        testValues: snap.testValues,
         instructions: snap.instructions, notes: snap.notes,
         dirty: snap.dirty, undo: null, touched: true,
         // §11: the thread records the rollback — persisted, so the agent's §8
@@ -643,6 +644,8 @@ export default function CreateFlow() {
             // §4.2/§19: staged values land beside the draft — matched
             // name+kind against the landing version's definitions.
             ...(Object.keys(rev.paramValues).length ? { paramValues: rev.paramValues } : {}),
+            // §8/§19: staged concurrency lands beside the draft, like the PATCH
+            ...(rev.concurrency ? { concurrency: rev.concurrency } : {}),
           })
           setSurface('app')
           go('automation')
@@ -659,6 +662,7 @@ export default function CreateFlow() {
           draft: serializeDraft(rev), name: rev.name, agentId,
           stepAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
           ...(Object.keys(rev.paramValues).length ? { paramValues: rev.paramValues } : {}),
+          ...(rev.concurrency ? { concurrency: rev.concurrency } : {}),
         })
         // The detail page guards against unknown ids — make sure the store
         // knows the new automation before navigating (WS refresh may lag).
@@ -999,6 +1003,7 @@ export default function CreateFlow() {
                   rev={rev}
                   up={up}
                   liveParams={auto?.params}
+                  liveConcurrency={auto ? { maxParallel: auto.maxParallel, maxQueued: auto.maxQueued } : undefined}
                   drafting={drafting}
                   isCreateEmpty={isCreateEmpty}
                   outOfSync={outOfSync}

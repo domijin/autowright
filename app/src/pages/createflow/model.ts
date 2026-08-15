@@ -2,7 +2,7 @@
 // seeds, draft serialization, the §4.3 trigger merge, spec-text helpers, and
 // the chat-thread/blocker helpers. No React here — everything is plain data
 // in/data out, unit-tested via the CreateFlow page's re-exports.
-import type { Agent, Automation, Blocker, ChatEntry, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, TriggerOp, VersionInfo } from '../../types'
+import type { Agent, Automation, Blocker, ChatEntry, ConcurrencyStage, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, TriggerOp, VersionInfo } from '../../types'
 import { stepSecretNames, stepSecretTags } from '../../steps'
 
 // The step-secret scanners live in the shared step-list module (../../steps)
@@ -142,6 +142,9 @@ export interface Rev {
   params: NonNullable<DraftPayload['params']>
   // §4.2 chat-staged stored values (§8 `param_values`) — land only at save/create
   paramValues: Record<string, unknown>
+  // §8 chat-staged concurrency (`concurrency` action) — lands only at save/create;
+  // null when nothing is staged (the card then shows the stored/default values)
+  concurrency: ConcurrencyStage | null
   // §8/§11 drafted test values (call 2's manifest `test_values`) — seed the
   // Build & test setup editors and the closed-section test runs; draft state,
   // replaced when a later create/sync payload carries a new map
@@ -166,6 +169,7 @@ export interface Rev {
   undo: {
     spec: SpecBlock[]; steps: Step[]; params: Rev['params']; packages: PackageDep[]
     triggers: DraftTrigger[]; paramValues: Record<string, unknown>
+    concurrency: ConcurrencyStage | null
     testValues: Record<string, unknown> | null
     instructions: string; notes: string; dirty: boolean; entryId: string
   } | null
@@ -240,7 +244,7 @@ export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
   return {
     ...revDefaults,
     name: 'New automation', description: '', note: '',
-    spec: [], steps: [], params: [], paramValues: {}, testValues: null, packages: [],
+    spec: [], steps: [], params: [], paramValues: {}, concurrency: null, testValues: null, packages: [],
     triggers: [],
     instructions: instructionCache.defaultBuild,
     notes: '',
@@ -262,6 +266,7 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
     name: d.name || 'New automation', description: d.description || '', note: d.note || '',
     spec: d.spec ?? [], steps: d.steps ?? [], params: d.params ?? [],
     paramValues: d.paramValues ?? {},
+    concurrency: d.concurrency ?? null,
     testValues: d.testValues ?? null,
     packages: d.packages ?? [],
     triggers: d.triggers ?? [],
@@ -298,6 +303,7 @@ export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string
     steps: (src.steps ?? []).map((s) => ({ ...s })),
     params: (src.params ?? a.params ?? []).map((p) => ({ ...p })),
     paramValues: { ...(a.draft?.paramValues ?? {}) },
+    concurrency: a.draft?.concurrency ?? null,
     testValues: a.draft?.testValues ?? null,
     packages: (src.packages ?? []).map((p) => ({ ...p })),
     triggers: (a.draft?.triggers ?? a.triggers).map(stripTrigger),
@@ -414,6 +420,8 @@ export function serializeDraft(r: Rev): DraftPayload {
     triggers: r.triggers,
     // §4.2: the staged value map rides the snapshot only when nonempty
     ...(Object.keys(r.paramValues).length ? { paramValues: r.paramValues } : {}),
+    // §8: the staged concurrency object rides the snapshot only when staged
+    ...(r.concurrency ? { concurrency: r.concurrency } : {}),
     // §8/§11: the drafted test-value map rides the snapshot when present, so a
     // kept draft resumes with its test setup still seeded
     ...(r.testValues && Object.keys(r.testValues).length ? { testValues: r.testValues } : {}),

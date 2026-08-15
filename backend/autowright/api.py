@@ -482,6 +482,11 @@ def create_auto(body: models.AutomationCreate) -> dict:
     if body.paramValues:
         if matched := _staged_values(a, body.paramValues):
             store.patch_automation(a, {"paramValues": matched})
+    # §8/§19: the chat-staged concurrency object applies like the PATCH's
+    # fields — the request model validated the floors already.
+    if conc := (body.concurrency.model_dump(exclude_unset=True)
+                if body.concurrency is not None else None):
+        store.patch_automation(a, conc)
     # §4.4: Create consumes the pending create-mode slot — settled drafts are
     # never resurrected.
     store.delete_draft(None)
@@ -528,6 +533,9 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         if body.paramValues:
             if matched := _staged_values(a, body.paramValues):
                 patch["paramValues"] = matched
+        # §8/§19: staged concurrency lands with the save, like the PATCH.
+        if body.concurrency is not None:
+            patch.update(body.concurrency.model_dump(exclude_unset=True))
         if patch:
             store.patch_automation(a, patch)
         store.delete_draft(a)
@@ -589,6 +597,8 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
     ver["allowed_secrets"] = d.get("allowedSecrets")
     # §4.2: the chat-staged value map rides the snapshot as a draft-only key.
     ver["param_values"] = d.get("paramValues")
+    # §8: the chat-staged concurrency object rides the snapshot the same way.
+    ver["concurrency"] = d.get("concurrency")
     # §8/§11: the drafted test-value map rides the snapshot as a draft-only key.
     ver["test_values"] = d.get("testValues")
     # §4.4/§11: the dirty-gate state rides the snapshot — stored only when set,
@@ -1003,6 +1013,12 @@ def post_draft(body: models.DraftJobStart) -> dict:
         current = dict(current or {})
         current.setdefault("name", auto["name"])
         current.setdefault("description", auto.get("description", ""))
+        # §8 CURRENT concurrency: top-level operational state like triggers —
+        # the editor's staged object (possibly partial) merges over the stored
+        # values, so the prompt always shows the effective pair.
+        current["concurrency"] = {"maxParallel": auto["max_parallel"],
+                                  "maxQueued": auto["max_queued"],
+                                  **(current.get("concurrency") or {})}
     # §19: an explicit `spec` in the body wins — sync/edit regenerate against the
     # PROVIDED spec (§8), e.g. the in-editor draft, not the stored version's spec.
     if body.spec is not None:

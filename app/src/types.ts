@@ -318,12 +318,19 @@ export type TriggerOp =
   | { op: 'enable'; index: number; enabled: boolean }
   | { op: 'remove'; index: number }
 
+// §8 chat-staged concurrency — partial over the §4.1 pair, lands at save
+export interface ConcurrencyStage {
+  maxParallel?: number
+  maxQueued?: number
+}
+
 export interface ChatActions {
   sync?: boolean
   test?: boolean
   testValues?: Record<string, unknown>
   paramValues?: Record<string, unknown> // §4.2 staged stored values — land at save
   triggers?: TriggerOp[]                // §4.3 staged trigger edits — land at save
+  concurrency?: ConcurrencyStage        // §8 staged concurrency — lands at save
   name?: string
   description?: string
   undo?: boolean // §8: always alone — runs the §11 draft-undo restore
@@ -349,6 +356,9 @@ export interface DraftPayload {
   // §4.2: the chat-staged stored-value map — rides the draft snapshot, lands
   // only at save/create
   paramValues?: Record<string, unknown>
+  // §8: the chat-staged concurrency object — rides the draft snapshot, lands
+  // only at save/create
+  concurrency?: ConcurrencyStage
   // §8/§11: call 2's drafted best-effort test values (manifest `test_values`) —
   // seed the Build & test setup and the closed-section test runs; draft-only
   testValues?: Record<string, unknown>

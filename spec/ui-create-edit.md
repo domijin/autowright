@@ -112,7 +112,8 @@ applies unchanged; the chat pane never collapses.
     instructions updated.") `fa-list-check`; notes ("Notes updated.")
     `fa-note-sticky`; identity ("Renamed to `<name>`.", "Description updated.")
     `fa-pen`; parameters ("Parameter "X" staged — applies when you save.", "Value for
-    "X" dropped — no such parameter after the rebuild.") `fa-sliders`; triggers (the
+    "X" dropped — no such parameter after the rebuild.") `fa-sliders`; concurrency
+    ("Concurrency staged — applies when you save.") `fa-layer-group`; triggers (the
     trigger-op chips, "That trigger already exists.", the trigger-setup reminder under
     the TRIGGERS card below) `fa-clock`; Draft undo ("Last change undone — the rewrites
     above no longer apply.", "Nothing to undo.") `fa-rotate-left`; tests (the
@@ -258,7 +259,13 @@ applies unchanged; the chat pane never collapses.
     an `add` whose entry matches an existing trigger on the §4.3 identity fields is a
     **no-op** with the system entry "That trigger already exists." (a backstop, not a
     repair round — the §8 policy has the agent answer in prose instead); ops touch only
-    the entries they name — nothing else in the list moves. Both staged kinds mark the
+    the entries they name — nothing else in the list moves. `concurrency` stages the §4.1
+    settings (§8 — partial `{ max_parallel?, max_queued? }`): the sent keys merge over
+    the editor's staged concurrency object and the CONCURRENCY card shows the staged
+    values, with one system entry "Concurrency staged — applies when you save."; a key
+    matching the current effective value (stored in edit mode, the 1/0 defaults in
+    create) still stages — staging an explicit value is harmless and simpler than
+    diffing. All staged kinds mark the
     draft touched, never out of sync, and land only at save (§4.4);
     `sync: true` arms a **pending sync**: a watcher fires it as soon as no
     §8 job or draft test is running — immediately when the panel is idle (exactly as if
@@ -464,9 +471,10 @@ buttons out of the window), version dropdown (edit mode), Start over ghost
 touched or a stored draft exists — leaves the editor on the §4.4 draft-keep path, toast
 "Draft kept — resume it from this automation anytime."), primary Create/Save — labeled "Create automation" in create mode,
 "Save as vN+1" in edit mode, and "Restore vX as vN+1" while viewing an old version. Save
-and Create send the chat-staged `param_values` map beside the draft (§19) so staged values
+and Create send the chat-staged `param_values` map and the staged `concurrency` object
+beside the draft (§19) so staged values
 land with the version; a save whose versioned content is unchanged (only staged
-values/triggers/grants moved) still goes through the same button and endpoint — the
+values/triggers/concurrency/grants moved) still goes through the same button and endpoint — the
 backend applies the operational state without minting a version (§4.4), announced by
 the toast "Changes saved — triggers and values updated, no new version needed."
 (recognized by the response returning the unchanged version number) — and a
@@ -505,7 +513,7 @@ vN+1 takes over from the next execution (`<short label of the next trigger>`)." 
 agents, secrets, instructions, framework — the spec and the agent's working notes on top, the
 grant cards under them, the standing-rules cards last: build instructions second-last, the
 read-only framework reference closing the column; right column: the Build & test panel on top,
-then steps, triggers, parameters, packages). Motion on this page follows §14: every collapsible card
+then steps, triggers, concurrency, parameters, packages). Motion on this page follows §14: every collapsible card
 animates open/closed through the Collapse primitive — the body **and** the collapsed hint,
 which hand off as a crossfade per the §14 collapsible motion (content fades while the rows
 resize; open decelerates at `--t-enter`, close accelerates at `--t-exit`) — never clipped
@@ -573,6 +581,7 @@ editors enter with
 - **Draft undo** — one-level **full-draft snapshot** per agent request: when a chat
   response changes the draft, the editor first stashes the draft **whole** — spec, steps,
   parameter definitions, packages, triggers, the staged `param_values` map (§4.2), the
+  staged `concurrency` object (§8), the
   drafted test-value map (`testValues`, test-setup section below),
   build instructions, notes, and the dirty flag
   of that moment (an answer-only response leaves the existing snapshot untouched; grants
@@ -587,7 +596,7 @@ editors enter with
   escape hatch ahead of the suggested next steps. Its position follows
   the **last** thread entry the request produced (the snapshot's anchor): the response's
   final rewrite/system chip — doc rewrites, the "Renamed to …" / "Description updated."
-  chips, and the staged parameter/trigger chips included — and, when a sync lands while the snapshot exists (chained or manual),
+  chips, and the staged parameter/trigger/concurrency chips included — and, when a sync lands while the snapshot exists (chained or manual),
   the anchor moves below that sync's "Steps synced with the spec." / "Notes updated."
   chips, so the pill always sits **below everything the request changed**. It is
   deliberately a row-level pill, never an action inside the
@@ -746,7 +755,17 @@ editors enter with
   saving." right after the job's outcome entries. It appends only when the settling job
   introduced the gap (the pre-job draft didn't qualify — a fresh create always counts),
   so repeated syncs over an unchanged gap never repeat the reminder.
-- **PARAMETERS · YOUR AI ASKED FOR THESE** card — display-only in **both** create and edit
+- **CONCURRENCY** card — display-only in both modes, directly below the TRIGGERS card: the
+  §4.1 settings as two summary rows in the §9.2 card's language — **"Run at once"**
+  (`maxParallel`) and **"Queue when busy"** (`maxQueued`), each with the value
+  right-aligned like the Parameters card's value summaries. The value's source: in edit
+  mode the automation's stored settings, in create mode the defaults (1 / 0) — and in
+  both modes a chat-staged value (§8 `concurrency` action) overrides its row, with the
+  same small "staged" hint the Parameters card uses, so an unsaved value is never
+  mistaken for a stored one. No inline editors (the §9.2 detail page keeps the number
+  inputs). Footer: "Not part of a version — change these on the automation page, or ask
+  your AI here (staged changes apply when you save)." The card is not collapsible and has
+  no empty state — the two rows always render.
   mode, with a "READ-ONLY HERE" tag whenever the draft has params: each row shows the draft
   parameter's name, description, and a read-only **value summary** (the §4.2 one-line summary,
   right-aligned, ellipsized) — never inline editors. The summary's source: in create mode the

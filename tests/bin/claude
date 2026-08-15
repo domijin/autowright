@@ -99,6 +99,12 @@ def respond(prompt: str) -> str:
                     "triggers:\n"
                     "  - add: { cron: \"0 21 * * *\" }\n"
                     "===END===\n")
+        if "stage-concurrency" in user.lower():
+            # §8 `concurrency` action — staged, lands when the user saves
+            return ("Staged the concurrency change — it applies when you save.\n"
+                    "===FILE: actions.yaml===\n"
+                    "concurrency: { max_parallel: 2, max_queued: 3 }\n"
+                    "===END===\n")
         if "fix-and-test" in user.lower():
             spec = SPEC_ENVELOPE.format(title="Fixed automation",
                                         desc="Fixed by the mock agent.").split("===END===")[0]

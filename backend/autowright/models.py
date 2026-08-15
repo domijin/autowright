@@ -81,6 +81,13 @@ class AutomationPatch(BaseModel):
     maxQueued: StrictInt = Field(default=None, ge=0)     # §6 — strict int, floor 0
 
 
+class ConcurrencyIn(BaseModel):
+    """§8 chat-staged concurrency — partial object, same floors as the PATCH."""
+
+    maxParallel: StrictInt = Field(default=None, ge=1)   # §6 — strict int, floor 1
+    maxQueued: StrictInt = Field(default=None, ge=0)     # §6 — strict int, floor 0
+
+
 class AutomationCreate(BaseModel):
     """POST /automations (§19)."""
 
@@ -90,6 +97,7 @@ class AutomationCreate(BaseModel):
     stepAgents: list[StrictStr] = None
     allowedSecrets: list[StrictStr] = None
     paramValues: dict[StrictStr, Any] = None  # §4.2 staged values — lenient name+kind match
+    concurrency: ConcurrencyIn = None         # §8 staged concurrency — applied like the PATCH
 
 
 class VersionSave(BaseModel):
@@ -101,6 +109,7 @@ class VersionSave(BaseModel):
     stepAgents: list[StrictStr] = None
     allowedSecrets: list[StrictStr] = None
     paramValues: dict[StrictStr, Any] = None  # §4.2 staged values — lenient name+kind match
+    concurrency: ConcurrencyIn = None         # §8 staged concurrency — applied like the PATCH
 
 
 class VersionRestore(BaseModel):

@@ -215,6 +215,7 @@ def test_message_firing_queues_instead_of_being_dropped(store):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"some-live-exec"}
 
     assert fire_trigger(store, engine, a, _discord_trig(), payload=_payload()) is False
@@ -240,6 +241,7 @@ def test_admission_publishes_exec_queued(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"some-live-exec"}
 
     assert fire_trigger(store, engine, a, _discord_trig(), payload=_payload()) is False
@@ -297,6 +299,7 @@ def test_queue_drains_into_a_freed_slot_and_promotes_in_place(store):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
 
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave"))
@@ -336,6 +339,7 @@ def test_stale_queue_entry_is_answered_not_executed(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave"))
     entry_id = store.queued_execs(a["id"])[0]["id"]
@@ -362,6 +366,7 @@ def test_cancelling_a_queued_entry_answers_its_sender(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave"))
     entry_id = store.queued_execs(a["id"])[0]["id"]
@@ -387,6 +392,7 @@ def test_max_parallel_admits_several_and_then_queues(store):
     ver["steps"][0]["code"] = "import time\ntime.sleep(1.5)\n"
     a = store.create_automation(ver, "Parallel", None)
     a["max_parallel"] = 2
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — default 0 would skip Kim
 
     assert fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave")) is True
     assert fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Ana")) is True
@@ -418,6 +424,7 @@ def test_trigger_off_cancels_its_waiting_entries(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["triggers"] = [_discord_trig()]
     a["_live"] = {"blocking"}
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave"))
@@ -445,6 +452,7 @@ def test_trigger_off_keeps_entries_of_other_enabled_triggers(store):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     other = {"id": "t2", "kind": "discord", "enabled": True, "secret": "TOKEN",
              "channel": "99"}
     a["triggers"] = [_discord_trig(), other]
@@ -473,6 +481,7 @@ def test_each_admission_publishes_its_own_exec_queued(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave", "one"))
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave", "two"))
@@ -558,6 +567,7 @@ def test_deleted_version_queue_entry_finishes_with_note(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Chat", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave"))
     entry = store.queued_execs(a["id"])[0]
@@ -703,6 +713,7 @@ def test_trigger_off_cancels_unmatched_imessage_entries(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Texts", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     keep = {"id": "tk", "kind": "imessage", "enabled": True, "from": "+15551234567"}
     drop = {"id": "td", "kind": "imessage", "enabled": True, "from": "+19998887777"}
     a["triggers"] = [keep, drop]
@@ -733,6 +744,7 @@ def test_drain_queue_slot_race_leaves_entry_queued(store, monkeypatch):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Race", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     fire_trigger(store, engine, a, _discord_trig(), payload=_payload("Dave"))
     head = store.queued_execs(a["id"])[0]
@@ -775,6 +787,7 @@ def test_queue_manual_admits_at_capacity_and_drains(store):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Manual Q", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     h, queued = queue_manual(store, engine, a, "manual")
     assert queued is True
@@ -803,6 +816,7 @@ def test_queue_manual_has_no_ttl(store, monkeypatch):
     monkeypatch.setattr(firing_mod, "QUEUE_TTL_S", -1.0)  # everything is stale
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Manual Q", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     h, _queued = queue_manual(store, engine, a, "manual")
 
@@ -845,6 +859,7 @@ def test_trigger_edits_never_cancel_a_manual_entry(store):
 
     engine, sched = _mk(store)
     a = store.create_automation(make_version(), "Manual Q", None)
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     a["_live"] = {"blocking"}
     h, _queued = queue_manual(store, engine, a, "manual")
     cancel_unmatched_queue(store, engine, a["id"])  # no message triggers enabled at all

@@ -53,8 +53,10 @@ maxParallel: int ≥ 1 (default 1) — how many executions of this automation ma
   (§6). User-owned and never versioned (§5 top-level `automation.yaml`), like `triggers`.
   Raising it above 1 is opt-in per automation because `memory/` is shared across concurrent
   executions (§6) — the §9.2 card cautions when the automation's steps actually touch memory.
-maxQueued: int ≥ 0 (default 10) — how many message firings may wait when every slot is taken
-  (§6 firing queue). 0 restores skip-on-busy.
+maxQueued: int ≥ 0 (default 0) — how many message firings may wait when every slot is taken
+  (§6 firing queue). 0 (the default) is skip-on-busy; queueing is opt-in per automation.
+  Both concurrency fields change on the §9.2 card, or staged through the §11 chat (§8
+  `concurrency` action — applied when the user saves, like `param_values`).
 resultChip: short summary chip ("2 new chapters") | null — the chip is optional: null when the
   last successful execution never called result.chip(); failed automations synthesize "Needs attention"
 resultStatus: changes | ok | attention | null — tints resultChip with the §7 chip colors
@@ -365,14 +367,17 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   agentId, merges the draft's trigger list into the automation's (§4.3 trigger merge —
   triggers themselves stay unversioned), applies the draft's staged `param_values` to the
   automation's stored values (§4.2 — name+kind matched against the landing version's
-  definitions, unmatched entries dropped), sets `specMeta` to "vN · updated Today".
+  definitions, unmatched entries dropped), applies the draft's staged `concurrency`
+  (§8 action — partial `{ maxParallel?, maxQueued? }` over the stored §4.1 fields, like
+  the §19 PATCH), sets `specMeta` to "vN · updated Today".
   Prior versions are untouched. **Operational-only save skips the version mint**: when the
   sent draft's versioned content — spec, steps, instructions, notes, param definitions,
   packages — equals the current version's (compared over the stored serialization, ids and
   timestamps aside), the save applies only the operational state (trigger list, staged
   param values, grants, identity patch) and mints no version — a chat session that only
   changed a schedule or a value must not litter the Version menu with identical versions.
-  The response is the same automation JSON either way.
+  Staged concurrency counts as operational state, like the trigger list and staged param
+  values. The response is the same automation JSON either way.
 - Leaving the editor with unsaved touched changes snapshots a **draft** onto the automation
   (toast: "Draft kept — resume it from this automation anytime."). Every exit path
   persists it — the header back button, system back/forward navigation, anything that closes
@@ -389,7 +394,9 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   packages, the editor's trigger list (stored as a draft-only `triggers` key — the §4.3
   merged preview, so a resumed draft keeps a synced schedule change), the chat-staged
   stored-value map when nonempty (§4.2 — stored as a draft-only `param_values` key, so a
-  resumed draft keeps staged values), the drafted test-value map when the pipeline
+  resumed draft keeps staged values), the chat-staged concurrency object when nonempty
+  (§8 `concurrency` action → payload `concurrency` → draft-only `concurrency` key, so a
+  resumed draft keeps a staged concurrency change), the drafted test-value map when the pipeline
   delivered one (§8 call-2 manifest `test_values` → payload `testValues` → draft-only
   `test_values` key, so a resumed draft still seeds its test setup, §11), the editor's
   step-agents + allowed-secrets grant selections (stored as

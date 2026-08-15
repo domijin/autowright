@@ -819,6 +819,24 @@ describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () 
     // and the live automation in the store still holds the stored value
     expect((storeMod.useStore.getState().automations[0].params[0] as { value?: string }).value).toBe('hello')
   })
+
+  it('a concurrency action stages in the draft only — chip, STAGED row, no PATCH, PUT carries the object', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      actions: { concurrency: { maxParallel: 2 } },
+    }))
+    render(<CreateFlow />)
+    // CONCURRENCY card always renders its two rows — defaults before staging
+    expect(screen.getByText('Run at once')).toBeTruthy()
+    expect(screen.getByText('Queue when busy')).toBeTruthy()
+    send('let two run at once')
+    await waitFor(() => expect(screen.getByText('Concurrency staged — applies when you save.')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('STAGED')).toBeTruthy()
+    expect(screen.getByText('2')).toBeTruthy()
+    // §8: staged is draft state only — the automation is never PATCHed now
+    expect(mockedApi.patchAutomation).not.toHaveBeenCalled()
+    const d = await lastDraftPut()
+    expect((d as { concurrency?: Record<string, number> }).concurrency).toEqual({ maxParallel: 2 })
+  })
 })
 
 describe('CreateFlow draft undo (§11)', () => {

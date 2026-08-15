@@ -497,10 +497,13 @@ run a draft test (`test`, with `test_values` setting test-only parameter
 values — keys must be existing param names), stage stored parameter values
 (`param_values` — same key rule), stage trigger edits (`triggers` — a list of
 add/edit/enable/remove ops naming entries by their CURRENT-triggers index),
+stage concurrency settings (`concurrency` — one or both of `max_parallel` and
+`max_queued`, current values under CURRENT concurrency),
 rename the automation (`name`),
 rewrite its one-line description (`description`), and restore the draft to the state
 before the last request (`undo` — always alone: no other action keys and no
-rewrite blocks in the same response). Staged values and trigger edits apply to
+rewrite blocks in the same response). Staged values, trigger edits, and
+concurrency changes apply to
 the draft and land only when the user saves — say so plainly ("staged — takes
 effect when you save"); when the user wants immediate effect, point them at
 the automation page, where the same edit applies instantly. Keep the name and description
@@ -538,7 +541,11 @@ identifying details (channel id, token-secret name, sender handle) may come
 from the spec or from what the user typed in this conversation — never
 invented. Ops touch only the entries they name; everything else stays as is.
 Parameter **definitions** still change only through a spec rewrite plus
-`sync`; `test_values` affects a single test only.
+`sync`; `test_values` affects a single test only. `concurrency` only when the
+user explicitly asks for parallel runs or queueing ("let two run at once",
+"queue messages when it's busy") — never speculatively; the defaults
+(`max_parallel` 1, `max_queued` 0) stay unless the user names different
+numbers or words you can map to them ("a couple at once" → 2).
 
 When the request needs something only the user can supply — a channel id, a
 sender handle, which secret holds a token, which account or folder is meant —

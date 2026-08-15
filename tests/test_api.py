@@ -779,6 +779,44 @@ def test_create_applies_staged_param_values(client):
     assert store.autos[r.json()["id"]]["param_values"] == {"count": 7}
 
 
+def test_save_version_applies_staged_concurrency(client):
+    # §8/§19: the chat-staged concurrency object lands with the save — partial,
+    # applied like the PATCH; out-of-range values 422 and nothing is stored.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Concurrent", "mock")
+    r = client.post(f"/automations/{a['id']}/versions", json={
+        "draft": make_version(notes="second"),
+        "concurrency": {"maxParallel": 2},
+    })
+    assert r.status_code == 200
+    auto = store.autos[a["id"]]
+    assert auto["max_parallel"] == 2 and auto["max_queued"] == 0  # partial: unsent key stays
+    r = client.post(f"/automations/{a['id']}/versions", json={
+        "draft": make_version(notes="third"),
+        "concurrency": {"maxParallel": 0},
+    })
+    assert r.status_code == 422
+    assert store.autos[a["id"]]["max_parallel"] == 2  # nothing stored on 422
+
+
+def test_create_applies_staged_concurrency(client):
+    from autowright.storage import store
+
+    r = client.post("/automations", json={
+        "draft": make_version(), "name": "Created",
+        "concurrency": {"maxParallel": 3, "maxQueued": 5},
+    })
+    assert r.status_code == 200
+    auto = store.autos[r.json()["id"]]
+    assert auto["max_parallel"] == 3 and auto["max_queued"] == 5
+    # invalid values 422 like the PATCH — nothing is created
+    r = client.post("/automations", json={
+        "draft": make_version(), "concurrency": {"maxQueued": -1},
+    })
+    assert r.status_code == 422
+
+
 def test_operational_only_save_skips_version_mint(client):
     # §4.4: unchanged versioned content mints nothing — the trigger replace and
     # staged values still apply, and the response shape is unchanged.
@@ -842,6 +880,26 @@ def test_edit_draft_snapshot_carries_param_values(client):
     assert d["paramValues"] == {"greeting": "staged"}
     # the automation's stored values stay untouched until the draft is saved
     assert store.autos[a["id"]]["param_values"] == {}
+
+
+def test_edit_draft_snapshot_carries_concurrency(client):
+    # §8/§4.4: the staged concurrency object rides the snapshot as the
+    # draft-only `concurrency` key and echoes back; stored settings untouched.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Staged conc", "mock")
+    r = client.put(f"/draft/{a['id']}", json={"draft": {
+        **make_version(), "concurrency": {"maxParallel": 2, "maxQueued": 4},
+    }})
+    assert r.status_code == 200
+    d = client.get(f"/automations/{a['id']}").json()["draft"]
+    assert d["concurrency"] == {"maxParallel": 2, "maxQueued": 4}
+    auto = store.autos[a["id"]]
+    assert auto["max_parallel"] == 1 and auto["max_queued"] == 0
+    # a snapshot without the object drops the key
+    r = client.put(f"/draft/{a['id']}", json={"draft": make_version()})
+    assert r.status_code == 200
+    assert "concurrency" not in client.get(f"/automations/{a['id']}").json()["draft"]
 
 
 def test_edit_draft_snapshot_carries_test_values(client):
@@ -1961,7 +2019,7 @@ def test_concurrency_settings_patch_and_validate(client):
 
     auto = client.post("/automations", json={"draft": _echo_draft()}).json()
     aid = auto["id"]
-    assert auto["maxParallel"] == 1 and auto["maxQueued"] == 10  # §4.1 defaults
+    assert auto["maxParallel"] == 1 and auto["maxQueued"] == 0  # §4.1 defaults
     assert auto["live"] == []  # §4.1 live is a list now
 
     body = client.patch(f"/automations/{aid}", json={"maxParallel": 3, "maxQueued": 0}).json()
@@ -1989,6 +2047,7 @@ def test_queue_clear_endpoint(client, monkeypatch):
     auto = client.post("/automations", json={"draft": _echo_draft()}).json()
     aid = auto["id"]
     a = store.autos[aid]
+    a["max_queued"] = 10  # §4.1: queueing is opt-in — the default 0 would skip
     assert client.post(f"/automations/{aid}/queue/clear").json() == {"cancelled": 0}
 
     a["_live"] = {"blocking"}

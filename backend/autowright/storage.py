@@ -57,11 +57,11 @@ def is_test(h: dict) -> bool:
     """§4.5: test executions are kind `test` — there is no stored flag."""
     return h.get("kind") == "test"
 
-# §6 concurrency settings (§4.1). Defaults preserve the old behavior for the
-# parallel slot count; the queue is on by default because the alternative is
-# dropping a person's message with no answer.
+# §6 concurrency settings (§4.1). One run at a time and skip-on-busy are the
+# defaults — parallel runs and queueing are opt-in per automation (§9.2 card,
+# or staged through the §8 `concurrency` chat action).
 DEFAULT_MAX_PARALLEL = 1
-DEFAULT_MAX_QUEUED = 10
+DEFAULT_MAX_QUEUED = 0
 
 
 def clamp_max_parallel(v: Any) -> int:
@@ -362,8 +362,8 @@ class Store:
             "memory_snapshots": self._load_snapshot_settings(top.get("memory_snapshots")),
             "param_values": top.get("param_values", {}) or {},
             # §6 concurrency settings — absent keys default to one at a time
-            # plus a queue; a hand-edited out-of-range value is clamped rather
-            # than dropping the automation at load.
+            # and skip-on-busy; a hand-edited out-of-range value is clamped
+            # rather than dropping the automation at load.
             "max_parallel": clamp_max_parallel(top.get("max_parallel")),
             "max_queued": clamp_max_queued(top.get("max_queued")),
             "created_at": top.get("created_at"),
@@ -465,6 +465,7 @@ class Store:
             "allowed_secrets": meta.get("allowed_secrets"),
             "triggers": meta.get("triggers"),
             "param_values": meta.get("param_values"),
+            "concurrency": meta.get("concurrency"),
             "test_values": meta.get("test_values"),
             "out_of_sync": bool(meta.get("out_of_sync")) or None,
         }
@@ -595,6 +596,7 @@ class Store:
             **({"allowed_secrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
             **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {}),
             **({"param_values": ver["param_values"]} if ver.get("param_values") is not None else {}),
+            **({"concurrency": ver["concurrency"]} if ver.get("concurrency") is not None else {}),
             **({"test_values": ver["test_values"]} if ver.get("test_values") is not None else {}),
             **({"out_of_sync": True} if ver.get("out_of_sync") else {}),
             "steps": manifest_steps,
@@ -1502,6 +1504,7 @@ class Store:
                 **({"allowedSecrets": ver["allowed_secrets"]} if ver.get("allowed_secrets") is not None else {}),
                 **({"triggers": ver["triggers"]} if ver.get("triggers") is not None else {}),
                 **({"paramValues": ver["param_values"]} if ver.get("param_values") is not None else {}),
+                **({"concurrency": ver["concurrency"]} if ver.get("concurrency") is not None else {}),
                 **({"testValues": ver["test_values"]} if ver.get("test_values") is not None else {}),
                 **({"outOfSync": True} if ver.get("out_of_sync") else {}),
             }

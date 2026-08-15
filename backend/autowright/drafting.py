@@ -155,6 +155,7 @@ triggers:                   # stage trigger edits — applied when the user save
   - edit: { index: 1, cron: "30 8 * * *" } # replace entry 1's fields (id and on/off state kept)
   - enable: { index: 2, enabled: false }   # flip an entry on/off
   - remove: { index: 3 }                   # delete an entry (indexes from CURRENT triggers)
+concurrency: { max_parallel: 2, max_queued: 5 }  # stage concurrency settings (one or both keys) — applied when the user saves
 name: New automation name   # rename the automation (current name under AUTOMATION above)
 description: One-line description  # rewrite its one-line description
 undo: true                  # restore the draft to before the last request — exact revert, one level
@@ -162,7 +163,7 @@ undo: true                  # restore the draft to before the last request — e
 
 - A change missing something only the user can supply (a channel id, a sender handle, which secret holds a token, which account or folder is meant) → ask for it in plain prose — no file blocks, no actions, no blocker. Never guess the missing piece; ask for everything missing in one message, and the user's next message completes the request.
 
-Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, secret name, sender handle) may come from the spec or from what the user typed in this conversation, never invented. Staged values and trigger edits land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
+Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, secret name, sender handle) may come from the spec or from what the user typed in this conversation, never invented. Use `concurrency` only when the user explicitly asks for parallel runs or queueing ("let two run at once", "queue messages when it's busy") — never speculatively; the defaults (max_parallel 1, max_queued 0) stay unless the user names different numbers or words you can map to them ("a couple at once" → 2). Staged values, trigger edits, and concurrency changes land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
 - A failure the user can't fix by changing the automation → when the RECENT RUNS show the failure comes from the user's Mac, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
 
@@ -347,6 +348,16 @@ def build_chat_prompt(user_text: str | None, current: dict | None,
                                for i, t in enumerate(trigs, 1)],
                               sort_keys=False, allow_unicode=True).strip()
                if trigs else "none"))
+    # §8 CURRENT concurrency — the §4.1 maxParallel/maxQueued pair, editable
+    # only via the actions.yaml `concurrency` key; edits are staged until save.
+    conc = (current or {}).get("concurrency") or {}
+    parts.append(
+        "=== CURRENT concurrency (how many executions may run at once and how "
+        "many may queue when busy — change only via actions.yaml `concurrency`; "
+        "edits are staged and land when the user saves) ===\n"
+        + yaml.safe_dump({"max_parallel": conc.get("maxParallel", 1),
+                          "max_queued": conc.get("maxQueued", 0)},
+                         sort_keys=False).strip())
     for s in (current or {}).get("steps", []):
         parts.append(f"=== CURRENT step {_step_head(s)} ===\n{s.get('code', '')}")
     parts.append("=== USER REQUEST ===\n" + (user_text or "").strip())
@@ -653,7 +664,7 @@ def validate_actions(text: str, param_names: list[str] | None = None,
     out: dict = {}
     for k in data:
         if k not in ("sync", "test", "test_values", "param_values", "triggers",
-                     "name", "description", "undo"):
+                     "concurrency", "name", "description", "undo"):
             errors.append(f"actions.yaml: unknown key {k!r}")
     # §8: undo is exclusive — undoing and acting/rewriting in one response is
     # contradictory (the rewrite-block half is enforced in validate_chat)
@@ -686,6 +697,11 @@ def validate_actions(text: str, param_names: list[str] | None = None,
         errors += errs
         if not errs:
             out["triggers"] = ops
+    if "concurrency" in data:
+        conc, errs = _validate_concurrency(data["concurrency"])
+        errors += errs
+        if not errs:
+            out["concurrency"] = conc
     for k in ("name", "description"):
         if k in data:
             if not isinstance(data[k], str) or not data[k].strip():
@@ -694,6 +710,29 @@ def validate_actions(text: str, param_names: list[str] | None = None,
                 out[k] = data[k].strip()
     if not errors and not out:
         errors.append("actions.yaml carries no actions — omit the block instead")
+    return ({}, errors) if errors else (out, [])
+
+
+def _validate_concurrency(raw) -> tuple[dict, list[str]]:
+    """§8 `concurrency` action — a mapping holding one or both of
+    `max_parallel` (int ≥ 1) and `max_queued` (int ≥ 0) and nothing else.
+    Returns the §4.1 camelCase object, or the errors feeding the repair round."""
+    if not isinstance(raw, dict) or not raw:
+        return {}, ["actions.yaml: concurrency must be a mapping with "
+                    "max_parallel and/or max_queued"]
+    errors: list[str] = []
+    out: dict = {}
+    floors = {"max_parallel": 1, "max_queued": 0}
+    dests = {"max_parallel": "maxParallel", "max_queued": "maxQueued"}
+    for k, v in raw.items():
+        if k not in floors:
+            errors.append(f"actions.yaml: unknown concurrency key {k!r} — use "
+                          "max_parallel and/or max_queued")
+        elif not isinstance(v, int) or isinstance(v, bool) or v < floors[k]:
+            errors.append(f"actions.yaml: concurrency {k} must be an integer "
+                          f"≥ {floors[k]}, got {v!r}")
+        else:
+            out[dests[k]] = v
     return ({}, errors) if errors else (out, [])
 
 

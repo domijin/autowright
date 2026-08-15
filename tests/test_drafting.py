@@ -448,7 +448,7 @@ def test_chat_prompt_section_order_and_content():
              p.index("=== BUILD INSTRUCTIONS"), p.index("=== CONVERSATION"),
              p.index("=== AUTOMATION"), p.index("=== SPEC (spec.md) ==="),
              p.index("=== CURRENT parameters"), p.index("=== CURRENT triggers"),
-             p.index("=== CURRENT step"),
+             p.index("=== CURRENT concurrency"), p.index("=== CURRENT step"),
              p.index("=== USER REQUEST ==="), p.index("=== TASK ===")]
     assert order == sorted(order)
     assert "Block spec body." in p
@@ -477,9 +477,14 @@ def test_chat_prompt_section_order_and_content():
     # no conversation → no section
     bare = build_chat_prompt("x", cur, GRANTS, None)
     assert "=== CONVERSATION" not in bare
+    # §8 CURRENT concurrency — always present; no key → the 1/0 defaults
+    assert "max_parallel: 1" in p and "max_queued: 0" in p
+    withc = build_chat_prompt("x", {**cur, "concurrency": {"maxParallel": 3, "maxQueued": 5}}, GRANTS)
+    assert "max_parallel: 3" in withc and "max_queued: 5" in withc
     # no name/desc, no params, no triggers key → none of those sections
     anon = build_chat_prompt("x", {"spec": "# T", "params": [], "steps": []}, GRANTS)
     assert "=== AUTOMATION" not in anon and "=== CURRENT parameters" not in anon
+    assert "=== CURRENT concurrency" in anon
     assert "=== CURRENT triggers" not in anon
     # an empty trigger list still renders the section, as `none`
     unsched = build_chat_prompt("x", {"spec": "# T", "params": [], "steps": [], "triggers": []}, GRANTS)
@@ -1078,6 +1083,29 @@ def test_validate_actions_trigger_ops():
         {"op": "enable", "index": 2, "enabled": False},
         {"op": "remove", "index": 2},
     ]
+
+
+def test_validate_actions_concurrency():
+    # §8 `concurrency` — one or both of max_parallel (≥ 1) / max_queued (≥ 0),
+    # nothing else; lands as the §4.1 camelCase object.
+    ok, errs = validate_actions("concurrency: { max_parallel: 2, max_queued: 5 }\n")
+    assert errs == [] and ok == {"concurrency": {"maxParallel": 2, "maxQueued": 5}}
+    ok, errs = validate_actions("concurrency: { max_queued: 0 }\n")
+    assert errs == [] and ok == {"concurrency": {"maxQueued": 0}}
+    _, errs = validate_actions("concurrency: {}\n")
+    assert any("must be a mapping" in e for e in errs)
+    _, errs = validate_actions("concurrency: 3\n")
+    assert any("must be a mapping" in e for e in errs)
+    _, errs = validate_actions("concurrency: { slots: 2 }\n")
+    assert any("unknown concurrency key" in e for e in errs)
+    _, errs = validate_actions("concurrency: { max_parallel: 0 }\n")
+    assert any("≥ 1" in e for e in errs)
+    _, errs = validate_actions("concurrency: { max_queued: -1 }\n")
+    assert any("≥ 0" in e for e in errs)
+    _, errs = validate_actions("concurrency: { max_parallel: true }\n")
+    assert any("integer" in e for e in errs)
+    _, errs = validate_actions("concurrency: { max_parallel: '2' }\n")
+    assert any("integer" in e for e in errs)
 
 
 def test_validate_actions_trigger_ops_errors():

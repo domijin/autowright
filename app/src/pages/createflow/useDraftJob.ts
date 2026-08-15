@@ -368,7 +368,8 @@ export function useDraftJob(d: DraftJobDeps) {
                 next = {
                   ...next,
                   spec: snap.spec, steps: snap.steps, params: snap.params, packages: snap.packages,
-                  triggers: snap.triggers, paramValues: snap.paramValues, testValues: snap.testValues,
+                  triggers: snap.triggers, paramValues: snap.paramValues, concurrency: snap.concurrency,
+                  testValues: snap.testValues,
                   instructions: snap.instructions, notes: snap.notes,
                   dirty: snap.dirty, undo: null,
                 }
@@ -439,13 +440,23 @@ export function useDraftJob(d: DraftJobDeps) {
                 chat.push(entry)
               }
             }
+            // §8 `concurrency`: stage the §4.1 settings — sent keys merge over
+            // the staged object, land only at save; the CONCURRENCY card shows
+            // the staged values.
+            if (actions.concurrency) {
+              next = { ...next, concurrency: { ...next.concurrency, ...actions.concurrency } }
+              const entry = newEntry({ kind: 'system', icon: 'fa-layer-group', text: 'Concurrency staged — applies when you save.' })
+              anchorId = entry.id
+              chat.push(entry)
+            }
             // an answer-only response leaves the existing snapshot untouched
             if (anchorId) {
               next = {
                 ...next,
                 undo: {
                   spec: r.spec, steps: r.steps, params: r.params, packages: r.packages,
-                  triggers: r.triggers, paramValues: r.paramValues, testValues: r.testValues,
+                  triggers: r.triggers, paramValues: r.paramValues, concurrency: r.concurrency,
+                  testValues: r.testValues,
                   instructions: r.instructions, notes: r.notes,
                   dirty: r.dirty, entryId: anchorId,
                 },

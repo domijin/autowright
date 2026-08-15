@@ -568,6 +568,24 @@ describe('serializeDraft (§4.4 draft payload)', () => {
     expect(a.testValues).toEqual({ city: 'Bergen' })
   })
 
+  it('round-trips the §8 staged concurrency object (§4.4 draft-only key)', () => {
+    const r = { ...seedDrafting(AGENTS, SECRETS), concurrency: { maxParallel: 2 } }
+    expect(serializeDraft(r).concurrency).toEqual({ maxParallel: 2 })
+    // nothing staged drops the key
+    expect('concurrency' in serializeDraft(seedDrafting(AGENTS, SECRETS))).toBe(false)
+    // both resume paths restore it
+    expect(seedFromPayload({ concurrency: { maxQueued: 5 } } as unknown as DraftPayload, AGENTS, SECRETS).concurrency)
+      .toEqual({ maxQueued: 5 })
+    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRETS).concurrency).toBeNull()
+    const a = seedFromAuto({
+      name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
+      triggers: [], stepAgents: ['g1'], allowedSecrets: [],
+      agentId: null,
+      draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '', concurrency: { maxParallel: 3, maxQueued: 1 } },
+    } as unknown as Automation, AGENTS, SECRETS)
+    expect(a.concurrency).toEqual({ maxParallel: 3, maxQueued: 1 })
+  })
+
   it('round-trips the §11 dirty gate as outOfSync — resume must not unlock Save (§4.4)', () => {
     const dirty = { ...seedDrafting(AGENTS, SECRETS), dirty: true }
     expect(serializeDraft(dirty).outOfSync).toBe(true)

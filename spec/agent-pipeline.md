@@ -71,7 +71,8 @@ also served to the create/edit page via §19 `GET /instructions`):
   The section carries the **action policy** (the when-to-request rules under
   "actions.yaml" below), so deferral phrasing like "don't build yet" is honored.
   The section also carries the **staged-changes contract**: the chat can stage stored
-  parameter values (`param_values`) and trigger edits (`triggers` ops) — both apply to the
+  parameter values (`param_values`), trigger edits (`triggers` ops), and concurrency
+  settings (`concurrency`) — all apply to the
   draft and land only when the user saves, so the agent says so plainly ("staged — takes
   effect when you save") and, when the user wants immediate effect, points at the
   automation page where the same edit applies instantly. Parameter **definitions** still
@@ -175,7 +176,11 @@ ops name entries by; the same sourcing as the sync call's reference section: the
 `current.triggers`, else the
 stored list; present whenever the key travels, `none` when empty; editable through the
 `triggers` action ops below — the heading says so, and that edits are staged until the
-user saves), every
+user saves), **CURRENT concurrency** — the §4.1 `maxParallel`/`maxQueued` pair as yaml
+(sourced like triggers: the editor's `current.concurrency` — staged values included —
+else the stored automation's; create mode without one shows the defaults 1/0), headed
+that edits go through the `concurrency` action below and are staged until the user
+saves, every
 current step (file, name, code — the same rendering the sync call's CURRENT sections use),
 the closing **USER REQUEST** (the message text), and a TASK directive stating the response
 contract:
@@ -228,6 +233,7 @@ triggers:                   # stage trigger edits (§4.3 — applied when the us
   - edit: { index: 1, cron: "30 8 * * *" }   # replace entry 1's fields (id + enabled kept)
   - enable: { index: 2, enabled: false }     # flip an entry on/off
   - remove: { index: 3 }                     # delete an entry
+concurrency: { max_parallel: 2, max_queued: 5 }  # stage §4.1 concurrency (applied when the user saves)
 name: New automation name   # rename — §4.1 user-owned identity, applied like the pencil
 description: One-line description  # ditto for the description
 undo: true                  # run the §11 draft-undo restore — back to before the last request
@@ -257,6 +263,9 @@ malformed op, unknown op name, or out-of-range index is a validation error feedi
 repair round. A message-trigger `add`/`edit` follows rule 9's detail rule with one
 extension: identifying details (channel id, token-secret name, sender handle) may come
 from the spec **or the user's own conversation text** — never invented;
+`concurrency` a mapping holding one or both of `max_parallel` (int ≥ 1) and `max_queued`
+(int ≥ 0) and nothing else — an empty mapping, unknown key, or out-of-range value is a
+validation error feeding the repair round;
 `name`/`description` nonempty strings. `test: true` implies the sync whenever the workflow is out
 of sync once the rewrites land (§11). Grants are **not** actions: the agent may suggest
 enabling an agent or secret in prose but can never do it, and there is no save/create
@@ -277,6 +286,10 @@ undo or revert the last change ("undo that", "put it back") — never hand-rewri
 documents back from memory when the exact restore is available. `param_values` only when
 the user explicitly states a value ("set url to X") — never guessed; a value that looks
 like a password or token is refused in prose and pointed at §4.8 secrets instead.
+`concurrency` only when the user explicitly asks for parallel runs or queueing ("let two
+run at once", "queue messages when it's busy") — never speculatively; the defaults
+(`max_parallel` 1, `max_queued` 0) stay unless the user names different numbers or asks
+in words the agent can map to them ("a couple at once" → 2).
 `triggers` ops only on an explicit trigger request ("run at 9 instead", "pause the
 schedule", "delete the Discord trigger") — a trigger the agent merely judges missing keeps
 going through the spec + sync (rule 9), never an op. Before an `add`, check the CURRENT

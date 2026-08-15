@@ -887,15 +887,14 @@ editors enter with
   Empty state:
   "No settings needed — your AI didn't ask for any."
 - **CONCURRENCY** card — display-only in both modes, directly below the Parameters card: the
-  §4.1 settings as two summary rows in the §9.2 card's language — **"Run at once"**
-  (`maxParallel`) and **"Queue when busy"** (`maxQueued`), each with the value
+  §4.1 settings as two summary rows in the §9.2 card's language — **"Max parallel executions"**
+  (`maxParallel`) and **"Max queued executions"** (`maxQueued`), each with the value
   right-aligned like the Parameters card's value summaries. The value's source: in edit
   mode the automation's stored settings, in create mode the defaults (1 / 0) — and in
   both modes a chat-staged value (§8 `concurrency` action) overrides its row, with the
   same small "staged" hint the Parameters card uses, so an unsaved value is never
   mistaken for a stored one. No inline editors (the §9.2 detail page keeps the number
-  inputs). Footer: "Not part of a version — change these on the automation page, or ask
-  your AI here (staged changes apply when you save)." The card is not collapsible and has
+  inputs). No footer text. The card is not collapsible and has
   no empty state — the two rows always render.
 - **Steps** — readable scripts with per-step read-only tags (same tag language as the §9.2
   detail page — never menus, every tag carries a plain-language tooltip — the §14 Tag

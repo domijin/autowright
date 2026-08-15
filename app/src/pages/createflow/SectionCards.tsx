@@ -809,12 +809,12 @@ export function RightCards({
           <Eyebrow>CONCURRENCY</Eyebrow>
         </div>
         {([
-          { label: 'Run at once', key: 'maxParallel' as const, fallback: 1 },
-          { label: 'Queue when busy', key: 'maxQueued' as const, fallback: 0 },
+          { label: 'Max parallel executions', key: 'maxParallel' as const, fallback: 1 },
+          { label: 'Max queued executions', key: 'maxQueued' as const, fallback: 0 },
         ]).map(({ label, key, fallback }) => {
           const staged = rev.concurrency?.[key]
           return (
-            <div key={key} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+            <div key={key} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '11px 20px', borderBottom: key === 'maxQueued' ? 'none' : '1px solid var(--hairline-dim)' }}>
               <div style={{ font: "600 12.5px var(--sans)" }}>{label}</div>
               <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
                 {staged != null && (
@@ -825,9 +825,6 @@ export function RightCards({
             </div>
           )
         })}
-        <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
-          Not part of a version — change these on the automation page, or ask your AI here (staged changes apply when you save).
-        </div>
       </div>
 
       {/* PACKAGES · PYTHON LIBRARIES (§6.2) — display-only, right column like

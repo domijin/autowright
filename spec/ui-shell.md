@@ -410,8 +410,8 @@ Sections top to bottom:
   underneath spanning the full card width (text inputs capped at 520px).
 - **CONCURRENCY** card — the §6 settings, rendered for every automation (manual executions
   can run in parallel and queue via the §9.2 capacity popup, so the card is never inert). Two `number`
-  rows using the §9.2 row layout: **"Run at once"** (`maxParallel`, min 1) with caption "How many
-  executions of this automation may run at the same time." and **"Queue when busy"**
+  rows using the §9.2 row layout: **"Max parallel executions"** (`maxParallel`, min 1) with caption "How many
+  executions of this automation may run at the same time." and **"Max queued executions"**
   (`maxQueued`, min 0) with caption "How many executions wait for a free slot. Incoming
   messages beyond this are answered with a busy notice instead." Both PATCH immediately like parameters —
   no version, no AI. Through the PATCH round-trip the input keeps showing the committed

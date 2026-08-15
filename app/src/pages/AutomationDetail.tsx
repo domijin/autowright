@@ -683,7 +683,7 @@ function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToast: (m:
       </div>
       <div className="ad-card" style={{ overflow: 'hidden' }}>
         <NumberSettingRow
-          label="Run at once"
+          label="Max parallel executions"
           help="How many executions of this automation may run at the same time."
           value={auto.maxParallel} min={1}
           onCommit={(v) => patch('maxParallel', v)}
@@ -705,7 +705,7 @@ function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToast: (m:
           </div>
         )}
         <NumberSettingRow
-          label="Queue when busy"
+          label="Max queued executions"
           help="How many executions wait for a free slot. Incoming messages beyond this are answered with a busy notice instead."
           value={auto.maxQueued} min={0} last={waiting === 0}
           onCommit={(v) => patch('maxQueued', v)}

@@ -157,26 +157,23 @@ applies unchanged; the chat pane never collapses.
     `--text-muted` live detail line.
   No entry hand-picks sizes outside these roles — a new entry kind joins one of the
   three.
-- **Thread spacing — three gaps, by boundary.** 14 px separates turns: any gap that
-  touches a user bubble. 10 px separates the families: any agent-side gap that touches
-  a **message block** (operation block ↔ message block in either order, and two
-  consecutive message blocks) — the agent's record of work and its words to the user
-  read as distinct groups. Consecutive **operation blocks** chain **flush (0 px)** — one
-  response often lands several (stage trails, the rewrite entry, its "Renamed
-  to …" / "Description updated." system chips), and they read as one continuous block,
-  exactly like an activity entry's own feed lines, not as blank-line-separated
-  paragraphs (each entry's internal line-height and its own top padding, where a kind has
-  one, provide the breathing room). The transient progress entry is an operation block
-  and follows the same rules:
-  flush when it restarts beneath a just-settled **activity** entry (the same job's trail
-  chains as one block), 10 px after a message block, 14 px after a user bubble. The
-  turn action row sits 10 px beneath the entry it follows — slightly detached from the
-  group it closes. One exception to the three gaps: a §4.4 **boundary marker** never
-  chains flush — its chip sits a fixed 18 px beneath whatever precedes it (overriding
-  the family gap); when an entry follows the marker, its divider rule (entry-kind list
-  above) sits 10 px beneath the marker group (chip + explainer bullet) and the entry
-  after the rule opens with 10 px instead of chaining flush, so the settled session
-  closes on its own band and the fence sits between it and the current session.
+- **Thread spacing — one group gap.** A uniform **14 px** separates any two distinct
+  groups: turns (any gap touching a user bubble), operation block ↔ message block in
+  either order, two consecutive message blocks, and every gap around a §4.4 boundary
+  marker — 14 px above its chip (overriding the family gap), 14 px between the marker
+  group (chip + explainer bullet) and its divider rule when one renders (entry-kind
+  list above), and 14 px between the rule and the entry after it. Consecutive
+  **operation blocks** chain **flush (0 px)** — one response often lands several (stage
+  trails, the rewrite entry, its "Renamed to …" / "Description updated." system chips),
+  and they read as one continuous block, exactly like an activity entry's own feed
+  lines, not as blank-line-separated paragraphs (each entry's internal line-height and
+  its own top padding, where a kind has one, provide the breathing room). The transient
+  progress entry is an operation block and follows the same rules: flush when it
+  restarts beneath a just-settled **activity** entry (the same job's trail chains as
+  one block), 14 px after anything else. A boundary marker never chains flush — it is
+  its own group even among operation blocks. The turn action row sits 10 px beneath
+  the entry it follows — attached to the group it closes, deliberately tighter than
+  the 14 px group gap.
 - **Turn action row** — the thread's one suggestion surface: a standalone left-aligned
   wrapping pill row (icon-led `.ad-btn-pill.action` pills — the composer pills' small
   look in the §14 sans action face) rendered beneath the thread's **last agent-side

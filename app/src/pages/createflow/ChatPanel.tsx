@@ -60,17 +60,14 @@ function MsgHeader({ icon, color, title }: { icon: string; color: string; title:
 
 /** §11 two block families: operation blocks (the record of what the agent
     did) vs message blocks (the agent talking to the user) — drives the
-    boundary spacing (14px turns / 10px around message blocks / 0 between ops). */
+    boundary spacing (uniform 14px between groups / 0 between chained ops). */
 const entryFamily = (e: ChatEntry): 'user' | 'msg' | 'op' =>
   e.kind === 'user' ? 'user'
     : e.kind === 'answer' || e.kind === 'blockers' || e.kind === 'error' ? 'msg' : 'op'
 const familyGap = (prev: ChatEntry | null, cur: ChatEntry): number => {
   if (!prev) return 0
-  if (prev.boundary) return 10 // the marker group reads as its own band (§11 thread spacing)
-  const a = entryFamily(prev); const b = entryFamily(cur)
-  if (a === 'user' || b === 'user') return 14
-  if (a === 'msg' || b === 'msg') return 10
-  return 0
+  if (prev.boundary) return 14 // the marker group is its own band (§11 thread spacing)
+  return entryFamily(prev) === 'op' && entryFamily(cur) === 'op' ? 0 : 14
 }
 
 /** Drafting-agent picker — lives in the chat pane composer (§11); menu opens
@@ -512,14 +509,14 @@ export function ChatPanel({
           // title; the undo row renders beneath it when it anchors the snapshot.
           // A §4.4 boundary marker is the one chip with a description bullet
           // (the derived history explainer, never persisted) and the one with
-          // chrome: 18px top gap (overriding the family gap) and, only when an
+          // chrome: 14px top gap (overriding the family gap) and, only when an
           // entry follows it, a hairline divider rule beneath its group — the
           // marker closes the history it describes, the rule sits between that
           // settled conversation and the next one (no rule while the marker is
           // the thread's last entry — nothing to fence off yet).
           return (
             <React.Fragment key={e.id}>
-            <div style={{ marginTop: e.boundary ? 18 : mt, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ marginTop: e.boundary ? 14 : mt, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
               <span style={{ width: 13, height: 13, flex: 'none', marginTop: 3, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className={`fa-solid ${e.icon ?? 'fa-circle-info'}`} style={{ fontSize: 10, color: 'var(--text-faint)' }} />
               </span>
@@ -537,7 +534,7 @@ export function ChatPanel({
             )}
             {e.boundary && i < rev.chat.length - 1 && (
               <div data-testid="chat-boundary-divider"
-                style={{ height: 1, flex: 'none', background: 'var(--hairline)', marginTop: 10 }} />
+                style={{ height: 1, flex: 'none', background: 'var(--hairline)', marginTop: 14 }} />
             )}
             {undoRow}
             </React.Fragment>

@@ -195,7 +195,8 @@ remain plain dicts (§2).
   full JSON) and publishes the automation-changed event. Guards, checked under one lock
   span: 404 unknown automation or version, 400 when `v` is the current version (the UI
   never offers it — restore another version first), 409 when any live or queued
-  execution records `(kind: version, version: v)` — an admitted Execute once must not
+  execution records `(kind: version, version: v)` — an admitted version execution (§19
+  execute `version`, §20 `execute --version`) must not
   lose its content before or during its run. Past execution records are untouched
   (§4.5 stores its own step list), but a failed execution on a deleted version can no
   longer retry — the §7 retry's version resolution answers 404

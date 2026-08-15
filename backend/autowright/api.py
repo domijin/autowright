@@ -771,7 +771,7 @@ def restore(automation_id: str, body: models.VersionRestore) -> dict:
 def delete_version(automation_id: str, version: int) -> dict:
     """§4.4/§19 delete an old version. Guards under one lock span: never the
     current version (400), never one a live or queued execution records (409 —
-    an admitted Execute once must not lose its content before or mid-run)."""
+    an admitted version execution must not lose its content before or mid-run)."""
     a = _auto_or_404(automation_id)
     with store.lock:
         if version == a["current_version"]:

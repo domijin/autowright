@@ -9,7 +9,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   queued — but the user can **choose** to queue it: §19 `queue: true` joins the §6 firing
   queue (manual-admission rules there: free slot starts immediately, Draft never queues, full
   queue answers 409 "the queue is full (N waiting)", and manual entries have no TTL).
-  Surfaces: the §9.2 detail page's Execute now (and its version-chip Execute once) opens the
+  Surfaces: the §9.2 detail page's Execute now opens the
   **capacity popup** (§9.2) instead of firing blind whenever another execution is live — the
   popup is where Run now / Queue / capacity-full are offered. Every other surface (the §9.1
   inline execute button, the §13 menu bar, the execution page's Execute again, and any raced

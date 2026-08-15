@@ -60,8 +60,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const clickExecuteNow = () => {
-  // The header's accent primary — reads "Executing…" while anything is live;
-  // the version rows' buttons say "Execute once".
+  // The header's accent primary — reads "Executing…" while anything is live.
   const btn = screen.getAllByRole('button').find((b) => /Execute now|Executing…/.test(b.textContent ?? ''))
   expect(btn).toBeTruthy()
   fireEvent.click(btn!)

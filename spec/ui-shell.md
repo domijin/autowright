@@ -193,7 +193,7 @@ Under the title row, a lede row: the automation's `description` (§4.1) as a mut
 page — and beside it, on the same row, the §4.3 detail-page trigger status chip (never
 shrinks; the description ellipsizes first). When the description is empty the description text is omitted
 and the chip stands alone on the row.
-Then the version chip dropdown (§4.4 Execute once + footer
+Then the version chip dropdown (§4.4 read-only history + footer
 explainer), status badge, then the §9 header-action cluster: Edit (ghost), Execute now (accent
 primary), ellipsis menu at the far right edge (**Export…**, then Delete automation… in red). Export… opens a small modal — "Export "`<name>`"" with one toggle row,
 "Include parameter values" (on; help: "Your saved parameter values travel with the file — turn
@@ -202,7 +202,7 @@ this Mac", accent Export / quiet Cancel — then a native save dialog (main-proc
 name `<name>.autowright` in Downloads) writes the §19 export response; success toasts
 "Exported to `<file>`."
 
-**Capacity popup** — pressing Execute now (or a version row's Execute once) while **any**
+**Capacity popup** — pressing Execute now while **any**
 execution of this automation is live never fires blind: the click opens a modal decided by
 the store's state at click time (`live` count, the automation's own non-test `queued`
 records = waiting, `maxParallel`, `maxQueued`). Nothing live → no popup, executes as always.
@@ -217,8 +217,7 @@ Three cases:
    (`maxParallel` 1) or "All N slots are busy." (`maxParallel` > 1), then "Queue this
    execution? It runs as soon as a slot frees up, and waits until you cancel it." and the
    faint hint "Raise Max parallel in Settings to allow more at once." Accent **Queue** /
-   quiet Cancel. Confirm sends §19 `queue: true` (an Execute-once row queues pinned to its
-   version); success toasts "Queued — runs as soon as a slot frees up." (or, when the raced
+   quiet Cancel. Confirm sends §19 `queue: true`; success toasts "Queued — runs as soon as a slot frees up." (or, when the raced
    response started instead of queueing, no toast — the live UI already shows it running).
 3. **Slots full, queue full** (live ≥ `maxParallel`, waiting ≥ `maxQueued` — `maxQueued` 0
    included) — nothing can be offered. Title "Execution and queue capacity is full", body

@@ -489,8 +489,8 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   icon button (`.ad-btn-icon.danger`) on its right. The Draft row and the current-version
   header never show it — **hidden, not disabled**: deleting the current version is
   structurally impossible (restore another version first and it stops being current), and
-  permanently inapplicable actions hide rather than grey out, matching the detail-page
-  menu where only older rows get Execute once. The trash opens a danger ConfirmModal ("Delete v X? · v X is deleted
+  permanently inapplicable actions hide rather than grey out — the same rule that keeps
+  the current version out of both menus' selectable rows. The trash opens a danger ConfirmModal ("Delete v X? · v X is deleted
   from the version history. This can't be undone. Past executions of v X stay in
   Executions."); confirming calls the §19 DELETE, reloads the automation, and toasts
   "v X deleted." If the deleted version was the one being viewed, the editor jumps back to
@@ -499,10 +499,12 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   (400) and a version with a live or queued execution on it (409 — an in-flight Execute
   once must not lose its content mid-run); a failed execution whose version was deleted
   can no longer Retry (its §7 retry answers 404), and its stored record is untouched.
-- Detail page: old versions can **Execute once** without touching the triggers (toast: "Executing vX
-  once — triggers and Execute now stay on vN."). The detail-page version menu carries a footer
-  explainer: "Executing an older version once doesn't change anything — triggers and Execute now
-  always use the current version. To make an older version current, open Edit and restore it from
+- Detail page: the version menu is **read-only history** — older rows show version, note, and
+  date and carry no actions. There is no Execute once in the UI: re-executing an older version
+  from the app was removed (params are current stored values and old versions can hold stale
+  assumptions); executing an old version stays possible through §19 execute `version` and the
+  §20 CLI's `execute --version`. The menu's footer explainer: "Triggers and Execute now always
+  use the current version. To make an older version current, open Edit and restore it from
   the Version menu." Draft banner offers Resume editing / Discard — the UI has no
   Execute-draft action; draft iteration happens through the editor's §11 Test.
 - **A Draft execution executes on the draft's own memory** (`draft/memory/`, §5). Draft

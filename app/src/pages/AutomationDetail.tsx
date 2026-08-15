@@ -921,11 +921,9 @@ export default function AutomationDetail() {
   const [verOpen, setVerOpen, verRef] = usePopover()
   const [actOpen, setActOpen, actRef] = usePopover()
   const [delAsk, setDelAsk] = useState(false)
-  // §9.2 capacity popup — a click on Execute now / Execute once while anything
-  // is live routes through the modal; `kind` is decided at click time.
-  const [execAsk, setExecAsk] = useState<{
-    ver?: string; toastMsg?: string; kind: 'parallel' | 'queue' | 'full'
-  } | null>(null)
+  // §9.2 capacity popup — a click on Execute now while anything is live
+  // routes through the modal; `kind` is decided at click time.
+  const [execAsk, setExecAsk] = useState<'parallel' | 'queue' | 'full' | null>(null)
   const [exportAsk, setExportAsk] = useState(false)
   const [exportValues, setExportValues] = useState(true)
   const [specOpen, setSpecOpen] = useState(true)
@@ -997,12 +995,11 @@ export default function AutomationDetail() {
   const execLabel = executing ? 'Executing…' : 'Execute now'
   const execIconCls = executing ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play'
 
-  const runExecute = (ver?: string, toastMsg?: string, queue = false) => {
+  const runExecute = (queue = false) => {
     void (async () => {
       try {
-        const r = await api.executeNow(auto.id, ver, 'manual', queue)
+        const r = await api.executeNow(auto.id, undefined, 'manual', queue)
         if (queue && r.queued) showToast('Queued — runs as soon as a slot frees up.')
-        else if (toastMsg) showToast(toastMsg)
       } catch (err) {
         // §9.2: a raced 409 (capacity changed between popup and click) falls
         // back to the §7 busy toast.
@@ -1013,15 +1010,12 @@ export default function AutomationDetail() {
   }
   // §9.2 capacity popup: anything live never fires blind — the click opens the
   // modal whose case is decided by the store's state right now.
-  const doExecute = (ver?: string, toastMsg?: string) => {
+  const doExecute = () => {
     if (executing) {
-      setExecAsk({
-        ver, toastMsg,
-        kind: !atCapacity ? 'parallel' : waiting < auto.maxQueued ? 'queue' : 'full',
-      })
+      setExecAsk(!atCapacity ? 'parallel' : waiting < auto.maxQueued ? 'queue' : 'full')
       return
     }
-    runExecute(ver, toastMsg)
+    runExecute()
   }
 
   // §4.3 trigger edits are user-owned operational state: whole-list PATCH, no
@@ -1221,16 +1215,6 @@ export default function AutomationDetail() {
                       {(v.note ? `${v.note} — ` : '') + v.when}
                     </div>
                   </div>
-                  <button
-                    className="ad-btn-accent-ghost small"
-                    onClick={() => {
-                      setVerOpen(false)
-                      doExecute(`v${v.version}`, `Executing v${v.version} once — triggers and Execute now stay on v${auto.version}.`)
-                    }}
-                    style={{ flex: 'none' }}
-                  >
-                    <i className="fa-solid fa-play" style={{ fontSize: 9 }} /> Execute once
-                  </button>
                 </div>
               ))}
               </ScrollArea>
@@ -1238,7 +1222,7 @@ export default function AutomationDetail() {
                 padding: '10px 14px', fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)',
                 background: 'var(--bg-card)',
               }}>
-                Executing an older version once doesn’t change anything — triggers and{' '}
+                Triggers and{' '}
                 <i className="fa-solid fa-play" style={{ fontSize: 9 }} /> Execute now always use the current version.
                 To make an older version current, open Edit and restore it from the Version menu.
               </div>
@@ -1808,16 +1792,16 @@ export default function AutomationDetail() {
           onCancel={() => setRemoveTrig(null)}
         />
       )}
-      {execAsk?.kind === 'parallel' && (
+      {execAsk === 'parallel' && (
         <ConfirmModal
           title="Already executing"
           body={`${liveCount} of ${auto.maxParallel} slots are busy. This runs now, in parallel with the execution already running.`}
           confirmLabel="Run now"
-          onConfirm={() => { const a = execAsk; setExecAsk(null); runExecute(a.ver, a.toastMsg) }}
+          onConfirm={() => { setExecAsk(null); runExecute() }}
           onCancel={() => setExecAsk(null)}
         />
       )}
-      {execAsk?.kind === 'queue' && (
+      {execAsk === 'queue' && (
         <ConfirmModal
           title="Already executing"
           body={(
@@ -1828,11 +1812,11 @@ export default function AutomationDetail() {
             </>
           )}
           confirmLabel="Queue"
-          onConfirm={() => { const a = execAsk; setExecAsk(null); runExecute(a.ver, a.toastMsg, true) }}
+          onConfirm={() => { setExecAsk(null); runExecute(true) }}
           onCancel={() => setExecAsk(null)}
         />
       )}
-      {execAsk?.kind === 'full' && (
+      {execAsk === 'full' && (
         <Modal
           onClose={() => setExecAsk(null)} width={400} zIndex={90}
           cardStyle={{ padding: '22px 24px' }}

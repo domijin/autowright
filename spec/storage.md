@@ -395,7 +395,7 @@ Rules:
 
 **Terminology:** **execution** is the one and only term for a single occurrence of an
 automation — in files, code, APIs, and UI copy alike. The verb form is **execute** ("Execute
-now", "Executing", "Execute once"). The word "run" is never used for this
+now", "Executing"). The word "run" is never used for this
 concept anywhere; "running" survives only in its ordinary process sense (a daemon or the
 backend being up).
 

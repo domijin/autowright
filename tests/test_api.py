@@ -844,6 +844,33 @@ def test_edit_draft_snapshot_carries_param_values(client):
     assert store.autos[a["id"]]["param_values"] == {}
 
 
+def test_staged_draft_values_never_affect_executions(client):
+    # §4.2: the chat-staged map is draft state only — a version execution keeps
+    # resolving from the automation's stored values while the draft holds a
+    # different staged value, until the draft is saved.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Staged exec", "mock")
+    r = client.patch(f"/automations/{a['id']}", json={"paramValues": {"greeting": "stored"}})
+    assert r.status_code == 200
+    r = client.put(f"/draft/{a['id']}", json={"draft": {
+        **make_version(), "paramValues": {"greeting": "staged"}}})
+    assert r.status_code == 200
+    eid = client.post(f"/automations/{a['id']}/execute", json={}).json()["executionId"]
+    for _ in range(100):
+        e = client.get(f"/executions/{eid}").json()
+        if e["status"] != "executing":
+            break
+        time.sleep(0.1)
+    assert e["status"] == "succeeded"
+    # values-as-used come from the stored values, never the draft's staged map
+    greet = next(p for p in e["params"] if p["name"] == "greeting")
+    assert greet.get("value") == "stored"
+    assert store.autos[a["id"]]["param_values"] == {"greeting": "stored"}
+    # the staged map still rides the draft, ready for the save
+    assert client.get(f"/automations/{a['id']}").json()["draft"]["paramValues"] == {"greeting": "staged"}
+
+
 def test_edit_draft_snapshot_carries_triggers(client):
     from autowright.storage import store
 

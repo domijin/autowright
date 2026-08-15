@@ -14,6 +14,7 @@ vi.mock('../src/api', () => ({
   api: {
     instructions: vi.fn(async () => ({ framework: '# Framework', defaultBuild: '- rules' })),
     postDraftJob: vi.fn(async () => ({ jobId: 'j1' })),
+    patchAutomation: vi.fn(async () => ({})),
     getDraftJob: vi.fn(() => new Promise(() => { /* poll never answers in tests */ })),
     cancelDraftJob: vi.fn(async () => ({})),
     // §19 one draft-container surface (owner = automation id | 'pending')
@@ -624,6 +625,99 @@ describe('CreateFlow chat response application (§11)', () => {
     // the armed test chained a sync first; its block kept the steps stale
     expect(draftBody(1).mode).toBe('sync')
     expect(mockedApi.postTest).not.toHaveBeenCalled()
+  })
+})
+
+describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () => {
+  beforeEach(armPendingPoll)
+
+  const done = (draft: Record<string, unknown>) => ({
+    id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'chat', draft,
+  })
+  const send = (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'),
+      { target: { value: text } })
+    fireEvent.click(screen.getByText('Send'))
+  }
+  // The §4.4 debounced draft PUT is the observable for staged editor state —
+  // its payload is exactly what a kept draft (and a save) carries.
+  const lastDraftPut = async () => {
+    await waitFor(() => expect(mockedApi.putDraft).toHaveBeenCalled(), { timeout: 3000 })
+    return (mockedApi.putDraft as ReturnType<typeof vi.fn>).mock.calls.at(-1)![1] as {
+      triggers: Array<Record<string, unknown>>
+      paramValues?: Record<string, unknown>
+      params: Array<Record<string, unknown>>
+    }
+  }
+
+  const TRIGGERED = {
+    ...AUTO,
+    triggers: [
+      { id: 't1', kind: 'cron', expression: '0 8 * * *', enabled: true, source: 'spec', label: 'Daily at 8:00', short: 'Daily 8:00' },
+      { id: 't2', kind: 'discord', channel: '123', secret: 'CRM_API_KEY', enabled: true, label: 'Discord · 123', short: 'Discord' },
+    ],
+    params: [{ name: 'greeting', kind: 'text', label: 'Greeting', help: 'What to say.', default: 'hello', value: 'hello' }],
+  } as unknown as Automation
+  beforeEach(() => storeMod.useStore.setState({ automations: [TRIGGERED] }))
+
+  it('an add matching an existing trigger is a no-op — chip lands, list unchanged', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      answer: 'That schedule is already set up.',
+      actions: { triggers: [{ op: 'add', trigger: { kind: 'cron', expression: '0 8 * * *', enabled: true, source: 'user' } }] },
+    }))
+    render(<CreateFlow />)
+    send('add an 8am schedule')
+    await waitFor(() => expect(screen.getByText('That trigger already exists.')).toBeTruthy(), { timeout: 3000 })
+    const d = await lastDraftPut()
+    expect(d.triggers.map((t) => t.id)).toEqual(['t1', 't2'])
+  })
+
+  it('adding a new trigger keeps every existing trigger untouched', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      actions: { triggers: [{ op: 'add', trigger: { kind: 'cron', expression: '0 21 * * *', enabled: true, source: 'user' } }] },
+    }))
+    render(<CreateFlow />)
+    send('also run at 9pm')
+    await waitFor(() => expect(screen.getByText('Trigger added.')).toBeTruthy(), { timeout: 3000 })
+    // TRIGGERS card shows the old chips and the new one (preview-mock labels
+    // re-fetch async after the list changes)
+    await waitFor(() => expect(screen.getByText('0 21 * * *')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('0 8 * * *')).toBeTruthy()
+    expect(screen.getByText('123')).toBeTruthy()
+    const d = await lastDraftPut()
+    expect(d.triggers.map((t) => [t.id, t.enabled])).toEqual([['t1', true], ['t2', true], [undefined, true]])
+    expect(d.triggers[2]).toMatchObject({ kind: 'cron', expression: '0 21 * * *', source: 'user' })
+  })
+
+  it('an enable op flips only the trigger it names — the others keep their state', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      actions: { triggers: [{ op: 'enable', index: 2, enabled: false }] },
+    }))
+    render(<CreateFlow />)
+    send('pause the discord trigger')
+    await waitFor(() => expect(screen.getByText('Trigger 2 turned off.')).toBeTruthy(), { timeout: 3000 })
+    const d = await lastDraftPut()
+    expect(d.triggers.map((t) => [t.id, t.enabled])).toEqual([['t1', true], ['t2', false]])
+  })
+
+  it('param_values stage in the draft only — no PATCH, stored defs untouched, save carries the map', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      actions: { paramValues: { greeting: 'hi' } },
+    }))
+    render(<CreateFlow />)
+    send('set greeting to hi')
+    await waitFor(() => expect(screen.getByText('Parameter “greeting” staged — applies when you save.')).toBeTruthy(), { timeout: 3000 })
+    // Parameters card marks the unsaved value and shows the staged summary
+    expect(screen.getByText('STAGED')).toBeTruthy()
+    expect(screen.getByText('hi')).toBeTruthy()
+    // §4.2: staged is draft state only — the automation is never PATCHed now
+    expect(mockedApi.patchAutomation).not.toHaveBeenCalled()
+    const d = await lastDraftPut()
+    expect(d.paramValues).toEqual({ greeting: 'hi' })
+    // the param definitions (what versions store) keep their old value
+    expect(d.params[0]).toMatchObject({ name: 'greeting', value: 'hello' })
+    // and the live automation in the store still holds the stored value
+    expect((storeMod.useStore.getState().automations[0].params[0] as { value?: string }).value).toBe('hello')
   })
 })
 

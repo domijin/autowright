@@ -1581,7 +1581,12 @@ class DraftJobs:
     _CHAT_LABELS = {"spec.md": "Writing the spec",
                     "instructions.md": "Writing the build instructions",
                     "notes.md": "Updating the notes",
-                    "actions.yaml": "Choosing next actions"}
+                    "actions.yaml": "Writing the follow-up actions"}
+
+    # §8 chat-job stage flip: the first streamed rewrite marker moves the job
+    # from the neutral deciding stage to the documents stage; answer-only,
+    # actions-only, and blocker responses never flip.
+    _REWRITE_MARKS = frozenset({"spec.md", "instructions.md", "notes.md"})
 
     def _chat_cb(self, job: dict, prefix: str = ""):
         """§8 chat-call live progress: `Thinking…` until text arrives, then a
@@ -1600,6 +1605,12 @@ class DraftJobs:
             marks = list(FILE_MARK_RE.finditer(text))
             if marks:
                 fname = marks[-1].group(1).strip()
+                # §8 stage flip — checked against the job, not the round's local
+                # state, so a repair round that first streams a rewrite marker
+                # still flips, and a flipped job never flips back.
+                if (fname in self._REWRITE_MARKS
+                        and job["stage"] == "Working on the request"):
+                    self._stage(job, "Updating the documents")
                 shape = fname
                 label = self._CHAT_LABELS.get(fname, f"Writing {fname}")
                 if fname == "actions.yaml":

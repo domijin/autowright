@@ -603,10 +603,10 @@ describe('CreateFlow chat response application (§11)', () => {
     }))
     render(<CreateFlow />)
     send('Also weekends')
-    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     // §11 order: the answer entry lands before the rewrite entry
     const answer = screen.getByText('Sure — done.')
-    const rewrite = screen.getByText('Spec updated')
+    const rewrite = screen.getByText('Spec updated.')
     expect(answer.compareDocumentPosition(rewrite) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // the rewrite applied to the spec card and marked the workflow out of sync
     expect(screen.getByText('Now with weekends.')).toBeTruthy()
@@ -622,7 +622,7 @@ describe('CreateFlow chat response application (§11)', () => {
     }))
     render(<CreateFlow />)
     send('Also weekends')
-    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     // a reply arriving with a rewrite is the plan
     expect(screen.getByText('The plan')).toBeTruthy()
     // a plain question response gets the question header
@@ -653,7 +653,7 @@ describe('CreateFlow chat response application (§11)', () => {
       spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten.' }],
     }))
     send('Rewrite it')
-    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     const row2 = screen.getByTestId('chat-turn-actions')
     expect(within(row2).getByTestId('chat-sync-now')).toBeTruthy()
     expect(within(row2).getByText('Undo this change')).toBeTruthy()
@@ -849,6 +849,46 @@ describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () 
     expect((storeMod.useStore.getState().automations[0].params[0] as { value?: string }).value).toBe('hello')
   })
 
+  it('hold-and-flush: a sync-arming response lands its staged chip beneath the sync trail (§11)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(done({
+        spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'With greeting.' }],
+        actions: { paramValues: { greeting: 'hi' }, sync: true },
+      }))
+      .mockResolvedValue(done({}))
+    render(<CreateFlow />)
+    send('set greeting to hi and sync')
+    await waitFor(() => expect(screen.getByText('Steps synced with the spec.')).toBeTruthy(), { timeout: 5000 })
+    // the workflow chip group sits contiguously beneath the sync trail — the
+    // staged chip was held through the chained sync and flushed after it
+    const synced = screen.getByText('Steps synced with the spec.')
+    const staged = screen.getByText('Parameter “greeting” staged — applies when you save.')
+    expect(synced.compareDocumentPosition(staged) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // the staging itself applied at response time regardless
+    const d = await lastDraftPut()
+    expect(d.paramValues).toEqual({ greeting: 'hi' })
+  })
+
+  it('the derived out-of-sync line closes an unsynced rewrite turn and clears when a sync lands (§11)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce(done({
+        spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'Rewritten.' }],
+        actions: { paramValues: { greeting: 'hi' } },
+      }))
+      .mockResolvedValue(done({}))
+    render(<CreateFlow />)
+    send('rewrite it, stage greeting')
+    await waitFor(() => expect(screen.getByTestId('chat-outofsync-note')).toBeTruthy(), { timeout: 3000 })
+    // no sync armed → the staged chip landed at apply time, the amber line after it
+    const staged = screen.getByText('Parameter “greeting” staged — applies when you save.')
+    const note = screen.getByTestId('chat-outofsync-note')
+    expect(staged.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // a sync clears it — the line is derived, never persisted
+    fireEvent.click(screen.getByTestId('chat-sync-now'))
+    await waitFor(() => expect(screen.getByText('Steps synced with the spec.')).toBeTruthy(), { timeout: 5000 })
+    expect(screen.queryByTestId('chat-outofsync-note')).toBeNull()
+  })
+
   it('a concurrency action stages in the draft only — chip, STAGED row, no PATCH, PUT carries the object', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
       actions: { concurrency: { maxParallel: 2 } },
@@ -888,7 +928,7 @@ describe('CreateFlow draft undo (§11)', () => {
     }))
     render(<CreateFlow />)
     send('Change everything')
-    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByText('Rewritten body.')).toBeTruthy()
     expect(bodyLi('be bold')).toBeTruthy()
     expect(bodyLi('Learned a quirk')).toBeTruthy()
@@ -978,7 +1018,7 @@ describe('CreateFlow draft undo (§11)', () => {
       .mockResolvedValue(done({ answer: 'Rolling the draft back.', actions: { undo: true } }))
     render(<CreateFlow />)
     send('Change it')
-    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByText('Rewritten body.')).toBeTruthy()
     send('undo that')
     await waitFor(
@@ -1000,7 +1040,7 @@ describe('CreateFlow draft undo (§11)', () => {
     }))
     render(<CreateFlow />)
     send('Change it')
-    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getAllByText('Undo this change')).toHaveLength(1)
     const specCard = cardOf(screen.getByText('SPEC'))
     fireEvent.click(within(specCard).getByText('Edit'))
@@ -1037,7 +1077,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     fireEvent.click(screen.getByText('Sync spec'))
     // the same live line renders in the thread and as the panel's status text
     // (no agent · model attribution — the composer's picker names the agent)
-    expect(screen.getAllByText('Rewriting the steps from your spec…').length).toBe(2)
+    expect(screen.getAllByText('Syncing the workflow…').length).toBe(2)
     const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(document.body).length).toBe(1)
     expect(spinnersIn(screen.getByTestId('chat-thread')).length).toBe(1)
@@ -1148,18 +1188,18 @@ describe('CreateFlow clear chat (§11)', () => {
     expect(clearBtn().disabled).toBe(true) // empty thread
     send('Change it')
     expect(clearBtn().disabled).toBe(true) // job in flight
-    await waitFor(() => expect(screen.getByText('Spec updated')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     expect(clearBtn().disabled).toBe(false)
     expect(screen.getAllByText('Undo this change')).toHaveLength(1)
     // confirm step — cancelling keeps the thread
     fireEvent.click(clearBtn())
     expect(screen.getByText('Clear this conversation?')).toBeTruthy()
     fireEvent.click(screen.getByText('Cancel'))
-    expect(screen.getByText('Spec updated')).toBeTruthy()
+    expect(screen.getByText('Spec updated.')).toBeTruthy()
     // confirming empties the thread; the undo row's snapshot clears with it
     fireEvent.click(clearBtn())
     fireEvent.click(document.querySelector('.ad-btn-danger-ghost') as HTMLButtonElement)
-    await waitFor(() => expect(screen.queryByText('Spec updated')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('Spec updated.')).toBeNull())
     expect(screen.queryByText('Undo this change')).toBeNull()
     expect(clearBtn().disabled).toBe(true) // empty again
     // the draft itself is untouched: still out of sync from the rewrite

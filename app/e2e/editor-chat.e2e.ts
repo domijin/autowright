@@ -65,15 +65,18 @@ describe('editor chat e2e', () => {
     // the bottom of the thread, and the composer's Send becomes Cancel (§11).
     await page.getByPlaceholder(CHAT_INPUT).fill('Track new manga chapters instead')
     await page.getByRole('button', { name: 'Send' }).click()
-    // scoped to the live progress entry — the first job's settled activity
-    // entry repeats the same stage title in the thread
-    await page.getByTestId('chat-progress').getByText('Working on the request…').waitFor({ timeout: 15_000 })
+    // scoped to the live progress entry — either chat stage label counts: the
+    // §8 flip moves the job to "Updating the documents…" once the fake
+    // harness streams a rewrite marker, and timing decides which one a poll
+    // catches first
+    await page.getByTestId('chat-progress')
+      .getByText(/Working on the request…|Updating the documents…/).waitFor({ timeout: 15_000 })
     await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor()
 
-    // The rewrite lands as a "Spec updated" entry carrying the request text
-    // and the out-of-sync note with its inline Sync now. (exact — the toast
-    // "Spec updated — …" would otherwise match too)
-    await page.getByText('Spec updated', { exact: true }).waitFor({ timeout: 60_000 })
+    // The rewrite lands as the "Spec updated." chip (exact — the toast
+    // "Spec updated — …" would otherwise match too); the request text shows
+    // in the user bubble (the chip no longer echoes it)
+    await page.getByText('Spec updated.', { exact: true }).waitFor({ timeout: 60_000 })
     await page.getByText('Track new manga chapters instead').first().waitFor()
 
     // §11 thread scroll behaviors. Growing the composer shrinks the thread
@@ -110,7 +113,7 @@ describe('editor chat e2e', () => {
     // in-sync state) is untouched and the composer still works.
     await page.getByTestId('chat-clear').click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Clear chat' }).click()
-    await expect.poll(() => page.getByText('Spec updated', { exact: true }).count()).toBe(0)
+    await expect.poll(() => page.getByText('Spec updated.', { exact: true }).count()).toBe(0)
     await page.getByText(/Ask anything, or describe a change/).waitFor()
     await page.getByText('In sync with the spec.').waitFor()
 
@@ -159,7 +162,7 @@ describe('editor chat e2e', () => {
     await page.getByRole('button', { name: /Fix with AI/ }).click()
     await page.getByText(/Execution failed at step Boom/).waitFor({ timeout: 20_000 })
     // The fake claude answers the analyze message with a spec rewrite.
-    await page.getByText('Spec updated', { exact: true }).waitFor({ timeout: 60_000 })
+    await page.getByText('Spec updated.', { exact: true }).waitFor({ timeout: 60_000 })
     await page.getByText(/This execution failed — figure out why/).first().waitFor()
     await shot(page, 'editor-chat-fix-with-ai.png')
   }, 120_000)

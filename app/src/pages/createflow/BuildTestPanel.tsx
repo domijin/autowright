@@ -88,6 +88,9 @@ export interface BuildTestPanelProps {
   stageLabel: string
   lockStyle?: React.CSSProperties
   runSync: () => void
+  // §11 hold-and-flush: lands any held workflow chips when the old-version
+  // watcher clears the pending sync silently — receipts still reach the thread
+  flushHeldChips: () => void
   sendChat: (text?: string, runId?: string) => Promise<void>
   // §11 turn action row: the chat's Test-the-draft pill bumps this counter —
   // the panel starts a draft test (the panel's current setup values, seeded
@@ -98,7 +101,7 @@ export interface BuildTestPanelProps {
 export function BuildTestPanel({
   rev, up, appendEntry, isEdit, auto,
   drafting, outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
-  agentGap, stageLabel, lockStyle, runSync, sendChat, runTestSignal,
+  agentGap, stageLabel, lockStyle, runSync, flushHeldChips, sendChat, runTestSignal,
 }: BuildTestPanelProps) {
   const { executions, executionFull, go, showToast, test, beginTest } = useStore()
 
@@ -269,7 +272,7 @@ export function BuildTestPanel({
   useEffect(() => {
     if (!rev || anyJobBusy || testLive || drafting) return
     if (!rev.pendingSync && !rev.pendingTest) return
-    if (viewingOld) { up({ pendingSync: false, pendingTest: null }); return }
+    if (viewingOld) { up({ pendingSync: false, pendingTest: null }); flushHeldChips(); return }
     if (rev.pendingSync) {
       up({ pendingSync: false })
       runSync()
@@ -332,7 +335,7 @@ export function BuildTestPanel({
             }}>
               {drafting ? stageLabel
                 : rev.syncBusy
-                  ? 'Rewriting the steps from your spec…'
+                  ? 'Syncing the workflow…'
                   : (rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
                     : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
                       : 'The workflow is out of sync — steps use a secret that isn’t allowed.')}

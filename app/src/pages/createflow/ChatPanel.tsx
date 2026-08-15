@@ -392,23 +392,15 @@ export function ChatPanel({
             )
           }
           if (e.kind === 'rewrite') {
-            // §11 operation block — glyph + title, the echoed request and the
-            // out-of-sync note as flush-left bullets; Sync now lives on the
-            // turn action row, never on the entry
+            // §11 rewrite chip — "Spec updated." in the system-chip role; the
+            // stored request text feeds the agent's §8 context, never echoed
+            // here (the user bubble above shows it), and the derived amber
+            // out-of-sync line renders at the thread's end (below the map)
             return (
               <React.Fragment key={e.id}>
-              <div className="ad-anim-item" style={{ marginTop: mt }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <GlyphBox><i className="fa-solid fa-file-pen" style={{ fontSize: 10, color: 'var(--accent)' }} /></GlyphBox>
-                  <span style={{ font: "600 12.5px var(--sans)", color: 'var(--text)', flex: 1, minWidth: 0 }}>Spec updated</span>
-                </div>
-                {e.text && <OpBullet text={e.text} first size={11.5} color="var(--text-muted)" />}
-                {e.id === lastRewriteId && outOfSync && rev.dirty && (
-                  <OpBullet
-                    text="The workflow is out of sync — sync the steps before saving."
-                    first={!e.text} size={11.5} color="var(--amber)"
-                  />
-                )}
+              <div className="ad-anim-item" style={{ marginTop: mt, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <GlyphBox><i className="fa-solid fa-file-pen" style={{ fontSize: 10, color: 'var(--text-faint)' }} /></GlyphBox>
+                <div style={{ flex: 1, minWidth: 0, font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>Spec updated.</div>
               </div>
               {undoRow}
               </React.Fragment>
@@ -540,6 +532,17 @@ export function ChatPanel({
             </React.Fragment>
           )
         })}
+        {/* §11 derived out-of-sync line — closes the newest turn's workflow
+            chip group while an agent rewrite left the workflow out of sync:
+            amber chip styling, never persisted, gone the moment a sync lands */}
+        {!!lastRewriteId && outOfSync && rev.dirty && !anyJobBusy && !rev.pendingSync && !viewingOld && rev.chat.length > 0 && (
+          <div data-testid="chat-outofsync-note" style={{ marginTop: familyGap(rev.chat[rev.chat.length - 1], { kind: 'system' } as ChatEntry), display: 'flex', alignItems: 'center', gap: 10 }}>
+            <GlyphBox><i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 10, color: 'var(--amber)' }} /></GlyphBox>
+            <div style={{ flex: 1, minWidth: 0, font: "500 12.5px/1.5 var(--sans)", color: 'var(--amber)' }}>
+              The workflow is out of sync — sync the steps before saving.
+            </div>
+          </div>
+        )}
         {/* §11 turn action row — pills beneath the thread's last agent-side
             entry: Undo first (the escape hatch), then the suggested next steps */}
         {showTurnRow && (

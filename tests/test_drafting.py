@@ -1672,8 +1672,9 @@ def test_agent_refusal_blockers_are_not_diagnosed(monkeypatch):
 # ---------- §8 chat call: stage label, streamed progress, repair rounds ----------
 
 def test_chat_job_stage_label(monkeypatch):
-    # spec/agent-pipeline.md: chat jobs have the single stage
-    # "Working on the request" — never the create/sync stage labels.
+    # spec/agent-pipeline.md: chat jobs open at "Working on the request" and
+    # flip to "Updating the documents" only when a rewrite marker streams —
+    # an answer-only response (or a buffered harness) never flips.
     from autowright import harness
     from autowright.drafting import DraftJobs
 
@@ -1697,22 +1698,29 @@ def test_chat_progress_detail_labels():
     assert job["detail"] == "Thinking…"
     cb("Working on it\nsecond line")
     assert job["detail"] == "Writing the answer · 2 lines"
+    assert job["stage"] == "Working on the request"  # prose never flips
     cb("\n===FILE: spec.md===\n# T\n\n- bullet\n")
     assert job["detail"] == "Writing the spec · 3 lines"
+    # §8 stage flip: the first rewrite marker moves the job to the documents
+    # stage — and the marker's own event is stamped with the new stage.
+    assert job["stage"] == "Updating the documents"
     cb("===FILE: instructions.md===\nPrefer Python.\n")
     assert job["detail"] == "Writing the build instructions · 1 line"
     cb("===FILE: notes.md===\n- a\n- b\n")
     assert job["detail"] == "Updating the notes · 2 lines"
     cb("===FILE: actions.yaml===\nsync: true\ntest: true\n")
-    assert job["detail"] == "Choosing next actions"  # no line count
+    assert job["detail"] == "Writing the follow-up actions"  # no line count
     # a name outside the four chat blocks falls back to the generic label
     cb("===FILE: 01-a.py===\nx = 1\n")
     assert job["detail"] == "Writing 01-a.py · 1 line"
-    # §8 activity feed: count-less milestones, one per shape change
+    # §8 activity feed: count-less milestones, one per shape change; events
+    # before the flip carry the neutral stage stamp, later ones the new stage
     assert [e["text"] for e in job["events"]] == [
         "Writing the answer", "Writing the spec", "Writing the build instructions",
-        "Updating the notes", "Choosing next actions", "Writing 01-a.py",
+        "Updating the notes", "Writing the follow-up actions", "Writing 01-a.py",
     ]
+    assert [e["stage"] for e in job["events"]] == (
+        ["Working on the request"] + ["Updating the documents"] * 5)
 
 
 def test_chat_progress_detail_repair_prefix():
@@ -1726,6 +1734,8 @@ def test_chat_progress_detail_repair_prefix():
     cb("===FILE: spec.md===\n# T\n")
     assert job["detail"] == "Second try — writing the spec · 1 line"
     assert [e["text"] for e in job["events"]] == ["Second try — writing the spec"]
+    # §8: a repair round that first streams a rewrite marker still flips
+    assert job["stage"] == "Updating the documents"
 
 
 def test_tool_events_labels_and_feed_cap():

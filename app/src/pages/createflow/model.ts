@@ -78,17 +78,19 @@ export function chatSinceBoundary(chat: ChatEntry[]): ChatEntry[] {
 // the composer's picker already names the agent, and naming it in one title
 // only would read as if a different agent handled the other jobs.
 export function jobStageTitle(r: Rev, installing: boolean): string {
-  return r.chatBusy ? 'Working on the request…'
+  // §8 chat-job stage flip: the live stage drives the title once the backend
+  // moves the job into the documents phase
+  return r.chatBusy ? (r.genStage === 'Updating the documents' ? 'Updating the documents…' : 'Working on the request…')
     : r.specBusy ? 'Writing the spec…'
       : installing ? 'Installing the packages…'
-        : r.syncBusy ? 'Rewriting the steps from your spec…' : 'Generating the steps…'
+        : r.syncBusy ? 'Syncing the workflow…' : 'Generating the steps…'
 }
 
 // §11: display title for a §8 backend stage label — each settled per-stage
 // activity entry reads exactly like the spinner line it replaces (the labels
-// above). Sync jobs re-title the steps stage: the spec is the input there.
+// above). Sync jobs re-title the steps stage: the workflow is what it rebuilds.
 export function stageDisplayTitle(stage: string, mode: 'create' | 'chat' | 'sync'): string {
-  if (stage === 'Generating the steps' && mode === 'sync') return 'Rewriting the steps from your spec…'
+  if (stage === 'Generating the steps' && mode === 'sync') return 'Syncing the workflow…'
   return `${stage}…`
 }
 

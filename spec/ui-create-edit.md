@@ -76,7 +76,12 @@ applies unchanged; the chat pane never collapses.
     `failed`. Each carries the stage's §11 label (`title`) plus the stage's own slice of
     the §8 `events` feed (grouped by each event's `stage` stamp). A cancelled job leaves
     no entry for its in-flight stage — its request text returns to the input instead —
-    but stages that already settled stay in the thread. Renders exactly like the live
+    but stages that already settled stay in the thread. One deliberate skip: a chat
+    job's neutral "Working on the request" stage settles **only when its feed has at
+    least one event or it carries a blocked/failed outcome** — an empty, cleanly
+    finished deciding phase lands no entry, so a small edit turn starts straight at
+    "Updating the documents", while a research trail always persists and a blocked or
+    failed first phase always keeps a home for its outcome glyph. Renders exactly like the live
     progress entry it replaces — the stage label kept, an **outcome glyph** in the
     spinner's 13 px box (same size, so the text never shifts when the spinner settles): a
     green check for a finished stage (every non-final stage, and the final one of a job
@@ -90,16 +95,21 @@ applies unchanged; the chat pane never collapses.
     carrying no stage at all (belt-and-braces — the backend always sets one) settles as
     one entry with the job's live stage label and the whole feed. Excluded from the
     agent's §8 CONVERSATION context (operational noise, §8).
-  - **rewrite** — a "Spec updated" event: an operation block — `fa-file-pen` accent
-    glyph beside the 12.5 px/600 title, the user's request text echoed beneath as a dim
-    bullet (the §8 payload carries no summary field), and — while the workflow is still
-    out of sync — the amber out-of-sync note ("The workflow is out of sync — sync the
-    steps before saving.") as a further bullet. **Sync now** no longer sits on the
-    entry — it lives in the turn action row (below), which follows the response's last
-    entry anyway. No card chrome — the entry is a
-    left-aligned agent block like the rest. The entry carries no Undo of its own — undo
-    restores the whole draft, not just the spec, so it lives on the turn action row
-    (Draft undo below).
+  - **rewrite** — a "Spec updated." receipt, rendered exactly like a system chip: faint
+    `fa-file-pen` glyph beside the chip text "Spec updated." in the system-chip role
+    (12.5 px/500 `--text-muted`). The §4.4 entry still stores the user's request text —
+    it feeds the agent's §8 CONVERSATION summary — but the thread no longer echoes it
+    (the user bubble above already shows the request), and old persisted rewrite
+    entries render the same chip way. The entry keeps anchoring the draft-undo
+    snapshot and the turn's out-of-sync state. The amber out-of-sync note lives off
+    the entry: while the newest post-boundary rewrite's workflow is still out of sync
+    (out of sync + dirty, no §8 job in flight, not viewing an old version), the thread
+    renders one **derived** amber chip line "The workflow is out of sync — sync the
+    steps before saving." at the thread's end, closing the turn's workflow chip group
+    (chip groups under the chat choreography below) — never persisted, gone the moment
+    a sync lands. **Sync now** stays on the turn action row (below), and undo stays
+    there too — the restore covers the whole draft, not just the spec (Draft undo
+    below).
   - **blockers** — the §8 blocker list rendered as agent output (Blockers below).
   - **system** — a quiet one-line left-aligned status chip, rendered as an operation
     block: a per-operation glyph (faint) beside the chip's text as its title — no
@@ -144,14 +154,12 @@ applies unchanged; the chat pane never collapses.
     12.5–13.5 px (the compact variant's cap).
   - **Entry titles** — one-line, beside the entry's glyph. Message-block headers are
     the thread's loudest lines at 13 px / 600 `--text` (the blockers headline, the
-    answer header, the error "Something went wrong"). Operation-block titles: the
-    rewrite "Spec updated" is
-    12.5 px / 600 `--text`; activity/progress stage titles and system chip text are
-    12.5 px / 500 `--text-muted` (the chip's text is its title — the redesign promotes
-    system chips from the secondary role into this one).
+    answer header, the error "Something went wrong"). Operation-block titles:
+    activity/progress stage titles and chip text — system chips and the rewrite chip
+    alike — are 12.5 px / 500 `--text-muted` (the chip's text is its title — the
+    redesign promotes system chips from the secondary role into this one).
   - **Secondary & feed** — the operation blocks' bullets and supporting prose (the
-    rewrite entry's
-    echoed request, the dismissed-blockers summary, "Previously resolved")
+    dismissed-blockers summary, "Previously resolved")
     is 11.5 px / 1.5–1.6, `--text-muted` or `--text-faint` by weight of the information;
     activity/progress feed history lines are 11 px `--text-faint` under an 11.5 px
     `--text-muted` live detail line.
@@ -164,7 +172,7 @@ applies unchanged; the chat pane never collapses.
   group (chip + explainer bullet) and its divider rule when one renders (entry-kind
   list above), and 12 px between the rule and the entry after it. Consecutive
   **operation blocks** chain **flush (0 px)** — one response often lands several (stage
-  trails, the rewrite entry, its "Renamed to …" / "Description updated." system chips),
+  trails, the rewrite chip, the "Renamed to …" / "Description updated." system chips),
   and they read as one continuous block, exactly like an activity entry's own feed
   lines, not as blank-line-separated paragraphs (each entry's internal line-height and
   its own top padding, where a kind has one, provide the breathing room). The transient
@@ -246,7 +254,8 @@ applies unchanged; the chat pane never collapses.
   - a **spec rewrite** replaces the spec exactly like a manual spec edit — out-of-sync
     marking, toast "Spec updated — the workflow is out of sync. Sync the steps before
     saving.", the full-draft undo snapshot stashed (one snapshot for the whole response —
-    Draft undo below) — and appends a rewrite entry (the toast is
+    Draft undo below) — and appends the rewrite chip ("Spec updated.", entry kinds
+    above; the toast is
     skipped when the response's actions immediately sync);
   - an **instructions rewrite** replaces the Build-instructions text like a manual
     instructions Save (same dirty gating) and appends a system entry ("Build instructions
@@ -279,7 +288,25 @@ applies unchanged; the chat pane never collapses.
     matching the current effective value (stored in edit mode, the 1/0 defaults in
     create) still stages — staging an explicit value is harmless and simpler than
     diffing. All staged kinds mark the
-    draft touched, never out of sync, and land only at save (§4.4);
+    draft touched, never out of sync, and land only at save (§4.4). **Workflow chip
+    group — hold-and-flush:** a turn's chips split into two groups mirroring the page.
+    The document chips (the rewrite chip, "Build instructions updated.", "Notes
+    updated.", "Renamed to …", "Description updated.") land at apply time. The
+    staged-change chips (parameter staged, the trigger-op chips, concurrency staged)
+    are the **workflow group**: when the response arms a sync (`sync: true`, or
+    `test: true` on an out-of-sync draft) the editor **holds** them and flushes them
+    into the thread when that sync job settles — on **any** outcome (done, failed,
+    blocked before its own entries, cancelled) and likewise when the old-version
+    watcher clears the pending sync — so they sit contiguously beneath the sync trail
+    after "Steps synced with the spec.", with the drop chips following them (a value
+    staged this turn that the rebuild then dropped reads staged → dropped). The
+    staging itself still
+    happens at apply time (the cards show staged values immediately — the chips are
+    receipts, and a cancelled sync never swallows one). A response arming no sync
+    lands them at apply time right after the document chips, and when that response
+    also rewrote the spec the derived amber out-of-sync line (entry kinds above)
+    closes the group. The draft-undo anchor follows the flush: it re-anchors below
+    the last flushed chip;
     `sync: true` arms a **pending sync**: a watcher fires it as soon as no
     §8 job or draft test is running — immediately when the panel is idle (exactly as if
     the user pressed Sync now), otherwise automatically the moment the running work
@@ -307,8 +334,9 @@ applies unchanged; the chat pane never collapses.
   flight (create, chat, or sync, however started), a **transient agent-activity entry**
   renders at the bottom of the thread, styled as a left-aligned agent block: a spinner,
   the job's stage label ("Working on the
-  request…" / "Writing the spec…" / "Installing the packages…" / "Generating the steps…" /
-  "Rewriting the steps from your spec…"; the install stage shows "Installing the
+  request…" / "Updating the documents…" (the §8 chat-job flip, mid-job) / "Writing the
+  spec…" / "Installing the packages…" / "Generating the steps…" /
+  "Syncing the workflow…" (the sync job's steps stage); the install stage shows "Installing the
   packages…" on sync jobs too; no title ever carries agent · model attribution —
   the composer's picker names the agent; the Build & test panel's coarse
   state-1 label reads "Waiting for the spec…" while call 1 writes), and an **activity feed**
@@ -649,10 +677,11 @@ editors enter with
   the **last** thread entry the request produced (the snapshot's anchor): the response's
   final rewrite/system chip — doc rewrites, the "Renamed to …" / "Description updated."
   chips, and the staged parameter/trigger/concurrency chips included — and, when a sync lands while the snapshot exists (chained or manual),
-  the anchor moves below that sync's "Steps synced with the spec." / "Notes updated."
-  chips, so the pill always sits **below everything the request changed**. It is
+  the anchor moves below that sync's "Steps synced with the spec." / "Notes updated." /
+  drop chips and any workflow-group chips the sync's settle flushed (hold-and-flush
+  above), so the pill always sits **below everything the request changed**. It is
   deliberately a row-level pill, never an action inside the
-  "Spec updated" entry: the restore covers the whole draft, not just the spec. The pill
+  rewrite chip: the restore covers the whole draft, not just the spec. The pill
   is
   the page's only undo affordance; it renders only while the snapshot exists and hides
   while any §8 job is in flight, while viewing an old version, and while a test executes.
@@ -989,7 +1018,7 @@ editors enter with
      lives in the thread progress entry
      (Drafting on Review above), and the other right-column cards show their static
      placeholders.
-  2. **Sync in flight** — static line "Rewriting the steps from your spec…"
+  2. **Sync in flight** — static line "Syncing the workflow…"
      over a faint dot; the live `detail` line lives in the thread progress entry and the
      **Cancel** in the composer (cancel semantics under Dirty gating above).
   3. **Out of sync** — build zone: amber dot, the reason line and saving-is-locked

@@ -329,10 +329,17 @@ repairs by full resend — per-block attribution needs parsed blocks — but blo
 from earlier rounds still merge under whatever the resend returns. Terminal payload:
 `draft: { answer?, spec?, instructions?, notes?, actions? }` — `spec` as §5 blocks, `instructions` and
 `notes` as markdown strings, `actions` the validated mapping with the §4.1 camelCase
-serialization (`testValues`). Stage label: "Working on the request"; the streamed `detail`
+serialization (`testValues`). Stage labels — a chat job has two: it opens at "Working on
+the request" (the deciding phase — tool uses, prose answers, and a decision-only
+response's actions all land here) and **flips to "Updating the documents"** the moment
+the first rewrite marker (`spec.md` / `instructions.md` / `notes.md`) streams — an
+ordinary mid-job stage change, so the §11 thread settles the first phase and restarts
+the live entry under the new label. An answer-only, actions-only, or blocker response
+never flips; a repair round flips late when only it streams a rewrite marker; once
+flipped the job stays flipped. The streamed `detail`
 line is `Thinking…` until text arrives, then per the last streamed marker `Writing the
 spec · N lines` / `Writing the build instructions · N lines` / `Updating the notes · N
-lines` / `Choosing next actions`, else `Writing the answer · N lines` (same 1 s throttle).
+lines` / `Writing the follow-up actions`, else `Writing the answer · N lines` (same 1 s throttle).
 Same timeout cap, same cancel semantics, same app-log logging as every drafting call. A
 chat job never touches the draft container, the dirty flag, or any stored file — the
 editor applies the whole outcome (§11).
@@ -613,7 +620,8 @@ streaming still ends. Both kills raise the same retryable timeout error; cancell
 the job (Start over, or an edit that supersedes an in-flight steps call, §11) kills the harness
 process. The job's `stage` tracks the pipeline ("Writing the spec" → "Generating the steps" →
 "Installing the packages" — the §11 drafting labels; sync jobs start at the second, chat
-jobs have the single stage "Working on the request", and the install stage only appears when
+jobs run the "Working on the request" → "Updating the documents" pair (the flip fires
+only when a rewrite marker streams — see the chat call above), and the install stage only appears when
 the manifest declares packages). On
 a create job, call 1's validated spec rides the job payload as soon as the spec call completes
 (§19), so the §11 spec card can render it while the steps call is still working. Every

@@ -7,7 +7,7 @@
 import { useEffect, useRef } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
-import type { Agent, Automation, Blocker, DraftPayload, SpecBlock } from '../../types'
+import type { Agent, Automation, Blocker, ChatEntry, DraftPayload, SpecBlock } from '../../types'
 import {
   type Rev, TRIGGER_SETUP_TEXT, answerHeader, applyTriggerOps, chatSinceBoundary, coerceParamValue, jobStageTitle,
   mergeDraftTriggers,
@@ -64,6 +64,22 @@ export function useDraftJob(d: DraftJobDeps) {
   const createEntryRef = useRef<string | null>(null)
   const chatReqRef = useRef<{ text: string; entryId: string } | null>(null)
   const dirtyBeforeSync = useRef(false)
+  // §11 workflow chip group (hold-and-flush): a chat response arming a sync
+  // holds its staged-change chips here; the sync's settle — any outcome — or
+  // the old-version watcher's silent pending-clear flushes them beneath the
+  // sync trail, so the workflow group reads contiguously.
+  const heldChipsRef = useRef<ChatEntry[]>([])
+  const takeHeldChips = (): ChatEntry[] => {
+    const held = heldChipsRef.current
+    heldChipsRef.current = []
+    return held
+  }
+  // §11: the old-version watcher clears pending sync/test silently — the held
+  // receipts still land (the staging already happened at apply time).
+  const flushHeldChips = () => {
+    const held = takeHeldChips()
+    if (held.length) setRev((r) => r && ({ ...r, chat: [...r.chat, ...held] }))
+  }
 
   // ---- polling ----
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -86,6 +102,9 @@ export function useDraftJob(d: DraftJobDeps) {
     // Builds (and marks settled) one activity entry per given stage, each
     // carrying its own stage-stamped slice of the feed; only the last stage of
     // a terminal batch takes the job's outcome — earlier stages finished fine.
+    // §11: a chat job's neutral deciding stage settles only when its feed has
+    // events or it carries a blocked/failed outcome — an empty, cleanly
+    // finished "Working on the request" lands no entry.
     const settleStages = (
       mode: 'create' | 'chat' | 'sync', evs: { text: string; stage?: string }[],
       stages: string[], outcome: 'done' | 'blocked' | 'failed' | null,
@@ -96,7 +115,8 @@ export function useDraftJob(d: DraftJobDeps) {
         text: evs.filter((e) => e.stage === s).map((e) => e.text).join('\n'),
         outcome: outcome && i === stages.length - 1 ? outcome : 'done',
       })
-    })
+    }).filter((en) => !(mode === 'chat' && en.title === 'Working on the request…'
+      && !en.text && en.outcome === 'done'))
     // Staleness guard: a slow in-flight tick may resolve after this job was
     // cancelled/replaced (jobIdRef changed) or after another tick already
     // handled the terminal status (jobIdRef cleared below). Checking the ref
@@ -141,18 +161,20 @@ export function useDraftJob(d: DraftJobDeps) {
           // input — but already-settled stages stay.
           if (j.status === 'done' || j.status === 'blocked' || j.status === 'failed') {
             const status = j.status
-            const rest = settleStages(j.mode, evs,
-              seenStages.filter((s) => !settledStages.has(s)), status)
+            const pending = seenStages.filter((s) => !settledStages.has(s))
+            const rest = settleStages(j.mode, evs, pending, status)
             setRev((r) => {
               if (!r) return r
               // A payload with no stage at all (belt-and-braces — the backend
               // always sets one) settles the old way: one entry, busy-flag
-              // title, the whole feed.
-              const entries = rest.length ? rest : [newEntry({
+              // title, the whole feed. A batch emptied by the neutral-stage
+              // drop rule appends nothing — the stage existed, and was skipped
+              // deliberately.
+              const entries = (rest.length || pending.length) ? rest : [newEntry({
                 kind: 'activity', title: jobStageTitle(r, r.genStage === 'Installing the packages'),
                 text: evs.map((e) => e.text).join('\n'), outcome: status,
               })]
-              return { ...r, chat: [...r.chat, ...entries] }
+              return entries.length ? { ...r, chat: [...r.chat, ...entries] } : r
             })
           }
           if (j.status === 'done') {
@@ -422,6 +444,10 @@ export function useDraftJob(d: DraftJobDeps) {
               next = { ...next, description: actions.description }
               chat.push(entry)
             }
+            // §11 workflow chip group: the staged-change chips collect here —
+            // held for the chained sync's settle when the response arms one,
+            // landed right after the document chips otherwise (hold-and-flush).
+            const wfChips: ChatEntry[] = []
             // §8 `param_values`: stage stored values (§4.2) — coerced against
             // today's defs; a name today's defs don't hold stays raw in the
             // map and re-checks after the chained sync lands (§11).
@@ -432,7 +458,7 @@ export function useDraftJob(d: DraftJobDeps) {
                 staged[n] = def ? coerceParamValue(def, v) : v
                 const entry = newEntry({ kind: 'system', icon: 'fa-sliders', text: `Parameter “${n}” staged — applies when you save.` })
                 anchorId = entry.id
-                chat.push(entry)
+                wfChips.push(entry)
               }
               next = { ...next, paramValues: staged }
             }
@@ -444,7 +470,7 @@ export function useDraftJob(d: DraftJobDeps) {
               for (const text of applied.chips) {
                 const entry = newEntry({ kind: 'system', icon: 'fa-clock', text })
                 anchorId = entry.id
-                chat.push(entry)
+                wfChips.push(entry)
               }
             }
             // §8 `concurrency`: stage the §4.1 settings — sent keys merge over
@@ -454,8 +480,16 @@ export function useDraftJob(d: DraftJobDeps) {
               next = { ...next, concurrency: { ...next.concurrency, ...actions.concurrency } }
               const entry = newEntry({ kind: 'system', icon: 'fa-layer-group', text: 'Concurrency staged — applies when you save.' })
               anchorId = entry.id
-              chat.push(entry)
+              wfChips.push(entry)
             }
+            // §11 hold-and-flush: an armed sync takes the workflow chips with
+            // it (assignment, not append — idempotent under a re-run updater);
+            // no sync means they land now, after the document chips. The undo
+            // anchor may point at a held chip — the row stays hidden until the
+            // flush lands it in the thread.
+            const willSync = !!(actions.sync || (actions.test && next.dirty))
+            if (willSync) heldChipsRef.current = wfChips
+            else chat.push(...wfChips)
             // §4.4: a response that changed the draft marks it touched — an
             // answer-only reply leaves the draft (and the keep paths) alone.
             // anchorId covers every doc rewrite and staged chip; the undo
@@ -477,7 +511,7 @@ export function useDraftJob(d: DraftJobDeps) {
             if (empty) chat.push(newEntry({ kind: 'error', text: 'The agent returned an empty response.' }))
             // §11 action chaining: arm the sync/test pendings; the watcher
             // effect (Build & test panel) fires them against fresh state.
-            if (actions.sync || (actions.test && next.dirty)) next = { ...next, pendingSync: true }
+            if (willSync) next = { ...next, pendingSync: true }
             if (actions.test) next = { ...next, pendingTest: { values: actions.testValues ?? null } }
             return { ...next, chat }
           })
@@ -540,6 +574,11 @@ export function useDraftJob(d: DraftJobDeps) {
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
       }, {
         onDone: (dft) => {
+          // §11 hold-and-flush: taken outside the updater (a ref mutation is
+          // not idempotent under a re-run updater) — the held workflow chips
+          // land beneath the sync trail, before the drop chips, so a value
+          // staged this turn that the rebuild then dropped reads staged → dropped.
+          const held = takeHeldChips()
           setRev((r) => {
             if (!r) return r
             const steps = dft.steps ?? r.steps
@@ -568,7 +607,7 @@ export function useDraftJob(d: DraftJobDeps) {
               // reverts the whole request, chained-sync steps included — and
               // re-anchors the undo row below the sync's own chips
               ...r, syncBusy: false, genStage: null, dirty: false,
-              undo: r.undo ? { ...r.undo, entryId: (dropEntries.at(-1) ?? notesEntry ?? syncedEntry).id } : r.undo,
+              undo: r.undo ? { ...r.undo, entryId: (dropEntries.at(-1) ?? held.at(-1) ?? notesEntry ?? syncedEntry).id } : r.undo,
               steps, params, paramValues, packages: dft.packages ?? [],
               // §8/§11: a sync's drafted test values replace the map; absent
               // one, the old map stays (unmatched names simply seed nothing)
@@ -583,6 +622,7 @@ export function useDraftJob(d: DraftJobDeps) {
                 ...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed ? { ...e, dismissed: true } : e)),
                 syncedEntry,
                 ...(notesEntry ? [notesEntry] : []),
+                ...held,
                 ...dropEntries,
                 ...(remind ? [newEntry({ kind: 'system', icon: 'fa-clock', text: TRIGGER_SETUP_TEXT })] : []),
               ],
@@ -591,18 +631,29 @@ export function useDraftJob(d: DraftJobDeps) {
           showToast('Steps synced with the spec — review them, then save.', 3600)
         },
         onFail: (msg) => {
-          setRev((r) => r && ({ ...r, syncBusy: false }))
+          // §11 hold-and-flush: any outcome flushes the held workflow chips —
+          // the staging happened, a failed sync never swallows the receipts.
+          const held = takeHeldChips()
+          setRev((r) => r && ({ ...r, syncBusy: false, ...(held.length ? { chat: [...r.chat, ...held] } : {}) }))
           showToast(`The draft didn’t validate — try again or rephrase.${msg ? ' ' + msg : ''}`, 4500)
         },
-        onCancelled: () => setRev((r) => r && ({ ...r, syncBusy: false })),
-        onBlocked: (blockers, _at, _spec, diagnosed, notes) => setRev((r) => {
-          if (!r) return r
-          const bn = blockerNotes(r, notes)
-          return {
-            ...r, syncBusy: false, ...bn.patch,
-            chat: [...r.chat, newEntry({ kind: 'blockers', source: 'sync', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
-          }
-        }),
+        onCancelled: () => {
+          const held = takeHeldChips()
+          setRev((r) => r && ({ ...r, syncBusy: false, ...(held.length ? { chat: [...r.chat, ...held] } : {}) }))
+        },
+        onBlocked: (blockers, _at, _spec, diagnosed, notes) => {
+          // §11 hold-and-flush: the held chips land after the settled trail,
+          // before the blockers message block.
+          const held = takeHeldChips()
+          setRev((r) => {
+            if (!r) return r
+            const bn = blockerNotes(r, notes)
+            return {
+              ...r, syncBusy: false, ...bn.patch,
+              chat: [...r.chat, ...held, newEntry({ kind: 'blockers', source: 'sync', blockers, diagnosed, resolved: r.resolved }), ...bn.chip],
+            }
+          })
+        },
       })
     } catch (e) {
       up({ syncBusy: false })
@@ -657,7 +708,7 @@ export function useDraftJob(d: DraftJobDeps) {
   }
 
   return {
-    submitCreate, sendChat, runSync,
+    submitCreate, sendChat, runSync, flushHeldChips,
     cancelChat, cancelCreate, cancelSync, cancelStepsGen, cancelJob,
     stopPoll, jobIdRef, lastCreateRef, createEntryRef,
   }

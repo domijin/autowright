@@ -1132,6 +1132,7 @@ export default function CreateFlow() {
                   stageLabel={stageLabel}
                   lockStyle={lockStyle}
                   runSync={() => void jobs.runSync()}
+                  flushHeldChips={jobs.flushHeldChips}
                   sendChat={jobs.sendChat}
                   runTestSignal={testRunSignal}
                 />

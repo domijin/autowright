@@ -529,13 +529,13 @@ export function ChatPanel({
               {showTestPill && (
                 <button className="ad-btn-pill action" data-testid="chat-test-draft" onClick={runDraftTest}>
                   <i className="fa-solid fa-vial" style={pillGlyph} />
-                  Test the draft
+                  Test draft
                 </button>
               )}
               {analyzeFailure && (
                 <button className="ad-btn-pill action" data-testid="chat-analyze-failure" onClick={analyzeFailure}>
                   <i className="fa-solid fa-magnifying-glass" style={pillGlyph} />
-                  Analyze the failure
+                  Analyze failure
                 </button>
               )}
             </ActionRow>

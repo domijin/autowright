@@ -44,12 +44,12 @@ describe('edit draft e2e', () => {
     await page.getByText('Edit draft e2e').waitFor({ timeout: 20_000 })
     await page.getByText('Edit draft e2e').click()
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
+    await page.getByTestId('test-draft-toggle').waitFor({ timeout: 10_000 })
 
     // §11 draft test — the pristine draft is in sync, so the Build & test
     // panel's Test executes v1's real steps on scratch memory. (The spec-edit
     // path is exercised after the run — an out-of-sync draft can't be tested.)
-    await page.getByRole('button', { name: 'Test the draft' }).click()
+    await page.getByTestId('test-draft-toggle').click()
     await page.getByRole('button', { name: 'Run test' }).click()
     await page.getByText('Test succeeded — the memory copy was discarded.').waitFor({ timeout: 60_000 })
     // §11: the settled test also lands as a quiet system chip in the chat thread.
@@ -58,7 +58,7 @@ describe('edit draft e2e', () => {
 
     // The test is a real execution record: View run (inside the reopened setup
     // section's run row) shows the step's log line.
-    await page.getByRole('button', { name: 'Test the draft' }).click()
+    await page.getByTestId('test-draft-toggle').click()
     await page.getByRole('button', { name: 'View run' }).click()
     await page.getByText('Draft test').waitFor({ timeout: 10_000 })
     await page.getByText('edit-draft distinctive log line').waitFor({ timeout: 20_000 })
@@ -79,7 +79,7 @@ describe('edit draft e2e', () => {
     // surface (Edit → textarea → Save).
     await page.getByRole('heading', { name: 'Edit draft e2e' }).click()
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
+    await page.getByTestId('test-draft-toggle').waitFor({ timeout: 10_000 })
     await page.getByTestId('spec-edit').click()
     const specBox = page.getByTestId('spec-editor')
     await specBox.waitFor({ timeout: 10_000 })
@@ -90,7 +90,7 @@ describe('edit draft e2e', () => {
     // §11 Build & test panel: out of sync locks the Test button behind a sync
     await page.getByText(/these steps still match the old spec/).waitFor({ timeout: 10_000 })
     await page.getByText('Sync first — a test executes the steps as generated from the spec.').waitFor()
-    expect(await page.getByRole('button', { name: 'Test the draft' }).isDisabled()).toBe(true)
+    expect(await page.getByTestId('test-draft-toggle').isDisabled()).toBe(true)
 
     // Back to the detail page: leaving the editor kept the draft — discard it
     // from the §4.4 banner and confirm v1 is unchanged.

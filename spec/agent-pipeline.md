@@ -652,7 +652,7 @@ backs the §11 thread progress entry's activity feed.
 
 **Failed-run analysis is a chat message.** There is no separate issue-analysis call:
 the chat call's RECENT RUNS section already carries a failed run's error and log tails, so
-"why did it fail" and "fix it" are ordinary chat jobs — the §11 "Analyze the failure"
+"why did it fail" and "fix it" are ordinary chat jobs — the §11 "Analyze failure"
 button and the §7/§9.2 Fix-with-AI entry just send canned chat messages (the latter naming
 the execution via the §19 `runId` body field). One call shape, one repair loop, one thread.
 Secret values never travel: the log tails are the already-redacted execution output (§6).

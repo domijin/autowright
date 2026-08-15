@@ -102,9 +102,10 @@ export function BuildTestPanel({
 }: BuildTestPanelProps) {
   const { executions, executionFull, go, showToast, test, beginTest } = useStore()
 
-  // §11 test-setup section: the Test the draft disclosure toggle —
-  // expanding shows every test option at once (param editors, trigger message,
-  // the Run test row). Values survive a collapse; only Run test starts a test.
+  // §11 test-setup section: the Test draft disclosure toggle —
+  // expanding shows the Run test row first, then every test option at once
+  // (param editors, trigger message). Values survive a collapse; only Run test
+  // starts a test.
   const [testOpen, setTestOpen] = useState(false)
   // §11 test parameter values: seeded when the setup section first opens; the
   // values ride §19 `paramValues` and apply to this test only.
@@ -169,9 +170,9 @@ export function BuildTestPanel({
   // and the rows wrap so a button is never clipped.
   const panelBtnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap' }
   const panelRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 18px' }
-  // §11 test-setup disclosure: Test the draft never starts a test —
-  // it expands the setup section below the action row with every option at once
-  // (param editors, trigger message, the Run test row). Entered values survive a
+  // §11 test-setup disclosure: Test draft never starts a test —
+  // it expands the setup section below the action row — the Run test row first,
+  // then every option at once (param editors, trigger message). Entered values survive a
   // collapse; seeding happens only when the section opens without prior values.
   const toggleTestSetup = () => {
     if (testOpen) { setTestOpen(false); return }
@@ -183,7 +184,7 @@ export function BuildTestPanel({
   }
   // §9.2 step-row caret language: left collapsed, down expanded.
   const testToggleBtn = (label: string) => (
-    <button className="ad-btn-text" disabled={busyRewrite} onClick={toggleTestSetup} style={panelBtnStyle}>
+    <button className="ad-btn-text" data-testid="test-draft-toggle" disabled={busyRewrite} onClick={toggleTestSetup} style={panelBtnStyle}>
       {label}{' '}
       <i className={`fa-solid ${testOpen ? 'fa-caret-down' : 'fa-caret-left'}`} style={{ fontSize: 10 }} />
     </button>
@@ -196,7 +197,7 @@ export function BuildTestPanel({
       onClick={runSync}
       style={panelBtnStyle}
     >
-      Sync with spec
+      Sync spec
     </button>
   )
   // A live test survives leaving the editor — re-attach the card on entry.
@@ -353,7 +354,7 @@ export function BuildTestPanel({
           onClick={runSync}
           style={outOfSync ? { flex: 'none', whiteSpace: 'nowrap' } : panelBtnStyle}
         >
-          {outOfSync ? 'Sync now' : 'Sync with spec'}
+          {outOfSync ? 'Sync now' : 'Sync spec'}
         </button>
       </div>
       )}
@@ -366,8 +367,8 @@ export function BuildTestPanel({
               Cancel
             </button>
           ) : (
-            <button className="ad-btn-text" disabled style={panelBtnStyle}>
-              Test the draft
+            <button className="ad-btn-text" data-testid="test-draft-toggle" disabled style={panelBtnStyle}>
+              Test draft
             </button>
           )}
           <span style={{ minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
@@ -376,9 +377,9 @@ export function BuildTestPanel({
         </div>
       )}
       {/* test zone — in-sync states only. One hairline opens the zone;
-          the Test the draft disclosure on the action row
-          expands the test-setup section (param editors, trigger message,
-          Run test) as sub-blocks over dim dividers. */}
+          the Test draft disclosure on the action row
+          expands the test-setup section (Run test, then param editors and
+          trigger message) as sub-blocks over dim dividers. */}
       {!drafting && !rev.syncBusy && !outOfSync && (
         <>
           {/* §11: no build zone in sync — the header hairline opens the
@@ -419,7 +420,7 @@ export function BuildTestPanel({
                       </div>
                     )}
                     <div style={{ ...panelRowStyle, marginTop: 8 }}>
-                      {/* §11 state 5: Sync with spec, then the Test the draft
+                      {/* §11 state 5: Sync spec, then the Test draft
                           setup toggle — Run test and View run live in the
                           expanded setup section; only a live test keeps
                           View run on the action row (the setup is hidden) */}
@@ -440,13 +441,13 @@ export function BuildTestPanel({
                       ) : (
                         <>
                           {syncGhostBtn}
-                          {testToggleBtn('Test the draft')}
+                          {testToggleBtn('Test draft')}
                           {/* §11: sends the canned analyze chat message — the
                               whole repair loop lives in the thread. Disabled
                               while a job runs, never hidden. */}
                           {testExec.status === 'failed' && (
                             <button className="ad-btn-text dim" disabled={anyJobBusy} onClick={runAnalyze} style={panelBtnStyle}>
-                              <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze the failure
+                              <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze failure
                             </button>
                           )}
                         </>
@@ -469,7 +470,7 @@ export function BuildTestPanel({
                 )}
                 <div style={{ ...panelRowStyle, marginTop: 8 }}>
                   {syncGhostBtn}
-                  {testToggleBtn('Test the draft')}
+                  {testToggleBtn('Test draft')}
                 </div>
               </div>
             ) : (
@@ -480,16 +481,52 @@ export function BuildTestPanel({
                  buttons when space runs out */
               <div style={{ ...panelRowStyle, padding: '10px 20px 12px' }}>
                 {syncGhostBtn}
-                {testToggleBtn('Test the draft')}
+                {testToggleBtn('Test draft')}
                 <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                   In sync with the spec. A test executes the real steps on this Mac — emails send, files move; memory is a scratch copy.
                 </span>
               </div>
             )}
           </div>
-          {/* §11 test-setup section — expanded by the Test the draft
+          {/* §11 run row — opens the setup section, above the option
+              sub-blocks so it's never buried under a long param list:
+              Run test is the only control that starts a test; View run
+              rides beside it when a test record exists */}
+          {testOpen && !testLive && (
+            <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', padding: '8px 20px 10px', ...lockStyle }}>
+              <div style={panelRowStyle}>
+                <button
+                  className="ad-btn-text"
+                  disabled={rev.steps.length === 0 || busyRewrite}
+                  onClick={() => void runTest()}
+                  style={panelBtnStyle}
+                >
+                  <i className="fa-solid fa-play" style={{ fontSize: 10 }} /> Run test
+                </button>
+                {(test || (!!rev.lastTest?.executionId && executions.some((e) => e.id === rev.lastTest!.executionId))) && (
+                  <button
+                    className="ad-btn-text dim"
+                    onClick={() => go('execution', { executionId: test ? test.executionId : rev.lastTest!.executionId! })}
+                    style={panelBtnStyle}
+                  >
+                    <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
+                  </button>
+                )}
+              </div>
+              {(rev.params.length > 0 || msgTriggers.length > 0) && (
+                <div style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)', paddingBottom: 2 }}>
+                  {rev.params.length > 0 && msgTriggers.length > 0
+                    ? 'Values and the message apply to this test only — nothing is saved.'
+                    : rev.params.length > 0
+                      ? 'These values apply to this test only — nothing is saved.'
+                      : 'The message applies to this test only — nothing is saved.'}
+                </div>
+              )}
+            </div>
+          )}
+          {/* §11 test-setup option sub-blocks — expanded by the Test draft
               disclosure toggle, hidden while a test executes;
-              shows every option at once, then the Run test row */}
+              every option at once below the run row */}
           {testOpen && !testLive && rev.params.length > 0 && testParams !== null && (
             <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
               <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-muted)' }}>
@@ -551,41 +588,6 @@ export function BuildTestPanel({
                   ? 'A step’s reply() posts to the real Discord channel.'
                   : 'A step’s reply() can’t send from a mocked iMessage — it logs the failed send instead.'}
               </div>
-            </div>
-          )}
-          {/* §11 run row — closes the setup section: Run test is the only
-              control that starts a test; View run rides beside it when a
-              test record exists */}
-          {testOpen && !testLive && (
-            <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', padding: '4px 20px 10px', ...lockStyle }}>
-              <div style={panelRowStyle}>
-                <button
-                  className="ad-btn-text"
-                  disabled={rev.steps.length === 0 || busyRewrite}
-                  onClick={() => void runTest()}
-                  style={panelBtnStyle}
-                >
-                  <i className="fa-solid fa-play" style={{ fontSize: 10 }} /> Run test
-                </button>
-                {(test || (!!rev.lastTest?.executionId && executions.some((e) => e.id === rev.lastTest!.executionId))) && (
-                  <button
-                    className="ad-btn-text dim"
-                    onClick={() => go('execution', { executionId: test ? test.executionId : rev.lastTest!.executionId! })}
-                    style={panelBtnStyle}
-                  >
-                    <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 10 }} /> View run
-                  </button>
-                )}
-              </div>
-              {(rev.params.length > 0 || msgTriggers.length > 0) && (
-                <div style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)', paddingBottom: 2 }}>
-                  {rev.params.length > 0 && msgTriggers.length > 0
-                    ? 'Values and the message apply to this test only — nothing is saved.'
-                    : rev.params.length > 0
-                      ? 'These values apply to this test only — nothing is saved.'
-                      : 'The message applies to this test only — nothing is saved.'}
-                </div>
-              )}
             </div>
           )}
         </>

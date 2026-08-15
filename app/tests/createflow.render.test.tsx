@@ -136,7 +136,7 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
 
     // grant toggles alone never mark the workflow out of sync (§11) — the
     // panel still offers the on-demand sync
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
     const body = draftBody(0)
     expect(body.mode).toBe('sync')
@@ -158,7 +158,7 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
     expect(screen.getByText('0 of 2 enabled')).toBeTruthy()
     expect(screen.getByText('0 of 2 allowed')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
     const body = draftBody(0)
     // §19: [] means "unchecked" — absent keys would fall back to stored grants
@@ -192,7 +192,7 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
     fireEvent.click(screen.getByText('Fast local'))     // …and re-check
     expect(screen.getByText('2 of 2 enabled')).toBeTruthy()
 
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
     expect(draftBody(0).enabledAgents).toEqual(['g1', 'g2'])
   })
@@ -215,13 +215,13 @@ describe('CreateFlow Build & test panel (§11)', () => {
     expect(screen.getByText('Sync now')).toBeTruthy()
     expect(screen.getByText(/steps call an agent that isn’t enabled/)).toBeTruthy()
     // the Test button stays visible but disabled, with the §11 hint
-    const testBtn = screen.getByText('Test the draft').closest('button')!
+    const testBtn = screen.getByText('Test draft').closest('button')!
     expect(testBtn.disabled).toBe(true)
     expect(screen.getByText('Sync first — a test executes the steps as generated from the spec.')).toBeTruthy()
     // re-checking the grant clears the gap instantly — Test re-enables
     fireEvent.click(agentRow())
-    expect(screen.getByText('Sync with spec')).toBeTruthy()
-    expect((screen.getByText('Test the draft').closest('button')!).disabled).toBe(false)
+    expect(screen.getByText('Sync spec')).toBeTruthy()
+    expect((screen.getByText('Test draft').closest('button')!).disabled).toBe(false)
   })
 
   it('in sync: quiet panel — no indicator dot, no accent button, one test row', () => {
@@ -233,15 +233,15 @@ describe('CreateFlow Build & test panel (§11)', () => {
     expect(panel.querySelector('.ad-btn-primary')).toBeNull()
     // §11 button treatment: compact borderless text buttons — main action
     // muted, the sync escape hatch faint; never bordered or filled boxes
-    const testBtn = within(panel).getByText('Test the draft').closest('button')!
+    const testBtn = within(panel).getByText('Test draft').closest('button')!
     expect(testBtn.disabled).toBe(false)
     expect(testBtn.classList.contains('ad-btn-text')).toBe(true)
-    const syncBtn = within(panel).getByText('Sync with spec').closest('button')!
+    const syncBtn = within(panel).getByText('Sync spec').closest('button')!
     expect(syncBtn.classList.contains('ad-btn-text')).toBe(true)
     expect(syncBtn.classList.contains('dim')).toBe(true)
   })
 
-  it('Test the draft is a disclosure: setup shows every option at once, only Run test starts it', async () => {
+  it('Test draft is a disclosure: setup shows every option at once, only Run test starts it', async () => {
     armPendingPoll()
     storeMod.useStore.setState({
       automations: [{
@@ -256,7 +256,7 @@ describe('CreateFlow Build & test panel (§11)', () => {
     expect(within(panel).queryByText('Run test')).toBeNull()
     expect(within(panel).queryByText('PARAMETER VALUES · THIS TEST ONLY')).toBeNull()
     // the toggle expands the setup — it never starts a test
-    fireEvent.click(within(panel).getByText('Test the draft'))
+    fireEvent.click(within(panel).getByText('Test draft'))
     expect(mockedApi.postTest).not.toHaveBeenCalled()
     // both option groups render together — no nested toggles
     expect(within(panel).getByText('PARAMETER VALUES · THIS TEST ONLY')).toBeTruthy()
@@ -290,12 +290,12 @@ describe('CreateFlow Build & test panel (§11)', () => {
         testValues: { city: 'Bergen' },
       },
     })
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(screen.getByText('Steps synced with the spec.')).toBeTruthy(), { timeout: 3000 })
     // §11 turn action row: the Test-the-draft pill starts the test with the
     // setup section never opened — the drafted values still ride the run
     const row = screen.getByTestId('chat-turn-actions')
-    fireEvent.click(within(row).getByText('Test the draft'))
+    fireEvent.click(within(row).getByText('Test draft'))
     await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1), { timeout: 3000 })
     const body = (mockedApi.postTest as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
     expect(body.paramValues).toEqual({ city: 'Bergen' })
@@ -303,8 +303,8 @@ describe('CreateFlow Build & test panel (§11)', () => {
     await waitFor(() => expect(storeMod.useStore.getState().test).toBeTruthy())
     storeMod.useStore.setState({ test: null })
     const panel = cardOf(screen.getByText('BUILD & TEST'))
-    await waitFor(() => expect(within(panel).getByText('Test the draft')).toBeTruthy())
-    fireEvent.click(within(panel).getByText('Test the draft'))
+    await waitFor(() => expect(within(panel).getByText('Test draft')).toBeTruthy())
+    fireEvent.click(within(panel).getByText('Test draft'))
     expect(within(panel).getByDisplayValue('Bergen')).toBeTruthy()
   })
 
@@ -315,7 +315,7 @@ describe('CreateFlow Build & test panel (§11)', () => {
       blockers: [{ reason: 'The build failed validation.', fix: 'Simplify the spec.' }],
     })
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(
       () => expect(screen.getByText('The build failed — your AI suggests these fixes')).toBeTruthy(),
       { timeout: 3000 },
@@ -332,7 +332,7 @@ describe('CreateFlow Build & test panel (§11)', () => {
       blockers: [{ reason: 'Needs a channel id.', fix: 'Name it in the spec.' }],
     })
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(
       () => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(),
       { timeout: 3000 },
@@ -344,7 +344,7 @@ describe('CreateFlow Build & test panel (§11)', () => {
       ...BLOCKED_SYNC, draft: { spec: null, notes: '- the feed needs auth' },
     })
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
     // the notes land like a chat notes rewrite — chip after the blockers entry
     expect(screen.getByText('Notes updated.')).toBeTruthy()
@@ -357,7 +357,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
   it('Apply gates while a job is busy and ungates when it settles; text renders as agent output', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce(BLOCKED_SYNC)
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
     // the blocked job's activity glyph is the amber check (§11 outcome glyph)
     const glyph = document.querySelector('[data-testid="chat-thread"] .fa-check') as HTMLElement
@@ -368,7 +368,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     expect(screen.queryByDisplayValue('Name it in the spec.')).toBeNull()
     expect((screen.getByText('Apply to the spec & sync').closest('button')!).disabled).toBe(false)
     // a second sync (never answering) disables the primary
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     expect((screen.getByText('Apply to the spec & sync').closest('button')!).disabled).toBe(true)
     // the composer Cancel settles the job — the primary ungates
     fireEvent.click(screen.getByText('Cancel'))
@@ -384,7 +384,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     })
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce(BLOCKED_SYNC)
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
     // browse v1 from the version menu — the thread survives, Apply gated
     fireEvent.click(screen.getByText('Draft'))
@@ -478,7 +478,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
         fix: 'Download it from [transmissionbt.com](https://transmissionbt.com) and install it.' }],
     })
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
     const a = screen.getByText('transmissionbt.com').closest('a')!
     expect(a.getAttribute('href')).toBe('https://transmissionbt.com')
@@ -492,7 +492,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
         fix: 'Install Transmission, then run the automation again.', kind: 'user-action' }],
     })
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(
       () => expect(screen.getByText('Your AI needs you to do something first')).toBeTruthy(),
       { timeout: 3000 },
@@ -605,7 +605,7 @@ describe('CreateFlow chat response application (§11)', () => {
     expect(screen.getByText('Question for you')).toBeTruthy()
   })
 
-  it('turn action row: Test the draft when in sync; Sync now + Undo after a rewrite (§11)', async () => {
+  it('turn action row: Test draft when in sync; Sync now + Undo after a rewrite (§11)', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({ answer: 'All good.' }))
     render(<CreateFlow />)
     send('Anything to improve?')
@@ -615,7 +615,7 @@ describe('CreateFlow chat response application (§11)', () => {
     expect(within(row).queryByText('Sync now')).toBeNull()
     expect(within(row).queryByText('Undo this change')).toBeNull()
     // the pill starts a draft test right away (§11) — same run as Run test
-    fireEvent.click(within(row).getByText('Test the draft'))
+    fireEvent.click(within(row).getByText('Test draft'))
     await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1), { timeout: 3000 })
     // let the tracked test settle out of the way before the rewrite half
     storeMod.useStore.setState({ test: null })
@@ -628,7 +628,7 @@ describe('CreateFlow chat response application (§11)', () => {
     const row2 = screen.getByTestId('chat-turn-actions')
     expect(within(row2).getByTestId('chat-sync-now')).toBeTruthy()
     expect(within(row2).getByText('Undo this change')).toBeTruthy()
-    expect(within(row2).queryByText('Test the draft')).toBeNull()
+    expect(within(row2).queryByText('Test draft')).toBeNull()
   })
 
   it('a settled job persists its event feed as an activity entry before the outcome', async () => {
@@ -1005,7 +1005,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
 
   it('sync job: thread and panel share the sync line; spinner in the thread, Cancel in the composer', () => {
     render(<CreateFlow />)
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     // the same live line renders in the thread and as the panel's status text
     // (no agent · model attribution — the composer's picker names the agent)
     expect(screen.getAllByText('Rewriting the steps from your spec…').length).toBe(2)
@@ -1016,7 +1016,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect(within(panel).queryByText('Cancel')).toBeNull()
     expect(screen.getAllByText('Cancel').length).toBe(1)
     // the panel's sync button disables instead of turning into a cancel
-    expect((within(panel).getByText('Sync with spec').closest('button')!).disabled).toBe(true)
+    expect((within(panel).getByText('Sync spec').closest('button')!).disabled).toBe(true)
   })
 
   it('create job: stage labels walk spec → steps → packages', async () => {
@@ -1075,7 +1075,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     render(<CreateFlow />)
     fireEvent.keyDown(document, { key: 'Escape' }) // no job — nothing happens
     expect(screen.getByText('Send')).toBeTruthy()
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     expect(screen.getByText('Cancel')).toBeTruthy()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByText('Cancel')).toBeNull()
@@ -1190,7 +1190,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     expect((screen.getByText('Save as v2').closest('button')!).disabled).toBe(false)
   })
 
-  it('Analyze the failure posts the canned chat message with the run id', async () => {
+  it('Analyze failure posts the canned chat message with the run id', async () => {
     const failed = {
       id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'v1',
       status: 'failed', trigger: 'Test', triggerSender: null, test: true,
@@ -1202,7 +1202,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     })
     render(<CreateFlow />)
     expect(screen.getByText('Test failed.')).toBeTruthy()
-    fireEvent.click(screen.getByText('Analyze the failure'))
+    fireEvent.click(screen.getByText('Analyze failure'))
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
     const body = draftBody(0)
     expect(body.mode).toBe('chat')
@@ -1211,7 +1211,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     // the canned message lands as a user entry in the thread
     expect(screen.getByText(body.text as string)).toBeTruthy()
     // §11: while the chat job runs the button disables — never hidden
-    const analyze = screen.getByText('Analyze the failure').closest('button')!
+    const analyze = screen.getByText('Analyze failure').closest('button')!
     expect(analyze.disabled).toBe(true)
   })
 
@@ -1261,7 +1261,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     expect(storeMod.useStore.getState().toast).toBe('Fast local · qwen3:8b now writes the spec and steps here.')
     expect(pick.textContent).toContain('Fast local · qwen3:8b')
     // a running sync locks the picker
-    fireEvent.click(screen.getByText('Sync with spec'))
+    fireEvent.click(screen.getByText('Sync spec'))
     expect(pick.disabled).toBe(true)
   })
 })

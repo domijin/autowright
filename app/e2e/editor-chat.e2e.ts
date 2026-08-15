@@ -34,7 +34,7 @@ describe('editor chat e2e', () => {
     await page.getByText(name).waitFor({ timeout: 20_000 })
     await page.getByText(name).click()
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
+    await page.getByTestId('test-draft-toggle').waitFor({ timeout: 10_000 })
     return { id, page }
   }
 

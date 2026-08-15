@@ -25,7 +25,7 @@ describe('edit loop e2e', () => {
     await page.getByText('Edit loop e2e').waitFor({ timeout: 20_000 })
     await page.getByText('Edit loop e2e').click()
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
+    await page.getByTestId('test-draft-toggle').waitFor({ timeout: 10_000 })
 
     // Spec edit — the SPEC card's own Edit button and textarea.
     await page.getByTestId('spec-edit').click()
@@ -48,7 +48,7 @@ describe('edit loop e2e', () => {
 
     // Restore lives in the EDIT page's version menu (§11): load v1, save as v3.
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await page.getByRole('button', { name: 'Test the draft' }).waitFor({ timeout: 10_000 })
+    await page.getByTestId('test-draft-toggle').waitFor({ timeout: 10_000 })
     await page.getByTestId('version-menu').click()
     await page.getByText('v1', { exact: true }).click()
     await page.getByText(/Loaded v1 from history/).waitFor({ timeout: 10_000 })

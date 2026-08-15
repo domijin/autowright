@@ -479,7 +479,7 @@ export function LeftColumn({
                       if (used.length) showToast(`Step${used.length > 1 ? 's' : ''} ${stepList(used)} ${used.length > 1 ? 'are' : 'is'} out of sync — ${agName(g)} is no longer available here. Re-enable it or sync the steps before saving.`, 5000)
                     } else {
                       up({ ...genPatch, enabledAgents: [...rev.enabledAgents, g.id], ...(isEdit ? { touched: true } : {}) })
-                      showToast(`${agName(g)} is now available to steps — Sync with spec if the steps should be rewritten to use it.`, 3600)
+                      showToast(`${agName(g)} is now available to steps — Sync spec if the steps should be rewritten to use it.`, 3600)
                     }
                   }}
                   className="ad-btn-bare ad-focus-inset ad-hover-row"

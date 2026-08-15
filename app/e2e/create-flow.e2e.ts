@@ -45,7 +45,7 @@ describe('create flow e2e', () => {
 
     // Test: the toggle opens the setup section; Run test starts the real
     // draft execution through the engine (scratch memory).
-    await page.getByRole('button', { name: 'Test the draft' }).click()
+    await page.getByTestId('test-draft-toggle').click()
     await page.getByRole('button', { name: 'Run test' }).click()
     await page.getByText('Test succeeded — the memory copy was discarded.').waitFor({ timeout: 60_000 })
     await shot(page, 'create-test-succeeded.png')

@@ -178,7 +178,7 @@ applies unchanged; the chat pane never collapses.
   - **Sync now** (`fa-rotate`) — while the workflow is dirty and out of sync, sync is
     not disabled, and no pending sync is armed; the same §8 sync call and gating as the
     panel's button (this pill replaces the one the rewrite entry used to carry).
-  - **Test the draft** (`fa-vial`) — while the workflow is in sync, steps exist, and
+  - **Test draft** (`fa-vial`) — while the workflow is in sync, steps exist, and
     nothing is drafting; it **starts a draft test immediately** — the same run the
     panel's Run test starts, using the panel's current setup values (the seeded
     values — drafted §8 `test_values` included — when the setup section was never
@@ -186,7 +186,7 @@ applies unchanged; the chat pane never collapses.
     panel into view, where the live test takes over as usual. Unlike the panel's
     same-named disclosure toggle (which only opens the setup section), the pill runs
     the test; the setup section stays where fine-tuning lives.
-  - **Analyze the failure** (`fa-magnifying-glass`) — while the draft's tracked test
+  - **Analyze failure** (`fa-magnifying-glass`) — while the draft's tracked test
     settled failed; sends the canned analyze chat message exactly like the panel's
     button, with the same gating.
 - **Input:** pinned footer composer, two stacked rows. Top row: a full-width auto-growing
@@ -710,7 +710,7 @@ editors enter with
   are left untouched and the workflow returns to its pre-sync state, announced by a toast
   (never a system chip) — "Sync stopped — the workflow is still out of sync." when it was
   out of sync when the sync started, "Sync stopped — nothing changed." when it wasn't (an
-  in-sync "Sync with spec" run). A `blocked` sync renders a thread
+  in-sync "Sync spec" run). A `blocked` sync renders a thread
   blockers entry (source: sync; Blockers above): its
   primary amends the in-editor spec (same `## Constraints & resolutions` rule) and
   repeats the sync; dismissing it leaves the workflow out of sync with
@@ -912,9 +912,9 @@ editors enter with
   nothing must not draw the eye), and at most one accent-primary button ever renders:
   **Sync now** while out of sync. Every other panel button is a compact borderless **text
   button** (the card-header treatment above — never a bordered or filled box): the state's
-  main actions (the Test the draft setup toggle, the setup section's Run
-  test, a live test's Cancel) muted, every other action (View run, Analyze the failure,
-  Sync with spec) faint — the test controls included: a failed test never blocks saving,
+  main actions (the Test draft setup toggle, the setup section's Run
+  test, a live test's Cancel) muted, every other action (View run, Analyze failure,
+  Sync spec) faint — the test controls included: a failed test never blocks saving,
   so testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
   space runs out — a panel button is never clipped.
   **Layout.** The header row holds only the `BUILD & TEST` eyebrow, never a button. In
@@ -926,7 +926,7 @@ editors enter with
   runs — cancelling lives in the composer's Cancel button), never hidden — with the **test
   zone** under a hairline. In the in-sync states (4–6) the build zone disappears and the
   panel is a **single test zone** under the header hairline; sync access stays as a faint
-  **Sync with spec** text button riding the test zone's action row (the same §8 `sync`
+  **Sync spec** text button riding the test zone's action row (the same §8 `sync`
   call on demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
   test zone owns every test control — the test button never sits in the header: the test
   button with its hint / outcome / progress and their action rows, laid out per state
@@ -947,15 +947,15 @@ editors enter with
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
   4. **In sync, test executing** — the live status line, progress bar, and the action row
-     Cancel + the disabled faint **Sync with spec** (below) + View run; the test-setup
+     Cancel + the disabled faint **Sync spec** (below) + View run; the test-setup
      section stays hidden while the test executes.
   5. **In sync, test settled** — the outcome line over the action row faint **Sync with
-     spec** / **Test the draft** and, on failure, **Analyze the failure**, which sends
-     the canned analyze chat message (below). Test the draft is the same setup toggle as
+     spec** / **Test draft** and, on failure, **Analyze failure**, which sends
+     the canned analyze chat message (below). Test draft is the same setup toggle as
      state 6 — reopening shows the values the last test used — and **View run** lives
      only inside the setup section's run row, not on the action row.
-  6. **In sync, never tested** — one action row: the faint **Sync with spec** directly
-     beside the muted **Test the draft** setup toggle — always side by side, nothing
+  6. **In sync, never tested** — one action row: the faint **Sync spec** directly
+     beside the muted **Test draft** setup toggle — always side by side, nothing
      between them — with the plain-words status-and-side-effects line — "In sync with
      the spec. A test executes the real steps on this Mac — emails send, files move;
      memory is a scratch copy." — wrapping below the buttons when space runs out.
@@ -969,7 +969,7 @@ editors enter with
   draft's scripts), `workspace/`, `result/`, and per-step-attempt logs all live under
   `executions/<uuid>/`, progress streams over the ordinary `execution.*` WS events, and the
   result, failure diagnostics, and secret redaction work exactly as in §7. The panel's
-  setup toggle always reads **"Test the draft"** — the label never changes once a test
+  setup toggle always reads **"Test draft"** — the label never changes once a test
   outcome exists (a live test shows Cancel in its place) — and the setup section's run
   button reads
   **"Run test"** — never "Execute", which is reserved for real
@@ -986,13 +986,22 @@ editors enter with
   (one per draft container, and one **live** test per container: §19 answers 409), and a
   settled draft (discard, save as vN+1, Create, Start over) deletes its test records.
   Deleting the automation deletes them too.
-  **Test setup section (create and edit mode):** the test button (**Test the draft**)
+  **Test setup section (create and edit mode):** the test button (**Test draft**)
   is a **disclosure toggle**, not the run trigger — it never starts a
   test. It carries a caret (pointing left collapsed, down expanded — the §9.2 step-row
   caret language) and expands the test-setup section **below** the action row, opened by
   a dim hairline (the zone's top hairline stays the only full divider). The section
   shows **every test option at once** — no nested toggles, nothing behind a second
   click:
+  - The **run row opens the section** — first, above the option sub-blocks, so it is
+    never buried under a long param list: the muted **Run test** button — the only
+    control that starts a test — and, when a test record exists, the faint **View
+    run** beside it (the settled states' only View-run home — the action rows never
+    carry it), over the this-test-only note, worded to what the draft has — "Values
+    and the message apply to this test only — nothing is saved." (params and message
+    triggers both), "These values apply to this test only — nothing is saved."
+    (params only), "The message applies to this test only — nothing is saved."
+    (message triggers only) — and omitted entirely when the draft has neither.
   - When the draft has params: the `PARAMETER VALUES · THIS TEST ONLY` eyebrow, then one
     editor per param (§4.2 kinds), prefilled in edit mode with the automation's current
     values (draft default when a param is new) and in create mode with the draft
@@ -1025,14 +1034,6 @@ editors enter with
     (§6.1). The built §4.5 payload is snapshotted on the test record like a real
     firing's, so the test's execution page shows the message and sender like any message
     execution's; the record's trigger label stays "Test".
-  - The closing **run row**: the muted **Run test** button — the only control that
-    starts a test — and, when a test record exists, the faint **View run** beside it
-    (the settled states' only View-run home — the action rows never carry it),
-    over the this-test-only note, worded to what the draft has — "Values and the message
-    apply to this test only — nothing is saved." (params and message triggers both),
-    "These values apply to this test only — nothing is saved." (params only), "The
-    message applies to this test only — nothing is saved." (message triggers only) — and
-    omitted entirely when the draft has neither.
   Clicking the toggle again collapses the section; starting a test collapses it too
   (its inputs were snapshotted), and it stays hidden while the test executes. The
   entered values survive a collapse — reopening shows them again; seeding happens only
@@ -1065,7 +1066,7 @@ editors enter with
   appends a run-settled **system** entry — "Test succeeded." / "Test failed at step
   `<name>` — `<message>`." — so follow-up messages have an anchor and the agent's
   CONVERSATION context names the run. **On failure nothing analyzes by itself:** the panel
-  shows the "Test failed" line plus an **"Analyze the failure"** button on the action row —
+  shows the "Test failed" line plus an **"Analyze failure"** button on the action row —
   it sends the **canned analyze chat message** "The test failed at step `<name>` — figure
   out why. If the automation is at fault, fix it; if it's something I need to do on this
   Mac, tell me what to do and how instead." as an ordinary §8 chat job

@@ -148,7 +148,7 @@ everything finer-grained belongs to the unit/integration tiers:
 - failed execution → §7 diagnostics on the execution page → Retry in place → attempt 2
   succeeds → attempts visible, list chip recovers
 - Cancel on a live execution; skip-step on a live execution continuing to the next step
-- the full edit loop: spec edit → Sync with spec (real second AI call) → Save as v2 →
+- the full edit loop: spec edit → Sync spec (real second AI call) → Save as v2 →
   version history → restore v1 as v3
 - the editor chat pane, question then edit: a question-shaped message lands a prose answer
   entry (workflow untouched); a change request rewrites the spec from chat, the thread
@@ -197,8 +197,12 @@ controls. Test ids in the app (all in `app/src`): `nav-rail` (the §9 nav rail �
 harness's `clickNav` measures its width), `agent-card` (§12 agent cards),
 `execution-row` (§9 executions-list rows), `param-row-<name>` (§9.2 parameter rows, one
 per param), `spec-edit` / `spec-editor` (§11 SPEC card's Edit button and its edit
-textarea), `sync-steps` (§11 Build panel's Sync now / Sync with spec button),
-`chat-sync-now` (§11 chat thread rewrite entry's inline Sync now), `chat-thread` (§11
+textarea), `sync-steps` (§11 Build panel's Sync now / Sync spec button), `test-draft-toggle` (§11 test
+panel's Test draft setup-toggle button — its "Test draft" label also appears on the chat
+turn-row pill `chat-test-draft`, so bare text can't reach it),
+`chat-sync-now` (§11 chat thread rewrite entry's inline Sync now), `chat-turn-actions` /
+`chat-test-draft` / `chat-analyze-failure` (§11 chat turn action row and its Test draft /
+Analyze failure pills), `chat-thread` (§11
 chat thread's scrolling body — the element whose scrollTop the pinning tests measure),
 `chat-progress` (§11 thread's transient live-job progress entry — its stage label text
 also appears verbatim as settled activity-entry titles, so bare text can't reach it),

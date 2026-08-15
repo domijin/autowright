@@ -383,12 +383,11 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   persists it — the header back button, system back/forward navigation, anything that closes
   the editor — never just the header button. Discard draft and Save as vN+1 settle the draft:
   leaving after either writes nothing (a discarded or saved draft is never resurrected).
-  Touched edits count regardless of which editable view they were made in: the Draft view or
-  the current version's view (§11: only *old* versions are read-only) — edits made while
-  viewing "vN · current" persist as the draft on every draft-keep path (leaving the editor,
-  switching views in the Version menu), never silently discarded. Browsing the current
-  version untouched writes nothing (it must not clobber an existing draft with the version's
-  own content).
+  The Draft view is the only editable view (§11: every listed vN row is read-only history —
+  the current version is not a selectable view, below); touched Draft edits persist on every
+  draft-keep path (leaving the editor, switching views in the Version menu), never silently
+  discarded. (Defensive: should the working state ever record the current version as the
+  view, its touched edits still count as draft edits — the keep paths must not drop them.)
 - The draft snapshot carries the **full working state**: spec, steps, instructions, notes
   (§4.1), params,
   packages, the editor's trigger list (stored as a draft-only `triggers` key — the §4.3
@@ -477,10 +476,29 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   changes or a stored draft). It leaves the editor through the same keep path as the header
   back button — so keeping the draft is a visible choice, not an accident of which button
   you noticed.
-- Editor version menu lists: Draft ("your working copy — unsaved"), current vN ("current · …"),
-  each older vN (date, always with the year · note). Loading an old version shows a banner: "Loaded vX from history.
+- Editor version menu lists: Draft ("your working copy — unsaved"), then each older vN
+  (date, always with the year · note). **The current version is never a selectable
+  option** — the Draft *is* the working copy of it, so a current row would only duplicate
+  Draft (or, with edits pending, show a state Save is about to replace). It appears only
+  as an inert header at the top of the menu — "vN · current" with the explainer "Your
+  draft builds on this — Save lands it as vN+1." — the same header treatment as the
+  detail-page menu (hidden as an option, not disabled). Loading an old version shows a banner: "Loaded vX from history.
   Saving restores it as vN+1 — your draft stays in the Version menu." with a bordered
   **Back to draft** button; Save label becomes "Restore vX as vN+1".
+- **Deleting old versions** (editor version menu only): every *older* row carries a trash
+  icon button (`.ad-btn-icon.danger`) on its right. The Draft row and the current-version
+  header never show it — **hidden, not disabled**: deleting the current version is
+  structurally impossible (restore another version first and it stops being current), and
+  permanently inapplicable actions hide rather than grey out, matching the detail-page
+  menu where only older rows get Execute once. The trash opens a danger ConfirmModal ("Delete v X? · v X is deleted
+  from the version history. This can't be undone. Past executions of v X stay in
+  Executions."); confirming calls the §19 DELETE, reloads the automation, and toasts
+  "v X deleted." If the deleted version was the one being viewed, the editor jumps back to
+  the Draft view (the loaded-from-history banner leaves with it). Deletion is
+  irreversible — no snapshot, no undo. The backend refuses deleting the current version
+  (400) and a version with a live or queued execution on it (409 — an in-flight Execute
+  once must not lose its content mid-run); a failed execution whose version was deleted
+  can no longer Retry (its §7 retry answers 404), and its stored record is untouched.
 - Detail page: old versions can **Execute once** without touching the triggers (toast: "Executing vX
   once — triggers and Execute now stay on vN."). The detail-page version menu carries a footer
   explainer: "Executing an older version once doesn't change anything — triggers and Execute now

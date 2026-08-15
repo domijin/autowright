@@ -767,6 +767,26 @@ def restore(automation_id: str, body: models.VersionRestore) -> dict:
     return {"version": n, "automation": _auto_json_locked(a)}
 
 
+@app.delete("/automations/{automation_id}/versions/{version}", dependencies=[Depends(auth)])
+def delete_version(automation_id: str, version: int) -> dict:
+    """§4.4/§19 delete an old version. Guards under one lock span: never the
+    current version (400), never one a live or queued execution records (409 —
+    an admitted Execute once must not lose its content before or mid-run)."""
+    a = _auto_or_404(automation_id)
+    with store.lock:
+        if version == a["current_version"]:
+            raise HTTPException(400, "the current version can't be deleted — restore another version first")
+        if version not in a["versions"]:
+            raise HTTPException(404, f"v{version} not found")
+        if any(x["automation_id"] == a["id"] and x.get("kind") == "version"
+               and x.get("version") == version and x["status"] in ("executing", "queued")
+               for x in store.execs.values()):
+            raise HTTPException(409, f"an execution is using v{version} — wait for it to finish")
+        store.delete_version(a, version)
+    _publish_auto_changed(a)
+    return {"automation": _auto_json_locked(a)}
+
+
 @app.post("/automations/{automation_id}/execute", dependencies=[Depends(auth)])
 def execute_auto(automation_id: str, body: models.ExecuteBody | None = None) -> dict:
     a = _auto_or_404(automation_id)

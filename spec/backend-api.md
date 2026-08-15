@@ -190,6 +190,15 @@ remain plain dicts (§2).
   endpoints themselves (save, create, draft DELETE), never through this surface
 - `POST /automations/{id}/restore` `{ version }` — restore vX as vN+1, written through the
   §5 version-folder writer (manifest last as the commit point — never a tree copy)
+- `DELETE /automations/{id}/versions/{v}` — §4.4 delete an old version: removes the
+  `versions/vX/` folder and the in-memory entry, answers `{ automation }` (the updated
+  full JSON) and publishes the automation-changed event. Guards, checked under one lock
+  span: 404 unknown automation or version, 400 when `v` is the current version (the UI
+  never offers it — restore another version first), 409 when any live or queued
+  execution records `(kind: version, version: v)` — an admitted Execute once must not
+  lose its content before or during its run. Past execution records are untouched
+  (§4.5 stores its own step list), but a failed execution on a deleted version can no
+  longer retry — the §7 retry's version resolution answers 404
 - `GET /automations/{id}/export?values=0|1` — the §5.1 transfer archive as `application/zip`
   (`Content-Disposition` filename `<name>.autowright`, name sanitized for the filesystem);
   `values=0` omits `param_values` from the manifest (default `1`)

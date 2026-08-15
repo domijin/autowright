@@ -661,6 +661,22 @@ export default function CreateFlow() {
     }
   }
 
+  // §4.4 delete an old version — the affordance exists only on older rows,
+  // so the current version and the Draft can never reach here.
+  const [delVer, setDelVer] = useState<number | null>(null)
+  const deleteVersion = async (v: number) => {
+    if (!auto) return
+    try {
+      await api.deleteVersion(auto.id, v)
+      // Viewing the deleted version → back to the Draft view (§4.4).
+      if (rev?.viewing === v) pickVersion('draft')
+      await loadAuto(auto.id)
+      showToast(`v${v} deleted.`)
+    } catch (err) {
+      showToast((err as Error).message)
+    }
+  }
+
   // ---- leave / start over / save ----
   const close = async () => {
     jobs.stopPoll()
@@ -885,7 +901,22 @@ export default function CreateFlow() {
                     <span>{rev.viewing === 'draft' ? 'Draft' : `v${rev.viewing}${rev.viewing === auto.version ? ' · current' : ''}`}</span>
                     <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
                   </button>
-                  <PopMenu show={verOpen} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 360 }}>
+                  <PopMenu show={verOpen} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 360, padding: 0, overflow: 'hidden' }}>
+                    {/* §4.4: the current version is never a selectable option — the Draft
+                        is its working copy. Inert header only, like the detail-page menu. */}
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
+                      borderBottom: '1px solid var(--hairline-dim)', background: 'rgba(255,255,255,.03)',
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ font: "600 12.5px var(--mono)", color: 'var(--text)' }}>
+                          v{auto.version} · current
+                        </div>
+                        <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 1 }}>
+                          Your draft builds on this — Save lands it as v{auto.version + 1}.
+                        </div>
+                      </div>
+                    </div>
                     {/* a long version history scrolls inside the menu instead of past the window */}
                     <ScrollArea style={{ maxHeight: '60vh' }}>
                       {([
@@ -893,20 +924,23 @@ export default function CreateFlow() {
                           key: 'draft' as const, label: 'Draft',
                           sub: 'your working copy — unsaved',
                         },
-                        {
-                          key: auto.version, label: `v${auto.version}`,
-                          sub: 'current · ' + (((auto.specMeta || '').split('·')[1] || '').trim()),
-                        },
                         ...(auto.versions ?? []).map((v) => ({
                           key: v.version, label: `v${v.version}`, sub: v.when + (v.note ? ' · ' + v.note : ''),
+                          // §4.4: only older rows are deletable — the Draft and
+                          // current rows hide the affordance (never disabled).
+                          del: true,
                         })),
                       ]).map((it) => {
                         const sel = rev.viewing === it.key
                         return (
-                          <button
+                          // div, not button — the older rows nest the delete button
+                          <div
                             key={String(it.key)}
                             className="ad-btn-bare ad-hover-row"
+                            role="button"
+                            tabIndex={0}
                             onClick={() => pickVersion(it.key)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickVersion(it.key) } }}
                             style={{
                               display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', cursor: 'pointer',
                               borderBottom: '1px solid var(--hairline-dim)',
@@ -920,7 +954,19 @@ export default function CreateFlow() {
                               <div style={{ font: "600 12.5px var(--mono)", color: sel ? 'var(--text)' : 'var(--text-2)' }}>{it.label}</div>
                               <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 1 }}>{it.sub}</div>
                             </div>
-                          </button>
+                            {'del' in it && it.del && (
+                              <button
+                                className="ad-btn-icon danger"
+                                title={`Delete v${it.key}`}
+                                aria-label={`Delete v${it.key}`}
+                                data-testid={`delete-version-${it.key}`}
+                                onClick={(e) => { e.stopPropagation(); setVerOpen(false); setDelVer(it.key as number) }}
+                                style={{ flex: 'none' }}
+                              >
+                                <i className="fa-solid fa-trash-can" style={{ fontSize: 11 }} />
+                              </button>
+                            )}
+                          </div>
                         )
                       })}
                     </ScrollArea>
@@ -1110,6 +1156,22 @@ export default function CreateFlow() {
           )}
         </div>
       </div>
+
+      {delVer != null && (
+        <ConfirmModal
+          title={`Delete v${delVer}?`}
+          body={(
+            <>
+              v{delVer} is deleted from the version history. This can’t be undone.
+              Past executions of v{delVer} stay in Executions.
+            </>
+          )}
+          confirmLabel={`Delete v${delVer}`}
+          danger
+          onConfirm={() => { const v = delVer; setDelVer(null); void deleteVersion(v) }}
+          onCancel={() => setDelVer(null)}
+        />
+      )}
 
       {confirmSpecCancel && (
         <ConfirmModal

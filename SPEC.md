@@ -175,17 +175,30 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   the click downloads the DMG with the version in its filename; the static fallback
   `href` (no JS, fetch failure) is the repo's latest-release GitHub page,
   "View source") · an animated app-window demo
-  that mirrors the §11 chat-first create flow (46 px icon rail with the §9 nav icon set —
+  that mirrors the §11 chat thread (46 px icon rail with the §9 nav icon set —
   bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
   page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
-  `@fortawesome/fontawesome-free` package into `<symbol>` defs; chat
-  composer with a bordered `.ad-input`-style textarea and the real empty placeholder, typed
-  plain-words prompt, agent-picker and Send/Cancel both rendered as `.ad-btn-pill` clones —
-  mono 10.5 px, white .06 background, radius 6, microchip glyph + `name · model` + caret-down on
-  the picker; the progress block sits above the textarea, §11 stage labels "Working on the request…" / "Writing the spec…" / "Generating the
-  steps…", numbered step rows with `.py` file tags, then trigger + ran-result chips; three
-  looping scenes cover a cron, a Discord-trigger, and an interval job across different
-  agents) · a three-step "how it works" strip (say it → read it → let it run) · three promise
+  `@fortawesome/fontawesome-free` package into `<symbol>` defs. The stage is the real
+  chat-pane layout: a scrolling thread above a pinned composer. The composer is a
+  bordered `.ad-input`-style textarea with the real placeholders (empty-state
+  "Describe the job - one sentence is enough.", then the in-thread
+  "Change something, or ask a question…" once the first turn lands), agent-picker and
+  Send/Cancel both `.ad-btn-pill` clones — mono 10.5 px, white .06 background, radius 6,
+  microchip glyph + `name · model` + caret-down on the picker. Each scene plays a §11
+  turn in thread form: the typed prompt lands as the quiet right-aligned user bubble;
+  then the §11 operation blocks stream in — spinner while live, settling to a green
+  check beside the unified §8 stage labels "Working on the request…" / "Updating the
+  documents…" / "Syncing the workflow…", each with its `• `-bulleted feed lines flush
+  left ("Choosing what to do"; "Writing the spec"; "Writing the manifest - name,
+  triggers, parameters, step list" and "Writing step n of N - `NN-name.py`") — with the
+  faint system-chip receipts between stages ("Spec updated." `fa-file-pen`,
+  "Renamed to …" / "Description updated." `fa-pen`, "Steps synced with the spec."
+  `fa-rotate`); the turn closes with the §11 turn action row — "Undo this change"
+  (`fa-rotate-left`) and "Test draft" (`fa-vial`) as icon-led action pills. No step
+  cards, no trigger/ran chips — the demo shows exactly what the app's thread shows.
+  Three looping scenes cover a cron, a Discord-trigger, and an interval job across
+  different agents; the thread clears between scenes and the empty-state heading
+  returns) · a three-step "how it works" strip (say it → read it → let it run) · three promise
   cards (the two §1 core promises plus the review promise "Nothing executes until you
   approve it") · a feature grid (message triggers, runs-with-window-closed + menu bar,
   versions, memory + snapshots, execution history, `.autowright` share/import) ·
@@ -193,7 +206,9 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   download CTA (same feed-driven direct-DMG link as the hero — both anchors carry
   `data-download`; the JSON-LD `downloadUrl` stays the static latest-release page URL) ·
   footer (GitHub, Privacy, MIT). All repo links point to
-  `hansololz/autowright`. Respects `prefers-reduced-motion`. Head metadata: canonical
+  `hansololz/autowright`. The page never uses the em dash character (—) anywhere -
+  copy, meta tags, demo strings, code comments; where an app string it mirrors
+  carries one, the page substitutes a plain hyphen. Respects `prefers-reduced-motion`. Head metadata: canonical
   `https://autowright.ai/`, `theme-color` `#090d14`, Open Graph + Twitter-card tags with a
   1200×630 social image (`docs/og.png`, AW mark + headline on the dark background),
   `docs/apple-touch-icon.png` (180 px full-bleed AW mark), and JSON-LD

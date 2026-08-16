@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('autowright', {
   updateCheck: () => ipcRenderer.invoke('update-check'),
   updateDownload: () => ipcRenderer.invoke('update-download'),
   updateInstall: () => ipcRenderer.invoke('update-install'),
+  // §4.9 QUIT card: stop the backend service, then quit the app (§3
+  // explicit-quit exception)
+  quitAll: () => ipcRenderer.invoke('quit-all'),
   // Download percent (null = size unknown). Re-registering replaces the
   // previous listener — the About page re-subscribes on every mount.
   onUpdateProgress: (cb) => {

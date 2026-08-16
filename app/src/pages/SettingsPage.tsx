@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import { Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
+import { ConfirmModal, Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }
@@ -26,6 +26,9 @@ export default function SettingsPage() {
   // re-read on every Settings visit (this mount).
   const [cli, setCli] = useState<CliState | null>(null)
   const [cliBusy, setCliBusy] = useState(false)
+  // §4.9 QUIT card (§3 explicit-quit exception)
+  const [quitConfirm, setQuitConfirm] = useState(false)
+  const [quitBusy, setQuitBusy] = useState(false)
 
   useEffect(() => {
     if (settings) setDays(String(settings.days))
@@ -45,6 +48,20 @@ export default function SettingsPage() {
       const s = await window.autowright?.cliStatus().catch(() => null)
       if (s) setCli(s.state)
       setCliBusy(false)
+    })()
+  }
+
+  // §4.9: stop the backend service, then the app quits (§3). Busy or error
+  // leaves everything running — reset and toast.
+  const quitAll = () => {
+    if (quitBusy) return
+    setQuitBusy(true)
+    void (async () => {
+      const r = await window.autowright?.quitAll().catch((e: Error) => ({ error: e.message }))
+      if (r && 'busy' in r) showToast('An automation is executing — quit when it finishes.')
+      else if (r && 'error' in r) showToast(r.error)
+      // on { ok } the app is exiting — nothing to do
+      setQuitBusy(false)
     })()
   }
 
@@ -276,6 +293,45 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {window.autowright && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <Eyebrow style={{ paddingLeft: 2 }}>QUIT</Eyebrow>
+          <div className="ad-card" style={card}>
+            <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+              <div style={{ flex: 1 }}>
+                <div style={rowTitle}>Quit Autowright entirely</div>
+                <div style={rowSub}>
+                  Stops the background service too — schedules and message triggers pause until you next log in or open Autowright.
+                </div>
+              </div>
+              <button
+                className="ad-btn-soft"
+                onClick={() => setQuitConfirm(true)}
+                disabled={quitBusy}
+                style={{ flex: 'none' }}
+              >
+                {quitBusy ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <Spinner size={12} /> Stopping…
+                  </span>
+                ) : 'Quit…'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {quitConfirm && (
+        <ConfirmModal
+          title="Quit Autowright entirely?"
+          body="The background service stops too, so schedules and message triggers pause until you next log in or open Autowright."
+          confirmLabel="Quit Autowright"
+          danger
+          onConfirm={() => { setQuitConfirm(false); quitAll() }}
+          onCancel={() => setQuitConfirm(false)}
+        />
+      )}
     </div>
   )
 }

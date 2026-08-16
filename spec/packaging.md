@@ -116,6 +116,14 @@ the update bullets below).
 - Quitting the Electron app (window and menu bar) never stops the backend; the scheduler keeps
   running. The §4.9 `login` setting controls only whether the UI starts at login — the backend
   service stays registered regardless once onboarding completes.
+  **One explicit exception:** the Settings page's "Quit Autowright entirely" action (§4.9 QUIT
+  card). It runs `python -m autowright.service stop` — bootout only; the plist and the CLI shim
+  stay on disk — and then quits the Electron app. The action is gated on no live executions
+  (same rule as update-install; busy → the renderer toasts and nothing stops). If the stop
+  fails, the app does **not** quit — the error is surfaced instead; the app must never quit its
+  UI while the backend it promised to stop keeps running. A stopped backend returns at next
+  login (`RunAtLoad`) or next app launch (ensure-backend re-heals) — stopped, never
+  uninstalled.
 - Discovery: the backend listens on localhost and writes its port + auth token to
   `~/Library/Application Support/Autowright/backend.json` (0600); UI and CLI read it to connect.
   Fields: `port`, `token`, `version`, `pid`, and `python` — the backend's `sys.executable`,
@@ -229,7 +237,12 @@ CLI is enabled, so the full surface below is live:
 - **Bootstrap** — `autowright service install` registers the backend by writing a launchd plist to
   `~/Library/LaunchAgents/` directly (the very same code the app's ensure-backend step runs at
   launch — one registration path; install rewrites and adopts an existing registration).
-  `service uninstall`, `service status`, and `service restart` accompany it.
+  `service uninstall`, `service status`, `service restart`, and `service stop` accompany it.
+  `stop` unloads the job but leaves the plist and shim on disk ("stopped until next login or
+  app launch" — the §4.9 quit-entirely action's backend half); it reports failure (exit 1) when
+  launchd still lists the job afterwards, and "not installed" (exit 1) with no plist. `status`
+  distinguishes the states: job unloaded but plist present → "stopped (plist present)", exit 0
+  (stopped on purpose is not a failure); no plist → "not installed", exit 1.
   Two launchd realities the install/restart path must handle: (a) booting out a *running* job is
   asynchronous — an immediate re-bootstrap races the teardown and fails, so after `bootout` the
   code polls `launchctl print` until the job is gone (up to 10 s) before loading; (b) legacy

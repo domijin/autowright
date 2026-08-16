@@ -31,7 +31,7 @@ autowright execution <verb> …           list · show · tail · cancel · retr
 autowright secret list|set|delete
 autowright agent list|check
 autowright settings show|set
-autowright service install|uninstall|status|restart   (§3 — the only group that needs no backend)
+autowright service install|uninstall|status|restart|stop   (§3 — the only group that needs no backend)
 ```
 
 The `service` group is a thin wrapper over `service.py` — the same functions the app's

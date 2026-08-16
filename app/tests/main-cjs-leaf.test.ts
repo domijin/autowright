@@ -15,6 +15,10 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     expect(src).toContain("'-m', 'autowright.service', 'install'")
   })
 
+  it('quit-all stops the backend via -m autowright.service stop', () => {
+    expect(src).toContain("'-m', 'autowright.service', 'stop'")
+  })
+
   it('never executes the CLI — autowright.cli appears only inside the shim file text', () => {
     const hits = src.match(/autowright\.cli/g) ?? []
     expect(hits).toHaveLength(1)

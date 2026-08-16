@@ -333,7 +333,7 @@ Dev workflow:
   with `AUTOWRIGHT_RENDERER_URL=http://127.0.0.1:<vite port>` (§15) — renderer edits under
   `app/src` hot-reload live; backend edits need a dev.sh restart. Quitting Electron normally
   (Cmd+Q) leaves the backend running (release semantics — automations keep firing; stop it with
-  `.venv/bin/autowright service uninstall`). Ctrl+C in the dev.sh terminal instead shuts the
+  `.venv/bin/autowright service stop`, or `service uninstall` for full teardown). Ctrl+C in the dev.sh terminal instead shuts the
   whole app down: Electron dies with the terminal's SIGINT, the exit trap kills Vite, and an
   INT/TERM trap stops the backend — `autowright service uninstall` first (launchd KeepAlive
   would otherwise respawn it), then the same SIGTERM → 5 s grace → SIGKILL escalation as the

@@ -50,7 +50,7 @@ def svc(home, monkeypatch):
         return [c for c in calls if c[1] != "print"]
 
     return SimpleNamespace(mod=service, plist=plist, shim=shim, calls=calls,
-                           results=results, actions=actions)
+                           results=results, actions=actions, registered=registered)
 
 
 def _gui_domain():
@@ -246,6 +246,23 @@ def test_status_not_installed(svc):
     assert svc.mod.status() == "not installed"
 
 
+def test_status_stopped_with_plist_present(svc, capsys):
+    # §3: unloaded job + plist on disk = stopped on purpose (`service stop`),
+    # not "not installed" — and not a failure (exit 0).
+    svc.results["list"] = _list_result("1\t0\tcom.apple.other\n")
+    svc.plist.parent.mkdir(parents=True, exist_ok=True)
+    svc.plist.write_bytes(b"<plist/>")
+    assert svc.mod.status().startswith("stopped (plist present)")
+    assert svc.mod.main(["status"]) == 0
+    capsys.readouterr()
+
+
+def test_status_not_installed_exits_nonzero(svc, capsys):
+    svc.results["list"] = _list_result("1\t0\tcom.apple.other\n")
+    assert svc.mod.main(["status"]) == 1
+    capsys.readouterr()
+
+
 def test_status_tolerates_stale_or_garbage_backend_json(svc):
     svc.results["list"] = _list_result("42\t0\tcom.autowright.backend\n")
     from autowright import paths
@@ -271,6 +288,50 @@ def test_uninstall_when_not_installed(svc):
     assert svc.mod.uninstall() == "service was not installed"
     # the stop is still attempted (harmless), plist untouched
     assert svc.actions() == [["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"]]
+
+
+# ---------------------------------------------------------------- stop
+
+def test_stop_unloads_but_keeps_plist_and_shim(svc):
+    # §3 quit-entirely backend half: bootout only — plist and shim survive,
+    # the service returns at next login or app launch.
+    svc.plist.parent.mkdir(parents=True, exist_ok=True)
+    svc.plist.write_bytes(b"<plist/>")
+    svc.shim.parent.mkdir(parents=True)
+    svc.shim.write_text(svc.mod.shim_text())
+    out = svc.mod.stop()
+    assert out.startswith("stopped")
+    assert svc.plist.exists()
+    assert svc.shim.exists()
+    assert svc.actions() == [["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"]]
+
+
+def test_stop_when_not_installed(svc, capsys):
+    assert svc.mod.stop().startswith("not installed")
+    assert svc.actions() == []  # nothing to unload
+    assert svc.mod.main(["stop"]) == 1
+    capsys.readouterr()
+
+
+def test_main_dispatches_stop(svc, capsys):
+    svc.plist.parent.mkdir(parents=True, exist_ok=True)
+    svc.plist.write_bytes(b"<plist/>")
+    assert svc.mod.main(["stop"]) == 0
+    assert "stopped" in capsys.readouterr().out
+
+
+def test_stop_failed_when_still_registered(svc, monkeypatch, capsys):
+    # launchd refuses both bootout and legacy unload and keeps the job:
+    # stop must report failure (exit 1) — the app then must not quit (§3).
+    monkeypatch.setattr(svc.mod.time, "sleep", lambda _s: None)
+    svc.plist.parent.mkdir(parents=True, exist_ok=True)
+    svc.plist.write_bytes(b"<plist/>")
+    svc.registered["job"] = True
+    svc.results["bootout"] = SimpleNamespace(returncode=1, stdout="", stderr="")
+    svc.results["unload"] = SimpleNamespace(returncode=1, stdout="", stderr="")
+    assert svc.mod.stop() == "stop failed: launchd still reports the job"
+    assert svc.mod.main(["stop"]) == 1
+    capsys.readouterr()
 
 
 # ------------------------------------------------- §3 discovery guard (main.py)

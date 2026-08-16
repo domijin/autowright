@@ -788,6 +788,16 @@ prompt; the row's detail line already says so: "macOS will ask for your password
 running, the button shows the §9 busy-commit spinner, then the row re-reads `cli-status` — a
 declined prompt just returns to the previous state, never an error banner. A **DEVELOPER**
 card sits last on the page with
-the single **Developer mode** toggle row (developerMode above). Version, updates,
+the single **Developer mode** toggle row (developerMode above). A **QUIT** card sits at the
+very bottom of the page (below DEVELOPER), rendered only when the preload bridge exists (like
+COMMAND LINE; no stored setting). One row titled "Quit Autowright entirely", detail "Stops the
+background service too — schedules and message triggers pause until you next log in or open
+Autowright.", with a "Quit…" button (ellipsis: a confirm follows). The button opens a danger
+ConfirmModal — title "Quit Autowright entirely?", body restating the pause-until-next-launch
+consequence, confirm label "Quit Autowright". Confirming fires the §3 `quit-all` IPC: busy
+(live execution) → toast "An automation is executing — quit when it finishes." and the row
+resets; error → toast the error text, row resets; success → the app exits (backend stopped
+first — §3 explicit-quit exception). While running, the button shows the §9 busy spinner as
+"Stopping…" (the stop's launchd deregistration wait can take up to ~10 s). Version, updates,
 GitHub links, licenses, and the disclaimer live on the About page (§9.4), not here.
 

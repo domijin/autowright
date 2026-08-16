@@ -768,6 +768,28 @@ ipcMain.handle('update-install', async () => {
   return { ok: true }
 })
 
+// §3 explicit-quit exception (§4.9 QUIT card): stop the backend LaunchAgent
+// (bootout only — plist and shim stay; it returns at next login or app
+// launch), then quit the app. On any stop failure the app stays up — never
+// quit the UI while the backend it promised to stop keeps running.
+ipcMain.handle('quit-all', async () => {
+  if (await executionsLive()) return { busy: true }
+  // Dev launches have no bundled Python — backend.json publishes the
+  // interpreter that runs the backend (§3 discovery fields), same code path.
+  const py = bundledPython() || backendInfo()?.python
+  if (!py) return { error: 'No backend interpreter found' }
+  const err = await new Promise((resolve) => {
+    execFile(py, ['-m', 'autowright.service', 'stop'], (e, stdout, stderr) => {
+      appLog(`quit-all: ${String(stdout || stderr || '').trim()}`)
+      resolve(e ? String(stdout || stderr || e.message).trim() : null)
+    })
+  })
+  if (err) return { error: err }
+  appLog('quit-all: backend stopped, quitting app')
+  app.quit()
+  return { ok: true }
+})
+
 app.whenReady().then(() => {
   if (!gotLock) return
   // Dev launches via `electron .`, which ships the default Electron dock icon —
@@ -788,4 +810,6 @@ app.whenReady().then(() => {
 })
 
 // §3: quitting the app never stops the backend — we are always a client.
+// (The one exception is the explicit quit-all IPC above, which stops the
+// backend first and then quits.)
 app.on('window-all-closed', () => { /* stay alive in the tray */ })

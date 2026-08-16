@@ -1073,7 +1073,7 @@ def _grant_flags(p) -> None:
 
 def _add_service(top) -> None:
     p = _sub(top, "service", cmd_service, "manage the launchd service (§3)", client=False)
-    p.add_argument("action", choices=["install", "uninstall", "status", "restart"])
+    p.add_argument("action", choices=["install", "uninstall", "status", "restart", "stop"])
 
 
 def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:

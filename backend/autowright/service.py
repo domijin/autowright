@@ -173,7 +173,22 @@ def status() -> str:
                 except (OSError, ValueError, KeyError, TypeError):
                     port = " · stale backend.json"
             return ("active" if alive else "loaded, not active") + f" (pid {pid}){port}"
+    # §3: an unloaded job with its plist still on disk is "stopped", not
+    # "not installed" — it returns at next login or `service install`.
+    if plist_path().exists():
+        return "stopped (plist present) — returns at next login or app launch"
     return "not installed"
+
+
+def stop() -> str:
+    """§3 quit-entirely backend half: unload the job, keep plist and shim."""
+    p = plist_path()
+    if not p.exists():
+        return "not installed — nothing to stop"
+    _unload(p)
+    if _registered():
+        return "stop failed: launchd still reports the job"
+    return "stopped — returns at next login or app launch"
 
 
 def restart() -> str:
@@ -186,7 +201,7 @@ def restart() -> str:
 
 
 ACTIONS = {"install": install, "uninstall": uninstall,
-           "status": status, "restart": restart}
+           "status": status, "restart": restart, "stop": stop}
 
 
 def main(argv: list[str]) -> int:

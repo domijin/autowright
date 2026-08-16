@@ -796,6 +796,15 @@ def test_parser_marks_service_as_clientless():
     assert cli.build_parser(full=True).parse_args(["status"]).client is True
 
 
+def test_parser_accepts_service_stop_in_both_shapes():
+    # §20/§3: `service stop` (the quit-entirely backend half) is part of the
+    # verb set in the full parser and the service-only parser alike.
+    from autowright import cli
+
+    assert cli.build_parser(full=True).parse_args(["service", "stop"]).action == "stop"
+    assert cli.build_parser(full=False).parse_args(["service", "stop"]).action == "stop"
+
+
 def test_shipped_cli_exposes_the_full_surface():
     """§20: the CLI is enabled — the parser main() ships is the full one."""
     from autowright import cli
@@ -1464,3 +1473,11 @@ def test_cmd_service_dispatches_to_service_module(monkeypatch, capsys):
     monkeypatch.setitem(service.ACTIONS, "status", lambda: "running (pid 42)")
     _run(None, "service", "status")
     assert "running (pid 42)" in capsys.readouterr().out
+
+
+def test_cmd_service_dispatches_stop(monkeypatch, capsys):
+    from autowright import service
+
+    monkeypatch.setitem(service.ACTIONS, "stop", lambda: "stopped — fake")
+    _run(None, "service", "stop")
+    assert "stopped — fake" in capsys.readouterr().out

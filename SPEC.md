@@ -7,6 +7,8 @@ sheet, implemented in code by `app/src/tokens.css`.
 The spec is split across this index file and `spec/*.md`. § numbers are global across all spec
 files; the map below says which file holds each section. Read this file first, then open only the
 spec files the task touches. Keep the map current when sections are added or moved.
+The spec is written in English only — every word, including quoted UI copy and examples; no
+words from other languages except established technical terms.
 
 **Section map** — ordered so later sections build on earlier ones:
 

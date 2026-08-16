@@ -605,6 +605,30 @@ def test_test_409_while_live(client, monkeypatch):
     _until_finished(events, eid)
 
 
+def test_discard_draft_cancels_live_test_and_leaves_no_residue(client, monkeypatch):
+    # §11 test lifetime / §19 draft settle: discarding a draft while its test
+    # is still executing cancels the test; the record deletes itself once it
+    # lands and no test.yaml is written into the settled container.
+    from autowright import paths
+    from autowright.storage import store
+
+    events = _capture_events(monkeypatch)
+    d = _echo_draft(steps=[{"file": "01-slow.py", "name": "Slow", "description": "",
+                            "code": "from autowright import log\nimport time\nlog('sleeping')\ntime.sleep(60)\n"}])
+    eid = client.post("/tests", json={"draft": d}).json()["executionId"]
+    # discard only once the step subprocess is provably live — same pre-flight
+    # caveat as the cancel tests above
+    _until(events, "execution.log")
+    assert client.delete("/draft/pending").json()["ok"]
+    _until_finished(events, eid)
+    # the cancelled record deletes itself (testexec._run) — poll briefly
+    t0 = time.time()
+    while time.time() - t0 < 10 and eid in store.execs:
+        time.sleep(0.05)
+    assert eid not in store.execs
+    assert not (paths.pending_draft_dir() / "test.yaml").exists()
+
+
 def test_patch_automation_triggers_and_grants(client):
     from autowright.storage import store
 

@@ -174,7 +174,11 @@ remain plain dicts (§2).
   `memory/`) exist, never touching contents already there — the create flow calls it on
   open so the pending slot exists before any drafting or test. For an automation owner, PUT
   and DELETE answer 409 while a Draft-version execution is running (rewriting/pruning the
-  draft's step scripts mid-run would break the per-step sha record). `DELETE` settles the
+  draft's step scripts mid-run would break the per-step sha record). Every **draft-settle**
+  endpoint (this DELETE, `POST /automations`, `POST /automations/{id}/versions`) first
+  **cancels the container's still-executing test record** (§11 test lifetime), marking it
+  so it deletes itself when it lands instead of surviving as an orphan or rewriting the
+  settled container's `test.yaml`. `DELETE` settles the
   draft but **never deletes the thread** (§4.4 thread lifetime): it appends the "Draft
   discarded." boundary marker to the owner's `chat.jsonl` and, for the pending owner,
   empties the slot's draft contents while leaving `chat.jsonl` in place. The §8 drafting-job

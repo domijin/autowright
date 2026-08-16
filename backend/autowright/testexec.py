@@ -122,15 +122,26 @@ def _run(engine: Engine, shadow: dict, ver: dict, h: dict, state: dict,
         engine._execute(shadow, ver, h, state)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)  # §11: the memory copy is discarded
-    if h["status"] in ("succeeded", "failed"):
-        # §5 test.yaml — the last-test summary a resumed draft's Test card
-        # shows; deleted with the draft. A failed test is NOT analyzed here —
-        # analysis is a user-sent §8 chat message reading executions_context.
-        save_yaml(dbase / "test.yaml", {
-            "status": h["status"],
-            "when": timefmt.now_iso(),
-            "execution_id": h["id"],
-        })
+    # §11 test lifetime: a draft settle that raced this test cancelled and
+    # marked it (§19 `_draft_settled`) — or, if the test settled first, already
+    # deleted the record. Either way the test leaves nothing behind: no record,
+    # and no test.yaml written into the settled container. Checked and written
+    # under the lock so a settle can't land between the check and the write.
+    orphaned = False
+    with store.lock:
+        if h.get("_draft_settled") or h["id"] not in store.execs:
+            orphaned = True
+        elif h["status"] in ("succeeded", "failed"):
+            # §5 test.yaml — the last-test summary a resumed draft's Test card
+            # shows; deleted with the draft. A failed test is NOT analyzed here —
+            # analysis is a user-sent §8 chat message reading executions_context.
+            save_yaml(dbase / "test.yaml", {
+                "status": h["status"],
+                "when": timefmt.now_iso(),
+                "execution_id": h["id"],
+            })
+    if orphaned:
+        store.delete_execution(h["id"])
 
 
 def _log_tail(h: dict, idx: int) -> list[str]:

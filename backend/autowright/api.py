@@ -21,7 +21,7 @@ from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
 from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger, queue_manual
-from .storage import _kind_ok, iter_file_stats, size_label, store
+from .storage import _kind_ok, is_test, iter_file_stats, size_label, store
 from . import testexec
 
 log = logging.getLogger("autowright.api")
@@ -469,6 +469,7 @@ def create_auto(body: models.AutomationCreate) -> dict:
     if err:
         raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
+    _cancel_live_test(None)  # §11: Create settles the pending slot — its live test dies
     a = store.create_automation(
         _draft_to_version(d),
         name=body.name or d.get("name") or "New automation",
@@ -518,6 +519,7 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         if err:
             raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
+    _cancel_live_test(automation_id)  # §11: saving settles the draft — its live test dies
     ver = _draft_to_version(d)
     with store.lock:
         # Same guard as PUT/DELETE draft: saving deletes the draft container,
@@ -552,6 +554,22 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         cancel_unmatched_queue(store, engine, automation_id)
     _publish_auto_changed(a)
     return {"version": n, "automation": _auto_json_locked(a)}
+
+
+def _cancel_live_test(container_id: str | None) -> None:
+    """§11 test lifetime: a draft settle cancels the container's still-executing
+    test. The record is marked under the lock so testexec._run deletes it when
+    it lands (instead of it surviving the draft or rewriting the settled
+    container's test.yaml); the cancel itself runs outside the lock — it kills
+    a process."""
+    with store.lock:
+        live = [h for h in store.execs.values()
+                if is_test(h) and h["automation_id"] == container_id
+                and h["status"] == "executing"]
+        for h in live:
+            h["_draft_settled"] = True
+    for h in live:
+        engine.cancel(h["id"])
 
 
 def _reject_live_draft_exec(a: dict) -> None:
@@ -628,6 +646,7 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
 @app.delete("/draft/{owner}", dependencies=[Depends(auth)])
 def delete_draft_container(owner: str) -> dict:
     a = _draft_owner(owner)
+    _cancel_live_test(a["id"] if a is not None else None)  # §11: discard settles the draft
     with store.lock:
         if a is not None:
             _reject_live_draft_exec(a)

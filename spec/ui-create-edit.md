@@ -1091,6 +1091,10 @@ editors enter with
   and its lifetime is the draft's — starting a new test deletes the previous test record
   (one per draft container, and one **live** test per container: §19 answers 409), and a
   settled draft (discard, save as vN+1, Create, Start over) deletes its test records.
+  A test **still executing** when the draft settles is **cancelled by the settle** (§19:
+  every draft-settle endpoint cancels the container's live test first), and the cancelled
+  record deletes itself once it lands — it never survives the draft and never writes a
+  last-test summary into the settled container, so a discarded draft leaves no test residue.
   Deleting the automation deletes them too.
   **Test setup section (create and edit mode):** the test button (**Test draft**)
   is a **disclosure toggle**, not the run trigger — it never starts a

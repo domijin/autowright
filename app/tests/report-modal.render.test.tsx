@@ -3,7 +3,7 @@
 // App renders for real (happy-dom) with the api module mocked to a connected,
 // onboarded snapshot.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settings } from '../src/types'
 
 const SETTINGS: Settings = {
@@ -36,7 +36,7 @@ beforeAll(async () => {
     updateCheck: () => Promise.resolve({ state: 'uptodate' }),
     onUpdateProgress: () => {},
     backendStatus: () => Promise.resolve({ state: 'ok', detail: '' }),
-    platformInfo: () => Promise.resolve({ platform: 'darwin', release: '15.5', arch: 'arm64' }),
+    platformInfo: () => Promise.resolve({ platform: 'darwin', release: '15.5', arch: 'arm64', version: '7.7.7' }),
   }
   const ls = new Map<string, string>()
   Object.defineProperty(globalThis, 'localStorage', {
@@ -109,6 +109,15 @@ describe('report modal (§9.5)', () => {
     expect(body).not.toContain('Location:')
     expect(body).not.toContain('Backend:')
     expect(body).not.toContain('Update available:')
+  })
+
+  it('an empty store version falls back to the bundle version — never a bare "v"', async () => {
+    await openModal()
+    storeMod.useStore.setState({ version: '' })
+    const body = () => new URL(openHref()).searchParams.get('body')!
+    // platformInfo lands async — wait for the bundle-version fallback
+    await waitFor(() => expect(body()).toContain('Autowright v7.7.7'))
+    expect(body()).not.toContain('Autowright v\n')
   })
 
   it('feature toggle switches the label; info toggle drops the environment', async () => {

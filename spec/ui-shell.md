@@ -674,8 +674,10 @@ cause."
 ### 9.5 Report bug modal
 
 Reached only from the §9 "Report bug" nav row. A shared-`Modal` dialog, title "Report a
-problem", open state held in one store boolean `reportOpen` (open/close actions) — opening
-never navigates, closing restores nothing because nothing changed. Contents, top to bottom:
+problem" with a muted sub-line directly under it — "Reports are filed as GitHub issues — a
+GitHub account is required." — so the requirement is stated before the user types. Open
+state held in one store boolean `reportOpen` (open/close actions) — opening never navigates,
+closing restores nothing because nothing changed. Contents, top to bottom:
 
 - **Type toggle** — Bug / Feature request pair, default Bug. Decides the GitHub label
   (`bug` / `enhancement`).
@@ -688,9 +690,10 @@ never navigates, closing restores nothing because nothing changed. Contents, top
 - **Include environment info** — toggle (the shared §14 Toggle — the app has no checkbox
   control), default on, with the rendered info block visible below it (mono, muted) so the
   user sees exactly what would be included. Block lines — exactly two: app version (store
-  `version` from `GET /state`) · macOS release + arch (`platform-info` IPC: preload
-  `platformInfo()` → main answers `{ platform, release, arch }` — the renderer has no other
-  OS-details source). Nothing else — no location, backend, or update state. **Never** in
+  `version` from `GET /state`, falling back to the Electron bundle version riding on the
+  `platform-info` answer — the line never shows a bare "v") · macOS release + arch
+  (`platform-info` IPC: preload `platformInfo()` → main answers `{ platform, release, arch,
+  version: app.getVersion() }` — the renderer has no other OS-details source). Nothing else — no location, backend, or update state. **Never** in
   the block or the issue body: the backend bearer token, secret names or values, raw log
   contents.
 - Footer: quiet **Cancel** (closes) · primary **"Open GitHub issue ↗"**.

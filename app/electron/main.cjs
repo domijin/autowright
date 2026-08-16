@@ -540,6 +540,9 @@ ipcMain.handle('platform-info', () => ({
   platform: process.platform,
   release: process.getSystemVersion(),
   arch: process.arch,
+  // Bundle version — the §9.5 fallback while the store's /state version
+  // hasn't landed (the block must never show a bare "v").
+  version: app.getVersion(),
 }))
 ipcMain.handle('apply-settings', (_e, s) => applyShellSettings(s))
 ipcMain.handle('tray-alert', (_e, on) => {

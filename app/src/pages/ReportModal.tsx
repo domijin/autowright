@@ -20,16 +20,18 @@ export default function ReportModal() {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [includeInfo, setIncludeInfo] = useState(true)
-  const [os, setOs] = useState<{ platform: string; release: string; arch: string } | null>(null)
+  const [os, setOs] = useState<{ platform: string; release: string; arch: string; version: string } | null>(null)
 
   useEffect(() => {
     void window.autowright?.platformInfo?.().then(setOs)
   }, [])
 
   // §9.5 environment block — exactly two lines: app version + OS. Never the
-  // backend token, secrets, or raw logs.
+  // backend token, secrets, or raw logs. Version falls back to the bundle
+  // version so the line never shows a bare "v".
+  const appVersion = version || os?.version || ''
   const infoBlock = [
-    `Autowright v${version}`,
+    appVersion ? `Autowright v${appVersion}` : 'Autowright (version unknown)',
     os ? `macOS ${os.release} (${os.arch})` : 'macOS (version unknown)',
   ].join('\n')
 
@@ -50,7 +52,12 @@ export default function ReportModal() {
     <Modal onClose={() => useStore.setState({ reportOpen: false })} width={520} ariaLabel="Report a problem">
       {(close) => (
         <div data-testid="report-modal" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Report a problem</h2>
+          <div>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Report a problem</h2>
+            <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)' }}>
+              Reports are filed as GitHub issues — a GitHub account is required.
+            </div>
+          </div>
 
           <div style={{ display: 'flex', gap: 18 }}>
             {([['bug', 'Bug'], ['feature', 'Feature request']] as const).map(([k, l]) => (

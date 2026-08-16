@@ -12,8 +12,8 @@ declare global {
       saveFile(defaultName: string, data: ArrayBuffer): Promise<string | null>
       openArchive(): Promise<{ name: string; data: Uint8Array } | null>
       revealPath(p: string): Promise<void>
-      // §9.5 report modal: OS details for the info block
-      platformInfo(): Promise<{ platform: string; release: string; arch: string }>
+      // §9.5 report modal: OS details + bundle version for the info block
+      platformInfo(): Promise<{ platform: string; release: string; arch: string; version: string }>
       applySettings(s: { login?: boolean; menuBarIcon?: boolean; automaticUpdateCheck?: boolean }): Promise<void>
       tailLogs(): Promise<{ name: string; text: string }[]>
       listRequestLogs(): Promise<string[]>

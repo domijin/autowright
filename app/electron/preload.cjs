@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('autowright', {
   // §4.9 COMMAND LINE card)
   cliStatus: () => ipcRenderer.invoke('cli-status'),
   cliInstall: () => ipcRenderer.invoke('cli-install'),
+  cliUninstall: () => ipcRenderer.invoke('cli-uninstall'),
   openApp: (hash) => ipcRenderer.invoke('open-app', hash),
   pickFolder: (defaultPath) => ipcRenderer.invoke('pick-folder', defaultPath),
   resizePanel: (h) => ipcRenderer.invoke('resize-panel', h),

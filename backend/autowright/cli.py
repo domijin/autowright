@@ -989,7 +989,8 @@ def cmd_agent_check(c: Client, args) -> None:
 # ---------------------------------------------------------------- settings
 
 SETTINGS_KEYS = {"login": bool, "menuBarIcon": bool, "keepAwake": bool, "automaticUpdateCheck": bool,
-                 "notifications": str, "days": int, "keepForever": bool, "developerMode": bool}
+                 "notifications": str, "days": int, "keepForever": bool, "developerMode": bool,
+                 "cliEnabled": bool}
 
 
 def cmd_settings_show(c: Client, args) -> None:

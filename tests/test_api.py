@@ -1321,6 +1321,15 @@ def test_settings_devmode_gates_request_logging(client):
     assert flt.filter(info)
 
 
+def test_settings_cli_enabled_defaults_off_and_patches(client):
+    # §4.9: the CLI opt-in preference — default false, PATCH persists, and the
+    # strict model rejects non-boolean values like every settings boolean.
+    assert client.get("/settings").json()["cliEnabled"] is False
+    assert client.patch("/settings", json={"cliEnabled": True}).json()["cliEnabled"] is True
+    assert client.get("/settings").json()["cliEnabled"] is True
+    assert client.patch("/settings", json={"cliEnabled": "yes"}).status_code == 422
+
+
 def test_settings_keep_awake_holds_assertion(client, monkeypatch):
     import os
 

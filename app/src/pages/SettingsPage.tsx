@@ -41,11 +41,36 @@ export default function SettingsPage() {
   // §4.9: fires §3 cli-install — a silent write into ~/.local/bin, no dialog;
   // a failed install just returns to the previous state — never an error
   // banner.
-  const cliInstall = () => {
+  const cliInstall = (): Promise<boolean> => {
+    if (cliBusy) return Promise.resolve(false)
+    setCliBusy(true)
+    return (async () => {
+      const r = await window.autowright?.cliInstall().catch(() => null)
+      const s = await window.autowright?.cliStatus().catch(() => null)
+      if (s) setCli(s)
+      setCliBusy(false)
+      return Boolean(r?.ok)
+    })()
+  }
+
+  // §4.9 toggle: cliEnabled is the stored opt-in; turning on also installs,
+  // and a failed install flips the setting back — the toggle just returns.
+  // Turning off touches no files (Delete below is the explicit removal).
+  const setCliEnabled = (on: boolean) => {
+    patch({ cliEnabled: on })
+    if (on) {
+      void cliInstall().then((ok) => { if (!ok) patch({ cliEnabled: false }) })
+    }
+  }
+
+  // §4.9 Delete: §3 cli-uninstall removes ours-marker shims; an undeletable
+  // legacy one comes back as a manual-command hint, toasted.
+  const cliDelete = () => {
     if (cliBusy) return
     setCliBusy(true)
     void (async () => {
-      await window.autowright?.cliInstall().catch(() => null)
+      const r = await window.autowright?.cliUninstall().catch(() => null)
+      if (r && !r.ok) showToast(r.hint)
       const s = await window.autowright?.cliStatus().catch(() => null)
       if (s) setCli(s)
       setCliBusy(false)
@@ -253,31 +278,79 @@ export default function SettingsPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
           <Eyebrow style={{ paddingLeft: 2 }}>COMMAND LINE</Eyebrow>
           <div className="ad-card" style={card}>
-            <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={rowTitle}>The <code>autowright</code> command</div>
-                <div style={{
-                  ...rowSub,
-                  ...(cli.state === 'stale' ? { color: 'var(--amber)' } : {}),
-                }}>
-                  {cli.state === 'installed' && (cli.onPath
-                    ? `Installed at ${cli.path}`
-                    : `Installed at ${cli.path}. Add ~/.local/bin to your PATH to use it: export PATH="$HOME/.local/bin:$PATH"`)}
-                  {cli.state === 'missing' && 'Not installed — manage automations from the Terminal. Installs to ~/.local/bin — no password needed.'}
-                  {cli.state === 'stale' && 'An old autowright command at /usr/local/bin points at an old location — remove it with sudo rm /usr/local/bin/autowright, then install here.'}
-                  {cli.state === 'foreign' && `A different autowright is already at ${cli.path} — Autowright won’t touch it.`}
-                </div>
-              </div>
-              {(cli.state === 'missing' || cli.state === 'stale') && (
-                <button className="ad-btn-soft" onClick={cliInstall} disabled={cliBusy} style={{ flex: 'none' }}>
-                  {cliBusy ? (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                      <Spinner size={12} /> Installing…
-                    </span>
-                  ) : 'Install'}
-                </button>
-              )}
-            </div>
+            {(() => {
+              // §4.9: at most one second row — Delete (toggle off, ours-marker
+              // shim still on disk) or the missing warning (toggle on, no
+              // working user-local install).
+              const deleteRow = cli.state !== 'foreign' && !settings.cliEnabled
+                && (cli.state === 'installed' || cli.state === 'stale')
+              const warnRow = cli.state !== 'foreign' && settings.cliEnabled
+                && (cli.state === 'missing' || cli.state === 'stale')
+              return (
+                <>
+                  <div style={{
+                    padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
+                    ...(deleteRow || warnRow ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={rowTitle}>The <code>autowright</code> command</div>
+                      <div style={{
+                        ...rowSub,
+                        ...(cli.state === 'stale' ? { color: 'var(--amber)' } : {}),
+                      }}>
+                        {cli.state === 'installed' && (settings.cliEnabled
+                          ? (cli.onPath
+                            ? `Installed at ${cli.path}`
+                            : `Installed at ${cli.path}. Add ~/.local/bin to your PATH to use it: export PATH="$HOME/.local/bin:$PATH"`)
+                          : `Still installed at ${cli.path} — turn on to keep it up to date.`)}
+                        {cli.state === 'missing' && (settings.cliEnabled
+                          ? 'Not installed — manage automations from the Terminal.'
+                          : 'Not installed — manage automations from the Terminal. Turning this on installs to ~/.local/bin — no password needed.')}
+                        {cli.state === 'stale' && 'An old autowright command at /usr/local/bin points at an old location.'}
+                        {cli.state === 'foreign' && `A different autowright is already at ${cli.path} — Autowright won’t touch it.`}
+                      </div>
+                    </div>
+                    {cli.state !== 'foreign' && (
+                      <Toggle on={settings.cliEnabled} onChange={setCliEnabled} />
+                    )}
+                  </div>
+                  {deleteRow && (
+                    <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={rowTitle}>Delete the command</div>
+                        <div style={rowSub}>
+                          Removes the command file from this Mac. Your automations, settings, and executions aren’t affected.
+                        </div>
+                      </div>
+                      <button className="ad-btn-soft" onClick={cliDelete} disabled={cliBusy} style={{ flex: 'none' }}>
+                        {cliBusy ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                            <Spinner size={12} /> Deleting…
+                          </span>
+                        ) : 'Delete'}
+                      </button>
+                    </div>
+                  )}
+                  {warnRow && (
+                    <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ ...rowTitle, color: 'var(--amber)' }}>The command is missing</div>
+                        <div style={rowSub}>
+                          autowright wasn’t found in ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the Terminal.
+                        </div>
+                      </div>
+                      <button className="ad-btn-soft" onClick={() => { void cliInstall() }} disabled={cliBusy} style={{ flex: 'none' }}>
+                        {cliBusy ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                            <Spinner size={12} /> Installing…
+                          </span>
+                        ) : 'Reinstall'}
+                      </button>
+                    </div>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </div>
       )}

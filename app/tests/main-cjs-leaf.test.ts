@@ -60,8 +60,14 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
 
   it('no auto-install: cli-install is reachable only via its IPC handler (§3)', () => {
     // Exactly two mentions of cliInstall: the definition and the IPC handler.
-    const hits = src.match(/cliInstall/g) ?? []
+    const hits = src.match(/cliInstall(?!l)/g) ?? []
     expect(hits).toHaveLength(2)
     expect(src).toContain("ipcMain.handle('cli-install', () => cliInstall())")
+  })
+
+  it('cli-uninstall deletes only marker-carrying shims, via its IPC handler (§3)', () => {
+    expect(src).toContain("ipcMain.handle('cli-uninstall', () => cliUninstall())")
+    // The marker gate sits before the unlink — foreign files are never touched.
+    expect(src).toMatch(/if \(!text\.includes\(SHIM_MARKER\)\) continue[\s\S]{0,120}unlinkSync/)
   })
 })

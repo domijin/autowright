@@ -308,6 +308,7 @@ export interface Settings {
   days: number
   keepForever: boolean
   developerMode: boolean
+  cliEnabled: boolean
   dataPath: string
   dataSize: string
   appPath?: string

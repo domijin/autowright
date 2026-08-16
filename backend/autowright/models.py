@@ -294,6 +294,7 @@ class SettingsPatch(BaseModel):
     automaticUpdateCheck: StrictBool = None
     keepForever: StrictBool = None
     developerMode: StrictBool = None
+    cliEnabled: StrictBool = None
     notifications: Literal["attention", "all"] = None
     days: StrictInt = None
 

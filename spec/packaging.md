@@ -84,8 +84,9 @@ the update bullets below).
   is the backend's real interpreter). The command name is `autowright` (no short alias for now).
   **One install location:** `~/.local/bin/autowright` — user-owned, so no privilege and no
   password, ever. There is no admin-prompt (osascript) flow anywhere anymore, and the app
-  **never auto-installs**: creation happens only when the user clicks Install on the §4.9
-  COMMAND LINE card. `~/.local/bin` may be absent from the user's PATH — the shell checks the
+  **never auto-installs**: creation happens only through the §4.9 COMMAND LINE card — turning
+  its `cliEnabled` toggle on, or its explicit Install button. The opt-in itself is the stored
+  `cliEnabled` setting (§4.9); the shim files on disk stay the truth about what's installed. `~/.local/bin` may be absent from the user's PATH — the shell checks the
   **login-shell** PATH (GUI apps inherit a stripped one, so it asks
   `$SHELL -l -c 'printf %s "$PATH"'` with a ~2 s timeout, caches the answer per app run, and
   counts any failure as not-on-PATH) and the card shows the one-line fix
@@ -107,7 +108,11 @@ the update bullets below).
     `cli-install` (plain unprivileged writes to `~/.local/bin/autowright`: `mkdir -p`, write
     the shim, `chmod 755`. No dialog, no password. A `stale` legacy shim is not rewritten by
     it — the card's fix is a fresh user-local install plus the manual
-    `sudo rm /usr/local/bin/autowright`, and the card says so).
+    `sudo rm /usr/local/bin/autowright`, and the card says so). A third IPC, `cli-uninstall`
+    (the §4.9 Delete button), removes ours-marker shims from every candidate location — same
+    rules as `service uninstall` below: marker required, foreign files never touched, and an
+    undeletable one (root-owned legacy dir) is reported back as the manual `sudo rm` command
+    instead of an error.
     The interpreter path comes from `backend.json`'s `python` field, so the same code works
     in dev (repo venv) and prod (bundled interpreter) — no dev-only path.
   - **Healing is `service install`'s job — silent and sudo-free** (§3 has no sudo anywhere in

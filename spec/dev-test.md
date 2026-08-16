@@ -105,7 +105,8 @@ no child-process call executes the CLI (the string `autowright.cli` may appear o
 the shim file text), and that shim writes only ever target the §3 user-local location —
 no osascript admin prompt exists (`with administrator privileges` must not appear), and
 nothing writes to the legacy `/usr/local/bin` (heal of an already-ours file goes through
-the shared candidate list, creation only through `cli-install`).
+the shared candidate list, creation only through `cli-install`, deletion only through
+`cli-uninstall` and only of marker-carrying files).
 
 **Shift-left order.** Tiers run cheapest-first so failures surface early: Vitest unit
 (<1 s) → `tsc --noEmit` → pytest unit (seconds) → pytest `-m integration` (~10 s) →

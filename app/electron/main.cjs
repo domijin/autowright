@@ -530,10 +530,34 @@ function cliInstall() {
   }
 }
 
+// §3 cli-uninstall (§4.9 Delete): remove ours-marker shims from every
+// candidate; foreign files never touched. An undeletable one (root-owned
+// legacy dir) reports the manual command instead of an error.
+function cliUninstall() {
+  const hints = []
+  for (const p of shimPaths()) {
+    let text
+    try {
+      text = fs.readFileSync(p, 'utf-8')
+    } catch {
+      continue
+    }
+    if (!text.includes(SHIM_MARKER)) continue
+    try {
+      fs.unlinkSync(p)
+      appLog(`cli-uninstall: removed ${p}`)
+    } catch {
+      hints.push(`sudo rm ${p}`)
+    }
+  }
+  return hints.length ? { ok: false, hint: `Remove it with: ${hints.join(' && ')}` } : { ok: true }
+}
+
 ipcMain.handle('backend-info', () => backendInfo())
 ipcMain.handle('backend-status', () => ensureStatus)
 ipcMain.handle('cli-status', () => cliStatus())
 ipcMain.handle('cli-install', () => cliInstall())
+ipcMain.handle('cli-uninstall', () => cliUninstall())
 ipcMain.handle('open-app', (_e, hash) => { showApp(hash); if (panel) panel.hide() })
 ipcMain.handle('resize-panel', (_e, h) => {
   if (panel) panel.setSize(334, Math.min(Math.max(Math.round(h), 120), 640))

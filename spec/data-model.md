@@ -761,6 +761,10 @@ developerMode: bool (default false) — "Developer mode" ("Logs every backend re
   panel.") — gates request logging, the per-request log files under `<logs>/requests/` (§5),
   the §5 build-failure records under `<logs>/build-failures/`, and the `` ` ``-key log
   overlay (§9.3)
+cliEnabled: bool (default false) — the CLI opt-in preference behind the COMMAND LINE card's
+  toggle (below): whether the user wants the `autowright` command available. The §3 shim
+  files on disk stay the truth about what's actually installed — this key only records the
+  user's choice (stored backend-side like every setting, §20 CLI parity included)
 dataPath (default ~/Library/Application Support/Autowright/executions), dataSize
 appPath — derived, serialization-only: the fixed automations-and-settings root
   (~/Library/Application Support/Autowright) — backs the ON THIS MAC card's
@@ -777,23 +781,41 @@ The "Keep executions for" days row is hidden (not just disabled) while "Keep exe
 on. One **ON THIS MAC** card holds two rows: **"Automations & settings"** (the fixed path
 `~/Library/Application Support/Autowright` with its own Show in Finder button — this location
 is not changeable) above the **Execution data** row. A **COMMAND LINE** card sits below ON THIS
-MAC: one row titled "The `autowright` command", state from the §3 `cli-status` preload IPC (no
-stored setting — the shim files on disk are the source of truth, re-read on every Settings
-visit; the IPC's `path` names the §3 effective location, `onPath` says whether `~/.local/bin`
-is on the login-shell PATH). The CLI is opt-in: nothing installs until the user clicks the
-button here (§3 — no auto-install, no password anywhere). Detail line + action by state:
-`installed` → "Installed at `<path>`" (the IPC's `path`), no button; when `onPath` is false
-it appends the PATH hint: "Add ~/.local/bin to your PATH to use it: `export
-PATH="$HOME/.local/bin:$PATH"`"; `missing` → "Not installed — manage automations from the
-Terminal. Installs to ~/.local/bin — no password needed." with an "Install" button (no
-ellipsis — no dialog follows); `stale` (legacy `/usr/local/bin` only, §3) → amber "An old
-`autowright` command at /usr/local/bin points at an old location — remove it with `sudo rm
-/usr/local/bin/autowright`, then install here." with an "Install" button (installs fresh to
-~/.local/bin; the legacy file is never touched); `foreign` → "A different `autowright` is
-already at `<path>` — Autowright won't touch it.", no button. Install fires
-the §3 `cli-install` IPC; while
-running, the button shows the §9 busy-commit spinner, then the row re-reads `cli-status` — a
-failed install just returns to the previous state, never an error banner. A **DEVELOPER**
+MAC: one row titled "The `autowright` command" with a **Toggle** bound to the stored
+`cliEnabled` setting (above; default false — the CLI is opt-in, §3: no auto-install, no
+password anywhere). Disk state still comes from the §3 `cli-status` preload IPC (`{state,
+path, onPath}`, re-read on every Settings visit — the shim files are the truth about what's
+installed; the setting only records the user's choice). Turning the toggle **on** patches
+`cliEnabled: true` and fires §3 `cli-install` (silent ~/.local/bin write, no dialog); a
+failed install patches the setting back to false — the toggle just returns, never an error
+banner. Turning it **off** patches false and touches no files — removal is the explicit
+Delete button below, never a side effect of the flip. Detail line + extra action by
+setting × disk state: on+`installed` → "Installed at `<path>`" (when `onPath` is false it
+appends the PATH hint: "Add ~/.local/bin to your PATH to use it: `export
+PATH="$HOME/.local/bin:$PATH"`"); on+`missing` (the user deleted the file by hand) → "Not
+installed — manage automations from the Terminal."; on+`stale` (legacy `/usr/local/bin`
+only, §3) → amber "An old `autowright` command at /usr/local/bin points at an old
+location."; off+`installed` → "Still installed at `<path>` — turn on to keep it up to
+date."; off+`stale` → amber "An old `autowright` command at /usr/local/bin points at an old
+location."; off+`missing` → "Not installed — manage automations from the Terminal. Turning
+this on installs to ~/.local/bin — no password needed."; `foreign` (either setting) → "A
+different `autowright` is already at `<path>` — Autowright won't touch it.", no toggle, no
+buttons. The card can grow **one second row** below the toggle row, separated by the
+standard hairline divider — exactly one of:
+- **Delete row** — toggle off and an ours-marker shim still on disk (off+`installed` /
+  off+`stale`): title "Delete the command", description "Removes the command file from this
+  Mac. Your automations, settings, and executions aren't affected.", with the "Delete"
+  button. It fires the §3 `cli-uninstall` IPC (removes ours-marker shims only); when a shim
+  can't be deleted (root-owned legacy dir) the returned manual command is shown as a toast
+  and the row stays.
+- **Missing-warning row** — toggle on but no working user-local install (on+`missing` /
+  on+`stale`): amber title "The command is missing", description "autowright wasn't found in
+  ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the
+  Terminal.", with a "Reinstall" button firing §3 `cli-install` (silent, ~/.local/bin — the
+  app never re-creates on its own; the row is the explicit ask). The row-1 Install button is
+  gone — reinstall lives only here.
+Delete/Reinstall show the §9 busy-commit spinner while running, then the card re-reads
+`cli-status`. A **DEVELOPER**
 card sits last on the page with
 the single **Developer mode** toggle row (developerMode above). A **QUIT** card sits at the
 very bottom of the page (below DEVELOPER), rendered only when the preload bridge exists (like

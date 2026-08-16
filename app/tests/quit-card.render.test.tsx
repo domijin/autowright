@@ -8,7 +8,7 @@ import SettingsPage from '../src/pages/SettingsPage'
 
 const SETTINGS: Settings = {
   login: false, menuBarIcon: false, keepAwake: false, automaticUpdateCheck: false,
-  notifications: 'attention', days: 30, keepForever: false, developerMode: false,
+  notifications: 'attention', days: 30, keepForever: false, developerMode: false, cliEnabled: false,
   dataPath: '/tmp', dataSize: '0 B',
 }
 

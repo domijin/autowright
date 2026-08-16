@@ -65,11 +65,15 @@ applies unchanged; the chat pane never collapses.
     (its compact `.ad-md-sm` variant — thread type scale below). The header names what
     kind of message it is, stamped on the entry at creation (§4.4 `icon` + `title`)
     from the response that produced it: a reply arriving **with** rewrites or actions
-    is the agent's plan — `fa-list-check`, "The plan"; a reply that is a question (its
-    trimmed text ends with `?`) — `fa-circle-question`, "Question for you"; any other
-    reply — `fa-message`, "From your AI". An entry persisted before the fields existed
-    derives the same header at render time (the question check, else the plain
-    header) — old threads gain the layout, nothing is dropped. **The plan lands at the
+    is the agent's plan — `fa-list-check`, "The plan"; a reply the agent declared a
+    question (the §8 `===QUESTION===` marker, riding the §19 payload as
+    `answerKind: "question"`) — `fa-circle-question`, "Question for you" (the §8
+    prompt has the agent lead such a reply with the ask, so the title's promise is
+    met in the first line even when the reply also answers something); any other
+    reply — `fa-message`, "From your AI". Never inferred from the text — a reply that
+    merely ends with a courtesy question stays "From your AI". An entry persisted
+    before the fields existed derives the plain "From your AI" header at render
+    time — old threads gain the layout, nothing is dropped. **The plan lands at the
     flip:** the moment a chat job flips to "Updating the documents", its §19 `plan` —
     the prose streamed before the first rewrite marker — lands as this entry (the
     "The plan" header: rewrites follow by definition), beneath the just-settled

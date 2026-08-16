@@ -45,12 +45,14 @@ export function newEntry(e: Omit<ChatEntry, 'id' | 'at'>): ChatEntry {
 }
 
 // §11 answer header — a reply arriving with rewrites or actions is the plan;
-// a question gets its own glyph. Stamped on the entry at creation; ChatPanel
-// derives the same header at render time for entries persisted before the
+// a reply the agent declared a question (§8 ===QUESTION=== marker, §19
+// answerKind) gets its own glyph — never inferred from the text, so a closing
+// courtesy question stays a plain reply. Stamped on the entry at creation;
+// ChatPanel falls back to the plain header for entries persisted before the
 // fields existed.
-export function answerHeader(text: string, withWork: boolean): { icon: string; title: string } {
+export function answerHeader(withWork: boolean, kind?: string): { icon: string; title: string } {
   return withWork ? { icon: 'fa-list-check', title: 'The plan' }
-    : text.trim().endsWith('?') ? { icon: 'fa-circle-question', title: 'Question for you' }
+    : kind === 'question' ? { icon: 'fa-circle-question', title: 'Question for you' }
       : { icon: 'fa-message', title: 'From your AI' }
 }
 // §4.4: error entries persist too, so a later chat's CONVERSATION context

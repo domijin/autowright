@@ -859,6 +859,72 @@ def test_chat_job_answer_path(monkeypatch):
     assert j["draft"] == {"answer": "It checks the site **daily**."}
 
 
+def test_chat_job_question_marker(monkeypatch):
+    # §8 question type: a leading ===QUESTION=== is stripped and rides the
+    # payload as answerKind: "question".
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setattr(harness, "invoke",
+                        lambda agent, prompt, **kw:
+                        "===QUESTION===\nWhich folder should I watch?")
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "Watch stuff",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "done", j
+    assert j["draft"] == {"answer": "Which folder should I watch?",
+                          "answerKind": "question"}
+
+
+def test_chat_classify_question_marker_shapes():
+    # §8 question type edges: the marker anywhere but the start is prose; a
+    # marker-only response is an empty answer; the marker before a ===FILE:
+    # block strips from the accompanying answer and still rides the payload.
+    from autowright.drafting import DraftJobs
+
+    # mid-text: ordinary prose, no kind
+    out, payload, _, _, _ = DraftJobs._chat_classify(
+        "The marker is\n===QUESTION===\nliteral text here.")
+    assert out == "done"
+    assert "answerKind" not in payload
+    assert payload["answer"].startswith("The marker is")
+    # marker only: empty payload (the caller fails it as an empty answer)
+    out, payload, _, _, _ = DraftJobs._chat_classify("===QUESTION===\n")
+    assert out == "done" and payload == {}
+    # marker ahead of a rewrite block: stripped answer + answerKind ride along
+    raw = ("===QUESTION===\nWhich list?\n"
+           "===FILE: notes.md===\n- a note\n===END===")
+    out, payload, _, _, _ = DraftJobs._chat_classify(raw)
+    assert out == "done"
+    assert payload["answer"] == "Which list?"
+    assert payload["answerKind"] == "question"
+    assert payload["notes"] == "- a note"
+
+
+def test_chat_classify_repair_prose_carries_kind():
+    # §8: a repair round's replacement prose re-derives the kind — and a
+    # carried question answer keeps its kind when the repair sends blocks only.
+    from autowright.drafting import DraftJobs
+
+    bad = ("===QUESTION===\nWhich list?\n"
+           "===FILE: bogus.md===\nx\n===END===")
+    out, errors, kept, answer, failed = DraftJobs._chat_classify(bad)
+    assert out == "invalid" and failed == ["bogus.md"]
+    # repair returns a valid block, no prose — the carried question stands
+    repair = "===FILE: notes.md===\n- fixed\n===END==="
+    out, payload, _, _, _ = DraftJobs._chat_classify(
+        repair, None, None, kept, answer)
+    assert out == "done"
+    assert payload["answer"] == "Which list?"
+    assert payload["answerKind"] == "question"
+    # repair replaces the prose with a plain answer — the kind goes with it
+    repair2 = "All set.\n===FILE: notes.md===\n- fixed\n===END==="
+    out, payload, _, _, _ = DraftJobs._chat_classify(
+        repair2, None, None, kept, answer)
+    assert out == "done"
+    assert payload["answer"] == "All set."
+    assert "answerKind" not in payload
+
+
 def test_chat_job_empty_answer_fails(monkeypatch):
     from autowright import harness
     from autowright.drafting import DraftJobs

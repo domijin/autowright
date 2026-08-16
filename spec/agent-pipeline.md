@@ -187,7 +187,13 @@ the closing **USER REQUEST** (the message text), and a TASK directive stating th
 contract:
 
 - **A question** → answer in plain markdown prose for the user — no file blocks, no
-  envelope, no yaml — grounded in the spec, steps, and runs above.
+  envelope, no yaml — grounded in the spec, steps, and runs above. When the reply's
+  **purpose** is to ask the user for something the agent needs to proceed, the prose
+  starts with `===QUESTION===` on its own line — the agent-declared question type
+  (the §11 answer header renders it "Question for you"), and the prose **leads with
+  the ask** — any explanation or answering follows the question, so the header's
+  promise is met in the first line. A closing courtesy question
+  ("does that answer it?") is not a question response and gets no marker.
 - **A change** → file blocks, any subset, in one response: `spec.md` (the full updated
   spec — the spec-document rules above, keeping everything the request doesn't
   touch unchanged; never return step files — the steps are rebuilt from the spec later),
@@ -201,7 +207,7 @@ contract:
   in plain prose** and return no rewrites and no actions: never guess the missing piece,
   and never a blocker for it (asking is a chat answer, not an impossibility — the user's
   next message carries the detail through the CONVERSATION context and completes the
-  request).
+  request). This is the question type: the prose starts with `===QUESTION===`.
 - The blocker envelope stays reserved for genuine impossibility and for fixes that are
   user action outside the app (`kind: user-action` — e.g. a missing desktop dependency a
   failed run reveals; Blocker response below).
@@ -316,7 +322,13 @@ Chat-call validation, by response shape: a valid blocker envelope settles the jo
 (`blockedAt: chat`), its optional `notes.md` (Blocker response below) riding `draft.notes`; a response with no `===FILE:` marker is an **answer** — the raw
 response text, trimmed, with payload `draft: { answer }`; the only answer-path failure is
 an empty response ("The agent returned an empty answer.") — no envelope parsing and no
-repair round there. A response containing a `===FILE:` marker parses per the §8 envelope
+repair round there. A **leading `===QUESTION===` line** (the question type above) is
+stripped from the answer prose and rides the payload as `answerKind: "question"`; without
+the marker the key is absent (a plain answer). The marker anywhere else is ordinary text,
+and a response that is only the marker is an empty answer. The strip applies wherever
+answer prose is extracted — the answer-only response, the prose before a round's first
+`===FILE:` marker, and a repair round's replacement prose (the kind rides with whichever
+prose settles as the answer). A response containing a `===FILE:` marker parses per the §8 envelope
 rules; the allowed block names are exactly `spec.md`, `instructions.md`, `notes.md`,
 `actions.yaml` — anything else (a step file, say) is a validation error; `spec.md`
 validates per the spec-document rules above; `actions.yaml` must parse as a yaml mapping matching the schema
@@ -335,7 +347,7 @@ settles the kept blocks with that prose as the answer. When a round's response n
 parsed into blocks (a truncated envelope, a malformed blocker envelope), that round
 repairs by full resend — per-block attribution needs parsed blocks — but blocks kept
 from earlier rounds still merge under whatever the resend returns. Terminal payload:
-`draft: { answer?, spec?, instructions?, notes?, actions? }` — `spec` as §5 blocks, `instructions` and
+`draft: { answer?, answerKind?, spec?, instructions?, notes?, actions? }` — `spec` as §5 blocks, `instructions` and
 `notes` as markdown strings, `actions` the validated mapping with the §4.1 camelCase
 serialization (`testValues`). Stage labels — a chat job has two: it opens at "Working on
 the request" (the deciding phase — tool uses, prose answers, and a decision-only
@@ -346,7 +358,8 @@ the live entry under the new label. An answer-only, actions-only, or blocker res
 never flips; a repair round flips late when only it streams a rewrite marker; once
 flipped the job stays flipped. At the flip, the prose streamed before the first
 `===FILE:` marker — the accompanying answer, already complete once a marker streams —
-rides the job as `plan` (§19; trimmed, set only when nonempty), so the §11 thread can
+rides the job as `plan` (§19; trimmed, a leading `===QUESTION===` stripped, set only
+when nonempty), so the §11 thread can
 land "The plan" message block while the documents phase is still running. The settled
 payload's `answer` remains authoritative: when a repair round's prose replaced it, the
 editor updates the shown entry's text in place (§11) — never a second entry, never a

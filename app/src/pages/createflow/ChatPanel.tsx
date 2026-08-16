@@ -351,8 +351,8 @@ export function ChatPanel({
           }
           if (e.kind === 'answer') {
             // §11 message block: header stamped at creation (§4.4 icon/title);
-            // older entries derive it at render time — question check, else plain
-            const hdr = e.icon && e.title ? { icon: e.icon, title: e.title } : answerHeader(e.text ?? '', false)
+            // entries persisted before the fields existed get the plain header
+            const hdr = e.icon && e.title ? { icon: e.icon, title: e.title } : answerHeader(false)
             return (
               <div key={e.id} style={{ marginTop: mt }}>
                 <MsgHeader icon={hdr.icon} color="var(--accent)" title={hdr.title} />

@@ -42,6 +42,19 @@ log = logging.getLogger("autowright.drafting")
 PARAM_KINDS = {"toggle", "list", "kv", "number", "text"}
 STEP_FILE_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.py$")
 FILE_MARK_RE = re.compile(r"^===FILE: (.+?)===\s*$", re.M)
+# §8 chat-call question type: a leading ===QUESTION=== line declares the
+# answer prose a question to the user (stripped; rides the payload as
+# answerKind). Anywhere else in the text it is ordinary prose.
+QUESTION_MARK_RE = re.compile(r"^===QUESTION===[ \t]*\n?")
+
+
+def split_answer_kind(prose: str) -> tuple[str, str | None]:
+    """§8: strip a leading ===QUESTION=== from answer prose → (text, kind) —
+    kind "question" when the marker was present, else None."""
+    m = QUESTION_MARK_RE.match(prose)
+    if m:
+        return prose[m.end():].strip(), "question"
+    return prose, None
 BLOCKED_MARK_RE = re.compile(r"^===BLOCKED===\s*$", re.M)
 END_MARK_RE = re.compile(r"^===END===[ \t]*$", re.M)
 FENCE_OPEN_RE = re.compile(r"^```[\w+.-]*$")
@@ -119,7 +132,7 @@ STEPS_REMINDER = ("=== RESPONSE REMINDER ===\n"
 CHAT_TASK = """=== TASK ===
 Decide what the USER REQUEST above needs:
 
-- A question → answer it in plain markdown prose written for the user — no file blocks, no envelope, no yaml. Ground the answer in the SPEC, the CURRENT steps, and the RECENT EXECUTIONS shown above; when something isn't decided there, say so plainly.
+- A question → answer it in plain markdown prose written for the user — no file blocks, no envelope, no yaml. Ground the answer in the SPEC, the CURRENT steps, and the RECENT EXECUTIONS shown above; when something isn't decided there, say so plainly. When your reply's PURPOSE is to ask the user for something you need to proceed, begin the response with ===QUESTION=== on its own line and lead with the ask — the question comes first, any explanation or answering after it; the app then presents it as a question awaiting their reply. A closing courtesy question ("does that answer it?", "want me to fix it?") is not a question response — no marker for those.
 
 - A NEW automation (the SPEC above is empty) → the USER REQUEST is the automation's description: return the FULL spec.md written from it (don't promise AI judgment unless the enabled-agents list is nonempty), plus actions.yaml carrying `name`, `description`, and `sync: true` so the steps build in the same turn — unless the request is a question or asks you to hold off. Clarifications work like any other turn: when something only the user can supply is missing, ask in plain prose instead. A fresh spec's shape and tone, for example:
 
@@ -159,7 +172,7 @@ description: One-line description  # rewrite its one-line description
 undo: true                  # restore the draft to before the last request — exact revert, one level
 ===END===
 
-- A change missing something only the user can supply (a channel id, a sender handle, which secret holds a token, which account or folder is meant) → ask for it in plain prose — no file blocks, no actions, no blocker. Never guess the missing piece; ask for everything missing in one message, and the user's next message completes the request.
+- A change missing something only the user can supply (a channel id, a sender handle, which secret holds a token, which account or folder is meant) → ask for it in plain prose beginning with ===QUESTION=== on its own line, leading with the ask itself — any explanation follows the question; no file blocks, no actions, no blocker. Never guess the missing piece; ask for everything missing in one message, and the user's next message completes the request.
 
 Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, secret name, sender handle) may come from the spec or from what the user typed in this conversation, never invented. Use `concurrency` only when the user explicitly asks for parallel runs or queueing ("let two run at once", "queue messages when it's busy") — never speculatively; the defaults (max_parallel 1, max_queued 0) stay unless the user names different numbers or words you can map to them ("a couple at once" → 2). Staged values, trigger edits, and concurrency changes land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
@@ -1310,7 +1323,15 @@ class DraftJobs:
         if not FILE_MARK_RE.search(raw):
             text = raw.strip()
             if not kept:
-                return "done", ({"answer": text} if text else {}), {}, text, []
+                # §8 question type: a leading ===QUESTION=== is stripped and
+                # rides the payload as answerKind; a marker-only response is
+                # an empty answer. The carried answer keeps the marker so a
+                # later round's replacement semantics stay prose-vs-prose.
+                atext, akind = split_answer_kind(text)
+                payload = ({"answer": atext,
+                            **({"answerKind": akind} if akind else {})}
+                           if atext else {})
+                return "done", payload, {}, text, []
             merged, prose = dict(kept), text
         else:
             try:
@@ -1327,7 +1348,13 @@ class DraftJobs:
                     if k in CHAT_FILES and k not in bad}
             return "invalid", errors, good, answer, sorted(bad)
         if answer:
-            payload["answer"] = answer
+            # §8 question type — stripped at payload build so the kind rides
+            # with whichever round's prose settled as the answer.
+            atext, akind = split_answer_kind(answer)
+            if atext:
+                payload["answer"] = atext
+                if akind:
+                    payload["answerKind"] = akind
         return "done", payload, merged, answer, []
 
     @staticmethod
@@ -1576,7 +1603,7 @@ class DraftJobs:
                     # answer and is complete once a marker streams — ride it on
                     # the job as `plan` (§19) so the §11 thread can land "The
                     # plan" while the documents phase is still running.
-                    plan = text[: marks[0].start()].strip()
+                    plan, _ = split_answer_kind(text[: marks[0].start()].strip())
                     if plan:
                         # New-key insert from the streaming thread — under the
                         # lock, like _settle's, so get()'s items() iteration

@@ -323,7 +323,7 @@ export function useDraftJob(d: DraftJobDeps) {
               } else {
                 chat.push(newEntry({
                   kind: 'answer', text: dft.answer,
-                  ...answerHeader(dft.answer, rewrote || Object.keys(actions).length > 0),
+                  ...answerHeader(rewrote || Object.keys(actions).length > 0, dft.answerKind),
                 }))
               }
             }
@@ -481,7 +481,7 @@ export function useDraftJob(d: DraftJobDeps) {
         // §11: the flip's plan lands mid-job as "The plan" (rewrites follow by
         // definition), beneath the just-settled deciding block.
         onPlan: (plan) => {
-          const entry = newEntry({ kind: 'answer', text: plan, ...answerHeader(plan, true) })
+          const entry = newEntry({ kind: 'answer', text: plan, ...answerHeader(true) })
           planEntryId = entry.id
           setRev((r) => r && ({ ...r, chat: [...r.chat, entry] }))
         },

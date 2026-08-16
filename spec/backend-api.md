@@ -309,8 +309,9 @@ remain plain dicts (§2).
   assembles the §8 RECENT EXECUTIONS and PACKAGES context itself (`executionId`, optional, names an
   execution to include in full detail — the §11 Fix-with-AI entry; unknown ids are
   ignored), and the terminal
-  payload is `draft: { answer?, spec?, instructions?, notes?, actions? }` — the §8 chat call's
-  response shape decides which keys are present; an `automationId` that doesn't resolve
+  payload is `draft: { answer?, answerKind?, spec?, instructions?, notes?, actions? }` — the §8 chat call's
+  response shape decides which keys are present (`answerKind: "question"` when the response
+  declared the §8 `===QUESTION===` type; absent otherwise); an `automationId` that doesn't resolve
   answers 404 (like the stale-`automationId` 404 on `/tests`) — never a silent fall-back to
   the no-automation grant defaults below; the job's agent is the explicit `agentId` when sent,
   else the default agent — 404 when neither resolves to a configured agent (including the

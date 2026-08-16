@@ -632,13 +632,24 @@ describe('CreateFlow chat response application (§11)', () => {
     await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     // a reply arriving with a rewrite is the plan
     expect(screen.getByText('The plan')).toBeTruthy()
-    // a plain question response gets the question header
+    // an agent-declared question (§19 answerKind) gets the question header
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
-      answer: 'Which folder should I watch?',
+      answer: 'Which folder should I watch?', answerKind: 'question',
     }))
     send('Watch stuff')
     await waitFor(() => expect(screen.getByText('Which folder should I watch?')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByText('Question for you')).toBeTruthy()
+  })
+
+  it('a reply merely ending with ? stays From your AI — no answerKind, no question header (§11)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      answer: 'It runs daily at 8. Does that answer your question?',
+    }))
+    render(<CreateFlow />)
+    send('When does it run?')
+    await waitFor(() => expect(screen.getByText(/Does that answer your question/)).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('From your AI')).toBeTruthy()
+    expect(screen.queryByText('Question for you')).toBeNull()
   })
 
   it('the plan lands mid-job at the flip; the settle updates it in place (§8/§11)', async () => {

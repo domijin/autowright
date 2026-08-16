@@ -373,6 +373,7 @@ export interface DraftPayload {
   outOfSync?: boolean
   test?: DraftTest  // §11: last-test summary, GET responses only — never sent back
   answer?: string        // §8 chat call: prose answer / accompanying message
+  answerKind?: string    // §8 chat call: "question" when the agent declared the ===QUESTION=== type
   actions?: ChatActions  // §8 chat call: validated follow-up actions
 }
 

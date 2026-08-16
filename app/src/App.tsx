@@ -76,12 +76,7 @@ function Sidebar() {
               <button
                 data-testid="nav-update"
                 className="ad-nav-row"
-                // §9.4 updateSpotlight: About consumes it on mount and rings the
-                // Download update button.
-                onClick={() => {
-                  useStore.setState({ updateSpotlight: true })
-                  go('about', { automationId: null, executionId: null })
-                }}
+                onClick={() => go('about', { automationId: null, executionId: null })}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
                   borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',

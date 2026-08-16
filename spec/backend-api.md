@@ -335,18 +335,6 @@ remain plain dicts (§2).
   reserved for harness errors and crashes — a validation double-failure always ends `blocked`
   (§8 failure policy); `DELETE /drafts/{jobId}` cancels
   (kills the harness process)
-- `POST /report/draft` `{ kind: bug|feature, text?, info?, agentId? }` → `{ jobId }` — the
-  §9.5 AI bug-report draft: a one-off `harness.invoke` job **outside** the §8 pipeline (own
-  small purpose-built prompt — issue-writer role, the kind, the user text, the info block,
-  plus the last 16 KiB each of `app.log` and `backend.err.log` read server-side from the §5
-  logs dir; instructions: answer `===TITLE===` / `===BODY===` sections, markdown body with
-  What happened / Steps to reproduce / Expected / Environment, body under 6 KB, redact
-  anything token-, secret-, or email-shaped — no instruction files, no envelope, no repair
-  rounds, web disabled). Agent = explicit `agentId`, else the default agent — 404 when
-  neither resolves to a configured agent (like `/drafts`). Clients poll
-  `GET /report/draft/{jobId}` → `{ status: running|done|failed|cancelled, draft?: { title,
-  body }, error? }` — a reply missing the markers degrades, never fails: whole reply = body,
-  its first line = title. `DELETE /report/draft/{jobId}` cancels (kills the harness process)
 - `GET /executions?auto=&status=` (headers only — no steps; rows carry the §4.5
   `triggerSender`) · `GET /executions/{id}` (steps
   with attempts + params + error + result + `triggerPayload` (§4.5) — logs are lazy, never

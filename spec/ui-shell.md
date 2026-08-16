@@ -678,36 +678,29 @@ problem", open state held in one store boolean `reportOpen` (open/close actions)
 never navigates, closing restores nothing because nothing changed. Contents, top to bottom:
 
 - **Type toggle** — Bug / Feature request pair, default Bug. Decides the GitHub label
-  (`bug` / `enhancement`) and the drafting call's `kind`.
+  (`bug` / `enhancement`).
+- **Title** — single-line input, placeholder "One-line summary". Becomes the issue title.
 - **What happened?** — multiline textarea, placeholder "What did you expect, and what
-  happened instead?". Used verbatim in the issue body on the plain path, or as the drafting
-  call's user text.
-- **Include app info** — toggle (the shared §14 Toggle — the app has no checkbox control),
-  default on, with the rendered info block visible below it
-  (mono, muted) so the user sees exactly what would be included. Block lines: app version
-  (store `version` from `GET /state`) · macOS release + arch (new `platform-info` IPC:
-  preload `platformInfo()` → main answers `{ platform, release, arch }` from Node `os` —
-  the renderer has no other OS-details source) · current location — the `surface` and `page`
-  names only, never entity ids or content · backend state (store `connected` plus the §3
-  `backend-status` state) · update state (`updateAvailable`). **Never** in the block or the
-  issue body: the backend bearer token, secret names or values, raw log contents.
-- **Draft with AI** — button; disabled with the §12 no-agent copy when zero agents are
-  configured. Click starts a §19 `POST /report/draft` job (kind, text, info block when the
-  toggle is on; agent = default agent — the backend re-resolves). While the job runs the
-  button reads busy and a Cancel beside it DELETEs the job; closing the modal cancels too.
-  On `done` the modal gains **editable Title and Body fields** prefilled from the draft —
-  the user's edits ride into the URL. On `failed` a `--red-text` line shows the error; the
-  plain path below still works.
-- Footer: quiet **Cancel** (closes, cancels any live job) · primary **"Open GitHub
-  issue ↗"**.
+  happened instead?". Used verbatim in the issue body.
+- Both fields carry the app's standard text-field dimensions (`.ad-input` +
+  `padding: 11px 14px`) and share one text style — 13 px / weight 400 / line-height 1.5 —
+  so title and body read identically.
+- **Include environment info** — toggle (the shared §14 Toggle — the app has no checkbox
+  control), default on, with the rendered info block visible below it (mono, muted) so the
+  user sees exactly what would be included. Block lines — exactly two: app version (store
+  `version` from `GET /state`) · macOS release + arch (`platform-info` IPC: preload
+  `platformInfo()` → main answers `{ platform, release, arch }` — the renderer has no other
+  OS-details source). Nothing else — no location, backend, or update state. **Never** in
+  the block or the issue body: the backend bearer token, secret names or values, raw log
+  contents.
+- Footer: quiet **Cancel** (closes) · primary **"Open GitHub issue ↗"**.
 
 Open action: a plain `target="_blank"` anchor (the §9.4 external-URL policy routes it to the
 default browser) to `https://github.com/hansololz/autowright/issues/new` with
-`URLSearchParams`-built `labels`, `title`, `body`. Without an AI draft the title is empty and
+`URLSearchParams`-built `labels`, `title`, `body`. The title is the Title field's text and
 the body is `### What happened` + the textarea text, then `### Environment` + the info block
-(section present only while the toggle is on). With a draft, title/body come from the
-editable fields. GitHub caps prefill URLs around 8 KB, so the body is clamped to 6 KB before
-encoding. The repo URL is one shared constant with §9.4 — never two copies. The app itself
+(section present only while the toggle is on). GitHub caps prefill URLs around 8 KB, so the
+body is clamped to 6 KB before encoding. The repo URL is one shared constant with §9.4 — never two copies. The app itself
 sends nothing anywhere: opening the browser is the only outbound action, and the user reviews
 the prefilled issue on GitHub before submitting.
 

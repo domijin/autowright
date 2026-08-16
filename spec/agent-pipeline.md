@@ -18,9 +18,7 @@ web-read tools are turned on (the §6 per-harness flag list) so the agent fetche
 request names and grounds the spec, selectors, and notes in the real DOM; runtime `agent.ask`
 calls stay fully tool-locked (§6). Everything below is otherwise harness-independent; adapters
 only translate "send prompt, receive text." Agents never touch the data directory — the
-backend writes files only after validation passes. The §9.5 bug-report draft (§19
-`POST /report/draft`) is **not** part of this pipeline: a one-off `harness.invoke` with its
-own small prompt — no instruction files, no envelopes, no repair rounds, web disabled.
+backend writes files only after validation passes.
 
 **Instruction files** (markdown next to the code, loaded at import — never inline in Python;
 also served to the create/edit page via §19 `GET /instructions`):

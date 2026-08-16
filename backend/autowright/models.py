@@ -215,15 +215,6 @@ class DraftJobStart(BaseModel):
     allowedSecrets: list[StrictStr] = None
 
 
-class ReportDraftStart(BaseModel):
-    """POST /report/draft (§19) — the §9.5 AI bug-report draft."""
-
-    kind: Literal["bug", "feature"]
-    text: StrictStr | None = None
-    info: StrictStr | None = None
-    agentId: StrictStr | None = None
-
-
 class SkipStep(BaseModel):
     """POST /executions/{id}/skip-step (§7)."""
 

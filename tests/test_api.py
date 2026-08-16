@@ -629,6 +629,57 @@ def test_discard_draft_cancels_live_test_and_leaves_no_residue(client, monkeypat
     assert not (paths.pending_draft_dir() / "test.yaml").exists()
 
 
+def test_discard_draft_cancels_owner_drafting_jobs(client):
+    # §19 draft settle: discarding cancels the owner's still-building §8
+    # drafting jobs; other owners' jobs are untouched. The pending slot's
+    # discard (owner None) kills the slot's jobs the same way.
+    from autowright.api import draft_jobs
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Job owner", "mock")
+    fakes = {
+        "mine": {"id": "mine", "status": "building", "_cancel": False,
+                 "_proc": {}, "_owner": a["id"]},
+        "other": {"id": "other", "status": "building", "_cancel": False,
+                  "_proc": {}, "_owner": "someone-else"},
+        "slot": {"id": "slot", "status": "building", "_cancel": False,
+                 "_proc": {}, "_owner": None},
+    }
+    draft_jobs.jobs.update(fakes)
+    try:
+        assert client.delete(f"/draft/{a['id']}").json()["ok"]
+        assert draft_jobs.jobs["mine"]["status"] == "cancelled"
+        assert draft_jobs.jobs["other"]["status"] == "building"
+        assert draft_jobs.jobs["slot"]["status"] == "building"
+        assert client.delete("/draft/pending").json()["ok"]
+        assert draft_jobs.jobs["slot"]["status"] == "cancelled"
+    finally:
+        for k in fakes:
+            draft_jobs.jobs.pop(k, None)
+
+
+def test_draft_job_owner_stamp(client, monkeypatch):
+    # §19: POST /drafts stamps the job with its owner — the automationId's
+    # container, or None (the pending slot) when none was sent.
+    from autowright import api
+    from autowright.storage import store
+
+    captured = {}
+
+    def fake_start(mode, agent, user_text, current, grants, **kw):
+        captured["owner"] = kw.get("owner_id", "missing")
+        return "job-x"
+
+    monkeypatch.setattr(api.draft_jobs, "start", fake_start)
+    assert client.post("/drafts", json={"mode": "chat", "text": "x",
+                                        "agentId": "mock"}).status_code == 200
+    assert captured["owner"] is None
+    a = store.create_automation(make_version(), "Stamp owner", "mock")
+    assert client.post("/drafts", json={"mode": "chat", "text": "x", "agentId": "mock",
+                                        "automationId": a["id"]}).status_code == 200
+    assert captured["owner"] == a["id"]
+
+
 def test_patch_automation_triggers_and_grants(client):
     from autowright.storage import store
 

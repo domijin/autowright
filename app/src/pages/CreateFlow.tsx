@@ -712,6 +712,9 @@ export default function CreateFlow() {
       // debounce timers check the flag at fire time, and a PUT landing after
       // the DELETE would resurrect the discarded draft (§4.4) or clobber the
       // boundary marker the DELETE appends to the kept thread.
+      // §11: settling cancels any in-flight §8 job client-side too — the
+      // DELETE below also kills the owner's jobs server-side (§19).
+      jobs.cancelJob()
       draftSettled.current = true
       await flushChat()
       await putInFlight.current

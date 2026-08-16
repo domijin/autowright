@@ -469,7 +469,7 @@ def create_auto(body: models.AutomationCreate) -> dict:
     if err:
         raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
-    _cancel_live_test(None)  # §11: Create settles the pending slot — its live test dies
+    _cancel_live_draft_work(None)  # §11/§19: Create settles the pending slot — its live test and jobs die
     a = store.create_automation(
         _draft_to_version(d),
         name=body.name or d.get("name") or "New automation",
@@ -519,7 +519,7 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         if err:
             raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
-    _cancel_live_test(automation_id)  # §11: saving settles the draft — its live test dies
+    _cancel_live_draft_work(automation_id)  # §11/§19: saving settles the draft — its live test and jobs die
     ver = _draft_to_version(d)
     with store.lock:
         # Same guard as PUT/DELETE draft: saving deletes the draft container,
@@ -556,12 +556,13 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
     return {"version": n, "automation": _auto_json_locked(a)}
 
 
-def _cancel_live_test(container_id: str | None) -> None:
-    """§11 test lifetime: a draft settle cancels the container's still-executing
-    test. The record is marked under the lock so testexec._run deletes it when
-    it lands (instead of it surviving the draft or rewriting the settled
-    container's test.yaml); the cancel itself runs outside the lock — it kills
-    a process."""
+def _cancel_live_draft_work(container_id: str | None) -> None:
+    """§11/§19 draft settle: cancel the container's still-executing test and
+    its still-building §8 drafting jobs — a settled draft never leaves a test
+    or agent harness process running. The test record is marked under the lock
+    so testexec._run deletes it when it lands (instead of it surviving the
+    draft or rewriting the settled container's test.yaml); the cancels
+    themselves run outside the lock — they kill processes."""
     with store.lock:
         live = [h for h in store.execs.values()
                 if is_test(h) and h["automation_id"] == container_id
@@ -570,6 +571,7 @@ def _cancel_live_test(container_id: str | None) -> None:
             h["_draft_settled"] = True
     for h in live:
         engine.cancel(h["id"])
+    draft_jobs.cancel_for(container_id)
 
 
 def _reject_live_draft_exec(a: dict) -> None:
@@ -646,7 +648,7 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
 @app.delete("/draft/{owner}", dependencies=[Depends(auth)])
 def delete_draft_container(owner: str) -> dict:
     a = _draft_owner(owner)
-    _cancel_live_test(a["id"] if a is not None else None)  # §11: discard settles the draft
+    _cancel_live_draft_work(a["id"] if a is not None else None)  # §11/§19: discard settles the draft
     with store.lock:
         if a is not None:
             _reject_live_draft_exec(a)
@@ -1127,9 +1129,13 @@ def post_draft(body: models.DraftJobStart) -> dict:
         if pkgs := (current or {}).get("packages"):
             pkg_state = pkglib.check([{"pip": p.get("pip"), "import": p.get("import")}
                                       for p in pkgs])
+    # §19: the owner stamp — the automation's draft container, or the pending
+    # slot when no automationId was sent — lets the draft-settle endpoints
+    # cancel this job when the draft settles.
     job_id = draft_jobs.start(mode, agent, body.text, current, grants,
                               chat_history=body.chat, executions=executions,
-                              pkg_state=pkg_state)
+                              pkg_state=pkg_state,
+                              owner_id=auto["id"] if auto else None)
     return {"jobId": job_id}
 
 

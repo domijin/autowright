@@ -1271,6 +1271,26 @@ def test_draft_jobs_cancel_building_and_terminal_noop():
     assert jobs.cancel("never-existed") is False
 
 
+def test_draft_jobs_cancel_for_owner():
+    # §19 draft settle: cancel_for kills only the owner's building jobs —
+    # other owners' jobs and terminal jobs are untouched; None = pending slot.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    jobs.jobs["a"] = {"id": "a", "status": "building", "_cancel": False,
+                      "_proc": {}, "_owner": "auto-1"}
+    jobs.jobs["b"] = {"id": "b", "status": "building", "_cancel": False,
+                      "_proc": {}, "_owner": None}
+    jobs.jobs["c"] = {"id": "c", "status": "done", "_cancel": False,
+                      "_proc": {}, "_owner": "auto-1"}
+    jobs.cancel_for("auto-1")
+    assert jobs.jobs["a"]["status"] == "cancelled"
+    assert jobs.jobs["b"]["status"] == "building"
+    assert jobs.jobs["c"]["status"] == "done"
+    jobs.cancel_for(None)
+    assert jobs.jobs["b"]["status"] == "cancelled"
+
+
 def test_cancel_after_call_never_starts_next_harness_call(monkeypatch):
     # §8 cancel semantics: a cancel that lands while the chat call's response
     # is in hand raises Cancelled out of _invoke (post-return check) — no

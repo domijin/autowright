@@ -1102,6 +1102,11 @@ editors enter with
   every draft-settle endpoint cancels the container's live test first), and the cancelled
   record deletes itself once it lands — it never survives the draft and never writes a
   last-test summary into the settled container, so a discarded draft leaves no test residue.
+  The same settle also cancels any **still-building §8 drafting job** stamped with the
+  container as its owner (§19 — the cancel kills the harness process): a settled draft
+  leaves no agent process running either. The editor cancels its own in-flight job
+  client-side too (Discard draft / Start over call the same cancel as leaving the page —
+  belt-and-braces beside the server-side owner cancel).
   Deleting the automation deletes them too.
   **Test setup section (create and edit mode):** the test button (**Test draft**)
   is a **disclosure toggle**, not the run trigger — it never starts a

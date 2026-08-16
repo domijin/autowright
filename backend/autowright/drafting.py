@@ -1117,7 +1117,8 @@ class DraftJobs:
     def start(self, mode: str, agent: dict, user_text: str | None,
               current: dict | None, grants: dict,
               chat_history: list | None = None, executions: str | None = None,
-              pkg_state: list[dict] | None = None) -> str:
+              pkg_state: list[dict] | None = None,
+              owner_id: str | None = None) -> str:
         job_id = str(uuid.uuid4())
         # §8 unified stage set: every job enters at the phase where its real
         # work starts — sync at the workflow phase, chat at the neutral
@@ -1125,9 +1126,11 @@ class DraftJobs:
         # streamed rewrite marker).
         stage = ("Syncing the workflow" if mode == "sync"
                  else "Working on the request")
+        # §19: the owner stamp (automation id, None = the pending slot) lets
+        # the draft-settle endpoints cancel the container's building jobs.
         job = {"id": job_id, "status": "building", "stage": stage, "detail": None,
                "events": [], "error": None, "draft": None, "mode": mode,
-               "_cancel": False, "_proc": {}}
+               "_cancel": False, "_proc": {}, "_owner": owner_id}
         with self._lock:
             # Terminal jobs hold full draft payloads (all step code) — keep only
             # a recent tail so the process doesn't grow for its whole lifetime.
@@ -1170,6 +1173,16 @@ class DraftJobs:
             # process") — CLIs spawn helpers that terminate alone won't reach.
             harness.kill_group(proc, signal.SIGTERM)
         return True
+
+    def cancel_for(self, owner_id: str | None) -> None:
+        """§19 draft settle: cancel every still-building job stamped with this
+        owner (None = the pending slot), so a settled draft never leaves an
+        agent harness process running."""
+        with self._lock:
+            ids = [k for k, v in self.jobs.items()
+                   if v["status"] == "building" and v.get("_owner") == owner_id]
+        for k in ids:
+            self.cancel(k)
 
     def _settle(self, job: dict, status: str, **fields) -> bool:
         """The only terminal transition — building → done/blocked/failed under

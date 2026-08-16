@@ -178,7 +178,10 @@ remain plain dicts (§2).
   endpoint (this DELETE, `POST /automations`, `POST /automations/{id}/versions`) first
   **cancels the container's still-executing test record** (§11 test lifetime), marking it
   so it deletes itself when it lands instead of surviving as an orphan or rewriting the
-  settled container's `test.yaml`. `DELETE` settles the
+  settled container's `test.yaml`, **and cancels the owner's still-building §8 drafting
+  jobs** (`POST /drafts` stamps every job with its owner, below; the cancel kills the
+  harness process exactly like `DELETE /drafts/{jobId}`) — a settled draft never leaves
+  an agent process or test process running. `DELETE` settles the
   draft but **never deletes the thread** (§4.4 thread lifetime): it appends the "Draft
   discarded." boundary marker to the owner's `chat.jsonl` and, for the pending owner,
   empties the slot's draft contents while leaving `chat.jsonl` in place. The §8 drafting-job
@@ -315,7 +318,9 @@ remain plain dicts (§2).
   answers 404 (like the stale-`automationId` 404 on `/tests`) — never a silent fall-back to
   the no-automation grant defaults below; the job's agent is the explicit `agentId` when sent,
   else the default agent — 404 when neither resolves to a configured agent (including the
-  zero-agents case); the grant arrays, when present, override
+  zero-agents case); every job is stamped with its **owner** — the sent `automationId`'s
+  draft container, or the pending slot when none was sent — so the draft-settle endpoints
+  (above) can cancel the owner's still-building jobs when the draft settles; the grant arrays, when present, override
   the stored automation's for the §8 grants context; when `enabledAgents` / `allowedSecrets`
   is absent and no stored automation exists (no `automationId` sent — a fresh create-flow
   draft), the

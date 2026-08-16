@@ -57,7 +57,12 @@ Four components (per top-level README):
 - **CLI** — command-line access to the same backend, full UI parity (§20): manage, author
   (pull/push workdirs), and execute automations; executions, secrets, agents, settings; §5.1
   export/import. Headless operation is a supported mode (§3), not just a debug aid, and the
-  §17 agent skill drives everything through it. Naming: user-facing surface (command names,
+  §17 agent skill drives everything through it. **Invariant: the CLI is a pure leaf — the UI
+  and the backend must never depend on or invoke it.** Dependency direction is one-way (CLI →
+  backend API, CLI → `service.py`); the app registers the backend via
+  `python -m autowright.service` (§3) and may *install* the CLI's PATH shim, but never
+  executes the CLI. This keeps the CLI freely removable, optional per install, and unable to
+  break app bootstrap. Naming: user-facing surface (command names,
   arguments, metavars, help and error text) always spells out `automation` — never the `auto`
   shorthand. Grants are explicit (§20 grant model): `create`/`push` grant only the agents and
   secrets named by `--grant-agent`/`--grant-secret` flags — no all-on seed, no silent widening.

@@ -42,7 +42,7 @@ interface Model {
   updateSpotlight: boolean
   // §4.4 pending create-mode slot — drives the §9.1 Resume draft button
   pendingDraft: { name: string; updatedAt: string | null } | null
-  // §9.5 report bug modal — opened by the §9 "Report bug" nav row; not a page.
+  // §9.5 report issue modal — opened by the §9 "Report an issue" nav row; not a page.
   reportOpen: boolean
 
   surface: Surface

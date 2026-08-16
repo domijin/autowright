@@ -1,4 +1,4 @@
-// §9/§9.5 report bug: the permanent nav row (directly above About, below the
+// §9/§9.5 report issue: the permanent nav row (directly above About, below the
 // update row) and the report modal — prefill URL assembly, info-block toggle.
 // App renders for real (happy-dom) with the api module mocked to a connected,
 // onboarded snapshot.
@@ -63,19 +63,19 @@ afterEach(() => { cleanup(); storeMod.useStore.getState().disconnect() })
 
 const openModal = async () => {
   render(<App />)
-  fireEvent.click(await screen.findByTestId('nav-report-bug'))
+  fireEvent.click(await screen.findByTestId('nav-report-issue'))
   return await screen.findByTestId('report-modal')
 }
 const openHref = () => (screen.getByTestId('report-open') as HTMLAnchorElement).href
 
-describe('report bug nav row (§9)', () => {
+describe('report issue nav row (§9)', () => {
   it('always renders, directly above About and below the update row', async () => {
     storeMod.useStore.setState({ updateAvailable: '9.9.9' })
     render(<App />)
     const rail = await screen.findByTestId('nav-rail')
     const rows = Array.from(rail.querySelectorAll('button')).map((b) => b.textContent ?? '')
     const iUpdate = rows.findIndex((t) => t.includes('Update available'))
-    const iReport = rows.findIndex((t) => t.includes('Report bug'))
+    const iReport = rows.findIndex((t) => t.includes('Report an issue'))
     const iAbout = rows.findIndex((t) => t.includes('About'))
     expect(iUpdate).toBeGreaterThan(-1)
     expect(iReport).toBe(iUpdate + 1)
@@ -120,10 +120,17 @@ describe('report modal (§9.5)', () => {
     expect(body()).not.toContain('Autowright v\n')
   })
 
-  it('feature toggle switches the label; info toggle drops the environment', async () => {
+  it('feature toggle switches label, prompt, and body heading; text survives; info toggle drops the environment', async () => {
     await openModal()
+    fireEvent.change(screen.getByPlaceholderText('What did you expect, and what happened instead?'),
+      { target: { value: 'keep me' } })
     fireEvent.click(screen.getByText('Feature request'))
     expect(openHref()).toContain('labels=enhancement')
+    // §9.5: details field follows the type — label/placeholder swap, text stays
+    expect(screen.getByText('What do you need?')).toBeTruthy()
+    const area = screen.getByPlaceholderText('What would it do, and why do you need it?') as HTMLTextAreaElement
+    expect(area.value).toBe('keep me')
+    expect(new URL(openHref()).searchParams.get('body')).toContain('### What do you need')
     fireEvent.click(screen.getByTitle('Include environment info'))
     expect(new URL(openHref()).searchParams.get('body')).not.toContain('### Environment')
   })

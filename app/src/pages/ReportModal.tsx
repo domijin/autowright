@@ -1,8 +1,8 @@
-// Report bug modal (§9.5): opened by the §9 "Report bug" nav row — type
-// toggle, "What happened?", include-app-info block, and a prefilled GitHub
-// new-issue link. The app itself sends nothing anywhere: opening the browser
-// is the only outbound action, and the user reviews the issue on GitHub
-// before submitting.
+// Report issue modal (§9.5): opened by the §9 "Report an issue" nav row —
+// type toggle, per-type details field, include-app-info block, and a
+// prefilled GitHub new-issue link. The app itself sends nothing anywhere:
+// opening the browser is the only outbound action, and the user reviews the
+// issue on GitHub before submitting.
 import React, { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { BtnGhost, Modal, RadioRing, Toggle } from '../ui'
@@ -35,10 +35,16 @@ export default function ReportModal() {
     os ? `macOS ${os.release} (${os.arch})` : 'macOS (version unknown)',
   ].join('\n')
 
+  // §9.5: details label/placeholder and body heading follow the type toggle;
+  // entered text survives toggling.
+  const details = kind === 'bug'
+    ? { label: 'What happened?', placeholder: 'What did you expect, and what happened instead?', heading: '### What happened' }
+    : { label: 'What do you need?', placeholder: 'What would it do, and why do you need it?', heading: '### What do you need' }
+
   // §9.5 open action: plain anchor — the §9.4 external-URL policy routes it to
   // the default browser.
   const issueBody = [
-    '### What happened',
+    details.heading,
     text.trim() || '(describe it here)',
     ...(includeInfo ? ['', '### Environment', '```', infoBlock, '```'] : []),
   ].join('\n')
@@ -49,11 +55,11 @@ export default function ReportModal() {
   }).toString()
 
   return (
-    <Modal onClose={() => useStore.setState({ reportOpen: false })} width={520} ariaLabel="Report a problem">
+    <Modal onClose={() => useStore.setState({ reportOpen: false })} width={520} ariaLabel="Report an issue">
       {(close) => (
         <div data-testid="report-modal" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Report a problem</h2>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Report an issue</h2>
             <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)' }}>
               Reports are filed as GitHub issues — a GitHub account is required.
             </div>
@@ -84,7 +90,7 @@ export default function ReportModal() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={label}>What happened?</span>
+            <span style={label}>{details.label}</span>
             <textarea
               className="ad-input" rows={4} value={text}
               style={{
@@ -92,7 +98,7 @@ export default function ReportModal() {
                 fontWeight: 400, fontSize: 13, lineHeight: 1.5, color: 'var(--text)',
                 resize: 'vertical',
               }}
-              placeholder="What did you expect, and what happened instead?"
+              placeholder={details.placeholder}
               onChange={(e) => setText(e.target.value)}
             />
           </div>
@@ -116,7 +122,6 @@ export default function ReportModal() {
             <a
               data-testid="report-open"
               className="ad-btn-primary"
-              style={{ textDecoration: 'none' }}
               href={href} target="_blank" rel="noopener noreferrer"
             >
               Open GitHub issue ↗

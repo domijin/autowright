@@ -90,7 +90,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   ellipsis instead of wrapping, for ask-box textareas that size to typed content only — the
   §11 chat composer). Classes own colors,
   interaction, **and size** — call sites never override button padding/font-size/radius inline
-  (layout-only styles such as `flex`, `whiteSpace`, margins are fine). All action buttons share
+  (layout-only styles such as `flex`, `whiteSpace`, margins are fine). Button classes render
+  identically on `<a>` link-as-buttons: `a.ad-btn-ghost` and `a.ad-btn-primary` rules suppress
+  the global link hover (color + underline) so an anchor styled as a button keeps the class's
+  own text color in every state (§7 Open in Discord, §9.5 Open GitHub issue) — call sites never
+  patch this inline. All action buttons share
   one size: 13 px font, radius 8 px, padding 8 px 15 px on bordered buttons (`.ad-btn-ghost`,
   `.ad-btn-soft`, `.ad-btn-dashed`, `.ad-btn-accent-ghost`, `.ad-btn-danger-ghost`) and
   9 px 16 px on the borderless filled `.ad-btn-primary` — same rendered box. Borderless text

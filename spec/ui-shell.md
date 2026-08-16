@@ -31,9 +31,9 @@ collapsed rail; no count pill, never in the active state. Clicking it sets the o
 `updateSpotlight` store flag and navigates to the About page, which opens pre-armed with its
 action button playing the §14 attention ring (§9.4) — the download itself still starts from
 that row's button. The row follows the §3 clearing rule: gone when a later check answers up-to-date,
-otherwise only with the restart that installs. A permanent **Report bug** row
-(`data-testid="nav-report-bug"`) sits directly above About — below the update row when that
-one shows (order: update · report bug · About): fa-bug icon, "Report bug" label, normal
+otherwise only with the restart that installs. A permanent **Report an issue** row
+(`data-testid="nav-report-issue"`) sits directly above About — below the update row when that
+one shows (order: update · report issue · About): fa-bug icon, "Report an issue" label, normal
 nav-row styling, no count pill, never the active state. Clicking it opens the §9.5 report
 modal in place — it is not a page: no `Page` union entry, `go()` untouched, whatever page
 was showing stays underneath. On `:hover` the panel's width
@@ -671,10 +671,10 @@ change before you accept and execute it. You are responsible for what your
 automations do; the author accepts no liability for any damage or loss they
 cause."
 
-### 9.5 Report bug modal
+### 9.5 Report issue modal
 
-Reached only from the §9 "Report bug" nav row. A shared-`Modal` dialog, title "Report a
-problem" with a muted sub-line directly under it — "Reports are filed as GitHub issues — a
+Reached only from the §9 "Report an issue" nav row. A shared-`Modal` dialog, title "Report
+an issue" with a muted sub-line directly under it — "Reports are filed as GitHub issues — a
 GitHub account is required." — so the requirement is stated before the user types. Open
 state held in one store boolean `reportOpen` (open/close actions) — opening never navigates,
 closing restores nothing because nothing changed. Contents, top to bottom:
@@ -682,8 +682,11 @@ closing restores nothing because nothing changed. Contents, top to bottom:
 - **Type toggle** — Bug / Feature request pair, default Bug. Decides the GitHub label
   (`bug` / `enhancement`).
 - **Title** — single-line input, placeholder "One-line summary". Becomes the issue title.
-- **What happened?** — multiline textarea, placeholder "What did you expect, and what
-  happened instead?". Used verbatim in the issue body.
+- **Details textarea** — multiline, label and placeholder follow the type toggle. Bug: label
+  "What happened?", placeholder "What did you expect, and what happened instead?". Feature
+  request: label "What do you need?", placeholder "What would it do, and why do you need
+  it?". Text entered survives toggling the type — only label/placeholder swap. Used verbatim
+  in the issue body.
 - Both fields carry the app's standard text-field dimensions (`.ad-input` +
   `padding: 11px 14px`) and share one text style — 13 px / weight 400 / line-height 1.5 —
   so title and body read identically.
@@ -696,12 +699,15 @@ closing restores nothing because nothing changed. Contents, top to bottom:
   version: app.getVersion() }` — the renderer has no other OS-details source). Nothing else — no location, backend, or update state. **Never** in
   the block or the issue body: the backend bearer token, secret names or values, raw log
   contents.
-- Footer: quiet **Cancel** (closes) · primary **"Open GitHub issue ↗"**.
+- Footer: quiet **Cancel** (closes) · primary **"Open GitHub issue ↗"** — an anchor carrying
+  `.ad-btn-primary`; the §14 link-as-button rule keeps `--on-accent` text and no underline on
+  hover, so it is indistinguishable from a real primary button.
 
 Open action: a plain `target="_blank"` anchor (the §9.4 external-URL policy routes it to the
 default browser) to `https://github.com/hansololz/autowright/issues/new` with
 `URLSearchParams`-built `labels`, `title`, `body`. The title is the Title field's text and
-the body is `### What happened` + the textarea text, then `### Environment` + the info block
+the body is a heading matching the type (`### What happened` for Bug, `### What do you need`
+for Feature request) + the textarea text, then `### Environment` + the info block
 (section present only while the toggle is on). GitHub caps prefill URLs around 8 KB, so the
 body is clamped to 6 KB before encoding. The repo URL is one shared constant with §9.4 — never two copies. The app itself
 sends nothing anywhere: opening the browser is the only outbound action, and the user reviews

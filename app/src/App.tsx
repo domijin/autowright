@@ -93,11 +93,11 @@ function Sidebar() {
               </button>
             )}
             {i === 1 && (
-              // §9 "Report bug" row: directly above About (below the update row
-              // when both show). Opens the §9.5 modal — not a page: no Page
+              // §9 "Report an issue" row: directly above About (below the update
+              // row when both show). Opens the §9.5 modal — not a page: no Page
               // union entry, go() untouched.
               <button
-                data-testid="nav-report-bug"
+                data-testid="nav-report-issue"
                 className="ad-nav-row"
                 onClick={() => useStore.setState({ reportOpen: true })}
                 style={{
@@ -107,7 +107,7 @@ function Sidebar() {
                 }}
               >
                 <i className="fa-solid fa-bug" style={{ width: 16, fontSize: 12, opacity: 0.85 }} />
-                <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Report bug</span>
+                <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Report an issue</span>
               </button>
             )}
             {group.rows.map((n) => {

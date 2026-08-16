@@ -136,6 +136,11 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   transition: background var(--t-hover) var(--ease-enter);
 }
 .ad-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+/* link-as-button (§9.5 Open GitHub issue): the global a / a:hover link color +
+   underline must never leak into an anchor styled as a primary button */
+a.ad-btn-primary, a.ad-btn-primary:hover {
+  color: var(--on-accent); text-decoration: none; user-select: none;
+}
 .ad-btn-primary:disabled { background: rgba(255, 255, 255, 0.08); color: var(--text-faint); }
 /* disabled look while staying clickable (validation-on-click forms) */
 .ad-btn-primary.looks-disabled, .ad-btn-primary.looks-disabled:hover:not(:disabled) {

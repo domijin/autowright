@@ -776,7 +776,18 @@ the new location (the old dir stays where it was).
 The "Keep executions for" days row is hidden (not just disabled) while "Keep execution history forever" is
 on. One **ON THIS MAC** card holds two rows: **"Automations & settings"** (the fixed path
 `~/Library/Application Support/Autowright` with its own Show in Finder button — this location
-is not changeable) above the **Execution data** row. A **DEVELOPER** card sits last on the page with
+is not changeable) above the **Execution data** row. A **COMMAND LINE** card sits below ON THIS
+MAC: one row titled "The `autowright` command", state from the §3 `cli-status` preload IPC (no
+stored setting — the shim file on disk is the source of truth, re-read on every Settings
+visit). Detail line + action by state: `installed` → "Installed at /usr/local/bin/autowright",
+no button; `missing` → "Not installed — manage automations from the Terminal." with an
+"Install…" button; `stale` → amber "Points at an old location — reinstall to fix." with
+"Reinstall…"; `foreign` → "A different `autowright` is already at /usr/local/bin — Autowright
+won't touch it.", no button. Install/Reinstall fire the §3 `cli-install` IPC (macOS admin
+prompt; the row's detail line already says so: "macOS will ask for your password."); while
+running, the button shows the §9 busy-commit spinner, then the row re-reads `cli-status` — a
+declined prompt just returns to the previous state, never an error banner. A **DEVELOPER**
+card sits last on the page with
 the single **Developer mode** toggle row (developerMode above). Version, updates,
 GitHub links, licenses, and the disclaimer live on the About page (§9.4), not here.
 

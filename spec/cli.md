@@ -34,6 +34,11 @@ autowright settings show|set
 autowright service install|uninstall|status|restart   (§3 — the only group that needs no backend)
 ```
 
+The `service` group is a thin wrapper over `service.py` — the same functions the app's
+ensure-backend step runs via `python -m autowright.service` (§3). Dependency direction is
+one-way: the CLI calls the backend API and the service module; **the UI and the backend never
+invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
+
 - **References:** automations resolve by id, exact name (case-insensitive), or unique name
   substring; executions and snapshots by id prefix. Ambiguity or no match exits with the
   candidate list.

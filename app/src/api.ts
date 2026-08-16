@@ -6,6 +6,9 @@ declare global {
     autowright?: {
       backendInfo(): Promise<{ port: number; token: string } | null>
       backendStatus(): Promise<{ state: 'idle' | 'installing' | 'ok' | 'failed'; detail: string }>
+      // §3 CLI on PATH (§10 step 3, §4.9 COMMAND LINE card)
+      cliStatus(): Promise<{ state: 'installed' | 'stale' | 'missing' | 'foreign' }>
+      cliInstall(): Promise<{ ok: true } | { ok: false; canceled?: boolean; error: string }>
       openApp(hash: string): Promise<void>
       pickFolder(defaultPath?: string): Promise<string | null>
       resizePanel(h: number): Promise<void>

@@ -27,8 +27,13 @@ the update bullets below).
 - The backend ships inside the Electron `.app` bundle
   (`Contents/Resources/python/`). **Ensure-backend:** at every app launch, the Electron main
   process probes the backend (`backend.json` + unauthenticated `GET /health`, short timeout); if
-  unreachable, it runs the bundled CLI — `Contents/Resources/python/bin/python3 -m autowright.cli
-  service install` — which writes the LaunchAgent plist and bootstraps it via `launchctl`. This is
+  unreachable, it runs the bundled service module — `Contents/Resources/python/bin/python3 -m
+  autowright.service install` — which writes the LaunchAgent plist and bootstraps it via
+  `launchctl`. `service.py` owns this and is directly runnable (`python -m autowright.service
+  install|uninstall|status|restart`); the §20 CLI's `autowright service …` group is a thin
+  wrapper over the same functions. **The UI and the backend never invoke the CLI** — the CLI is
+  a pure client leaf (it calls the backend API and the service module; nothing calls it). The
+  app may *install* the CLI shim (the CLI-on-PATH bullet below) but never executes it. This is
   the same single `service install` code path headless setups run by hand; there is no separate
   registration mechanism (`SMAppService` was considered and dropped — it would need a native
   helper for no gain). No sudo required. A healthy backend is never touched, so an app launch
@@ -73,17 +78,35 @@ the update bullets below).
   The seal is re-verified immediately before submission.
 - **CLI on PATH (decided):** the CLI ships only inside the bundle — never via pip/PyPI (a second
   channel would reintroduce a user-provided Python and version skew between CLI and backend,
-  which the one-`VERSION` design excludes by construction). `service install` also
-  writes a shim script to `/usr/local/bin/autowright`: `#!/bin/sh` with an `# autowright CLI shim` marker line,
-  then `exec "<sys.executable>" -m autowright.cli "$@"` (module form per the shebang rule above;
-  the interpreter path is captured at install time, same as the plist). The shim is rewritten on
-  every install, so a moved app bundle or a dev↔prod switch heals through the same
-  re-registration that rewrites the plist. Writing is best-effort and sudo-free (§3 has no sudo
-  anywhere): when `/usr/local/bin` is missing or unwritable, install still succeeds — the result
-  line notes the skipped shim with the manual `<python> -m autowright.cli` invocation instead.
-  `service uninstall` removes the shim only when the marker identifies it as ours — a foreign
-  `/usr/local/bin/autowright` is never touched. The command name is `autowright` (no short alias
-  for now).
+  which the one-`VERSION` design excludes by construction). The command is a shim script at
+  `/usr/local/bin/autowright`: `#!/bin/sh` with an `# autowright CLI shim` marker line, then
+  `exec "<python>" -m autowright.cli "$@"` (module form per the shebang rule above; `<python>`
+  is the backend's real interpreter). The command name is `autowright` (no short alias for now).
+  On stock macOS `/usr/local/bin` is root-owned (or absent), so creation needs privilege —
+  ownership of the two halves is split:
+  - **Creation is the Electron shell's job — explicit and privileged.** The shell exposes two
+    IPCs on the preload bridge: `cli-status` (reads the shim; states `installed` — marker
+    present and exec line points at the current backend interpreter from `backend.json` —
+    `stale` — marker present, different interpreter, and the file is not user-writable so the
+    heal below can't fix it — `missing`, and `foreign` — file exists without the marker; never
+    touched) and `cli-install` (runs one `osascript … with administrator privileges` command:
+    `mkdir -p /usr/local/bin`, write the shim, `chmod 755`, **`chown` to the console user** —
+    that last step is the trick: admin is needed at most once, because a user-owned shim file
+    is rewritable without touching the root-owned directory). The UI always explains what will
+    be installed and where **before** the password dialog appears (§10 step 3, §4.9 COMMAND
+    LINE card), and declining is a normal state, never an error. The interpreter path comes
+    from `backend.json`'s `python` field, so the same code works in dev (repo venv) and prod
+    (bundled interpreter) — no dev-only path.
+  - **Healing is `service install`'s job — silent and sudo-free** (§3 has no sudo anywhere in
+    the plumbing): when the shim exists, carries the marker, is user-writable, and its exec
+    line names a different interpreter (moved bundle, dev↔prod switch, update), install
+    rewrites it in place — rewriting a user-owned file needs no directory write. It never
+    *creates* the shim (creation is the explicit UI flow above) and never touches a foreign
+    file (no marker). The install result line reports the shim state either way.
+  `service uninstall` removes the shim only when the marker identifies it as ours and the file
+  is deletable (deleting from a root-owned directory isn't — then the result line prints the
+  manual `sudo rm` command instead). Users who skip the shim always have the module form:
+  `<python> -m autowright.cli`.
 - launchd keeps it alive: `RunAtLoad` + `KeepAlive` (restart on crash). launchd also guarantees a
   single backend instance — the UI and CLI are always clients, never owners.
 - Step processes die with their backend: graceful shutdown hard-kills every live step group,
@@ -95,6 +118,9 @@ the update bullets below).
   service stays registered regardless once onboarding completes.
 - Discovery: the backend listens on localhost and writes its port + auth token to
   `~/Library/Application Support/Autowright/backend.json` (0600); UI and CLI read it to connect.
+  Fields: `port`, `token`, `version`, `pid`, and `python` — the backend's `sys.executable`,
+  read by the shell's CLI-on-PATH machinery (above) so the shim always execs the interpreter
+  that actually runs the backend, dev and prod alike.
   The backend binds its socket first and only then publishes `backend.json` (uvicorn serves on
   the already-bound socket) — the file never points clients (token included) at a port the
   backend doesn't own. A stale/truncated `backend.json` (SIGKILL leftovers) makes the CLI and

@@ -81,45 +81,91 @@ def test_install_writes_plist_and_reloads(svc):
 
 # ---------------------------------------------------------------- CLI shim
 
-def test_install_writes_cli_shim(svc):
+def test_install_never_creates_shim(svc):
+    # §3: creation is the Electron shell's explicit privileged flow —
+    # `service install` only heals. No shim → a manual-invocation note, and
+    # registration itself still succeeds.
+    out = svc.mod.install()
+    assert out.startswith("installed and started")
+    assert "CLI not installed" in out
+    assert f"{sys.executable} -m autowright.cli" in out
+    assert not svc.shim.exists()
+
+
+def test_install_heals_existing_shim(svc):
+    # A moved bundle or dev↔prod switch heals through re-install (§3): our
+    # marker + user-writable → rewritten in place onto this interpreter.
+    svc.shim.parent.mkdir(parents=True)
+    svc.shim.write_text(f"#!/bin/sh\n{svc.mod.SHIM_MARKER}\n"
+                        f'exec "/old/gone/python3" -m autowright.cli "$@"\n')
     out = svc.mod.install()
     assert f"CLI at {svc.shim}" in out
     text = svc.shim.read_text()
-    assert text.startswith("#!/bin/sh\n")
-    assert svc.mod.SHIM_MARKER in text
+    assert text == svc.mod.shim_text()
     assert f'exec "{sys.executable}" -m autowright.cli "$@"' in text
     assert svc.shim.stat().st_mode & 0o111  # executable
 
 
-def test_install_survives_unwritable_shim_dir(svc):
-    # §3: no sudo anywhere — a root-owned /usr/local/bin skips the shim with a
-    # manual-invocation note; registration itself still succeeds.
+def test_install_reports_current_shim(svc):
     svc.shim.parent.mkdir(parents=True)
+    svc.shim.write_text(svc.mod.shim_text())
+    assert f"CLI at {svc.shim}" in svc.mod.install()
+
+
+def test_install_reports_stale_unwritable_shim(svc):
+    # Ours, wrong interpreter, not writable (pre-chown legacy or root-owned):
+    # reported with the module-form fallback, never fatal (§3).
+    svc.shim.parent.mkdir(parents=True)
+    svc.shim.write_text(f"#!/bin/sh\n{svc.mod.SHIM_MARKER}\n"
+                        f'exec "/old/gone/python3" -m autowright.cli "$@"\n')
+    svc.shim.chmod(0o555)
     svc.shim.parent.chmod(0o555)
     try:
         out = svc.mod.install()
     finally:
         svc.shim.parent.chmod(0o755)
+        svc.shim.chmod(0o755)
     assert out.startswith("installed and started")
-    assert "CLI shim not written" in out
+    assert "CLI shim stale, not rewritable" in out
     assert f"{sys.executable} -m autowright.cli" in out
-    assert not svc.shim.exists()
 
 
-def test_install_rewrites_existing_shim(svc):
-    # A moved bundle or dev↔prod switch heals through re-install (§3).
+def test_install_leaves_foreign_shim_alone(svc):
     svc.shim.parent.mkdir(parents=True)
-    svc.shim.write_text(f"#!/bin/sh\n{svc.mod.SHIM_MARKER}\n"
-                        f'exec "/old/gone/python3" -m autowright.cli "$@"\n')
-    svc.mod.install()
-    assert f'"{sys.executable}"' in svc.shim.read_text()
+    svc.shim.write_text("#!/bin/sh\necho someone else's autowright\n")
+    out = svc.mod.install()
+    assert f"foreign {svc.shim} left alone" in out
+    assert "someone else" in svc.shim.read_text()
+
+
+def test_shim_path_env_knob(monkeypatch, home):
+    # AUTOWRIGHT_SHIM (§15) — tests and dev never touch /usr/local/bin.
+    # Uses the real shim_path (the svc fixture replaces it, so no fixture here).
+    from autowright import service
+
+    monkeypatch.setenv("AUTOWRIGHT_SHIM", str(home / "elsewhere" / "aw"))
+    assert service.shim_path() == home / "elsewhere" / "aw"
+    monkeypatch.delenv("AUTOWRIGHT_SHIM")
+    assert str(service.shim_path()) == "/usr/local/bin/autowright"
 
 
 def test_uninstall_removes_own_shim(svc):
-    svc.mod.install()
-    assert svc.shim.exists()
+    svc.shim.parent.mkdir(parents=True)
+    svc.shim.write_text(svc.mod.shim_text())
     svc.mod.uninstall()
     assert not svc.shim.exists()
+
+
+def test_uninstall_reports_undeletable_shim(svc):
+    svc.shim.parent.mkdir(parents=True)
+    svc.shim.write_text(svc.mod.shim_text())
+    svc.shim.parent.chmod(0o555)  # deletion needs a directory write
+    try:
+        out = svc.mod.uninstall()
+    finally:
+        svc.shim.parent.chmod(0o755)
+    assert f"sudo rm {svc.shim}" in out
+    assert svc.shim.exists()
 
 
 def test_uninstall_leaves_foreign_shim_alone(svc):
@@ -128,6 +174,27 @@ def test_uninstall_leaves_foreign_shim_alone(svc):
     svc.shim.write_text("#!/bin/sh\necho someone else's autowright\n")
     svc.mod.uninstall()
     assert svc.shim.exists()
+
+
+# ------------------------------------------- `python -m autowright.service`
+
+def test_main_dispatches_and_prints(svc, capsys):
+    assert svc.mod.main(["install"]) == 0
+    assert "installed and started" in capsys.readouterr().out
+
+
+def test_main_rejects_bad_usage(svc, capsys):
+    assert svc.mod.main([]) == 2
+    assert svc.mod.main(["frobnicate"]) == 2
+    assert "usage:" in capsys.readouterr().err
+
+
+def test_main_exit_code_on_failure(svc, capsys):
+    svc.results["bootstrap"] = SimpleNamespace(returncode=5, stdout="",
+                                               stderr="Bootstrap failed: 5\n")
+    svc.results["load"] = SimpleNamespace(returncode=1, stdout="",
+                                          stderr="Load failed: 5\n")
+    assert svc.mod.main(["install"]) == 1
 
 
 def test_install_falls_back_to_legacy_load(svc):

@@ -1,9 +1,11 @@
 """launchd LaunchAgent management (§3): install/uninstall/status/restart.
 
 Writes a per-user plist to ~/Library/LaunchAgents/ pointing at this interpreter.
-The one registration path: the app's ensure-backend step runs `service install`
-via the bundled interpreter at launch, and headless setups run it by hand —
-install rewrites and adopts an existing registration.
+The one registration path: the app's ensure-backend step runs
+`python -m autowright.service install` at launch (the __main__ dispatch below —
+the app never invokes the CLI), and headless setups run the same functions via
+the §20 `autowright service` wrapper — install rewrites and adopts an existing
+registration.
 """
 from __future__ import annotations
 
@@ -25,33 +27,58 @@ def plist_path() -> Path:
 
 
 def shim_path() -> Path:
-    return Path("/usr/local/bin/autowright")
+    # AUTOWRIGHT_SHIM is the §15 test knob (mirrored in electron/main.cjs).
+    return Path(os.environ.get("AUTOWRIGHT_SHIM", "/usr/local/bin/autowright"))
 
 
-def _write_shim() -> str:
-    """Put the CLI on PATH (§3): exec this interpreter, module form (pip's
-    bin/ entry scripts carry staging-path shebangs). Best-effort and sudo-free
-    — an unwritable /usr/local/bin is reported, never fatal."""
+def shim_text() -> str:
+    """Shim contents for this interpreter, module form (pip's bin/ entry
+    scripts carry staging-path shebangs)."""
+    return (f'#!/bin/sh\n{SHIM_MARKER}\n'
+            f'exec "{sys.executable}" -m autowright.cli "$@"\n')
+
+
+def _heal_shim() -> str:
+    """§3: healing only, never creation. Creating /usr/local/bin/autowright
+    needs privilege and belongs to the Electron shell's explicit cli-install
+    flow (which chowns the file to the user). Here: when our shim exists,
+    is user-writable, and points at another interpreter (moved bundle,
+    dev↔prod switch, update), rewrite it in place — sudo-free, since a
+    user-owned file rewrites without a directory write."""
     p = shim_path()
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(f'#!/bin/sh\n{SHIM_MARKER}\n'
-                     f'exec "{sys.executable}" -m autowright.cli "$@"\n')
+        current = p.read_text()
+    except OSError:
+        return f"CLI not installed — use `{sys.executable} -m autowright.cli`"
+    if SHIM_MARKER not in current:
+        return f"foreign {p} left alone"
+    wanted = shim_text()
+    if current == wanted:
+        return f"CLI at {p}"
+    try:
+        p.write_text(wanted)
         p.chmod(0o755)
         return f"CLI at {p}"
     except OSError as e:
-        return (f"CLI shim not written ({e}) — "
+        return (f"CLI shim stale, not rewritable ({e}) — "
                 f"use `{sys.executable} -m autowright.cli`")
 
 
-def _remove_shim() -> None:
-    """Delete the shim only when the marker says it's ours (§3)."""
+def _remove_shim() -> str | None:
+    """Delete the shim only when the marker says it's ours (§3). Deleting
+    from a root-owned /usr/local/bin fails sudo-free — then report the
+    manual command instead."""
     p = shim_path()
     try:
-        if SHIM_MARKER in p.read_text():
-            p.unlink()
+        if SHIM_MARKER not in p.read_text():
+            return None
     except (OSError, UnicodeDecodeError):
-        pass
+        return None
+    try:
+        p.unlink()
+        return None
+    except OSError:
+        return f"CLI shim left at {p} — remove with `sudo rm {p}`"
 
 
 def _registered() -> bool:
@@ -113,17 +140,19 @@ def install() -> str:
     _unload(p)
     if err := _load(p):
         return f"install failed: {err}"
-    return f"installed and started ({p}) · {_write_shim()}"
+    return f"installed and started ({p}) · {_heal_shim()}"
 
 
 def uninstall() -> str:
     p = plist_path()
     _unload(p)
-    _remove_shim()
+    shim_note = _remove_shim()
     if p.exists():
         p.unlink()
-        return "service unloaded and removed"
-    return "service was not installed"
+        out = "service unloaded and removed"
+    else:
+        out = "service was not installed"
+    return f"{out} · {shim_note}" if shim_note else out
 
 
 def status() -> str:
@@ -154,3 +183,25 @@ def restart() -> str:
     _unload(p)
     err = _load(p)
     return "restarted" if err is None else f"restart failed: {err}"
+
+
+ACTIONS = {"install": install, "uninstall": uninstall,
+           "status": status, "restart": restart}
+
+
+def main(argv: list[str]) -> int:
+    """`python -m autowright.service <action>` — the §3 registration entry the
+    app's ensure-backend step execs (the UI never invokes the CLI). The §20
+    `autowright service` group wraps the same ACTIONS."""
+    if len(argv) != 1 or argv[0] not in ACTIONS:
+        print(f"usage: python -m autowright.service {{{'|'.join(ACTIONS)}}}",
+              file=sys.stderr)
+        return 2
+    out = ACTIONS[argv[0]]()
+    print(out)
+    head = out.split("·")[0]  # shim notes after "·" are informational
+    return 1 if ("failed" in head or head.startswith("not installed")) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

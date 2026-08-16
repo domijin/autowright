@@ -1404,8 +1404,10 @@ def test_cmd_settings_set_data_path_and_errors(capsys):
 
 
 def test_cmd_service_dispatches_to_service_module(monkeypatch, capsys):
-    from autowright import cli
+    from autowright import service
 
-    monkeypatch.setattr(cli.service, "status", lambda: "running (pid 42)")
+    # The CLI group is a thin wrapper over service.ACTIONS (§3 — the same
+    # table `python -m autowright.service` dispatches through).
+    monkeypatch.setitem(service.ACTIONS, "status", lambda: "running (pid 42)")
     _run(None, "service", "status")
     assert "running (pid 42)" in capsys.readouterr().out

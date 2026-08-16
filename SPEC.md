@@ -85,7 +85,8 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   drafting, harness adapters,
   transfer archives (`transfer.py`, §5.1 + §5.2 URL fetch/resolution), FastAPI API (`api.py`),
   launchd service
-  (`service.py`), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
+  (`service.py`, runnable as `python -m autowright.service` — the §3 registration entry the
+  app uses; the UI and backend never invoke the CLI), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
   Further modules: `main.py` (backend entry point, `python -m autowright.main` — bind localhost,
   write `backend.json` per the §3 bind-before-publish handshake, start the scheduler, serve the
   API), `installer.py` (§19 real harness installers + sign-in help), `packages.py` (§6.2

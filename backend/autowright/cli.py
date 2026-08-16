@@ -1026,8 +1026,9 @@ def cmd_settings_set(c: Client, args) -> None:
 # ---------------------------------------------------------------- service
 
 def cmd_service(_c, args) -> None:
-    print({"install": service.install, "uninstall": service.uninstall,
-           "status": service.status, "restart": service.restart}[args.action]())
+    # Thin wrapper over the §3 registration entry (`python -m autowright.service`)
+    # — same ACTIONS, one registration path.
+    print(service.ACTIONS[args.action]())
 
 
 # ---------------------------------------------------------------- parser

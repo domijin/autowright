@@ -57,8 +57,9 @@ function appLog(line) {
 }
 
 // §3 ensure-backend: the app owns backend registration. Probe the backend; if
-// unreachable, (re)register the LaunchAgent by running the bundled CLI's
-// `service install` — the same single code path headless setups run by hand.
+// unreachable, (re)register the LaunchAgent by running the bundled service
+// module (`python -m autowright.service install`) — the same single code path
+// headless setups run by hand. The app never invokes the CLI (§3).
 // A healthy backend is never touched, so an app launch never interrupts
 // running executions; a broken registration (fresh install, app bundle moved,
 // plist pointing at a deleted interpreter) self-heals here. Dev launches
@@ -163,7 +164,7 @@ async function syncBackendVersion(py, running) {
     }
     await new Promise((r) => setTimeout(r, 30_000))
   }
-  execFile(py, ['-m', 'autowright.cli', 'service', 'install'], (err, stdout, stderr) => {
+  execFile(py, ['-m', 'autowright.service', 'install'], (err, stdout, stderr) => {
     if (err) {
       appLog(`ensure-backend: version-sync install failed: ${String(stderr || err.message).trim()}`)
       return
@@ -183,7 +184,7 @@ async function ensureBackend() {
     return
   }
   ensureStatus = { state: 'installing', detail: '' }
-  execFile(py, ['-m', 'autowright.cli', 'service', 'install'], (err, stdout, stderr) => {
+  execFile(py, ['-m', 'autowright.service', 'install'], (err, stdout, stderr) => {
     if (err) {
       const detail = String(stderr || err.message).trim()
       ensureStatus = { state: 'failed', detail: `Backend install failed: ${detail}` }
@@ -452,8 +453,75 @@ function togglePanel() {
   panel.show()
 }
 
+// §3 CLI on PATH: the shell owns shim *creation* (explicit + privileged, the
+// only admin prompt in the app); `service install` only heals a user-owned
+// shim. Interpreter comes from backend.json's `python`, so dev and prod run
+// the same code. AUTOWRIGHT_SHIM is the §15 test knob (mirrored in service.py).
+const SHIM_MARKER = '# autowright CLI shim'
+
+function shimPath() {
+  return process.env.AUTOWRIGHT_SHIM || '/usr/local/bin/autowright'
+}
+
+function shimText(python) {
+  return `#!/bin/sh\n${SHIM_MARKER}\nexec "${python}" -m autowright.cli "$@"\n`
+}
+
+function cliStatus() {
+  const python = backendInfo()?.python
+  let current
+  try {
+    current = fs.readFileSync(shimPath(), 'utf-8')
+  } catch {
+    return { state: 'missing' }
+  }
+  if (!current.includes(SHIM_MARKER)) return { state: 'foreign' }
+  if (!python || current === shimText(python)) return { state: 'installed' }
+  // Ours but pointing elsewhere: heal in place when user-owned (§3 — a file
+  // rewrite needs no directory write); only an unwritable shim is 'stale'.
+  try {
+    fs.writeFileSync(shimPath(), shimText(python), { mode: 0o755 })
+    return { state: 'installed' }
+  } catch {
+    return { state: 'stale' }
+  }
+}
+
+function cliInstall() {
+  return new Promise((resolve) => {
+    const python = backendInfo()?.python
+    if (!python) return resolve({ ok: false, error: 'The backend is not running yet — try again in a moment.' })
+    const tmp = path.join(os.tmpdir(), `autowright-shim-${process.pid}`)
+    try {
+      fs.writeFileSync(tmp, shimText(python))
+    } catch (e) {
+      return resolve({ ok: false, error: String(e?.message || e) })
+    }
+    // chown to the user: admin is needed at most once — a user-owned file in
+    // the root-owned dir rewrites sudo-free ever after (§3 heal).
+    const dir = path.dirname(shimPath())
+    const sh = `mkdir -p '${dir}' && cp '${tmp}' '${shimPath()}' && `
+      + `chmod 755 '${shimPath()}' && chown ${process.getuid()} '${shimPath()}'`
+    const script = `do shell script "${sh.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" with administrator privileges`
+    execFile('osascript', ['-e', script], (err, _stdout, stderr) => {
+      try { fs.unlinkSync(tmp) } catch { /* best-effort cleanup */ }
+      if (err) {
+        const msg = String(stderr || err.message).trim()
+        appLog(`cli-install: ${msg}`)
+        // -128 is AppleScript's user-canceled — a normal state, not an error
+        resolve({ ok: false, canceled: msg.includes('-128'), error: msg })
+        return
+      }
+      appLog(`cli-install: CLI installed at ${shimPath()}`)
+      resolve({ ok: true })
+    })
+  })
+}
+
 ipcMain.handle('backend-info', () => backendInfo())
 ipcMain.handle('backend-status', () => ensureStatus)
+ipcMain.handle('cli-status', () => cliStatus())
+ipcMain.handle('cli-install', () => cliInstall())
 ipcMain.handle('open-app', (_e, hash) => { showApp(hash); if (panel) panel.hide() })
 ipcMain.handle('resize-panel', (_e, h) => {
   if (panel) panel.setSize(334, Math.min(Math.max(Math.round(h), 120), 640))

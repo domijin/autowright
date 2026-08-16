@@ -21,7 +21,7 @@ describe('autowright e2e', () => {
     const { page } = handle
 
     // Step 1: welcome + live self-check.
-    await page.getByText('Step 1 of 2').waitFor({ timeout: 20_000 })
+    await page.getByText('Step 1 of 3').waitFor({ timeout: 20_000 })
     await page.getByText('Recurring jobs, done exactly the same way every time.').waitFor()
     await page.getByText('Getting Autowright ready').waitFor()
     // Self-check finishes (~4 s of staged timers + real connected gate).
@@ -31,7 +31,7 @@ describe('autowright e2e', () => {
 
     // Advance to step 2: real agent detection.
     await toConnect.click()
-    await page.getByText('Step 2 of 2').waitFor({ timeout: 10_000 })
+    await page.getByText('Step 2 of 3').waitFor({ timeout: 10_000 })
     await page.getByRole('heading', { name: 'Connect your AI' }).waitFor()
     // Detection spinner holds ≥1.9 s, then cards land.
     await page.getByText('FOUND ON THIS MAC').waitFor({ timeout: 20_000 })
@@ -47,7 +47,21 @@ describe('autowright e2e', () => {
       .waitFor({ timeout: 20_000 })
     await shot(page, 'onboarding-step2.png')
 
-    // Never proceed further: suggestion-card "Set up …" buttons run real installs.
+    // Pick the fake Claude Code as default → step 3 (the `autowright`
+    // command; AUTOWRIGHT_SHIM points into the tmp home, so its state is
+    // deterministically 'missing'). Skip lands in the app shell — the
+    // Install button would raise a real macOS admin prompt, never in e2e.
+    // (Suggestion-card "Set up …" buttons also stay untouched: real installs.)
+    await page
+      .getByText('Claude Code', { exact: true }).locator('..').locator('..')
+      .getByRole('button', { name: 'Use as default →' })
+      .click()
+    await page.getByText('Step 3 of 3').waitFor({ timeout: 20_000 })
+    await page.getByRole('heading', { name: 'Use Autowright from the Terminal' }).waitFor()
+    await shot(page, 'onboarding-step3.png')
+    await page.getByRole('button', { name: 'Skip for now' }).click()
+    // App shell: the empty automations list invites the first automation.
+    await page.getByText('Automations', { exact: true }).first().waitFor({ timeout: 20_000 })
   }, 120_000)
 
   it('seeded home skips onboarding and executes an automation from the UI', async () => {

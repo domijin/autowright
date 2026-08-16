@@ -713,12 +713,13 @@ body is clamped to 6 KB before encoding. The repo URL is one shared constant wit
 sends nothing anywhere: opening the browser is the only outbound action, and the user reviews
 the prefilled issue on GitHub before submitting.
 
-## 10. Onboarding (2 steps, step label top-right in mono)
+## 10. Onboarding (3 steps, step label top-right in mono)
 
 Onboarding shows whenever `ad-onboarded` (§15) is unset — existing agents or automations do NOT
 bypass it: step 1 always renders. When prior data exists (any agent or any automation), step 1's
-Continue goes straight to the app shell instead of step 2. The step label ("Step 1 of 2" /
-"Step 2 of 2") renders only when no prior data exists — with prior data step 1 is the only
+Continue goes straight to the app shell instead of steps 2–3 (those users reach the CLI install
+from the §4.9 COMMAND LINE card). The step label ("Step 1 of 3" / "Step 2 of 3" / "Step 3 of 3")
+renders only when no prior data exists — with prior data step 1 is the only
 screen, so no counter shows.
 
 **Step 1 — Welcome.** Logo, headline "Recurring jobs, done exactly the same way every time.",
@@ -824,9 +825,8 @@ real sign-in checks; no simulation in any mode:
   at any piece shows red "Install failed — `<first error line>`" with "Try again", which
   resumes at the still-missing pieces.
 
-Clicking a card's Use-as-default button is what picks the provider and completes onboarding — it lands in
-the app shell, where the empty Automations list (§9.1) invites the first automation; there is
-no third step. The picked provider becomes the default agent, all
+Clicking a card's Use-as-default button is what picks the provider — it commits the agents and
+advances to step 3. The picked provider becomes the default agent, all
 connected/ready cards are committed as agent records — a harness card as
 `{ name: null, harness, mode: default, model: null }`, the Free local AI card as
 `{ name: null, harness: OpenCode, mode: ollama, model: <the card's model> }` — the found
@@ -837,13 +837,30 @@ automations get the chosen default agent. While committing, all Use-as-default b
 and the pressed one swaps its label for a `LoadingRow`-style spinner + "Setting up…" (§9
 busy-commit convention), and "Skip for now" disables with them (it fires the same commit —
 an enabled skip would double-fire it). Otherwise "Skip for now" is always
-available (commits any connected providers, goes to the app). Persistent footer: the two
+available (commits any connected providers, advances to step 3). Persistent footer: the two
 green-dot promises (§1).
 
+**Step 3 — The `autowright` command.** Headline "Use Autowright from the Terminal", body copy
+explaining exactly what will happen before any system dialog (the transparency the CLI-install
+prompts of other apps get criticized for): "Installs the `autowright` command at
+`/usr/local/bin/autowright` so you and your AI agents can manage automations from the
+Terminal. macOS will ask for your password once." Two actions: primary "Install the command"
+→ preload `cli-install` (§3 — one `osascript` admin prompt: create dir, write shim, chown to
+the user so it heals sudo-free forever after) → on success the button area swaps to a green-dot
+confirmation "Installed — try `autowright --help` in a new Terminal window" with a single
+"Open Autowright →" button that lands in the app shell; secondary "Skip for now" lands in the
+shell directly. A declined password prompt (or any write failure) returns to idle with an
+amber note "Not installed — you can do this anytime from Settings." and both buttons still
+live — declining is a normal state, never an error, and never blocks finishing onboarding.
+If `cli-status` already reports `installed` when the step would show (reinstall over a
+machine that has the shim), the step is skipped entirely and step 2 lands in the shell.
+Persistent footer: the two green-dot promises (§1).
+
 Installs and model downloads run in the backend, so an in-flight model download keeps going
-after onboarding hands off to the app — it "finishes in the background" as promised. Installs
-never need admin rights (§19 channels are all user-writable), so there is no sudo or
-permission-declined state anywhere in the flow.
+after onboarding hands off to the app — it "finishes in the background" as promised. Agent
+installs never need admin rights (§19 channels are all user-writable) — the **only** admin
+prompt in onboarding is step 3's explicit, skippable CLI install, and it appears only after
+the step has explained it.
 
 
 ## 12. Agents & Secrets pages

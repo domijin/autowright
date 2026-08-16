@@ -1,9 +1,9 @@
 // Settings page (§4.9, §12): general toggles, notifications, execution
-// history retention, and the on-this-Mac data section.
+// history retention, the on-this-Mac data section, and the §3 CLI card.
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import { Eyebrow, LoadingRow, PageTitle, RadioRing, Toggle } from '../ui'
+import { Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }
@@ -17,13 +17,36 @@ const pathBox: React.CSSProperties = {
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 
+type CliState = 'installed' | 'stale' | 'missing' | 'foreign'
+
 export default function SettingsPage() {
   const { settings, showToast } = useStore()
   const [days, setDays] = useState('')
+  // §4.9 COMMAND LINE card: the shim file on disk is the source of truth —
+  // re-read on every Settings visit (this mount).
+  const [cli, setCli] = useState<CliState | null>(null)
+  const [cliBusy, setCliBusy] = useState(false)
 
   useEffect(() => {
     if (settings) setDays(String(settings.days))
   }, [settings?.days])
+
+  useEffect(() => {
+    void window.autowright?.cliStatus().then((s) => setCli(s.state)).catch(() => {})
+  }, [])
+
+  // §4.9: the macOS admin prompt (§3 cli-install); a declined prompt just
+  // returns to the previous state — never an error banner.
+  const cliInstall = () => {
+    if (cliBusy) return
+    setCliBusy(true)
+    void (async () => {
+      await window.autowright?.cliInstall().catch(() => null)
+      const s = await window.autowright?.cliStatus().catch(() => null)
+      if (s) setCli(s.state)
+      setCliBusy(false)
+    })()
+  }
 
   // §9: settings arrive over the first store fetch — show the shared busy row,
   // not a blank pane, while they load.
@@ -207,6 +230,37 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {cli !== null && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <Eyebrow style={{ paddingLeft: 2 }}>COMMAND LINE</Eyebrow>
+          <div className="ad-card" style={card}>
+            <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={rowTitle}>The <code>autowright</code> command</div>
+                <div style={{
+                  ...rowSub,
+                  ...(cli === 'stale' ? { color: 'var(--amber)' } : {}),
+                }}>
+                  {cli === 'installed' && 'Installed at /usr/local/bin/autowright'}
+                  {cli === 'missing' && 'Not installed — manage automations from the Terminal. macOS will ask for your password.'}
+                  {cli === 'stale' && 'Points at an old location — reinstall to fix. macOS will ask for your password.'}
+                  {cli === 'foreign' && 'A different autowright is already at /usr/local/bin — Autowright won’t touch it.'}
+                </div>
+              </div>
+              {(cli === 'missing' || cli === 'stale') && (
+                <button className="ad-btn-soft" onClick={cliInstall} disabled={cliBusy} style={{ flex: 'none' }}>
+                  {cliBusy ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                      <Spinner size={12} /> Installing…
+                    </span>
+                  ) : cli === 'stale' ? 'Reinstall…' : 'Install…'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
         <Eyebrow style={{ paddingLeft: 2 }}>DEVELOPER</Eyebrow>

@@ -207,7 +207,13 @@ export async function launchApp(home: string, onboarded: boolean): Promise<AppHa
     ],
     cwd: APP_DIR,
     executablePath: require('electron') as unknown as string,
-    env: { ...process.env, AUTOWRIGHT_HOME: home } as Record<string, string>,
+    env: {
+      ...process.env,
+      AUTOWRIGHT_HOME: home,
+      // §15: cli-status must read a tmp path, not the machine's real
+      // /usr/local/bin — keeps onboarding step 3 deterministic.
+      AUTOWRIGHT_SHIM: `${home}/bin/autowright`,
+    } as Record<string, string>,
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')

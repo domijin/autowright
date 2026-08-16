@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import socket
+import sys
 import threading
 
 import uvicorn
@@ -91,9 +92,11 @@ def main() -> None:
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", int(os.environ.get("AUTOWRIGHT_PORT", 0))))
     port = sock.getsockname()[1]
-    # §3 discovery: port + auth token, 0600.
+    # §3 discovery: port + auth token, 0600. `python` feeds the shell's
+    # CLI-on-PATH shim (§3) so it execs the interpreter that runs the backend.
     discovery = json.dumps({
         "port": port, "token": api.AUTH_TOKEN, "version": __version__, "pid": os.getpid(),
+        "python": sys.executable,
     })
     atomic_write_text(paths.backend_json(), discovery, mode=0o600)
     # §3 discovery guard: backend.json is written once at boot — if something

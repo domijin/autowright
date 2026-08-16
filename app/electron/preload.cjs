@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('autowright', {
   backendInfo: () => ipcRenderer.invoke('backend-info'),
   // §3 ensure-backend outcome for the §9 boot splash
   backendStatus: () => ipcRenderer.invoke('backend-status'),
+  // §3 CLI on PATH: shim state + explicit privileged install (§10 step 3,
+  // §4.9 COMMAND LINE card)
+  cliStatus: () => ipcRenderer.invoke('cli-status'),
+  cliInstall: () => ipcRenderer.invoke('cli-install'),
   openApp: (hash) => ipcRenderer.invoke('open-app', hash),
   pickFolder: (defaultPath) => ipcRenderer.invoke('pick-folder', defaultPath),
   resizePanel: (h) => ipcRenderer.invoke('resize-panel', h),

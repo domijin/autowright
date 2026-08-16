@@ -30,6 +30,14 @@ description: Build, launch, and drive Autowright (Electron + Python backend) to 
 
 ## Gotchas
 
+- **Driving Electron registers the REAL launchd service** even with an isolated
+  `AUTOWRIGHT_HOME`: main.cjs registers `com.autowright.backend` on every launch, and the
+  service runs against the real `~/Library/Application Support/Autowright`. After a verify
+  session, check `launchctl list | grep autowright` and restore the pre-session state
+  (`launchctl bootout gui/501/com.autowright.backend` + remove the plist if it didn't exist
+  before). The real service can also touch real shims (heal/remove per the real `cliEnabled`),
+  which can yank `~/.local/bin/autowright` out from under a verify run.
+
 - **Onboarding only shows when the backend has zero automations AND `ad-onboarded` is absent
   from localStorage** (`store.ts` boot). Non-empty home → straight to app. Use an empty home on
   a second port.

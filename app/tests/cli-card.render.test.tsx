@@ -45,21 +45,28 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('COMMAND LINE card (§4.9)', () => {
-  it('on + installed: path shown, toggle on, no buttons, no PATH hint when on PATH', async () => {
+  it('on + installed: path shown, toggle on, no Install/Delete buttons', async () => {
     setup(true)
     cliStatus.mockResolvedValue({ state: 'installed', path: USER, onPath: true })
     render(<SettingsPage />)
     await screen.findByText('COMMAND LINE')
     await screen.findByText(`Installed at ${USER}`)
-    expect(screen.queryByText(/Add ~\/\.local\/bin to your PATH/)).toBeNull()
     expect(screen.queryByRole('button', { name: /Install|Delete/ })).toBeNull()
   })
 
-  it('on + installed but off the login PATH: appends the export hint', async () => {
+  it('on + installed: PATH row with the copyable command block, regardless of onPath', async () => {
     setup(true)
-    cliStatus.mockResolvedValue({ state: 'installed', path: USER, onPath: false })
+    cliStatus.mockResolvedValue({ state: 'installed', path: USER, onPath: true })
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     render(<SettingsPage />)
-    await screen.findByText(/Installed at .*Add ~\/\.local\/bin to your PATH to use it: export PATH/)
+    // §4.9 PATH row: own title + description below the toggle row.
+    await screen.findByText('Add it to your PATH')
+    await screen.findByText(/If your Terminal can’t find autowright, add ~\/\.local\/bin to your PATH:/)
+    await screen.findByText('echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.zprofile && source ~/.zprofile')
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.zprofile && source ~/.zprofile'))
+    await waitFor(() => expect(useStore.getState().toast).toContain('Copied'))
   })
 
   it('off + missing: turning the toggle on patches cliEnabled and installs silently', async () => {
@@ -68,7 +75,9 @@ describe('COMMAND LINE card (§4.9)', () => {
     cliInstall.mockResolvedValue({ ok: true })
     cliStatus.mockResolvedValueOnce({ state: 'installed', path: USER, onPath: true })
     render(<SettingsPage />)
-    await screen.findByText(/Turning this on installs to ~\/\.local\/bin — no password needed/)
+    await screen.findByText(/Turning this on installs to ~\/\.local\/bin — no password needed\./)
+    // No PATH row while off — it belongs to on+installed only.
+    expect(screen.queryByText('Add it to your PATH')).toBeNull()
     const card = (await screen.findByText('COMMAND LINE')).parentElement as HTMLElement
     fireEvent.click(card.querySelector('[role="switch"]') as Element)
     await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ cliEnabled: true }))
@@ -125,12 +134,12 @@ describe('COMMAND LINE card (§4.9)', () => {
     cliStatus.mockResolvedValueOnce({ state: 'installed', path: USER, onPath: true })
     render(<SettingsPage />)
     // §4.9 missing-warning row: own title + description, Reinstall action.
-    await screen.findByText('The command is missing')
+    await screen.findByText(/CLI is missing/)
     await screen.findByText(/autowright wasn’t found in ~\/\.local\/bin — it may have been deleted or moved\. Reinstall it to keep using it from the Terminal\./)
     fireEvent.click(await screen.findByRole('button', { name: 'Reinstall' }))
     await waitFor(() => expect(cliInstall).toHaveBeenCalledTimes(1))
     await screen.findByText(`Installed at ${USER}`)
-    expect(screen.queryByText('The command is missing')).toBeNull()
+    expect(screen.queryByText(/CLI is missing/)).toBeNull()
   })
 
   it('on + stale legacy: amber row-1 copy plus the warning row with Reinstall', async () => {
@@ -138,7 +147,7 @@ describe('COMMAND LINE card (§4.9)', () => {
     cliStatus.mockResolvedValue({ state: 'stale', path: LEGACY, onPath: true })
     render(<SettingsPage />)
     await screen.findByText(/An old autowright command at \/usr\/local\/bin points at an old location\./)
-    await screen.findByText('The command is missing')
+    await screen.findByText(/CLI is missing/)
     await screen.findByRole('button', { name: 'Reinstall' })
   })
 

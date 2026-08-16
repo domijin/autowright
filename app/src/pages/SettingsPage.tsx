@@ -19,6 +19,10 @@ const pathBox: React.CSSProperties = {
 
 type Cli = { state: 'installed' | 'stale' | 'missing' | 'foreign'; path: string; onPath: boolean }
 
+// §4.9 PATH command block: the exact line the Copy button puts on the clipboard.
+// Appends to ~/.zprofile (the login-shell init macOS Terminal reads) so it persists.
+const PATH_CMD = 'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.zprofile && source ~/.zprofile'
+
 export default function SettingsPage() {
   const { settings, showToast } = useStore()
   const [days, setDays] = useState('')
@@ -280,17 +284,20 @@ export default function SettingsPage() {
           <div className="ad-card" style={card}>
             {(() => {
               // §4.9: at most one second row — Delete (toggle off, ours-marker
-              // shim still on disk) or the missing warning (toggle on, no
-              // working user-local install).
+              // shim still on disk), the missing warning (toggle on, no
+              // working user-local install), or the PATH row (toggle on,
+              // installed).
               const deleteRow = cli.state !== 'foreign' && !settings.cliEnabled
                 && (cli.state === 'installed' || cli.state === 'stale')
               const warnRow = cli.state !== 'foreign' && settings.cliEnabled
                 && (cli.state === 'missing' || cli.state === 'stale')
+              // §4.9 PATH row: on + installed, regardless of onPath.
+              const pathRow = cli.state === 'installed' && settings.cliEnabled
               return (
                 <>
                   <div style={{
                     padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-                    ...(deleteRow || warnRow ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
+                    ...(deleteRow || warnRow || pathRow ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
                   }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={rowTitle}>The <code>autowright</code> command</div>
@@ -299,9 +306,7 @@ export default function SettingsPage() {
                         ...(cli.state === 'stale' ? { color: 'var(--amber)' } : {}),
                       }}>
                         {cli.state === 'installed' && (settings.cliEnabled
-                          ? (cli.onPath
-                            ? `Installed at ${cli.path}`
-                            : `Installed at ${cli.path}. Add ~/.local/bin to your PATH to use it: export PATH="$HOME/.local/bin:$PATH"`)
+                          ? `Installed at ${cli.path}`
                           : `Still installed at ${cli.path} — turn on to keep it up to date.`)}
                         {cli.state === 'missing' && (settings.cliEnabled
                           ? 'Not installed — manage automations from the Terminal.'
@@ -314,6 +319,26 @@ export default function SettingsPage() {
                       <Toggle on={settings.cliEnabled} onChange={setCliEnabled} />
                     )}
                   </div>
+                  {pathRow && (
+                    <div style={{ padding: '15px 20px' }}>
+                      <div style={rowTitle}>Add it to your PATH</div>
+                      <div style={rowSub}>If your Terminal can’t find autowright, add ~/.local/bin to your PATH:</div>
+                      <div style={{ ...pathBox, padding: '5px 6px 5px 11px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{PATH_CMD}</span>
+                        <button
+                          className="ad-btn-soft"
+                          style={{ flex: 'none' }}
+                          onClick={() => {
+                            void navigator.clipboard.writeText(PATH_CMD)
+                              .then(() => showToast('Copied to clipboard.'))
+                              .catch(() => {})
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {deleteRow && (
                     <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -334,7 +359,7 @@ export default function SettingsPage() {
                   {warnRow && (
                     <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ ...rowTitle, color: 'var(--amber)' }}>The command is missing</div>
+                        <div style={{ ...rowTitle, color: 'var(--amber)' }}>The <code>autowright</code> CLI is missing</div>
                         <div style={rowSub}>
                           autowright wasn’t found in ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the Terminal.
                         </div>

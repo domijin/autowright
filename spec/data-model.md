@@ -790,9 +790,8 @@ installed; the setting only records the user's choice). Turning the toggle **on*
 failed install patches the setting back to false — the toggle just returns, never an error
 banner. Turning it **off** patches false and touches no files — removal is the explicit
 Delete button below, never a side effect of the flip. Detail line + extra action by
-setting × disk state: on+`installed` → "Installed at `<path>`" (when `onPath` is false it
-appends the PATH hint: "Add ~/.local/bin to your PATH to use it: `export
-PATH="$HOME/.local/bin:$PATH"`"); on+`missing` (the user deleted the file by hand) → "Not
+setting × disk state: on+`installed` → "Installed at `<path>`" (`onPath` no longer affects
+the card — the PATH help lives in the PATH row below, shown for every on+`installed`); on+`missing` (the user deleted the file by hand) → "Not
 installed — manage automations from the Terminal."; on+`stale` (legacy `/usr/local/bin`
 only, §3) → amber "An old `autowright` command at /usr/local/bin points at an old
 location."; off+`installed` → "Still installed at `<path>` — turn on to keep it up to
@@ -809,11 +808,20 @@ standard hairline divider — exactly one of:
   can't be deleted (root-owned legacy dir) the returned manual command is shown as a toast
   and the row stays.
 - **Missing-warning row** — toggle on but no working user-local install (on+`missing` /
-  on+`stale`): amber title "The command is missing", description "autowright wasn't found in
+  on+`stale`): amber title "The `autowright` CLI is missing", description "autowright wasn't found in
   ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the
   Terminal.", with a "Reinstall" button firing §3 `cli-install` (silent, ~/.local/bin — the
   app never re-creates on its own; the row is the explicit ask). The row-1 Install button is
   gone — reinstall lives only here.
+- **PATH row** — toggle on and the shim installed (on+`installed`, regardless of `onPath`):
+  title "Add it to your PATH", description "If your Terminal can't find autowright, add
+  ~/.local/bin to your PATH:", followed by the **PATH command block** — a `pathBox`-style
+  mono block holding the exact command
+  `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile && source ~/.zprofile`
+  (appends to `~/.zprofile` so the change persists — the login-shell init macOS Terminal
+  reads, matching the §3 login-PATH probe) with a "Copy" button that writes the command to
+  the clipboard and toasts "Copied to clipboard." The command wraps instead of truncating —
+  it must stay fully readable at any card width.
 Delete/Reinstall show the §9 busy-commit spinner while running, then the card re-reads
 `cli-status`. A **DEVELOPER**
 card sits last on the page with

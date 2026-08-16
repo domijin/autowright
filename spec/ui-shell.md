@@ -16,7 +16,9 @@ a window drag; synthetic/Playwright clicks bypass drag regions entirely and won'
 mistake.
 
 The sidebar is a **hover-expanding floating rail** anchored to the left window edge: a panel
-(`position: fixed`, `left: 0, top: 46, bottom: 12`, z 90) with square left corners and a 12 px
+(`position: fixed`, `left: 0, top: 46, bottom: 12`, z 50 — above all page content but below
+every modal backdrop (z 60+), so an open modal dims and blocks the rail like the rest of the
+shell) with square left corners and a 12 px
 radius on the right corners (`0 12px 12px 0`), `--bg-sidebar` background and a hairline border.
 Its top edge (46 px) sits **below** the traffic lights — the lights are pinned at
 `trafficLightPosition: { x: 14, y: 14 }` (`titleBarStyle: 'hidden'`, one fixed position in

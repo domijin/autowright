@@ -58,7 +58,9 @@ function Sidebar() {
       className="ad-rail"
       data-testid="nav-rail"
       style={{
-        position: 'fixed', left: 0, top: 46, bottom: 12, zIndex: 90,
+        // z 50: above page content, below every modal backdrop (z 60+) so an
+        // open modal dims and blocks the rail too (§9).
+        position: 'fixed', left: 0, top: 46, bottom: 12, zIndex: 50,
         display: 'flex', flexDirection: 'column',
       }}
     >

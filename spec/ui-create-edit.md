@@ -871,8 +871,8 @@ editors enter with
   saving." right after the job's outcome entries. It appends only when the settling job
   introduced the gap (the pre-job draft didn't qualify — a fresh draft's first build always counts),
   so repeated syncs over an unchanged gap never repeat the reminder.
-- **PARAMETERS · YOUR AI ASKED FOR THESE** card — display-only in **both** create and edit
-  mode, with a "READ-ONLY HERE" tag whenever the draft has params: each row shows the draft
+- **PARAMETERS** card — display-only in **both** create and edit
+  mode (no read-only tag, the plain title carries it): each row shows the draft
   parameter's name, description, and a read-only **value summary** (the §4.2 one-line summary,
   right-aligned, ellipsized) — never inline editors. The summary's source: in create mode the
   drafted definition's default (the initial values v1 seeds — e.g. a URL the AI captured from
@@ -895,7 +895,9 @@ editors enter with
 - **CONCURRENCY** card — display-only in both modes, directly below the Parameters card: the
   §4.1 settings as two summary rows in the §9.2 card's language — **"Max parallel executions"**
   (`maxParallel`) and **"Max queued executions"** (`maxQueued`), each with the value
-  right-aligned like the Parameters card's value summaries. The value's source: in edit
+  right-aligned like the Parameters card's value summaries and the §9.2 caption below the
+  label (same help text as the detail page's rows, same secondary style as the Parameters
+  card's per-row descriptions). The value's source: in edit
   mode the automation's stored settings, in create mode the defaults (1 / 0) — and in
   both modes a chat-staged value (§8 `concurrency` action) overrides its row, with the
   same small "staged" hint the Parameters card uses, so an unsaved value is never

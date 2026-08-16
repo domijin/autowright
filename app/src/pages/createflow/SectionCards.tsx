@@ -756,11 +756,8 @@ export function RightCards({
       {/* PARAMETERS — display-only (§16): value input lives on the automation page,
           test-only values in the Test card */}
       <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
-          <Eyebrow>PARAMETERS · YOUR AI ASKED FOR THESE</Eyebrow>
-          {!drafting && rev.params.length > 0 && (
-            <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-muted)' }}>READ-ONLY HERE</span>
-          )}
+        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
+          <Eyebrow>PARAMETERS</Eyebrow>
         </div>
         {drafting || isCreateEmpty ? (
           <div style={{ padding: '14px 20px 16px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>Parameters appear here once the build finishes.</div>
@@ -809,19 +806,24 @@ export function RightCards({
           <Eyebrow>CONCURRENCY</Eyebrow>
         </div>
         {([
-          { label: 'Max parallel executions', key: 'maxParallel' as const, fallback: 1 },
-          { label: 'Max queued executions', key: 'maxQueued' as const, fallback: 0 },
-        ]).map(({ label, key, fallback }) => {
+          { label: 'Max parallel executions', key: 'maxParallel' as const, fallback: 1,
+            help: 'How many executions of this automation may run at the same time.' },
+          { label: 'Max queued executions', key: 'maxQueued' as const, fallback: 0,
+            help: 'How many executions wait for a free slot. Incoming messages beyond this are answered with a busy notice instead.' },
+        ]).map(({ label, key, fallback, help }) => {
           const staged = rev.concurrency?.[key]
           return (
-            <div key={key} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '11px 20px', borderBottom: key === 'maxQueued' ? 'none' : '1px solid var(--hairline-dim)' }}>
-              <div style={{ font: "600 12.5px var(--sans)" }}>{label}</div>
-              <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
-                {staged != null && (
-                  <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--accent)', marginRight: 8 }}>STAGED</span>
-                )}
-                {staged ?? liveConcurrency?.[key] ?? fallback}
+            <div key={key} style={{ padding: '11px 20px', borderBottom: key === 'maxQueued' ? 'none' : '1px solid var(--hairline-dim)' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ font: "600 12.5px var(--sans)" }}>{label}</div>
+                <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                  {staged != null && (
+                    <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--accent)', marginRight: 8 }}>STAGED</span>
+                  )}
+                  {staged ?? liveConcurrency?.[key] ?? fallback}
+                </div>
               </div>
+              <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 2 }}>{help}</div>
             </div>
           )
         })}

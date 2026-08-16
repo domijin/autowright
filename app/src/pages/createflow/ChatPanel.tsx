@@ -43,7 +43,7 @@ function OpBullet({ text, first, ellipsis, size, color }: {
       marginTop: first ? 3 : 0,
       ...(ellipsis ? { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' } : { overflowWrap: 'break-word' as const }),
     }}>
-      • {text}
+      •&nbsp; {text}
     </div>
   )
 }

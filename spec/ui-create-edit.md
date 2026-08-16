@@ -42,7 +42,8 @@ applies unchanged; the chat pane never collapses.
   - **Operation blocks** (`activity`, `rewrite`, `system`, the transient progress
     entry) — the record of what the agent **did**. Layout: a glyph in a 13 px box
     beside a one-line title, and beneath them the entry's description lines as
-    `• `-prefixed bullets running the pane's full width **flush left with the glyph —
+    `• `-prefixed bullets (bullet glyph then a 2-space gap before the text) running
+    the pane's full width **flush left with the glyph —
     never indented under the title** (the activity-feed flush rule, now for every
     operation block). An entry with no description renders the header row alone.
   - **Message blocks** (`answer`, `blockers`, `error`) — the agent **talking to the
@@ -370,7 +371,7 @@ applies unchanged; the chat pane never collapses.
   canned description bullet (the per-stage map under the activity entry kind) holds the
   feed's place — a live block never renders as a bare title either.
   The feed and detail lines render as the operation-block bullets
-  (`• `-prefixed) and run the pane's full width, flush left with the
+  (`• `-prefixed, 2-space gap after the glyph) and run the pane's full width, flush left with the
   spinner — only the stage label sits beside the spinner, the lines below are not
   indented under it. The entry is **derived editor state, never a persisted thread entry**
   (§4.4 `chat` never carries it): it appears when the job starts and disappears when the

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('autowright', {
   saveFile: (defaultName, data) => ipcRenderer.invoke('save-file', defaultName, data),
   openArchive: () => ipcRenderer.invoke('open-archive'),
   revealPath: (p) => ipcRenderer.invoke('reveal-path', p),
+  // §9.5 report modal: OS details for the info block
+  platformInfo: () => ipcRenderer.invoke('platform-info'),
   // §4.9 shell-owned settings effects (login item + tray icon)
   applySettings: (s) => ipcRenderer.invoke('apply-settings', s),
   // §9.3 developer log overlay

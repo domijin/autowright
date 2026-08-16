@@ -31,7 +31,12 @@ collapsed rail; no count pill, never in the active state. Clicking it sets the o
 `updateSpotlight` store flag and navigates to the About page, which opens pre-armed with its
 action button playing the §14 attention ring (§9.4) — the download itself still starts from
 that row's button. The row follows the §3 clearing rule: gone when a later check answers up-to-date,
-otherwise only with the restart that installs. On `:hover` the panel's width
+otherwise only with the restart that installs. A permanent **Report bug** row
+(`data-testid="nav-report-bug"`) sits directly above About — below the update row when that
+one shows (order: update · report bug · About): fa-bug icon, "Report bug" label, normal
+nav-row styling, no count pill, never the active state. Clicking it opens the §9.5 report
+modal in place — it is not a page: no `Page` union entry, `go()` untouched, whatever page
+was showing stays underneath. On `:hover` the panel's width
 animates 58 px → 212 px (200 ms — `var(--t-enter)` — pure CSS on the `.ad-rail` class) **overlaying** the content
 pane, which never reflows: the layout reserves a constant 58 px spacer, so the content pane
 always spans the rest of the window. Inner sidebar content keeps a fixed 212 px width with
@@ -665,6 +670,46 @@ scripts can do anything your user account can do on this Mac. Review every
 change before you accept and execute it. You are responsible for what your
 automations do; the author accepts no liability for any damage or loss they
 cause."
+
+### 9.5 Report bug modal
+
+Reached only from the §9 "Report bug" nav row. A shared-`Modal` dialog, title "Report a
+problem", open state held in one store boolean `reportOpen` (open/close actions) — opening
+never navigates, closing restores nothing because nothing changed. Contents, top to bottom:
+
+- **Type toggle** — Bug / Feature request pair, default Bug. Decides the GitHub label
+  (`bug` / `enhancement`) and the drafting call's `kind`.
+- **What happened?** — multiline textarea, placeholder "What did you expect, and what
+  happened instead?". Used verbatim in the issue body on the plain path, or as the drafting
+  call's user text.
+- **Include app info** — toggle (the shared §14 Toggle — the app has no checkbox control),
+  default on, with the rendered info block visible below it
+  (mono, muted) so the user sees exactly what would be included. Block lines: app version
+  (store `version` from `GET /state`) · macOS release + arch (new `platform-info` IPC:
+  preload `platformInfo()` → main answers `{ platform, release, arch }` from Node `os` —
+  the renderer has no other OS-details source) · current location — the `surface` and `page`
+  names only, never entity ids or content · backend state (store `connected` plus the §3
+  `backend-status` state) · update state (`updateAvailable`). **Never** in the block or the
+  issue body: the backend bearer token, secret names or values, raw log contents.
+- **Draft with AI** — button; disabled with the §12 no-agent copy when zero agents are
+  configured. Click starts a §19 `POST /report/draft` job (kind, text, info block when the
+  toggle is on; agent = default agent — the backend re-resolves). While the job runs the
+  button reads busy and a Cancel beside it DELETEs the job; closing the modal cancels too.
+  On `done` the modal gains **editable Title and Body fields** prefilled from the draft —
+  the user's edits ride into the URL. On `failed` a `--red-text` line shows the error; the
+  plain path below still works.
+- Footer: quiet **Cancel** (closes, cancels any live job) · primary **"Open GitHub
+  issue ↗"**.
+
+Open action: a plain `target="_blank"` anchor (the §9.4 external-URL policy routes it to the
+default browser) to `https://github.com/hansololz/autowright/issues/new` with
+`URLSearchParams`-built `labels`, `title`, `body`. Without an AI draft the title is empty and
+the body is `### What happened` + the textarea text, then `### Environment` + the info block
+(section present only while the toggle is on). With a draft, title/body come from the
+editable fields. GitHub caps prefill URLs around 8 KB, so the body is clamped to 6 KB before
+encoding. The repo URL is one shared constant with §9.4 — never two copies. The app itself
+sends nothing anywhere: opening the browser is the only outbound action, and the user reviews
+the prefilled issue on GitHub before submitting.
 
 ## 10. Onboarding (2 steps, step label top-right in mono)
 

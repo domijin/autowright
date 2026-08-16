@@ -22,7 +22,7 @@ spec files the task touches. Keep the map current when sections are added or mov
   §20 CLI → [spec/cli.md](spec/cli.md)
 - **AI:** §8 agent drafting contract → [spec/agent-pipeline.md](spec/agent-pipeline.md)
 - **UI:** §9 shell & navigation (incl. §9.1 automations list · §9.2 automation detail ·
-  §9.3 developer log overlay · §9.4 about page) ·
+  §9.3 developer log overlay · §9.4 about page · §9.5 report bug modal) ·
   §10 onboarding · §12 agents & secrets pages · §13 menu bar →
   [spec/ui-shell.md](spec/ui-shell.md) ·
   §11 create/edit flow → [spec/ui-create-edit.md](spec/ui-create-edit.md) ·

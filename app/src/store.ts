@@ -42,6 +42,8 @@ interface Model {
   updateSpotlight: boolean
   // §4.4 pending create-mode slot — drives the §9.1 Resume draft button
   pendingDraft: { name: string; updatedAt: string | null } | null
+  // §9.5 report bug modal — opened by the §9 "Report bug" nav row; not a page.
+  reportOpen: boolean
 
   surface: Surface
   page: Page
@@ -143,6 +145,7 @@ export const useStore = create<Model>((set, get) => ({
   updateAvailable: null,
   updateSpotlight: false,
   pendingDraft: null,
+  reportOpen: false,
   surface: 'app',
   page: 'automations',
   automationId: null,

@@ -6,8 +6,7 @@ import { api } from '../api'
 import { useStore } from '../store'
 import { BtnGhost, Eyebrow, Modal, PageTitle, ProgressBar, ScrollArea, Toggle } from '../ui'
 import { Markdown } from '../result'
-
-const REPO_URL = 'https://github.com/hansololz/autowright'
+import { REPO_URL } from '../config'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }

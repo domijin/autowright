@@ -12,6 +12,8 @@ declare global {
       saveFile(defaultName: string, data: ArrayBuffer): Promise<string | null>
       openArchive(): Promise<{ name: string; data: Uint8Array } | null>
       revealPath(p: string): Promise<void>
+      // §9.5 report modal: OS details for the info block
+      platformInfo(): Promise<{ platform: string; release: string; arch: string }>
       applySettings(s: { login?: boolean; menuBarIcon?: boolean; automaticUpdateCheck?: boolean }): Promise<void>
       tailLogs(): Promise<{ name: string; text: string }[]>
       listRequestLogs(): Promise<string[]>
@@ -155,6 +157,14 @@ export const api = {
   postDraftJob: (body: Record<string, unknown>) => req<{ jobId: string }>('POST', '/drafts', body),
   getDraftJob: (jobId: string) => req<DraftJob>('GET', `/drafts/${jobId}`),
   cancelDraftJob: (jobId: string) => req('DELETE', `/drafts/${jobId}`),
+  // §9.5 report modal — the §19 one-off AI bug-report draft job
+  postReportDraft: (body: { kind: 'bug' | 'feature'; text?: string; info?: string }) =>
+    req<{ jobId: string }>('POST', '/report/draft', body),
+  getReportDraft: (jobId: string) =>
+    req<{ status: 'running' | 'done' | 'failed' | 'cancelled'
+          draft: { title: string; body: string } | null
+          error: string | null }>('GET', `/report/draft/${jobId}`),
+  cancelReportDraft: (jobId: string) => req('DELETE', `/report/draft/${jobId}`),
   addAgent: (body: Record<string, unknown>) => req<import('./types').Agent>('POST', '/agents', body),
   patchAgent: (id: string, body: Record<string, unknown>) => req('PATCH', `/agents/${id}`, body),
   deleteAgent: (id: string) => req('DELETE', `/agents/${id}`),

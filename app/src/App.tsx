@@ -14,6 +14,7 @@ import ExecutionPage from './pages/ExecutionPage'
 import ExecutionsList from './pages/ExecutionsList'
 import MenuBarPanel from './pages/MenuBarPanel'
 import Onboarding from './pages/Onboarding'
+import ReportModal from './pages/ReportModal'
 import SecretsPage from './pages/SecretsPage'
 import SettingsPage from './pages/SettingsPage'
 
@@ -89,6 +90,24 @@ function Sidebar() {
               >
                 <i className="fa-solid fa-download" style={{ width: 16, fontSize: 12 }} />
                 <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Update available</span>
+              </button>
+            )}
+            {i === 1 && (
+              // §9 "Report bug" row: directly above About (below the update row
+              // when both show). Opens the §9.5 modal — not a page: no Page
+              // union entry, go() untouched.
+              <button
+                data-testid="nav-report-bug"
+                className="ad-nav-row"
+                onClick={() => useStore.setState({ reportOpen: true })}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
+                  borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',
+                  color: 'var(--text-muted)',
+                }}
+              >
+                <i className="fa-solid fa-bug" style={{ width: 16, fontSize: 12, opacity: 0.85 }} />
+                <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Report bug</span>
               </button>
             )}
             {group.rows.map((n) => {
@@ -189,6 +208,7 @@ export default function App() {
   const connected = useStore((s) => s.connected)
   const surface = useStore((s) => s.surface)
   const toast = useStore((s) => s.toast)
+  const reportOpen = useStore((s) => s.reportOpen)
   const boot = useStore((s) => s.boot)
   const disconnect = useStore((s) => s.disconnect)
   const login = useStore((s) => s.settings?.login)
@@ -229,6 +249,8 @@ export default function App() {
         {surface === 'create' ? <CreateFlow /> : <Content />}
       </ScrollArea>
       <Toast msg={toast} />
+      {/* §9.5 report bug modal — opened by the nav row, never a page */}
+      {reportOpen && <ReportModal />}
       {/* §9.3 developer log overlay — main-window surfaces only */}
       <DevLogOverlay />
     </div>

@@ -18,6 +18,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from . import __version__, awake, harness, imessage, installer, keychain, models, paths
 from . import drafting, packages as pkglib, reqlog, timefmt, transfer, triggers as triggerlib
 from .drafting import draft_jobs
+from .report import report_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
 from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger, queue_manual
@@ -1144,6 +1145,27 @@ def get_draft(job_id: str) -> dict:
 @app.delete("/drafts/{job_id}", dependencies=[Depends(auth)])
 def cancel_draft(job_id: str) -> dict:
     return {"ok": draft_jobs.cancel(job_id)}
+
+
+# ---------- report draft (§9.5) ----------
+@app.post("/report/draft", dependencies=[Depends(auth)])
+def post_report_draft(body: models.ReportDraftStart) -> dict:
+    agent = _agent_or_404(body.agentId or store.default_agent_id
+                          or (store.agents[0]["id"] if store.agents else ""))
+    return {"jobId": report_jobs.start(agent, body.kind, body.text, body.info)}
+
+
+@app.get("/report/draft/{job_id}", dependencies=[Depends(auth)])
+def get_report_draft(job_id: str) -> dict:
+    j = report_jobs.get(job_id)
+    if not j:
+        raise HTTPException(404, "job not found")
+    return j
+
+
+@app.delete("/report/draft/{job_id}", dependencies=[Depends(auth)])
+def cancel_report_draft(job_id: str) -> dict:
+    return {"ok": report_jobs.cancel(job_id)}
 
 
 # ---------- executions ----------

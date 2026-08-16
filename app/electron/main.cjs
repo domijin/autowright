@@ -533,6 +533,14 @@ ipcMain.handle('read-request-log', (_e, name) => {
   if (typeof name !== 'string' || name !== path.basename(name)) return null
   try { return fs.readFileSync(path.join(logsDir(), 'requests', name), 'utf-8') } catch { return null }
 })
+// §9.5 report modal: OS details for the info block — the renderer has no
+// other source (getSystemVersion is the marketing macOS version, not the
+// Darwin kernel release).
+ipcMain.handle('platform-info', () => ({
+  platform: process.platform,
+  release: process.getSystemVersion(),
+  arch: process.arch,
+}))
 ipcMain.handle('apply-settings', (_e, s) => applyShellSettings(s))
 ipcMain.handle('tray-alert', (_e, on) => {
   if (tray) tray.setImage(trayIcon(!!on))

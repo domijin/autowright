@@ -340,3 +340,37 @@ def test_trim_logs_leaves_small_and_missing_files_alone(home, monkeypatch):
     log.write_bytes(b"small\n" * 10)
     backend_main.trim_logs()  # backend.err.log missing — must not raise
     assert log.read_bytes() == b"small\n" * 10
+
+
+# ------------------------------------------------- §2 CLI leaf invariant
+
+def test_no_backend_module_imports_the_cli():
+    """§2: the CLI is a pure leaf — the UI and the backend must never depend on
+    or invoke it. Pin the import direction: no module in the autowright package
+    besides cli.py itself may import autowright.cli. (service.py's shim_text
+    mentions `-m autowright.cli` as the shim file's *contents* — a string, not
+    an import — which this scan correctly ignores.)"""
+    import ast
+    from pathlib import Path
+
+    import autowright
+
+    pkg = Path(autowright.__file__).parent
+    offenders = []
+    for py in pkg.rglob("*.py"):
+        if py.name == "cli.py":
+            continue
+        tree = ast.parse(py.read_text(), filename=str(py))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(a.name == "autowright.cli" or a.name.startswith("autowright.cli.")
+                       for a in node.names):
+                    offenders.append(f"{py.name}:{node.lineno}")
+            elif isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                if (mod == "autowright.cli" or mod.startswith("autowright.cli.")
+                        or (node.level >= 1 and (mod == "cli" or mod.startswith("cli.")))
+                        or (node.level >= 1 and mod == ""
+                            and any(a.name == "cli" for a in node.names))):
+                    offenders.append(f"{py.name}:{node.lineno}")
+    assert not offenders, f"backend modules import the CLI (§2 leaf invariant): {offenders}"

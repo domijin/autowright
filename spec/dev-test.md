@@ -97,6 +97,12 @@ progress-entry stage labels, collapsed-card defaults, and analyze/agent-picker r
 payloads. Full
 journeys stay e2e; all other component rendering is exercised by the playwright-driven
 Electron path, never by DOM unit tests.
+Both suites carry guards for the §2 CLI-leaf invariant: a pytest scan asserts no backend
+module besides `cli.py` imports `autowright.cli`, and a Vitest guard reads
+`app/electron/main.cjs` asserting backend registration runs `-m autowright.service`, that
+no child-process call executes the CLI (the string `autowright.cli` may appear only inside
+the shim file text), and that the shim install goes through the §3 admin-prompt path
+(`with administrator privileges` + chown-to-user) — never a silent filesystem write.
 
 **Shift-left order.** Tiers run cheapest-first so failures surface early: Vitest unit
 (<1 s) → `tsc --noEmit` → pytest unit (seconds) → pytest `-m integration` (~10 s) →

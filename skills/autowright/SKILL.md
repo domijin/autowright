@@ -48,7 +48,8 @@ autowright automation show <name> --json   # full record, machine-readable
 ```
 
 Every read verb takes `--json`. Automations are addressed by name (case-insensitive,
-unique substring works) or id; executions and snapshots by id prefix.
+unique substring works) or id (a unique prefix works — the 8-char ids the CLI prints
+resolve); executions and snapshots by id prefix.
 
 ## Creating an automation
 
@@ -137,6 +138,9 @@ autowright automation trigger list <name>
 autowright automation trigger add <name> "0 8 * * *" [--timezone Asia/Tokyo]
 autowright automation trigger add <name> --at 2026-08-01T09:00     # one-shot
 autowright automation trigger add <name> --app-start
+autowright automation trigger add <name> --discord <channel> --secret NAME
+    [--pattern TEXT] [--mention] [--author ID,ID…]
+autowright automation trigger add <name> --imessage <from> [--pattern TEXT]
 autowright automation trigger on|off|remove <name> <index>
 autowright secret list · secret set NAME [--stdin] · secret delete NAME
 autowright agent list · agent check <name>        # AI agents available to agent: true steps
@@ -155,7 +159,8 @@ autowright agent list · agent check <name>        # AI agents available to agen
   save — write the new steps to migrate lazily (a `schema_version` key, `memory.load`
   defaults for missing shapes) rather than assuming a fresh dir; check the real shape
   first with `memory show`.
-- `automation export <name> [file.autowright]` / `automation import <file>` share
-  automations as archives (secrets travel as names only, never values; imported triggers
-  arrive off).
+- `automation export <name> [file.autowright]` / `automation import <file-or-https-url>`
+  share automations as archives (secrets travel as names only, never values; imported
+  triggers arrive off). Export includes the user's param values — `--no-values` leaves
+  them out when the archive is for someone else.
 - `settings show` / `settings set days=30 notifications=all developerMode=on dataPath=/path`.

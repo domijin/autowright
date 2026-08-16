@@ -154,6 +154,59 @@ def test_find_auto_no_match_exits():
     assert "(none)" in str(ei.value.code)
 
 
+def test_find_auto_unique_id_prefix():
+    """§20: every short id the CLI prints (8-char `[abcd1234]` forms) must
+    resolve back — id-prefix lookup, tried before name matching."""
+    from autowright.cli import find_automation
+
+    autos = [
+        {"id": "abc12345-9a0b-4e4e-b5f2-e04cf88cba12", "name": "Daily Report"},
+        {"id": "def67890-1c2d-4a5b-8e9f-a0b1c2d3e4f5", "name": "Weekly Report"},
+    ]
+    assert find_automation(_ListClient(autos), "abc12345")["name"] == "Daily Report"
+
+
+def test_find_auto_ambiguous_id_prefix_exits():
+    from autowright.cli import find_automation
+
+    autos = [
+        {"id": "abc12345-9a0b-4e4e-b5f2-e04cf88cba12", "name": "Daily Report"},
+        {"id": "abc12399-1c2d-4a5b-8e9f-a0b1c2d3e4f5", "name": "Weekly Report"},
+    ]
+    with pytest.raises(SystemExit) as ei:
+        find_automation(_ListClient(autos), "abc123")
+    assert "ambiguous" in str(ei.value.code)
+
+
+# ---------------------------------------------------------------- HTTP error format
+
+def test_exit_http_prints_api_detail_not_raw_json():
+    """§20: an HTTP error prints the API's detail message, never the raw body."""
+    import io
+    import urllib.error
+
+    from autowright.cli import _exit_http
+
+    err = urllib.error.HTTPError(
+        "http://x", 422, "Unprocessable", {}, io.BytesIO(b'{"detail":"memory is empty"}'))
+    with pytest.raises(SystemExit) as ei:
+        _exit_http(err)
+    assert str(ei.value.code) == "422: memory is empty"
+
+
+def test_exit_http_falls_back_to_body_when_detail_not_string():
+    import io
+    import urllib.error
+
+    from autowright.cli import _exit_http
+
+    for body in (b"plain text error", b'{"detail":[{"loc":["x"]}]}'):
+        err = urllib.error.HTTPError("http://x", 500, "Server Error", {}, io.BytesIO(body))
+        with pytest.raises(SystemExit) as ei:
+            _exit_http(err)
+        assert body.decode() in str(ei.value.code)
+
+
 # ---------------------------------------------------------------- follow_exec
 
 class _FollowClient:

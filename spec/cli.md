@@ -39,9 +39,10 @@ ensure-backend step runs via `python -m autowright.service` (§3). Dependency di
 one-way: the CLI calls the backend API and the service module; **the UI and the backend never
 invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
 
-- **References:** automations resolve by id, exact name (case-insensitive), or unique name
-  substring; executions and snapshots by id prefix. Ambiguity or no match exits with the
-  candidate list.
+- **References:** automations resolve by id, unique id prefix, exact name (case-insensitive),
+  or unique name substring; executions and snapshots by id prefix. Every short id the CLI
+  prints (the 8-character `[abcd1234]` forms in list/create/ambiguity output) must therefore
+  resolve when passed back. Ambiguity or no match exits with the candidate list.
 - **`--json`** on every read verb (`status`, `instructions`, `automation list|show`,
   `param list`, `trigger list`, `memory show`, `snapshot list`, `execution list|show`,
   `secret list`, `agent list`, `settings show`) prints the raw API JSON instead of the human
@@ -62,7 +63,8 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   channel — it must not KeyError on one). Then the text, indented. The `secret` is never
   printed. `--json` carries the raw payload (and list rows the §4.5 `triggerSender`) as always.
 - **Exit codes:** 0 success · 1 any error (connection, HTTP, validation, bad reference —
-  message on stderr, §3 guidance style, never a traceback) · 2 from `automation execute -f`,
+  message on stderr, §3 guidance style, never a traceback; an HTTP error prints the API's
+  `detail` message, never the raw JSON body) · 2 from `automation execute -f`,
   `execution retry -f`, and `execution tail` when the followed execution ends in any
   terminal status other than
   `succeeded` — so a harness can branch on the exit code without parsing prose.

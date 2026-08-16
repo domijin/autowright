@@ -25,6 +25,17 @@ from . import paths, service
 _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def _exit_http(e: urllib.error.HTTPError) -> None:
+    # §20: print the API's detail message, never the raw JSON body.
+    body = e.read().decode()
+    try:
+        detail = json.loads(body).get("detail")
+    except (ValueError, AttributeError):
+        detail = None
+    message = detail if isinstance(detail, str) else body
+    sys.exit(f"{e.code}: {message[:300]}")
+
+
 class Client:
     def __init__(self) -> None:
         bj = paths.backend_json()
@@ -53,8 +64,7 @@ class Client:
             with _opener.open(r, timeout=timeout) as resp:
                 return json.loads(resp.read().decode() or "{}")
         except urllib.error.HTTPError as e:
-            detail = e.read().decode()[:300]
-            sys.exit(f"{e.code}: {detail}")
+            _exit_http(e)
         except (urllib.error.URLError, TimeoutError) as e:
             # §3: backend.json can be well-formed yet point at a dead backend
             # (SIGKILL leftovers) — same clean guidance as a stale file, no traceback.
@@ -73,8 +83,7 @@ class Client:
             with _opener.open(r, timeout=30) as resp:
                 return resp.read()
         except urllib.error.HTTPError as e:
-            detail = e.read().decode()[:300]
-            sys.exit(f"{e.code}: {detail}")
+            _exit_http(e)
         except (urllib.error.URLError, TimeoutError) as e:
             sys.exit(f"backend isn't reachable at {self.base} ({e}) — restart it with "
                      "`autowright service restart` or `autowright-backend`")
@@ -87,9 +96,13 @@ def find_automation(c: Client, ref: str) -> dict:
     for a in autos:
         if a["id"] == ref:
             return a
+    # §20: the short ids the CLI prints must resolve back — try id prefix
+    # before names.
+    matches = [a for a in autos if a["id"].startswith(ref)]
     # §5.1 makes duplicate names a designed state (re-import creates a copy) —
     # §20: ambiguity exits with the candidate list, never a silent first-match.
-    matches = [a for a in autos if a["name"].lower() == ref.lower()]
+    if not matches:
+        matches = [a for a in autos if a["name"].lower() == ref.lower()]
     if not matches:
         matches = [a for a in autos if ref.lower() in a["name"].lower()]
     if len(matches) == 1:

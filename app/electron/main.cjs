@@ -453,44 +453,92 @@ function togglePanel() {
   panel.show()
 }
 
-// §3 CLI on PATH: the shell owns shim *creation* (explicit + privileged, the
-// only admin prompt in the app); `service install` only heals a user-owned
-// shim. Interpreter comes from backend.json's `python`, so dev and prod run
-// the same code. AUTOWRIGHT_SHIM is the §15 test knob (mirrored in service.py).
+// §3 CLI on PATH: the shell owns shim *creation*; `service install` only
+// heals user-owned shims. Two candidate locations — ~/.local/bin when it's on
+// the login-shell PATH (user target: silent, unprivileged), else
+// /usr/local/bin (system target: explicit admin prompt, the only one in the
+// app). Interpreter comes from backend.json's `python`, so dev and prod run
+// the same code. AUTOWRIGHT_SHIM is the §15 test knob (mirrored in
+// service.py): it forces a single location and skips the PATH probe.
 const SHIM_MARKER = '# autowright CLI shim'
+const USER_SHIM = path.join(os.homedir(), '.local', 'bin', 'autowright')
+const SYSTEM_SHIM = '/usr/local/bin/autowright'
 
-function shimPath() {
-  return process.env.AUTOWRIGHT_SHIM || '/usr/local/bin/autowright'
+function shimPaths() {
+  return process.env.AUTOWRIGHT_SHIM ? [process.env.AUTOWRIGHT_SHIM] : [USER_SHIM, SYSTEM_SHIM]
 }
 
 function shimText(python) {
   return `#!/bin/sh\n${SHIM_MARKER}\nexec "${python}" -m autowright.cli "$@"\n`
 }
 
-function cliStatus() {
+// §3: GUI apps inherit a stripped PATH, so ask the login shell whether
+// ~/.local/bin is reachable. Cached per app run; any failure = not on PATH.
+let userBinOnPath = null
+function userBinOnLoginPath() {
+  if (process.env.AUTOWRIGHT_SHIM) return Promise.resolve(true)
+  if (userBinOnPath !== null) return Promise.resolve(userBinOnPath)
+  return new Promise((resolve) => {
+    const shell = process.env.SHELL || '/bin/zsh'
+    execFile(shell, ['-l', '-c', 'printf %s "$PATH"'], { timeout: 2000 }, (err, stdout) => {
+      userBinOnPath = !err && String(stdout).split(':').includes(path.dirname(USER_SHIM))
+      resolve(userBinOnPath)
+    })
+  })
+}
+
+async function cliTarget() {
+  const user = await userBinOnLoginPath()
+  return user
+    ? { target: 'user', path: shimPaths()[0] }
+    : { target: 'system', path: shimPaths()[shimPaths().length - 1] }
+}
+
+async function cliStatus() {
   const python = backendInfo()?.python
+  const chosen = await cliTarget()
+  // Effective shim: first existing file among the *reachable* candidates —
+  // all of them for the user target (~/.local/bin precedes /usr/local/bin on
+  // any PATH that includes it, §3), only /usr/local/bin when ~/.local/bin is
+  // off the login PATH.
+  const reachable = chosen.target === 'user' ? shimPaths() : [chosen.path]
+  const effective = reachable.find((p) => fs.existsSync(p)) ?? null
+  if (effective === null) return { state: 'missing', target: chosen.target, path: chosen.path }
+  const target = effective === SYSTEM_SHIM ? 'system' : 'user'
   let current
   try {
-    current = fs.readFileSync(shimPath(), 'utf-8')
+    current = fs.readFileSync(effective, 'utf-8')
   } catch {
-    return { state: 'missing' }
+    return { state: 'missing', target: chosen.target, path: chosen.path }
   }
-  if (!current.includes(SHIM_MARKER)) return { state: 'foreign' }
-  if (!python || current === shimText(python)) return { state: 'installed' }
+  if (!current.includes(SHIM_MARKER)) return { state: 'foreign', target, path: effective }
+  if (!python || current === shimText(python)) return { state: 'installed', target, path: effective }
   // Ours but pointing elsewhere: heal in place when user-owned (§3 — a file
   // rewrite needs no directory write); only an unwritable shim is 'stale'.
   try {
-    fs.writeFileSync(shimPath(), shimText(python), { mode: 0o755 })
-    return { state: 'installed' }
+    fs.writeFileSync(effective, shimText(python), { mode: 0o755 })
+    return { state: 'installed', target, path: effective }
   } catch {
-    return { state: 'stale' }
+    return { state: 'stale', target, path: effective }
   }
 }
 
-function cliInstall() {
+async function cliInstall() {
+  const python = backendInfo()?.python
+  if (!python) return { ok: false, error: 'The backend is not running yet — try again in a moment.' }
+  const { target, path: shim } = await cliTarget()
+  if (target === 'user') {
+    // §3 user target: plain writes, no dialog, no password.
+    try {
+      fs.mkdirSync(path.dirname(shim), { recursive: true })
+      fs.writeFileSync(shim, shimText(python), { mode: 0o755 })
+      appLog(`cli-install: CLI installed at ${shim}`)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e?.message || e) }
+    }
+  }
   return new Promise((resolve) => {
-    const python = backendInfo()?.python
-    if (!python) return resolve({ ok: false, error: 'The backend is not running yet — try again in a moment.' })
     const tmp = path.join(os.tmpdir(), `autowright-shim-${process.pid}`)
     try {
       fs.writeFileSync(tmp, shimText(python))
@@ -499,9 +547,9 @@ function cliInstall() {
     }
     // chown to the user: admin is needed at most once — a user-owned file in
     // the root-owned dir rewrites sudo-free ever after (§3 heal).
-    const dir = path.dirname(shimPath())
-    const sh = `mkdir -p '${dir}' && cp '${tmp}' '${shimPath()}' && `
-      + `chmod 755 '${shimPath()}' && chown ${process.getuid()} '${shimPath()}'`
+    const dir = path.dirname(shim)
+    const sh = `mkdir -p '${dir}' && cp '${tmp}' '${shim}' && `
+      + `chmod 755 '${shim}' && chown ${process.getuid()} '${shim}'`
     const script = `do shell script "${sh.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}" with administrator privileges`
     execFile('osascript', ['-e', script], (err, _stdout, stderr) => {
       try { fs.unlinkSync(tmp) } catch { /* best-effort cleanup */ }
@@ -512,10 +560,28 @@ function cliInstall() {
         resolve({ ok: false, canceled: msg.includes('-128'), error: msg })
         return
       }
-      appLog(`cli-install: CLI installed at ${shimPath()}`)
+      appLog(`cli-install: CLI installed at ${shim}`)
       resolve({ ok: true })
     })
   })
+}
+
+// §3 auto-install: user target only, once ever (the marker file makes a
+// deliberate delete stick). backend.json may lag on first launch — retry a
+// few times, then give up quietly; the §4.9 card still offers Install.
+async function cliAutoInstall() {
+  const marker = path.join(app.getPath('userData'), 'cli-auto-installed')
+  if (fs.existsSync(marker)) return
+  for (let i = 0; i < 30; i++) {
+    if (backendInfo()?.python) break
+    await new Promise((r) => setTimeout(r, 2000))
+  }
+  if (!backendInfo()?.python) return
+  if ((await cliTarget()).target !== 'user') return
+  if (shimPaths().some((p) => fs.existsSync(p))) return
+  const res = await cliInstall()
+  appLog(`cli-auto-install: ${res.ok ? 'installed' : `skipped (${res.error})`}`)
+  try { fs.writeFileSync(marker, '') } catch { /* marker is best-effort */ }
 }
 
 ipcMain.handle('backend-info', () => backendInfo())
@@ -801,6 +867,7 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   void notifyAppStarted()
+  void cliAutoInstall()
   void refreshTrayAlert()
   void syncShellSettings()
   setInterval(() => { void refreshTrayAlert(); void syncShellSettings() }, 60_000)

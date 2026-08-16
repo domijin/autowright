@@ -25,9 +25,10 @@ Backend env knobs (configuration only):
   `<home>/logs/` (§5), and Electron's Chromium profile follows to `<home>/electron/` — an
   isolated home isolates the renderer's localStorage/cookies too, never the real profile.
 - `AUTOWRIGHT_PORT` — fixed port instead of a random free one.
-- `AUTOWRIGHT_SHIM` — overrides the §3 CLI shim location (default
-  `/usr/local/bin/autowright`); honored by both `service.py` and the Electron shell's
-  `cli-status`/`cli-install`, so tests never touch the real `/usr/local/bin`.
+- `AUTOWRIGHT_SHIM` — forces a **single** §3 CLI shim location, replacing both candidates
+  (`~/.local/bin/autowright` and `/usr/local/bin/autowright`) and skipping the login-PATH
+  probe (a forced location is always the user target); honored by both `service.py` and the
+  Electron shell's `cli-status`/`cli-install`, so tests never touch the real locations.
 - `AUTOWRIGHT_OLLAMA_URL` — Ollama HTTP endpoint override (default `http://localhost:11434`).
 - `AUTOWRIGHT_STEP_TIMEOUT` — the **default** per-step timeout in seconds (default 900); a
   step's own `timeout`/`no_timeout` (§4.1, §6) always wins over it.
@@ -101,8 +102,10 @@ Both suites carry guards for the §2 CLI-leaf invariant: a pytest scan asserts n
 module besides `cli.py` imports `autowright.cli`, and a Vitest guard reads
 `app/electron/main.cjs` asserting backend registration runs `-m autowright.service`, that
 no child-process call executes the CLI (the string `autowright.cli` may appear only inside
-the shim file text), and that the shim install goes through the §3 admin-prompt path
-(`with administrator privileges` + chown-to-user) — never a silent filesystem write.
+the shim file text), and that the §3 **system-target** shim install goes through the
+admin-prompt path (`with administrator privileges` + chown-to-user) — the only silent shim
+writes are the §3 user-target install (into `~/.local/bin`) and the heal of an
+already-ours file.
 
 **Shift-left order.** Tiers run cheapest-first so failures surface early: Vitest unit
 (<1 s) → `tsc --noEmit` → pytest unit (seconds) → pytest `-m integration` (~10 s) →

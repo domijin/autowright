@@ -78,35 +78,54 @@ the update bullets below).
   The seal is re-verified immediately before submission.
 - **CLI on PATH (decided):** the CLI ships only inside the bundle — never via pip/PyPI (a second
   channel would reintroduce a user-provided Python and version skew between CLI and backend,
-  which the one-`VERSION` design excludes by construction). The command is a shim script at
-  `/usr/local/bin/autowright`: `#!/bin/sh` with an `# autowright CLI shim` marker line, then
+  which the one-`VERSION` design excludes by construction). The command is a shim script named
+  `autowright`: `#!/bin/sh` with an `# autowright CLI shim` marker line, then
   `exec "<python>" -m autowright.cli "$@"` (module form per the shebang rule above; `<python>`
   is the backend's real interpreter). The command name is `autowright` (no short alias for now).
-  On stock macOS `/usr/local/bin` is root-owned (or absent), so creation needs privilege —
-  ownership of the two halves is split:
-  - **Creation is the Electron shell's job — explicit and privileged.** The shell exposes two
-    IPCs on the preload bridge: `cli-status` (reads the shim; states `installed` — marker
-    present and exec line points at the current backend interpreter from `backend.json` —
-    `stale` — marker present, different interpreter, and the file is not user-writable so the
-    heal below can't fix it — `missing`, and `foreign` — file exists without the marker; never
-    touched) and `cli-install` (runs one `osascript … with administrator privileges` command:
-    `mkdir -p /usr/local/bin`, write the shim, `chmod 755`, **`chown` to the console user** —
-    that last step is the trick: admin is needed at most once, because a user-owned shim file
-    is rewritable without touching the root-owned directory). The UI always explains what will
-    be installed and where **before** the password dialog appears (§4.9 COMMAND LINE card —
-    the only install entry, §10), and declining is a normal state, never an error. The interpreter path comes
-    from `backend.json`'s `python` field, so the same code works in dev (repo venv) and prod
-    (bundled interpreter) — no dev-only path.
+  **Two candidate locations, chosen per machine.** The preferred home is
+  `~/.local/bin/autowright` — user-owned, so no privilege ever — but only when `~/.local/bin`
+  is on the user's **login-shell** PATH (GUI apps inherit a stripped PATH, so the shell asks
+  `$SHELL -l -c 'printf %s "$PATH"'` with a ~2 s timeout, caches the answer per app run, and
+  counts any failure as not-on-PATH). Otherwise the home is `/usr/local/bin/autowright`, which
+  on stock macOS is root-owned (or absent), so creation needs privilege. Shims are never
+  migrated between locations. Status, heal, and uninstall consider **both** locations; when
+  both hold our marker the user-local one is the effective one (it precedes `/usr/local/bin`
+  on any PATH that includes it). Ownership of the two halves is split:
+  - **Creation is the Electron shell's job.** The shell exposes two IPCs on the preload
+    bridge: `cli-status` (reads both candidate shims; states `installed` — marker present and
+    exec line points at the current backend interpreter from `backend.json` — `stale` —
+    marker present, different interpreter, and the file is not user-writable so the heal
+    below can't fix it (only possible at `/usr/local/bin`) — `missing`, and `foreign` — the
+    effective file exists without the marker; never touched. The result also carries
+    `target: 'user' | 'system'` — the effective install location per the PATH probe above —
+    and `path`, the effective shim path, so the §4.9 card can name it) and `cli-install`,
+    which branches on the target:
+    - *user target* (`~/.local/bin` on the login PATH): plain unprivileged writes —
+      `mkdir -p`, write the shim, `chmod 755`. No dialog, no password. The shell also
+      **auto-installs** this way at startup, once `backend.json` is readable, when no shim
+      exists at either location and the one-shot `cli-auto-installed` marker file (in the
+      Electron userData dir) is absent; the marker is written after the attempt, so a user
+      who deletes the shim on purpose never sees it come back.
+    - *system target* (fallback): explicit and privileged, never automatic — one
+      `osascript … with administrator privileges` command: `mkdir -p /usr/local/bin`, write
+      the shim, `chmod 755`, **`chown` to the console user** — that last step is the trick:
+      admin is needed at most once, because a user-owned shim file is rewritable without
+      touching the root-owned directory. The UI always explains what will be installed,
+      where, and why the password is needed **before** the dialog appears (§4.9 COMMAND LINE
+      card — the only install entry, §10), and declining is a normal state, never an error.
+    The interpreter path comes from `backend.json`'s `python` field, so the same code works
+    in dev (repo venv) and prod (bundled interpreter) — no dev-only path.
   - **Healing is `service install`'s job — silent and sudo-free** (§3 has no sudo anywhere in
-    the plumbing): when the shim exists, carries the marker, is user-writable, and its exec
-    line names a different interpreter (moved bundle, dev↔prod switch, update), install
-    rewrites it in place — rewriting a user-owned file needs no directory write. It never
-    *creates* the shim (creation is the explicit UI flow above) and never touches a foreign
-    file (no marker). The install result line reports the shim state either way.
-  `service uninstall` removes the shim only when the marker identifies it as ours and the file
-  is deletable (deleting from a root-owned directory isn't — then the result line prints the
-  manual `sudo rm` command instead). Users who skip the shim always have the module form:
-  `<python> -m autowright.cli`.
+    the plumbing): for **every** candidate location whose shim exists, carries the marker, is
+    user-writable, and whose exec line names a different interpreter (moved bundle, dev↔prod
+    switch, update), install rewrites it in place — rewriting a user-owned file needs no
+    directory write. It never *creates* a shim (creation is the shell flow above) and never
+    touches a foreign file (no marker). The install result line reports the shim state either
+    way.
+  `service uninstall` removes our shim from every location where the marker identifies it as
+  ours and the file is deletable (deleting from a root-owned directory isn't — then the result
+  line prints the manual `sudo rm` command instead). Users who skip the shim always have the
+  module form: `<python> -m autowright.cli`.
 - launchd keeps it alive: `RunAtLoad` + `KeepAlive` (restart on crash). launchd also guarantees a
   single backend instance — the UI and CLI are always clients, never owners.
 - Step processes die with their backend: graceful shutdown hard-kills every live step group,

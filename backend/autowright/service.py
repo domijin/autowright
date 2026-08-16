@@ -26,9 +26,14 @@ def plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 
 
-def shim_path() -> Path:
-    # AUTOWRIGHT_SHIM is the §15 test knob (mirrored in electron/main.cjs).
-    return Path(os.environ.get("AUTOWRIGHT_SHIM", "/usr/local/bin/autowright"))
+def shim_paths() -> list[Path]:
+    """§3 candidate shim locations, user-local first. AUTOWRIGHT_SHIM is the
+    §15 test knob (mirrored in electron/main.cjs): it forces a single one."""
+    forced = os.environ.get("AUTOWRIGHT_SHIM")
+    if forced:
+        return [Path(forced)]
+    return [Path.home() / ".local" / "bin" / "autowright",
+            Path("/usr/local/bin/autowright")]
 
 
 def shim_text() -> str:
@@ -38,18 +43,12 @@ def shim_text() -> str:
             f'exec "{sys.executable}" -m autowright.cli "$@"\n')
 
 
-def _heal_shim() -> str:
-    """§3: healing only, never creation. Creating /usr/local/bin/autowright
-    needs privilege and belongs to the Electron shell's explicit cli-install
-    flow (which chowns the file to the user). Here: when our shim exists,
-    is user-writable, and points at another interpreter (moved bundle,
-    dev↔prod switch, update), rewrite it in place — sudo-free, since a
-    user-owned file rewrites without a directory write."""
-    p = shim_path()
+def _heal_one(p: Path) -> str | None:
+    """Heal a single candidate location; None when nothing is there."""
     try:
         current = p.read_text()
     except OSError:
-        return f"CLI not installed — use `{sys.executable} -m autowright.cli`"
+        return None
     if SHIM_MARKER not in current:
         return f"foreign {p} left alone"
     wanted = shim_text()
@@ -64,21 +63,35 @@ def _heal_shim() -> str:
                 f"use `{sys.executable} -m autowright.cli`")
 
 
+def _heal_shim() -> str:
+    """§3: healing only, never creation. Creating a shim belongs to the
+    Electron shell's cli-install flow (silent in ~/.local/bin, admin-prompted
+    + chown-to-user in /usr/local/bin). Here: every candidate location whose
+    shim is ours, user-writable, and points at another interpreter (moved
+    bundle, dev↔prod switch, update) is rewritten in place — sudo-free, since
+    a user-owned file rewrites without a directory write."""
+    notes = [n for n in (_heal_one(p) for p in shim_paths()) if n]
+    if not notes:
+        return f"CLI not installed — use `{sys.executable} -m autowright.cli`"
+    return " · ".join(notes)
+
+
 def _remove_shim() -> str | None:
-    """Delete the shim only when the marker says it's ours (§3). Deleting
+    """Delete shims only where the marker says they're ours (§3). Deleting
     from a root-owned /usr/local/bin fails sudo-free — then report the
     manual command instead."""
-    p = shim_path()
-    try:
-        if SHIM_MARKER not in p.read_text():
-            return None
-    except (OSError, UnicodeDecodeError):
-        return None
-    try:
-        p.unlink()
-        return None
-    except OSError:
-        return f"CLI shim left at {p} — remove with `sudo rm {p}`"
+    notes = []
+    for p in shim_paths():
+        try:
+            if SHIM_MARKER not in p.read_text():
+                continue
+        except (OSError, UnicodeDecodeError):
+            continue
+        try:
+            p.unlink()
+        except OSError:
+            notes.append(f"CLI shim left at {p} — remove with `sudo rm {p}`")
+    return " · ".join(notes) if notes else None
 
 
 def _registered() -> bool:

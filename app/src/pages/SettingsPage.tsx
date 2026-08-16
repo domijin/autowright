@@ -17,14 +17,14 @@ const pathBox: React.CSSProperties = {
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 
-type CliState = 'installed' | 'stale' | 'missing' | 'foreign'
+type Cli = { state: 'installed' | 'stale' | 'missing' | 'foreign'; target: 'user' | 'system'; path: string }
 
 export default function SettingsPage() {
   const { settings, showToast } = useStore()
   const [days, setDays] = useState('')
-  // §4.9 COMMAND LINE card: the shim file on disk is the source of truth —
+  // §4.9 COMMAND LINE card: the shim files on disk are the source of truth —
   // re-read on every Settings visit (this mount).
-  const [cli, setCli] = useState<CliState | null>(null)
+  const [cli, setCli] = useState<Cli | null>(null)
   const [cliBusy, setCliBusy] = useState(false)
   // §4.9 QUIT card (§3 explicit-quit exception)
   const [quitConfirm, setQuitConfirm] = useState(false)
@@ -35,18 +35,19 @@ export default function SettingsPage() {
   }, [settings?.days])
 
   useEffect(() => {
-    void window.autowright?.cliStatus().then((s) => setCli(s.state)).catch(() => {})
+    void window.autowright?.cliStatus().then((s) => setCli(s)).catch(() => {})
   }, [])
 
-  // §4.9: the macOS admin prompt (§3 cli-install); a declined prompt just
-  // returns to the previous state — never an error banner.
+  // §4.9: fires §3 cli-install — silent for the user target, the macOS admin
+  // prompt for the system target; a declined prompt just returns to the
+  // previous state — never an error banner.
   const cliInstall = () => {
     if (cliBusy) return
     setCliBusy(true)
     void (async () => {
       await window.autowright?.cliInstall().catch(() => null)
       const s = await window.autowright?.cliStatus().catch(() => null)
-      if (s) setCli(s.state)
+      if (s) setCli(s)
       setCliBusy(false)
     })()
   }
@@ -257,21 +258,23 @@ export default function SettingsPage() {
                 <div style={rowTitle}>The <code>autowright</code> command</div>
                 <div style={{
                   ...rowSub,
-                  ...(cli === 'stale' ? { color: 'var(--amber)' } : {}),
+                  ...(cli.state === 'stale' ? { color: 'var(--amber)' } : {}),
                 }}>
-                  {cli === 'installed' && 'Installed at /usr/local/bin/autowright'}
-                  {cli === 'missing' && 'Not installed — manage automations from the Terminal. macOS will ask for your password.'}
-                  {cli === 'stale' && 'Points at an old location — reinstall to fix. macOS will ask for your password.'}
-                  {cli === 'foreign' && 'A different autowright is already at /usr/local/bin — Autowright won’t touch it.'}
+                  {cli.state === 'installed' && `Installed at ${cli.path}`}
+                  {cli.state === 'missing' && (cli.target === 'user'
+                    ? 'Not installed — manage automations from the Terminal. Installs to ~/.local/bin — no password needed.'
+                    : 'Not installed — manage automations from the Terminal. macOS will ask for your password — /usr/local/bin is a system folder, so placing the command there needs admin rights, just this once.')}
+                  {cli.state === 'stale' && 'Points at an old location — reinstall to fix. macOS will ask for your password — the installed command isn’t yours to edit, so replacing it needs admin rights.'}
+                  {cli.state === 'foreign' && `A different autowright is already at ${cli.path} — Autowright won’t touch it.`}
                 </div>
               </div>
-              {(cli === 'missing' || cli === 'stale') && (
+              {(cli.state === 'missing' || cli.state === 'stale') && (
                 <button className="ad-btn-soft" onClick={cliInstall} disabled={cliBusy} style={{ flex: 'none' }}>
                   {cliBusy ? (
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                       <Spinner size={12} /> Installing…
                     </span>
-                  ) : cli === 'stale' ? 'Reinstall…' : 'Install…'}
+                  ) : cli.state === 'stale' ? 'Reinstall…' : cli.target === 'user' ? 'Install' : 'Install…'}
                 </button>
               )}
             </div>

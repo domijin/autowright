@@ -7,7 +7,7 @@ declare global {
       backendInfo(): Promise<{ port: number; token: string } | null>
       backendStatus(): Promise<{ state: 'idle' | 'installing' | 'ok' | 'failed'; detail: string }>
       // §3 CLI on PATH (§10 step 3, §4.9 COMMAND LINE card)
-      cliStatus(): Promise<{ state: 'installed' | 'stale' | 'missing' | 'foreign'; target: 'user' | 'system'; path: string }>
+      cliStatus(): Promise<{ state: 'installed' | 'stale' | 'missing' | 'foreign'; path: string; onPath: boolean }>
       cliInstall(): Promise<{ ok: true } | { ok: false; canceled?: boolean; error: string }>
       openApp(hash: string): Promise<void>
       pickFolder(defaultPath?: string): Promise<string | null>

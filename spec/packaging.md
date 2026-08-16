@@ -82,37 +82,32 @@ the update bullets below).
   `autowright`: `#!/bin/sh` with an `# autowright CLI shim` marker line, then
   `exec "<python>" -m autowright.cli "$@"` (module form per the shebang rule above; `<python>`
   is the backend's real interpreter). The command name is `autowright` (no short alias for now).
-  **Two candidate locations, chosen per machine.** The preferred home is
-  `~/.local/bin/autowright` — user-owned, so no privilege ever — but only when `~/.local/bin`
-  is on the user's **login-shell** PATH (GUI apps inherit a stripped PATH, so the shell asks
+  **One install location:** `~/.local/bin/autowright` — user-owned, so no privilege and no
+  password, ever. There is no admin-prompt (osascript) flow anywhere anymore, and the app
+  **never auto-installs**: creation happens only when the user clicks Install on the §4.9
+  COMMAND LINE card. `~/.local/bin` may be absent from the user's PATH — the shell checks the
+  **login-shell** PATH (GUI apps inherit a stripped one, so it asks
   `$SHELL -l -c 'printf %s "$PATH"'` with a ~2 s timeout, caches the answer per app run, and
-  counts any failure as not-on-PATH). Otherwise the home is `/usr/local/bin/autowright`, which
-  on stock macOS is root-owned (or absent), so creation needs privilege. Shims are never
-  migrated between locations. Status, heal, and uninstall consider **both** locations; when
-  both hold our marker the user-local one is the effective one (it precedes `/usr/local/bin`
-  on any PATH that includes it). Ownership of the two halves is split:
-  - **Creation is the Electron shell's job.** The shell exposes two IPCs on the preload
-    bridge: `cli-status` (reads both candidate shims; states `installed` — marker present and
-    exec line points at the current backend interpreter from `backend.json` — `stale` —
-    marker present, different interpreter, and the file is not user-writable so the heal
-    below can't fix it (only possible at `/usr/local/bin`) — `missing`, and `foreign` — the
-    effective file exists without the marker; never touched. The result also carries
-    `target: 'user' | 'system'` — the effective install location per the PATH probe above —
-    and `path`, the effective shim path, so the §4.9 card can name it) and `cli-install`,
-    which branches on the target:
-    - *user target* (`~/.local/bin` on the login PATH): plain unprivileged writes —
-      `mkdir -p`, write the shim, `chmod 755`. No dialog, no password. The shell also
-      **auto-installs** this way at startup, once `backend.json` is readable, when no shim
-      exists at either location and the one-shot `cli-auto-installed` marker file (in the
-      Electron userData dir) is absent; the marker is written after the attempt, so a user
-      who deletes the shim on purpose never sees it come back.
-    - *system target* (fallback): explicit and privileged, never automatic — one
-      `osascript … with administrator privileges` command: `mkdir -p /usr/local/bin`, write
-      the shim, `chmod 755`, **`chown` to the console user** — that last step is the trick:
-      admin is needed at most once, because a user-owned shim file is rewritable without
-      touching the root-owned directory. The UI always explains what will be installed,
-      where, and why the password is needed **before** the dialog appears (§4.9 COMMAND LINE
-      card — the only install entry, §10), and declining is a normal state, never an error.
+  counts any failure as not-on-PATH) and the card shows the one-line fix
+  (`export PATH="$HOME/.local/bin:$PATH"`) after install rather than editing anyone's
+  dotfiles. `/usr/local/bin/autowright` is **legacy-only**: shims created there by earlier
+  builds are still recognized, healed, and uninstalled, but never created. Status, heal, and
+  uninstall consider **both** locations; the user-local file wins when both exist. Ownership
+  of the two halves is split:
+  - **Creation is the Electron shell's job — explicit and silent.** The shell exposes two
+    IPCs on the preload bridge: `cli-status` (reads both candidate shims; the effective one
+    is the first that exists, user-local first; states `installed` — marker present and exec
+    line points at the current backend interpreter from `backend.json` — `stale` — marker
+    present, different interpreter, and the file is not user-writable so the heal below
+    can't fix it; only possible at the legacy `/usr/local/bin`, since a user-local file is
+    always writable — `missing`, and `foreign` — the effective file exists without the
+    marker; never touched. The result also carries `path` — the effective shim path (the
+    install destination when missing) — and `onPath` — whether `~/.local/bin` is on the
+    login-shell PATH — so the §4.9 card can name the location and show the PATH hint) and
+    `cli-install` (plain unprivileged writes to `~/.local/bin/autowright`: `mkdir -p`, write
+    the shim, `chmod 755`. No dialog, no password. A `stale` legacy shim is not rewritten by
+    it — the card's fix is a fresh user-local install plus the manual
+    `sudo rm /usr/local/bin/autowright`, and the card says so).
     The interpreter path comes from `backend.json`'s `python` field, so the same code works
     in dev (repo venv) and prod (bundled interpreter) — no dev-only path.
   - **Healing is `service install`'s job — silent and sudo-free** (§3 has no sudo anywhere in

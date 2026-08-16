@@ -779,21 +779,21 @@ on. One **ON THIS MAC** card holds two rows: **"Automations & settings"** (the f
 is not changeable) above the **Execution data** row. A **COMMAND LINE** card sits below ON THIS
 MAC: one row titled "The `autowright` command", state from the §3 `cli-status` preload IPC (no
 stored setting — the shim files on disk are the source of truth, re-read on every Settings
-visit; the IPC's `target`/`path` fields name the §3 effective location). Detail line + action
-by state: `installed` → "Installed at `<path>`" (the IPC's `path`), no button; `missing` →
-"Not installed — manage automations from the Terminal." plus a target-specific sentence and
-button: user target appends "Installs to ~/.local/bin — no password needed." with an
-"Install" button (no ellipsis — no dialog follows); system target appends "macOS will ask
-for your password — /usr/local/bin is a system folder, so placing the command there needs
-admin rights, just this once." (once, because §3 chowns the shim to the user) with an
-"Install…" button; `stale` (system target only, §3) → amber "Points at an old location —
-reinstall to fix. macOS will ask for your password — the installed command isn't yours to
-edit, so replacing it needs admin rights." with "Reinstall…"; `foreign` → "A different
-`autowright` is already at `<path>` — Autowright won't touch it.", no button. The §3 rule
-stands: the password-explainer copy appears **before** any dialog. Install/Reinstall fire
+visit; the IPC's `path` names the §3 effective location, `onPath` says whether `~/.local/bin`
+is on the login-shell PATH). The CLI is opt-in: nothing installs until the user clicks the
+button here (§3 — no auto-install, no password anywhere). Detail line + action by state:
+`installed` → "Installed at `<path>`" (the IPC's `path`), no button; when `onPath` is false
+it appends the PATH hint: "Add ~/.local/bin to your PATH to use it: `export
+PATH="$HOME/.local/bin:$PATH"`"; `missing` → "Not installed — manage automations from the
+Terminal. Installs to ~/.local/bin — no password needed." with an "Install" button (no
+ellipsis — no dialog follows); `stale` (legacy `/usr/local/bin` only, §3) → amber "An old
+`autowright` command at /usr/local/bin points at an old location — remove it with `sudo rm
+/usr/local/bin/autowright`, then install here." with an "Install" button (installs fresh to
+~/.local/bin; the legacy file is never touched); `foreign` → "A different `autowright` is
+already at `<path>` — Autowright won't touch it.", no button. Install fires
 the §3 `cli-install` IPC; while
 running, the button shows the §9 busy-commit spinner, then the row re-reads `cli-status` — a
-declined prompt just returns to the previous state, never an error banner. A **DEVELOPER**
+failed install just returns to the previous state, never an error banner. A **DEVELOPER**
 card sits last on the page with
 the single **Developer mode** toggle row (developerMode above). A **QUIT** card sits at the
 very bottom of the page (below DEVELOPER), rendered only when the preload bridge exists (like

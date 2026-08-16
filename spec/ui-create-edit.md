@@ -156,9 +156,9 @@ applies unchanged; the chat pane never collapses.
     backend-appended on settle, Thread lifetime below) `fa-flag-checkered`.
   - **error** — a failure entry (a failed §8 job's message, the
     Failures paragraph below), a message block: `fa-circle-xmark` red glyph beside the
-    13 px/600 title "Something went wrong", the failure message as body prose beneath;
-    its "Try again" action, when present, sits beneath the body as an
-    `.ad-btn-pill.action` pill. Persisted like the other kinds (§4.4), so it survives a
+    13 px/600 title "Something went wrong", the failure message as body prose beneath —
+    no action pills (retrying is resending, and the composer owns that).
+    Persisted like the other kinds (§4.4), so it survives a
     reload and
     reaches the agent's CONVERSATION context.
 - **Thread type scale** — one scale across every entry kind, three roles (all sans;
@@ -443,7 +443,7 @@ applies unchanged; the chat pane never collapses.
   inert**: entries at or before the newest marker offer no actions — the settled draft
   they belonged to can't be acted on. A history blockers entry renders as its dismissed
   one-line summary whatever its stored flag says (belt-and-braces over the marker's
-  dismiss stamp), a history error entry hides its Try-again pill, and the turn action
+  dismiss stamp), and the turn action
   row never renders when the thread's last agent-side entry is a boundary marker (no
   Undo/Sync/Test/Analyze pills dangle under a settled session — they return with the
   next current-session entry); the rewrite entry's out-of-sync note likewise anchors to
@@ -480,7 +480,8 @@ job and no separate drafting state — while the first turn runs:
 - **Title row** — name shows the placeholder "New automation…" until the draft holds a
   spec, then the spec's `#` title as the provisional name; the response's `name` action
   replaces it (the §8 new-automation rule has the agent set one). The Start over ghost
-  cancels any in-flight job, deletes the pending slot's draft (the thread stays, behind
+  (disabled while a §8 job runs — the inputs lock below; the running job's only live
+  control is the composer's Cancel) deletes the pending slot's draft (the thread stays, behind
   the "Draft discarded." boundary marker — Thread lifetime above; the editor refetches it
   so the marker shows), and returns the editor to the create empty state with the
   description back in the input.
@@ -1054,7 +1055,7 @@ editors enter with
   3. **In sync, test executing** — the live status line, progress bar, and the action row
      Cancel + the disabled faint **Sync spec** (below) + View execution; the test-setup
      section stays hidden while the test executes.
-  4. **In sync, test settled** — the outcome line over the action row faint **Sync with
+  4. **In sync, test settled** — the outcome line over the action row faint **Sync
      spec** / **Test draft** and, on failure, **Analyze failure**, which sends
      the canned analyze chat message (below). Test draft is the same setup toggle as
      state 5 — reopening shows the values the last test used — and **View execution** lives
@@ -1101,8 +1102,8 @@ editors enter with
   - The **run row opens the section** — first, above the option sub-blocks, so it is
     never buried under a long param list: the muted **Run test** button — the only
     control that starts a test — and, when a test record exists, the faint **View
-    run** beside it (the settled states' only View-run home — the action rows never
-    carry it), over the this-test-only note, worded to what the draft has — "Values
+    execution** beside it (the settled states' only View-execution home — the action
+    rows never carry it), over the this-test-only note, worded to what the draft has — "Values
     and the message apply to this test only — nothing is saved." (params and message
     triggers both), "These values apply to this test only — nothing is saved."
     (params only), "The message applies to this test only — nothing is saved."

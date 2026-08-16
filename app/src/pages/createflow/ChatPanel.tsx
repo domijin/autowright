@@ -281,9 +281,8 @@ export function ChatPanel({
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>
       {/* thread — no header row (§11); the composer below carries the pane's identity */}
-      {/* §11 thread spacing: no flex gap — each entry carries its own top margin
-          (14px turn gap touching a user bubble, 6px between consecutive
-          agent-side entries so one response reads as one group) */}
+      {/* §11 thread spacing: no flex gap — each entry carries its own top
+          margin (uniform 12px group gap, 0 between chained operation blocks) */}
       <ScrollArea scrollRef={chatScrollRef} testId="chat-thread" wrapStyle={{ flex: 1, minHeight: 0 }} style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
         {rev.chat.length === 0 && !anyJobBusy && (isCreateEmpty ? (
           <div style={{ padding: '10px 4px' }}>
@@ -319,8 +318,8 @@ export function ChatPanel({
           </div>
         ))}
         {rev.chat.map((e, i) => {
-          // §11 thread spacing: 14px turns (touching a user bubble), 10px at
-          // family boundaries (around message blocks), 0 between operation blocks
+          // §11 thread spacing: uniform 12px group gap, 0 between chained
+          // operation blocks
           const prev = i > 0 ? rev.chat[i - 1] : null
           const mt = familyGap(prev, e)
           // §11 history-inert rule: at or before the newest boundary marker
@@ -475,7 +474,7 @@ export function ChatPanel({
           }
           if (e.kind === 'error') {
             // §11 message block — red glyph + title, the failure message as
-            // body prose, Try again as a pill beneath it
+            // body prose
             return (
               <div key={e.id} style={{ marginTop: mt }}>
                 <MsgHeader icon="fa-circle-xmark" color="var(--red)" title="Something went wrong" />
@@ -529,7 +528,8 @@ export function ChatPanel({
         {!!lastRewriteId && outOfSync && rev.dirty && !anyJobBusy && !rev.pendingSync && !viewingOld && rev.chat.length > 0 && (
           <div data-testid="chat-outofsync-note" style={{ marginTop: familyGap(rev.chat[rev.chat.length - 1], { kind: 'system' } as ChatEntry), display: 'flex', alignItems: 'center', gap: 10 }}>
             <GlyphBox><i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 10, color: 'var(--amber)' }} /></GlyphBox>
-            <div style={{ flex: 1, minWidth: 0, font: "500 12.5px/1.5 var(--sans)", color: 'var(--amber)' }}>
+            {/* the chip role (§11 secondary, 11.5/400) — amber for the color only */}
+            <div style={{ flex: 1, minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--amber)' }}>
               The workflow is out of sync — sync the steps before saving.
             </div>
           </div>
@@ -571,8 +571,8 @@ export function ChatPanel({
             left-aligned agent block at the bottom of the thread */}
         {anyJobBusy && (
           // §11 thread spacing: an operation block — flush beneath a
-          // just-settled op entry (the same job's trail chains), 10px after a
-          // message block, 14px after a user bubble
+          // just-settled op entry (the same job's trail chains), the uniform
+          // 12px group gap otherwise
           <div data-testid="chat-progress" style={{ marginTop: rev.chat.length === 0 ? 0 : familyGap(rev.chat[rev.chat.length - 1], { kind: 'activity' } as ChatEntry) }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <Spinner size={13} style={{ flex: 'none' }} />

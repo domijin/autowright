@@ -510,14 +510,16 @@ export function useDraftJob(d: DraftJobDeps) {
     // §11 rewrites-lock: nothing rewrites the workflow under a running test
     if (!rev || anyJobBusy || testLive) return
     // A cancel must return the panel to the state it was in (§11) — a sync
-    // started from a clean draft must not leave it marked out-of-sync.
-    dirtyBeforeSync.current = rev.dirty
+    // started from a clean draft must not leave it marked out-of-sync. A
+    // blocker amend (specOverride) is a spec rewrite: it dirties the draft,
+    // and a cancelled/failed sync keeps it dirty — the amended spec stays.
+    dirtyBeforeSync.current = specOverride ? true : rev.dirty
     up({
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // discard unsaved edits
       notesDraft: null, notesEdit: false,
       syncBusy: true, genStage: null, genDetail: null, genEvents: [], touched: true,
       // §11 draft undo: a repair amend replaces the spec outside the undo flow
-      ...(specOverride ? { spec: specOverride, undo: null } : {}),
+      ...(specOverride ? { spec: specOverride, dirty: true, undo: null } : {}),
     })
     try {
       await startJob({
@@ -608,7 +610,10 @@ export function useDraftJob(d: DraftJobDeps) {
         },
       })
     } catch (e) {
-      up({ syncBusy: false })
+      // §11 hold-and-flush: a POST that never became a job is an outcome too —
+      // the held chips land like on any other failure.
+      const held = takeHeldChips()
+      setRev((r) => r && ({ ...r, syncBusy: false, ...(held.length ? { chat: [...r.chat, ...held] } : {}) }))
       showToast((e as Error).message)
     }
   }
@@ -630,18 +635,25 @@ export function useDraftJob(d: DraftJobDeps) {
 
   // §11: sync Cancel (footer action block) — kill the job, keep the steps
   // and spec untouched, return the panel to the state it was in before.
+  // §11 hold-and-flush: cancelJob() stops the poll, so onCancelled never
+  // fires for a user cancel — the held workflow chips flush here instead
+  // (the staging already happened; a cancelled sync never swallows a receipt).
   const cancelSync = () => {
     if (!rev?.syncBusy) return
     cancelJob()
     const wasDirty = dirtyBeforeSync.current
-    setRev((r) => r && ({ ...r, syncBusy: false, dirty: wasDirty }))
+    const held = takeHeldChips()
+    setRev((r) => r && ({
+      ...r, syncBusy: false, dirty: wasDirty,
+      ...(held.length ? { chat: [...r.chat, ...held] } : {}),
+    }))
     showToast(wasDirty
       ? 'Sync stopped — the workflow is still out of sync.'
       : 'Sync stopped — nothing changed.', 4200)
   }
 
   return {
-    sendChat, runSync, flushHeldChips,
+    sendChat, runSync, flushHeldChips, takeHeldChips,
     cancelChat, cancelSync, cancelJob,
     stopPoll, jobIdRef, firstRequestRef,
   }

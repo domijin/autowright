@@ -1578,7 +1578,11 @@ class DraftJobs:
                     # plan" while the documents phase is still running.
                     plan = text[: marks[0].start()].strip()
                     if plan:
-                        job["plan"] = plan
+                        # New-key insert from the streaming thread — under the
+                        # lock, like _settle's, so get()'s items() iteration
+                        # never sees the dict resize mid-copy.
+                        with self._lock:
+                            job["plan"] = plan
                     self._stage(job, "Updating the documents")
                 shape = fname
                 label = self._CHAT_LABELS.get(fname, f"Writing {fname}")

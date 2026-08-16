@@ -97,9 +97,11 @@ export default function CreateFlow() {
     const a = autoRef.current
     if (draftSettled.current) return
     // §4.4: the thread flushes on every exit path, like the draft below.
+    // §11 hold-and-flush: leaving mid-chained-sync cancels the job — that's an
+    // outcome, so any held workflow chips land in the persisted thread here.
     if (chatLoaded.current && r) {
       const owner = isEdit ? a?.id : 'pending'
-      if (owner) void api.putChat(owner, persistChat(r.chat)).catch(() => { /* backend restarting */ })
+      if (owner) void api.putChat(owner, persistChat([...r.chat, ...jobs.takeHeldChips()])).catch(() => { /* backend restarting */ })
     }
     if (isEdit) {
       if (!a) return
@@ -613,23 +615,30 @@ export default function CreateFlow() {
   // run-settled system entry, so the conversation picks up where the run left off.
   const draftRunSeeded = useRef(false)
   useEffect(() => {
-    // Waits for the stored thread to merge (§4.4 thread load above) — seeding
-    // against an unmerged (empty) thread would re-append a run the stored
-    // thread already recorded.
     if (!isEdit || !rev || !chatLoaded.current || draftRunSeeded.current) return
     draftRunSeeded.current = true
-    const lastAt = rev.chat.length ? Date.parse(rev.chat[rev.chat.length - 1].at ?? '') || 0 : 0
     const dr = executions
       .filter((e) => e.automationId === automationId && e.ver === 'Draft'
         && (e.status === 'failed' || e.status === 'succeeded'))
       .sort((a, b) => b.startedMs - a.startedMs)[0]
-    if (!dr || Math.max(dr.endedMs, dr.startedMs) <= lastAt) return
-    appendEntry({
+    if (!dr) return
+    const entry = newEntry({
       kind: 'system',
       icon: 'fa-vial',
       text: dr.status === 'failed'
         ? `Draft execution failed${dr.error?.step ? ` at step ${dr.error.step}` : ''} — ${dr.error?.message ?? 'see the run'}`
         : 'Draft execution succeeded.',
+    })
+    // The duplicate check runs INSIDE the updater: the stored-thread merge
+    // (§4.4 thread load above) queues its prepend in the same effects pass,
+    // so this effect's own `rev.chat` closure is still pre-merge — only the
+    // updater sees the merged thread and can compare against its last entry.
+    // Guarded on the entry's own id so a re-run updater stays idempotent.
+    setRev((r) => {
+      if (!r || r.chat.some((e) => e.id === entry.id)) return r
+      const lastAt = r.chat.length ? Date.parse(r.chat[r.chat.length - 1].at ?? '') || 0 : 0
+      if (Math.max(dr.endedMs, dr.startedMs) <= lastAt) return r
+      return { ...r, chat: [...r.chat, entry] }
     })
   }, [rev != null, chatMergeTick]) // eslint-disable-line react-hooks/exhaustive-deps
 

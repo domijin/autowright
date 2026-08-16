@@ -1047,10 +1047,12 @@ def post_draft(body: models.DraftJobStart) -> dict:
     current = body.current.plain() if body.current is not None else None
     if auto and current is None:
         current = auto["versions"][auto["current_version"]]
-    if auto and "triggers" not in (current or {}):
+    if auto and (current or {}).get("triggers") is None:
         # §8: triggers are unversioned top-level state — attach the stored list
         # so the steps call's CURRENT-triggers reference has it (the editor's
-        # `current.triggers` wins when the body carries one).
+        # `current.triggers` wins when the body carries one). Checked for None,
+        # not key presence: a version-folder-seeded `current` always carries
+        # the key with a None value (§5 load model).
         current = dict(current or {})
         current["triggers"] = auto["triggers"]
     if auto and mode == "chat":
@@ -1188,9 +1190,13 @@ def retry_exec(execution_id: str) -> dict:
     a = _auto_or_404(h["automation_id"])
     try:
         h2 = engine.retry(a, h)
-    except (RuntimeError, LookupError) as e:
-        # §7: retry answers 409 while live, when the version no longer
-        # resolves, or when a re-saved draft's steps drifted from the record.
+    except LookupError as e:
+        # §19: a deleted version (or record) no longer resolves — 404, like
+        # execute_auto's unknown-version mapping; not a liveness conflict.
+        raise HTTPException(404, str(e)) from e
+    except RuntimeError as e:
+        # §7: retry answers 409 while live or when a re-saved draft's steps
+        # drifted from the record.
         raise HTTPException(409, str(e)) from e
     return {"executionId": h2["id"]}
 

@@ -204,8 +204,9 @@ export function BuildTestPanel({
   // A live test survives leaving the editor — re-attach the card on entry.
   useEffect(() => {
     if (test) return
+    // §4.5: a create-mode test record carries automationId null.
     const live = executions.find((e) => e.test && e.status === 'executing'
-      && (isEdit ? e.automationId === (auto?.id ?? '') : e.automationId === ''))
+      && (isEdit ? e.automationId === auto?.id : !e.automationId))
     if (live) beginTest(live.id)
   }, [executions]) // eslint-disable-line react-hooks/exhaustive-deps
   const runTest = async (valuesOverride?: Record<string, unknown>) => {
@@ -285,8 +286,17 @@ export function BuildTestPanel({
     if (rev.steps.length === 0) { up({ pendingTest: null }); return }
     const values = rev.pendingTest?.values ?? null
     up({ pendingTest: null })
-    if (values) setTestParams(applyTestValues(seedTestParams(), values)) // §11: pre-fill the panel's editors
-    void runTest(values ?? undefined)
+    if (values) {
+      // §11: pre-fill the panel's editors and send the SAME coerced values —
+      // raw yaml shapes (quoted numbers, kv mappings) would fail the backend's
+      // kind check and silently fall back to defaults while the editors show
+      // the coerced prefill.
+      const seeded = applyTestValues(seedTestParams(), values)
+      setTestParams(seeded)
+      void runTest(testParamValues(seeded))
+    } else {
+      void runTest()
+    }
   }, [rev, anyJobBusy, testLive, viewingOld, outOfSync]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11 test-settled thread anchor: when the tracked test finishes, a
@@ -348,19 +358,22 @@ export function BuildTestPanel({
         </div>
         {/* §11: no Cancel here — a running sync is cancelled from the
             chat footer's action block; the button just disables */}
+        {/* §11 state 1: while the sync runs the control drops to the faint
+            disabled text button — accent-primary Sync now is out-of-sync only */}
         <button
-          className={outOfSync ? 'ad-btn-primary' : 'ad-btn-text dim'} data-testid="sync-steps"
+          className={!rev.syncBusy && outOfSync ? 'ad-btn-primary' : 'ad-btn-text dim'} data-testid="sync-steps"
           disabled={syncDisabled}
           onClick={runSync}
-          style={outOfSync ? { flex: 'none', whiteSpace: 'nowrap' } : panelBtnStyle}
+          style={!rev.syncBusy && outOfSync ? { flex: 'none', whiteSpace: 'nowrap' } : panelBtnStyle}
         >
-          {outOfSync ? 'Sync now' : 'Sync spec'}
+          {!rev.syncBusy && outOfSync ? 'Sync now' : 'Sync spec'}
         </button>
       </div>
       )}
-      {/* §11 test zone, out of sync: the test button disabled beside the
-          sync-first hint — but a still-executing test keeps its Cancel */}
-      {!rev.syncBusy && outOfSync && (
+      {/* §11 test zone, states 1–2 (sync in flight, out of sync): the test
+          button disabled beside the sync-first hint — but a still-executing
+          test keeps its Cancel */}
+      {(rev.syncBusy || outOfSync) && (
         <div style={{ padding: '12px 20px 14px', borderTop: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 12 }}>
           {testLive ? (
             <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>

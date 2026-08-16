@@ -216,9 +216,10 @@ export interface Rev {
   syncBusy: boolean
   // §8 chat job in flight (the thread's progress entry carries the Cancel)
   chatBusy: boolean
-  // §11 Packages card: an install/retry call in flight; the §8 job's live stage
-  // (drives the "Installing the packages…" skeleton + save-hint labels)
+  // §11 Packages card: an install/retry call in flight
   pkgBusy: boolean
+  // the §8 job's live stage (unified three-phase set — drives the skeleton +
+  // save-hint labels)
   genStage: string | null
   // §8 live progress: the job's finer in-flight line under the stage
   genDetail: string | null

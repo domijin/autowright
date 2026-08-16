@@ -2695,7 +2695,7 @@ def test_chat_assembles_pkg_state_section(client):
 
 def test_retry_endpoint_reruns_and_answers_conflicts(client, monkeypatch):
     """§19 POST /executions/{id}/retry: a failed record re-executes in place
-    and answers its own id; an unresolvable version is the 409, not a 500."""
+    and answers its own id; an unresolvable version is the 404, not a 500."""
     from autowright.storage import store
 
     events = _capture_events(monkeypatch)
@@ -2715,12 +2715,14 @@ def test_retry_endpoint_reruns_and_answers_conflicts(client, monkeypatch):
     assert r.status_code == 200 and r.json()["executionId"] == eid
     assert _until_finished(events, eid)["execution"]["status"] == "succeeded"
 
-    # a failed record whose version is gone → 409 with the engine's words
+    # a failed record whose version is gone → 404 with the engine's words
+    # (§19 delete-version rule: the version no longer resolves — like
+    # execute's unknown-version mapping, not a liveness conflict)
     h2 = store.create_execution(a, "version", 99, "manual", [], status="failed")
     store.update_execution(h2)
     a["_live"].discard(h2["id"])
     r2 = client.post(f"/executions/{h2['id']}/retry")
-    assert r2.status_code == 409
+    assert r2.status_code == 404
     assert "not found" in r2.json()["detail"]
 
     assert client.post("/executions/nope/retry").status_code == 404

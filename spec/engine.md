@@ -385,7 +385,8 @@ constraints file pinning every already-installed distribution to its exact versi
 package whose requirements genuinely conflict with those pins fails the install with pip's
 resolution error instead of silently upgrading a neighbor. Ensure happens at two moments through the same code path:
 
-- right after a §8 steps call validates (job stage "Installing the packages"; per-package
+- right after a §8 steps call validates (still under the job's "Syncing the workflow"
+  stage — install lines land as §8 feed events; per-package
   statuses ride the draft payload and render in the §11 Packages card) — the user learns about
   an install failure while still on the edit page, not when a trigger fires;
 - before an execution's first step (§7) — self-healing after an app update, a cleared

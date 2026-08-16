@@ -479,8 +479,9 @@ notes rewrite (§11).
    manifest's declared package imports (an unknown or curated/stdlib import is a validation
    error) and `why` is a required one-line note on what that step uses the package for (the
    box tag's tooltip, §11) — one package can serve different jobs in different steps, and the
-   per-step note names this step's. After validation the job enters stage "Installing the packages"
-   and runs the §6.2 ensure; per-package results ride the draft payload as
+   per-step note names this step's. After validation the job runs the §6.2 ensure — still
+   under "Syncing the workflow" (installs are not a stage; the `Installing <pip spec>…`
+   lines land as feed events, the unified stage set below); per-package results ride the draft payload as
    `packages: [{ pip, import, status: installed | failed, version?, error? }]`. An install
    failure does **not** fail the job — the draft lands with the failure visible in the §11
    Packages card.

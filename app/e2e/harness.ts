@@ -211,7 +211,7 @@ export async function launchApp(home: string, onboarded: boolean): Promise<AppHa
       ...process.env,
       AUTOWRIGHT_HOME: home,
       // §15: cli-status must read a tmp path, not the machine's real
-      // /usr/local/bin — keeps onboarding step 3 deterministic.
+      // /usr/local/bin — keeps the Settings COMMAND LINE card deterministic.
       AUTOWRIGHT_SHIM: `${home}/bin/autowright`,
     } as Record<string, string>,
   })

@@ -1,7 +1,6 @@
-// Onboarding surface (SPEC §10): step 1 (welcome + live self-check), step 2
-// (connect your AI) and step 3 (the `autowright` command). A card's Continue
-// commits the agents and advances to step 3 — skipped entirely when the CLI
-// shim is already installed.
+// Onboarding surface (SPEC §10): step 1 (welcome + live self-check) and step 2
+// (connect your AI). A card's Continue commits the agents and lands in the app
+// shell — the CLI shim install lives only on the §4.9 COMMAND LINE card.
 //
 // Step 2 is fully real (§10/§19): detection reports installed + sign-in state
 // for the four harnesses, installs run in the backend (`harness.install` WS
@@ -61,7 +60,7 @@ const SUG: Record<string, { title: string; body: string; btn: string; primary: b
 const CONTINUE_LABEL = 'Use as default →'
 
 interface Ob {
-  phase: 'welcome' | 'connect' | 'cli'
+  phase: 'welcome' | 'connect'
   smStarted: boolean
   smSteps: { name: string; status: 'pending' | 'executing' | 'done'; duration: string }[]
   smShowResult: boolean
@@ -82,10 +81,6 @@ interface Ob {
   chosen: string | null
   committing: boolean
   sugOpen: boolean
-  // §10 step 3 (the `autowright` command)
-  cliBusy: boolean
-  cliDone: boolean
-  cliNote: string | null
 }
 
 const freshCard = (): Card => ({
@@ -114,9 +109,6 @@ function freshOb(): Ob {
     chosen: null,
     committing: false,
     sugOpen: false,
-    cliBusy: false,
-    cliDone: false,
-    cliNote: null,
   }
 }
 
@@ -466,13 +458,6 @@ export default function Onboarding() {
     if (pre) { setSurface('app'); return }
     up((o) => { o.phase = 'connect' })
   }
-  // §10: step 2 → step 3, unless the CLI shim is already installed (reinstall
-  // over a machine that has it) — then step 2 lands in the shell directly.
-  const afterConnect = async () => {
-    const st = await window.autowright?.cliStatus().catch(() => null)
-    if (st?.state === 'installed') { setSurface('app'); return }
-    up((o) => { o.phase = 'cli'; o.committing = false })
-  }
   const obContinue = (pick: string) => {
     if (ob.committing) return
     up((o) => { o.chosen = pick; o.committing = true })
@@ -487,7 +472,7 @@ export default function Onboarding() {
       // The store only hears about the new agents via the async agents.changed
       // refresh — pull state now so the app mounts seeing the picked default.
       await useStore.getState().refresh().catch(() => { /* WS refresh still lands */ })
-      await afterConnect()
+      setSurface('app')
     })()
   }
   const obSkip = () => {
@@ -500,24 +485,7 @@ export default function Onboarding() {
         showToast((e as Error).message)
       }
       await useStore.getState().refresh().catch(() => { /* WS refresh still lands */ })
-      await afterConnect()
-    })()
-  }
-  // §10 step 3: the only admin prompt in onboarding — explicit and explained
-  // beforehand; declining is a normal state, never an error.
-  const cliInstall = () => {
-    if (ob.cliBusy) return
-    up((o) => { o.cliBusy = true; o.cliNote = null })
-    void (async () => {
-      const r = await window.autowright?.cliInstall().catch(() => null)
-      if (r?.ok) {
-        up((o) => { o.cliBusy = false; o.cliDone = true })
-      } else {
-        up((o) => {
-          o.cliBusy = false
-          o.cliNote = 'Not installed — you can do this anytime from Settings.'
-        })
-      }
+      setSurface('app')
     })()
   }
 
@@ -527,18 +495,16 @@ export default function Onboarding() {
       background: 'radial-gradient(1000px 480px at 50% -12%, oklch(0.74 0.155 52 / .05), transparent 70%)',
     }}>
       <div className="ad-drag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18, padding: '13px 28px', flex: 'none' }}>
-        {/* §10: with prior data step 1 is the only screen — no counter.
-            Step 3 is only reachable on the fresh path, but committing step
-            2's agents flips `pre` live — keep the counter showing there. */}
-        {(!pre || ob.phase === 'cli') && (
+        {/* §10: with prior data step 1 is the only screen — no counter. */}
+        {!pre && (
           <div style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)' }}>
-            {ob.phase === 'welcome' ? 'Step 1 of 3' : ob.phase === 'connect' ? 'Step 2 of 3' : 'Step 3 of 3'}
+            {ob.phase === 'welcome' ? 'Step 1 of 2' : 'Step 2 of 2'}
           </div>
         )}
       </div>
 
       <ScrollArea wrapStyle={{ flex: 1, minHeight: 0 }}>
-        {ob.phase === 'welcome' ? renderWelcome() : ob.phase === 'connect' ? renderConnect() : renderCli()}
+        {ob.phase === 'welcome' ? renderWelcome() : renderConnect()}
       </ScrollArea>
 
       <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '13px 28px', display: 'flex', justifyContent: 'center', gap: 26, flexWrap: 'wrap' }}>
@@ -726,51 +692,6 @@ export default function Onboarding() {
               </button>
             </div>
           </>
-        )}
-      </div>
-    )
-  }
-
-  // ---------- step 3 (§10): the `autowright` command ----------
-  function renderCli() {
-    return (
-      <div className="ad-anim-page" style={{ maxWidth: 720, margin: '0 auto', padding: '44px 32px 60px' }}>
-        <h1 style={{ fontWeight: 600, fontSize: 26, lineHeight: 1.25, letterSpacing: '-.02em', margin: '0 0 10px' }}>
-          Use Autowright from the Terminal
-        </h1>
-        <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 26px' }}>
-          Installs the <code>autowright</code> command at <code>/usr/local/bin/autowright</code> so
-          you and your AI agents can manage automations from the Terminal. macOS will ask for your
-          password once.
-        </p>
-        {ob.cliDone ? (
-          <div className="ad-anim-item" style={{ display: 'flex', flexDirection: 'column', gap: 18, alignItems: 'flex-start' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)' }} />
-              <span style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                Installed — try <code>autowright --help</code> in a new Terminal window
-              </span>
-            </div>
-            <button className="ad-btn-primary" onClick={() => setSurface('app')}>Open Autowright →</button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'flex-start' }}>
-            {ob.cliNote && (
-              <div className="ad-anim-item" style={{ fontSize: 13, color: 'var(--amber)' }}>{ob.cliNote}</div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-              <button className="ad-btn-primary" onClick={cliInstall} disabled={ob.cliBusy}>
-                {ob.cliBusy ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                    <Spinner size={13} /> Installing…
-                  </span>
-                ) : 'Install the command'}
-              </button>
-              <button className="ad-btn-text dim" onClick={() => setSurface('app')} disabled={ob.cliBusy}>
-                Skip for now
-              </button>
-            </div>
-          </div>
         )}
       </div>
     )

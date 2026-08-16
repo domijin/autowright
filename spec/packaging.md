@@ -93,8 +93,8 @@ the update bullets below).
     `mkdir -p /usr/local/bin`, write the shim, `chmod 755`, **`chown` to the console user** —
     that last step is the trick: admin is needed at most once, because a user-owned shim file
     is rewritable without touching the root-owned directory). The UI always explains what will
-    be installed and where **before** the password dialog appears (§10 step 3, §4.9 COMMAND
-    LINE card), and declining is a normal state, never an error. The interpreter path comes
+    be installed and where **before** the password dialog appears (§4.9 COMMAND LINE card —
+    the only install entry, §10), and declining is a normal state, never an error. The interpreter path comes
     from `backend.json`'s `python` field, so the same code works in dev (repo venv) and prod
     (bundled interpreter) — no dev-only path.
   - **Healing is `service install`'s job — silent and sudo-free** (§3 has no sudo anywhere in

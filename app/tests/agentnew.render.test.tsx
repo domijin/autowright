@@ -68,12 +68,18 @@ describe('AgentNewPage (§12)', () => {
     expect(storeMod.useStore.getState().page).toBe('agents')
   })
 
-  it('submitting without a name shows the inline error and posts nothing', async () => {
+  it('submitting without a name shows the inline error, scrolls to and focuses the name field, posts nothing', async () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView')
     render(<AgentNewPage />)
     fireEvent.click(screen.getByText('Codex'))
     fireEvent.click(screen.getByText('Add agent'))
     expect(await screen.findByText('A name is required — give this agent a name before saving.')).toBeTruthy()
+    const nameInput = screen.getByPlaceholderText('Name this agent')
+    expect(scrollSpy).toHaveBeenCalledTimes(1)
+    expect(scrollSpy.mock.instances[0]).toBe(nameInput)
+    expect(document.activeElement).toBe(nameInput)
     expect(mockedApi.addAgent).not.toHaveBeenCalled()
+    scrollSpy.mockRestore()
   })
 
   it('custom mode posts the typed model string verbatim', async () => {

@@ -94,6 +94,7 @@ export default function AgentNewPage() {
   const [name, setName] = useState(editAgent ? (editAgent.name || editAgent.harness) : '')
   const [description, setDesc] = useState(editAgent?.description ?? '')
   const [nameErr, setNameErr] = useState(false)
+  const nameRef = useRef<HTMLInputElement | null>(null)
   const [fix, setFix] = useState<'needs' | 'busy' | 'done'>(
     () => (editAgent && agentChecks[editAgent.id] === 'needs' ? 'needs' : 'done'))
   // §12 edit-mode overflow menu (moved off the agent card): check / make default / remove.
@@ -347,7 +348,12 @@ export default function AgentNewPage() {
     if (!canAdd) {
       const needsName = harness && mode && !name.trim()
       const missingOllama = needsOllama && !ready
-      if (needsName) setNameErr(true)
+      if (needsName) {
+        setNameErr(true)
+        // Submit button sits at the bottom of a long page — bring the error on-screen (§12).
+        nameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        nameRef.current?.focus({ preventScroll: true })
+      }
       if (harness && !hInstalled) showToast(`Download and set up ${HARNESS_NAME[harness]} first.`)
       else if (missingOllama) showToast('Install Ollama first.')
       else if (!needsName) showToast('Pick a harness and a model first.')
@@ -446,6 +452,7 @@ export default function AgentNewPage() {
 
       <Eyebrow style={{ margin: '0 0 10px' }}>NAME</Eyebrow>
       <input
+        ref={nameRef}
         className={`ad-input${nameErr ? ' invalid' : ''}`}
         value={name}
         onChange={(e) => { setName(e.target.value); if (e.target.value.trim()) setNameErr(false) }}

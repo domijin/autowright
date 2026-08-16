@@ -941,7 +941,9 @@ already-installed but signed-out harness never gates — saving such an agent su
 the Needs setup badge and the reconnect banner, as before. The
 submit button renders disabled-styled until valid but stays clickable: submitting with a missing
 name shows an inline red error "A name is required — give this agent a name before saving." (red
-input border, clears on typing); an uninstalled picked harness toasts "Download and set up
+input border, clears on typing) and smooth-scrolls the Name field to the center of the view,
+focusing the input — the submit button sits at the bottom of a long page, so the error must be
+brought on-screen; an uninstalled picked harness toasts "Download and set up
 `<Harness>` first."; missing Ollama toasts "Install Ollama first."; otherwise "Pick
 a harness and a model first." Success toasts: "`<name>` added — ready to write automations." /
 "Changes saved — `<name>` is ready." When editing a signed-out agent, the form shows a reconnect

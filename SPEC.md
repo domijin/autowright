@@ -181,25 +181,46 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
   page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
   `@fortawesome/fontawesome-free` package into `<symbol>` defs. The stage is the real
-  chat-pane layout: a scrolling thread above a pinned composer. The composer is a
-  bordered `.ad-input`-style textarea with the real placeholders (empty-state
+  chat-pane layout and repeats its §11 type, color, and spacing values exactly: a
+  scrolling thread (14/18 px padding) above a pinned composer fenced off by a hairline
+  top border, entries carrying their own top margin - 12 px between families, 0 between
+  chained operation blocks, so a run's blocks and receipts read as one stack. The four
+  entry shapes are the app's: the quiet right-aligned user bubble (inset fill, hairline,
+  radius 9, 500 12.5 px `--text-2`); operation blocks (13 px glyph box + 500 12.5 px
+  `--text-muted` stage title, 3 px header top padding, then `• `-prefixed 11 px
+  `--text-faint` feed bullets flush left with the glyph, single-line with ellipsis, the
+  newest line brighter at `--text-muted` while it is the live one); message blocks
+  (13 px glyph box + 600 13 px `--text` title over the 12.5 px `--text-2` markdown body,
+  its list lines set tight - no gap between items, unlike the app's 6 px, so the plan
+  reads as one dense block at demo scale);
+  and faint system-chip receipts (10 px glyph, 400 11.5 px `--text-faint`). The composer
+  is a bordered `.ad-input`-style textarea with the real placeholders (empty-state
   "Describe the job - one sentence is enough.", then the in-thread
-  "Change something, or ask a question…" once the first turn lands), agent-picker and
-  Send/Cancel both `.ad-btn-pill` clones — mono 10.5 px, white .06 background, radius 6,
-  microchip glyph + `name · model` + caret-down on the picker. Each scene plays a §11
-  turn in thread form: the typed prompt lands as the quiet right-aligned user bubble;
-  then the §11 operation blocks stream in — spinner while live, settling to a green
-  check beside the unified §8 stage labels "Working on the request…" / "Updating the
-  documents…" / "Syncing the workflow…", each with its `• `-bulleted feed lines flush
-  left ("Choosing what to do"; "Writing the spec"; "Writing the manifest - name,
-  triggers, parameters, step list" and "Writing step n of N - `NN-name.py`") — with the
-  faint system-chip receipts between stages ("Spec updated." `fa-file-pen`,
-  "Renamed to …" / "Description updated." `fa-pen`, "Steps synced with the spec."
-  `fa-rotate`); the turn closes with the §11 turn action row — "Undo this change"
-  (`fa-rotate-left`) and "Test draft" (`fa-vial`) as icon-led action pills. No step
+  "Change something, or ask a question…" once the first turn lands) over the app's
+  toolbar row: agent picker (`.ad-btn-pill` clone - mono 10.5 px, white .06 background,
+  radius 6, microchip glyph + `name · model` + caret-down) and the dim `fa-eraser`
+  Clear-chat button on the left, Send/Cancel alone on the right as an
+  `.ad-btn-pill.action` clone (sans 11 px/500, the face every action pill in the demo
+  uses). The empty state is the app's create empty state: 600 19 px heading "What should
+  Autowright do for you?", the 12.5 px `--text-muted` subhead, the "OR START FROM AN
+  EXAMPLE" eyebrow over the six rounded `.ad-chip-btn` example chips (the app's list,
+  except the first chip reads "Track TV series" `fa-tv` where the app opens with the
+  manga example, so it matches the demo's first scene), and the closing
+  "Your AI writes the steps" line. Each scene then plays a §11 turn in thread form: the
+  typed prompt lands as the user bubble; the §11 operation blocks stream in - spinner
+  while live, settling to a green check beside the unified §8 stage labels "Working on
+  the request…" / "Updating the documents…" / "Syncing the workflow…", each with its feed
+  bullets ("Choosing what to do"; "Writing the spec"; "Writing the manifest - name,
+  triggers, parameters, step list" and "Writing step n of N - `NN-name.py`") - with the
+  mid-job "The plan" message block (`fa-list-check`, accent glyph) between the first two
+  stages, exactly where §11 lands it, and the system-chip receipts between stages
+  ("Spec updated." `fa-file-pen`, "Renamed to …" / "Description updated." `fa-pen`,
+  "Steps synced with the spec." `fa-rotate`); the turn closes with the §11 turn action
+  row - "Undo this change" (`fa-rotate-left`) and "Test draft" (`fa-vial`) as icon-led
+  action pills. No step
   cards, no trigger/ran chips — the demo shows exactly what the app's thread shows.
   Three looping scenes cover a cron, a Discord-trigger, and an interval job across
-  different agents; the thread clears between scenes and the empty-state heading
+  different agents; the thread clears between scenes and the empty state
   returns) · a three-step "how it works" strip (say it → read it → let it run) · three promise
   cards (the two §1 core promises plus the review promise "Nothing executes until you
   approve it") · a feature grid (message triggers, runs-with-window-closed + menu bar,

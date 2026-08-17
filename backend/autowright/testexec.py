@@ -129,7 +129,12 @@ def _run(engine: Engine, shadow: dict, ver: dict, h: dict, state: dict,
     # under the lock so a settle can't land between the check and the write.
     orphaned = False
     with store.lock:
-        if h.get("_draft_settled") or h["id"] not in store.execs:
+        if (h.get("_draft_settled") or h["id"] not in store.execs
+                or (h["automation_id"] is not None
+                    and h["automation_id"] not in store.autos)):
+            # The owner-gone arm is the §19 delete backstop: a test thread that
+            # somehow outlived delete's kill grace must not re-create the
+            # removed automation directory by writing test.yaml into it.
             orphaned = True
         elif h["status"] in ("succeeded", "failed"):
             # §5 test.yaml — the last-test summary a resumed draft's Test card

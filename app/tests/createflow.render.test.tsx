@@ -1481,3 +1481,175 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     expect(mockedApi.putChat).not.toHaveBeenCalledWith('pending', [])
   })
 })
+
+describe('CreateFlow old-version view: thread survival + test gating (§11)', () => {
+  beforeEach(armPendingPoll)
+  const V1_ROW = {
+    version: 1, when: 'Jul 1', note: null,
+    spec: AUTO.spec, steps: AUTO.steps, instructions: '', notes: '', params: [], packages: [],
+  }
+  const testRow = (status: string) => ({
+    id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'Test',
+    status, trigger: 'Test', triggerSender: null, test: true, steps: [],
+    duration: '', started: '', startedMs: 1, endedMs: status === 'executing' ? 0 : 2,
+    queuedMs: 0, note: null, error: null,
+  })
+
+  it('a test chip landed while viewing v1 survives Back to draft (shown blocks never removed)', async () => {
+    storeMod.useStore.setState({
+      automations: [{ ...AUTO, version: 2, versions: [V1_ROW] } as unknown as Automation],
+      test: { executionId: 'e9' },
+      executions: [testRow('executing')] as never,
+      executionFull: { e9: testRow('executing') } as never,
+    })
+    render(<CreateFlow />)
+    // touch the draft so leaving the Draft view stashes it (§4.4)
+    fireEvent.click(rowText('Fast local'))
+    fireEvent.click(screen.getByTestId('version-menu'))
+    fireEvent.click(screen.getByText('v1'))
+    expect(screen.getByText(/Loaded v1 from history/)).toBeTruthy()
+    // the live test settles while v1 is viewed - the run chip lands in the thread
+    storeMod.useStore.setState({
+      executions: [testRow('succeeded')] as never,
+      executionFull: { e9: testRow('succeeded') } as never,
+    })
+    await waitFor(() => expect(screen.getByText('Test succeeded.')).toBeTruthy())
+    // returning to the draft keeps the live thread - the chip never vanishes
+    fireEvent.click(screen.getByText('Back to draft'))
+    expect(screen.queryByText(/Loaded v1 from history/)).toBeNull()
+    expect(screen.getByText('Test succeeded.')).toBeTruthy()
+  })
+
+  it('viewing an old version disables the test controls - an old version is never tested', async () => {
+    storeMod.useStore.setState({
+      automations: [{ ...AUTO, version: 2, versions: [V1_ROW] } as unknown as Automation],
+    })
+    render(<CreateFlow />)
+    expect((screen.getByTestId('test-draft-toggle') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByTestId('version-menu'))
+    fireEvent.click(screen.getByText('v1'))
+    const toggle = screen.getByTestId('test-draft-toggle') as HTMLButtonElement
+    expect(toggle.disabled).toBe(true)
+    fireEvent.click(toggle) // inert - the setup section never opens
+    expect(screen.queryByText('Run test')).toBeNull()
+    expect(mockedApi.postTest).not.toHaveBeenCalled()
+    // back on the draft the toggle re-enables
+    fireEvent.click(screen.getByText('Back to draft'))
+    expect((screen.getByTestId('test-draft-toggle') as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+describe('CreateFlow send/sync edit guard + settle flush + poll retry (§11)', () => {
+  beforeEach(armPendingPoll)
+  const done = (draft: Record<string, unknown>) => ({
+    id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'chat', draft,
+  })
+  const send = (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'), { target: { value: text } })
+    fireEvent.click(screen.getByText('Send'))
+  }
+  const STAGED_CHIP = 'Parameter “greeting” staged — applies when you save.'
+
+  it('leaving with Keep draft mid-chained-sync flushes the held workflow chips (hold-and-flush)', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce(done({
+      spec: [{ kind: 'h1', text: 'My auto' }, { kind: 'p', text: 'With greeting.' }],
+      actions: { paramValues: { greeting: 'hi' }, sync: true },
+    }))
+    render(<CreateFlow />)
+    send('stage greeting and sync')
+    // the chat settles, the chained sync starts and never answers (held chips)
+    await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect(screen.queryByText(STAGED_CHIP)).toBeNull() // held, not landed
+    // back (the §4.4 keep path) - the settle flush lands the receipts
+    fireEvent.click(screen.getAllByText('My auto').find((el) => el.closest('button'))!)
+    await waitFor(() => {
+      const calls = (mockedApi.putChat as ReturnType<typeof vi.fn>).mock.calls
+      expect(calls.some((c) => (c[1] as Array<{ text?: string }>).some((e) => e.text === STAGED_CHIP))).toBe(true)
+    })
+    await waitFor(() => expect(screen.getByText(STAGED_CHIP)).toBeTruthy())
+  })
+
+  it('sending under an unsaved spec edit asks first; cancel keeps both texts, confirm proceeds', async () => {
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByTestId('spec-edit'))
+    fireEvent.change(screen.getByTestId('spec-editor'), { target: { value: '# My auto\nTyped change.' } })
+    const input = screen.getByPlaceholderText('Change something, or ask a question…') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'and also weekends' } })
+    fireEvent.click(screen.getByText('Send'))
+    // the discard confirm gates the send - no job yet
+    const dialog = screen.getByRole('alertdialog')
+    expect(within(dialog).getByText('Discard your spec edits?')).toBeTruthy()
+    expect(mockedApi.postDraftJob).not.toHaveBeenCalled()
+    // cancelling aborts: composer text and the open editor both survive
+    fireEvent.click(within(dialog).getByText('Cancel'))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(input.value).toBe('and also weekends')
+    expect((screen.getByTestId('spec-editor') as HTMLTextAreaElement).value).toBe('# My auto\nTyped change.')
+    expect(mockedApi.postDraftJob).not.toHaveBeenCalled()
+    // confirming discards the edits and the send proceeds
+    fireEvent.click(screen.getByText('Send'))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Discard edits'))
+    await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
+    expect(draftBody(0).text).toBe('and also weekends')
+    expect(screen.queryByTestId('spec-editor')).toBeNull()
+  })
+
+  it('starting a sync under an unsaved instructions edit asks the same way', async () => {
+    render(<CreateFlow />)
+    const card = cardOf(screen.getByText('BUILD INSTRUCTIONS'))
+    fireEvent.click(screen.getByText('BUILD INSTRUCTIONS'))
+    fireEvent.click(within(card).getByText('Edit'))
+    fireEvent.change(card.querySelector('textarea')!, { target: { value: '- new rule' } })
+    fireEvent.click(screen.getByText('Sync spec'))
+    const dialog = screen.getByRole('alertdialog')
+    expect(within(dialog).getByText('Discard your instruction edits?')).toBeTruthy()
+    fireEvent.click(within(dialog).getByText('Cancel'))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect(mockedApi.postDraftJob).not.toHaveBeenCalled()
+    expect((card.querySelector('textarea') as HTMLTextAreaElement).value).toBe('- new rule')
+  })
+
+  it('Fix with AI waits for the stored thread - the job carries the kept history and the seed', async () => {
+    ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ chat: [
+      { id: 'c1', at: '2026-08-01T00:00:00Z', kind: 'user', text: 'Earlier question' },
+    ] })
+    const failed = {
+      id: 'e7', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'v1',
+      status: 'failed', trigger: 'Manual', triggerSender: null, test: false, steps: [],
+      duration: '1s', started: '', startedMs: 1, endedMs: 2, queuedMs: 0, note: null,
+      error: { step: 'Fetch pages', message: 'boom', reason: null },
+    }
+    storeMod.useStore.setState({ fixExec: 'e7', executions: [failed] as never, executionFull: { e7: failed } as never })
+    render(<CreateFlow />)
+    await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1), { timeout: 3000 })
+    const body = draftBody(0)
+    expect(body.executionId).toBe('e7')
+    expect(String(body.text)).toMatch(/^This execution failed/)
+    const chat = body.chat as Array<{ kind: string; text?: string }>
+    expect(chat.some((e) => e.text === 'Earlier question')).toBe(true)
+    expect(chat.some((e) => e.kind === 'system' && /Execution failed at step Fetch pages/.test(e.text ?? ''))).toBe(true)
+  })
+
+  it('one transient poll error never fails the job - the next tick recovers it', async () => {
+    let calls = 0
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      calls += 1
+      if (calls === 1) throw new Error('socket hiccup')
+      return done({ answer: 'All good' })
+    })
+    render(<CreateFlow />)
+    send('hello')
+    await waitFor(() => expect(screen.getByText('All good')).toBeTruthy(), { timeout: 6000 })
+    expect(screen.queryByText('Something went wrong')).toBeNull()
+  })
+
+  it('three consecutive poll failures give up with the error entry', async () => {
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      throw new Error('backend gone')
+    })
+    render(<CreateFlow />)
+    send('hello')
+    await waitFor(() => expect(screen.getByText('Something went wrong')).toBeTruthy(), { timeout: 8000 })
+    expect(screen.getByText('backend gone')).toBeTruthy()
+  })
+})

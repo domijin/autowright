@@ -57,6 +57,25 @@ def is_test(h: dict) -> bool:
     """§4.5: test executions are kind `test` — there is no stored flag."""
     return h.get("kind") == "test"
 
+
+def lenient_int(v: Any) -> int:
+    """§5 lenient serialization: metadata files are hand-editable, and one
+    damaged numeric value must degrade to 0 - never a ValueError that 500s
+    every /state."""
+    try:
+        return int(v or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def lenient_local(s: Any) -> datetime | None:
+    """§5 lenient serialization: a damaged stored timestamp reads as None -
+    callers drop the display label instead of 500ing every /state."""
+    try:
+        return timefmt.parse_local(s)
+    except Exception:  # noqa: BLE001 - any unreadable value degrades
+        return None
+
 # §6 concurrency settings (§4.1). One run at a time and skip-on-busy are the
 # defaults — parallel runs and queueing are opt-in per automation (§9.2 card,
 # or staged through the §8 `concurrency` chat action).
@@ -864,6 +883,7 @@ class Store:
         """§19 GET /state `pendingDraft`: the slot's identity summary — backs
         the §9.1 Resume draft button; None when the slot holds no draft."""
         with self.lock:
+            self._recover_draft_swap(paths.pending_draft_dir())  # §5 swap repair
             dd = paths.pending_draft_dir() / "automation"
             if not (dd / "automation.yaml").exists():
                 return None
@@ -1473,10 +1493,10 @@ class Store:
             return meta
 
     def snapshot_json(self, m: dict) -> dict:
-        dt = timefmt.parse_local(m["created_at"])
+        dt = lenient_local(m["created_at"])
         return {"id": m["id"], "name": m.get("name"), "reason": m["reason"],
-                "when": timefmt.date_label(dt), "version": m.get("version"),
-                "size": size_label(int(m.get("size") or 0)), "files": int(m.get("files") or 0)}
+                "when": timefmt.date_label(dt) if dt else "", "version": m.get("version"),
+                "size": size_label(lenient_int(m.get("size"))), "files": lenient_int(m.get("files"))}
 
     def merged_params(self, a: dict, ver: dict) -> list[dict]:
         out = []
@@ -1500,8 +1520,7 @@ class Store:
     def version_json(self, a: dict, n: int, ver: dict) -> dict:
         when = ver.get("when")
         when_label = ""
-        if when:
-            dt = timefmt.parse_local(when)
+        if when and (dt := lenient_local(when)):
             # Year always included — "created Jul 18" is ambiguous a year later.
             when_label = ("created" if n == 1 else "updated") + f" {dt.strftime('%b')} {dt.day}, {dt.year}"
         return {"version": n, "when": when_label, "note": ver.get("note"),
@@ -1523,11 +1542,11 @@ class Store:
             out["agents"] = list(s.get("agents") or [])
             out["why"] = s.get("why", "")
         if s.get("timeout"):
-            out["timeout"] = int(s["timeout"])
+            out["timeout"] = lenient_int(s["timeout"])
         if s.get("no_timeout"):
             out["noTimeout"] = True
         if s.get("retries"):
-            out["retries"] = int(s["retries"])
+            out["retries"] = lenient_int(s["retries"])
         if s.get("infinite_retries"):
             out["infiniteRetries"] = True
         return out
@@ -1577,8 +1596,8 @@ class Store:
         if not t or not t.get("status"):
             return None
         when = ""
-        if t.get("when"):
-            when = timefmt.started_label(timefmt.parse_local(t["when"]))
+        if t.get("when") and (dt := lenient_local(t["when"])):
+            when = timefmt.started_label(dt)
         return {"status": t["status"], "when": when, "executionId": t.get("execution_id")}
 
     def latest_result_json(self, a: dict) -> dict | None:
@@ -1611,8 +1630,7 @@ class Store:
         nxt = triggerlib.next_at(a["triggers"])
         when = a["versions"].get(a["current_version"], {}).get("when")
         spec_meta = f"v{a['current_version']}"
-        if when:
-            dt = timefmt.parse_local(when)
+        if when and (dt := lenient_local(when)):
             spec_meta += f" · updated {timefmt.date_label(dt)}"
         out: dict[str, Any] = {
             "id": a["id"],

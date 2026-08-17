@@ -49,7 +49,10 @@ def _installed_versions() -> dict[str, str]:
         return out
     for dist in md.distributions(path=[str(d)]):
         try:
-            out[_norm(dist.metadata["Name"])] = dist.version
+            name = dist.metadata.get("Name")
+            if not name:
+                continue
+            out[_norm(name)] = dist.version
         except Exception:  # noqa: BLE001 — a broken dist-info never blocks the check
             continue
     return out

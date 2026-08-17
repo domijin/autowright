@@ -32,7 +32,16 @@ def _exit_http(e: urllib.error.HTTPError) -> None:
         detail = json.loads(body).get("detail")
     except (ValueError, AttributeError):
         detail = None
-    message = detail if isinstance(detail, str) else body
+    if isinstance(detail, str):
+        message = detail
+    elif isinstance(detail, list) and detail and isinstance(detail[0], dict):
+        # §20: a list-shaped validation detail (the pydantic 422 form) prints
+        # as the first error's field path and message, never the raw JSON.
+        loc = ".".join(str(x) for x in detail[0].get("loc") or [] if x != "body")
+        msg = str(detail[0].get("msg") or "invalid value")
+        message = f"{loc}: {msg}" if loc else msg
+    else:
+        message = body
     sys.exit(f"{e.code}: {message[:300]}")
 
 
@@ -227,6 +236,16 @@ def validate_workdir(c: Client, d: Path) -> dict:
             print(f"  - {e}", file=sys.stderr)
         sys.exit(1)
     draft["spec"] = spec["blocks"]
+    # §20: the workdir manifest carries `name`/`description` (unlike the §8
+    # sync manifest, where the validator ignores them) - read them here.
+    import yaml
+
+    manifest = yaml.safe_load(files.get("manifest.yaml") or "") or {}
+    if isinstance(manifest, dict):
+        if manifest.get("name"):
+            draft["name"] = str(manifest["name"])
+        if manifest.get("description"):
+            draft["description"] = str(manifest["description"])
     if "instructions.md" in files:
         draft["instructions"] = files["instructions.md"].strip()
     if "notes.md" in files:
@@ -1040,9 +1059,13 @@ def cmd_settings_set(c: Client, args) -> None:
 # ---------------------------------------------------------------- service
 
 def cmd_service(_c, args) -> None:
-    # Thin wrapper over the §3 registration entry (`python -m autowright.service`)
-    # — same ACTIONS, one registration path.
-    print(service.ACTIONS[args.action]())
+    # Thin wrapper over the §3 registration entry (`python -m autowright.service`):
+    # same ACTIONS, one registration path, and the same §3 exit codes via
+    # service.result_code, so both entry points exit alike.
+    out = service.ACTIONS[args.action]()
+    print(out)
+    if service.result_code(out):
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------- parser

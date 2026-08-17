@@ -35,7 +35,11 @@ remain plain dicts (§2).
 - `GET /instructions` → `{ framework, defaultBuild }` — the two §8 instruction files verbatim
   (backs the §11 Framework-instructions and Build-instructions cards)
 - `GET /automations` · `GET /automations/{id}` · `DELETE /automations/{id}` — delete cancels
-  every live execution and queued firing, then **waits for the cancelled engine threads to
+  every live execution and queued firing, **and settles the automation's draft work the same
+  way a save does** (the §11 draft test is cancelled and its record marked so a landing test
+  deletes itself instead of rewriting the removed container; the automation's still-building
+  §8 drafting jobs are cancelled - a deleted automation never leaves a test or agent harness
+  process running), then **waits for the cancelled engine threads to
   finish** (bounded by the §7 SIGTERM→SIGKILL grace plus margin) before removing the
   automation directory — a step still dying during the grace window must not re-create
   `memory/` after the rmtree (a half-recreated directory with no `versions/` would be

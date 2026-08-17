@@ -194,17 +194,40 @@ def test_exit_http_prints_api_detail_not_raw_json():
     assert str(ei.value.code) == "422: memory is empty"
 
 
+def test_exit_http_renders_validation_list_detail():
+    """§20: a list-shaped validation detail (the pydantic 422 form) prints as
+    the first error's field path and message, never the raw JSON body."""
+    import io
+    import urllib.error
+
+    from autowright.cli import _exit_http
+
+    body = (b'{"detail":[{"type":"literal_error","loc":["body","notifications"],'
+            b'"msg":"Input should be \'attention\' or \'all\'"}]}')
+    err = urllib.error.HTTPError("http://x", 422, "Unprocessable", {}, io.BytesIO(body))
+    with pytest.raises(SystemExit) as ei:
+        _exit_http(err)
+    assert str(ei.value.code) == "422: notifications: Input should be 'attention' or 'all'"
+
+    # No usable loc: the message alone still beats raw JSON.
+    body = b'{"detail":[{"loc":["body"],"msg":"boom"}]}'
+    err = urllib.error.HTTPError("http://x", 422, "Unprocessable", {}, io.BytesIO(body))
+    with pytest.raises(SystemExit) as ei:
+        _exit_http(err)
+    assert str(ei.value.code) == "422: boom"
+
+
 def test_exit_http_falls_back_to_body_when_detail_not_string():
     import io
     import urllib.error
 
     from autowright.cli import _exit_http
 
-    for body in (b"plain text error", b'{"detail":[{"loc":["x"]}]}'):
-        err = urllib.error.HTTPError("http://x", 500, "Server Error", {}, io.BytesIO(body))
-        with pytest.raises(SystemExit) as ei:
-            _exit_http(err)
-        assert body.decode() in str(ei.value.code)
+    err = urllib.error.HTTPError("http://x", 500, "Server Error", {},
+                                 io.BytesIO(b"plain text error"))
+    with pytest.raises(SystemExit) as ei:
+        _exit_http(err)
+    assert "plain text error" in str(ei.value.code)
 
 
 # ---------------------------------------------------------------- follow_exec
@@ -1481,3 +1504,27 @@ def test_cmd_service_dispatches_stop(monkeypatch, capsys):
     monkeypatch.setitem(service.ACTIONS, "stop", lambda: "stopped — fake")
     _run(None, "service", "stop")
     assert "stopped — fake" in capsys.readouterr().out
+
+
+def test_cmd_service_exits_nonzero_on_failure(monkeypatch, capsys):
+    from autowright import service
+
+    # §3/§20: the wrapper exits exactly where `python -m autowright.service`
+    # does; a failed stop is exit 1, not a silent 0.
+    monkeypatch.setitem(service.ACTIONS, "stop",
+                        lambda: "stop failed: launchd still reports the job")
+    with pytest.raises(SystemExit) as ei:
+        _run(None, "service", "stop")
+    assert ei.value.code == 1
+    assert "stop failed" in capsys.readouterr().out
+
+
+def test_cmd_service_exits_nonzero_when_not_installed(monkeypatch, capsys):
+    from autowright import service
+
+    # §3: `status` with no plist reports "not installed", exit 1.
+    monkeypatch.setitem(service.ACTIONS, "status", lambda: "not installed")
+    with pytest.raises(SystemExit) as ei:
+        _run(None, "service", "status")
+    assert ei.value.code == 1
+    assert "not installed" in capsys.readouterr().out

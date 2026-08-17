@@ -55,6 +55,12 @@ export default function CreateFlow() {
   const [descEdit, setDescEdit] = useState<string | null>(null)
   const [chatText, setChatText] = useState('')
   const [confirmSpecCancel, setConfirmSpecCancel] = useState(false)
+  // §11: sending a chat message or starting a sync while a manual edit holds
+  // unsaved changes first asks through the editing card's discard confirm -
+  // confirming discards and proceeds, cancelling aborts the send with the
+  // composer text kept. An open editor holding no changes never asks.
+  const [confirmEditDiscard, setConfirmEditDiscard] =
+    useState<{ doc: 'spec' | 'instructions' | 'notes'; proceed: () => void } | null>(null)
   const draftSnap = useRef<Rev | null>(null)
   const seededRef = useRef(false)
 
@@ -85,12 +91,18 @@ export default function CreateFlow() {
   // The settle flows call this before their settle endpoint: the in-flight
   // debounced PUT is awaited and the current thread written now, so every
   // entry lands BEFORE the §4.4 boundary marker the endpoint appends.
+  // §11 hold-and-flush: a keep/settle flush is an outcome too - held workflow
+  // chips land in the thread and its write here. The discard paths (Start
+  // over, Discard draft) take the chips first, so receipts for discarded
+  // staging never reach a later session's thread.
   const flushChat = async () => {
     await chatPutInFlight.current
     const r = revRef.current
     const owner = chatOwner()
     if (!chatLoaded.current || !r || !owner) return
-    try { await api.putChat(owner, persistChat(r.chat)) } catch { /* backend restarting */ }
+    const held = jobs.takeHeldChips()
+    if (held.length) setRev((x) => x && ({ ...x, chat: [...x.chat, ...held] }))
+    try { await api.putChat(owner, persistChat([...r.chat, ...held])) } catch { /* backend restarting */ }
   }
   useEffect(() => () => {
     const r = revRef.current
@@ -119,6 +131,10 @@ export default function CreateFlow() {
   // the editor already appended (the §7 Fix-with-AI seed can land first) —
   // only then do the thread writers arm.
   const [chatMergeTick, setChatMergeTick] = useState(0)
+  // §11 Fix-with-AI: true once the stored thread merged (or was cleared) - the
+  // canned analyze send waits on it, so its §8 CONVERSATION context carries
+  // the kept history and the seeded failure entry.
+  const [chatReady, setChatReady] = useState(false)
   const pendingStoredChat = useRef<ChatEntry[] | null>(null)
   // §4.4 fresh-entry clear: in create mode the stored-thread merge waits for
   // the pending-draft answer — null until GET /draft/pending resolves, then
@@ -144,6 +160,7 @@ export default function CreateFlow() {
     const stored = pendingStoredChat.current
     pendingStoredChat.current = null
     chatLoaded.current = true
+    setChatReady(true)
     if (!isEdit && slotResume.current === false) {
       // No draft to resume — a new automation always opens on the create
       // empty state: drop the settled session's leftover thread and unlink it.
@@ -230,6 +247,19 @@ export default function CreateFlow() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const up = (patch: Partial<Rev>) => setRev((r) => (r ? { ...r, ...patch } : r))
+
+  // §11: which open manual editor holds unsaved changes (the edits are
+  // mutually exclusive, so at most one can). Sends and syncs route through
+  // guardManualEdit so typed edits are never silently destroyed.
+  const editHoldsChanges = (r: Rev): 'spec' | 'instructions' | 'notes' | null =>
+    r.specEdit && r.specText !== r.specTextOrig ? 'spec'
+      : r.instrEdit && r.instrDraft != null && r.instrDraft !== r.instructions ? 'instructions'
+        : r.notesEdit && r.notesDraft != null && r.notesDraft !== r.notes ? 'notes' : null
+  const guardManualEdit = (proceed: () => void) => {
+    const doc = rev ? editHoldsChanges(rev) : null
+    if (doc) setConfirmEditDiscard({ doc, proceed })
+    else proceed()
+  }
 
   // ---- thread helpers ----
   const appendEntry = (e: Omit<ChatEntry, 'id' | 'at'>) =>
@@ -336,7 +366,7 @@ export default function CreateFlow() {
   const analyzeFailure = test && testExec?.status === 'failed'
     ? () => {
         if (anyJobBusy || testLive || viewingOld) return
-        void jobs.sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId)
+        guardManualEdit(() => void jobs.sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId))
       }
     : null
 
@@ -381,6 +411,10 @@ export default function CreateFlow() {
   // discarded." boundary marker — refetched so the marker shows.
   const resetCreate = async () => {
     jobs.cancelJob()
+    // §11 hold-and-flush: Start over discards the session's staging, so its
+    // held workflow chips drop with it - they must never flush into (or leak
+    // through a later sync onto) the next session's thread.
+    jobs.takeHeldChips()
     // §4.4: Start over discards the pending slot's draft — after any in-flight
     // continuous-persist PUT, which would otherwise resurrect it. The thread
     // flushes first so every entry lands before the boundary marker; bumping
@@ -432,7 +466,9 @@ export default function CreateFlow() {
   // first message included (the §8 new-automation rule: the agent writes the
   // spec, names the automation through actions, and chains the sync).
   const sendMessage = () => {
-    void jobs.sendChat()
+    // §11: an open manual edit with unsaved changes asks before the send -
+    // cancelling keeps the composer text (sendChat clears it only on proceed).
+    guardManualEdit(() => void jobs.sendChat())
   }
 
   // §11 Clear chat: empties the thread only — the debounced thread persist
@@ -580,12 +616,15 @@ export default function CreateFlow() {
     if (!rev) return
     const blockers = (entry.blockers ?? []).filter((b) => b.kind !== 'user-action')
     if (!blockers.length) return
-    setRev((r) => r && ({
-      ...r,
-      resolved: [...r.resolved, ...blockers.map(blockerLine)],
-      chat: r.chat.map((e) => (e.id === entry.id ? { ...e, dismissed: true } : e)),
-    }))
-    void jobs.runSync(amendSpec(rev.spec, blockers))
+    // §11: starting a sync under an unsaved manual edit asks first
+    guardManualEdit(() => {
+      setRev((r) => r && ({
+        ...r,
+        resolved: [...r.resolved, ...blockers.map(blockerLine)],
+        chat: r.chat.map((e) => (e.id === entry.id ? { ...e, dismissed: true } : e)),
+      }))
+      void jobs.runSync(amendSpec(rev.spec, blockers))
+    })
   }
 
   // §7/§9.2 Fix with AI: the editor opened from a failed execution seeds the
@@ -594,6 +633,7 @@ export default function CreateFlow() {
   // in full detail (§19 executionId). While another job is already in flight only
   // the seed lands; the user asks when it settles.
   const fixConsumed = useRef(false)
+  const [fixSend, setFixSend] = useState<string | null>(null)
   useEffect(() => {
     if (!rev || fixConsumed.current) return
     const fx = useStore.getState().fixExec
@@ -605,10 +645,21 @@ export default function CreateFlow() {
       ? `Execution failed at step ${ex.error.step ?? '?'} — ${ex.error.message}`
       : 'The execution failed.'
     appendEntry({ kind: 'system', icon: 'fa-circle-exclamation', text: failure })
-    if (anyJobBusy || testLive || !ex || ex.status !== 'failed') return
-    // The seed entry above already names the failing step — don't repeat it here.
-    void jobs.sendChat('This execution failed — figure out why. If the automation is at fault, change it so it won’t happen again; if the fix is something I need to do on this Mac (install or start an app, sign in), tell me what to do and how instead.', fx)
+    if (!ex || ex.status !== 'failed') return
+    // §11: the send is deferred until the stored thread merged (chatReady) -
+    // the effect below fires it, so the job's §8 CONVERSATION context carries
+    // the kept history and the seed entry above instead of a pre-merge thread.
+    setFixSend(fx)
   }, [rev != null]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!rev || !chatReady || !fixSend) return
+    setFixSend(null)
+    // While another §8 job is already in flight only the seed lands (§11);
+    // the user asks when it settles.
+    if (anyJobBusy || testLive) return
+    // The seed entry above already names the failing step — don't repeat it here.
+    void jobs.sendChat('This execution failed — figure out why. If the automation is at fault, change it so it won’t happen again; if the fix is something I need to do on this Mac (install or start an app, sign in), tell me what to do and how instead.', fixSend)
+  }, [rev != null, chatReady, fixSend]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11: settled runs seed the thread — entering the editor after the newest
   // Draft execution finished (later than the thread's last entry) appends a
@@ -653,9 +704,20 @@ export default function CreateFlow() {
       void api.putDraft(auto.id, serializeDraft(rev)).catch(() => { /* keep local snapshot */ })
     }
     if (key === 'draft') {
-      if (draftSnap.current) setRev({ ...draftSnap.current, viewing: 'draft' })
-      else if (auto.draft) setRev(seedFromAuto(auto, agents, secrets.map((s) => s.name)))
-      else setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instructions: auto.instructions, notes: auto.notes, params: auto.params, packages: auto.packages }, 'draft'))
+      // §11: the chat thread is one live surface across views - entries that
+      // landed while a version was viewed (a settling test's run chip, flushed
+      // workflow receipts) stay when the draft returns; only the draft
+      // documents restore from the stash. The old-version watcher's pending
+      // clear was deliberate (§11), so the stash never re-arms a pending.
+      if (draftSnap.current) {
+        const snap = draftSnap.current
+        setRev((r) => ({
+          ...snap, chat: r ? r.chat : snap.chat,
+          pendingSync: false, pendingTest: null, viewing: 'draft' as const,
+        }))
+      } else if (auto.draft) {
+        setRev((r) => ({ ...seedFromAuto(auto, agents, secrets.map((s) => s.name)), chat: r ? r.chat : [] }))
+      } else setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instructions: auto.instructions, notes: auto.notes, params: auto.params, packages: auto.packages }, 'draft'))
     } else if (key === auto.version) {
       setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instructions: auto.instructions, notes: auto.notes, params: auto.params, packages: auto.packages }, key))
     } else {
@@ -715,6 +777,9 @@ export default function CreateFlow() {
       // §11: settling cancels any in-flight §8 job client-side too — the
       // DELETE below also kills the owner's jobs server-side (§19).
       jobs.cancelJob()
+      // §11 hold-and-flush: a discard drops the session's held chips with its
+      // staging - receipts for discarded staging never reach the kept thread.
+      jobs.takeHeldChips()
       draftSettled.current = true
       await flushChat()
       await putInFlight.current
@@ -820,7 +885,7 @@ export default function CreateFlow() {
             setChatText={setChatText}
             sendMessage={sendMessage}
             undoDraft={undoDraft}
-            runSync={() => void jobs.runSync()}
+            runSync={() => guardManualEdit(() => void jobs.runSync())}
             runDraftTest={() => setTestRunSignal((s) => s + 1)}
             analyzeFailure={analyzeFailure}
             patchEntry={patchEntry}
@@ -1122,9 +1187,10 @@ export default function CreateFlow() {
                   syncDisabled={syncDisabled}
                   agentGap={agentGap}
                   lockStyle={lockStyle}
-                  runSync={() => void jobs.runSync()}
+                  runSync={() => guardManualEdit(() => void jobs.runSync())}
                   flushHeldChips={jobs.flushHeldChips}
-                  sendChat={jobs.sendChat}
+                  sendChat={async (text?: string, executionId?: string) =>
+                    guardManualEdit(() => void jobs.sendChat(text, executionId))}
                   runTestSignal={testRunSignal}
                 />
                 <RightCards
@@ -1172,6 +1238,24 @@ export default function CreateFlow() {
           danger
           onConfirm={() => { setConfirmSpecCancel(false); up({ specEdit: false, specText: '', specTextOrig: '' }) }}
           onCancel={() => setConfirmSpecCancel(false)}
+        />
+      )}
+
+      {/* §11: a send or sync under an unsaved manual edit asks first -
+          confirming discards the edits (the job start resets the editor
+          state) and proceeds; cancelling aborts with the composer text kept */}
+      {confirmEditDiscard && (
+        <ConfirmModal
+          title={confirmEditDiscard.doc === 'spec' ? 'Discard your spec edits?'
+            : confirmEditDiscard.doc === 'instructions' ? 'Discard your instruction edits?'
+              : 'Discard your notes edits?'}
+          body={confirmEditDiscard.doc === 'spec' ? 'The changes you typed into the spec editor will be lost.'
+            : confirmEditDiscard.doc === 'instructions' ? 'The changes you typed into the build instructions will be lost.'
+              : 'The changes you typed into the notes editor will be lost.'}
+          confirmLabel="Discard edits"
+          danger
+          onConfirm={() => { const { proceed } = confirmEditDiscard; setConfirmEditDiscard(null); proceed() }}
+          onCancel={() => setConfirmEditDiscard(null)}
         />
       )}
 

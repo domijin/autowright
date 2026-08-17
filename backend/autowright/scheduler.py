@@ -148,6 +148,13 @@ class Scheduler:
                 hub.publish("automation.changed")
 
     def _fire(self, a: dict, t: dict) -> None:
+        # The tick evaluated a snapshot taken outside the lock - a PATCH landing
+        # mid-tick may have removed or disabled this trigger, and an occurrence
+        # the API already confirmed off must not fire from the stale dict.
+        with self.store.lock:
+            cur = next((x for x in a["triggers"] if x["id"] == t["id"]), None)
+            if cur is None or not cur["enabled"]:
+                return
         # §6: a cron/one-shot/app-start firing with no free slot is skipped, never
         # queued — only message firings queue (a due one-shot is still consumed by
         # the caller).

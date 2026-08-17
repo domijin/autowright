@@ -44,10 +44,12 @@ def shim_text() -> str:
 
 
 def _heal_one(p: Path) -> str | None:
-    """Heal a single candidate location; None when nothing is there."""
+    """Heal a single candidate location; None when nothing is there. An
+    undecodable (binary) file can't carry the marker: foreign, left alone,
+    never a traceback (same tolerance as _remove_shim)."""
     try:
         current = p.read_text()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     if SHIM_MARKER not in current:
         return f"foreign {p} left alone"
@@ -217,6 +219,15 @@ ACTIONS = {"install": install, "uninstall": uninstall,
            "status": status, "restart": restart, "stop": stop}
 
 
+def result_code(out: str) -> int:
+    """§3 exit code for an action's result line: 1 for a failed action or a
+    missing install, 0 otherwise. Shim notes after "·" are informational.
+    Shared by main() below and the §20 `autowright service` wrapper, so both
+    entry points exit alike."""
+    head = out.split("·")[0]
+    return 1 if ("failed" in head or head.startswith("not installed")) else 0
+
+
 def main(argv: list[str]) -> int:
     """`python -m autowright.service <action>` — the §3 registration entry the
     app's ensure-backend step execs (the UI never invokes the CLI). The §20
@@ -227,8 +238,7 @@ def main(argv: list[str]) -> int:
         return 2
     out = ACTIONS[argv[0]]()
     print(out)
-    head = out.split("·")[0]  # shim notes after "·" are informational
-    return 1 if ("failed" in head or head.startswith("not installed")) else 0
+    return result_code(out)
 
 
 if __name__ == "__main__":

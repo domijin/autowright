@@ -64,7 +64,8 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   printed. `--json` carries the raw payload (and list rows the §4.5 `triggerSender`) as always.
 - **Exit codes:** 0 success · 1 any error (connection, HTTP, validation, bad reference —
   message on stderr, §3 guidance style, never a traceback; an HTTP error prints the API's
-  `detail` message, never the raw JSON body) · 2 from `automation execute -f`,
+  `detail` message, never the raw JSON body, and a list-shaped validation `detail` (the
+  pydantic 422 form) prints as the first error's field path and message) · 2 from `automation execute -f`,
   `execution retry -f`, and `execution tail` when the followed execution ends in any
   terminal status other than
   `succeeded` — so a harness can branch on the exit code without parsing prose.

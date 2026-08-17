@@ -361,14 +361,20 @@ def test_retry_create_mode_test_answers_409(client):
 
 
 def test_fabricated_trigger_id_cannot_store_past_time(client):
-    """§19: a past `time` answers 422 — a client-made id used to bypass the
-    check via the stored-entry leniency."""
+    """§4.3 spent-drop: an id-carrying past `time` the automation does not
+    store is dropped silently - a client-made id stores nothing, and an
+    elapsed staged one-shot never blocks the save."""
     r = client.post("/automations", json={"draft": make_version(), "name": "Timey",
                                           "agentId": "mock"})
     aid = r.json()["id"]
     r2 = client.patch(f"/automations/{aid}", json={
         "triggers": [{"kind": "time", "at": "2020-01-01T10:00", "id": "fake-id"}]})
-    assert r2.status_code == 422
+    assert r2.status_code == 200
+    assert r2.json()["triggers"] == []
+    # a brand-new entry (no id) with a past time still answers 422
+    r2b = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2020-01-01T10:00"}]})
+    assert r2b.status_code == 422
     # the real leniency still holds: an id the automation actually stores
     r3 = client.patch(f"/automations/{aid}", json={
         "triggers": [{"kind": "time", "at": "2030-01-01T10:00"}]})
@@ -377,6 +383,28 @@ def test_fabricated_trigger_id_cannot_store_past_time(client):
     r4 = client.patch(f"/automations/{aid}", json={
         "triggers": [{"kind": "time", "at": "2020-01-01T10:00", "id": stored["id"]}]})
     assert r4.status_code == 200
+
+
+def test_elapsed_staged_one_shot_never_blocks_save(client):
+    """§4.3 spent-drop on the draft paths: a staged one-shot whose moment
+    passed before Create / version save lands is dropped, the save succeeds,
+    and the rest of the list stores normally."""
+    past = {"kind": "time", "at": "2020-01-01T10:00", "id": "staged-one-shot"}
+    cron = {"kind": "cron", "expression": "0 8 * * *"}
+    r = client.post("/automations", json={
+        "draft": {**make_version(), "triggers": [past, cron]},
+        "name": "Stale staged", "agentId": "mock"})
+    assert r.status_code == 200
+    kinds = [t["kind"] for t in r.json()["triggers"]]
+    assert kinds == ["cron"]
+    aid = r.json()["id"]
+    # version save: same rule - the scheduler consumed the one-shot mid-edit
+    d = {**make_version(), "triggers": [past, {"id": r.json()["triggers"][0]["id"],
+                                               **cron}]}
+    d["notes"] = "changed"
+    r2 = client.post(f"/automations/{aid}/versions", json={"draft": d})
+    assert r2.status_code == 200
+    assert [t["kind"] for t in r2.json()["automation"]["triggers"]] == ["cron"]
 
 
 def test_draft_out_of_sync_roundtrips(client):
@@ -472,3 +500,32 @@ def test_scheduler_warns_once_on_timezone_rewind(store, monkeypatch, caplog):
     utc.now += timedelta(days=1, hours=1)
     sched._tick()
     assert fires == ["t1"]
+
+
+def test_damaged_metadata_never_500s_state(client):
+    """§5 lenient serialization: hand-edited numeric/timestamp values degrade
+    (empty label, 0) instead of 500ing every /state."""
+    from autowright.storage import store
+
+    r = client.post("/automations", json={"draft": make_version(), "name": "Damaged",
+                                          "agentId": "mock"})
+    aid = r.json()["id"]
+    a = store.autos[aid]
+    ver = a["versions"][a["current_version"]]
+    ver["when"] = "not-a-timestamp"
+    ver["steps"][0]["timeout"] = "3.2 KB"
+    assert client.get("/state").status_code == 200
+    got = client.get(f"/automations/{aid}")
+    assert got.status_code == 200
+
+
+def test_pending_summary_recovers_half_finished_swap(client):
+    """§5: loads repair a half-finished save_draft swap first - the /state
+    pendingDraft summary must see a draft whose save crashed between the two
+    renames, same as GET /draft/pending does."""
+    from autowright import paths
+
+    assert client.put("/draft/pending", json={"draft": make_version()}).status_code == 200
+    dd = paths.pending_draft_dir() / "automation"
+    dd.rename(paths.pending_draft_dir() / ".ad-old-automation")
+    assert client.get("/state").json()["pendingDraft"] is not None

@@ -501,6 +501,22 @@ def parse_envelope(text: str) -> dict[str, str]:
     return files
 
 
+def _blocked_mark_outside_fences(text: str) -> re.Match | None:
+    """§8 shape-aware blocker detection: the first line-anchored ===BLOCKED===
+    that does NOT sit inside a markdown code fence - a fenced marker is quoted
+    prose (an answer explaining the format), never an envelope."""
+    fenced = False
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\r\n")
+        if FENCE_OPEN_RE.match(bare):
+            fenced = not fenced
+        elif not fenced and BLOCKED_MARK_RE.match(bare):
+            return BLOCKED_MARK_RE.match(text, pos)
+        pos += len(line)
+    return None
+
+
 def parse_blockers(text: str) -> tuple[list[dict] | None, str | None]:
     """§8 blocker envelope → (blockers, notes). (None, None) when the response
     isn't one; the parsed nonempty blocker list when it is, plus the optional
@@ -509,18 +525,21 @@ def parse_blockers(text: str) -> tuple[list[dict] | None, str | None]:
     any other file block stays forbidden); ValueError when it is a blocker but
     malformed (which sends it through the normal repair round like any invalid
     response)."""
-    m = BLOCKED_MARK_RE.search(text)
+    m = _blocked_mark_outside_fences(text)
     if not m:
         return None, None
     endm = END_MARK_RE.search(text, m.end())
     if not endm:
         raise ValueError("blocker response is truncated — no ===END=== marker")
     notes = None
-    if FILE_MARK_RE.search(text):
+    # §8: only a file block *beside* the envelope counts - a ===FILE: line
+    # quoted inside the yaml body is body text, not a block.
+    remainder = text[:m.start()] + text[endm.end():]
+    if FILE_MARK_RE.search(remainder):
         # The envelope's own span is cut out, so the remainder must parse as a
         # plain file envelope holding exactly the optional notes.md.
         try:
-            files = parse_envelope(text[:m.start()] + text[endm.end():])
+            files = parse_envelope(remainder)
         except ValueError:
             raise ValueError("a blocker envelope may carry only one notes.md block "
                              "beside it — close the block with its own ===END===")
@@ -1084,8 +1103,9 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
     # No triggers key -> no triggers (manual / menu bar only).
     draft = {
         "triggers": norm_trigs,
-        "name": manifest.get("name"),
-        "description": manifest.get("description", ""),
+        # §8: name/description are never manifest keys - identity changes only
+        # through the chat call's actions, so a manifest that smuggles them in
+        # is ignored rather than forwarded.
         "note": manifest.get("note", ""),
         "params": params,
         "packages": norm_pkgs,
@@ -1172,6 +1192,17 @@ class DraftJobs:
             # The whole session group (§8 "cancelling the job kills the harness
             # process") — CLIs spawn helpers that terminate alone won't reach.
             harness.kill_group(proc, signal.SIGTERM)
+
+            def _hard_kill(p=proc):
+                # §8: a CLI that traps SIGTERM must still die - same
+                # term-then-kill escalation as the engine's step groups.
+                try:
+                    p.wait(timeout=5.0)
+                except Exception:  # noqa: BLE001 - timeout or a raced reap
+                    harness.kill_group(p, signal.SIGKILL)
+
+            threading.Thread(target=_hard_kill, daemon=True,
+                             name="ad-draft-kill").start()
         return True
 
     def cancel_for(self, owner_id: str | None) -> None:

@@ -141,6 +141,18 @@ def test_install_leaves_foreign_shim_alone(svc):
     assert "someone else" in svc.shim.read_text()
 
 
+def test_install_leaves_undecodable_foreign_file_alone(svc):
+    # §3: a non-UTF-8 file named autowright (some other tool's compiled
+    # binary) can't carry the marker; install leaves it alone and still
+    # succeeds, never a traceback (same tolerance as uninstall).
+    payload = b"\x00\x80\xff not utf-8"
+    svc.shim.parent.mkdir(parents=True)
+    svc.shim.write_bytes(payload)
+    out = svc.mod.install()
+    assert out.startswith("installed and started")
+    assert svc.shim.read_bytes() == payload
+
+
 def test_shim_paths_env_knob(monkeypatch, home):
     # AUTOWRIGHT_SHIM (§15) forces a single location — tests and dev never
     # touch the real candidates. Uses the real shim_paths (the svc fixture
@@ -235,6 +247,14 @@ def test_main_exit_code_on_failure(svc, capsys):
     svc.results["load"] = SimpleNamespace(returncode=1, stdout="",
                                           stderr="Load failed: 5\n")
     assert svc.mod.main(["install"]) == 1
+
+
+def test_result_code_from_real_action_output(svc, capsys):
+    # §3/§20: result_code is the one exit-code rule, shared by main() and the
+    # CLI `service` wrapper; probe it against real action output.
+    assert svc.mod.result_code(svc.mod.stop()) == 1       # no plist: not installed
+    assert svc.mod.result_code(svc.mod.install()) == 0
+    assert svc.mod.result_code(svc.mod.status()) == 0     # plist present: stopped, not a failure
 
 
 def test_install_falls_back_to_legacy_load(svc):

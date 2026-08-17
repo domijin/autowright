@@ -330,7 +330,13 @@ applies unchanged; the chat pane never collapses.
     staged this turn that the rebuild then dropped reads staged → dropped). The
     staging itself still
     happens at apply time (the cards show staged values immediately — the chips are
-    receipts, and a cancelled sync never swallows one). A response arming no sync
+    receipts, and a cancelled sync never swallows one). A session that leaves the
+    editor or settles while chips are still held resolves them the same way: the
+    keep and settle paths that carry the session forward (Keep draft, leaving the
+    editor, Save, Create) flush the held chips into the thread before its write,
+    while Start over and Discard draft drop them with the session's staging
+    (receipts for discarded staging never reach a later session's thread). A
+    response arming no sync
     lands them at apply time right after the document chips, and when that response
     also rewrote the spec the derived amber out-of-sync line (entry kinds above)
     closes the group. The draft-undo anchor follows the flush: it re-anchors below
@@ -509,6 +515,8 @@ job and no separate drafting state — while the first turn runs:
   entry with the §8 failure message — the user resends or rephrases from the composer. A
   failed chained sync leaves the landed spec with the workflow out of sync — the panel's
   Sync now rebuilds the steps (an empty-steps draft can always rebuild; never a dead end).
+  The editor's job poll tolerates transient fetch errors: it keeps the job tracked
+  and gives up (with the failure entry) only after three consecutive poll failures.
 - **Saving** — blocked while any §8 job is in flight (Dirty gating below); a create draft
   cannot save until steps exist and are in sync.
 
@@ -694,7 +702,14 @@ editors enter with
   outcome renders a thread blockers entry (source: chat) — either way the draft is
   untouched, except a blocked payload's `draft.notes` (§8 blocker notes), applied like
   any notes rewrite (Blockers above). Manual spec/instruction edits are mutually exclusive (one edit at a time), and
-  both are locked while a chat/sync job runs (inputs lock below).
+  both are locked while a chat/sync job runs (inputs lock below). Sending a chat
+  message or starting a sync while a manual spec / build-instructions / notes edit
+  holds unsaved changes first asks through the editing card's discard confirm
+  ("Discard your spec edits?" / "Discard your instruction edits?" / "Discard your
+  notes edits?", body naming the editor whose text is lost, confirm label "Discard
+  edits"): confirming discards the unsaved edits and the send or sync proceeds;
+  cancelling aborts it, with the composer text kept. An open editor holding no
+  changes never asks; it closes silently as before.
 - **Draft undo** — one-level **full-draft snapshot** per agent request: when a chat
   response changes the draft, the editor first stashes the draft **whole** — spec, steps,
   parameter definitions, packages, triggers, the staged `param_values` map (§4.2), the
@@ -794,7 +809,11 @@ editors enter with
   version is browsed read-only: the spec card's Edit button and the thread's undo row
   disable while viewing
   one (like the sync button) — editing there would mark the workflow dirty and lock Restore
-  behind a sync button that is itself disabled, a dead end; Restore first, then edit. Sync
+  behind a sync button that is itself disabled, a dead end; Restore first, then edit.
+  The chat thread is one live surface across views: entries that land while an old
+  version is viewed (a settling test's run chip, flushed workflow receipts) stay in
+  the thread when the user returns to the draft; a view switch never removes a
+  shown block. Sync
   state lives in the **Build & test panel** (its own section below) at the top of the right
   column, **above** the Steps card rather than inside it, because a sync rewrites the steps and
   the parameter definitions, not just the step list. Outside a sync the panel's sync button is disabled
@@ -1075,7 +1094,8 @@ editors enter with
   The test-setup section (below) renders only in the in-sync states (3–5) and never
   while a test is executing. **Run test** is additionally gated on steps existing and no
   §8 job being in flight (inputs-lock above); the setup toggle disables under the same
-  inputs-lock.
+  inputs-lock. Both also disable while an old version is viewed (like the sync
+  button): an old version is never synced or tested.
   **Test** — executes the draft's **real steps** as a **test execution record** (§4.5:
   `test: true`, `ver: "Test"`, `trigger: "Test"`) through the exact engine path a real
   execution takes (there is no simulation mode): the record and its `steps/` (the sent
@@ -1209,7 +1229,9 @@ something I need to do on this Mac (install or start an app, sign in), tell me w
 and how instead." (the step is not repeated — the
 system entry directly above already names it) as a §8 chat job
 carrying the execution's id as the §19 `executionId`, so the RECENT EXECUTIONS context includes that
-run in full detail however old it is. The outcome lands like any chat outcome. While
+run in full detail however old it is. The send waits for the stored thread to load
+(Thread lifetime above), so the job's CONVERSATION context carries the kept history
+and the seeded failure entry. The outcome lands like any chat outcome. While
 another §8 job is already in flight the message is not sent — only the system entry is
 appended, and the user asks when the job settles.
 

@@ -246,6 +246,22 @@ def test_specmd_roundtrip():
     assert md_to_blocks(blocks_to_md(blocks)) == blocks
 
 
+def test_specmd_numbered_lists_stay_separate():
+    """§4.1: adjacent numbered-list lines never merge into one paragraph - the
+    list survives the spec.md round trip readable."""
+    from autowright.specmd import blocks_to_md, md_to_blocks
+
+    got = md_to_blocks("# T\n\n1. first\n2. second\n3) third\nplain tail\n")
+    assert got == [
+        {"kind": "h1", "text": "T"},
+        {"kind": "p", "text": "1. first"},
+        {"kind": "p", "text": "2. second"},
+        {"kind": "p", "text": "3) third"},
+        {"kind": "p", "text": "plain tail"},
+    ]
+    assert md_to_blocks(blocks_to_md(got)) == got
+
+
 # ---------- §4.3 DST behavior (triggers.py is the ONE trigger-math
 # implementation — the renderer previews via §19 POST /triggers/preview) ----------
 
@@ -325,3 +341,30 @@ def test_trigger_exec_labels():
     assert trigger_label("manual") == "Manual"
     assert trigger_label("menubar") == "Menu bar"
     assert trigger_label("test") == "Test"
+
+
+def test_dst_spring_forward_gap_local_no_timezone():
+    """§4.3: the gap rule also applies when the trigger has no `timezone` and
+    runs on the system zone - 2:30 AM erased by spring-forward fires at 3:30,
+    not at the first tick past 3:00."""
+    import os
+    import time as _time
+
+    old = os.environ.get("TZ")
+    os.environ["TZ"] = "America/Los_Angeles"
+    _time.tzset()
+    try:
+        trig = {"kind": "cron", "expression": "30 2 * * *", "enabled": True, "id": "x"}
+        got = trigger_next(trig, after=datetime(2027, 3, 14, 1, 0))
+        assert got == datetime(2027, 3, 14, 3, 30)
+        # ordinary days are untouched
+        assert trigger_next(trig, after=datetime(2027, 3, 15, 1, 0)) == datetime(2027, 3, 15, 2, 30)
+        # a one-shot staged into the erased window shifts the same way
+        one = {"kind": "time", "at": "2027-03-14T02:30", "enabled": True, "id": "y"}
+        assert trigger_next(one, after=datetime(2027, 3, 14, 1, 0)) == datetime(2027, 3, 14, 3, 30)
+    finally:
+        if old is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old
+        _time.tzset()

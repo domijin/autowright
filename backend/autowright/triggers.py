@@ -14,6 +14,10 @@ DOW_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
 RESERVED_KINDS = ("pubsub",)  # §4.3 message triggers — coming soon
 
+# §4.3 one-shot past check - normalize_triggers matches on this exact value to
+# apply the spent-drop rule, so the two must share one constant.
+PAST_ERROR = "the time must be in the future"
+
 # Unsatisfiable expressions (e.g. "0 0 30 2 *") stop searching after this many days.
 _SEARCH_DAYS = 366 * 5
 
@@ -147,6 +151,24 @@ def _wall_to_local(wall: datetime, tz: ZoneInfo, after: datetime | None) -> date
     return None
 
 
+def _local_gap_fix(d: datetime, after: datetime | None) -> datetime | None:
+    """§4.3 gap rule for the system zone (no `timezone` on the trigger): a
+    wall time erased by spring-forward fires shifted forward by the gap width,
+    same as `_wall_to_local` does for a zoned trigger. An ordinary or
+    ambiguous reading returns unchanged - the scheduler's naive baseline math
+    already fires a fall-back hour once. Returns None only when the shifted
+    reading lands at or before `after`."""
+    d0, d1 = d.replace(fold=0), d.replace(fold=1)
+    if d0.astimezone().utcoffset() == d1.astimezone().utcoffset():
+        return d
+    # Transition zone: a round trip through UTC tells erased from ambiguous -
+    # an ambiguous wall time survives it, an erased one comes back shifted.
+    rt = d0.astimezone(timezone.utc).astimezone().replace(tzinfo=None)
+    if rt == d:
+        return d
+    return rt if after is None or rt > after else None
+
+
 def _to_local(wall: datetime, tz: ZoneInfo) -> datetime:
     """The zone's naive wall clock → local naive (first/earliest reading —
     use `_wall_to_local` when monotonicity against a baseline matters)."""
@@ -262,7 +284,7 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             return "the timestamp must not carry a UTC offset — use timezone for the zone"
         tz = zone_of(t)
         if not allow_past and (_to_local(at, tz) if tz else at) <= datetime.now():
-            return "the time must be in the future"
+            return PAST_ERROR
         return None
     return f"unknown trigger kind {kind!r}"
 
@@ -273,8 +295,11 @@ def normalize_triggers(raw: list,
 
     `existing_ids` is the set of trigger ids already stored on the automation:
     only those revalidate leniently (allow_past), so an elapsed one-shot can't
-    block edits or version saves of the whole list — while a client-fabricated
-    id can't smuggle a past `time` past the §19 422. None (the §19 preview,
+    block edits or version saves of the whole list. An id-carrying past `time`
+    entry the automation does *not* store is the §4.3 spent case (a staged
+    one-shot that elapsed before the save, or one the scheduler consumed
+    mid-edit): dropped silently, never stored, never a 422 - so a fabricated
+    id still can't smuggle a past time into storage. None (the §19 preview,
     which has no automation context) trusts any id — display-only, nothing is
     stored there."""
     out: list[dict] = []
@@ -283,6 +308,8 @@ def normalize_triggers(raw: list,
             return [], "each trigger must be an object"
         known = bool(t.get("id")) and (existing_ids is None or t["id"] in existing_ids)
         err = validate_trigger(t, allow_past=known)
+        if err == PAST_ERROR and t.get("id") and existing_ids is not None:
+            continue  # §4.3 spent-drop: staged one-shot elapsed before the save
         if err:
             return [], err
         n: dict = {"id": t.get("id") or str(uuid.uuid4()),
@@ -374,7 +401,18 @@ def trigger_next(t: dict, after: datetime | None = None) -> datetime | None:
     base = after or datetime.now()
     if t["kind"] == "cron":
         if not tz:
-            return cron_next(t["expression"], base)
+            # Same non-monotonicity as the zoned path, on the system zone: a
+            # candidate erased by spring-forward shifts forward by the gap
+            # width and must still land strictly after `base`.
+            nxt = cron_next(t["expression"], base)
+            for _ in range(1000):
+                if nxt is None:
+                    return None
+                loc = _local_gap_fix(nxt, base)
+                if loc is not None:
+                    return loc
+                nxt = cron_next(t["expression"], nxt)
+            return None
         # The wall→local map is non-monotonic around DST transitions; keep
         # advancing until a reading lands strictly after `base` — the
         # scheduler's contract (occurrences at or before the baseline never
@@ -391,6 +429,8 @@ def trigger_next(t: dict, after: datetime | None = None) -> datetime | None:
     at = datetime.fromisoformat(t["at"])
     if tz:
         at = _to_local(at, tz)
+    else:
+        at = _local_gap_fix(at, None) or at
     return at if at > base else None
 
 

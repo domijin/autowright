@@ -75,7 +75,8 @@ def test_parse_and_validate_steps_good():
     assert set(files) == {"manifest.yaml", "01-a.py", "02-b.py"}
     draft, errors = validate_steps(files)
     assert errors == []
-    assert draft["name"] == "Hello"
+    # §8: identity never rides the manifest - a smuggled `name:` key is ignored
+    assert "name" not in draft and "description" not in draft
     assert draft["steps"][1]["agent"] is True
     assert "spec" not in draft  # the spec is settled in call 1
 
@@ -2323,3 +2324,39 @@ def test_chat_repair_merged_set_revalidates_as_whole(home, devmode, monkeypatch)
     assert calls["n"] == 3
     rec = sorted((home / "logs" / "build-failures").iterdir())[0].read_text()
     assert "test_values names unknown params" in rec
+
+
+def test_fenced_blocked_marker_is_prose_not_envelope():
+    """§8 shape-aware detection: a ===BLOCKED=== line quoted inside a markdown
+    code fence is an answer explaining the format, never a blocker envelope."""
+    from autowright.drafting import parse_blockers
+
+    text = ("Blockers are reported like this:\n"
+            "```\n===BLOCKED===\nblockers:\n- reason: x\n  fix: y\n===END===\n```\n"
+            "That is the whole format.\n")
+    assert parse_blockers(text) == (None, None)
+    # a real envelope after the fenced example still parses
+    real = text + "\n===BLOCKED===\nblockers:\n- reason: r\n  fix: f\n===END===\n"
+    blockers, notes = parse_blockers(real)
+    assert blockers == [{"reason": "r", "fix": "f", "details": ""}]
+    assert notes is None
+
+
+def test_blocker_details_quoting_file_marker_still_valid():
+    """§8: a ===FILE: line inside the envelope's yaml body is body text - it
+    must not push the response through file parsing and fail validation."""
+    from autowright.drafting import parse_blockers
+
+    text = ("===BLOCKED===\n"
+            "blockers:\n"
+            "- reason: need the format\n"
+            "  fix: use file blocks\n"
+            "  details: |\n"
+            "    like this:\n"
+            "    ===FILE: notes.md===\n"
+            "    body here\n"
+            "===END===\n")
+    blockers, notes = parse_blockers(text)
+    assert blockers and blockers[0]["reason"] == "need the format"
+    assert "===FILE: notes.md===" in blockers[0]["details"]
+    assert notes is None

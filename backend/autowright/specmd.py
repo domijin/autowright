@@ -1,6 +1,12 @@
 """spec.md ↔ block-list conversion (§4.1 spec blocks: h1|h2|li|p, §5 spec.md)."""
 from __future__ import annotations
 
+import re
+
+# §4.1: a numbered-list line keeps its own `p` block - merging "1. foo" and
+# "2. bar" into one paragraph would garble the list on every round trip.
+_NUMBERED_RE = re.compile(r"^\d+[.)] ")
+
 
 def blocks_to_md(blocks: list[dict]) -> str:
     out: list[str] = []
@@ -45,6 +51,9 @@ def md_to_blocks(md: str) -> list[dict]:
         elif ln.lstrip().startswith("- "):
             flush()
             blocks.append({"kind": "li", "text": ln.lstrip()[2:].strip()})
+        elif _NUMBERED_RE.match(ln.strip()):
+            flush()
+            blocks.append({"kind": "p", "text": ln.strip()})
         else:
             para.append(ln.strip())
     flush()

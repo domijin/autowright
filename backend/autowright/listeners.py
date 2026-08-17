@@ -225,21 +225,33 @@ class _Conn(threading.Thread):
                                    "device": "autowright"},
                 }}))
                 seq = None
+                awaiting_ack = False
                 next_beat = time.monotonic() + interval
                 while not self._stop.is_set():
                     try:
                         raw = ws.recv(timeout=max(0.0, min(next_beat - time.monotonic(), 5.0)))
                     except TimeoutError:
                         if time.monotonic() >= next_beat:
+                            if awaiting_ack:
+                                # §6: no ack for the previous heartbeat - a
+                                # half-dead TCP path (sleep/wake, network
+                                # switch) would otherwise sit "connected" while
+                                # dropping messages until the OS kills the
+                                # socket. Reconnect now.
+                                raise RuntimeError("gateway heartbeat not acknowledged")
                             ws.send(json.dumps({"op": 1, "d": seq}))
+                            awaiting_ack = True
                             next_beat = time.monotonic() + interval
                         continue
                     msg = json.loads(raw)
                     if msg.get("s") is not None:
                         seq = msg["s"]
                     op = msg.get("op")
-                    if op == 1:  # gateway asks for an immediate heartbeat
+                    if op == 11:  # heartbeat ack - the path is alive
+                        awaiting_ack = False
+                    elif op == 1:  # gateway asks for an immediate heartbeat
                         ws.send(json.dumps({"op": 1, "d": seq}))
+                        awaiting_ack = True
                         next_beat = time.monotonic() + interval
                     elif op in (7, 9):  # reconnect / invalid session → new session
                         return ready

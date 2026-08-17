@@ -471,7 +471,11 @@ notes rewrite (§11).
    fence (```` ```lang ```` … ```` ``` ````) has the fence lines stripped before validation.
    A response with no `===END===` at or after the last `===FILE:` marker is treated as
    truncated and invalid. The blocker envelope's yaml body follows the same rule: it ends at
-   the first `===END===` **after** the `===BLOCKED===` marker.
+   the first `===END===` **after** the `===BLOCKED===` marker. Blocker detection is
+   shape-aware, not a raw text search: a `===BLOCKED===` line sitting inside a markdown code
+   fence is quoted prose (an answer explaining the format), never a blocker envelope; and a
+   `===FILE:` line inside the envelope's yaml body is body text - only a file block *beside*
+   the envelope (the optional notes.md) goes through file parsing.
 2. The sync call must return `manifest.yaml` and every file listed in `steps` — a `spec.md` block in
    its response is a validation error (the spec is already settled); an optional `notes.md` block
    (above) is allowed and excluded from the step-file matching.

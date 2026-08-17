@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
@@ -43,10 +44,22 @@ def auth(cred: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> None:
         raise HTTPException(401, "bad token")
 
 
+@asynccontextmanager
+async def _lifespan(_: FastAPI):
+    hub.bind_loop(asyncio.get_running_loop())
+    _repair_stale_executing()
+    hub.publish("automation.changed")
+    yield
+    # §3: live step groups die with this backend — the successor's startup
+    # recovery marks their records interrupted, and an orphan must not keep
+    # writing memory/ beside the second copy the next cron tick starts.
+    engine.kill_all_live()
+
+
 # §19: no interactive docs. /health is the only unauthenticated route, and any
 # website in a browser can reach localhost — the app must not hand one its
 # schema.
-app = FastAPI(title="Autowright backend", version=__version__,
+app = FastAPI(title="Autowright backend", version=__version__, lifespan=_lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
 
 # §19: the Electron renderer calls us cross-origin — packaged it loads from
@@ -428,6 +441,10 @@ def delete_auto(automation_id: str) -> dict:
     live = list(a.get("_live") or ())
     for eid in live:
         engine.cancel(eid)
+    # §19: delete settles the draft work too - a live §11 test or building §8
+    # job would outlive the rmtree and resurrect the deleted directory when it
+    # lands (tests never join _live, so the loop above misses them).
+    live += _cancel_live_draft_work(automation_id)
     # §6: waiting firings go with it — their sender is told rather than left
     # waiting on an automation that no longer exists.
     for h in store.queued_execs(automation_id):
@@ -463,7 +480,8 @@ def create_auto(body: models.AutomationCreate) -> dict:
         raise HTTPException(422, "draft has no steps")
     _check_agent_refs(body.agentId, body.stepAgents)
     # Create: no automation exists yet, so no trigger id is "already stored" —
-    # every entry validates as new (a fabricated id must not bypass the 422).
+    # a staged one-shot whose moment passed while the draft sat is the §4.3
+    # spent case and drops out of the list; a no-id past time still 422s.
     triggers, err = triggerlib.normalize_triggers(d.get("triggers") or [],
                                                   existing_ids=set())
     if err:
@@ -519,6 +537,10 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
         if err:
             raise HTTPException(422, err)
     _validate_draft_steps(d)  # §19: the §8 validators run server-side
+    # A refused settle must be side-effect free: check the 409 condition
+    # before the cancels (the in-lock check below stays authoritative).
+    with store.lock:
+        _reject_live_draft_exec(a)
     _cancel_live_draft_work(automation_id)  # §11/§19: saving settles the draft — its live test and jobs die
     ver = _draft_to_version(d)
     with store.lock:
@@ -556,13 +578,14 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
     return {"version": n, "automation": _auto_json_locked(a)}
 
 
-def _cancel_live_draft_work(container_id: str | None) -> None:
+def _cancel_live_draft_work(container_id: str | None) -> list[str]:
     """§11/§19 draft settle: cancel the container's still-executing test and
     its still-building §8 drafting jobs — a settled draft never leaves a test
     or agent harness process running. The test record is marked under the lock
     so testexec._run deletes it when it lands (instead of it surviving the
     draft or rewriting the settled container's test.yaml); the cancels
-    themselves run outside the lock — they kill processes."""
+    themselves run outside the lock — they kill processes. Returns the
+    cancelled test execution ids so delete can wait on their threads."""
     with store.lock:
         live = [h for h in store.execs.values()
                 if is_test(h) and h["automation_id"] == container_id
@@ -572,6 +595,7 @@ def _cancel_live_draft_work(container_id: str | None) -> None:
     for h in live:
         engine.cancel(h["id"])
     draft_jobs.cancel_for(container_id)
+    return [h["id"] for h in live]
 
 
 def _reject_live_draft_exec(a: dict) -> None:
@@ -648,6 +672,11 @@ def put_draft_container(owner: str, body: models.DraftPut) -> dict:
 @app.delete("/draft/{owner}", dependencies=[Depends(auth)])
 def delete_draft_container(owner: str) -> dict:
     a = _draft_owner(owner)
+    # A refused settle must be side-effect free: check the 409 condition
+    # before the cancels (the in-lock check below stays authoritative).
+    if a is not None:
+        with store.lock:
+            _reject_live_draft_exec(a)
     _cancel_live_draft_work(a["id"] if a is not None else None)  # §11/§19: discard settles the draft
     with store.lock:
         if a is not None:
@@ -1714,16 +1743,3 @@ def _repair_stale_executing() -> None:
         store._refresh_exec_derived()
 
 
-@app.on_event("startup")
-async def _bind_loop() -> None:
-    hub.bind_loop(asyncio.get_running_loop())
-    _repair_stale_executing()
-    hub.publish("automation.changed")
-
-
-@app.on_event("shutdown")
-async def _kill_live_steps() -> None:
-    # §3: live step groups die with this backend — the successor's startup
-    # recovery marks their records interrupted, and an orphan must not keep
-    # writing memory/ beside the second copy the next cron tick starts.
-    engine.kill_all_live()

@@ -185,7 +185,8 @@ export function BuildTestPanel({
   }
   // §9.2 step-row caret language: left collapsed, down expanded.
   const testToggleBtn = (label: string) => (
-    <button className="ad-btn-text" data-testid="test-draft-toggle" disabled={busyRewrite} onClick={toggleTestSetup} style={panelBtnStyle}>
+    // §11: disabled while an old version is viewed - never synced or tested
+    <button className="ad-btn-text" data-testid="test-draft-toggle" disabled={busyRewrite || viewingOld} onClick={toggleTestSetup} style={panelBtnStyle}>
       {label}{' '}
       <i className={`fa-solid ${testOpen ? 'fa-caret-down' : 'fa-caret-left'}`} style={{ fontSize: 10 }} />
     </button>
@@ -211,8 +212,9 @@ export function BuildTestPanel({
   }, [executions]) // eslint-disable-line react-hooks/exhaustive-deps
   const runTest = async (valuesOverride?: Record<string, unknown>) => {
     // §11 Build & test panel: a test always runs steps that match the spec —
-    // never stale ones (out of sync) and never mid-build.
-    if (!rev || rev.steps.length === 0 || testLive || busyRewrite || outOfSync) return
+    // never stale ones (out of sync) and never mid-build. An old version is
+    // never synced or tested (§11), so a version view can't start one either.
+    if (!rev || rev.steps.length === 0 || testLive || busyRewrite || outOfSync || viewingOld) return
     try {
       // §11: with the setup section never opened, drafted §8 test values still
       // apply — the closed-section run sends the seeded values (drafted map on
@@ -510,7 +512,7 @@ export function BuildTestPanel({
               <div style={panelRowStyle}>
                 <button
                   className="ad-btn-text"
-                  disabled={rev.steps.length === 0 || busyRewrite}
+                  disabled={rev.steps.length === 0 || busyRewrite || viewingOld}
                   onClick={() => void runTest()}
                   style={panelBtnStyle}
                 >

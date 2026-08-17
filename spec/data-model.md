@@ -115,7 +115,10 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, packag
   pair, both are written by the drafting agent per the §8 retry rule. On disk and in the §8
   manifest the keys are spelled `no_timeout`, `infinite_retries` (§5 yaml is snake_case); the
   API serialization is `noTimeout`, `infiniteRetries`
-spec: block list [{ kind: h1|h2|p|li, text }] — the human-readable spec
+spec: block list [{ kind: h1|h2|p|li, text }] — the human-readable spec. The §5 spec.md
+  conversion parses `#`/`##`/`- ` prefixes into h1/h2/li and merges other consecutive
+  lines into one `p` - except numbered-list lines (`1. `-style), which each keep their own
+  `p` block so an agent-written numbered list survives the round trip readable
 specMeta: "v3 · updated Yesterday" (shared time label)
 packages: [{ pip, import, why }] — the current version's §6.2 declared packages ([] when
   none); why is the drafting agent's one-line GENERAL purpose (§8 rule 5 — required), shown
@@ -191,7 +194,9 @@ the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-d
   alone) leaves the stored trigger as is; an unmatched one is appended enabled with a fresh
   id. Stored message/app-start triggers the draft doesn't mention always survive — a sync
   never drops one.
-- `time` one-shots are never drafted (§8) and always survive a save untouched.
+- `time` one-shots are never drafted (§8) and always survive a save untouched. (An elapsed
+  one is dropped by the save's validation instead - the spent-drop rule under one-shot
+  semantics below.)
 
 Manual starts (Execute now, the menu bar, CLI) are
 not triggers in this list — they always work, whatever the list holds.
@@ -318,8 +323,15 @@ whitespace. One implementation: the backend (`triggers.cron_display`) — serial
 carry the derived `label`/`short`, and the editors label unsaved entries through §19
 `POST /triggers/preview`, so no second implementation exists to drift.
 
-**One-shot semantics** (`time`): `at` must be strictly in the future when saved (422 otherwise;
-the check reads `at` in the trigger's `timezone`).
+**One-shot semantics** (`time`): `at` must be strictly in the future when saved (the check reads
+`at` in the trigger's `timezone`). A brand-new entry - one arriving without an `id` - answers
+422 when `at` has passed. An entry that arrives *with* an `id` the automation does not currently
+store is the spent case: a staged one-shot (chat op in a draft, §8) whose moment passed before
+the save landed, or a stored one the scheduler consumed mid-edit. The save **drops it
+silently** - not stored, not a 422, the rest of the list saves normally - so an elapsed staged
+one-shot can never block a create, version save, or trigger PATCH. (A client-fabricated id
+therefore still cannot store a past time: the entry stores nothing at all.) An id the
+automation does store revalidates leniently and survives the save.
 The trigger is consumed — removed from the list — when it fires, and equally when its moment is
 skipped (backend down when it passed, or superseded mid-execution, §6). It never lingers spent.
 

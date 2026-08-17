@@ -1865,6 +1865,19 @@ def test_delete_automation_removes_test_exec_records(client):
     assert client.get(f"/executions/{real['id']}").json()["automationDeleted"] is True
 
 
+def test_delete_automation_settles_live_draft_test(client):
+    """§19: delete settles the draft work - a still-executing §11 test is
+    marked settled so a landing test deletes itself instead of writing
+    test.yaml into (and resurrecting) the removed automation directory."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Doomed live", "mock")
+    t = store.create_execution(a, "test", None, "test", [], status="executing")
+    assert client.delete(f"/automations/{a['id']}").status_code == 200
+    assert a["id"] not in store.autos
+    assert t.get("_draft_settled") is True
+
+
 # ---------- §8/§19 grant propagation — the editor's agent/secret checkboxes ----------
 
 def _capture_draft_grants(monkeypatch):

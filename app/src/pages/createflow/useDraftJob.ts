@@ -121,11 +121,15 @@ export function useDraftJob(d: DraftJobDeps) {
     // cancelled/replaced (jobIdRef changed) or after another tick already
     // handled the terminal status (jobIdRef cleared below). Checking the ref
     // covers both — callbacks fire once, and never against a different job.
+    // §11: transient poll errors keep the job tracked - the job may still be
+    // running fine server-side, so only three consecutive failures give up.
+    let pollFails = 0
     pollRef.current = setInterval(() => {
       void (async () => {
         try {
           const j = await api.getDraftJob(jobId)
           if (jobIdRef.current !== jobId) return
+          pollFails = 0
           if (j.status !== 'building') jobIdRef.current = null
           // §8/§11: the job's live stage drives the skeleton + save-hint labels
           // (the unified three-phase set); `detail` is the
@@ -204,6 +208,7 @@ export function useDraftJob(d: DraftJobDeps) {
           }
         } catch (e) {
           if (jobIdRef.current !== jobId) return
+          if (++pollFails < 3) return // transient - the next tick retries
           jobIdRef.current = null
           stopPoll()
           onFail((e as Error).message)

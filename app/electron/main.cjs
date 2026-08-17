@@ -121,6 +121,23 @@ async function executionsLive() {
 // and expose the failure to the renderer (backend-status IPC → §9 boot splash).
 let ensureStatus = { state: 'idle', detail: '' }
 
+// §3 quit-all interlock: a spawned `service install` child (ensure-backend or
+// version-sync) survives app.quit(), so quit-all's `service stop` could
+// interleave with it and leave the backend running after the app quit
+// claiming it stopped. Every install spawn goes through runServiceInstall so
+// quit-all can wait for the in-flight child and block new ones.
+let quittingAll = false
+let serviceInstallDone = Promise.resolve()
+
+function runServiceInstall(py, cb) {
+  if (quittingAll) return
+  serviceInstallDone = serviceInstallDone.then(() => new Promise((resolve) => {
+    execFile(py, ['-m', 'autowright.service', 'install'], (err, stdout, stderr) => {
+      try { cb(err, stdout, stderr) } finally { resolve() }
+    })
+  }))
+}
+
 async function verifyBackendUp() {
   for (let i = 0; i < 15; i++) {
     await new Promise((r) => setTimeout(r, 2000))
@@ -164,7 +181,7 @@ async function syncBackendVersion(py, running) {
     }
     await new Promise((r) => setTimeout(r, 30_000))
   }
-  execFile(py, ['-m', 'autowright.service', 'install'], (err, stdout, stderr) => {
+  runServiceInstall(py, (err, stdout, stderr) => {
     if (err) {
       appLog(`ensure-backend: version-sync install failed: ${String(stderr || err.message).trim()}`)
       return
@@ -184,7 +201,7 @@ async function ensureBackend() {
     return
   }
   ensureStatus = { state: 'installing', detail: '' }
-  execFile(py, ['-m', 'autowright.service', 'install'], (err, stdout, stderr) => {
+  runServiceInstall(py, (err, stdout, stderr) => {
     if (err) {
       const detail = String(stderr || err.message).trim()
       ensureStatus = { state: 'failed', detail: `Backend install failed: ${detail}` }
@@ -747,20 +764,29 @@ ipcMain.handle('update-download', async () => {
     // locally, verifies, and stages as usual.
     const port = await new Promise((res, rej) => {
       server = http.createServer((req, resp) => {
-        if (req.url === '/feed.json') {
-          const localFeed = {
-            ...feed,
-            releases: [{ ...entry, updateTo: { ...entry.updateTo, url: `http://127.0.0.1:${server.address().port}/update.zip` } }],
+        // A request landing after cleanup (kept-alive socket, temp zip gone,
+        // server closing) must get an error response, never a throw: an
+        // uncaught exception here would crash the main process.
+        try {
+          if (req.url === '/feed.json') {
+            const localFeed = {
+              ...feed,
+              releases: [{ ...entry, updateTo: { ...entry.updateTo, url: `http://127.0.0.1:${server.address().port}/update.zip` } }],
+            }
+            resp.setHeader('Content-Type', 'application/json')
+            resp.end(JSON.stringify(localFeed))
+          } else if (req.url === '/update.zip') {
+            resp.setHeader('Content-Type', 'application/zip')
+            resp.setHeader('Content-Length', String(fs.statSync(tmpZip).size))
+            const zip = fs.createReadStream(tmpZip)
+            zip.on('error', () => resp.destroy())
+            zip.pipe(resp)
+          } else {
+            resp.statusCode = 404
+            resp.end()
           }
-          resp.setHeader('Content-Type', 'application/json')
-          resp.end(JSON.stringify(localFeed))
-        } else if (req.url === '/update.zip') {
-          resp.setHeader('Content-Type', 'application/zip')
-          resp.setHeader('Content-Length', String(fs.statSync(tmpZip).size))
-          fs.createReadStream(tmpZip).pipe(resp)
-        } else {
-          resp.statusCode = 404
-          resp.end()
+        } catch {
+          try { resp.statusCode = 500; resp.end() } catch { resp.destroy() }
         }
       })
       server.on('error', rej)
@@ -814,13 +840,21 @@ ipcMain.handle('quit-all', async () => {
   // interpreter that runs the backend (§3 discovery fields), same code path.
   const py = bundledPython() || backendInfo()?.python
   if (!py) return { error: 'No backend interpreter found' }
+  // §3: block new `service install` spawns and wait out any in-flight one
+  // before stopping, so the stop can't be undone by a racing install child.
+  quittingAll = true
+  await serviceInstallDone
   const err = await new Promise((resolve) => {
     execFile(py, ['-m', 'autowright.service', 'stop'], (e, stdout, stderr) => {
       appLog(`quit-all: ${String(stdout || stderr || '').trim()}`)
       resolve(e ? String(stdout || stderr || e.message).trim() : null)
     })
   })
-  if (err) return { error: err }
+  if (err) {
+    // The app stays up (§3), so future ensure/version-sync installs may run.
+    quittingAll = false
+    return { error: err }
+  }
   appLog('quit-all: backend stopped, quitting app')
   app.quit()
   return { ok: true }

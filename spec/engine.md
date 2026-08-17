@@ -28,7 +28,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   per distinct bot-token secret name** — shared by every trigger referencing that secret;
   connections open, close, and re-resolve their token as triggers are added, removed, toggled,
   or re-pointed. A dropped connection reconnects with exponential backoff (1 s doubling to a
-  60 s cap); an authentication failure (bad token) or a missing/valueless secret parks the
+  60 s cap). Heartbeats track their acks (gateway op 11): a heartbeat whose ack has not
+  arrived by the next heartbeat's deadline means the connection is a zombie (sleep/wake,
+  network switch) - the session closes and reconnects instead of sitting "connected" while
+  dropping messages; an authentication failure (bad token) or a missing/valueless secret parks the
   connection in the `connection` error state (§4.3) and re-tries at the backoff cap, so fixing the
   secret heals it without a restart; `automation.changed` fires for affected automations on every
   state change. Each connection learns the bot's user id from `READY` and the bot's

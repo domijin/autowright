@@ -3,35 +3,146 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Autowright - personal automations in plain words</title>
-<meta name="description" content="Describe a recurring task in one sentence. Your AI agent writes it as readable Python, and your Mac runs it on schedule, locally, after you approve.">
+<title>Autowright - AI automation app for Mac, in plain words</title>
+<meta name="description" content="Autowright is a free, open source Mac app. Describe a recurring task in one sentence; your AI agent writes it as readable Python, and Autowright runs it on schedule, locally.">
 <meta name="theme-color" content="#090d14">
+<meta name="author" content="David Zhang">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="canonical" href="https://autowright.ai/">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://autowright.ai/">
 <meta property="og:site_name" content="Autowright">
-<meta property="og:title" content="Autowright - personal automations in plain words">
-<meta property="og:description" content="Describe a recurring task in one sentence. Your AI agent writes it as readable Python, and your Mac runs it on schedule, locally, after you approve.">
+<meta property="og:title" content="Autowright - AI automation app for Mac, in plain words">
+<meta property="og:description" content="Autowright is a free, open source Mac app. Describe a recurring task in one sentence; your AI agent writes it as readable Python, and Autowright runs it on schedule, locally.">
 <meta property="og:image" content="https://autowright.ai/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Autowright: say what you want done, your Mac keeps doing it.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Autowright - personal automations in plain words">
-<meta name="twitter:description" content="Describe a recurring task in one sentence. Your AI agent writes it as readable Python, and your Mac runs it on schedule, locally, after you approve.">
+<meta name="twitter:title" content="Autowright - AI automation app for Mac, in plain words">
+<meta name="twitter:description" content="Autowright is a free, open source Mac app. Describe a recurring task in one sentence; your AI agent writes it as readable Python, and Autowright runs it on schedule, locally.">
 <meta name="twitter:image" content="https://autowright.ai/og.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
+  "@id": "https://autowright.ai/#app",
   "name": "Autowright",
-  "operatingSystem": "macOS",
+  "alternateName": "Autowright for Mac",
+  "operatingSystem": "macOS 12 Monterey or later, Apple Silicon",
   "applicationCategory": "UtilitiesApplication",
+  "applicationSubCategory": "Task automation",
   "description": "Describe a recurring task in one sentence. An AI agent writes it as readable Python, and Autowright runs it on a schedule, entirely on your Mac.",
   "url": "https://autowright.ai/",
   "downloadUrl": "https://github.com/hansololz/autowright/releases/latest",
+  "softwareHelp": "https://github.com/hansololz/autowright",
   "license": "https://github.com/hansololz/autowright/blob/main/LICENSE",
+  "screenshot": "https://autowright.ai/og.png",
+  "isAccessibleForFree": true,
+  "featureList": [
+    "Write automations by describing them in one sentence",
+    "Your AI agent generates readable Python you review before it runs",
+    "Schedule, one-shot, app-start, Discord, and iMessage triggers",
+    "Background scheduler that keeps firing with the window closed",
+    "Versioned edits with rollback and isolated draft testing",
+    "Memory that persists between runs, with snapshots and restore",
+    "Full run history with per-step status and streamed logs",
+    "Secrets stored in the macOS Keychain, injected at runtime",
+    "Portable .autowright exports"
+  ],
+  "author": { "@id": "https://autowright.ai/#owner" },
+  "publisher": { "@id": "https://autowright.ai/#owner" },
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://autowright.ai/#owner",
+      "name": "Autowright",
+      "alternateName": "Autowright automation app",
+      "description": "Autowright is an open source macOS app that turns a plain-language description of a recurring task into readable Python your Mac runs on a schedule. It is unrelated to the automotive businesses of the same name.",
+      "url": "https://autowright.ai/",
+      "logo": "https://autowright.ai/apple-touch-icon.png",
+      "founder": { "@type": "Person", "name": "David Zhang" },
+      "sameAs": [
+        "https://github.com/hansololz/autowright",
+        "https://github.com/hansololz",
+        "https://pypi.org/project/autowright/"
+      ]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://autowright.ai/#website",
+      "name": "Autowright",
+      "alternateName": "autowright.ai",
+      "url": "https://autowright.ai/",
+      "inLanguage": "en",
+      "publisher": { "@id": "https://autowright.ai/#owner" },
+      "about": { "@id": "https://autowright.ai/#app" }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "@id": "https://autowright.ai/#faq",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is Autowright?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Autowright is a free, open source macOS app for personal automation. You describe a recurring task in one sentence, an AI agent turns it into short, readable Python scripts, and after you approve them Autowright runs those exact scripts on the schedule you set."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Where do Autowright automations run?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "On your Mac. There are no cloud runners and no server component: Autowright installs a background scheduler that keeps firing with the app window closed. Secrets live in the macOS Keychain and are injected into the process at runtime, never written into a script or a log."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which AI agents does Autowright work with?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Autowright drives the coding agent you already use: Claude Code, Gemini CLI, Codex, or OpenCode, including OpenCode pointed at a local Ollama model. If you have none installed, Autowright can set one up for you, including a free local model that never sends anything online."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is Autowright free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Autowright is free and MIT licensed, with the full source on GitHub. There is no subscription and no account. You pay only whatever your own AI agent costs you, which is nothing if you run a local model."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How is Autowright different from cron or from asking a chat agent to do the task?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "cron runs code you already wrote; Autowright writes that code with you first, then schedules it. And unlike asking a chat agent to perform the task each time, Autowright runs the same approved scripts on every fire, so there is no re-prompting and no drift between runs."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What does Autowright need to run?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "An Apple Silicon Mac on macOS 12 Monterey or later; Windows and Linux support is planned. Install the signed DMG from the latest GitHub release, or use the Homebrew cask: brew install --cask hansololz/tap/autowright"
+      }
+    }
+  ]
 }
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -265,6 +376,19 @@
   .badge span{color:var(--faint)}
   .agents .local{font-size:12.5px; color:var(--muted); margin-top:16px}
 
+  /* common questions */
+  .faq{padding:60px 0 6px}
+  .faq .eyebrow{color:var(--faint); text-align:center}
+  .faqgrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:10px 14px}
+  .qa{padding:16px 18px; border:1px solid var(--hairline); border-radius:10px}
+  .qa h3{font-size:13.5px; font-weight:500; letter-spacing:-.01em}
+  .qa p{font-size:12.5px; font-weight:400; color:var(--muted); margin-top:6px}
+  .qa a{color:var(--text-2); text-decoration:underline; text-underline-offset:2px;
+    text-decoration-color:rgba(255,255,255,.25); transition:color .15s}
+  .qa a:hover{color:var(--text)}
+  .qa code{font-family:var(--mono); font-size:11.5px; color:var(--text-2);
+    background:rgba(255,255,255,.06); border-radius:4px; padding:1px 5px}
+
   /* closing cta */
   .closing{padding:74px 0 8px; text-align:center}
   .closing h2{font-size:clamp(22px,3.5vw,30px); font-weight:600; letter-spacing:-.02em}
@@ -331,7 +455,7 @@
   </header>
 
   <section class="hero">
-    <div class="eyebrow">Open source · runs locally</div>
+    <div class="eyebrow">Autowright · open source · runs locally</div>
     <h1>Say what you want done.<br><span class="dim">Your Mac keeps doing it.</span></h1>
     <p class="sub">Describe a recurring task in one sentence: watch a site for changes, back up a folder, track a price. Autowright uses the AI agent you already have to write it as readable Python, then runs it on your schedule, on your Mac, only after you approve.</p>
     <div class="ctas">
@@ -389,7 +513,7 @@
     </div>
   </section>
 
-  <section class="how reveal">
+  <section class="how reveal" id="how">
     <div class="eyebrow">How it works</div>
     <div class="grid3">
       <div class="hstep">
@@ -430,7 +554,7 @@
     </div>
   </section>
 
-  <section class="features reveal">
+  <section class="features reveal" id="features">
     <div class="eyebrow">Under the hood</div>
     <div class="fgrid">
       <div class="feat">
@@ -469,6 +593,36 @@
       <div class="badge">OpenCode <span>+ local Ollama</span></div>
     </div>
     <p class="local">No agent installed? Autowright sets one up, including a free local model that never goes online.</p>
+  </section>
+
+  <section class="faq reveal" id="faq">
+    <div class="eyebrow">Common questions</div>
+    <div class="faqgrid">
+      <div class="qa">
+        <h3>What is Autowright?</h3>
+        <p>Autowright is a free, open source macOS app for personal automation. You describe a recurring task in one sentence, an AI agent turns it into short, readable Python scripts, and after you approve them Autowright runs those exact scripts on the schedule you set.</p>
+      </div>
+      <div class="qa">
+        <h3>Where do Autowright automations run?</h3>
+        <p>On your Mac. There are no cloud runners and no server component: Autowright installs a background scheduler that keeps firing with the app window closed. Secrets live in the macOS Keychain and are injected into the process at runtime, never written into a script or a log.</p>
+      </div>
+      <div class="qa">
+        <h3>Which AI agents does Autowright work with?</h3>
+        <p>Autowright drives the coding agent you already use: Claude Code, Gemini CLI, Codex, or OpenCode, including OpenCode pointed at a local Ollama model. If you have none installed, Autowright can set one up for you, including a free local model that never sends anything online.</p>
+      </div>
+      <div class="qa">
+        <h3>Is Autowright free?</h3>
+        <p>Yes. Autowright is free and MIT licensed, with the full source on <a href="https://github.com/hansololz/autowright">GitHub</a>. There is no subscription and no account. You pay only whatever your own AI agent costs you, which is nothing if you run a local model.</p>
+      </div>
+      <div class="qa">
+        <h3>How is Autowright different from cron or from asking a chat agent to do the task?</h3>
+        <p>cron runs code you already wrote; Autowright writes that code with you first, then schedules it. And unlike asking a chat agent to perform the task each time, Autowright runs the same approved scripts on every fire, so there is no re-prompting and no drift between runs.</p>
+      </div>
+      <div class="qa">
+        <h3>What does Autowright need to run?</h3>
+        <p>An Apple Silicon Mac on macOS 12 Monterey or later; Windows and Linux support is planned. Install the signed DMG from the <a href="https://github.com/hansololz/autowright/releases/latest">latest GitHub release</a>, or use the Homebrew cask: <code>brew install --cask hansololz/tap/autowright</code></p>
+      </div>
+    </div>
   </section>
 
   <section class="closing reveal">

@@ -162,14 +162,17 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   and `tests/seed_data.py` (§16 fixture). `pytest.ini` at the repo root configures
   the suite. Renderer tests live under `app/` (above), not here.
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
-  single self-contained page + `CNAME` with the custom domain). Dark, matches the §14 visual
+  single self-contained page + `CNAME` with the custom domain + `robots.txt` and
+  `sitemap.xml` for search crawlers). Dark, matches the §14 visual
   language (IBM Plex Sans/Mono — no 700 weight, per §14 — brand orange accent `#f68b43`, and
   the §14 AW-monogram mark as both header mark and favicon, inlined from
   `app/electron/icon/icon.svg`). Audience: technically savvy users — copy is concise and
   concrete (short sentences, real nouns like Python, Keychain, scheduler, cron), never
   padded with explanation a developer does not need, and never marketing filler. Page
   structure, in order: header
-  (mark + wordmark + GitHub link) · hero (headline, one-paragraph pitch, "Download for
+  (mark + wordmark + GitHub link) · hero (an accent eyebrow that leads with the product
+  name - "Autowright · open source · runs locally", so the brand appears as page text above
+  the fold, not only in the wordmark - headline, one-paragraph pitch, "Download for
   macOS" → a direct download of the latest versioned DMG: on load, page JS fetches the
   same-origin §3 update feed (relative URL `updates/darwin-arm64.json`, so it also works
   when the page is served from a sub-path in local previews) and rewrites the download
@@ -226,7 +229,15 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   cards (the two §1 core promises plus the review promise "Nothing executes until you
   approve it") · a feature grid (message triggers, runs-with-window-closed + menu bar,
   versions, memory + snapshots, execution history, `.autowright` share/import) ·
-  supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · closing
+  supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · a
+  question-and-answer section ("Common questions", six items in the two-column card grid the
+  promise cards use, each a `<h3>` question over an answer paragraph). Its purpose is
+  twofold: answer what a first-time visitor actually asks, and give the page indexable prose
+  that names the product and its domain nouns - what Autowright is, where automations run,
+  which agents it drives, what it costs, how it differs from cron and from a chat agent
+  running tasks itself, and which macOS versions it needs. Answers restate facts already
+  spec'd elsewhere (§1 promises, §5 triggers, §6 execution, §13 agents) and must stay true to
+  them; each is two or three sentences and names "Autowright" rather than "it" · closing
   download CTA (same feed-driven direct-DMG link as the hero — both anchors carry
   `data-download`; the JSON-LD `downloadUrl` stays the static latest-release page URL) ·
   footer (GitHub, Privacy, MIT). All repo links point to
@@ -234,9 +245,25 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   copy, meta tags, demo strings, code comments; where an app string it mirrors
   carries one, the page substitutes a plain hyphen. Respects `prefers-reduced-motion`. Head metadata: canonical
   `https://autowright.ai/`, `theme-color` `#090d14`, Open Graph + Twitter-card tags with a
-  1200×630 social image (`docs/og.png`, AW mark + headline on the dark background),
-  `docs/apple-touch-icon.png` (180 px full-bleed AW mark), and JSON-LD
-  (`SoftwareApplication`, macOS, free, MIT). Sections below the demo fade up on first
+  1200×630 social image (`docs/og.png`, AW mark + headline on the dark background) and an
+  `og:image:alt` describing it, `docs/apple-touch-icon.png` (180 px full-bleed AW mark), and
+  JSON-LD.
+  The `<title>` and `<meta name="description">` both lead with the product name and then say
+  in plain words what the app is (an AI automation app for macOS that writes and schedules
+  Python), because "Autowright" is a contested term - unrelated automotive businesses hold
+  the top organic results - so every signal that ties the name to this product matters.
+  Three JSON-LD graphs, each in its own `<script type="application/ld+json">`:
+  `SoftwareApplication` (macOS, free, MIT, `downloadUrl` the static latest-release page,
+  plus `featureList`, `screenshot`, and `author`); `WebSite` with `alternateName` and
+  `publisher`; and `FAQPage` whose `mainEntity` mirrors the on-page question section
+  verbatim - the two must never drift, since Google discards FAQ markup that is not visible
+  on the page. The `Organization` node the other two reference carries `sameAs` links to
+  every profile that is unambiguously this project (the GitHub repo and owner, the PyPI
+  project), which is what lets a search engine treat this Autowright as an entity separate
+  from the businesses of the same name. `docs/robots.txt` allows every crawler and points at
+  `https://autowright.ai/sitemap.xml`; `docs/sitemap.xml` lists the single canonical page
+  (the `updates/` feeds are machine endpoints and stay out of it). Section elements that a
+  search engine may deep-link carry stable `id`s (`how`, `features`, `faq`). Sections below the demo fade up on first
   scroll-into-view (IntersectionObserver adding an `.in` class; entrance uses the app's
   §14 motion values — 360 ms `cubic-bezier(0.16,1,0.3,1)`). `::selection` is the accent at
   .35 alpha and links/buttons get a visible `:focus-visible` accent outline, per §14. A

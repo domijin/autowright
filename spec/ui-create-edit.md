@@ -190,8 +190,8 @@ applies unchanged; the chat pane never collapses.
     bullets and supporting prose (the
     dismissed-blockers summary, "Previously resolved")
     is 11.5 px / 1.5–1.6, `--text-muted` or `--text-faint` by weight of the information;
-    activity/progress feed history lines are 11 px `--text-faint` under an 11.5 px
-    `--text-muted` live detail line.
+    activity/progress feed lines are all 11 px — history lines `--text-faint`, the live
+    detail line `--text-muted` (color, not size, marks the working line).
   No entry hand-picks sizes outside these roles — a new entry kind joins one of the
   three.
 - **Thread spacing — one group gap.** A uniform **12 px** separates any two distinct

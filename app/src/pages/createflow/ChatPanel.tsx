@@ -593,12 +593,12 @@ export function ChatPanel({
                     <OpBullet key={`${i}-${t}`} text={t} ellipsis />
                   ))}
                   {rev.genDetail && (
-                    <OpBullet text={rev.genDetail} size={11.5} color="var(--text-muted)" />
+                    <OpBullet text={rev.genDetail} color="var(--text-muted)" />
                   )}
                   {/* §11: never an empty section — before the stream produces
                       any feed, the stage's canned description holds its place */}
                   {!rev.genDetail && hist.length === 0 && (
-                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} size={11.5} color="var(--text-muted)" />
+                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} color="var(--text-muted)" />
                   )}
                 </>
               )

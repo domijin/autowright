@@ -139,7 +139,8 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   `claude --model claude-opus-5 -p` from the staged diff, and commits;
   `release.sh` sets the app version from the repo-root `VERSION` file, invokes
   `prod.sh` to build the release distributable, publishes the DMG + update zip as a
-  GitHub release via `gh`, and rewrites the §3 update feed under `docs/updates/`, §18;
+  GitHub release via `gh`, rewrites the §3 update feed under `docs/updates/`, and
+  last publishes the §3 Homebrew cask to the separate `homebrew-tap` repository, §18;
   `test-fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
   `test-all.sh` runs every test tier in the same order — the fast gate via `test-fast.sh`,
   then pytest `-m integration`, then e2e — §15/§18;

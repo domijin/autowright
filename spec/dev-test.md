@@ -290,15 +290,34 @@ Dev workflow:
   in-bundle import smoke test and the Gatekeeper assessment);
   then runs `gh release create v<version> <DMG> <zip> --title "v<version>"
   --generate-notes` to tag the pushed commit and upload the DMG plus the §3 update zip;
-  finally rewrites the built arch's Squirrel feed (`docs/updates/darwin-<arch>.json`, §3 —
+  then rewrites the built arch's Squirrel feed (`docs/updates/darwin-<arch>.json`, §3 —
   `currentRelease` + one entry pointing at the release zip's download URL) and commits +
-  pushes it with a plain git commit. Requires the `gh` CLI,
+  pushes it with a plain git commit; finally updates the §3 Homebrew cask in the separate
+  `homebrew-tap` repository and pushes it to that repo's `main`. Requires the `gh` CLI,
   authenticated (`gh auth login`); fails with a hint otherwise. Files are rewritten only
   when their version actually differs, so an unchanged `pyproject.toml` mtime never
   churns the `.backend-stamp` dependency re-install. Modes (version-only — no build, no
   git/GitHub actions): **`--sync`** rewrites the three sites from `VERSION` without
   taking a new version (what `build.sh` runs); **`--check`** verifies all three match
   `VERSION` and exits non-zero listing every mismatch (what `prod.sh` runs).
+  - **Homebrew cask publish (§3).** Fully scripted, never hand-edited. The tap checkout is
+    always `../homebrew-tap`, the sibling of the repo root — the two repositories live in the
+    same parent directory, and there is no override; the cask file is `Casks/autowright.rb`
+    inside it. Preflight (with the other release prerequisites, before
+    anything is modified): clone `https://github.com/hansololz/homebrew-tap.git` if the
+    checkout is missing, then require it to be on `main`, clean, and holding the cask file,
+    and fast-forward it to `origin/main` — a dirty or diverged tap aborts the release before
+    the version bump is written, never after the GitHub release exists. The publish step runs
+    **last**, after the release and the update feed, and only for an `arm64` build (the cask
+    is `depends_on arch: :arm64`; an `x86_64` release logs that it skipped the cask rather
+    than overwriting the arm64 URL). It rewrites the cask's `version` line to the released
+    version and its `sha256` line to `shasum -a 256` of the uploaded DMG, runs `brew style`
+    on the result when `brew` is present, then commits `autowright <version>` and pushes the
+    tap's `main` to GitHub. Commit and push are decided separately: an already-current cask
+    commits nothing, but the push still runs whenever `main` is ahead of `origin/main`, so
+    earlier local tap commits can never leave the published cask lagging the checkout. Both
+    halves are idempotent — a tap already in sync pushes nothing and says so. A failed push
+    names the `--cask` recovery mode.
 - **`./scripts/prod.sh`** — the production distribution (§3), under `build/` (gitignored).
   Runs `release.sh --check` first and refuses to build on any version mismatch (the
   distributable's DMG name, bundle, and backend must agree on one version).

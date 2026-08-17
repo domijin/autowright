@@ -247,6 +247,28 @@ the update bullets below).
   out of the macOS session still stops the LaunchAgent and locks the Keychain (headless bullets
   below); for an unattended Mac, stay logged in (screen lock is fine) or enable auto-login.
 
+- **Homebrew cask (decided):** a second install channel beside the DMG download, distributed
+  from the project's own tap `hansololz/homebrew-tap` (repository `homebrew-tap`, cask file
+  `Casks/autowright.rb`, token `autowright`) — `brew install --cask hansololz/tap/autowright`.
+  Homebrew 6 refuses to load a cask from a third-party tap until the user trusts it, so the
+  tap's README documents `brew tap hansololz/tap` + `brew trust --tap hansololz/tap` before the
+  install; after the tap is added the bare token `autowright` resolves.
+  Not submitted to `Homebrew/homebrew-cask`: that requires notability (75 stars / 30 forks /
+  30 watchers) the project does not have, and the only thing it would buy is dropping the tap
+  prefix. The cask installs the same signed + notarized DMG from the GitHub release, so
+  Gatekeeper needs no override and there is no second artifact to build or verify. Its shape
+  follows from this section: `depends_on arch: :arm64` and `depends_on macos: :monterey` (the
+  bundle's `LSMinimumSystemVersion`); `auto_updates true`, because the in-app Squirrel updater
+  swaps the bundle in place and Homebrew's recorded version goes stale by design — `brew
+  upgrade` skips the cask unless `--greedy`; `uninstall launchctl: "com.autowright.backend"`
+  before `quit: "com.autowright.app"`, since launchd would otherwise keep restarting a backend
+  whose bundled interpreter was just removed; and `zap trash:` covering the §5 data directory,
+  the logs directory, the LaunchAgent plist, the `~/.local/bin/autowright` shim, and the app's
+  preferences/saved-state — never the Keychain secrets (§4.8), which the user removes by hand.
+  A `livecheck` block reads `currentRelease` from the same arch feed the updater uses, so the
+  cask stays checkable by `brew livecheck` and would be autobump-eligible if it ever moved to
+  core. Version bumps are `release.sh`'s job (§18), never a manual edit.
+
 **Headless mode (decided).** The backend and CLI must work with no GUI ever launched — the §20
 CLI is enabled, so the full surface below is live:
 

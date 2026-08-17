@@ -164,8 +164,10 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   single self-contained page + `CNAME` with the custom domain). Dark, matches the §14 visual
   language (IBM Plex Sans/Mono — no 700 weight, per §14 — brand orange accent `#f68b43`, and
   the §14 AW-monogram mark as both header mark and favicon, inlined from
-  `app/electron/icon/icon.svg`). Audience: technically savvy users plus curious
-  non-technical people — plain-language copy, no jargon. Page structure, in order: header
+  `app/electron/icon/icon.svg`). Audience: technically savvy users — copy is concise and
+  concrete (short sentences, real nouns like Python, Keychain, scheduler, cron), never
+  padded with explanation a developer does not need, and never marketing filler. Page
+  structure, in order: header
   (mark + wordmark + GitHub link) · hero (headline, one-paragraph pitch, "Download for
   macOS" → a direct download of the latest versioned DMG: on load, page JS fetches the
   same-origin §3 update feed (relative URL `updates/darwin-arm64.json`, so it also works

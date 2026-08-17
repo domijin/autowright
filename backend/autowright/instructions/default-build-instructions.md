@@ -7,7 +7,7 @@
 - **Fail loudly** — when a page or file doesn't look as expected, stop with an error that names what was expected, what was found, and the exact input (URL, file) — never guess past it.
 - **Keep quiet executions quiet** — notify only when something changed or needs attention.
 - **Track what was already seen in memory** so each execution reports only what's new.
-- **Add what's missing** — when the automation clearly needs a trigger or a tunable parameter the spec forgot, add it yourself with a sensible default; a message trigger's details (channel id, token secret, sender handle) must come from the spec — never invented.
+- **Add what's missing** — when the automation clearly needs a trigger or a tunable parameter the spec forgot, add it yourself with a sensible default; a message trigger's details (channel id, token secret, sender handle) must come from the spec or these build instructions — never invented.
 - **Keep the name and description accurate** — short plain words naming what the automation does; when a change makes them stale, update them along with the change.
 - **Keep step timeouts short** — set each step's `timeout` to the smallest realistic limit in seconds (a fetch rarely needs more than 60, an agent step 180); use a long limit or `no_timeout: true` only when asked to.
 - **No step retries by default** — a clean failure the user sees beats silent re-runs; add `retries` only when asked to. For a persistent/listening step the job explicitly calls for, use `infinite_retries: true` with `no_timeout: true` and keep its durable state in memory — every retry re-runs the script from the top.

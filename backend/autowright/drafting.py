@@ -76,7 +76,7 @@ _FRAMEWORK_SECTION = "=== FRAMEWORK INSTRUCTIONS ===\n" + CONTRACT_PREAMBLE
 # ---------- prompts ----------
 
 STEPS_TASK = """=== TASK ===
-Build the automation that implements the SPEC below, following the BUILD INSTRUCTIONS. Derive the triggers, every parameter (each with a default), and the steps from the SPEC — and add any trigger or parameter you judge the automation is missing (see Triggers and Parameters above; message-trigger details come from the SPEC only). Return manifest.yaml plus one file block per step — no spec.md (and no name/description keys — identity changes only through the chat call's actions):
+Build the automation that implements the SPEC below, following the BUILD INSTRUCTIONS. Derive the triggers, every parameter (each with a default), and the steps from the SPEC — and add any trigger or parameter you judge the automation is missing (see Triggers and Parameters above; message-trigger details come from the SPEC or BUILD INSTRUCTIONS, never invented). Return manifest.yaml plus one file block per step — no spec.md (and no name/description keys — identity changes only through the chat call's actions):
 
 ===FILE: manifest.yaml===
 note: One-line version note for the history menu
@@ -92,8 +92,8 @@ packages:                              # extra PyPI packages beyond the allowed 
       why: one line — what the steps use the package for }
 triggers:                              # see Triggers above; omit the whole key when the automation needs no trigger (manual / menu bar only)
   - cron: "0 8 * * *"                  # optional timezone: IANA zone, only when the spec names one
-  - { imessage: "+15551234567" }       # sender handle from the SPEC only; optional pattern
-  - { discord: "1234567890", secret: BOT_TOKEN_NAME }   # channel id + granted token secret from the SPEC only; optional pattern / mention / author (sender filter: numeric user id or list of them)
+  - { imessage: "+15551234567" }       # sender handle from the SPEC or BUILD INSTRUCTIONS only; optional pattern
+  - { discord: "1234567890", secret: BOT_TOKEN_NAME }   # channel id + granted token secret from the SPEC or BUILD INSTRUCTIONS only; optional pattern / mention / author (sender filter: numeric user id or list of them)
   - app_start: true                    # executes when the app starts
 steps:                                 # ordered; file names NN-name.py, two-digit, gapless from 01;
                                        # timeout: seconds the step may run before it is stopped (see Timeouts above);
@@ -210,12 +210,16 @@ def _common_context(current: dict | None, grants: dict) -> list[str]:
         "INSTRUCTIONS name a choice, follow them; otherwise pick the most appropriate "
         "entries yourself."
     ]
-    # §8: instructions travel with every call as context only — never returned by
-    # the agent. With no automation, the API seeds DEFAULT_INSTRUCTIONS when
-    # none are given (belt-and-braces — the editor normally sends them).
-    if (current or {}).get("instructions"):
-        parts.append("=== BUILD INSTRUCTIONS (the user's standing rules — follow them; "
-                     "never return this file) ===\n" + current["instructions"].strip())
+    # §8: instructions travel with every call — always present (`none` when the
+    # automation has none) so TASK references to the section never dangle. The
+    # chat call may return an updated instructions.md when the user asks; the
+    # sync call never returns them. With no automation, the API seeds
+    # DEFAULT_INSTRUCTIONS when none are given (belt-and-braces — the editor
+    # normally sends them).
+    instructions = str((current or {}).get("instructions") or "").strip()
+    parts.append("=== BUILD INSTRUCTIONS (the user's standing rules — follow them; "
+                 "rewritten only when the user asks to change them and the TASK "
+                 "allows an instructions.md block) ===\n" + (instructions or "none"))
     return parts
 
 

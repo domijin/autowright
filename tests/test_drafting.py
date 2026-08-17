@@ -543,9 +543,12 @@ def test_prompts_carry_build_instructions_in_every_mode():
         assert "BUILD INSTRUCTIONS" in p and "Never touch the Documents folder." in p
 
 
-def test_no_instructions_section_when_absent():
+def test_instructions_section_renders_none_when_absent():
+    # §8: the BUILD INSTRUCTIONS section always travels — the literal `none`
+    # when the automation has none, so TASK references to it never dangle.
     p = build_chat_prompt("do the thing", None, GRANTS)
-    assert "BUILD INSTRUCTIONS (the user's standing rules" not in p
+    section = p.split("=== BUILD INSTRUCTIONS", 1)[1]
+    assert section.split("===\n", 1)[1].startswith("none")
 
 
 # ---------- fake claude CLI (tests/bin) drives the full pipeline ----------

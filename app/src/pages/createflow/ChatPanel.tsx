@@ -371,7 +371,7 @@ export function ChatPanel({
             return (
               <div key={e.id} style={{ marginTop: mt }}>
                 {e.title && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 3 }}>
                     <GlyphBox>
                       <i className={`fa-solid ${failed ? 'fa-xmark' : 'fa-check'}`} style={{ fontSize: 11, color: glyphColor }} />
                     </GlyphBox>
@@ -572,7 +572,7 @@ export function ChatPanel({
           // just-settled op entry (the same job's trail chains), the uniform
           // 12px group gap otherwise
           <div data-testid="chat-progress" style={{ marginTop: rev.chat.length === 0 ? 0 : familyGap(rev.chat[rev.chat.length - 1], { kind: 'activity' } as ChatEntry) }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 3 }}>
               <Spinner size={13} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
                 {jobStageTitle(rev)}

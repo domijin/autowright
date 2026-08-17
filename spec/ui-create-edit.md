@@ -48,7 +48,7 @@ applies unchanged; the chat pane never collapses.
     operation block). The feed sits flush beneath the header row — no extra gap
     below the title, only the lines' own line-height. An `activity` block's header
     row (and the transient progress entry's — the same layout live) carries a small
-    **6 px top padding**, so an action block's title stands slightly off whatever
+    **3 px top padding**, so an action block's title stands slightly off whatever
     precedes it even when operation blocks chain flush; the one-line chips
     (`rewrite`, `system`) stay unpadded and keep chaining flush. An entry with no description renders the header row alone.
   - **Message blocks** (`answer`, `blockers`, `error`) — the agent **talking to the

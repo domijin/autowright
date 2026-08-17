@@ -45,7 +45,12 @@ applies unchanged; the chat pane never collapses.
     `• `-prefixed bullets (bullet glyph then a 2-space gap before the text) running
     the pane's full width **flush left with the glyph —
     never indented under the title** (the activity-feed flush rule, now for every
-    operation block). An entry with no description renders the header row alone.
+    operation block). The feed sits flush beneath the header row — no extra gap
+    below the title, only the lines' own line-height. An `activity` block's header
+    row (and the transient progress entry's — the same layout live) carries a small
+    **6 px top padding**, so an action block's title stands slightly off whatever
+    precedes it even when operation blocks chain flush; the one-line chips
+    (`rewrite`, `system`) stay unpadded and keep chaining flush. An entry with no description renders the header row alone.
   - **Message blocks** (`answer`, `blockers`, `error`) — the agent **talking to the
     user**: questions, plans, blockers, failures. Layout: a header row — glyph in the
     same 13 px box beside a 13 px/600 title — then the body as full-width paragraphs at

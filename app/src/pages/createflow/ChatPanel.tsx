@@ -34,13 +34,12 @@ function GlyphBox({ children }: { children: React.ReactNode }) {
 /** §11 operation-block bullet — `• `-prefixed description line running the
     pane's full width, flush left with the glyph (never indented under the
     title). `ellipsis` keeps activity-feed lines single-line. */
-function OpBullet({ text, first, ellipsis, size, color }: {
-  text: string; first: boolean; ellipsis?: boolean; size?: number; color?: string
+function OpBullet({ text, ellipsis, size, color }: {
+  text: string; ellipsis?: boolean; size?: number; color?: string
 }) {
   return (
     <div style={{
       font: `400 ${size ?? 11}px/1.5 var(--sans)`, color: color ?? 'var(--text-faint)',
-      marginTop: first ? 3 : 0,
       ...(ellipsis ? { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' } : { overflowWrap: 'break-word' as const }),
     }}>
       •&nbsp; {text}
@@ -372,7 +371,7 @@ export function ChatPanel({
             return (
               <div key={e.id} style={{ marginTop: mt }}>
                 {e.title && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 6 }}>
                     <GlyphBox>
                       <i className={`fa-solid ${failed ? 'fa-xmark' : 'fa-check'}`} style={{ fontSize: 11, color: glyphColor }} />
                     </GlyphBox>
@@ -380,7 +379,7 @@ export function ChatPanel({
                   </div>
                 )}
                 {lines.map((t, i) => (
-                  <OpBullet key={`${i}-${t}`} text={t} first={i === 0} ellipsis />
+                  <OpBullet key={`${i}-${t}`} text={t} ellipsis />
                 ))}
               </div>
             )
@@ -508,7 +507,6 @@ export function ChatPanel({
             </div>
             {e.boundary && (
               <OpBullet
-                first
                 size={11.5}
                 color="var(--text-faint)"
                 text="The messages above are from that draft — your AI starts fresh and no longer reads them."
@@ -574,7 +572,7 @@ export function ChatPanel({
           // just-settled op entry (the same job's trail chains), the uniform
           // 12px group gap otherwise
           <div data-testid="chat-progress" style={{ marginTop: rev.chat.length === 0 ? 0 : familyGap(rev.chat[rev.chat.length - 1], { kind: 'activity' } as ChatEntry) }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 6 }}>
               <Spinner size={13} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
                 {jobStageTitle(rev)}
@@ -592,15 +590,15 @@ export function ChatPanel({
               return (
                 <>
                   {hist.map((t, i) => (
-                    <OpBullet key={`${i}-${t}`} text={t} first={i === 0} ellipsis />
+                    <OpBullet key={`${i}-${t}`} text={t} ellipsis />
                   ))}
                   {rev.genDetail && (
-                    <OpBullet text={rev.genDetail} first={hist.length === 0} size={11.5} color="var(--text-muted)" />
+                    <OpBullet text={rev.genDetail} size={11.5} color="var(--text-muted)" />
                   )}
                   {/* §11: never an empty section — before the stream produces
                       any feed, the stage's canned description holds its place */}
                   {!rev.genDetail && hist.length === 0 && (
-                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} first size={11.5} color="var(--text-muted)" />
+                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} size={11.5} color="var(--text-muted)" />
                   )}
                 </>
               )

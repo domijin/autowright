@@ -8,8 +8,6 @@
   Read `SPEC.md` first and open only the spec files the task touches. Update the spec **before** starting the code
   change; amending it again after the code change starts is fine. When adding or moving sections, keep the
   `SPEC.md` section map current.
-- Always communicate using the `/caveman` skill with `lite` settings. Keep it active for every response in the session,
-  and in particular whenever updating the `SPEC.md` or `.claude/CLAUDE.md` doc.
 - Developer mode and production mode must behave the same: no mocked data in developer mode, and no separate
   dev-only code paths. Both modes execute the same real code.
 - The `scripts/` directory is developer-only — never run anything under it (enforced by a PreToolUse

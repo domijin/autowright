@@ -726,9 +726,11 @@ Onboarding shows whenever `ad-onboarded` (§15) is unset — existing agents or 
 bypass it: step 1 always renders. When prior data exists (any agent or any automation), step 1's
 Continue goes straight to the app shell instead of step 2. The step label ("Step 1 of 2" /
 "Step 2 of 2") renders only when no prior data exists — with prior data step 1 is the only
-screen, so no counter shows. Onboarding never installs the CLI shim — the §4.9 COMMAND LINE
-card is the only install entry (a dedicated step existed and was removed 2026-08-16; CLI
-install is not an onboarding focus for now).
+screen, so no counter shows. Onboarding itself never installs the CLI shim (a dedicated step
+existed and was removed 2026-08-16). Instead, the §3 one-shot first-run install runs silently
+at renderer boot regardless of onboarding state — with `cliEnabled` defaulting true (§4.9), a
+fresh install has the `autowright` command ready by the time onboarding finishes; the §4.9
+COMMAND LINE card stays the only interactive install entry.
 
 **Step 1 — Welcome.** Logo, headline "Recurring jobs, done exactly the same way every time.",
 then a live self-check card "Getting Autowright ready" with three steps (Checking your settings,

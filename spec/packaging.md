@@ -87,9 +87,20 @@ the update bullets below).
   `exec "<python>" -m autowright.cli "$@"` (module form per the shebang rule above; `<python>`
   is the backend's real interpreter). The command name is `autowright` (no short alias for now).
   **One install location:** `~/.local/bin/autowright` — user-owned, so no privilege and no
-  password, ever. There is no admin-prompt (osascript) flow anywhere anymore, and the app
-  **never auto-installs**: creation happens only through the §4.9 COMMAND LINE card — turning
-  its `cliEnabled` toggle on, or its explicit Install button. The opt-in itself is the stored
+  password, ever. There is no admin-prompt (osascript) flow anywhere anymore. Creation happens
+  in exactly two ways, both silent and user-local: the §4.9 COMMAND LINE card (its `cliEnabled`
+  toggle, or the missing-row Reinstall button) and a **one-shot first-run install**. The
+  one-shot runs at renderer boot once the settings snapshot has loaded and the preload bridge
+  exists: if `cliEnabled` (default true, §4.9) is on and the `ad-cli-installed` localStorage
+  marker (§15) is unset, the renderer reads `cli-status` and fires `cli-install` when the
+  state is `missing`. The marker records "first run settled": it is set on install success and
+  when the state is already `installed`, `stale`, or `foreign` (stale keeps its §4.9 amber
+  card; foreign files are never touched); a failed install leaves it unset so the next launch
+  retries, and, unlike the toggle flow, never patches the setting to false (a transient
+  failure must not become a permanent opt-out). Successful card installs set the marker too.
+  Once the marker is set the app never creates a shim on its own again: a hand-deleted shim
+  stays deleted (the §4.9 missing row is the explicit way back), and turning the toggle off
+  still touches no files. The preference itself is the stored
   `cliEnabled` setting (§4.9); the shim files on disk stay the truth about what's installed. `~/.local/bin` may be absent from the user's PATH — the shell checks the
   **login-shell** PATH (GUI apps inherit a stripped one, so it asks
   `$SHELL -l -c 'printf %s "$PATH"'` with a ~2 s timeout, caches the answer per app run, and

@@ -115,7 +115,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "keepForever": False,
     "dataPath": None,  # None → paths.default_data_path()
     "developerMode": False,  # §4.9: request logging on/off, read live by the log filter
-    "cliEnabled": False,  # §4.9: CLI opt-in preference — shim files stay the disk truth (§3)
+    "cliEnabled": True,  # §4.9: on by default (§3 first-run install) — shim files stay the disk truth
 }
 
 

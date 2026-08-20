@@ -50,6 +50,9 @@ export default function SettingsPage() {
     setCliBusy(true)
     return (async () => {
       const r = await window.autowright?.cliInstall().catch(() => null)
+      // §3: a settled card install also settles the first-run one-shot, so a
+      // later hand-deletion is never undone at boot.
+      if (r?.ok) localStorage.setItem('ad-cli-installed', '1')
       const s = await window.autowright?.cliStatus().catch(() => null)
       if (s) setCli(s)
       setCliBusy(false)
@@ -57,7 +60,7 @@ export default function SettingsPage() {
     })()
   }
 
-  // §4.9 toggle: cliEnabled is the stored opt-in; turning on also installs,
+  // §4.9 toggle: turning on also installs,
   // and a failed install flips the setting back — the toggle just returns.
   // Turning off touches no files (Delete below is the explicit removal).
   const setCliEnabled = (on: boolean) => {

@@ -795,8 +795,12 @@ developerMode: bool (default false) — "Developer mode" ("Logs every backend re
   panel.") — gates request logging, the per-request log files under `<logs>/requests/` (§5),
   the §5 build-failure records under `<logs>/build-failures/`, and the `` ` ``-key log
   overlay (§9.3)
-cliEnabled: bool (default false) — the CLI opt-in preference behind the COMMAND LINE card's
-  toggle (below): whether the user wants the `autowright` command available. The §3 shim
+cliEnabled: bool (default true) — whether the user wants the `autowright` command available;
+  drives the COMMAND LINE card's toggle (below) and the §3 one-shot first-run install. On by
+  default: fresh installs and pre-key upgrades resolve to true through the defaults merge,
+  while any stored value is kept as written, including the materialized `false` that
+  0.3.4/0.3.5 saves wrote for users who never touched the toggle (accepted: no migration, per
+  the no-compat-handlers rule). The §3 shim
   files on disk stay the truth about what's actually installed — this key only records the
   user's choice (stored backend-side like every setting, §20 CLI parity included)
 dataPath (default ~/Library/Application Support/Autowright/executions), dataSize
@@ -816,13 +820,15 @@ on. One **ON THIS MAC** card holds two rows: **"Automations & settings"** (the f
 `~/Library/Application Support/Autowright` with its own Show in Finder button — this location
 is not changeable) above the **Execution data** row. A **COMMAND LINE** card sits below ON THIS
 MAC: one row titled "The `autowright` command" with a **Toggle** bound to the stored
-`cliEnabled` setting (above; default false — the CLI is opt-in, §3: no auto-install, no
-password anywhere). Disk state still comes from the §3 `cli-status` preload IPC (`{state,
+`cliEnabled` setting (above; default true, installed by the §3 one-shot first-run install:
+user-local only, no password anywhere). Disk state still comes from the §3 `cli-status` preload IPC (`{state,
 path, onPath}`, re-read on every Settings visit — the shim files are the truth about what's
 installed; the setting only records the user's choice). Turning the toggle **on** patches
 `cliEnabled: true` and fires §3 `cli-install` (silent ~/.local/bin write, no dialog); a
 failed install patches the setting back to false — the toggle just returns, never an error
-banner. Turning it **off** patches false and touches no files — removal is the explicit
+banner. Any successful card install (toggle-on or the Reinstall button) also sets the §3
+`ad-cli-installed` first-run marker, so a later hand-deletion is never undone by the
+launch-time one-shot. Turning it **off** patches false and touches no files — removal is the explicit
 Delete button below, never a side effect of the flip. Detail line + extra action by
 setting × disk state: on+`installed` → "Installed at `<path>`" (`onPath` no longer affects
 the card — the PATH help lives in the PATH row below, shown for every on+`installed`); on+`missing` (the user deleted the file by hand) → "Not
@@ -844,9 +850,9 @@ standard hairline divider — exactly one of:
 - **Missing-warning row** — toggle on but no working user-local install (on+`missing` /
   on+`stale`): amber title "The `autowright` CLI is missing", description "autowright wasn't found in
   ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the
-  Terminal.", with a "Reinstall" button firing §3 `cli-install` (silent, ~/.local/bin — the
-  app never re-creates on its own; the row is the explicit ask). The row-1 Install button is
-  gone — reinstall lives only here.
+  Terminal.", with a "Reinstall" button firing §3 `cli-install` (silent, ~/.local/bin — once
+  the §3 first-run marker is set the app never re-creates on its own; the row is the explicit
+  ask). The row-1 Install button is gone — reinstall lives only here.
 - **PATH row** — toggle on and the shim installed (on+`installed`, regardless of `onPath`):
   title "Add it to your PATH", description "If your Terminal can't find autowright, add
   ~/.local/bin to your PATH:", followed by the **PATH command block** — a `pathBox`-style

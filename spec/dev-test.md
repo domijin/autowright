@@ -14,7 +14,9 @@ port, request logging via the §4.9 developerMode setting (§5), and the real la
 dev.sh).
 
 Frontend state (localStorage/URL — production mechanisms, not dev branches): `ad-onboarded`
-(persisted onboarding completion; clearing it replays onboarding), `#menubar` URL hash (selects
+(persisted onboarding completion; clearing it replays onboarding), `ad-cli-installed` (§3
+first-run CLI install settled; clearing it re-arms the one-shot at next boot), `#menubar` URL
+hash (selects
 the menu-bar surface — how the tray panel window loads). The renderer discovers the backend only
 via `backend.json` through the Electron preload bridge; there is no browser-dev URL-param
 fallback.

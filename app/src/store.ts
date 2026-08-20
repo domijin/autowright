@@ -97,6 +97,31 @@ let refreshSeq = 0
 // rather than clobber the fresher event-applied rows (§19 event path).
 let eventSeq = 0
 
+// §3 one-shot first-run CLI install: with cliEnabled on (default true) and the
+// ad-cli-installed marker (§15) unset, a `missing` shim is installed silently
+// once. Every already-settled state (installed/stale/foreign) sets the marker
+// without touching disk; a failed install leaves it unset so the next launch
+// retries — but never patches cliEnabled off (a transient failure must not
+// become a permanent opt-out). Once the marker is set the app never creates
+// the shim on its own again — hand-deletion sticks (§4.9 missing row is the
+// explicit way back).
+let cliFirstRunStarted = false
+async function ensureCliFirstRun(settings: Settings): Promise<void> {
+  if (cliFirstRunStarted || !settings.cliEnabled) return
+  if (localStorage.getItem('ad-cli-installed') === '1') return
+  const bridge = window.autowright
+  if (!bridge?.cliStatus) return
+  cliFirstRunStarted = true
+  const s = await bridge.cliStatus().catch(() => null)
+  if (!s) return
+  if (s.state === 'missing') {
+    const r = await bridge.cliInstall().catch(() => null)
+    if (r?.ok) localStorage.setItem('ad-cli-installed', '1')
+  } else {
+    localStorage.setItem('ad-cli-installed', '1')
+  }
+}
+
 // Execution cache eviction: full records and log buckets are kept only for
 // the currently viewed execution plus the 5 most recently viewed (MRU head is
 // the current one, so its live-streaming buckets are never evicted mid-view);
@@ -200,6 +225,9 @@ export const useStore = create<Model>((set, get) => ({
         } : {}),
       })
       if (onboarded) passedOnboard = true
+      // §3 one-shot first-run CLI install — fire-and-forget off the freshly
+      // fetched snapshot (not the store: a stale boot yields its snapshot set).
+      void ensureCliFirstRun(s.settings)
       // Exactly one live socket: a re-entrant boot (StrictMode re-mount,
       // backend restart) must not stack subscriptions — every stacked socket
       // applies each event once more (duplicate log lines, double toasts).

@@ -21,6 +21,19 @@ const SETTINGS: Settings = {
   cliEnabled: false, dataPath: '/tmp', dataSize: '0 B',
 }
 
+// This happy-dom/node combo exposes no working localStorage global; the §3
+// first-run marker set by settled card installs lives there, so stub a minimal one.
+const ls = new Map<string, string>()
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: {
+    getItem: (k: string) => ls.get(k) ?? null,
+    setItem: (k: string, v: string) => { ls.set(k, String(v)) },
+    removeItem: (k: string) => { ls.delete(k) },
+    clear: () => { ls.clear() },
+  },
+})
+
 type Cli = { state: 'installed' | 'stale' | 'missing' | 'foreign'; path: string; onPath: boolean }
 
 const USER = '/Users/me/.local/bin/autowright'
@@ -40,6 +53,7 @@ beforeEach(() => {
   cliInstall.mockReset()
   cliUninstall.mockReset()
   patchSettings.mockClear()
+  localStorage.clear()
 })
 
 afterEach(cleanup)
@@ -82,6 +96,8 @@ describe('COMMAND LINE card (§4.9)', () => {
     fireEvent.click(card.querySelector('[role="switch"]') as Element)
     await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ cliEnabled: true }))
     await waitFor(() => expect(cliInstall).toHaveBeenCalledTimes(1))
+    // §3: a settled card install also settles the first-run one-shot.
+    await waitFor(() => expect(localStorage.getItem('ad-cli-installed')).toBe('1'))
     // The real app flips the store via the settings.changed WS refresh —
     // simulate it, then the card shows the enabled+installed copy.
     useStore.setState({ settings: { ...SETTINGS, cliEnabled: true } })
@@ -97,6 +113,8 @@ describe('COMMAND LINE card (§4.9)', () => {
     fireEvent.click(card.querySelector('[role="switch"]') as Element)
     await waitFor(() => expect(cliInstall).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ cliEnabled: false }))
+    // §3: a failed install never settles the first-run marker.
+    expect(localStorage.getItem('ad-cli-installed')).toBeNull()
   })
 
   it('off + still installed: Delete row (own title + description) removes the shim; turning off never deleted it', async () => {
@@ -138,6 +156,8 @@ describe('COMMAND LINE card (§4.9)', () => {
     await screen.findByText(/autowright wasn’t found in ~\/\.local\/bin — it may have been deleted or moved\. Reinstall it to keep using it from the Terminal\./)
     fireEvent.click(await screen.findByRole('button', { name: 'Reinstall' }))
     await waitFor(() => expect(cliInstall).toHaveBeenCalledTimes(1))
+    // §3: Reinstall is a settled card install — first-run marker set.
+    await waitFor(() => expect(localStorage.getItem('ad-cli-installed')).toBe('1'))
     await screen.findByText(`Installed at ${USER}`)
     expect(screen.queryByText(/CLI is missing/)).toBeNull()
   })

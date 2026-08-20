@@ -387,8 +387,10 @@ Message and app-start triggers can be drafted too:
 
 - `- { imessage: "+15551234567" }` — the sender handle (E.164 phone or email);
   optional `pattern` fires only on messages containing that text.
-- `- { discord: "1234567890", secret: BOT_TOKEN_NAME }` — the numeric channel
-  id and the granted secret holding the bot token; optional `pattern`,
+- `- { discord: "1234567890", secret: 9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34 }` —
+  the numeric channel id and the **id** of the granted secret holding the bot
+  token, copied EXACTLY from the grants yaml (never the secret's name — same
+  rule as a step's `secrets:` entry); optional `pattern`,
   `mention: true`, and `author` (sender filter — a numeric user id or a
   list of them; fires only on those senders' messages).
 - `- app_start: true` — executes when the app starts.
@@ -396,7 +398,7 @@ Message and app-start triggers can be drafted too:
 When you judge the automation is missing a trigger the spec implies — a
 schedule it describes in passing, the message trigger a reply flow clearly
 needs — add it. But a message trigger's identifying details (channel id,
-token-secret name, sender handle) must come from the SPEC or BUILD
+which secret holds the token, sender handle) must come from the SPEC or BUILD
 INSTRUCTIONS — never invent one. When those details are absent, omit the
 trigger and write the steps against `execution.trigger_payload` and
 `reply(text)` — that is the contract the user's own trigger will deliver, added
@@ -564,9 +566,12 @@ in prose with no op — unless it exists but is off, where the right move is the
 `enable` op the user actually wants. A pure schedule change is a `triggers` op
 alone — no spec rewrite, no `sync`, no steps rebuild; rewrite the spec's
 schedule words only when the request also changes behavior. Message-trigger
-identifying details (channel id, token-secret name, sender handle) may come
+identifying details (channel id, which secret holds the token, sender handle)
+may come
 from the spec or from what the user typed in this conversation — never
-invented. Ops touch only the entries they name; everything else stays as is.
+invented; a discord op's `secret` is that secret's id, copied exactly from
+the grants yaml (never its name). Ops touch only the entries they name;
+everything else stays as is.
 Parameter **definitions** still change only through a spec rewrite plus
 `sync`; `test_values` affects a single test only. `concurrency` only when the
 user explicitly asks for parallel runs or queueing ("let two run at once",

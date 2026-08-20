@@ -95,7 +95,8 @@ def test_tz_validation():
     # §4.3: `timezone` belongs to cron/time only — a stray one on a message
     # trigger drops at normalize (kept, the loader would drop it on restart)
     norm, err = normalize_triggers([{"kind": "discord", "channel": "42",
-                                     "secret": "TOKEN", "timezone": "UTC"}])
+                                     "secret": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34",
+                                     "timezone": "UTC"}])
     assert err is None and "timezone" not in norm[0]
     norm, err = normalize_triggers([{"kind": "imessage", "from": "+15551234567",
                                      "timezone": "UTC"}])
@@ -187,12 +188,15 @@ def test_imessage_trigger_validation_and_normalization():
 
 
 def test_discord_trigger_validation():
-    ok = {"kind": "discord", "channel": "123456789", "secret": "DISCORD_BOT_TOKEN"}
+    ok = {"kind": "discord", "channel": "123456789",
+          "secret": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34"}
     assert validate_trigger(ok) is None
-    # channel: numeric snowflake only; secret: §4.8 name rule; pattern nonempty; mention bool
+    # channel: numeric snowflake only; secret: a §4.8 secret id (uuid form,
+    # §4.3 — a name is no longer a valid reference); pattern nonempty; mention bool
     assert validate_trigger({**ok, "channel": "general"})
     assert validate_trigger({**ok, "channel": ""})
     assert validate_trigger({**ok, "secret": ""})
+    assert validate_trigger({**ok, "secret": "DISCORD_BOT_TOKEN"})
     assert validate_trigger({**ok, "secret": "lower case"})
     assert validate_trigger({**ok, "pattern": "  "})
     assert validate_trigger({**ok, "mention": "yes"})
@@ -208,18 +212,19 @@ def test_discord_trigger_validation():
 
 
 def test_discord_trigger_normalize_and_display():
+    sid = "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34"
     norm, err = normalize_triggers([{"kind": "discord", "channel": " 42 ",
-                                     "secret": " TOKEN ", "pattern": " go ",
+                                     "secret": f" {sid} ", "pattern": " go ",
                                      "mention": True, "author": [" 777 ", "111", "777"]}])
     assert err is None
     t = norm[0]
     # author normalizes trimmed + deduped + sorted (§4.3 merge identity)
     assert (t["channel"], t["secret"], t["pattern"], t["mention"], t["author"]) == \
-        ("42", "TOKEN", "go", True, ["111", "777"])
+        ("42", sid, "go", True, ["111", "777"])
     from autowright.triggers import trigger_display
 
     assert trigger_display(t) == ("Discord · 42 · “go”", "Discord")
-    plain, _ = normalize_triggers([{"kind": "discord", "channel": "42", "secret": "TOKEN"}])
+    plain, _ = normalize_triggers([{"kind": "discord", "channel": "42", "secret": sid}])
     assert "pattern" not in plain[0] and "mention" not in plain[0] and "author" not in plain[0]
     assert trigger_display(plain[0]) == ("Discord · 42", "Discord")
     # §11: a missing detail field renders "missing" — never "Discord · "

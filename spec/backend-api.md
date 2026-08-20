@@ -31,8 +31,9 @@ never see). Pydantic shapes **requests only** — response bodies
 remain plain dicts (§2).
 
 - `GET /health` → `{ version, app }` (unauthenticated; used for discovery/liveness)
-- `GET /state` → boot snapshot: automations (full), execution headers, agents, secret names +
-  usedBy, settings, app version, `pendingDraft` (`{ name, updatedAt } | null` — the §4.4
+- `GET /state` → boot snapshot: automations (full), execution headers, agents, secrets (the
+  `GET /secrets` entries — id, name, description, set, usedBy; never values), settings, app
+  version, `pendingDraft` (`{ name, updatedAt } | null` — the §4.4
   slot's identity summary; backs the §9.1 Resume draft button)
 - `GET /instructions` → `{ framework, defaultBuild }` — the two §8 instruction files verbatim
   (backs the §11 Framework-instructions and Build-instructions cards)
@@ -278,7 +279,8 @@ remain plain dicts (§2).
   record. `triggerMock` is the §11 mocked trigger message:
   `{ kind: discord | imessage, text, sender, channel?, secret? }` — 422 unless `text` and
   `sender` are nonempty strings, and for discord `channel` is a nonempty ASCII-digit string
-  and `secret` a valid §4.8 secret name (the §4.3 trigger rules; iMessage takes no extra
+  and `secret` a uuid string (the §4.3 discord trigger rule — the §4.8 secret id; iMessage
+  takes no extra
   fields — `sender` is the handle). The backend builds the §4.5 payload from it (fields it
   can't truthfully supply are null — discord `channelName`/`guildName`/`guildId`/`messageId`,
   iMessage `chat`/`messageId`; `at` is the test start) and stores it on the record: the
@@ -511,18 +513,22 @@ remain plain dicts (§2).
   into `~/.config/opencode/opencode.json` (merge, never overwrite: provider `ollama` via npm
   `@ai-sdk/openai-compatible`, `baseURL` = `AUTOWRIGHT_OLLAMA_URL` + `/v1`, the agent's model
   listed under `models`) so `opencode run --model ollama/<model>` resolves.
-- `GET /secrets` (each entry: `id` — the §4.8 uuid steps bind by — + name + `description` +
-  `set` + usedBy — a list of automation names — never
-  values) · `PUT /secrets/{name}` `{ value, description? }` — `description` is
+- `GET /secrets` (each entry: `id` — the §4.8 uuid every reference binds by — + name +
+  `description` + `set` + usedBy — `{ id, name }` automation entries — never
+  values) · `POST /secrets` `{ name, value, description? }` — create: validates the name
+  (§4.8 rule, 422 otherwise) and its uniqueness (422 "a secret named X already exists" when
+  any stored secret holds it), mints the id, and returns the serialized secret entity (same
+  shape as a `GET /secrets` entry) so the client learns the id. A blank value creates a §4.8
+  placeholder (`set: false`) · `PUT /secrets/{id}` `{ value, description? }` — edit: the name
+  is immutable and not a field; unknown id answers 404. `description` is
   presence-sensitive (`exclude_unset`): absent leaves the stored description untouched, sent
-  (even blank) sets it. A blank
-  value on a new name creates a §4.8 placeholder (`set: false`); on an existing name a blank
-  value edits only the description — the presence rule is what makes that read. Returns the
-  serialized secret entity (same shape as a `GET /secrets` entry) so a creating client
-  learns the minted id; answers 503
-  when the Keychain refuses the write · `DELETE /secrets/{name}` —
-  values go straight to the Keychain, never
-  into responses or files. Routes stay name-keyed (§4.8: names are unique and immutable)
+  (even blank) sets it. A blank value keeps the stored state (§4.8) and edits only the
+  description — the presence rule is what makes that read. Returns the serialized entity;
+  both writes answer 503
+  when the Keychain refuses the write · `DELETE /secrets/{id}` (unknown id 404) —
+  values go straight to the Keychain (account = the secret's id, §4.8), never
+  into responses or files. Routes are id-keyed (§4.8: the id is the reference identity;
+  names exist for display and the create call)
 - `GET /settings` · `PATCH /settings` (validates before storing: `days` must be an int —
   strict, no coercion, 422 otherwise — and is
   clamped ≥ 1, `notifications` must be `attention | all` — 422 otherwise, so a bad value can never

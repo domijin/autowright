@@ -494,7 +494,8 @@ def test_load_triggers_discord_roundtrip(store):
     from autowright.storage import Store
 
     trig = {"id": "d1", "kind": "discord", "enabled": True, "channel": "42",
-            "secret": "BOT_TOKEN", "pattern": "go", "mention": True}
+            "secret": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34",  # §4.3: the token secret's id
+            "pattern": "go", "mention": True}
     a = store.create_automation(make_version(), "Chatty", None, triggers=[trig])
     s2 = Store()
     s2.load_all()

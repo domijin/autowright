@@ -758,8 +758,16 @@ def cmd_trigger_add(c: Client, args) -> None:
         if not args.secret:
             sys.exit("a Discord trigger needs --secret, the name of the secret "
                      "holding the bot token")
+        # §20: --secret takes the NAME (the human surface, like the grant
+        # flags); the trigger stores the secret's §4.8 id.
+        secrets = c.req("GET", "/secrets")
+        match = [s for s in secrets if s["name"] == args.secret]
+        if not match:
+            names = sorted(s["name"] for s in secrets)
+            sys.exit(f"no stored secret named {args.secret!r} — have: "
+                     f"{', '.join(names) or '(none)'}")
         entry: dict = {"kind": "discord", "channel": args.discord,
-                       "secret": args.secret, "enabled": True}
+                       "secret": match[0]["id"], "enabled": True}
         if args.pattern:
             entry["pattern"] = args.pattern
         if args.mention:
@@ -983,8 +991,15 @@ def cmd_secret_list(c: Client, args) -> None:
         return
     for s in secrets:
         tag = "" if s.get("set", True) else " (not set)"
-        used = ", ".join(s.get("usedBy") or []) or "not used yet"  # §4.8: usedBy is a list
+        # §4.8: usedBy entries are { id, name } — names are the display.
+        used = ", ".join(u["name"] for u in s.get("usedBy") or []) or "not used yet"
         print(f"{s['name'] + tag:<28} used by: {used}")
+
+
+def _secret_by_name(c: Client, name: str) -> dict | None:
+    """§20: names are the CLI's secret surface; the API routes are id-keyed
+    (§4.8) — resolve before calling them."""
+    return next((s for s in c.req("GET", "/secrets") if s["name"] == name), None)
 
 
 def cmd_secret_set(c: Client, args) -> None:
@@ -995,12 +1010,23 @@ def cmd_secret_set(c: Client, args) -> None:
     if not value:
         print("no value given — nothing saved")
         raise SystemExit(1)
-    c.req("PUT", f"/secrets/{args.name}", {"value": value})
+    # §20 upsert feel, CLI-side: an existing name edits via the id route,
+    # a new one creates.
+    existing = _secret_by_name(c, args.name)
+    if existing:
+        c.req("PUT", f"/secrets/{existing['id']}", {"value": value})
+    else:
+        c.req("POST", "/secrets", {"name": args.name, "value": value})
     print("saved to your Keychain")
 
 
 def cmd_secret_delete(c: Client, args) -> None:
-    c.req("DELETE", f"/secrets/{args.name}")
+    existing = _secret_by_name(c, args.name)
+    if existing is None:
+        names = sorted(s["name"] for s in c.req("GET", "/secrets"))
+        sys.exit(f"no stored secret named {args.name!r} — have: "
+                 f"{', '.join(names) or '(none)'}")
+    c.req("DELETE", f"/secrets/{existing['id']}")
     print("removed from your Keychain")
 
 

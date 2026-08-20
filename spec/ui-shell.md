@@ -318,11 +318,15 @@ Sections top to bottom:
   row per stored secret: accent check column for the selected one, mono name with the §12
   amber NOT SET badge when the secret is a placeholder, the secret's `description` as a muted
   sub-line when present; picking closes the menu; always rendered, even when no secrets
-  exist — the empty menu shows the muted note "No secrets yet — press New secret.") with a
-  quiet **New secret** button directly beside it (the row hugs left — the pill and the button
+  exist — the empty menu shows the muted note "No secrets yet — press New secret."). Picking
+  stores the secret's §4.8 **id** (the §4.3 `secret` field); the pill always renders the
+  live name resolved from the stored id, and an id matching no stored record (the secret was
+  deleted since) renders a short id prefix in the §9.2 deleted-red treatment — the row's
+  `connection` error line explains the breakage. Beside the picker sits a
+  quiet **New secret** button (the row hugs left — the pill and the button
   sit together, not pushed to opposite edges), opening the shared §12 secret modal in add
   mode; saving it
-  auto-selects the new name in the picker — no hint text under the row; the picker
+  auto-selects the new secret in the picker — no hint text under the row; the picker
   placeholder and the setup guide carry the explanation. A
   **setup guide** disclosure sits directly below the kind-picker chip row while Discord is the
   selected kind, above the editor inputs (quiet toggle link "New to Discord bots? Step-by-step
@@ -879,7 +883,10 @@ writer (`agent_id`) or a current-version step carries the agent's id in its `age
 references, not `allowed_secrets` (§12 Secrets).
 There is no Edit button and no per-card menu — the whole card is
 clickable (same hover treatment as the Automations list tiles) and opens the §12 edit form; a
-Needs-setup card opens it with the reconnect banner. Clicks on USED BY chips do not navigate.
+Needs-setup card opens it with the reconnect banner. A USED BY chip never opens the card's
+edit form (the click stops there): it navigates to its automation's detail page by the
+`usedBy` entry's automation id (§4.7 — never a name lookup, which duplicate names would make
+ambiguous); an entry whose id no longer resolves in the loaded list renders as an inert chip.
 The agent actions (check connection, make default, remove) live on the edit form's overflow
 menu (below), not on the card.
 Every card carries one action: a square accent icon button at the title row's right
@@ -1000,7 +1007,9 @@ single-line input (Enter saves, Escape closes); its placeholder is a hint, not a
 value: "A short name, like MAIL_PASSWORD or CRM_API_KEY". In edit mode the name is not an
 input at all — it renders as a read-only chip (§4.8: names are immutable; only description
 and value are editable). Add mode refuses a name that already exists (client-side guard —
-"already exists — edit it from the list instead" — because the §19 PUT is an upsert). Below the name sits an optional
+"already exists — edit it from the list instead" — friendlier than surfacing the §19 POST's
+422 for the same rule). Add saves via §19 `POST /secrets`, edit via `PUT /secrets/{id}`.
+Below the name sits an optional
 single-line DESCRIPTION input (placeholder "What this secret is for — helps the drafting agent
 pick the right secret"), pre-filled when editing. The value field is a 3-row vertically
 resizable textarea (multi-line values allowed, §4.8) masked with `-webkit-text-security` unless
@@ -1011,7 +1020,7 @@ password or API key — or leave blank to add the value later"; the success toas
 "Saved — add the value before an automation needs it."). The edit modal is titled
 "Edit secret" with submit "Save changes"; add is "New secret" / "Save to Keychain". The
 add/edit modal is a shared component (`SecretModal.tsx`) — the §9.2 Discord trigger editor
-opens it in add mode from its New secret button and receives the saved secret (the §19 PUT
+opens it in add mode from its New secret button and receives the saved secret (the §19 POST
 response entity — id included) via an
 `onSaved` callback. Toasts:
 "Saved to your Keychain." / "Secret updated." / "Removed from your Keychain." When no secrets exist, the table is replaced by an

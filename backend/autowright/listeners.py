@@ -4,7 +4,9 @@ chat.db watcher total while any enabled imessage trigger exists. Fires
 matching messages as executions (§4.3 rules, §4.5 triggerPayload) and sends
 §6.1 reply() messages back — Discord REST API or Messages.app osascript.
 Listener state is pushed into `store.listener_status` for the §4.3 `connection`
-field, keyed by secret name for Discord and by IMSG_KEY for iMessage."""
+field, keyed by the token secret's §4.8 id for Discord and by IMSG_KEY for
+iMessage. Ids are the binding; every user-facing error resolves the id to the
+secret's live name (short id prefix when no record matches)."""
 from __future__ import annotations
 
 import json
@@ -31,8 +33,8 @@ REPLY_LIMIT = 2000  # Discord message length cap — §6.1 reply() truncates
 BUSY_TEXT = ("I'm working on something else right now and couldn't take this "
              "message — please send it again in a moment.")
 # `listener_status` key of the one iMessage watcher (§6) — all imessage
-# triggers share it. Lowercase, so it can never collide with a secret name
-# (§4.8 names are [A-Z][A-Z0-9_]*).
+# triggers share it. Not a uuid, so it can never collide with a Discord
+# entry's key (§4.8 secret ids are uuids).
 IMSG_KEY = "imessage"
 
 # Gateway close codes worth a plain-word `connection` error (§4.3).
@@ -89,6 +91,15 @@ def trigger_payload(t: dict, d: dict, channel_name: str | None = None,
     }
 
 
+def _secret_label(sid: str) -> str:
+    """§4.8 ids-bind-names-display: error copy names the secret when a stored
+    record still matches the id, else a short id prefix — never the raw uuid."""
+    from .storage import store
+    with store.lock:
+        s = next((s for s in store.secrets if s["id"] == sid), None)
+    return s["name"] if s else f"{sid[:8]}…"
+
+
 def send_reply(payload: dict, text: str,
                reply_to: str | None = None) -> str | None:
     """§6.1 reply(): send `text` back to the payload's origin — Discord REST
@@ -105,9 +116,10 @@ def send_reply(payload: dict, text: str,
         return imessage.send_message(payload.get("chat") or "", str(text))
     if kind != "discord":
         return "this execution wasn't started by a message trigger"
-    token = keychain.get_secret(payload["secret"])
+    token = keychain.get_secret(payload["secret"])  # §4.8: Keychain keyed by id
     if not token:
-        return f"secret {payload['secret']} has no value — the bot token is gone"
+        return (f"secret {_secret_label(payload['secret'])} has no value — "
+                "the bot token is gone")
     body: dict = {"content": str(text)[:REPLY_LIMIT]}
     if reply_to:
         # fail_if_not_exists false: a since-deleted message degrades to a
@@ -149,13 +161,14 @@ def _send_busy(payload: dict) -> None:
 
 
 class _Conn(threading.Thread):
-    """One gateway connection for one bot-token secret. Resolves the token at
+    """One gateway connection for one bot-token secret (addressed by its §4.8
+    id). Resolves the token at
     every connect attempt (a fixed secret heals without a restart), reconnects
     with exponential backoff, and parks auth failures at the backoff cap."""
 
     def __init__(self, secret: str, mgr: "Listeners"):
-        super().__init__(daemon=True, name=f"ad-discord-{secret}")
-        self.secret = secret
+        super().__init__(daemon=True, name=f"ad-discord-{secret[:8]}")
+        self.secret = secret  # the token secret's §4.8 id
         self.mgr = mgr
         self.bot_id: str | None = None
         self.role_ids: set[str] = set()  # the bot's managed roles, per §4.3 mention rule
@@ -178,10 +191,10 @@ class _Conn(threading.Thread):
     def run(self) -> None:
         backoff = 1.0
         while not self._stop.is_set():
-            token = keychain.get_secret(self.secret)
+            token = keychain.get_secret(self.secret)  # §4.8: Keychain keyed by id
             if not token:
                 self.mgr.set_status(self.secret, "error",
-                                    f"secret {self.secret} has no value yet — "
+                                    f"secret {_secret_label(self.secret)} has no value yet — "
                                     "add the bot token on the Secrets page")
                 self._stop.wait(BACKOFF_MAX)
                 continue
@@ -348,7 +361,7 @@ class Listeners:
     def __init__(self, store: Store, engine):
         self.store = store
         self.engine = engine
-        self._conns: dict[str, _Conn] = {}  # token-secret name → connection
+        self._conns: dict[str, _Conn] = {}  # token-secret id → connection
         self._imsg: _ImsgWatcher | None = None
         self._stop = threading.Event()
 
@@ -371,7 +384,7 @@ class Listeners:
                 log.exception("listener reconcile failed")
 
     def _desired_secrets(self) -> tuple[set[str], set[str]]:
-        """→ (discord token-secret names, imessage sender handles), enabled
+        """→ (discord token-secret ids, imessage sender handles), enabled
         triggers only. The senders both gate the watcher's existence and
         scope its §6 minimized read."""
         with self.store.lock:
@@ -409,7 +422,7 @@ class Listeners:
     def set_status(self, key: str, state: str, error: str | None = None) -> None:
         """Push a listener's §4.3 `connection` state; on change,
         `automation.changed` fires for every automation holding a trigger on
-        that listener — `key` is a Discord token-secret name, or IMSG_KEY for
+        that listener — `key` is a Discord token-secret id, or IMSG_KEY for
         the watcher. §19: each event carries the automation's list row
         (`connection` is list-shape) so clients patch in place, no /state
         refetch per affected automation."""

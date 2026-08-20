@@ -22,8 +22,9 @@ def _settled_job(client, job_id):
 def test_draft_create_over_live_backend_honors_unchecked_grants(backend, client):
     ag = client.post("/agents", json={"harness": "Claude Code", "mode": "default",
                                       "name": "Mock writer"}).json()
-    assert client.put("/secrets/LIVE_KEY",
-                      json={"value": "", "description": "placeholder only"}).status_code == 200
+    assert client.post("/secrets",
+                       json={"name": "LIVE_KEY", "value": "",
+                             "description": "placeholder only"}).status_code == 200
 
     r = client.post("/drafts", json={"mode": "chat",
                                      "text": "Watch a page for changes",
@@ -41,8 +42,8 @@ def test_draft_create_over_live_backend_honors_unchecked_grants(backend, client)
     # sections must carry the literal `none`, and the unchecked secret's
     # name must not appear anywhere in the prompt.
     log = (backend.home / "logs" / "app.log").read_text(encoding="utf-8")
-    assert "allowed only if nonempty):\nnone" in log
-    assert "reference by secrets.NAME):\nnone" in log
+    assert "copied exactly):\nnone" in log
+    assert 'secrets["<id>"]  # NAME):\nnone' in log
     assert "LIVE_KEY" not in log
 
 
@@ -51,7 +52,8 @@ def test_draft_create_defaults_grant_everything(backend, client):
     # secrets, the same all-on seed the Review page starts from.
     ag = client.post("/agents", json={"harness": "Claude Code", "mode": "default",
                                       "name": "Mock writer"}).json()
-    client.put("/secrets/GRANTED_KEY", json={"value": "", "description": "placeholder"})
+    client.post("/secrets", json={"name": "GRANTED_KEY", "value": "",
+                                  "description": "placeholder"})
 
     r = client.post("/drafts", json={"mode": "chat", "text": "Watch the weather",
                                      "agentId": ag["id"]})
@@ -59,5 +61,7 @@ def test_draft_create_defaults_grant_everything(backend, client):
                  "draft job to settle")
     assert j["status"] == "done", j
     log = (backend.home / "logs" / "app.log").read_text(encoding="utf-8")
-    assert "- name: Mock writer" in log
-    assert "- name: GRANTED_KEY" in log
+    # §8 grants yaml: entries lead with the id (the reference the manifest
+    # entries and code subscripts copy), then the display name.
+    assert f"- id: {ag['id']}\n  name: Mock writer" in log
+    assert "\n  name: GRANTED_KEY" in log

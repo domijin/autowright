@@ -87,20 +87,22 @@ function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Eyebrow>USED BY</Eyebrow>
           {uses.map((u) => {
-            const auto = automations.find((a) => a.name === u)
+            // §4.7/§12: entries are { id, name } — navigate by id (a name
+            // lookup would be ambiguous under duplicate automation names).
+            const auto = automations.find((a) => a.id === u.id)
             // No matching automation → inert chip: plain span, base chip look, no hover/cursor.
             return auto ? (
               <button
-                key={u}
+                key={u.id}
                 className="ad-chip-btn"
-                onClick={(e) => { e.stopPropagation(); go('automation', { automationId: auto.id }) }}
+                onClick={(e) => { e.stopPropagation(); go('automation', { automationId: u.id }) }}
                 style={{ cursor: 'pointer' }}
               >
-                {u}
+                {u.name}
               </button>
             ) : (
               <span
-                key={u}
+                key={u.id}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 7,
                   background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.09)',
@@ -108,7 +110,7 @@ function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) 
                   padding: '6px 13px',
                 }}
               >
-                {u}
+                {u.name}
               </span>
             )
           })}

@@ -21,18 +21,23 @@ import yaml
 from . import __version__, harness, timefmt, triggers as triggerlib
 from .drafting import STEP_FILE_RE
 from .specmd import blocks_to_md, md_to_blocks
-from .storage import Store, new_id
+from .storage import AGENT_REF_RE, SECRET_REF_RE, Store, new_id
 
 FORMAT_VERSION = 1
 SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
-# §5.1 KNOWN GAP: transfer predates the §4.1 id-keyed step references and
-# stays name-based — this legacy scan only sees pre-id `secrets.NAME` code,
-# and id-shaped step entries contribute nothing to the reference lists. An
-# exported id-style automation's step references dangle on import until a
-# sync rebuilds the steps (spec §5.1).
-LEGACY_SECRET_REF_RE = re.compile(r"\bsecrets\.([A-Z][A-Z0-9_]*)")
+# §5.1 identity translation: inside an archive, NAMES are the reference format
+# (uuids are install-local and never travel). Export rewrites the §4.1/§6.1 id
+# references — step `agents:`/`secrets:` entries, the `secrets["<id>"]` /
+# `agents["<id>"]` code subscripts, and a discord trigger's `secret` — to
+# names; import rewrites them back to the matched/created records' local ids.
+# These regexes match the archive's name-form code subscripts.
+ARCHIVE_SECRET_REF_RE = re.compile(r"\bsecrets\[\s*[\"']([A-Z][A-Z0-9_]*)[\"']\s*\]")
+ARCHIVE_AGENT_REF_RE = re.compile(r"\bagents\[\s*[\"']([^\"'\n]+)[\"']\s*\]")
 PARAM_KINDS = ("text", "number", "toggle", "list", "kv")
 MODES = ("default", "ollama", "custom")
+# Any well-formed uuid passes the §4.3 field validator — the archive form
+# carries the secret's NAME instead, checked separately (§5.1).
+_PROBE_SECRET_ID = "00000000-0000-4000-8000-000000000000"
 
 
 class TransferError(Exception):
@@ -46,36 +51,75 @@ def safe_filename(name: str) -> str:
 
 
 # ---------- export ----------
-def _referenced_secrets(ver: dict, triggers: list[dict] | None = None) -> list[str]:
+class _RefResolver:
+    """§5.1 export-side id → name translation. Every resolution failure is a
+    TransferError naming what dangles — a reference with no stored record has
+    no name to travel by, so the automation must be repaired first (§5.1)."""
+
+    def __init__(self, store: Store):
+        self.secrets_by_id = {s["id"]: s for s in store.secrets}
+        self.agents_by_id = {g["id"]: g for g in store.agents}
+
+    def secret_name(self, sid: str, where: str) -> str:
+        s = self.secrets_by_id.get(sid)
+        if s is None:
+            raise TransferError(f"{where} references a secret that no longer exists "
+                                f"({sid[:8]}…) — repair it before exporting")
+        return s["name"]
+
+    def agent_name(self, aid: str, where: str) -> str:
+        g = self.agents_by_id.get(aid)
+        if g is None:
+            raise TransferError(f"{where} references an agent that no longer exists "
+                                f"({aid[:8]}…) — repair it before exporting")
+        name = harness.grant_name(g)
+        if any(c in name for c in "\"'\\\n"):
+            # The name lands inside a double-quoted code subscript on export —
+            # a quote or backslash would corrupt the step's code.
+            raise TransferError(f"agent name {name!r} can't travel in an archive — "
+                                "rename it without quotes or backslashes, then export again")
+        return name
+
+    def code(self, code: str, where: str) -> str:
+        """Rewrite the §6.1 id subscripts to the archive's name form. Existing
+        trailing `# NAME` comments stay — they name the name, still accurate."""
+        code = SECRET_REF_RE.sub(
+            lambda m: f'secrets["{self.secret_name(m.group(1), where)}"]', code)
+        return AGENT_REF_RE.sub(
+            lambda m: f'agents["{self.agent_name(m.group(1), where)}"]', code)
+
+
+def _referenced_secret_names(refs: _RefResolver, ver: dict,
+                             triggers: list[dict] | None = None) -> list[str]:
+    """Union of every step's `secrets:` entry ids and code-referenced ids plus
+    every discord trigger's token secret — resolved to names (§5.1)."""
     names: set[str] = set()
     for s in ver.get("steps", []):
-        # Pre-id entries only ({name, why}) — id entries are the §5.1 gap above.
-        names |= {e["name"] for e in s.get("secrets") or [] if e.get("name")}
-        names |= set(LEGACY_SECRET_REF_RE.findall(s.get("code", "")))
-    # §5.1: a discord trigger's bot-token secret travels by name too, so the
-    # import lands a §4.8 placeholder for it.
-    names |= {t["secret"] for t in triggers or [] if t.get("kind") == "discord"}
+        where = f"step {s.get('name')!r}"
+        names |= {refs.secret_name(e["id"], where)
+                  for e in s.get("secrets") or [] if e.get("id")}
+        names |= {refs.secret_name(sid, where)
+                  for sid in SECRET_REF_RE.findall(s.get("code", ""))}
+    names |= {refs.secret_name(t["secret"], "a Discord trigger")
+              for t in triggers or [] if t.get("kind") == "discord"}
     return sorted(names)
 
 
-def _referenced_agents(store: Store, a: dict, ver: dict) -> list[dict]:
-    """The drafting agent + every step-grant name, resolved like the engine
-    (§6 grant names: the automation's enabled agents, first enabled wins) —
-    deduped by record id, archive order stable."""
+def _referenced_agents(store: Store, refs: _RefResolver, a: dict, ver: dict) -> list[dict]:
+    """The drafting agent + every step-referenced agent (manifest entry ids
+    and agents["<id>"] code subscripts, §4.1) — deduped by record id, archive
+    order stable."""
     by_id: dict[str, dict] = {}
     drafting = next((g for g in store.agents if g["id"] == a["agent_id"]), None)
     if drafting:
         by_id[drafting["id"]] = drafting
-    agents_by_id = {g["id"]: g for g in store.agents}
-    pool = [agents_by_id[i] for i in a.get("enabled_agents") or [] if i in agents_by_id]
-    by_grant: dict[str, dict] = {}
-    for g in pool:  # duplicate grant names: the first enabled agent wins
-        by_grant.setdefault(harness.grant_name(g), g)
     for s in ver.get("steps", []):
-        for e in s.get("agents") or []:
-            g = by_grant.get(e.get("name"))
-            if g:
-                by_id.setdefault(g["id"], g)
+        where = f"step {s.get('name')!r}"
+        ids = {e["id"] for e in s.get("agents") or [] if e.get("id")}
+        ids |= set(AGENT_REF_RE.findall(s.get("code", "")))
+        for aid in sorted(ids):
+            refs.agent_name(aid, where)  # raises on a dangling id
+            by_id.setdefault(aid, refs.agents_by_id[aid])
     return [{"name": harness.grant_name(g), "description": g.get("description") or "",
              "harness": g.get("harness"), "mode": g.get("mode", "default"),
              "model": g.get("model")} for g in by_id.values()]
@@ -85,6 +129,7 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
     """The §5.1 archive for an automation's current version, as zip bytes."""
     with store.lock:
         ver = a["versions"][a["current_version"]]
+        refs = _RefResolver(store)
         manifest: dict = {
             "format_version": FORMAT_VERSION,
             "exported_at": timefmt.now_iso(),
@@ -96,8 +141,8 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
             manifest["agent"] = harness.grant_name(drafting)
         # §5.1: cron, app_start, discord, and imessage — one-shot `time`
         # triggers are moments in time; no ids, no enabled state. A discord
-        # trigger travels as its stored fields: the token secret's *name*
-        # only, never the value.
+        # trigger's §4.3 secret id is resolved to the token secret's *name*
+        # (the archive reference format) — never the value.
         triggers = []
         for t in a["triggers"]:
             if t["kind"] == "cron":
@@ -107,7 +152,7 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
                 triggers.append({"kind": "app_start"})
             elif t["kind"] == "discord":
                 triggers.append({"kind": "discord", "channel": t["channel"],
-                                 "secret": t["secret"],
+                                 "secret": refs.secret_name(t["secret"], "a Discord trigger"),
                                  **({"pattern": t["pattern"]} if t.get("pattern") else {}),
                                  **({"mention": True} if t.get("mention") else {}),
                                  **({"author": t["author"]} if t.get("author") else {})})
@@ -127,14 +172,23 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
             meta["packages"] = pkgs
         steps = []
         for s in ver["steps"]:
+            where = f"step {s.get('name')!r}"
             entry = {"file": s["file"], "name": s.get("name", ""), "description": s.get("description", "")}
             if s.get("agent"):
                 entry["agent"] = True
                 entry["why"] = s.get("why", "")
                 if s.get("agents"):
-                    entry["agents"] = list(s["agents"])
+                    # §5.1: id entries translate to the archive's { name, why? }
+                    # form — a dangling id raises above nothing being written.
+                    entry["agents"] = [
+                        {"name": refs.agent_name(e["id"], where),
+                         **({"why": e["why"]} if e.get("why") else {})}
+                        for e in s["agents"] if e.get("id")]
             if s.get("secrets"):
-                entry["secrets"] = list(s["secrets"])
+                entry["secrets"] = [
+                    {"name": refs.secret_name(e["id"], where),
+                     **({"why": e["why"]} if e.get("why") else {})}
+                    for e in s["secrets"] if e.get("id")]
             if s.get("packages"):
                 entry["packages"] = list(s["packages"])
             # §4.1 per-step time limits travel — a no_timeout long-runner must
@@ -152,10 +206,10 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
                 entry["infinite_retries"] = True
             steps.append(entry)
         meta["steps"] = steps
-        agents = _referenced_agents(store, a, ver)
+        agents = _referenced_agents(store, refs, a, ver)
         secret_desc = {s["name"]: s.get("description") or "" for s in store.secrets}
         secrets = [{"name": n, "description": secret_desc.get(n, "")}
-                   for n in _referenced_secrets(ver, a["triggers"])]
+                   for n in _referenced_secret_names(refs, ver, a["triggers"])]
         files: list[tuple[str, str]] = [
             ("manifest.yaml", yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True)),
             ("automation/automation.yaml", yaml.safe_dump(meta, sort_keys=False, allow_unicode=True)),
@@ -166,7 +220,9 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
         if (ver.get("notes") or "").strip():
             files.append(("automation/notes.md", ver["notes"].strip() + "\n"))
         for s in ver["steps"]:
-            files.append((f"automation/{s['file']}", s.get("code", "")))
+            # §5.1: the code's id subscripts travel in name form.
+            files.append((f"automation/{s['file']}",
+                          refs.code(s.get("code", ""), f"step {s.get('name')!r}")))
         files.append(("agents.yaml", yaml.safe_dump({"agents": agents}, sort_keys=False, allow_unicode=True)))
         files.append(("secrets.yaml", yaml.safe_dump({"secrets": secrets}, sort_keys=False, allow_unicode=True)))
     buf = io.BytesIO()
@@ -245,7 +301,15 @@ def _validate(z: zipfile.ZipFile) -> dict:
                                 "only cron, app_start, discord, and imessage travel")
         if t["kind"] == "app_start" and any(x["kind"] == "app_start" for x in triggers):
             raise TransferError("the archive holds more than one app_start trigger")
-        probe = ({"kind": "discord", "channel": t.get("channel"), "secret": t.get("secret"),
+        if t["kind"] == "discord":
+            # §5.1: the archive's `secret` is the token secret's NAME (ids
+            # never travel) — checked here; the §4.3 uuid rule applies only
+            # after import maps it to the local record's id.
+            sec = t.get("secret")
+            if not isinstance(sec, str) or not SECRET_NAME_RE.match(sec.strip()):
+                raise TransferError("invalid trigger in the archive: a Discord trigger "
+                                    "needs the name of the secret holding the bot token")
+        probe = ({"kind": "discord", "channel": t.get("channel"), "secret": _PROBE_SECRET_ID,
                   "pattern": t.get("pattern"), "mention": t.get("mention", False),
                   "author": t.get("author")}
                  if t["kind"] == "discord"
@@ -312,13 +376,24 @@ def _validate(z: zipfile.ZipFile) -> dict:
             raise TransferError(f"duplicate step filename: {s['file']!r}")
         seen_files.add(s["file"])
         code = _text(z, f"automation/{s['file']}")
+        # §5.1: ids never travel — an archive whose code still subscripts by
+        # uuid was built outside the export path and would land dangling
+        # references; reject it whole.
+        if SECRET_REF_RE.search(code) or AGENT_REF_RE.search(code):
+            raise TransferError(f"step {s['file']!r} references secrets or agents by "
+                                "install-local id — archives carry names; re-export "
+                                "the automation and import that archive")
         entry = {"file": s["file"], "name": s["name"], "description": s.get("description", ""),
                  "code": code}
         if s.get("agent"):
             entry["agent"] = True
             entry["why"] = s.get("why", "")
-            # §5.1: agent grants travel as {name, why?} entries — anything
-            # else in a foreign archive is dropped, not imported.
+            # §5.1: agent grants travel as {name, why?} entries — the §4.1 id
+            # form is rejected (ids never travel); other malformed foreign
+            # entries are dropped, not imported.
+            if any(isinstance(g, dict) and "id" in g for g in s.get("agents") or []):
+                raise TransferError(f"step {s['file']!r} lists agents by install-local "
+                                    "id — archives carry names; re-export the automation")
             entry["agents"] = [
                 {"name": g["name"],
                  **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
@@ -326,7 +401,10 @@ def _validate(z: zipfile.ZipFile) -> dict:
                 if isinstance(g, dict) and isinstance(g.get("name"), str)]
         if s.get("secrets"):
             # §5.1: like agents, secret grants travel as {name, why} entries —
-            # malformed foreign entries are dropped, not imported.
+            # the id form is rejected; malformed foreign entries are dropped.
+            if any(isinstance(g, dict) and "id" in g for g in s["secrets"]):
+                raise TransferError(f"step {s['file']!r} lists secrets by install-local "
+                                    "id — archives carry names; re-export the automation")
             entry["secrets"] = [
                 {"name": g["name"],
                  **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
@@ -380,6 +458,26 @@ def _validate(z: zipfile.ZipFile) -> dict:
         if (not isinstance(s, dict) or not isinstance(s.get("name"), str)
                 or not SECRET_NAME_RE.match(s["name"])):
             raise TransferError(f"invalid secret in the archive: {s!r}")
+
+    # §5.1: every name-form reference the import must map to a local id has to
+    # be resolvable — step grant entries against the archive's agents.yaml /
+    # secrets.yaml, and each discord trigger's token secret likewise (the
+    # matched-or-created record is what the reference becomes).
+    agent_names = {g["name"] for g in agents if isinstance(g, dict)}
+    secret_names = {s["name"] for s in secrets if isinstance(s, dict)}
+    for t in triggers:
+        if t["kind"] == "discord" and t["secret"] not in secret_names:
+            raise TransferError(f"a Discord trigger references secret {t['secret']} "
+                                "that isn't listed in the archive's secrets.yaml")
+    for s in steps:
+        for g in s.get("agents") or []:
+            if g["name"] not in agent_names:
+                raise TransferError(f"step {s['file']!r} references agent {g['name']!r} "
+                                    "that isn't listed in the archive's agents.yaml")
+        for g in s.get("secrets") or []:
+            if g["name"] not in secret_names:
+                raise TransferError(f"step {s['file']!r} references secret {g['name']} "
+                                    "that isn't listed in the archive's secrets.yaml")
 
     agent_name = manifest.get("agent")
     if agent_name is not None and not isinstance(agent_name, str):
@@ -486,10 +584,43 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
         if drafting is None:
             drafting = next((x for x in store.agents
                              if x["id"] == store.default_agent_id), None)
+        # §5.1: rewrite the archive's name-form references to the matched or
+        # created records' LOCAL ids — step grant entries, code subscripts,
+        # and each discord trigger's token secret. On disk, ids are the only
+        # reference format (§4.1/§4.3/§4.8).
+        secret_id_by_name = {s["name"]: s["id"] for s in store.secrets}
+        agent_id_by_name = {name: rec["id"] for name, rec in matched.items()}
+
+        def _local_code(code: str) -> str:
+            code = ARCHIVE_SECRET_REF_RE.sub(
+                lambda m: (f'secrets["{secret_id_by_name[m.group(1)]}"]'
+                           if m.group(1) in secret_id_by_name else m.group(0)), code)
+            return ARCHIVE_AGENT_REF_RE.sub(
+                lambda m: (f'agents["{agent_id_by_name[m.group(1)]}"]'
+                           if m.group(1) in agent_id_by_name else m.group(0)), code)
+
+        steps = []
+        for s in arch["steps"]:
+            entry = dict(s)
+            entry["code"] = _local_code(entry.get("code", ""))
+            if entry.get("agents"):
+                entry["agents"] = [
+                    {"id": agent_id_by_name[g["name"]],
+                     **({"why": g["why"]} if g.get("why") else {})}
+                    for g in entry["agents"]]
+            if entry.get("secrets"):
+                entry["secrets"] = [
+                    {"id": secret_id_by_name[g["name"]],
+                     **({"why": g["why"]} if g.get("why") else {})}
+                    for g in entry["secrets"]]
+            steps.append(entry)
         ver = {"description": arch["description"], "note": "Imported", "params": arch["params"],
-               "packages": arch["packages"], "steps": arch["steps"],
+               "packages": arch["packages"], "steps": steps,
                "spec": arch["spec"], "instructions": arch["instructions"], "notes": arch["notes"]}
-        triggers = [{"id": new_id(), "enabled": False, **t} for t in arch["triggers"]]
+        triggers = [{"id": new_id(), "enabled": False,
+                     **(t if t.get("kind") != "discord"
+                        else {**t, "secret": secret_id_by_name[t["secret"]]})}
+                    for t in arch["triggers"]]
         # §5.1 grants: only what this import created, passed directly into the
         # creation call as its grant lists (one write) — no post-create grant
         # patch, so no window ever exists in which the automation is stored

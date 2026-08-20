@@ -38,7 +38,7 @@ def seed(store: Store) -> None:
     for name, value, desc in [
             ("SMTP_PASSWORD", "mail-app-2291-kx7f", "App password for outgoing mail"),
             ("VAULT_DRIVE_KEY", "bk-2f91-aa07-51d3", "Encryption key for the backup drive")]:
-        keychain.set_secret(name, value)
+        keychain.set_secret(secret_ids[name], value)  # §4.8: Keychain keyed by id
         if not any(s["name"] == name for s in store.secrets):
             store.secrets.append({"id": secret_ids[name], "name": name, "description": desc})
     store.save_secrets()

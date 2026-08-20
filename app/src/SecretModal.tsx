@@ -14,12 +14,14 @@ const inputStyle: React.CSSProperties = {
   font: `400 12.5px var(--mono)`, padding: '9px 11px',
 }
 
-export type SecretModalState = { mode: 'add' } | { mode: 'edit'; name: string; description: string; usedBy: string[] }
+export type SecretModalState =
+  | { mode: 'add' }
+  | { mode: 'edit'; id: string; name: string; description: string; usedBy: { id: string; name: string }[] }
 
 export function SecretModal({ modal, onClose, onSaved }: {
   modal: SecretModalState
   onClose: () => void
-  // §19: the PUT response entity — carries the (possibly just-minted) §4.8 id
+  // §19: the POST/PUT response entity — carries the (possibly just-minted) §4.8 id
   onSaved?: (saved: SecretMeta) => void
 }) {
   const { showToast, secrets } = useStore()
@@ -36,8 +38,8 @@ export function SecretModal({ modal, onClose, onSaved }: {
           if (isAdd) {
             if (!name) { showToast('Give the secret a name.'); return }
             if (!NAME_RE.test(name)) { showToast('Secret names must start with a letter — A–Z, 0–9 and _ only.'); return }
-            // The backend PUT is an upsert — adding an existing name would
-            // silently replace its Keychain value with no undo.
+            // §4.8 uniqueness — the §19 POST 422s on a duplicate; the guard
+            // just gives the friendlier message.
             if (secrets.some((s) => s.name === name)) {
               showToast(`${name} already exists — edit it from the list instead.`)
               return
@@ -46,7 +48,9 @@ export function SecretModal({ modal, onClose, onSaved }: {
           try {
             // §4.8: a blank value on edit keeps the stored one (description-only
             // update); a blank value on add creates a placeholder (set: false).
-            const saved = await api.putSecret(name, value, description)
+            const saved = modal.mode === 'edit'
+              ? await api.putSecret(modal.id, value, description)
+              : await api.createSecret(name, value, description)
             close()
             showToast(isAdd
               ? (value ? 'Saved to your Keychain.' : 'Saved — add the value before an automation needs it.')
@@ -98,7 +102,9 @@ export function SecretModal({ modal, onClose, onSaved }: {
                   fontSize: 11, color: 'var(--text-faint)', marginLeft: 'auto',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
-                  {modal.mode === 'edit' ? (modal.usedBy.join(', ') || 'Not used yet') : ''}
+                  {modal.mode === 'edit'
+                    ? (modal.usedBy.map((u) => u.name).join(', ') || 'Not used yet')
+                    : ''}
                 </span>
               </div>
             )}

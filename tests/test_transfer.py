@@ -16,24 +16,29 @@ def _agent(name, harness="Claude Code", mode="default", model=None):
 
 def _build(store: Store):
     """An automation exercising every archive surface: params + values, cron +
-    app_start + time triggers, an agent step, declared + code-referenced secrets."""
+    app_start + time triggers, an agent step, declared + code-referenced
+    secrets — all references by id (§4.1/§4.3/§4.8); export translates them
+    to the archive's name form."""
     store.agents = [_agent("Researcher"),
                     _agent("Coder", harness="OpenCode", mode="custom", model="anthropic/x")]
     store.default_agent_id = store.agents[0]["id"]  # §4.7 single pointer
     store.save_agents()
-    store.secrets = [{"name": "API_KEY", "description": "service key", "set": True},
-                     {"name": "BOT_TOKEN", "description": "discord bot", "set": True},
-                     {"name": "MAIL_PASS", "description": "mail", "set": True}]
+    api_key, bot_token, mail_pass = new_id(), new_id(), new_id()
+    store.secrets = [{"id": api_key, "name": "API_KEY", "description": "service key", "set": True},
+                     {"id": bot_token, "name": "BOT_TOKEN", "description": "discord bot", "set": True},
+                     {"id": mail_pass, "name": "MAIL_PASS", "description": "mail", "set": True}]
     store.save_secrets()
+    coder_id = store.agents[1]["id"]
     ver = {
         "description": "Watches things",
         "params": [{"name": "count", "kind": "number", "label": "Count", "help": "", "default": 3}],
         "packages": [{"pip": "pandas", "import": "pandas", "why": "builds the table"}],
         "steps": [
-            {"name": "Fetch", "description": "", "code": "from autowright import secrets\nx = secrets.API_KEY\n",
-             "secrets": [{"name": "MAIL_PASS", "why": "sends the mail"}]},
+            {"name": "Fetch", "description": "",
+             "code": f'from autowright import secrets\nx = secrets["{api_key}"]  # API_KEY\n',
+             "secrets": [{"id": mail_pass, "why": "sends the mail"}]},
             {"name": "Summarize", "description": "", "code": "print('hi')\n",
-             "agent": True, "why": "judgment", "agents": [{"name": "Coder"}]},
+             "agent": True, "why": "judgment", "agents": [{"id": coder_id}]},
         ],
         "spec": [{"kind": "h1", "text": "Watch"}, {"kind": "p", "text": "Body."}],
         "instructions": "Keep it short.",
@@ -44,11 +49,11 @@ def _build(store: Store):
                   {"id": new_id(), "kind": "app_start", "enabled": True},
                   {"id": new_id(), "kind": "time", "enabled": True, "at": "2999-01-01T09:00"},
                   {"id": new_id(), "kind": "discord", "enabled": True, "channel": "42",
-                   "secret": "BOT_TOKEN", "pattern": "go", "author": ["111", "777"]},
+                   "secret": bot_token, "pattern": "go", "author": ["111", "777"]},
                   {"id": new_id(), "kind": "imessage", "enabled": True,
                    "from": "+15551234567", "pattern": "run"}],
         enabled_agents=[g["id"] for g in store.agents],
-        allowed_secrets=["API_KEY", "MAIL_PASS"])
+        allowed_secrets=[api_key, mail_pass])
     store.patch_automation(a, {"paramValues": {"count": 7}})
     return a
 
@@ -123,10 +128,16 @@ def test_import_on_fresh_machine(store, monkeypatch, tmp_path_factory):
     assert b["id"] != a["id"]
     assert b["current_version"] == 1
     assert b["versions"][1]["note"] == "Imported"
-    # everything the exporter wrote survives verbatim
+    # the exporter's content survives — with every reference rewritten to the
+    # importing machine's LOCAL ids (§5.1 identity translation)
     assert b["versions"][1]["spec"] == a["versions"][1]["spec"]
-    assert [s["code"] for s in b["versions"][1]["steps"]] == \
-        [s["code"] for s in a["versions"][1]["steps"]]
+    created_ids = {s["name"]: s["id"] for s in s2.secrets}
+    fetch, summarize = b["versions"][1]["steps"]
+    assert fetch["code"] == ('from autowright import secrets\n'
+                             f'x = secrets["{created_ids["API_KEY"]}"]  # API_KEY\n')
+    assert fetch["secrets"] == [{"id": created_ids["MAIL_PASS"], "why": "sends the mail"}]
+    coder = next(g for g in s2.agents if g["name"] == "Coder")
+    assert summarize["agents"] == [{"id": coder["id"]}]
     assert b["versions"][1]["instructions"] == "Keep it short."
     assert b["param_values"] == {"count": 7}
     # every trigger lands off, with fresh ids — message triggers keep their fields
@@ -134,7 +145,7 @@ def test_import_on_fresh_machine(store, monkeypatch, tmp_path_factory):
     assert {t["kind"] for t in b["triggers"]} == {"cron", "app_start", "discord", "imessage"}
     d = next(t for t in b["triggers"] if t["kind"] == "discord")
     assert (d["channel"], d["secret"], d["pattern"], d["author"]) == \
-        ("42", "BOT_TOKEN", "go", ["111", "777"])
+        ("42", created_ids["BOT_TOKEN"], "go", ["111", "777"])
     im = next(t for t in b["triggers"] if t["kind"] == "imessage")
     assert (im["from"], im["pattern"]) == ("+15551234567", "run")
     # secrets became placeholders, agents were created — and only those granted
@@ -143,7 +154,6 @@ def test_import_on_fresh_machine(store, monkeypatch, tmp_path_factory):
     assert sorted(g["name"] for g in summary["agentsCreated"]) == ["Coder", "Researcher"]
     assert all(not s["set"] for s in s2.secrets)
     # §4.1: allowed_secrets holds the created placeholders' ids
-    created_ids = {s["name"]: s["id"] for s in s2.secrets}
     assert sorted(b["allowed_secrets"]) == sorted(
         created_ids[n] for n in ("API_KEY", "BOT_TOKEN", "MAIL_PASS"))
     assert set(b["enabled_agents"]) == {g["id"] for g in s2.agents}
@@ -734,18 +744,30 @@ def test_github_api_error_mapping(monkeypatch):
 
 
 def test_import_without_optional_members_succeeds(store):
-    """§5.1: agents.yaml / secrets.yaml are optional — an archive stripped of
-    them imports with no grants created rather than being rejected."""
-    a = _build(store)
-    data = transfer.export_automation(store, a)
-    src = zipfile.ZipFile(io.BytesIO(data))
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as out:
-        for nm in src.namelist():
-            if nm not in ("agents.yaml", "secrets.yaml"):
-                out.writestr(nm, src.read(nm))
+    """§5.1: agents.yaml / secrets.yaml are optional — a reference-free archive
+    stripped of them imports with no grants created rather than being rejected.
+    An archive that DOES carry references can't lose the yaml its names must
+    resolve against (§5.1 identity translation) — that strip is a 422."""
+    def _strip(data):
+        src = zipfile.ZipFile(io.BytesIO(data))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as out:
+            for nm in src.namelist():
+                if nm not in ("agents.yaml", "secrets.yaml"):
+                    out.writestr(nm, src.read(nm))
+        return buf.getvalue()
+
+    ver = {"description": "", "params": [], "packages": [],
+           "steps": [{"name": "Only", "description": "", "code": "print('x')\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": ""}
+    plain = store.create_automation(ver, name="Plain", agent_id=None, triggers=[])
     agents_before = len(store.agents)
-    b, summary = transfer.import_automation(store, buf.getvalue())
+    b, summary = transfer.import_automation(
+        store, _strip(transfer.export_automation(store, plain)))
     assert b["id"] in store.autos
     assert len(store.agents) == agents_before  # nothing new created
     assert summary["agentsCreated"] == [] and summary["secretsCreated"] == []
+    # reference-carrying archive: the stripped yaml leaves its names dangling
+    a = _build(store)
+    with pytest.raises(transfer.TransferError, match="isn't listed in the archive's"):
+        transfer.import_automation(store, _strip(transfer.export_automation(store, a)))

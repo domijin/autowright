@@ -306,8 +306,9 @@ asked for them directly); `enable` carries `index` + boolean `enabled`; `index` 
 1-based position in the CURRENT triggers section and must be within the current list; a
 malformed op, unknown op name, or out-of-range index is a validation error feeding the
 repair round. A message-trigger `add`/`edit` follows rule 9's detail rule with one
-extension: identifying details (channel id, token-secret name, sender handle) may come
-from the spec **or the user's own conversation text** — never invented;
+extension: identifying details (channel id, token-secret choice, sender handle) may come
+from the spec **or the user's own conversation text** — never invented (a secret the user
+names in prose is resolved to its id through the grants yaml);
 `concurrency` a mapping holding one or both of `max_parallel` (int ≥ 1) and `max_queued`
 (int ≥ 0) and nothing else — an empty mapping, unknown key, or out-of-range value is a
 validation error feeding the repair round;
@@ -420,7 +421,9 @@ arms, the panel's Sync now, a repair-block apply: always against the provided sp
      - cron: "0 8 * * *"             # needs no trigger (manual/menu bar only)
      - { cron: "0 9 * * 1", timezone: Asia/Tokyo }   # timezone optional — only when the spec names a zone
      - { imessage: "+15551234567", pattern: check }     # details from the spec or build instructions only
-     - { discord: "1234567890", secret: DISCORD_BOT }   # ditto; + optional pattern/mention/author
+     - { discord: "1234567890",                          # ditto; + optional pattern/mention/author
+         secret: 9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34 }  # secret: the token secret's id, copied
+                                                         # exactly from the grants yaml (§4.8 uuid)
    params:                           # full definitions per §4.2, each with a default
      - { name: sources, kind: list, label: Manga URLs, help: ..., validate: true }
    test_values:                      # optional — best-effort draft-test values (policy below)
@@ -587,15 +590,19 @@ notes rewrite (§11).
      `timezone` a known IANA zone included only when the spec names one.
    - `{ imessage: handle }` (+ optional `pattern`) — `handle` a §4.3-valid sender (E.164
      phone or email), mapped to the stored `from` field.
-   - `{ discord: channel-id, secret: NAME }` (+ optional `pattern`, `mention`, `author`) —
-     channel a numeric id, `secret` a §4.3-valid secret name, `mention` a bool, `author` a
+   - `{ discord: channel-id, secret: <id> }` (+ optional `pattern`, `mention`, `author`) —
+     channel a numeric id, `secret` a granted secret's §4.8 id copied exactly from the
+     grants yaml (a validation error when it is neither a granted secret's id — same rule
+     as a step's `secrets:` entry — nor an existing CURRENT trigger's token-secret id:
+     re-emitting a stored trigger through the §4.3 merge must never fail on a bot token
+     that was, correctly, never step-granted), `mention` a bool, `author` a
      numeric Discord user id or a list of them (§4.3 sender filter; a scalar is accepted as
      shorthand and stored as a one-element list).
    - `app_start: true`.
 
    The agent derives triggers from the spec's words — and **may add an entry it judges the
    automation is missing** (a schedule the spec implies, the message trigger a reply flow
-   needs) — but a message trigger's identifying details (channel id, token-secret name,
+   needs) — but a message trigger's identifying details (channel id, token-secret choice,
    sender handle) must come from the spec or build instructions, never invented: when they
    are absent the agent omits the trigger and writes the steps against
    `execution.trigger_payload` as before (the user adds the trigger on the automation page,

@@ -25,7 +25,8 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   loop (period `AUTOWRIGHT_LISTEN_TICK_S`, §15) compares the enabled message triggers across
   all automations against the open listeners: for `discord` it maintains **one Discord
   gateway WebSocket
-  per distinct bot-token secret name** — shared by every trigger referencing that secret;
+  per distinct bot-token secret id** (§4.3 `secret`, a §4.8 uuid) — shared by every trigger
+  referencing that secret;
   connections open, close, and re-resolve their token as triggers are added, removed, toggled,
   or re-pointed. A dropped connection reconnects with exponential backoff (1 s doubling to a
   60 s cap). Heartbeats track their acks (gateway op 11): a heartbeat whose ack has not
@@ -193,8 +194,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   step receives only the secrets it declares in the manifest (`secrets` entry ids) plus the
   literal `secrets["<id>"]` subscripts its own code
   references — and redacted from logs; a missing secret stops the execution before any step.
-  The engine resolves each needed id to its stored §4.8 record (the Keychain lookup and every
-  error message use the record's name; a dangling id fails pre-step naming the short id
+  The engine resolves each needed id to its stored §4.8 record and reads the Keychain by the
+  id itself (§4.8: the id keys the Keychain entry); every error message uses the record's
+  name (a dangling id fails pre-step naming the short id
   prefix); redaction labels and `redactedSecrets` are always names, never ids.
 - **Agent steps are query-only.** A step's runtime agent call is a pure question → text-answer
   function; only step scripts make changes. A step may list several enabled agents (`agents`
@@ -301,7 +303,8 @@ SDK name it uses** — `from autowright import params, log, result` (or `import 
 - `reply(text)` — message-trigger executions only: sends `text` back to the triggering
   message's origin. The send happens **engine-side** (a `reply` control op routed through the
   listener module) — the bot token never enters the step process: Discord replies POST to the
-  payload's channel via the REST API with the token from the payload's `secret`; iMessage
+  payload's channel via the REST API with the token the payload's `secret` id resolves to
+  (a straight §4.8 Keychain read by id); iMessage
   replies send via Messages.app AppleScript (`osascript`, resolved through PATH) to the
   payload's `chat` guid — macOS may show the Automation permission prompt on the first send
   if the §9 checklist was skipped, and a denial (Apple Events error −1743) surfaces as the

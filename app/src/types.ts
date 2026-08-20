@@ -128,6 +128,7 @@ export type TriggerKindFields =
   | { kind: 'cron'; expression: string; timezone?: string; source?: 'spec' | 'user' } // §4.3 provenance: absent reads as 'spec'
   | { kind: 'time'; at: string; timezone?: string }         // one-shot wall-clock ISO timestamp
   | { kind: 'app_start' }
+  // §4.3: `secret` is the token secret's §4.8 id — displays resolve it to the live name
   | { kind: 'discord'; channel: string; secret: string; pattern?: string; mention?: boolean; author?: string[] }
   | { kind: 'imessage'; from: string; pattern?: string }
 
@@ -268,13 +269,22 @@ export interface Agent {
   // null only when mode is 'default' — the harness uses its own configured model
   model: string | null
   default?: boolean
-  usedBy?: string[]
+  // §4.7 usedBy: automations using the agent, as { id, name } — id is what
+  // the §12 chips navigate by, name the display.
+  usedBy?: { id: string; name: string }[]
 }
 
-// §4.8: id = the uuid steps bind by (names are unique + immutable display);
-// set=false → placeholder (name reserved, no Keychain value yet).
-// usedBy is the list of automation names using the secret — the UI joins it.
-export interface SecretMeta { id: string; name: string; description: string; set: boolean; usedBy: string[] }
+// §4.8: id = the uuid every reference binds by (names are unique + immutable
+// display); set=false → placeholder (name reserved, no Keychain value yet).
+// usedBy entries are { id, name } of automations using the secret — the UI
+// joins the names.
+export interface SecretMeta {
+  id: string
+  name: string
+  description: string
+  set: boolean
+  usedBy: { id: string; name: string }[]
+}
 
 // §5.1 import summary — what the import created vs. matched (§19).
 // Created agents carry `ready` (backend §19 check-ready rule at import time)

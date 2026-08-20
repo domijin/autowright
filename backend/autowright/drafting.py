@@ -177,7 +177,7 @@ undo: true                  # restore the draft to before the last request — e
 
 - A change missing something only the user can supply (a channel id, a sender handle, which secret holds a token, which account or folder is meant) → ask for it in plain prose beginning with ===QUESTION=== on its own line, leading with the ask itself — any explanation follows the question; no file blocks, no actions, no blocker. Never guess the missing piece; ask for everything missing in one message, and the user's next message completes the request.
 
-Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, secret name, sender handle) may come from the spec or from what the user typed in this conversation, never invented. Use `concurrency` only when the user explicitly asks for parallel runs or queueing ("let two run at once", "queue messages when it's busy") — never speculatively; the defaults (max_parallel 1, max_queued 0) stay unless the user names different numbers or words you can map to them ("a couple at once" → 2). Staged values, trigger edits, and concurrency changes land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
+Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, which secret holds the token, sender handle) may come from the spec or from what the user typed in this conversation, never invented — a discord op's `secret` is that secret's id, copied exactly from the grants yaml (never its name). Use `concurrency` only when the user explicitly asks for parallel runs or queueing ("let two run at once", "queue messages when it's busy") — never speculatively; the defaults (max_parallel 1, max_queued 0) stay unless the user names different numbers or words you can map to them ("a couple at once" → 2). Staged values, trigger edits, and concurrency changes land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
 - A failure the user can't fix by changing the automation → when the RECENT EXECUTIONS show the failure comes from the user's Mac, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
 
@@ -674,7 +674,7 @@ def parse_dialect_entry(t, allow_time: bool = False,
         f"triggers entry {t!r} must be {{ cron: expression[, timezone] }}, "
         + ("{ time: local-ISO-timestamp[, timezone] }, " if allow_time else "")
         + "{ imessage: handle[, pattern] }, "
-        "{ discord: channel-id, secret: NAME[, pattern, mention, author] }, "
+        "{ discord: channel-id, secret: <granted secret id>[, pattern, mention, author] }, "
         "or app_start: true")
 
 
@@ -904,10 +904,15 @@ def validate_chat(raw: str, files: dict[str, str],
     return payload, []
 
 
-def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[dict, list[str]]:
+def validate_steps(files: dict[str, str], grants: dict | None = None,
+                   trigger_secret_ids: set[str] | None = None) -> tuple[dict, list[str]]:
     """§8 sync-call validation. Returns (draft dict sans spec, errors). `grants`
     holds the call's agent/secret grant entries — per-step `agents`/`secrets`
-    lists must name entries from them."""
+    lists must name entries from them. `trigger_secret_ids` are the CURRENT
+    triggers' token-secret ids: a drafted discord trigger's `secret` must be a
+    granted secret's id OR one of these — re-emitting an existing trigger
+    through the §4.3 merge must never fail on a token that was (correctly)
+    never step-granted."""
     errors: list[str] = []
     if "manifest.yaml" not in files:
         errors.append("manifest.yaml is missing")
@@ -1164,6 +1169,15 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
             entry, err = parse_dialect_entry(t, cron_source="spec")
             if err:
                 errors.append(err)
+            elif (entry["kind"] == "discord" and entry["secret"] not in secret_names
+                  and entry["secret"] not in (trigger_secret_ids or set())):
+                # §8 rule 9: the token secret must be a granted secret's id
+                # (copied from the grants yaml — same rule as a step's
+                # `secrets:` entry, rule 6) or an existing trigger's token
+                # (the CURRENT triggers context the agent re-emits through
+                # the §4.3 merge).
+                errors.append(f"triggers: discord secret id {entry['secret']!r} isn't among "
+                              f"the granted secrets — granted: {_granted(secret_names)}")
             elif entry["kind"] == "app_start" and any(
                     x["kind"] == "app_start" for x in norm_trigs):
                 errors.append("triggers: only one app_start entry")
@@ -1328,9 +1342,13 @@ class DraftJobs:
         # ---- sync: steps, params, schedule — the provided spec IS the input ----
         spec_md = spec_as_md(current)
         self._stage(job, "Syncing the workflow")
+        # §8: a re-emitted existing discord trigger stays valid even when its
+        # token secret was never step-granted (validate_steps docstring).
+        trig_secrets = {t["secret"] for t in (current or {}).get("triggers") or []
+                        if t.get("kind") == "discord" and t.get("secret")}
         draft, _errors, blockers, diagnosed, bnotes = self._call_with_repair(
             job, agent, build_steps_prompt(spec_md, current, grants),
-            lambda files: validate_steps(files, grants), "steps")
+            lambda files: validate_steps(files, grants, trig_secrets), "steps")
         if blockers:
             # The blocker response's optional notes.md rides the payload (§8) —
             # the caller already holds the spec, a sync never changes it.

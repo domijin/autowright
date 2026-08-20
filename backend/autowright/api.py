@@ -289,7 +289,9 @@ def _data_size_label() -> str:
 def _agents_json() -> list[dict]:
     out = []
     for ag in store.agents:
-        used = [a["name"] for a in store.autos.values()
+        # §4.7 usedBy: { id, name } entries — the id is what the §12 chips
+        # navigate by (a name lookup would be ambiguous under duplicate names).
+        used = [{"id": a["id"], "name": a["name"]} for a in store.autos.values()
                 if a["agent_id"] == ag["id"]
                 or any(ag["id"] == e.get("id")
                        for s in a["versions"].get(a["current_version"], {}).get("steps", [])
@@ -957,8 +959,8 @@ def _mock_payload(mock: dict) -> dict:
     secret = mock.get("secret")
     if not isinstance(channel, str) or not channel.isascii() or not channel.isdigit():
         raise HTTPException(422, "triggerMock channel must be an ASCII-digit string")
-    if not isinstance(secret, str) or not SECRET_NAME_RE.match(secret):
-        raise HTTPException(422, "triggerMock secret must be a valid secret name")
+    if not isinstance(secret, str) or not triggerlib.SECRET_ID_RE.match(secret):
+        raise HTTPException(422, "triggerMock secret must be a secret id (uuid)")
     return {"kind": "discord", "text": text, "sender": sender, "channel": channel,
             "channelName": None, "guildName": None, "messageId": None,
             "guildId": None, "secret": secret, "at": timefmt.now_iso()}
@@ -1605,50 +1607,87 @@ def list_secrets() -> list[dict]:
     return _secrets_json()
 
 
-@app.put("/secrets/{name}", dependencies=[Depends(auth)])
-def put_secret(name: str, body: models.SecretPut) -> dict:
+def _secret_entity(s: dict) -> dict:
+    """§19: the entity shape (a GET /secrets entry) the write routes return,
+    so a creating client learns the minted id without a second fetch."""
+    return {"id": s["id"], "name": s["name"],
+            "description": s.get("description") or "",
+            "set": bool(s.get("set", True)),
+            "usedBy": store.secret_used_by(s["id"])}
+
+
+@app.post("/secrets", dependencies=[Depends(auth)])
+def create_secret(body: models.SecretCreate) -> dict:
+    name = body.name
     if not SECRET_NAME_RE.match(name):
         raise HTTPException(422, "secret names must match [A-Z][A-Z0-9_]* — "
                                  "uppercase letters, digits and underscores, starting with a letter")
-    sent = body.model_dump(exclude_unset=True)
-    value = body.value
-    if value:
+    with store.lock:
+        # §4.8 uniqueness — enforced at create; the name is immutable after.
+        if any(s["name"] == name for s in store.secrets):
+            raise HTTPException(422, f"a secret named {name} already exists")
+    sid = new_id()  # §4.8: the minted id is the reference identity — it also keys the Keychain
+    if body.value:
         # Keychain IPC can block for seconds (locked keychain, consent prompt) —
         # never hold store.lock across it; the engine would stall mid-execution.
         try:
-            keychain.set_secret(name, value)
+            keychain.set_secret(sid, body.value)
         except Exception as e:  # noqa: BLE001 — keyring's error zoo is open-ended
             # A locked keychain or a denied consent prompt is a routine macOS
             # condition, not a server bug: clean 503, nothing stored.
             raise HTTPException(503, f"your Keychain didn't accept the value ({e}) — "
                                      "unlock the login Keychain and try again") from e
     with store.lock:
-        existing = next((s for s in store.secrets if s["name"] == name), None)
-        if existing is None:
-            # §4.8: a blank value on a new name creates a placeholder (set: False).
-            # The minted id is the reference identity steps bind by.
-            existing = {"id": new_id(), "name": name, "description": "", "set": False}
-            store.secrets.append(existing)
-        if value:
-            existing["set"] = True
-        if "description" in sent:
-            existing["description"] = body.description or ""
+        if any(s["name"] == name for s in store.secrets):
+            # A racing create landed the name while the Keychain IPC ran —
+            # undo the fresh entry (best-effort) and answer the same 422.
+            keychain.delete_secret(sid)
+            raise HTTPException(422, f"a secret named {name} already exists")
+        entry = {"id": sid, "name": name, "description": body.description or "",
+                 "set": bool(body.value)}
+        store.secrets.append(entry)
         store.save_secrets()
-        # §19: return the entity (a GET /secrets entry) so a creating client
-        # learns the minted id without a second fetch.
-        out = {"id": existing["id"], "name": existing["name"],
-               "description": existing.get("description") or "",
-               "set": bool(existing.get("set", True)),
-               "usedBy": store.secret_used_by(existing["id"])}
+        out = _secret_entity(entry)
     hub.publish("secrets.changed")
     return out
 
 
-@app.delete("/secrets/{name}", dependencies=[Depends(auth)])
-def delete_secret(name: str) -> dict:
-    keychain.delete_secret(name)  # Keychain IPC — outside the lock (see put_secret)
+@app.put("/secrets/{sid}", dependencies=[Depends(auth)])
+def put_secret(sid: str, body: models.SecretPut) -> dict:
     with store.lock:
-        store.secrets = [s for s in store.secrets if s["name"] != name]
+        if not any(s["id"] == sid for s in store.secrets):
+            raise HTTPException(404, "no such secret")
+    sent = body.model_dump(exclude_unset=True)
+    if body.value:
+        # Keychain IPC outside the lock — see create_secret.
+        try:
+            keychain.set_secret(sid, body.value)
+        except Exception as e:  # noqa: BLE001 — keyring's error zoo is open-ended
+            raise HTTPException(503, f"your Keychain didn't accept the value ({e}) — "
+                                     "unlock the login Keychain and try again") from e
+    with store.lock:
+        # Re-find: the entry may have been deleted while the Keychain IPC ran.
+        existing = next((s for s in store.secrets if s["id"] == sid), None)
+        if existing is None:
+            raise HTTPException(404, "no such secret")
+        if body.value:
+            existing["set"] = True
+        if "description" in sent:
+            existing["description"] = body.description or ""
+        store.save_secrets()
+        out = _secret_entity(existing)
+    hub.publish("secrets.changed")
+    return out
+
+
+@app.delete("/secrets/{sid}", dependencies=[Depends(auth)])
+def delete_secret(sid: str) -> dict:
+    with store.lock:
+        if not any(s["id"] == sid for s in store.secrets):
+            raise HTTPException(404, "no such secret")
+    keychain.delete_secret(sid)  # Keychain IPC — outside the lock (see create_secret)
+    with store.lock:
+        store.secrets = [s for s in store.secrets if s["id"] != sid]
         store.save_secrets()
     hub.publish("secrets.changed")
     return {"ok": True}

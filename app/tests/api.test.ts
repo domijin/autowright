@@ -174,10 +174,24 @@ describe('agent/harness/ollama/draft request shapes', () => {
   })
 
   it('putSecret sends description only when given (§4.8: absent description edits nothing)', async () => {
-    await api.putSecret('MY_TOKEN', 'v')
+    // §19: the edit route is id-keyed — the name is immutable and never a field
+    const sid = '9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34'
+    await api.putSecret(sid, 'v')
+    expect(call()[0]).toBe(`http://127.0.0.1:4242/secrets/${sid}`)
     expect(call()[1].body).toBe(JSON.stringify({ value: 'v' }))
-    await api.putSecret('MY_TOKEN', 'v', 'what it is for')
+    await api.putSecret(sid, 'v', 'what it is for')
     expect((fetchMock.mock.calls[1][1] as RequestInit).body)
       .toBe(JSON.stringify({ value: 'v', description: 'what it is for' }))
+  })
+
+  it('createSecret POSTs the name + value; deleteSecret hits the id route (§4.8/§19)', async () => {
+    await api.createSecret('MY_TOKEN', 'v')
+    expect(call()[0]).toBe('http://127.0.0.1:4242/secrets')
+    expect(call()[1].method).toBe('POST')
+    expect(call()[1].body).toBe(JSON.stringify({ name: 'MY_TOKEN', value: 'v' }))
+    const sid = '9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34'
+    await api.deleteSecret(sid)
+    expect(fetchMock.mock.calls[1][0]).toBe(`http://127.0.0.1:4242/secrets/${sid}`)
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe('DELETE')
   })
 })

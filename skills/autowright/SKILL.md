@@ -66,8 +66,9 @@ resolve); executions and snapshots by id prefix.
      description: Checks followed manga for new chapters
      triggers:                    # omit if the automation needs no trigger
        - cron: "0 8 * * *"        # optional timezone: Asia/Tokyo
-       # also: { imessage: "+15551234567" } / { discord: "<channel>", secret: NAME }
-       # (details from the spec only; optional pattern) / app_start: true
+       # also: { imessage: "+15551234567" } / { discord: "<channel>", secret: <secret uuid> }
+       # (details from the spec only; the discord secret is the token secret's id from
+       # `autowright secret list --json`; optional pattern) / app_start: true
        # one-shot `time` triggers: never here — use `trigger add --at`
      params:                      # each with a default; kinds: toggle|list|kv|number|text
        - { name: sources, kind: list, label: Manga URLs, help: One URL per line,

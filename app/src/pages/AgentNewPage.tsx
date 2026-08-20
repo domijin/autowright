@@ -813,7 +813,7 @@ export default function AgentNewPage() {
               {delUses.length > 0 && (
                 <p style={{ color: P.amber, margin: '8px 0 0' }}>
                   {delUses.length === 1
-                    ? `“${delUses[0]}” uses this agent. It still executes on schedule — you’ll just need another agent to edit it.`
+                    ? `“${delUses[0].name}” uses this agent. It still executes on schedule — you’ll just need another agent to edit it.`
                     : `${delUses.length} automations use this agent — they still execute on schedule, but you’ll need another agent to edit them.`}
                 </p>
               )}

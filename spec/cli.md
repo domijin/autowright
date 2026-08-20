@@ -170,7 +170,9 @@ manifest, so an untouched manifest round-trips the schedule unchanged. Between p
 `--at` for a §4.3 one-shot — both take `--timezone <zone>`, an IANA zone, stored on the
 entry — `--app-start`, `--discord <channel> --secret <name>
 [--pattern <text>] [--mention] [--author <user-id>[,<user-id>…]]…` for a §4.3 discord
-trigger (`--author` repeats and each value may be comma-separated — all ids collect into
+trigger (`--secret` takes the secret's **name** — the human surface, like the grant
+flags — and the CLI maps it to the stored secret's §4.8 id, which is what the trigger
+stores; an unknown name exits 1 with the candidate list) (`--author` repeats and each value may be comma-separated — all ids collect into
 the trigger's one `author` list), or `--imessage <from>
 [--pattern <text>]` for a §4.3 imessage trigger), `trigger on|off <n>`, and
 `trigger remove <n>`
@@ -187,6 +189,11 @@ value exits 1 naming the expected form.
 (`getpass`, no echo), or reads the value from stdin with `--stdin` for scripted use. A value
 passed as an argument would land in shell history and in every local process's view of the
 process list, which is exactly what "passwords never leave your Keychain" (§1) rules out.
+Names are the CLI's secret surface; the CLI maps them to the §19 id routes: `secret set`
+with a name no stored secret holds creates via `POST /secrets`, with an existing name edits
+via `PUT /secrets/{id}` (the upsert feel is CLI-side; the API itself is split, §19).
+`secret delete NAME` resolves the name to its id (unknown name exits 1 with the candidates)
+and calls `DELETE /secrets/{id}`.
 
 **Destructive guard** — `automation delete` requires `--yes` (it removes every version and its
 history); everything else is either reversible (versions, snapshots) or already the §19

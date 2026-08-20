@@ -146,9 +146,9 @@ export class Backend {
 
   /** §4.8 placeholder secret — blank value, so NOTHING touches the Keychain.
    * Returns the entity so callers get the minted id (§4.1: steps and grants
-   * reference secrets by id). */
+   * reference secrets by id; §19: creation is the POST route). */
   async putSecretPlaceholder(name: string, description: string): Promise<{ id: string; name: string }> {
-    return await this.api('PUT', `/secrets/${name}`, { value: '', description }) as { id: string; name: string }
+    return await this.api('POST', '/secrets', { name, value: '', description }) as { id: string; name: string }
   }
 
   /** Fire an execution and return its id without waiting. */

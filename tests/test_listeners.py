@@ -471,7 +471,9 @@ def test_conn_missing_token_parks_with_plain_status(monkeypatch):
     assert waits == [li_mod.BACKOFF_MAX]
     key, state, error = mgr.statuses[0]
     assert (key, state) == ("NO_VALUE", "error")
-    assert "secret NO_VALUE has no value yet" in error
+    # §4.8 ids-bind-names-display: no stored record matches the id, so the
+    # error copy falls back to the short id prefix, never the raw uuid.
+    assert "secret NO_VALUE… has no value yet" in error
 
 
 # ---------- §6 _Conn._session: one scripted gateway session, no network ----------

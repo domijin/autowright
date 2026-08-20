@@ -617,15 +617,16 @@ def test_trigger_add_discord():
     from autowright import cli
 
     c = _WorkdirClient()
+    # §20: --secret takes the NAME; the trigger stores the secret's §4.8 id
     cli.cmd_trigger_add(c, SimpleNamespace(
-        automation="Daily Report", discord="123", secret="BOT_TOKEN",
+        automation="Daily Report", discord="123", secret="API_TOKEN",
         pattern="go", mention=True, author=["777,888", "999"], imessage=None,
         app_start=False, at=None, expression=None, timezone=None))
     method, path, body = c.posted[-1]
     assert (method, path) == ("PATCH", f"/automations/{FULL_AUTO['id']}")
     # repeated --author flags and comma-separated values collect into one list
     assert body["triggers"][-1] == {"kind": "discord", "channel": "123",
-                                    "secret": "BOT_TOKEN", "pattern": "go",
+                                    "secret": API_TOKEN_ID, "pattern": "go",
                                     "mention": True, "author": ["777", "888", "999"],
                                     "enabled": True}
     # --discord without --secret exits with guidance, nothing sent
@@ -634,6 +635,14 @@ def test_trigger_add_discord():
             automation="Daily Report", discord="123", secret=None, pattern=None,
             mention=False, author=None, imessage=None, app_start=False,
             at=None, expression=None, timezone=None))
+    # an unknown secret name exits with the candidate list, nothing sent
+    sent_before = len(c.posted)
+    with pytest.raises(SystemExit, match="no stored secret named"):
+        cli.cmd_trigger_add(c, SimpleNamespace(
+            automation="Daily Report", discord="123", secret="NOPE", pattern=None,
+            mention=False, author=None, imessage=None, app_start=False,
+            at=None, expression=None, timezone=None))
+    assert len(c.posted) == sent_before
 
 
 def test_trigger_add_imessage():
@@ -1405,8 +1414,10 @@ def test_cmd_execution_result_lists_then_streams(capsysbinary):
 
 
 def test_cmd_secret_commands(monkeypatch, capsys):
-    secrets = [{"name": "API_TOKEN", "set": True, "usedBy": ["Daily Report"]},
-               {"name": "BOT_TOKEN", "set": False, "usedBy": []}]
+    # §4.8: usedBy entries are { id, name } — the CLI prints the names
+    secrets = [{"id": "s-1", "name": "API_TOKEN", "set": True,
+                "usedBy": [{"id": "a-1", "name": "Daily Report"}]},
+               {"id": "s-2", "name": "BOT_TOKEN", "set": False, "usedBy": []}]
     _run(_RouteClient({"/secrets": secrets}), "secret", "list")
     out = capsys.readouterr().out
     assert "API_TOKEN" in out and "used by: Daily Report" in out
@@ -1417,24 +1428,29 @@ def test_cmd_secret_commands(monkeypatch, capsys):
     with pytest.raises(SystemExit):
         _run(_RouteClient(), "secret", "set", "API_TOKEN", "s3cret")
 
-    # --stdin, for scripted use
+    # --stdin, for scripted use — an existing name edits via the id route (§19)
     from autowright import cli
 
     monkeypatch.setattr(cli.sys, "stdin", io.StringIO("piped-in\n"))
-    c = _RouteClient()
+    c = _RouteClient({"/secrets": secrets})
     _run(c, "secret", "set", "API_TOKEN", "--stdin")
-    assert c.calls == [("PUT", "/secrets/API_TOKEN", {"value": "piped-in"})]
+    assert c.calls == [("PUT", "/secrets/s-1", {"value": "piped-in"})]
     assert "saved to your Keychain" in capsys.readouterr().out
 
-    # otherwise prompted, never echoed
+    # otherwise prompted, never echoed — a new name creates via POST (§19)
     monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "typed-in")
-    c = _RouteClient()
-    _run(c, "secret", "set", "API_TOKEN")
-    assert c.calls == [("PUT", "/secrets/API_TOKEN", {"value": "typed-in"})]
+    c = _RouteClient({"/secrets": secrets})
+    _run(c, "secret", "set", "NEW_KEY")
+    assert c.calls == [("POST", "/secrets", {"name": "NEW_KEY", "value": "typed-in"})]
 
-    c = _RouteClient()
+    # delete resolves the name to the id route; an unknown name exits
+    c = _RouteClient({"/secrets": secrets})
     _run(c, "secret", "delete", "API_TOKEN")
-    assert c.calls == [("DELETE", "/secrets/API_TOKEN", None)]
+    assert c.calls == [("DELETE", "/secrets/s-1", None)]
+    c = _RouteClient({"/secrets": secrets})
+    with pytest.raises(SystemExit, match="no stored secret named"):
+        _run(c, "secret", "delete", "NOPE")
+    assert c.calls == []
     assert "removed from your Keychain" in capsys.readouterr().out
 
 

@@ -7,7 +7,8 @@ import uuid
 from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")  # §4.8 — same rule as the Secrets API
+# §4.3 discord `secret` = a §4.8 secret id (uuid, lowercase hyphenated — the §4 id form).
+SECRET_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 DOW_LONG = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"]
 DOW_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
@@ -221,14 +222,15 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
     if kind == "app_start":
         return None
     if kind == "discord":
-        # §4.3: channel = ASCII-digit snowflake; secret = Keychain secret name
-        # holding the bot token (existence is a `connection` concern, not a 422).
+        # §4.3: channel = ASCII-digit snowflake; secret = the §4.8 id of the
+        # secret holding the bot token (existence is a `connection` concern,
+        # not a 422 — a mid-edit secret deletion must never block a save).
         ch = t.get("channel")
         if not (isinstance(ch, str) and _ascii_digits(ch.strip())):
             return "the Discord channel must be its numeric channel id"
         sec = t.get("secret")
-        if not (isinstance(sec, str) and SECRET_NAME_RE.match(sec.strip())):
-            return "a Discord trigger needs the name of the secret holding the bot token"
+        if not (isinstance(sec, str) and SECRET_ID_RE.match(sec.strip())):
+            return "a Discord trigger needs the id of the secret holding the bot token"
         pat = t.get("pattern")
         if pat is not None and not (isinstance(pat, str) and pat.strip()):
             return "the Discord message pattern must be a nonempty text"

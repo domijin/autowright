@@ -278,11 +278,16 @@ function TzPick({ timezone, onPick }: { timezone: string; onPick: (z: string) =>
   )
 }
 
-/** Bot-token secret picker — the app's standard popover pattern (§9.2). */
+/** Bot-token secret picker — the app's standard popover pattern (§9.2).
+ * `selected` is the secret's §4.8 id (what the trigger stores); the pill
+ * renders the live name resolved from it — a dangling id (the secret was
+ * deleted since) shows a short id prefix in the deleted-red treatment. */
 function SecretPick({ secrets, selected, onPick }: {
-  secrets: SecretMeta[]; selected: string; onPick: (name: string) => void
+  secrets: SecretMeta[]; selected: string; onPick: (id: string) => void
 }) {
   const [open, setOpen, ref] = usePopover()
+  const live = secrets.find((s) => s.id === selected)
+  const dangling = !!selected && !live
   return (
     <div ref={ref} style={{ position: 'relative', flex: '0 1 auto', minWidth: 0 }}>
       <button
@@ -295,8 +300,9 @@ function SecretPick({ secrets, selected, onPick }: {
         <span style={{
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           ...(selected ? {} : { fontWeight: 400, color: 'var(--text-muted)' }),
+          ...(dangling ? { color: 'var(--red-text)' } : {}),
         }}>
-          {selected || 'Choose the bot-token secret…'}
+          {live ? live.name : dangling ? `${selected.slice(0, 8)}…` : 'Choose the bot-token secret…'}
         </span>
         <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
       </button>
@@ -306,12 +312,12 @@ function SecretPick({ secrets, selected, onPick }: {
             No secrets yet — press New secret.
           </div>
         ) : secrets.map((s) => {
-          const sel = s.name === selected
+          const sel = s.id === selected
           return (
             <button
               className="ad-btn-bare"
-              key={s.name}
-              onClick={() => { setOpen(false); onPick(s.name) }}
+              key={s.id}
+              onClick={() => { setOpen(false); onPick(s.id) }}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', cursor: 'pointer',
                 borderBottom: '1px solid var(--hairline-dim)',
@@ -528,7 +534,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             <SecretModal
               modal={{ mode: 'add' }}
               onClose={() => setSecretModal(false)}
-              onSaved={(saved) => setSecret(saved.name)}
+              onSaved={(saved) => setSecret(saved.id)}
             />
           )}
           <input

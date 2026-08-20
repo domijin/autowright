@@ -217,7 +217,7 @@ strings `label` and `short`. The backend assigns `id` to entries that arrive wit
 | `cron` | `expression`: 5-field cron expression · optional `timezone` · optional `source`: `"spec"` \| `"user"` (provenance, above; absent reads as `spec`) | at every match | humanized when simple (below), else the raw expression in mono |
 | `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `timezone` | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
 | `app_start` | — | at every desktop-app launch (§6 firing path) | "On app start" / "App start" |
-| `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: name of the §4.8 secret holding the bot token · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a list of Discord user ids (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
+| `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: id of the §4.8 secret holding the bot token (a secret uuid) · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a list of Discord user ids (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
 | `imessage` | `from`: sender handle (E.164 phone or email) · optional `pattern`: text filter | at every matching iMessage on this Mac (rules below) | "iMessage · `<from>`" (+ " · “`<pattern>`”" when set) / "iMessage" |
 | `pubsub` | — | future message trigger | — |
 
@@ -236,8 +236,9 @@ surface it. Nothing else about it is specified yet.
 **Discord triggers** — the user supplies their own Discord bot: an application created in the
 Discord developer portal with the **Message Content intent** enabled, invited to the server
 whose channel the trigger watches. The bot token is stored as an ordinary §4.8 secret and
-referenced by name via the trigger's `secret` field — the token lives in the Keychain, never
-in the trigger. Firing rules, applied by the §6 listener manager to every gateway
+referenced by id via the trigger's `secret` field (the §4.8 uuid — the same reference identity
+steps bind by; display surfaces resolve it to the live name) — the token lives in the
+Keychain, never in the trigger. Firing rules, applied by the §6 listener manager to every gateway
 `MESSAGE_CREATE` in the trigger's `channel`:
 
 - messages authored by **any bot** (including the listening bot itself) never fire — a
@@ -258,9 +259,10 @@ A firing starts an execution with trigger label "Discord" and the §4.5 `trigger
 §6 one-execution-at-a-time skip applies like any trigger. Like
 `app_start`, a discord trigger has no computable next occurrence — `nextAt` ignores it, and a
 list whose only enabled triggers are message triggers shows the listening status line below.
-Validation (§19, 422 otherwise): `channel` a nonempty ASCII-digit string, `secret` a valid
-§4.8 secret name (the Secrets-API rule, `[A-Z][A-Z0-9_]*`; it need not exist yet — a
-missing/valueless secret surfaces as a `connection` error, not a 422), `pattern` when present a
+Validation (§19, 422 otherwise): `channel` a nonempty ASCII-digit string, `secret` a uuid
+string (lowercase hyphenated, the §4 id form; it need not resolve to a stored secret — a
+deleted, dangling, or valueless secret surfaces as a `connection` error, not a 422, so a
+mid-edit secret deletion can never block a save), `pattern` when present a
 nonempty string, `mention` a bool, `author` when present a nonempty list of nonempty
 ASCII-digit strings (Discord user ids, like `channel`); its entries are trimmed, deduped,
 and sorted at save, so element order never distinguishes two triggers — the trigger-merge
@@ -268,7 +270,9 @@ identity compares the normalized list. The serialized trigger of
 kind `discord` additionally carries **`connection`** — derived, never stored: the listener
 manager's connection state for the trigger's token,
 `{ state: connected | connecting | error, error? }` (`error` is the plain-word failure, e.g.
-"secret DISCORD_BOT_TOKEN has no value yet" or Discord's close reason).
+"secret DISCORD_BOT_TOKEN has no value yet" or Discord's close reason; error copy resolves
+the secret id to its live name, falling back to a short id prefix when no stored record
+matches — the §4.8 ids-bind-names-display rule).
 
 **iMessage triggers** — the Mac's own Messages account is the identity: no bot, no secret.
 The §6 listener manager watches the Messages database (`chat.db`) while at least one enabled
@@ -578,8 +582,8 @@ triggerPayload: message-trigger context | null (every non-message execution) —
   { kind: "discord", text, sender (the author's display name), channel, channelName | null,
   guildName | null (both resolved best-effort from the §6 gateway guild cache at firing
   time — null for DMs or a cache miss; displays fall back to the raw channel id), messageId,
-  guildId | null (null for DMs), secret (the trigger's token-secret name — reply routing,
-  §6.1; never displayed by any surface), at (message ISO timestamp) }; for iMessage: { kind: "imessage", text, sender (the
+  guildId | null (null for DMs), secret (the trigger's token-secret id, §4.8 uuid — reply
+  routing, §6.1; never displayed by any surface), at (message ISO timestamp) }; for iMessage: { kind: "imessage", text, sender (the
   sender's handle — E.164 phone or email; no Contacts lookup), chat (the Messages chat guid —
   reply routing, §6.1), messageId (the message guid), at (message ISO
   timestamp) }. Persisted on the record, snapshotted at start —
@@ -718,9 +722,10 @@ rejects it with 422 and the UI shows the option disabled with the reason). A nul
 model it is already configured with. Display shows "Default model" when the model is null. One agent is
 the app default: a single `default_agent` id pointer in `agents.yaml` (§5) — never a
 per-record flag, so "exactly one default" holds structurally; the API serializes each
-agent's derived `default` bool and its derived `usedBy` — the names of automations that use
-the agent, as their drafting agent or via a current-version step's `agents:` entry ids
-(§4.1). Deleting the default agent repoints the pointer and warns
+agent's derived `default` bool and its derived `usedBy` — the automations that use the
+agent, as their drafting agent or via a current-version step's `agents:` entry ids (§4.1),
+each entry `{ id, name }` (id is the automation's uuid — what the §12 chips navigate by;
+name is display). Deleting the default agent repoints the pointer and warns
 which automations use it.
 **Grant-name uniqueness:** an agent's effective §8 grant name (`name`, falling back to the
 harness name when unnamed) is unique across agents, compared case-insensitively. The API
@@ -737,23 +742,32 @@ local-model mode) and help the user sign in when the harness needs an account (�
 
 `{ id, name, description, set, usedBy }` — the value itself is never part of the entity (Keychain-only,
 below). `id` is a uuid minted when the secret is created; loading a stored entry without one
-mints and persists it (self-heal, like the §4.7 `default_agent` pointer). Steps bind secrets
-by this id (§4.1) - the id, not the name, is the reference identity. `usedBy` is the list of automation names whose current
-version uses the secret (the UI joins it; empty list renders "Not used yet"). Names uppercase, `[A-Z][A-Z0-9_]*` — sanitization (uppercase,
+mints and persists it (self-heal, like the §4.7 `default_agent` pointer). **The id is the
+reference identity everywhere**: steps bind secrets by it (§4.1), discord triggers reference
+it (§4.3), the §19 routes address it (`PUT`/`DELETE /secrets/{id}`; only `POST /secrets`
+carries a name — creation), and the Keychain entry is keyed by it (the keyring account is
+the secret's id, so the stored value survives nothing being named after it and never needs
+touching on metadata edits). `usedBy` is the list of automations whose current version uses
+the secret, each entry `{ id, name }` (the UI joins the names; empty list renders "Not used
+yet"). Names uppercase, `[A-Z][A-Z0-9_]*` — sanitization (uppercase,
 invalid chars → `_`) is UI input behavior; the backend validates strictly and rejects nonconforming
-names with HTTP 422. Names are **unique** (structural: the name keys `secrets.yaml`, the
-Keychain entry, and the §19 routes) and **immutable** - no rename path exists anywhere
-(`PUT /secrets/{name}` upserts under the path name and edits only value/description; the §12
-edit modal renders the name read-only). `description` is an optional free-text description ("What this secret is for — shown
+names with HTTP 422. Names are **unique** — enforced at create (§19 `POST /secrets` answers
+422 on a name another secret already holds) — and **immutable** - no rename path exists
+anywhere (`PUT /secrets/{id}` edits only value/description and carries no name field; the
+§12 edit modal renders the name read-only). Uniqueness exists for the §8 grants yaml, the
+§20 name flags, and unambiguous display — ids are the binding, names are the display
+(same rule as §4.7 agents). `description` is an optional free-text description ("What this secret is for — shown
 on the Secrets page and given to the drafting agent"), stored next to the name in `secrets.yaml`
 (never in the Keychain) and carried into the §8 grants yaml so the drafting agent knows which
 secret to use. Values are arbitrary strings and may be multi-line (e.g. a PEM key). Values stored
 in macOS Keychain, masked at rest; the API never returns secret values — show/hide applies to the
 value being typed in the add/edit modal, not to stored values. `set` is a backend-maintained
-boolean in `secrets.yaml`: saving a **new** name with a blank value creates a **placeholder**
+boolean in `secrets.yaml`: creating a secret (§19 `POST /secrets`) with a blank value creates
+a **placeholder**
 (`set: false`) — the name and description exist, no Keychain entry does; the Secrets page and
 grant surfaces show an amber "Not set" tag until a value is saved. Writing any nonblank value
-stores it in the Keychain and flips `set` to true; saving an existing secret with a blank value
+stores it in the Keychain and flips `set` to true; editing a secret (§19 `PUT /secrets/{id}`)
+with a blank value
 keeps the stored state (a set secret keeps its value, an unset one stays unset) and updates only
 the description. An execution needing an unset secret fails before any step with "secret `NAME`
 has no value yet — add it on the Secrets page" (same pre-step gate as a missing Keychain entry,

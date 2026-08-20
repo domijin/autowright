@@ -246,8 +246,8 @@ def test_secret_redacted_from_logs(store):
     from autowright import keychain
     from autowright.engine import Engine
 
-    keychain.set_secret("API_KEY", "super-secret-value-123")
     api_key = add_secret(store, "API_KEY")
+    keychain.set_secret(api_key, "super-secret-value-123")  # §4.8: Keychain keyed by id
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (f'from autowright import log, secrets\nk = secrets["{api_key}"]\n'
@@ -268,8 +268,8 @@ def test_multiline_secret_lines_redacted_from_logs(store):
     from autowright.engine import Engine
 
     pem = "-----BEGIN KEY-----\nabc123line\n-----END KEY-----"
-    keychain.set_secret("PEM_KEY", pem)
     pem_key = add_secret(store, "PEM_KEY")
+    keychain.set_secret(pem_key, pem)
     engine = Engine(store)
     ver = make_version()
     # Each log() call is a separate log line, so the whole value never
@@ -868,10 +868,10 @@ def test_secrets_scoped_per_step(store):
     from autowright import keychain
     from autowright.engine import Engine
 
-    keychain.set_secret("API_ONE", "value-one")
-    keychain.set_secret("API_TWO", "value-two")
     one = add_secret(store, "API_ONE")
     two = add_secret(store, "API_TWO")
+    keychain.set_secret(one, "value-one")
+    keychain.set_secret(two, "value-two")
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
@@ -1037,8 +1037,8 @@ def test_failure_error_message_redacted(store):
     from autowright import keychain
     from autowright.engine import Engine
 
-    keychain.set_secret("API_KEY", "sekret-42")
     api_key = add_secret(store, "API_KEY")
+    keychain.set_secret(api_key, "sekret-42")
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (f'from autowright import secrets\nk = secrets["{api_key}"]\n'
@@ -1285,8 +1285,8 @@ def test_declared_step_secrets_injected(store):
     from autowright import keychain
     from autowright.engine import Engine
 
-    keychain.set_secret("MY_TOKEN", "sekret")
     my_token = add_secret(store, "MY_TOKEN")
+    keychain.set_secret(my_token, "sekret")
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
@@ -1511,8 +1511,8 @@ def test_chip_and_notification_are_redacted(store, monkeypatch):
     posted = []
     monkeypatch.setattr(notify, "post", lambda title, body: posted.append((title, body)))
 
-    keychain.set_secret("API_KEY", "super-secret-value-123")
     api_key = add_secret(store, "API_KEY")
+    keychain.set_secret(api_key, "super-secret-value-123")
     engine = Engine(store)
     ver = make_version()
     # the last step owns the chip (the fixture's step 2 would overwrite it)
@@ -1547,8 +1547,8 @@ def test_reply_carrying_a_secret_is_never_sent(store, monkeypatch):
     monkeypatch.setattr(listeners, "send_reply",
                         lambda payload, text: sent.append(text) or None)
 
-    keychain.set_secret("API_KEY", "super-secret-value-123")
     api_key = add_secret(store, "API_KEY")
+    keychain.set_secret(api_key, "super-secret-value-123")
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (
@@ -1577,8 +1577,8 @@ def test_engine_side_reply_gate_blocks_raw_control_line(store, monkeypatch):
     monkeypatch.setattr(listeners, "send_reply",
                         lambda payload, text: sent.append(text) or None)
 
-    keychain.set_secret("API_KEY", "super-secret-value-123")
     api_key = add_secret(store, "API_KEY")
+    keychain.set_secret(api_key, "super-secret-value-123")
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (

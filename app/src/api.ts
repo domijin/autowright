@@ -182,12 +182,16 @@ export const api = {
   signinStatus: (id: string) => req<{ installed: boolean; signedIn: boolean | null }>('GET', `/agents/signin/${id}`),
   ollamaStatus: () => req<{ ready: boolean; installed: boolean; models: string[] }>('GET', '/ollama/status'),
   ollamaPull: (model: string) => req('POST', '/ollama/pull', { model }),
-  putSecret: (name: string, value: string, description?: string) =>
-    // §19: returns the serialized secret entity — the creating client learns
-    // the minted §4.8 id without a second fetch.
-    req<import('./types').SecretMeta>('PUT', `/secrets/${name}`,
+  // §19: both writes return the serialized secret entity — the creating
+  // client learns the minted §4.8 id without a second fetch. Routes are
+  // id-keyed; only create carries a name (§4.8: names are immutable).
+  createSecret: (name: string, value: string, description?: string) =>
+    req<import('./types').SecretMeta>('POST', '/secrets',
+      description === undefined ? { name, value } : { name, value, description }),
+  putSecret: (id: string, value: string, description?: string) =>
+    req<import('./types').SecretMeta>('PUT', `/secrets/${id}`,
       description === undefined ? { value } : { value, description }),
-  deleteSecret: (name: string) => req('DELETE', `/secrets/${name}`),
+  deleteSecret: (id: string) => req('DELETE', `/secrets/${id}`),
   patchSettings: (patch: Record<string, unknown>) =>
     req<import('./types').Settings>('PATCH', '/settings', patch),
   setDataPath: (path: string) => req<import('./types').Settings>('POST', '/settings/data-path', { path }),

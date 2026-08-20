@@ -739,7 +739,8 @@ class Engine:
                                       "reason": "A step references a secret this automation isn't allowed to use."}
                     failed = True
                 else:
-                    v = keychain.get_secret(sec["name"])
+                    # §4.8: the Keychain entry is keyed by the secret's id.
+                    v = keychain.get_secret(sid)
                     if v is None:
                         # §4.8: a placeholder (set: False) gets the clearer message —
                         # the secret exists, only its value was never added.

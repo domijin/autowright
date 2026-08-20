@@ -21,7 +21,7 @@ export default function SecretsPage() {
     const s = del
     setDel(null)
     try {
-      await api.deleteSecret(s.name)
+      await api.deleteSecret(s.id)
       showToast('Removed from your Keychain.')
     } catch (e) { showToast((e as Error).message) }
   }
@@ -77,7 +77,9 @@ export default function SecretsPage() {
                 </div>
               )}
             </div>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.usedBy.join(', ') || 'Not used yet'}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {s.usedBy.map((u) => u.name).join(', ') || 'Not used yet'}
+            </span>
             <span style={{
               font: `400 12px var(--mono)`,
               color: s.set ? 'var(--text-muted)' : 'var(--text-faint)',
@@ -88,7 +90,7 @@ export default function SecretsPage() {
             <div style={{ display: 'flex', gap: 4, justifySelf: 'end', alignItems: 'center' }}>
               <button
                 className="ad-btn-icon"
-                onClick={() => setModal({ mode: 'edit', name: s.name, description: s.description, usedBy: s.usedBy })}
+                onClick={() => setModal({ mode: 'edit', id: s.id, name: s.name, description: s.description, usedBy: s.usedBy })}
                 title="Edit"
                 aria-label="Edit secret"
               >
@@ -117,7 +119,7 @@ export default function SecretsPage() {
               {' '}will be removed from your Keychain. This can’t be undone.
               {del.usedBy.length > 0 && (
                 <p style={{ color: 'var(--red-text)', margin: '8px 0 0' }}>
-                  “{del.usedBy.join(', ')}” uses it and will stop working.
+                  “{del.usedBy.map((u) => u.name).join(', ')}” uses it and will stop working.
                 </p>
               )}
             </>

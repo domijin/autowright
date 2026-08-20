@@ -113,22 +113,33 @@ def test_triggers_bad_entries_rejected():
 
 
 def test_triggers_message_and_app_start_parsed():
+    # §8 rule 9: a drafted discord trigger's `secret` is a granted secret's id,
+    # copied from the grants yaml — same rule as a step's `secrets:` entry.
+    sid = "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34"
+    grants = {"agents": [], "secrets": [{"id": sid, "name": "BOT"}]}
     withtrig = GOOD_STEPS.replace(
         "note: Created\n",
         'note: Created\ntriggers:\n'
         '  - { imessage: "+1 (555) 123-4567", pattern: go }\n'
-        '  - { discord: "123456", secret: BOT, mention: true, author: "777" }\n'
-        '  - { discord: "123456", secret: BOT, author: ["999", "888"] }\n'
+        f'  - {{ discord: "123456", secret: {sid}, mention: true, author: "777" }}\n'
+        f'  - {{ discord: "123456", secret: {sid}, author: ["999", "888"] }}\n'
         '  - app_start: true\n')
-    draft, errors = validate_steps(parse_envelope(withtrig))
+    draft, errors = validate_steps(parse_envelope(withtrig), grants)
     assert errors == []
     assert draft["triggers"] == [
         {"kind": "imessage", "from": "+15551234567", "enabled": True, "pattern": "go"},
-        {"kind": "discord", "channel": "123456", "secret": "BOT", "enabled": True,
+        {"kind": "discord", "channel": "123456", "secret": sid, "enabled": True,
          "mention": True, "author": ["777"]},   # scalar shorthand → one-element list
-        {"kind": "discord", "channel": "123456", "secret": "BOT", "enabled": True,
+        {"kind": "discord", "channel": "123456", "secret": sid, "enabled": True,
          "author": ["888", "999"]},             # lists normalize sorted
         {"kind": "app_start", "enabled": True}]
+    # an ungranted (but well-formed) id is a validation error, like rule 6
+    other = "11111111-2222-4333-8444-555555555555"
+    bad = GOOD_STEPS.replace(
+        "note: Created\n",
+        f'note: Created\ntriggers:\n  - {{ discord: "123456", secret: {other} }}\n')
+    _, errors = validate_steps(parse_envelope(bad), grants)
+    assert any("isn't among the granted secrets" in e for e in errors)
 
 
 def test_manifest_test_values_ride_payload():

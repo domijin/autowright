@@ -276,9 +276,19 @@ class OllamaPull(BaseModel):
     model: StrictStr
 
 
+class SecretCreate(BaseModel):
+    """POST /secrets (§4.8) — create: a blank value creates a placeholder.
+    The name is validated (and checked unique) in the handler."""
+
+    name: StrictStr
+    value: StrictStr = ""
+    description: StrictStr | None = None
+
+
 class SecretPut(BaseModel):
-    """PUT /secrets/{name} (§4.8) — a blank value on a new name creates a
-    placeholder; description edits are presence-sensitive (exclude_unset)."""
+    """PUT /secrets/{id} (§4.8) — edit: the name is immutable and not a field;
+    a blank value keeps the stored state; description edits are
+    presence-sensitive (exclude_unset)."""
 
     value: StrictStr = ""
     description: StrictStr | None = None

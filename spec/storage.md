@@ -397,7 +397,9 @@ Rules:
   lines — one final `sys` marker line records the truncation, then nothing more lands in
   that file (the step itself keeps executing). `logs/execution.ndjson` has the same cap. A
   runaway step can't fill the disk through its logs.
-- Secret values never appear in any file — Keychain only, referenced by name.
+- Secret values never appear in any file — Keychain only, keyed by the secret's §4.8 id
+  (the keyring account string), so metadata edits never touch the Keychain and the entry
+  needs no rename path.
 
 **Terminology:** **execution** is the one and only term for a single occurrence of an
 automation — in files, code, APIs, and UI copy alike. The verb form is **execute** ("Execute
@@ -432,8 +434,10 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              #   the agents.yaml entry the imported agent_id maps to,
                              # triggers: [{kind, expression? | timezone? | channel+secret… | from…}] —
                              #   cron, app_start, discord, and imessage (§4.3 stored
-                             #   fields; the token itself never travels — only the
-                             #   secret's name); no ids,
+                             #   fields; the token itself never travels, and a discord
+                             #   entry's `secret` is the secret's NAME — export resolves
+                             #   the trigger's §4.3 secret id to its name, import maps it
+                             #   back to the local record's id); no ids,
                              #   no enabled state; one-shot `time` triggers are moments
                              #   in time and are never exported,
                              # param_values: {name: value} — only when "Include parameter
@@ -447,30 +451,40 @@ automation/                  # exactly the §5 version-folder shape; import copi
   notes.md                   #   verbatim; absent when empty (§4.1 notes)
   NN-name.py                 #   every step script, verbatim
 agents.yaml                  # configs of referenced agents (the automation's drafting
-                             # agent + every grant name in any step's agents: list):
+                             # agent + every agent referenced by a step's agents: entry
+                             # ids, resolved to names at export):
                              # [{name, description, harness, mode, model}] — no ids, no credentials
 secrets.yaml                 # referenced secret names (union of every step's secrets:
-                             # list, the secrets.NAME references in step code, and every
-                             # discord trigger's bot-token secret name):
+                             # entry ids and code-referenced ids — resolved to names at
+                             # export — and every
+                             # discord trigger's bot-token secret):
                              # [{name, description}] — never values
 ```
 
 **Identity across machines.** Uuids are meaningless on another Mac, so none travel and import
 mints everything fresh: a new automation id + directory, new trigger ids. Secrets are matched
-by **name** (unique + immutable, §4.8); agents are matched by name + config.
-**Known gap (transfer predates §4.1 id-keyed step references):** step `agents:`/`secrets:`
-entries and the `secrets["<id>"]`/`agents["<id>"]` subscripts in step code carry
-install-local uuids that this format neither translates nor rewrites — an imported
-automation's id references dangle until a sync rebuilds the steps. Future work: translate
-id → name at export and name → local id at import (well-defined, since names are unique on
-both sides); until then the passages below that speak of matching step references by grant
-name describe the pre-id format.
+by **name** (unique + immutable, §4.8); agents are matched by name + config. Step and trigger
+references **translate at the boundary** (well-defined, since names are unique on both
+sides): export rewrites ids to names — step `agents:`/`secrets:` entries become
+`{ name, why }`, the literal `secrets["<id>"]`/`agents["<id>"]` code subscripts become
+`secrets["<NAME>"]`/`agents["<Name>"]` (any §6.1 trailing `# NAME` comment travels verbatim —
+it names the name, so it stays accurate in both forms), and a discord
+trigger's `secret` id becomes the secret's name — and import rewrites the names back to the
+matched/created records' **local ids**, manifest entries and code subscripts alike. An
+export reference whose id matches
+no stored record answers 422 naming the step (or trigger) — a dangling reference must be
+repaired before the automation can travel, since there is no name to carry it. Import
+symmetrically rejects an archive that still carries id-form step entries or uuid code
+subscripts ("re-export the automation"). Inside an
+archive, names ARE the reference format; on disk they never are (§4.1/§4.3/§4.8: ids only).
 
 **Import behavior** (the whole archive validates before anything is written — any failure
 answers 422 and writes nothing):
 
-- Validate: `format_version`, every yaml's schema, step files matching the steps manifest,
-  §4.2 param kinds, §4.7 agent configs (harness/mode/model rules), §4.8 secret names, trigger
+- Validate: `format_version`, every yaml's schema, step files matching the steps manifest
+  (step `agents:`/`secrets:` entries in the archive's `{ name, why }` form — the §4.1 id
+  form is rejected: ids never travel), §4.2 param kinds, §4.7 agent configs
+  (harness/mode/model rules), §4.8 secret names, trigger
   kinds with at most one `app_start`. Imported steps obey the §8 step bounds: `retries`
   is 1–10, `timeout` never combines with `no_timeout`, and `retries` never combines with
   `infinite_retries` — an archive can't land a step no drafting call could produce. Step

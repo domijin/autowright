@@ -220,7 +220,7 @@ class Store:
         # `default_agent` in agents.yaml), never a per-record flag.
         self.default_agent_id: str | None = None
         self.settings: dict = dict(DEFAULT_SETTINGS)
-        # §4.3 `connection`: token-secret name → {state, error?}, owned by the §6
+        # §4.3 `connection`: token-secret id → {state, error?}, owned by the §6
         # listener manager (listeners.py pushes updates; trigger_json reads).
         self.listener_status: dict[str, dict] = {}
         self.secrets: list[dict] = []             # {name, description, set} — values live in the Keychain;
@@ -964,7 +964,8 @@ class Store:
         out = {**t, "label": label, "short": short}
         if t["kind"] == "discord":
             # §4.3 `connection` — the listener manager's state for the trigger's
-            # token secret; derived at serialization time, never stored.
+            # token secret (keyed by the secret's §4.8 id); derived at
+            # serialization time, never stored.
             out["connection"] = self.listener_status.get(
                 t["secret"], {"state": "connecting"})
         elif t["kind"] == "imessage":
@@ -1314,14 +1315,17 @@ class Store:
     def save_settings(self) -> None:
         save_yaml(paths.settings_file(), self.settings)
 
-    def secret_used_by(self, secret_id: str) -> list[str]:
+    def secret_used_by(self, secret_id: str) -> list[dict]:
+        """§4.8 usedBy: automations whose current version uses the secret,
+        as { id, name } entries — id is the binding the UI navigates by,
+        name the display (§4.7/§4.8 ids-bind-names-display rule)."""
         used = []
         for a in self.autos.values():
             cur = a["versions"].get(a["current_version"], {})
             for s in cur.get("steps", []):
                 if (any(e.get("id") == secret_id for e in s.get("secrets", []))
                         or secret_id in SECRET_REF_RE.findall(s.get("code", ""))):
-                    used.append(a["name"])
+                    used.append({"id": a["id"], "name": a["name"]})
                     break
         return used
 

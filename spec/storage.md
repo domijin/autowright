@@ -491,8 +491,9 @@ answers 422 and writes nothing):
   filenames obey the §8 `NN-name.py` rule in listed order (`01-…`, `02-…`), like every other
   ingest path — otherwise the app's own save endpoints would 422 on a version import created.
 - The automation lands as **v1** of a brand-new automation (note "Imported") — version history
-  is local editing history and never travels. Duplicate names are fine (§5 directory naming);
-  re-importing your own export creates a copy, never overwrites.
+  is local editing history and never travels. A name another automation already holds dedupes
+  per §4.1 (case-insensitive; smallest free "Name n" suffix) - import never fails on a name
+  collision; re-importing your own export creates a copy ("Name 2"), never overwrites.
 - Every trigger imports **off** — nothing fires unexpectedly on a new machine.
 - `param_values` from the manifest seed the top-level file (§5 name+kind matching applies at
   execution time as usual); absent values fall back to definition defaults.
@@ -500,10 +501,14 @@ answers 422 and writes nothing):
   (`set: false`, description from the archive). An existing name is the same secret by definition —
   left completely untouched.
 - **Agents:** an archive agent matching a local record exactly (name + harness + mode + model)
-  reuses it; otherwise a new record is created with the archive's config — same name even when
-  a differently-configured local agent already holds it (step grant names resolve against the
-  automation's enabled agents only, §6, so both automations keep resolving to the agent they
-  mean; the §6 first-enabled-wins rule already covers an automation granting both). A created
+  reuses it; otherwise a new record is created with the archive's config, its effective §4.7
+  grant name deduped by the §4.1 suffix rule when a differently-configured local agent
+  already holds it (base = the archive name, or the harness name when unnamed; the archive's
+  name-form references still map to the created record - the name→id translation happens at
+  import time, so the rename repoints nothing). §4.7 uniqueness therefore holds across every
+  write path, import included. Two archive agents sharing an effective name
+  (case-insensitive) fail validation with 422 - their name-form step references would be
+  ambiguous. A created
   agent whose harness isn't installed or signed in surfaces through the ordinary §12/§19
   install and sign-in flows. The drafting `agent_id` maps to the matched/created record; an
   archive with no agents falls back to the local default agent.

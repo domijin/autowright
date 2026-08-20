@@ -12,7 +12,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
 import type { Agent, ChatEntry } from '../types'
-import { BtnPrimary, ConfirmModal, HeaderActions, PULSE, PopMenu, ScrollArea, Spinner, usePopover } from '../ui'
+import { BtnPrimary, ConfirmModal, HeaderActions, P, PULSE, PopMenu, ScrollArea, Spinner, usePopover } from '../ui'
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import {
   type Rev, amendSpec, analyzeTestMessage, blockerLine, chatSinceBoundary, holdsDraftEdits, instructionCache,
@@ -52,6 +52,8 @@ export default function CreateFlow() {
 
   const [rev, setRev] = useState<Rev | null>(null)
   const [nameEdit, setNameEdit] = useState<string | null>(null)
+  // §4.1/§11: the colliding name behind the title input's inline error
+  const [nameErr, setNameErr] = useState<string | null>(null)
   const [descEdit, setDescEdit] = useState<string | null>(null)
   const [chatText, setChatText] = useState('')
   const [confirmSpecCancel, setConfirmSpecCancel] = useState(false)
@@ -489,14 +491,28 @@ export default function CreateFlow() {
       : rev.name
   const titleText = !rev ? ''
     : !isEdit && rev.spec.length === 0 && anyJobBusy ? 'New automation…' : draftName
+  // §4.1 uniqueness: case-insensitive, against the store's list, excluding
+  // the automation being edited — the same rule the backend 422s on.
+  const autoNameTaken = (nm: string) => automations.some((a) =>
+    a.id !== (isEdit ? automationId : null) && a.name.trim().toLowerCase() === nm.toLowerCase())
   const commitTitleRename = () => {
     const name = (nameEdit ?? '').trim()
+    if (!rev || !name || name === rev.name) { setNameEdit(null); setNameErr(null); return }
+    // §11: a collision keeps the input open with the inline error
+    if (autoNameTaken(name)) { setNameErr(name); return }
     setNameEdit(null)
-    if (!rev || !name || name === rev.name) return
+    setNameErr(null)
+    const prev = rev.name
     up({ name })
     // Edit mode: name is user-owned identity (§4.1) — it applies immediately
     // via PATCH, never rides the draft or waits for Save.
-    if (isEdit && auto) void api.patchAutomation(auto.id, { name }).catch((e) => showToast((e as Error).message))
+    if (isEdit && auto) void api.patchAutomation(auto.id, { name }).catch((e) => {
+      up({ name: prev })
+      // §4.1/§19: the backend's duplicate-name 422 surfaces like the inline
+      // check (a race with another writer can slip past the client-side test).
+      if (/already exists/.test((e as Error).message)) { setNameEdit(name); setNameErr(name) }
+      else showToast((e as Error).message)
+    })
   }
   // §11 lede: the automation's description — same identity rules as the name, but a
   // blank commit clears it (description is optional, §4.1).
@@ -968,12 +984,12 @@ export default function CreateFlow() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 13, margin: '0 0 6px' }}>
               {nameEdit !== null ? (
                 <input
-                  className="ad-input"
+                  className={`ad-input${nameErr ? ' invalid' : ''}`}
                   value={nameEdit}
-                  onChange={(e) => setNameEdit(e.target.value)}
+                  onChange={(e) => { setNameEdit(e.target.value); setNameErr(null) }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') commitTitleRename()
-                    if (e.key === 'Escape') setNameEdit(null)
+                    if (e.key === 'Escape') { setNameEdit(null); setNameErr(null) }
                   }}
                   onBlur={commitTitleRename}
                   autoFocus
@@ -1105,6 +1121,16 @@ export default function CreateFlow() {
                 </BtnPrimary>
               </HeaderActions>
             </div>
+            {/* §4.1/§11: the title input's duplicate-name inline error — the
+                §12 agent-form treatment (red dot + red text, clears on typing) */}
+            {nameEdit !== null && nameErr && (
+              <div className="ad-anim-item" style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '0 0 8px' }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: P.red, flex: 'none' }} />
+                <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--red-text)' }}>
+                  An automation named {nameErr} already exists — pick a different name.
+                </span>
+              </div>
+            )}
             {/* lede: the automation's description (§4.1) — editable like the name; create mode
                 shows the static drafting lede until the draft holds a spec. The row is
                 height-stable: every state shares one fixed-height box. The drafting-agent

@@ -29,6 +29,16 @@ name, description: strings — both are user-owned identity (§5: top-level auto
   §11 Review lede line; both also via §19 PATCH. Sync ignores the
   manifest's name and description. Edits never mark the workflow out of sync. A blank name is
   ignored (never cleared); a blank description clears it (description is optional).
+  Names store **trimmed** (surrounding whitespace stripped at every write path; a
+  whitespace-only name is a blank name) and are **unique** across automations, compared
+  case-insensitively (the §4.7/§4.8 rule):
+  the §19 rename paths reject a collision with 422 ("an automation named X already exists -
+  automation names must be unique"), while the paths whose incoming name the user didn't just
+  type - §19 create and §5.1 import - dedupe it by appending the smallest integer ≥ 2 that
+  frees the name ("Name 2", "Name 3"), so create and import never fail on a name collision.
+  Enforcement is write-time only - duplicates already on disk still load (the §4.7 rule).
+  Ids stay the only binding; uniqueness exists for unambiguous display and the §20
+  exact-name/substring resolution.
 version: int (current)
 triggers: ordered trigger list (§4.3) — user-owned, never versioned; the draft's spec-derived
   triggers are merged in when an edit is saved (§4.3 trigger merge)
@@ -736,7 +746,9 @@ each entry `{ id, name }` (id is the automation's uuid — what the §12 chips n
 name is display). Deleting the default agent repoints the pointer and warns
 which automations use it.
 **Grant-name uniqueness:** an agent's effective §8 grant name (`name`, falling back to the
-harness name when unnamed) is unique across agents, compared case-insensitively. The API
+harness name when unnamed) is unique across agents, compared case-insensitively. Agent
+names store trimmed (surrounding whitespace stripped on write; a whitespace-only name is
+an unnamed agent), so padding can't dodge the check. The API
 rejects a create, and a rename that would change the effective grant name into a collision,
 with 422 ("an agent named X already exists - agent names must be unique"); the §12 form
 shows the same rule inline. Enforcement is write-time only - duplicates already on disk

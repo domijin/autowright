@@ -642,11 +642,27 @@ class Store:
             if f.is_file() and f.name not in keep and not f.name.startswith(".ad-tmp-"):
                 f.unlink()
 
+    def free_automation_name(self, name: str) -> str:
+        """§4.1 dedupe for the paths whose incoming name the user didn't just
+        type (§19 create, §5.1 import): trim, then append the smallest integer
+        ≥ 2 that frees the name ("Name 2") — these paths never fail on a
+        collision. Comparison is case-insensitive, like the §19 rename 422."""
+        with self.lock:
+            name = name.strip() or "New automation"
+            taken = {a["name"].strip().lower() for a in self.autos.values()}
+            if name.lower() not in taken:
+                return name
+            n = 2
+            while f"{name} {n}".lower() in taken:
+                n += 1
+            return f"{name} {n}"
+
     def create_automation(self, ver: dict, name: str, agent_id: str | None,
                           triggers: list[dict] | None = None,
                           enabled_agents: list[str] | None = None,
                           allowed_secrets: list[str] | None = None) -> dict:
         with self.lock:
+            name = self.free_automation_name(name)  # §4.1 uniqueness
             automation_id = new_id()
             now = timefmt.now_iso()
             a = {
@@ -922,9 +938,11 @@ class Store:
     def patch_automation(self, a: dict, patch: dict) -> None:
         """User-owned fields only (§19 PATCH)."""
         with self.lock:
-            if "name" in patch and patch["name"] and patch["name"] != a["name"]:
-                # §5: directories are named by id — a rename touches only the name field.
-                a["name"] = patch["name"]
+            if "name" in patch and (n := (patch["name"] or "").strip()) and n != a["name"]:
+                # §5: directories are named by id — a rename touches only the
+                # name field. §4.1 uniqueness is the API's check; names store
+                # trimmed at every write path.
+                a["name"] = n
             if "description" in patch:
                 # §4.1: desc is optional — blank clears it.
                 a["description"] = patch["description"] or ""

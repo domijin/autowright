@@ -297,7 +297,11 @@ applies unchanged; the chat pane never collapses.
     appends a system entry ("Notes updated.");
   - **actions** (§8 `actions.yaml`) run after the rewrites land: `name`/`description` apply like
     the pencil edits (create: the draft's fields; edit: the immediate §19 PATCH) with a
-    system entry; `param_values` stages stored values (§4.2): entries naming a current
+    system entry; a `name` that collides with another automation's (case-insensitive, §4.1 -
+    create: checked against the store's automation list; edit: the §19 PATCH's 422) is a
+    **no-op** with the system entry "Rename to “X” skipped — an automation with that name
+    already exists." (a backstop like the duplicate-trigger add below - the automation keeps
+    its current name); `param_values` stages stored values (§4.2): entries naming a current
     param (name + kind, the §4.2/§5 matching rule, values coerced like `test_values`)
     land in the draft's staged map — one system entry per applied name, "Parameter
     “url” staged — applies when you save." — and the Parameters card shows the staged
@@ -676,7 +680,12 @@ modes — never an "Edit …" framing. It is editable in place: a small pencil s
 always visible on this page (no hover reveal — `.ad-title-rename.always`); clicking the
 pencil — only the pencil, never the title text itself — swaps the title to a single-line
 input holding the draft's name; Enter or blur
-commits, Esc cancels, and a blank result keeps the old name. Create mode: a rename updates
+commits, Esc cancels, and a blank result keeps the old name. A result that collides with
+another automation's name (case-insensitive, §4.1) doesn't commit: the input stays open with
+the inline error "An automation named `<name>` already exists - pick a different name." (red
+input border, clears on typing - the §12 agent-form treatment). Create mode guards
+client-side against the store's automation list; edit mode surfaces the §19 PATCH's 422
+identically. Create mode: a rename updates
 the draft's `name` — it persists with the §4.4 pending slot and lands on Create. Edit mode: a
 rename applies immediately through the §19 PATCH —
 it is independent of the draft (Discard draft never undoes it; the vN+1 draft doesn't carry a

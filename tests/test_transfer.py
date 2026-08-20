@@ -266,17 +266,37 @@ def test_import_on_same_machine_grants_nothing_preexisting(store):
 def test_import_agent_name_collision_creates_second_record(store):
     a = _build(store)
     data = transfer.export_automation(store, a)
-    # same name, different config → a second record with the same name (§5.1)
+    # same name, different config → a second record under a deduped grant
+    # name (§5.1/§4.7: uniqueness holds across every write path)
     coder = next(g for g in store.agents if g["name"] == "Coder")
     coder["mode"], coder["model"] = "default", None
     store.save_agents()
     b, summary = transfer.import_automation(store, data)
-    assert summary["agentsCreated"] == [{"name": "Coder", "ready": False}]
+    assert summary["agentsCreated"] == [{"name": "Coder 2", "ready": False}]
     assert summary["agentsReused"] == ["Researcher"]
-    coders = [g for g in store.agents if g["name"] == "Coder"]
-    assert len(coders) == 2
-    created = next(g for g in coders if g["mode"] == "custom")
+    created = next(g for g in store.agents if g["name"] == "Coder 2")
+    assert created["mode"] == "custom"
+    # the archive's name-form step references map to the created record
     assert b["enabled_agents"] == [created["id"]]
+
+
+def test_import_rejects_duplicate_archive_agent_names(store):
+    # §5.1: two archive agents sharing a name (case-insensitive) would make
+    # the archive's name-form step references ambiguous → 422, nothing lands.
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+
+    def edit(nm, body):
+        if nm == "agents.yaml":
+            doc = yaml.safe_load(body)
+            dup = {**doc["agents"][0], "name": doc["agents"][0]["name"].upper()}
+            doc["agents"].append(dup)
+            return yaml.safe_dump(doc)
+
+    before = len(store.autos)
+    with pytest.raises(transfer.TransferError, match="must be unique"):
+        transfer.import_automation(store, _rezip(data, edit))
+    assert len(store.autos) == before
 
 
 def test_import_summary_created_agents_carry_readiness(store, monkeypatch, tmp_path_factory):

@@ -171,6 +171,25 @@ def _check_agent_refs(agent_id: str | None, step_agents: list | None) -> None:
             raise HTTPException(422, f"stepAgents entry {x!r} isn't a configured agent")
 
 
+def _clean_name(name: str | None) -> str | None:
+    """§4.1/§4.7: names store trimmed — a whitespace-only name is a blank name,
+    so padding can never dodge the uniqueness checks."""
+    return (name or "").strip() or None
+
+
+def _check_automation_name_free(name: str, exclude_id: str | None = None) -> None:
+    """§4.1 uniqueness: automation names are unique across automations,
+    case-insensitively — unambiguous display and the §20 exact-name/substring
+    resolution rely on it. Write-time only: duplicates already on disk still
+    load (the §4.7 rule)."""
+    wanted = name.lower()
+    for other in store.autos.values():
+        if other["id"] != exclude_id and other["name"].strip().lower() == wanted:
+            raise HTTPException(
+                422, f"an automation named {other['name']!r} already exists - "
+                     "automation names must be unique")
+
+
 def _check_grant_name_free(agent: dict, exclude_id: str | None = None) -> None:
     """§4.7 uniqueness: the effective grant name (name, else harness) is unique
     across agents, case-insensitively — the §8 grants yaml, the §20
@@ -395,6 +414,12 @@ def patch_auto(automation_id: str, body: models.AutomationPatch) -> dict:
     # §19: the model checked types/shapes (incl. the §6 concurrency ints with
     # their floors); the store-state cross-field rules land here.
     patch = body.model_dump(exclude_unset=True)
+    if "name" in patch:
+        # §4.1: trimmed, and a rename into another automation's name 422s
+        # (excluding self, so a case-only rename keeps working).
+        patch["name"] = _clean_name(patch["name"])
+        if patch["name"]:
+            _check_automation_name_free(patch["name"], exclude_id=a["id"])
     if "agentId" in patch or "stepAgents" in patch:
         _check_agent_refs(patch.get("agentId"), patch.get("stepAgents"))
     if "allowedSecrets" in patch:
@@ -528,7 +553,9 @@ def create_auto(body: models.AutomationCreate) -> dict:
     _cancel_live_draft_work(None)  # §11/§19: Create settles the pending slot — its live test and jobs die
     a = store.create_automation(
         _draft_to_version(d),
-        name=body.name or d.get("name") or "New automation",
+        # §4.1/§19: the name may be agent-seeded or the fallback, so create
+        # never 422s on a collision — create_automation dedupes it.
+        name=_clean_name(body.name) or _clean_name(d.get("name")) or "New automation",
         agent_id=body.agentId,
         triggers=triggers,
         enabled_agents=body.stepAgents,
@@ -564,6 +591,12 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
     if not d.get("steps"):
         raise HTTPException(422, "draft has no steps")
     sent = body.model_dump(exclude_unset=True)
+    if "name" in sent:
+        # §4.1/§19: the identity patch validates like the PATCH's, up front —
+        # 422 aborts the save before anything lands.
+        sent["name"] = _clean_name(sent["name"])
+        if sent["name"]:
+            _check_automation_name_free(sent["name"], exclude_id=a["id"])
     if "agentId" in sent or "stepAgents" in sent:
         _check_agent_refs(sent.get("agentId"), sent.get("stepAgents"))
     if "allowedSecrets" in sent:
@@ -1354,7 +1387,7 @@ def add_agent(body: models.AgentAdd) -> dict:
     import uuid
 
     with store.lock:
-        ag = {"id": str(uuid.uuid4()), "name": body.name or None, "description": body.description or "",
+        ag = {"id": str(uuid.uuid4()), "name": _clean_name(body.name), "description": body.description or "",
               "harness": harness_name, "mode": mode, "model": model}
         _check_grant_name_free(ag)
         store.agents.append(ag)
@@ -1370,6 +1403,8 @@ def patch_agent(agent_id: str, patch: models.AgentPatch) -> dict:
     # Same validation as POST — a PATCH must not be able to create an agent
     # shape POST rejects (e.g. mode ollama with no model, §4.7).
     body = patch.model_dump(exclude_unset=True)
+    if "name" in body:
+        body["name"] = _clean_name(body["name"])  # §4.7: trimmed; whitespace-only unnames
     if "harness" in body and body["harness"] not in HARNESSES:
         raise HTTPException(422, "unknown harness")
     with store.lock:

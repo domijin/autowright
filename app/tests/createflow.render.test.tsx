@@ -785,6 +785,22 @@ describe('CreateFlow chat response application (§11)', () => {
     expect(draftBody(1).mode).toBe('sync')
     expect(mockedApi.postTest).not.toHaveBeenCalled()
   })
+
+  it('a chat rename into a taken name is skipped with the system chip (§4.1)', async () => {
+    storeMod.useStore.setState({ automations: [AUTO, { ...AUTO, id: 'a2', name: 'Other auto' }] })
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      answer: 'Renaming it.', actions: { name: 'OTHER auto' },
+    }))
+    render(<CreateFlow />)
+    send('rename it to Other auto')
+    await waitFor(() => expect(
+      screen.getByText('Rename to “OTHER auto” skipped — an automation with that name already exists.'),
+    ).toBeTruthy(), { timeout: 3000 })
+    // the skipped rename never rides the PATCH and the title keeps the old name
+    expect(mockedApi.patchAutomation).not.toHaveBeenCalled()
+    expect(screen.getAllByText('My auto').length).toBeGreaterThan(0)
+    expect(screen.queryByText('OTHER auto')).toBeNull()
+  })
 })
 
 describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () => {
@@ -1366,6 +1382,23 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     render(<CreateFlow />)
     expect(screen.getByTitle('Rename')).toBeTruthy()
     expect(screen.getByTitle('Edit the description')).toBeTruthy()
+  })
+
+  it('title rename into another automation’s name shows the inline error and posts nothing (§4.1)', () => {
+    storeMod.useStore.setState({ automations: [AUTO, { ...AUTO, id: 'a2', name: 'Other auto' }] })
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByTitle('Rename'))
+    const input = screen.getByDisplayValue('My auto')
+    // case-insensitive and trimmed — padding can't dodge the check
+    fireEvent.change(input, { target: { value: ' other AUTO ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.getByText('An automation named other AUTO already exists — pick a different name.')).toBeTruthy()
+    expect(mockedApi.patchAutomation).not.toHaveBeenCalled()
+    // the input stayed open; typing clears the error and a free name commits
+    fireEvent.change(input, { target: { value: 'Fresh name' } })
+    expect(screen.queryByText(/already exists/)).toBeNull()
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(mockedApi.patchAutomation).toHaveBeenCalledWith('a1', { name: 'Fresh name' })
   })
 
   it('zero agents: edit mode redirects to Agents with the toast', () => {

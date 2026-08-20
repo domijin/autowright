@@ -284,6 +284,7 @@ triggers:                   # stage trigger edits (§4.3 — applied when the us
   - remove: { index: 3 }                     # delete an entry
 concurrency: { max_parallel: 2, max_queued: 5 }  # stage §4.1 concurrency (applied when the user saves)
 name: New automation name   # rename — §4.1 user-owned identity, applied like the pencil
+                            # (a §4.1 name collision is skipped with a system entry, §11)
 description: One-line description  # ditto for the description
 undo: true                  # run the §11 draft-undo restore — back to before the last request
 ===END===

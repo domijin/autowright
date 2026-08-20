@@ -108,8 +108,9 @@ def find_automation(c: Client, ref: str) -> dict:
     # §20: the short ids the CLI prints must resolve back — try id prefix
     # before names.
     matches = [a for a in autos if a["id"].startswith(ref)]
-    # §5.1 makes duplicate names a designed state (re-import creates a copy) —
-    # §20: ambiguity exits with the candidate list, never a silent first-match.
+    # §4.1 names are unique at write time, but duplicates already on disk
+    # still load — §20: ambiguity exits with the candidate list, never a
+    # silent first-match (substring matches can still collide anyway).
     if not matches:
         matches = [a for a in autos if a["name"].lower() == ref.lower()]
     if not matches:

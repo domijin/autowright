@@ -290,6 +290,12 @@ export function useDraftJob(d: DraftJobDeps) {
       const actions = dft.actions ?? {}
       const rewrote = !!dft.spec || dft.instructions != null || dft.notes != null
       const empty = !dft.answer && !rewrote && !dft.actions
+      // §4.1/§11 uniqueness backstop: a chat rename into another automation's
+      // name is skipped with a system entry — checked against the store's
+      // list (edit mode's §19 PATCH answers 422 on the same rule).
+      const nameSkipped = !!actions.name && useStore.getState().automations.some((a) =>
+        a.id !== (isEdit && auto ? auto.id : null)
+        && a.name.trim().toLowerCase() === actions.name!.trim().toLowerCase())
       setRev((r) => {
         if (!r) return r
         let next: Rev = { ...r, chatBusy: false }
@@ -361,9 +367,11 @@ export function useDraftJob(d: DraftJobDeps) {
           chat.push(entry)
         }
         if (actions.name && actions.name !== r.name) {
-          const entry = newEntry({ kind: 'system', icon: 'fa-pen', text: `Renamed to “${actions.name}”.` })
+          const entry = nameSkipped
+            ? newEntry({ kind: 'system', icon: 'fa-pen', text: `Rename to “${actions.name}” skipped — an automation with that name already exists.` })
+            : newEntry({ kind: 'system', icon: 'fa-pen', text: `Renamed to “${actions.name}”.` })
           if (anchorId) anchorId = entry.id // the row sits below every chip the request produced
-          next = { ...next, name: actions.name }
+          if (!nameSkipped) next = { ...next, name: actions.name }
           chat.push(entry)
         }
         if (actions.description && actions.description !== r.description) {
@@ -453,10 +461,11 @@ export function useDraftJob(d: DraftJobDeps) {
         return { ...next, chat }
       })
       // §4.1: name/description are user-owned identity — edit mode applies them
-      // immediately via PATCH, exactly like the pencil edits.
-      if (isEdit && auto && (actions.name || actions.description)) {
+      // immediately via PATCH, exactly like the pencil edits. A skipped
+      // rename never rides the PATCH (its 422 would drop the description too).
+      if (isEdit && auto && ((actions.name && !nameSkipped) || actions.description)) {
         void api.patchAutomation(auto.id, {
-          ...(actions.name ? { name: actions.name } : {}),
+          ...(actions.name && !nameSkipped ? { name: actions.name } : {}),
           ...(actions.description ? { description: actions.description } : {}),
         }).catch((e) => showToast((e as Error).message))
       }

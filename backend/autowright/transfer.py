@@ -453,6 +453,12 @@ def _validate(z: zipfile.ZipFile) -> dict:
                 "a local-model agent needs Claude Code, Codex, or OpenCode")
         if mode != "default" and not g.get("model"):
             raise TransferError(f"agent {g['name']!r} needs a model for mode {mode!r}")
+    # §5.1: two archive agents sharing a name (case-insensitive, the §4.7
+    # comparison) would make the archive's name-form step references ambiguous.
+    lowered = [g["name"].lower() for g in agents]
+    if len(set(lowered)) != len(lowered):
+        raise TransferError("duplicate agent names in the archive - "
+                            "agent names must be unique")
     secrets = _yaml_or_reject(z, "secrets.yaml", required=False).get("secrets") or []
     for s in secrets:
         if (not isinstance(s, dict) or not isinstance(s.get("name"), str)
@@ -515,6 +521,19 @@ def _agent_match(store: Store, g: dict) -> dict | None:
                  and x.get("model") == model), None)
 
 
+def _free_grant_name(store: Store, name: str) -> str:
+    """§5.1/§4.7: a created agent's effective grant name dedupes by the §4.1
+    suffix rule when a differently-configured local agent already holds it —
+    §4.7 uniqueness holds across every write path, import included."""
+    taken = {harness.grant_name(x).lower() for x in store.agents}
+    if name.lower() not in taken:
+        return name
+    n = 2
+    while f"{name} {n}".lower() in taken:
+        n += 1
+    return f"{name} {n}"
+
+
 def preview_archive(store: Store, data: bytes) -> dict:
     """§5.2 preview: validate fully, write nothing, run the §5.1 match rules dry."""
     with _open_archive(data) as z:
@@ -557,7 +576,9 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
         if created_secrets:
             store.save_secrets()
         # Agents: exact config match (name + harness + mode + model) reuses the
-        # local record; anything else is created — same name allowed (§5.1).
+        # local record; anything else is created, its grant name deduped
+        # (§5.1) — the archive's name-form references map to the record here,
+        # so the rename repoints nothing.
         created_recs, reused_agents = [], []
         created_ids: list[str] = []
         matched: dict[str, dict] = {}   # archive name → local record
@@ -568,7 +589,8 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                 matched[g["name"]] = local
                 reused_agents.append(g["name"])
             else:
-                rec = {"id": new_id(), "name": g["name"], "description": g.get("description") or "",
+                rec = {"id": new_id(), "name": _free_grant_name(store, g["name"]),
+                       "description": g.get("description") or "",
                        "harness": g["harness"], "mode": g.get("mode", "default"),
                        "model": model}
                 store.agents.append(rec)

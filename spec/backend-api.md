@@ -52,7 +52,10 @@ remain plain dicts (§2).
   invisible to the UI forever). If a thread somehow survives the wait, the directory is
   removed anyway (the step group is already hard-killed by then)
 - `PATCH /automations/{id}` — user-owned fields only: name (a blank or missing name is
-  ignored — a rename can never clear the name), description (blank clears it — the description is
+  ignored — a rename can never clear the name; a name another automation already holds,
+  compared case-insensitively and excluding the automation itself, answers 422 "an
+  automation named X already exists - automation names must be unique" and nothing is
+  stored - §4.1 uniqueness; a case-only rename of the same automation is allowed), description (blank clears it — the description is
   optional, §4.1), triggers (the §4.3 list, replaced
   whole; entries keep their `id`, new entries get one assigned;
   cron/time/app_start/discord/imessage
@@ -132,7 +135,9 @@ remain plain dicts (§2).
   422; the definitions were just rebuilt and a stale name is expected). `concurrency`
   (the §8 chat-staged object, partial `{ maxParallel?, maxQueued? }`) applies to the new
   automation like the PATCH's fields — same validation, 422 aborts and nothing is
-  created. `name` falls back to the draft's name, then "New automation";
+  created. `name` falls back to the draft's name, then "New automation", and the resolved
+  name then dedupes per §4.1 (case-insensitive; smallest free "Name n" suffix) - the name
+  may be agent-seeded or the fallback, so create never 422s on a collision;
   `stepAgents`/`allowedSecrets` land as the automation's grants exactly as sent (§20 grant
   model — no all-on seed), with one narrow default: when `stepAgents` is **omitted
   entirely**, the store seeds it with the drafting agent (`[agentId]`, empty without one) —
@@ -142,7 +147,9 @@ remain plain dicts (§2).
   "Created as v1." boundary marker there (thread-lifetime rules, §4.4)
 - `POST /automations/{id}/versions` `{ draft, name?, agentId?, stepAgents?, allowedSecrets?, paramValues?, concurrency? }`
   — save edit as vN+1; the optional identity/grant fields, when sent, are applied to the
-  automation as a patch after the version lands — the §20 push grant model rides this
+  automation as a patch after the version lands — a sent `name` validates like the PATCH's
+  (§4.1 case-insensitive collision with another automation), checked up front with the other
+  validations: 422 aborts the save and nothing is written — the §20 push grant model rides this
   (the CLI sends the draft plus its computed `stepAgents`/`allowedSecrets` in the one call).
   The draft's `triggers`
   list (when the key is sent) replaces the automation's trigger list whole, validated and

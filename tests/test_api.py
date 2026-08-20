@@ -89,7 +89,8 @@ def test_export_import_endpoints(client):
                      headers={"Content-Type": "application/octet-stream"})
     assert r2.status_code == 200
     body = r2.json()
-    assert body["automation"]["name"] == "Port me"
+    # §4.1/§5.1: re-importing your own export creates a copy under a deduped name
+    assert body["automation"]["name"] == "Port me 2"
     assert body["automation"]["id"] != a["id"]
     assert body["automation"]["triggersOff"] is True
     assert set(body["summary"]) == {"secretsCreated", "secretsExisting",
@@ -124,7 +125,8 @@ def test_import_preview_confirm_flow(client):
 
     r2 = client.post("/automations/import/confirm", json={"token": body["token"]})
     assert r2.status_code == 200
-    assert r2.json()["automation"]["name"] == "Previewed"
+    # §4.1/§5.1: the archive name collides with the original → "Name 2"
+    assert r2.json()["automation"]["name"] == "Previewed 2"
     assert r2.json()["automation"]["triggersOff"] is True
     assert len(store.autos) == n_before + 1
 
@@ -2299,6 +2301,62 @@ def test_ollama_pull_rides_server_api_when_answering(client, monkeypatch):
     assert pulls[-1]["done"] is True and pulls[-1]["ok"] is True
 
 
+# ---------- §4.1/§19 automation name uniqueness ----------
+
+def test_automation_rename_uniqueness(client):
+    # §4.1: names are unique case-insensitively; the §19 rename paths 422 on
+    # a collision; names compare and store trimmed.
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Morning news", "mock")
+    b = store.create_automation(make_version(), "Backup", "mock")
+    r = client.patch(f"/automations/{b['id']}", json={"name": "morning NEWS"})
+    assert r.status_code == 422 and "must be unique" in r.json()["detail"]
+    # padding can't dodge the check
+    assert client.patch(f"/automations/{b['id']}",
+                        json={"name": "  Morning news "}).status_code == 422
+    # a case-only self-rename is not a collision
+    r = client.patch(f"/automations/{a['id']}", json={"name": "MORNING news"})
+    assert r.status_code == 200 and r.json()["name"] == "MORNING news"
+    # a free name lands trimmed; a whitespace-only name is blank → ignored
+    r = client.patch(f"/automations/{b['id']}", json={"name": "  Evening news "})
+    assert r.status_code == 200 and r.json()["name"] == "Evening news"
+    r = client.patch(f"/automations/{b['id']}", json={"name": "   "})
+    assert r.status_code == 200 and r.json()["name"] == "Evening news"
+
+
+def test_automation_create_dedupes_colliding_name(client):
+    # §4.1/§19: create never 422s on a collision — the name may be
+    # agent-seeded or the fallback — it dedupes with the smallest free suffix.
+    from autowright.storage import store
+
+    assert client.post("/automations", json={"draft": _echo_draft()}).json()["name"] == "Param echo"
+    assert client.post("/automations", json={"draft": _echo_draft()}).json()["name"] == "Param echo 2"
+    assert client.post("/automations", json={"draft": _echo_draft(),
+                                             "name": "param ECHO"}).json()["name"] == "param ECHO 3"
+    store.create_automation(make_version(), "Digest", "mock")
+    assert client.post("/automations", json={"draft": _echo_draft(),
+                                             "name": "  Digest "}).json()["name"] == "Digest 2"
+
+
+def test_save_version_name_patch_uniqueness(client):
+    # §19: the versions-save identity patch validates like the PATCH — a
+    # colliding name 422s up front and nothing lands.
+    from autowright.storage import store
+
+    store.create_automation(make_version(), "Taken", "mock")
+    a = client.post("/automations", json={"draft": _echo_draft(), "name": "Mine"}).json()
+    r = client.post(f"/automations/{a['id']}/versions",
+                    json={"draft": _echo_draft(), "name": "taken"})
+    assert r.status_code == 422 and "must be unique" in r.json()["detail"]
+    got = client.get(f"/automations/{a['id']}").json()
+    assert got["name"] == "Mine" and got["version"] == 1
+    # keeping (or case-changing) your own name saves fine
+    r = client.post(f"/automations/{a['id']}/versions",
+                    json={"draft": _echo_draft(), "name": "MINE"})
+    assert r.status_code == 200 and r.json()["automation"]["name"] == "MINE"
+
+
 # ---------- §4.7/§19 agent record validation ----------
 
 def test_add_agent_validation_matrix(client):
@@ -2352,6 +2410,18 @@ def test_agent_rename_uniqueness_and_id_binding(client):
     renamed = next(g for g in client.get("/agents").json() if g["id"] == ag["id"])
     # §4.7 usedBy: { id, name } entries — id is what the §12 chips navigate by
     assert renamed["usedBy"] == [{"id": user["id"], "name": "Uses Fast"}]
+
+
+def test_agent_names_store_trimmed(client):
+    # §4.7: names store trimmed, so padding can't dodge the uniqueness check;
+    # a whitespace-only name is an unnamed agent.
+    ag = client.post("/agents", json={"harness": "Codex", "mode": "default",
+                                      "name": "  Fast  "}).json()
+    assert ag["name"] == "Fast"
+    r = client.post("/agents", json={"harness": "OpenCode", "mode": "default",
+                                     "name": "fast "})
+    assert r.status_code == 422 and "must be unique" in r.json()["detail"]
+    assert client.patch(f"/agents/{ag['id']}", json={"name": "   "}).json()["name"] is None
 
 
 def test_patch_agent_validation_and_default_switch(client):

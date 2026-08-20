@@ -39,7 +39,9 @@ nextAt: epoch ms of the next enabled occurrence across all triggers (§4.3) | nu
 instructions: optional multiline free-text user instructions to the agent
 notes: agent-owned working-knowledge document (markdown string, may be empty) — selectors and
   short HTML excerpts, API endpoints and quirks, approaches that failed and why, environment
-  facts the drafting agent discovered while building and testing. Written only by §8 agent
+  facts the drafting agent discovered while building and testing, and the reason behind any
+  non-obvious choice a later sync might otherwise simplify away (rationale evident from the
+  steps themselves is skipped). Written only by §8 agent
   responses (a chat or call-2 `notes.md` block — the agent keeps it a terse cheat sheet);
   user-readable and prunable in the §11 NOTES card. Versioned like spec/instructions, and sent back
   to the agent on every §8 chat and steps call so later syncs don't retry dead ends. A notes

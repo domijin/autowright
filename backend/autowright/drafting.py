@@ -160,7 +160,7 @@ The FULL updated spec — markdown (# title first, then ## sections, - bullets, 
 ===FILE: instructions.md===
 The FULL updated build instructions — only when the user asks to change their standing rules.
 ===FILE: notes.md===
-The FULL updated notes — your own working knowledge for this automation: selectors, endpoints, quirks, approaches that failed and why. Update it whenever you learn something a later build or fix should know; keep it a terse cheat sheet, not a log.
+The FULL updated notes — your own working knowledge for this automation: selectors, endpoints, quirks, approaches that failed and why, and the reason behind any non-obvious choice a later sync might otherwise simplify away (skip rationale evident from the steps themselves). Update it whenever you learn something a later build or fix should know; keep it a terse cheat sheet, not a log.
 ===FILE: actions.yaml===
 sync: true                  # rebuild the steps from the spec right away (after your rewrites apply)
 test: true                  # run a draft test once the steps match the spec (implies sync when they don't)

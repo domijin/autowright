@@ -431,7 +431,7 @@ export default function AutomationsList() {
         right={(
           <HeaderActions>
             <BtnGhost onClick={() => setImportOpen(true)}>
-              Import…
+              Import
             </BtnGhost>
             {(pendingDraft || slotJob) && (
               <BtnGhost onClick={() => setSurface('create', 'app')}>

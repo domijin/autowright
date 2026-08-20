@@ -151,7 +151,7 @@ draft has none; confirm button "Discard and start new") deletes the slot
 with `[]` — the one discard that deletes the thread, §4.4 thread lifetime) before opening
 the create flow, so the fresh session starts with an empty thread. Without a
 pending draft, the single New automation button opens the create flow directly. Left of
-these sits a ghost **Import…** button (always present): it opens the **import modal**
+these sits a ghost **Import** button (always present): it opens the **import modal**
 (§5.2 two-phase import). Input step: title "Import automation" over a one-line muted intro
 ("Add an automation someone shared — from a link, or a file on this Mac."), an
 eyebrow-labeled URL field (FROM A LINK; mono text, placeholder

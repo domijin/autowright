@@ -268,7 +268,7 @@ describe('applyTriggerOps (§8 chat trigger ops)', () => {
     ])
     expect(triggers.slice(0, 2)).toEqual(base)
     expect(triggers[2]).toEqual({ kind: 'cron', enabled: true, expression: '0 9 * * *', source: 'user' })
-    expect(chips).toEqual(['Trigger added.'])
+    expect(chips).toEqual(['Cron trigger added.'])
   })
 
   it('an add matching an existing trigger on identity fields is a no-op backstop', () => {
@@ -287,7 +287,7 @@ describe('applyTriggerOps (§8 chat trigger ops)', () => {
     expect(triggers).toEqual([
       { kind: 'cron', expression: '30 8 * * *', source: 'user', id: 'c1', enabled: false },
     ])
-    expect(chips).toEqual(['Trigger 1 updated.'])
+    expect(chips).toEqual(['Cron trigger 1 updated.'])
   })
 
   it('enable flips on/off; remove deletes; ops run in order over the evolving list', () => {
@@ -296,7 +296,7 @@ describe('applyTriggerOps (§8 chat trigger ops)', () => {
       { op: 'remove', index: 2 },
     ])
     expect(triggers).toEqual([{ ...base[0], enabled: false }])
-    expect(chips).toEqual(['Trigger 1 turned off.', 'Trigger 2 removed.'])
+    expect(chips).toEqual(['Cron trigger 1 turned off.', 'Discord trigger 2 removed.'])
   })
 
   it('indexes keep meaning the CURRENT-triggers numbering after an earlier remove', () => {
@@ -308,7 +308,7 @@ describe('applyTriggerOps (§8 chat trigger ops)', () => {
       { op: 'remove', index: 1 },
     ])
     expect(triggers).toEqual([{ ...base[1], enabled: false }])
-    expect(chips).toEqual(['Trigger 1 removed.', 'Trigger 2 turned off.'])
+    expect(chips).toEqual(['Cron trigger 1 removed.', 'Discord trigger 2 turned off.'])
   })
 })
 

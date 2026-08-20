@@ -270,6 +270,9 @@ export function ChatPanel({
   const showTurnRow = rowsAllowed && !!lastEntry && lastEntry.kind !== 'user' && !lastEntry.boundary
     && (undoAtEnd || showSyncPill || showTestPill || !!analyzeFailure)
   const pillGlyph: React.CSSProperties = { fontSize: 9, color: 'var(--text-faint)' }
+  // §11 composer: while the thread ends on a "Question for you" block, the
+  // placeholder invites the answer; any entry after the question reverts it.
+  const awaitingAnswer = lastEntry?.kind === 'answer' && lastEntry.title === 'Question for you'
 
   return (
     <div style={{
@@ -618,7 +621,8 @@ export function ChatPanel({
             placeholder={testLive ? 'Wait for the test to finish.'
               : viewingOld ? 'Back to the draft to edit or ask.'
                 : isCreateEmpty ? 'Describe the job — one sentence is enough.'
-                  : 'Change something, or ask a question…'}
+                  : awaitingAnswer ? 'Answer here…'
+                    : 'Change something, or ask a question…'}
             style={{
               width: '100%', color: 'var(--text)', font: "400 12.5px/1.5 var(--sans)", padding: '8px 12px',
               resize: 'none', overflow: 'hidden', display: 'block',

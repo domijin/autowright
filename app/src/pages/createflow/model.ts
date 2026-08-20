@@ -510,6 +510,15 @@ export function sameTriggerList(a: unknown, b: unknown): boolean {
 // 1-based over the CURRENT triggers list the agent saw — a handle table keeps
 // them meaningful even after an earlier op removes or edits an entry, so a
 // multi-op response can never hit a shifted neighbor.
+// §11 chip wording only — fixed display words per kind, never §4.3 label math
+// (labels still come from §19 `/triggers/preview`).
+const TRIGGER_KIND_WORD: Record<string, string> = {
+  cron: 'Cron', time: 'One-time', app_start: 'App-start',
+  discord: 'Discord', imessage: 'iMessage',
+}
+const triggerNoun = (kind: string): string =>
+  TRIGGER_KIND_WORD[kind] ? `${TRIGGER_KIND_WORD[kind]} trigger` : 'Trigger'
+
 export function applyTriggerOps(triggers: DraftTrigger[], ops: TriggerOp[]): { triggers: DraftTrigger[]; chips: string[] } {
   const sameTrigger = (a: DraftTrigger, b: DraftTrigger): boolean => {
     if (a.kind === 'cron' && b.kind === 'cron') {
@@ -531,7 +540,7 @@ export function applyTriggerOps(triggers: DraftTrigger[], ops: TriggerOp[]): { t
         chips.push('That trigger already exists.')
       } else {
         list = [...list, { ...op.trigger, enabled: true }]
-        chips.push('Trigger added.')
+        chips.push(`${triggerNoun(op.trigger.kind)} added.`)
       }
       continue
     }
@@ -541,16 +550,16 @@ export function applyTriggerOps(triggers: DraftTrigger[], ops: TriggerOp[]): { t
       const edited = { ...op.trigger, ...(target.id ? { id: target.id } : {}), enabled: target.enabled }
       list = list.map((t) => (t === target ? edited : t))
       handles[op.index - 1] = edited
-      chips.push(`Trigger ${op.index} updated.`)
+      chips.push(`${triggerNoun(edited.kind)} ${op.index} updated.`)
     } else if (op.op === 'enable') {
       const flipped = { ...target, enabled: op.enabled }
       list = list.map((t) => (t === target ? flipped : t))
       handles[op.index - 1] = flipped
-      chips.push(`Trigger ${op.index} turned ${op.enabled ? 'on' : 'off'}.`)
+      chips.push(`${triggerNoun(flipped.kind)} ${op.index} turned ${op.enabled ? 'on' : 'off'}.`)
     } else {
       list = list.filter((t) => t !== target)
       handles[op.index - 1] = null
-      chips.push(`Trigger ${op.index} removed.`)
+      chips.push(`${triggerNoun(target.kind)} ${op.index} removed.`)
     }
   }
   return { triggers: list, chips }

@@ -401,7 +401,7 @@ editor updates the shown entry's text in place (§11) — never a second entry, 
 removal. The streamed `detail`
 line is `Thinking…` until text arrives, then per the last streamed marker `Writing the
 spec · N lines` / `Writing the build instructions · N lines` / `Updating the notes · N
-lines` / `Writing the follow-up actions`, else `Writing the answer · N lines` (same 1 s throttle).
+lines` / `Recording the changes — name, description, triggers`, else `Writing the answer · N lines` (same 1 s throttle).
 Same timeout cap, same cancel semantics, same app-log logging as every drafting call. A
 chat job never touches the draft container, the dirty flag, or any stored file — the
 editor applies the whole outcome (§11).

@@ -738,7 +738,7 @@ export default function CreateFlow() {
       kind: 'system',
       icon: 'fa-vial',
       text: dr.status === 'failed'
-        ? `Draft execution failed${dr.error?.step ? ` at step ${dr.error.step}` : ''} — ${dr.error?.message ?? 'see the run'}`
+        ? `Draft execution failed${dr.error?.step ? ` at step ${dr.error.step}` : ''} — ${dr.error?.message ?? 'see the run'}.`
         : 'Draft execution succeeded.',
     })
     // The duplicate check runs INSIDE the updater: the stored-thread merge

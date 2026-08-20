@@ -206,11 +206,20 @@ applies unchanged; the chat pane never collapses.
   lines, not as blank-line-separated paragraphs (each entry's internal line-height and
   its own top padding, where a kind has one, provide the breathing room). The transient
   progress entry is an operation block and follows the same rules: flush when it
-  restarts beneath a just-settled **activity** entry (the same job's trail chains as
-  one block), 12 px after anything else. A boundary marker never chains flush — it is
+  restarts beneath any operation-family entry — a just-settled activity trail, a
+  rewrite chip, or a system chip (the turn's operation stack chains as one block) —
+  and 12 px after a bubble or a message block. A boundary marker never chains flush — it is
   its own group even among operation blocks. The turn action row sits 10 px beneath
   the entry it follows — attached to the group it closes, deliberately tighter than
   the 12 px group gap.
+- **Fixed internal values** (the rebuild-from-spec numbers): the thread body pads
+  14 px vertical / 16 px horizontal, and the composer 12 px vertical / 14 px
+  horizontal above its 1 px hairline top border; every entry header row sets glyph
+  box and title 10 px apart; a message block's body starts 6 px below its header
+  row; action rows space their pills 8 px apart. Inside a blockers entry: the
+  explainer sits 10 px above the first blocker, each markdown body carries 3 px
+  above / 8 px below, a "BLOCKER n" eyebrow 10 px above / 6 px below, the
+  "PREVIOUSLY RESOLVED" list 12 px above, and the resolution row 12 px above.
 - **Turn action row** — the thread's one suggestion surface: a standalone left-aligned
   wrapping pill row (icon-led `.ad-btn-pill.action` pills — the composer pills' small
   look in the §14 sans action face) rendered beneath the thread's **last agent-side
@@ -264,7 +273,9 @@ applies unchanged; the chat pane never collapses.
   version, and while the thread is empty. Left side = conversation meta (picker, clear);
   right side = the send/cancel action alone. Placeholder "Describe the job — one sentence is
   enough." while the draft has no spec (fresh create), else "Change something, or ask a
-  question…"; while viewing an old version the input is disabled with the placeholder
+  question…" — except when the thread's newest entry is a "Question for you" answer
+block, where it reads "Answer here…" (the reply goes through the ordinary send; the
+prompt reverts as soon as any entry follows the question); while viewing an old version the input is disabled with the placeholder
   "Back to the draft to edit or ask." (and while a test executes, "Wait for the test to
   finish." — the busy hint below). Placeholders stay on one line — they truncate with an
   ellipsis rather than wrap when the pane is at its narrow end (the auto-grow sizes to
@@ -315,8 +326,11 @@ applies unchanged; the chat pane never collapses.
     apply first proves the base list is still the one the agent saw — the §19
     `sentTriggers` guard under Background continuation & re-attach below), each with a
     system entry
-    ("Trigger added." / "Trigger 2 updated." / "Trigger 3 removed." / "Trigger 1 turned
-    off." — details live on the card, which re-labels through §19 `/triggers/preview`);
+    ("Discord trigger added." / "Cron trigger 2 updated." / "Cron trigger 3 removed." /
+    "Cron trigger 1 turned off." — the leading word is the trigger's kind from a fixed
+    display map, cron → Cron, time → One-time, app_start → App-start,
+    discord → Discord, imessage → iMessage: display words only, never §4.3 label math —
+    details live on the card, which re-labels through §19 `/triggers/preview`);
     an `add` whose entry matches an existing trigger on the §4.3 identity fields is a
     **no-op** with the system entry "That trigger already exists." (a backstop, not a
     repair round — the §8 policy has the agent answer in prose instead); ops touch only
@@ -1329,7 +1343,8 @@ appended, and the user asks when the job settles.
 
 **Settled runs seed the thread.** Beyond the test entries above, entering the editor in
 edit mode appends a run-settled system entry ("Draft execution failed at step `<name>` —
-`<message>`" / "Draft execution succeeded.") when the automation's newest settled Draft
+`<message>`." / "Draft execution succeeded." — both end with a period, like the test
+chips) when the automation's newest settled Draft
 execution (§4.5 kind `draft`) finished after the thread's last entry — a draft iterated
 via the §19 execute API picks the conversation up where the run left off. Duplicate
 seeds are suppressed the same way (only runs newer than the last thread entry qualify).

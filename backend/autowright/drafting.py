@@ -1798,7 +1798,7 @@ class DraftJobs:
     _CHAT_LABELS = {"spec.md": "Writing the spec",
                     "instructions.md": "Writing the build instructions",
                     "notes.md": "Updating the notes",
-                    "actions.yaml": "Writing the follow-up actions"}
+                    "actions.yaml": "Recording the changes — name, description, triggers"}
 
     # §8 chat-job stage flip: the first streamed rewrite marker moves the job
     # from the neutral deciding stage to the documents stage; answer-only,

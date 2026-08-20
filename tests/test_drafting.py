@@ -2044,7 +2044,7 @@ def test_chat_progress_detail_labels():
     cb("===FILE: notes.md===\n- a\n- b\n")
     assert job["detail"] == "Updating the notes · 2 lines"
     cb("===FILE: actions.yaml===\nsync: true\ntest: true\n")
-    assert job["detail"] == "Writing the follow-up actions"  # no line count
+    assert job["detail"] == "Recording the changes — name, description, triggers"  # no line count
     # a name outside the four chat blocks falls back to the generic label
     cb("===FILE: 01-a.py===\nx = 1\n")
     assert job["detail"] == "Writing 01-a.py · 1 line"
@@ -2054,7 +2054,7 @@ def test_chat_progress_detail_labels():
     # with the pre-flip stage since the prose streams before the first marker.
     assert [e["text"] for e in job["events"]] == [
         "Writing the answer", "Writing the spec", "Writing the build instructions",
-        "Updating the notes", "Writing the follow-up actions", "Writing 01-a.py",
+        "Updating the notes", "Recording the changes — name, description, triggers", "Writing 01-a.py",
     ]
     assert [e["stage"] for e in job["events"]] == (
         ["Working on the request"] + ["Updating the documents"] * 5)

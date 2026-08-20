@@ -644,6 +644,16 @@ describe('CreateFlow chat response application (§11)', () => {
     send('Watch stuff')
     await waitFor(() => expect(screen.getByText('Which folder should I watch?')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByText('Question for you')).toBeTruthy()
+    // §11: while the question is the newest entry the composer invites the answer
+    expect(screen.getByPlaceholderText('Answer here…')).toBeTruthy()
+    // replying reverts the prompt once entries follow the question
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      answer: 'Got it — watching Downloads.',
+    }))
+    fireEvent.change(screen.getByPlaceholderText('Answer here…'), { target: { value: 'The Downloads folder' } })
+    fireEvent.click(screen.getByText('Send'))
+    await waitFor(() => expect(screen.getByText('Got it — watching Downloads.')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByPlaceholderText('Change something, or ask a question…')).toBeTruthy()
   })
 
   it('a reply merely ending with ? stays From your AI — no answerKind, no question header (§11)', async () => {
@@ -853,7 +863,7 @@ describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () 
     }))
     render(<CreateFlow />)
     send('also run at 9pm')
-    await waitFor(() => expect(screen.getByText('Trigger added.')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Cron trigger added.')).toBeTruthy(), { timeout: 3000 })
     // TRIGGERS card shows the old chips and the new one (preview-mock labels
     // re-fetch async after the list changes)
     await waitFor(() => expect(screen.getByText('0 21 * * *')).toBeTruthy(), { timeout: 3000 })
@@ -870,7 +880,7 @@ describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () 
     }))
     render(<CreateFlow />)
     send('pause the discord trigger')
-    await waitFor(() => expect(screen.getByText('Trigger 2 turned off.')).toBeTruthy(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Discord trigger 2 turned off.')).toBeTruthy(), { timeout: 3000 })
     const d = await lastDraftPut()
     expect(d.triggers.map((t) => [t.id, t.enabled])).toEqual([['t1', true], ['t2', false]])
   })
@@ -1766,7 +1776,7 @@ describe('CreateFlow background continuation & re-attach (§11/§19)', () => {
     })
     render(<CreateFlow />)
     await waitFor(() => expect(screen.getByText('Trigger changes dropped — the triggers changed while your AI worked. Ask again.')).toBeTruthy(), { timeout: 4000 })
-    expect(screen.queryByText('Trigger added.')).toBeNull()
+    expect(screen.queryByText('Cron trigger added.')).toBeNull()
   })
 
   it('a background settle applies trigger ops when the base list still matches', async () => {
@@ -1778,7 +1788,7 @@ describe('CreateFlow background continuation & re-attach (§11/§19)', () => {
       draft: { spec: null, actions: { triggers: [{ op: 'add', trigger: { kind: 'cron', expression: '0 9 * * *', enabled: true } }] } },
     })
     render(<CreateFlow />)
-    await waitFor(() => expect(screen.getByText('Trigger added.')).toBeTruthy(), { timeout: 4000 })
+    await waitFor(() => expect(screen.getByText('Cron trigger added.')).toBeTruthy(), { timeout: 4000 })
     expect(screen.queryByText(/Trigger changes dropped/)).toBeNull()
   })
 

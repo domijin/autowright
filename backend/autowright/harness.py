@@ -133,6 +133,18 @@ def spawn_env(binpath: str | None = None) -> dict:
     return env
 
 
+def step_env() -> dict:
+    """os.environ with the fallback bin dirs APPENDED to PATH (§6.1). Every
+    step subprocess spawns with this, so a step's system-CLI calls and
+    `shutil.which` pre-flights resolve normally-installed tools under a Dock
+    launch's minimal GUI PATH — appended, unlike `spawn_env`, so the inherited
+    PATH order (the user's own resolution) always wins."""
+    env = dict(os.environ)
+    current = env.get("PATH", "").split(os.pathsep) if env.get("PATH") else []
+    env["PATH"] = os.pathsep.join(dict.fromkeys(current + list(_FALLBACK_BIN_DIRS)))
+    return env
+
+
 def invoke(agent: dict, prompt: str, timeout: int | None = None,
            proc_holder: dict | None = None, on_chunk=None,
            should_abort=None, web: bool = False, on_tool=None) -> str:

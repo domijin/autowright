@@ -1775,6 +1775,36 @@ def test_read_loop_error_reaps_the_step_group(monkeypatch, tmp_path):
     assert state["proc"] is None and "hard_kill" not in state
 
 
+def test_step_subprocess_path_carries_the_fallback_bin_dirs(monkeypatch, tmp_path):
+    """§6.1: steps spawn with the fallback bin dirs APPENDED to PATH, so a
+    step's system-CLI calls and shutil.which pre-flights resolve under a Dock
+    launch's minimal GUI PATH — appended, so the inherited order still wins."""
+    import subprocess
+    import sys
+
+    from autowright import engine as engmod, harness
+
+    monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", ("/fb-steps",))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")  # the Dock launch's stripped PATH
+    real = subprocess.Popen
+    seen = {}
+
+    def fake_popen(argv, **kw):
+        seen["env"] = kw.get("env")
+        # stand-in for the executor: drain ctx from stdin, exit clean
+        return real([sys.executable, "-c", "import sys; sys.stdin.read()"], **kw)
+
+    monkeypatch.setattr(engmod.subprocess, "Popen", fake_popen)
+    script = tmp_path / "01-ok.py"
+    script.write_text("pass\n")
+    state = {"proc": None, "cancel": False}
+    rc = engmod.run_step_process(script, {}, state, lambda k, t: None,
+                                 {"status": "ok", "chip": None}, {}, 10.0)
+    assert rc == 0
+    assert seen["env"] is not None, "the step must not inherit the raw GUI env"
+    assert seen["env"]["PATH"] == "/usr/bin:/bin:/fb-steps"
+
+
 def test_kill_all_live_kills_a_running_step(store):
     """§3 backend shutdown: kill_all_live hard-kills every live step group —
     the engine thread then finishes the record instead of waiting out the

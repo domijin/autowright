@@ -258,6 +258,12 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 ### 6.1 The `autowright` step SDK (decided)
 
 Each step executes in its own subprocess (the bundled interpreter, cwd = the execution `workspace/`).
+The step's environment is the backend's with the §19 install locations (`~/.local/bin`,
+`~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`) **appended** to `PATH` — so a step
+that shells out to a system CLI (or pre-flights one with `shutil.which`, §6.2 native tools)
+finds a normally-installed tool under a Dock-launched app's minimal GUI PATH exactly as it
+would under a terminal launch. Appended, unlike the §19 provider-child prepend: the dirs are
+a fallback, so the inherited `PATH` order — the user's own resolution — always wins.
 The executor registers an `autowright` module holding the SDK surface; **a step must import every
 SDK name it uses** — `from autowright import params, log, result` (or `import autowright` and
 `autowright.log(…)`). Nothing is injected into the script's globals: an unimported SDK name raises
@@ -437,7 +443,8 @@ inside the wheel; the step passes its path to the tool), it wins — a bundled e
 asking the user to install anything. Otherwise the steps target the **canonical tool for
 the job** (Transmission for torrents, the Discord desktop app, …) with a deterministic
 **pre-flight** that fails in plain words when the tool is absent — `shutil.which` for a
-CLI, a quick connect for a local daemon — raising an error that names the tool, says it
+CLI (reliable even under a Dock launch: the step `PATH` carries the standard install
+locations, §6.1), a quick connect for a local daemon — raising an error that names the tool, says it
 isn't installed or running, and includes the download URL, so the failure reads as user
 instructions and reaches later §8 chat calls verbatim via RECENT EXECUTIONS. A dependency the
 agent already **knows** is missing (the user said so; a run proved it) yields a §8

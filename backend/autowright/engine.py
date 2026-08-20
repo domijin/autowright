@@ -216,6 +216,10 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
         [sys.executable, "-m", "autowright.executor", str(script)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, errors="replace",  # binary garbage on stdout must not kill the read loop
+        # §6.1: fallback bin dirs appended to PATH, so a step's system-CLI
+        # calls and shutil.which pre-flights resolve under a Dock launch's
+        # minimal GUI PATH just like under a terminal launch.
+        env=harness.step_env(),
         # Own session: timeout/cancel/skip kill the whole group. Killing only
         # the executor leaves its children (Playwright browsers, step
         # subprocesses) alive — they hold the stdout write end open, the read

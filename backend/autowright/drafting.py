@@ -93,7 +93,8 @@ packages:                              # extra PyPI packages beyond the allowed 
 triggers:                              # see Triggers above; omit the whole key when the automation needs no trigger (manual / menu bar only)
   - cron: "0 8 * * *"                  # optional timezone: IANA zone, only when the spec names one
   - { imessage: "+15551234567" }       # sender handle from the SPEC or BUILD INSTRUCTIONS only; optional pattern
-  - { discord: "1234567890", secret: BOT_TOKEN_NAME }   # channel id + granted token secret from the SPEC or BUILD INSTRUCTIONS only; optional pattern / mention / author (sender filter: numeric user id or list of them)
+  - { discord: "1234567890",           # channel id from the SPEC or BUILD INSTRUCTIONS only; optional pattern / mention / author (sender filter: numeric user id or list of them)
+      secret: 9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34 }   # the granted token secret's ID, copied exactly from the grants yaml — never its name
   - app_start: true                    # executes when the app starts
 steps:                                 # ordered; file names NN-name.py, two-digit, gapless from 01;
                                        # timeout: seconds the step may run before it is stopped (see Timeouts above);

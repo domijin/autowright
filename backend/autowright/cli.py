@@ -4,7 +4,8 @@ Noun-verb groups (automation, execution, secret, agent, settings, service) plus
 status/instructions. Authoring goes through workdirs — spec.md + manifest.yaml +
 NN-name.py step files — validated with the same §8 validators the drafting
 pipeline uses. `--json` on read verbs prints the raw API JSON. Exit codes:
-0 ok · 1 error · 2 a followed execution ended other than succeeded.
+0 ok · 1 error (usage errors and Ctrl-C included) · 2 a followed execution
+ended other than succeeded; 2 signals nothing else.
 """
 from __future__ import annotations
 
@@ -151,33 +152,40 @@ def follow_exec(c: Client, execution_id: str) -> str:
     # skip it on later polls instead of re-downloading its whole file forever.
     seen: dict[tuple, int] = {}   # (step index | None, attempt | None) → last printed sequence
     settled: set[tuple] = set()
-    while True:
-        e = c.req("GET", f"/executions/{execution_id}")
-        targets: list[tuple[int | None, int | None, bool]] = [(None, None, False)]  # the execution log
-        for i, s in enumerate(e.get("steps", [])):
-            for a in s.get("attempts") or []:
-                terminal = a.get("status") not in ("executing", "queued")
-                targets.append((i, a["number"], terminal))
-        for step, attempt, terminal in targets:
-            key = (step, attempt)
-            if key in settled:
-                continue
-            q = "" if step is None else f"?step={step}&attempt={attempt}"
-            lines = c.req("GET", f"/executions/{execution_id}/logs{q}").get("lines", [])
-            last = seen.get(key, 0)
-            for ln in lines:
-                if ln["sequence"] > last:
-                    print(f"  {ln['time']} [{ln['kind']}] {ln['text']}")
-                    last = ln["sequence"]
-            seen[key] = last
-            if terminal:
-                settled.add(key)
-        # §20 follow semantics: `queued` (§6 firing queue) is not terminal —
-        # keep polling through promotion to executing and on to a real end.
-        if e["status"] not in ("executing", "queued"):
-            print(f"→ {e['status']} in {e['duration']}")
-            return e["status"]
-        time.sleep(1)
+    try:
+        while True:
+            e = c.req("GET", f"/executions/{execution_id}")
+            targets: list[tuple[int | None, int | None, bool]] = [(None, None, False)]  # the execution log
+            for i, s in enumerate(e.get("steps", [])):
+                for a in s.get("attempts") or []:
+                    terminal = a.get("status") not in ("executing", "queued")
+                    targets.append((i, a["number"], terminal))
+            for step, attempt, terminal in targets:
+                key = (step, attempt)
+                if key in settled:
+                    continue
+                q = "" if step is None else f"?step={step}&attempt={attempt}"
+                lines = c.req("GET", f"/executions/{execution_id}/logs{q}").get("lines", [])
+                last = seen.get(key, 0)
+                for ln in lines:
+                    if ln["sequence"] > last:
+                        print(f"  {ln['time']} [{ln['kind']}] {ln['text']}")
+                        last = ln["sequence"]
+                seen[key] = last
+                if terminal:
+                    settled.add(key)
+            # §20 follow semantics: `queued` (§6 firing queue) is not terminal —
+            # keep polling through promotion to executing and on to a real end.
+            if e["status"] not in ("executing", "queued"):
+                print(f"→ {e['status']} in {e['duration']}")
+                return e["status"]
+            time.sleep(1)
+    except KeyboardInterrupt:
+        # §20: Ctrl-C while following is an error exit (1), never a traceback,
+        # and never 2, which is exclusively the follow-failure signal. Only the
+        # watching stops; the execution runs on in the backend.
+        sys.exit(f"interrupted: execution {execution_id} is still running; "
+                 "check it with `autowright execution show`")
 
 
 def _exit_by_status(status: str) -> None:
@@ -615,8 +623,13 @@ def cmd_automation_export(c: Client, args) -> None:
     q = "?values=0" if args.no_values else ""
     data = c.req_raw("GET", f"/automations/{a['id']}/export{q}")
     path = args.path or f"{safe_filename(a['name'])}.autowright"
-    with open(path, "wb") as f:
-        f.write(data)
+    try:
+        with open(path, "wb") as f:
+            f.write(data)
+    except OSError as e:
+        # §20: an unwritable path (missing directory, no permission, read-only
+        # volume) is a plain error message on stderr, never an OSError traceback.
+        sys.exit(f"can't write {path}: {e.strerror or e}")
     print(f"exported {a['name']!r} to {path}")
 
 
@@ -1023,8 +1036,8 @@ def cmd_secret_set(c: Client, args) -> None:
     value = sys.stdin.readline().rstrip("\n") if args.stdin \
         else getpass.getpass(f"value for {args.name}: ")
     if not value:
-        print("no value given — nothing saved")
-        raise SystemExit(1)
+        # §20: errors go to stderr through sys.exit, like every other exit-1 path.
+        sys.exit("no value given, nothing saved")
     # §20 upsert feel, CLI-side: an existing name edits via the id route,
     # a new one creates.
     existing = _secret_by_name(c, args.name)
@@ -1132,6 +1145,19 @@ def cmd_service(_c, args) -> None:
 
 # ---------------------------------------------------------------- parser
 
+class Parser(argparse.ArgumentParser):
+    """§20 exit codes: argparse exits 2 on a usage error, but 2 is reserved
+    exclusively for "the followed execution didn't succeed", which a harness must
+    be able to branch on. Usage errors take the ordinary error exit (1), with
+    the usage line and the message on stderr like every other CLI error.
+    Subparsers inherit this class (argparse's `parser_class` defaults to the
+    parent's type), so the whole tree exits alike."""
+
+    def error(self, message: str):
+        self.print_usage(sys.stderr)
+        sys.exit(f"{self.prog}: {message}")
+
+
 def _sub(parent, name: str, fn, help: str, client: bool = True, json_flag: bool = False):
     p = parent.add_parser(name, help=help)
     p.set_defaults(fn=fn, client=client)
@@ -1163,7 +1189,7 @@ def _add_service(top) -> None:
 
 
 def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(
+    ap = Parser(
         prog="autowright", description="Autowright from the command line",
         epilog=None if full else _DISABLED_NOTE)
     top = ap.add_subparsers(dest="cmd", required=True)

@@ -80,6 +80,9 @@ def lenient_local(s: Any) -> datetime | None:
     except Exception:  # noqa: BLE001 - any unreadable value degrades
         return None
 
+# §4.4: prefix of the staged draft-memory seed copy (engine.py) - swept at load.
+DRAFT_MEM_STAGE_PREFIX = ".ad-tmp-memory-"
+
 # §6 concurrency settings (§4.1). One run at a time and skip-on-busy are the
 # defaults — parallel runs and queueing are opt-in per automation (§9.2 card,
 # or staged through the §8 `concurrency` chat action).
@@ -417,6 +420,11 @@ class Store:
                 m = re.fullmatch(r"v(\d+)", vd.name)
                 if m and (vd / "automation.yaml").exists():
                     a["versions"][int(m.group(1))] = self._load_version_folder(vd)
+        # §6.3/§4.4: staged memory copies a crash abandoned mid-swap. Nothing is
+        # staging at load, so anything still here is dead weight.
+        for stale in list(d.glob(f"{self.SNAPSHOT_STAGE_PREFIX}*")) + \
+                list((d / "draft").glob(f"{DRAFT_MEM_STAGE_PREFIX}*")):
+            shutil.rmtree(stale, ignore_errors=True)
         self._recover_draft_swap(d / "draft")  # §5: repair a half-finished save_draft swap
         if (d / "draft" / "automation" / "automation.yaml").exists():
             a["draft"] = self._load_version_folder(d / "draft" / "automation")
@@ -1230,7 +1238,10 @@ class Store:
         self._log_counts[key] = count + 1
 
     def read_log(self, execution_id: str, step_idx: int | None = None,
-                 attempt: int | None = None) -> list[dict]:
+                 attempt: int | None = None, tail: int | None = None) -> list[dict]:
+        """§19: one log file's lines. `tail` keeps only the last N of them -
+        the whole-log tail the §7 views ask for, so a multi-thousand-line file
+        never has to be serialized whole."""
         if step_idx is None:
             name = self.EXEC_LOG
         else:
@@ -1243,7 +1254,10 @@ class Store:
         if not p.exists():
             return []
         out = []
-        for ln in p.read_text(encoding="utf-8").splitlines():
+        raw = p.read_text(encoding="utf-8").splitlines()
+        if tail is not None:
+            raw = raw[-tail:]
+        for ln in raw:
             try:
                 line = json.loads(ln)
             except ValueError:
@@ -1460,27 +1474,52 @@ class Store:
         meta = load_yaml(d / "snapshot.yaml") if d else None
         return meta if self._snapshot_meta_ok(meta) else None
 
-    def snapshot_memory(self, a: dict, reason: str, name: str | None = None,
-                        version: str | None = None, keep: str | None = None) -> dict | None:
-        """§6.3 create: memory copy first, snapshot.yaml last; empty memory → None.
-        Automatic reasons toggled off (§6.3 memory_snapshots) → None, so no call
-        site needs its own check. Sweeps crash orphans, then prunes unnamed
-        snapshots beyond the newest 5 (`keep` is exempt — restore passes the
-        snapshot it is about to copy from)."""
+    SNAPSHOT_STAGE_PREFIX = ".ad-tmp-snapshot-"
+
+    def stage_snapshot(self, a: dict, reason: str) -> tuple[Path, int, int] | None:
+        """§6.3 stage: copy `memory/` into a temp sibling of the automation dir,
+        **outside** store.lock - a memory dir can be gigabytes, and every API
+        request queues behind the lock while a copytree runs. None when there
+        is nothing to snapshot (empty memory, or the automatic reason toggled
+        off, §6.3 memory_snapshots), so no call site needs its own check.
+        `commit_snapshot` renames the staged dir into place; `discard_snapshot`
+        drops it. A staged dir left behind by a crash is swept at load."""
         with self.lock:
             if reason != "manual" and not a["memory_snapshots"][reason.replace("-", "_")]:
                 return None
-            mem = self.auto_dir(a) / "memory"
-            size, files = self._memory_file_stats(mem)
-            if files == 0:
-                return None
+            base = self.auto_dir(a)
+        mem = base / "memory"
+        size, files = self._memory_file_stats(mem)
+        if files == 0:
+            return None
+        staging = base / f"{self.SNAPSHOT_STAGE_PREFIX}{new_id()}"
+        try:
+            shutil.copytree(mem, staging / "memory")
+        except BaseException:
+            self.discard_snapshot(staging)
+            raise
+        return staging, size, files
+
+    @staticmethod
+    def discard_snapshot(staging: Path) -> None:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    def commit_snapshot(self, a: dict, staged: tuple[Path, int, int], reason: str,
+                        name: str | None = None, version: str | None = None,
+                        keep: str | None = None) -> dict:
+        """§6.3 commit: the staged copy takes its place by rename (O(1) under
+        the lock), snapshot.yaml last. Sweeps crash orphans, then prunes unnamed
+        snapshots beyond the newest 5 (`keep` is exempt — restore passes the
+        snapshot it is about to copy from)."""
+        staging, size, files = staged
+        with self.lock:
             root = self.snapshots_dir(a)
             root.mkdir(parents=True, exist_ok=True)
             for d in root.iterdir():
                 if d.is_dir() and not (d / "snapshot.yaml").exists():
                     shutil.rmtree(d, ignore_errors=True)
             sid = new_id()
-            shutil.copytree(mem, root / sid / "memory")
+            staging.rename(root / sid)
             meta = {"id": sid, "name": name or None, "reason": reason,
                     "created_at": timefmt.now_iso(),
                     "version": version or f"v{a['current_version']}",
@@ -1491,6 +1530,23 @@ class Store:
                 if m["id"] != keep:
                     shutil.rmtree(root / m["id"], ignore_errors=True)
             return meta
+
+    def snapshot_memory(self, a: dict, reason: str, name: str | None = None,
+                        version: str | None = None, keep: str | None = None) -> dict | None:
+        """§6.3 create, stage-then-commit in one call - the shape every caller
+        that isn't racing for a §6 slot uses. Callers holding store.lock get the
+        copy under it; the §7 admission path stages and commits separately."""
+        staged = self.stage_snapshot(a, reason)
+        if staged is None:
+            return None
+        return self.commit_snapshot(a, staged, reason, name=name, version=version, keep=keep)
+
+    def pre_version_snapshot_exists(self, a: dict, version: str) -> bool:
+        """§6.3: a `pre-version` snapshot already stands for this version label -
+        the second half of the §7 has-this-version-ever-run decision, so two
+        concurrent first executions can't both stage a copy."""
+        return any(m.get("reason") == "pre-version" and m.get("version") == version
+                   for m in self.list_snapshots(a))
 
     def rename_snapshot(self, a: dict, sid: str, name: str | None) -> dict | None:
         with self.lock:
@@ -1657,8 +1713,10 @@ class Store:
         for h in sorted(hs, key=lambda x: x["started_at"] or "", reverse=True):
             r = self.result_json(h)
             if r:
-                dt = timefmt.parse_local(h["started_at"])
-                return {**r, "executionId": h["id"], "when": f"from {timefmt.started_label(dt)}"}
+                dt = lenient_local(h["started_at"])
+                return {**r, "executionId": h["id"],
+                        # §5 lenient: a damaged started_at drops the label, never 500s.
+                        "when": f"from {timefmt.started_label(dt)}" if dt else ""}
         return None
 
     def problems_json(self, a: dict, cur: dict) -> list[dict]:
@@ -1701,10 +1759,10 @@ class Store:
         out += [{"kind": "secret-missing",
                  "label": "A trigger references a deleted secret."}] * missing_trigger
         out += [{"kind": "secret-ungranted",
-                 "label": f"Secret {n} isn't allowed for this automation yet - "
+                 "label": f"Secret {n} isn't allowed for this automation yet — "
                           "grant it on the edit page."} for n in sorted(ungranted)]
         out += [{"kind": "secret-unset",
-                 "label": f"Secret {n} has no value yet - add it on the Secrets page."}
+                 "label": f"Secret {n} has no value yet — add it on the Secrets page."}
                 for n in sorted(unset)]
         agent_missing = 0
         agent_ungranted: list[str] = []
@@ -1719,7 +1777,7 @@ class Store:
         out += [{"kind": "agent-missing",
                  "label": "A step references a deleted agent."}] * agent_missing
         out += [{"kind": "agent-ungranted",
-                 "label": f"Agent {n} isn't enabled for this automation yet - "
+                 "label": f"Agent {n} isn't enabled for this automation yet — "
                           "enable it on the edit page."} for n in sorted(agent_ungranted)]
         pkgs = cur.get("packages", []) or []
         if pkgs:
@@ -1727,20 +1785,20 @@ class Store:
             missing_pkgs = sorted(e["pip"] for e in pkglib.check(pkgs)
                                   if e["status"] == "missing")
             out += [{"kind": "package-missing",
-                     "label": f"Package {n} isn't installed yet - "
+                     "label": f"Package {n} isn't installed yet — "
                               "it installs on the first execution."} for n in missing_pkgs]
         origin = a.get("origin_os")
         if origin and origin != paths.current_os():
             display = {"macos": "macOS", "windows": "Windows", "linux": "Linux"}.get(origin, origin)
             out.append({"kind": "os-mismatch",
-                        "label": f"Built on {display} - its steps may need rewriting "
+                        "label": f"Built on {display} — its steps may need rewriting "
                                  "before they run on this Mac."})
         return out
 
     def auto_json(self, a: dict, full: bool = True) -> dict:
         cur = a["versions"].get(a["current_version"], {})
         last_at = a.get("_last_exec_at")
-        last_dt = timefmt.parse_local(last_at) if last_at else None
+        last_dt = lenient_local(last_at) if last_at else None
         # §4.1 `live` is a list (maxParallel may allow several), ordered oldest
         # first so the UI can name "the current execution" deterministically.
         live_ids = sorted(a.get("_live") or (),
@@ -1805,15 +1863,16 @@ class Store:
     def step_attempts_json(self, s: dict) -> list[dict]:
         out = []
         for a in s.get("attempts", []):
-            adt = timefmt.parse_local(a["started_at"]) if a.get("started_at") else None
+            adt = lenient_local(a["started_at"]) if a.get("started_at") else None
             out.append({"number": a["number"], "status": a["status"],
                         "duration": timefmt.dur_label(a["duration_ms"]) if a.get("duration_ms") else "",
                         "startedMs": int(adt.timestamp() * 1000) if adt else 0})
         return out
 
     def exec_json(self, h: dict, full: bool = False) -> dict:
-        dt = timefmt.parse_local(h["started_at"]) if h["started_at"] else None
-        fin = timefmt.parse_local(h["finished_at"]) if h.get("finished_at") else None
+        dt = lenient_local(h["started_at"]) if h["started_at"] else None
+        fin = lenient_local(h["finished_at"]) if h.get("finished_at") else None
+        qdt = lenient_local(h["queued_at"]) if h.get("queued_at") else None
         out: dict[str, Any] = {
             "id": h["id"], "automationId": h["automation_id"],
             "automationName": (self.autos.get(h["automation_id"], {}) or {}).get("name") or h["automation_name"],
@@ -1833,8 +1892,7 @@ class Store:
             "startedMs": int(dt.timestamp() * 1000) if dt else 0,
             "endedMs": int(fin.timestamp() * 1000) if fin else 0,
             # §4.5: how long this firing waited in the §6 queue, if it waited at all
-            "queuedMs": int(datetime.fromisoformat(h["queued_at"]).timestamp() * 1000)
-                        if h.get("queued_at") else 0,
+            "queuedMs": int(qdt.timestamp() * 1000) if qdt else 0,
             "note": h["note"],
             "error": h.get("error"),
         }

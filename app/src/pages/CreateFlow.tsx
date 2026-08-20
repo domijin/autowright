@@ -39,8 +39,20 @@ export {
 // ---------- the page ----------
 
 export default function CreateFlow() {
-  const store = useStore()
-  const { agents, secrets, automations, executions, executionFull, createFrom, automationId, go, setSurface, showToast, loadAuto, test } = store
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this editor on
+  // every store write anywhere — every toast, every log line of every execution.
+  const agents = useStore((s) => s.agents)
+  const secrets = useStore((s) => s.secrets)
+  const automations = useStore((s) => s.automations)
+  const executions = useStore((s) => s.executions)
+  const executionFull = useStore((s) => s.executionFull)
+  const createFrom = useStore((s) => s.createFrom)
+  const automationId = useStore((s) => s.automationId)
+  const go = useStore((s) => s.go)
+  const setSurface = useStore((s) => s.setSurface)
+  const showToast = useStore((s) => s.showToast)
+  const loadAuto = useStore((s) => s.loadAuto)
+  const test = useStore((s) => s.test)
   const isEdit = createFrom === 'edit'
   const auto = isEdit ? automations.find((a) => a.id === automationId) ?? null : null
   // §19: the live-execution banner's "next execution" label reads from

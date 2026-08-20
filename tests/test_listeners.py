@@ -317,6 +317,9 @@ def test_reconcile_starts_and_stops_listeners(store, monkeypatch):
         def start(self):
             events.append(("conn-start", self.secret))
 
+        def is_alive(self):
+            return True
+
         def stop(self):
             events.append(("conn-stop", self.secret))
 
@@ -659,3 +662,89 @@ def test_stop_closes_live_socket(monkeypatch):
     conn._ws = _Ws()
     conn.stop()
     assert closed == [True] and conn._stop.is_set()
+
+
+# ---------- §6 per-item guards / listener liveness ----------
+
+def test_imsg_batch_survives_one_bad_row(store, monkeypatch):
+    """§6: the watcher's cursor advances past the whole batch BEFORE dispatch,
+    so a row that raises must not take the rows behind it - they can never be
+    re-read."""
+    from autowright import imessage
+    from autowright import listeners as li_mod
+
+    rows = [_imsg(guid="g1", text="one"), _imsg(guid="g2", text="two"),
+            _imsg(guid="g3", text="three")]
+    monkeypatch.setattr(imessage, "open_db", lambda: object())
+    monkeypatch.setattr(imessage, "max_rowid", lambda db: 99)
+    monkeypatch.setattr(imessage, "messages_after", lambda db, cur, top, senders: rows)
+    monkeypatch.setattr(imessage, "stale", lambda m: False)
+
+    li = li_mod.Listeners(store, None)
+    seen = []
+
+    def dispatch(m):
+        seen.append(m["guid"])
+        if m["guid"] == "g2":
+            raise RuntimeError("bad row")
+
+    li.dispatch_imessage = dispatch
+    li_mod._ImsgWatcher(li).tick({"dave@example.com"})
+    assert seen == ["g1", "g2", "g3"]
+
+
+def test_dispatch_imessage_survives_one_failing_firing(store, monkeypatch):
+    """§6: one automation's firing must never drop the others' (per hit)."""
+    from autowright import listeners as li_mod
+
+    fired = []
+
+    def boom(store, engine, a, t, payload=None):
+        if a["name"] == "Bad":
+            raise OSError("disk on fire")
+        fired.append(a["name"])
+        return True
+
+    monkeypatch.setattr(li_mod, "fire_trigger", boom)
+    for name in ("Bad", "Good"):
+        a = store.create_automation(make_version(), name, None)
+        a["triggers"] = [_imsg_trig()]
+    li_mod.Listeners(store, None).dispatch_imessage(_imsg())
+    assert fired == ["Good"]
+
+
+def test_reconcile_recreates_a_dead_connection(store, monkeypatch):
+    """§6: a listener thread that died is no listener at all - the next
+    reconcile replaces it instead of leaving the trigger unwatched."""
+    from autowright import listeners as li_mod
+
+    made = []
+
+    class FakeConn:
+        def __init__(self, secret, mgr):
+            self.secret = secret
+            self.alive = True
+            made.append(self)
+
+        def start(self):
+            pass
+
+        def is_alive(self):
+            return self.alive
+
+        def stop(self):
+            self.alive = False
+
+    monkeypatch.setattr(li_mod, "_Conn", FakeConn)
+    a = store.create_automation(make_version(), "Chat", None)
+    a["triggers"] = [_trig()]
+    li = li_mod.Listeners(store, None)
+    li._reconcile()
+    assert len(made) == 1 and li._conns["TOKEN"] is made[0]
+
+    li._reconcile()
+    assert len(made) == 1  # a live connection is left alone
+
+    made[0].alive = False  # the thread died
+    li._reconcile()
+    assert len(made) == 2 and li._conns["TOKEN"] is made[1]

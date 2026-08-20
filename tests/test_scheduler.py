@@ -864,3 +864,59 @@ def test_trigger_edits_never_cancel_a_manual_entry(store):
     h, _queued = queue_manual(store, engine, a, "manual")
     cancel_unmatched_queue(store, engine, a["id"])  # no message triggers enabled at all
     assert store.execs[h["id"]]["status"] == "queued"  # still waiting
+
+
+def test_one_automations_firing_failure_never_stops_the_tick(store, monkeypatch):
+    """§6: a per-automation guard - one broken automation must not silence
+    every automation after it in the tick's list."""
+    from datetime import datetime
+
+    from autowright import scheduler as sched_mod
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 7, 59))
+    engine, sched = _mk_clocked(store, clock)
+    fired = []
+
+    def boom(store, engine, a, t):
+        if a["name"] == "Bad":
+            raise OSError("disk on fire")
+        fired.append(a["name"])
+        return True
+
+    monkeypatch.setattr(sched_mod, "fire_trigger", boom)
+    trig = [{"id": "t1", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}]
+    for name in ("Bad", "Good"):
+        store.create_automation(make_version(), name, None,
+                                triggers=[dict(t) for t in trig])
+    sched._tick()  # baselines
+    clock.now = datetime(2026, 7, 10, 8, 1)
+    sched._tick()
+    assert fired == ["Good"]
+    # the failing automation keeps its baseline - the prune never dropped it
+    assert len(sched._baseline) == 2
+
+
+def test_fire_trigger_finishes_a_record_left_behind_by_a_failed_start(store):
+    """§4.6: `start` may raise after the record exists - left `executing` it
+    would hold the §6 slot and 409 every later firing."""
+    from autowright.firing import fire_trigger
+
+    class Boom:
+        @staticmethod
+        def at_capacity(a):
+            return False
+
+        def start(self, a, trigger, version_label=None, payload=None, adopt=None):
+            store.create_execution(a, "version", a["current_version"], trigger, steps=[])
+            raise OSError("disk on fire")
+
+    a = store.create_automation(make_version(), "Half Started", None)
+    assert fire_trigger(store, Boom(), a, {"id": "t1", "kind": "cron"}) is False
+    assert a["_live"] == set()
+    h = next(iter(store.execs.values()))
+    assert h["status"] == "skipped"
+    assert h["note"] == "the execution couldn't be started"
+    # and the automation can fire again
+    assert fire_trigger(store, Boom(), a, {"id": "t1", "kind": "cron"}) is False
+    assert a["_live"] == set()

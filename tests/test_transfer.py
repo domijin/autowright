@@ -884,7 +884,7 @@ def test_import_from_another_os_flags_needs_fixing(store, monkeypatch, tmp_path_
     assert b["origin_os"] == "windows"
     os_rows = [p for p in s2.auto_json(b)["problems"] if p["kind"] == "os-mismatch"]
     assert os_rows == [{"kind": "os-mismatch",
-                        "label": "Built on Windows - its steps may need rewriting "
+                        "label": "Built on Windows — its steps may need rewriting "
                                  "before they run on this Mac."}]
     # §5 disk-first: originOs survives a reload …
     s3 = Store()
@@ -921,3 +921,37 @@ def test_import_os_token_rules(store, monkeypatch, tmp_path_factory):
     assert "Built on beos" in row["label"]
     with pytest.raises(transfer.TransferError, match="os must be a non-empty string"):
         transfer.import_automation(s2, _rezip_manifest(data, lambda m: {**m, "os": "  "}))
+
+
+def test_failed_import_leaves_no_orphan_secrets_or_agents(store, monkeypatch,
+                                                          tmp_path_factory):
+    """§5.1: import writes nothing on failure. Secrets and agents land before
+    the automation exists (their ids are what its steps reference), so a
+    failure at creation time has to take them back out."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    assert s2.secrets == [] and s2.agents == []
+
+    real_create = s2.create_automation
+
+    def boom(*args, **kwargs):
+        raise OSError("disk on fire")
+
+    s2.create_automation = boom
+    with pytest.raises(OSError):
+        transfer.import_automation(s2, data)
+    assert s2.secrets == [] and s2.agents == []
+    assert s2.default_agent_id is None
+    assert s2.autos == {}
+
+    # the files on disk match memory - a reload sees nothing either
+    s3 = Store()
+    s3.load_all()
+    assert s3.secrets == [] and s3.agents == []
+
+    # and the retry lands cleanly, with no duplicates from the failed attempt
+    s2.create_automation = real_create
+    transfer.import_automation(s2, data)
+    assert sorted(s["name"] for s in s2.secrets) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
+    assert len(s2.agents) == 2

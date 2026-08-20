@@ -921,7 +921,17 @@ function ParamRow({ automationId, p, last }: { automationId: string; p: ParamDef
 // ---------- page ----------
 
 export default function AutomationDetail() {
-  const { automationId, automations, agents, secrets, executions, go, setSurface, showToast, loadAuto } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this page on
+  // every store write anywhere — every toast, every log line of every execution.
+  const automationId = useStore((s) => s.automationId)
+  const automations = useStore((s) => s.automations)
+  const agents = useStore((s) => s.agents)
+  const secrets = useStore((s) => s.secrets)
+  const executions = useStore((s) => s.executions)
+  const go = useStore((s) => s.go)
+  const setSurface = useStore((s) => s.setSurface)
+  const showToast = useStore((s) => s.showToast)
+  const loadAuto = useStore((s) => s.loadAuto)
   const auto: Automation | undefined = automations.find((a) => a.id === automationId)
 
   const [verOpen, setVerOpen, verRef] = usePopover()

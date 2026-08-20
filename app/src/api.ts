@@ -96,10 +96,17 @@ export const api = {
   skipStep: (executionId: string, index: number) =>
     req('POST', `/executions/${executionId}/skip-step`, { index }),
   getExecution: (executionId: string) => req<import('./types').Execution>('GET', `/executions/${executionId}`),
-  // §19 lazy logs: both params → that step attempt's file; neither → the execution log
-  getExecutionLogs: (executionId: string, step?: number, attempt?: number) =>
-    req<{ lines: import('./types').LogLine[] }>('GET', `/executions/${executionId}/logs`
-      + (step !== undefined ? `?step=${step}&attempt=${attempt ?? 1}` : '')),
+  // §19 lazy logs: both params → that step attempt's file; neither → the execution log.
+  // `tail` caps the response at the last N lines of that log (§7: the pane is
+  // capped, so a chatty run never ships or renders an unbounded array).
+  getExecutionLogs: (executionId: string, step?: number, attempt?: number, tail?: number) => {
+    const q = [
+      ...(step !== undefined ? [`step=${step}`, `attempt=${attempt ?? 1}`] : []),
+      ...(tail !== undefined ? [`tail=${tail}`] : []),
+    ]
+    return req<{ lines: import('./types').LogLine[] }>(
+      'GET', `/executions/${executionId}/logs${q.length ? `?${q.join('&')}` : ''}`)
+  },
   getAutomation: (automationId: string) => req<import('./types').Automation>('GET', `/automations/${automationId}`),
   patchAutomation: (automationId: string, patch: Record<string, unknown>) =>
     req<import('./types').Automation>('PATCH', `/automations/${automationId}`, patch),
@@ -236,7 +243,18 @@ export function openWs(onEvent: (msg: WsEvent) => void): () => void {
   const connect = () => {
     if (closed) return
     sock = new WebSocket(`${base.replace('http', 'ws')}/ws?token=${token}`)
-    sock.onmessage = (e) => onEvent(JSON.parse(e.data))
+    sock.onmessage = (e) => {
+      // A malformed frame (or a handler that throws on one) must never kill the
+      // socket's message loop — log it and drop that frame alone.
+      try {
+        onEvent(JSON.parse(e.data))
+      } catch (err) {
+        console.warn('Dropped a WebSocket frame:', err)
+      }
+    }
+    // Errors always arrive with (or just before) a close — let onclose own the
+    // reconnect; this handler only keeps the failure from surfacing unhandled.
+    sock.onerror = () => { console.warn('WebSocket error — reconnecting.') }
     sock.onclose = () => {
       if (closed) return
       // A backend restart binds a NEW port and token — re-read backend.json

@@ -4,6 +4,7 @@ will never run. The scheduler's tick loop lives in scheduler.py and calls in
 here; the API and listeners fire through here directly."""
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -14,6 +15,8 @@ from .storage import Store, clamp_max_queued
 
 if TYPE_CHECKING:  # runtime import would cycle: engine → listeners → firing
     from .engine import Engine
+
+log = logging.getLogger("autowright.firing")
 
 QUEUE_TTL_S = float(os.environ.get("AUTOWRIGHT_QUEUE_TTL_S", "120"))  # §15 knob
 
@@ -107,11 +110,24 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
                 finish_never_ran(store, h, note)
                 skipped = True
         else:
+            live_before = set(a.get("_live") or ())
             try:
                 engine.start(a, kind, payload=payload)
                 started = True
             except (RuntimeError, LookupError):
                 started = False
+            except Exception:  # noqa: BLE001 - a disk error, a bad step folder, …
+                # §4.6: `start` may already have created the record before it
+                # failed. Left `executing` it would hold a §6 slot forever and
+                # 409 every later firing, so the never-ran finisher ends it.
+                log.exception("firing %s on %r failed", kind, a.get("name"))
+                started = False
+                for eid in set(a.get("_live") or ()) - live_before:
+                    h = store.execs.get(eid)
+                    if h is not None:
+                        finish_never_ran(store, h, "the execution couldn't be started",
+                                         finished_at=timefmt.now_iso(),
+                                         with_automation=True)
     if skipped and payload:
         # §6: a dropped message firing answers its sender. Outside the store
         # lock — a network send must never run under it.

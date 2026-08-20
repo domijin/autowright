@@ -110,10 +110,27 @@ nothing writes to the legacy `/usr/local/bin` (heal of an already-ours file goes
 the shared candidate list, creation only through `cli-install`, deletion only through
 `cli-uninstall` and only of marker-carrying files).
 
+**Typecheck coverage.** `tsc --noEmit` runs twice, over two configs, because a single
+`include` cannot hold both: `app/tsconfig.json` covers `src` under the strict app settings,
+and `app/tsconfig.test.json` extends it to cover everything else that is TypeScript but
+never shipped: `tests/`, `e2e/`, the Vite/Vitest config files, and `ds-entry.ts`, adding
+only the `node` types those need. Neither the renderer's settings nor its file set change;
+the second config exists so untypechecked TypeScript cannot accumulate outside `src`.
+
+**Drift guards.** `tests/test_drift_guards.py` holds the cheap textual guards over facts
+that live in more than one hand-maintained file: the app version agrees across `VERSION`,
+`backend/pyproject.toml`, `backend/autowright/__init__.py`, and `app/package.json`; and the
+§6.2 curated-package list agrees across its four homes: `imports_check.ALLOWED_IMPORTS`
+(import names), the `backend/pyproject.toml` dependencies (distribution names),
+`instructions/framework-instructions.md`, and §6.2 itself, with the import-name ↔
+distribution-name mapping written out in the guard.
+
 **Shift-left order.** Tiers run cheapest-first so failures surface early: Vitest unit
-(<1 s) → `tsc --noEmit` → pytest unit (seconds) → pytest `-m integration` (~10 s) →
-e2e (minutes). `scripts/test-fast.sh` (§18) runs the three cheap tiers in that order,
-failing fast. `scripts/test-all.sh` (§18) runs all five tiers in the same order — the
+(<1 s) → `tsc --noEmit` (both configs) → pytest unit (seconds) → pytest `-m integration`
+(~10 s) → e2e (minutes). `scripts/test-fast.sh` (§18) runs the three cheap tiers in that
+order, failing fast; its typecheck step is the pair of invocations, `tsc --noEmit`
+followed by `tsc --noEmit -p tsconfig.test.json`.
+`scripts/test-all.sh` (§18) runs all five tiers in the same order — the
 fast gate via `test-fast.sh`, then integration, then e2e — failing fast at every tier.
 
 **Integration tests** live under `tests/integration/`, marked `integration` and excluded from
@@ -143,7 +160,13 @@ dies to a transient helper-process crash outside our code — "Target page, cont
 has been closed" — and a genuine failure still fails both attempts). Each test launches the real pieces exactly as release does: the backend subprocess
 over a tmp `AUTOWRIGHT_HOME` (fake `claude` from `tests/bin` on PATH), then the real Electron
 binary via playwright-core `_electron.launch` loading `app/dist` — real preload bridge, real
-`backend.json` discovery, real windows on screen. Scenarios stay high-value journeys —
+`backend.json` discovery, real windows on screen. Teardown stops the backend **gracefully**
+(SIGTERM, a bounded wait, then SIGKILL only if it has not exited) so the backend's lifespan
+cleanup runs and reaps the live step and drafting process groups before the tmp home is
+deleted; a hard SIGKILL with no warning is reserved for the crash-simulation restart below,
+whose whole point is that the backend dies without cleaning up. A backend that fails to come
+up is killed on the spot, so a startup timeout never leaks a python process either.
+Scenarios stay high-value journeys —
 everything finer-grained belongs to the unit/integration tiers:
 
 - onboarding on an empty home, real agent detection (fake CLI)
@@ -271,7 +294,12 @@ Dev workflow:
   `app/dist`, the bundle Electron loads in release). Runs `release.sh --sync` first, so the
   three version sites always track `VERSION`. Touches no processes and no data dir;
   safe to invoke anytime. **`--deps`** stops after the dependency step (no renderer bundle) —
-  what dev.sh uses.
+  what dev.sh uses. Two hygiene rules on the dependency step: the app install is
+  `npm ci` (the lockfile is the source of truth, and an install must never silently float
+  a dependency), and the editable backend install's setuptools scratch output
+  (`backend/build/`, `backend/*.egg-info/`) is deleted immediately afterwards, because a
+  stale full copy of the package tree there is invisible to the running app yet poisons
+  every repo-wide search.
 - **`./scripts/release.sh <version>`** — cuts a release end to end: sets the app version,
   builds the distributable, and publishes it as a GitHub release. Steps, in order:
   refuses if the working tree is dirty (the release commit must contain only the version
@@ -327,7 +355,10 @@ Dev workflow:
   (python-build-standalone `20260807` / CPython `3.14.7`, arch from `uname -m`, tarball
   cached in `build/cache/`, URL overridable via `AUTOWRIGHT_PBS_URL`), upgrades the bundled
   pip to the latest release, pip-installs the backend
-  + curated packages into it (inside the bundle the backend/CLI execute as
+  + curated packages into it **pinned by `backend/constraints.txt`** (`pip install -c`, §17:
+  without it, two DMGs cut from one commit could ship different library versions, and the
+  §6.2 curated packages are part of the user-facing step environment)
+  (inside the bundle the backend/CLI execute as
   `python3 -m autowright.main` / `-m autowright.cli` — pip's `bin/` entry scripts carry absolute
   staging-path shebangs), uses the checked-in app icon `app/electron/icon/icon.icns`
   (§14), packages `Autowright.app` with `@electron/packager` (bundle id

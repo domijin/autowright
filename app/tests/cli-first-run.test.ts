@@ -42,7 +42,7 @@ const cliInstall = vi.fn<() => Promise<{ ok: boolean }>>()
 
 const snapshot = (cliEnabled: boolean): StateSnapshot => ({
   version: '0.0.0', automations: [], executions: [], agents: [], secrets: [],
-  pendingDraft: null,
+  pendingDraft: null, draftJobs: [],
   settings: {
     login: false, menuBarIcon: false, keepAwake: false, automaticUpdateCheck: false,
     notifications: 'attention', days: 30, keepForever: false, developerMode: false,

@@ -8,7 +8,14 @@ oklch/rgba values where no token fits.
 
 ## Data + state
 
-- `useStore()` from `src/store.ts` — the central model:
+- `useStore()` from `src/store.ts` — the central model. **Always subscribe per field**
+  (`const go = useStore((s) => s.go)`), one `useStore` call per field or action you use, and
+  never a bare `useStore()`: a bare call re-renders the component on every store write
+  anywhere — every toast, every `execution.log` event of every execution. Actions are stable
+  references, so selecting them individually costs nothing. A selector that builds a new
+  object or array each call (`useStore((s) => ({ a, b }))`) defeats the same check — select
+  the fields separately, or a primitive derived from them (`useStore((s) => s.agents.length)`).
+  The fields:
   - data: `automations: Automation[]`, `executions: Execution[]` (list headers — no
     steps/result), `agents: Agent[]`, `secrets: SecretMeta[]`, `settings: Settings | null`,
     `pendingDraft`, `version`, `connected`
@@ -48,6 +55,8 @@ oklch/rgba values where no token fits.
 `paramSummary(p)`, `validUrl(s)`, `nextIn(auto)` (countdown; re-render every 30 s with a
 `useEffect` interval), `ConfirmModal`, `PageTitle`, `CountPill`. App renders `Toast` globally.
 Result rendering lives in `src/result.tsx`: `ResultSection label=… result=… executionId=…`.
+`src/ErrorBoundary.tsx` holds the §9 page boundary — the shell already wraps the content
+region (and `main.tsx` the root), so pages never mount their own.
 
 ## Behaviors that must match the spec
 

@@ -101,7 +101,14 @@ export function BuildTestPanel({
   outOfSync, anyJobBusy, busyRewrite, viewingOld, syncDisabled,
   agentGap, lockStyle, runSync, flushHeldChips, sendChat, runTestSignal,
 }: BuildTestPanelProps) {
-  const { executions, executionFull, go, showToast, test, beginTest } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders the whole
+  // panel on every store write anywhere — every toast, every log line.
+  const executions = useStore((s) => s.executions)
+  const executionFull = useStore((s) => s.executionFull)
+  const go = useStore((s) => s.go)
+  const showToast = useStore((s) => s.showToast)
+  const test = useStore((s) => s.test)
+  const beginTest = useStore((s) => s.beginTest)
 
   // §11 test-setup section: the Test draft disclosure toggle —
   // expanding shows the Run test row first, then every test option at once

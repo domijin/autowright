@@ -110,7 +110,10 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   `autowright/instructions/` holds the §8 prompt texts as markdown (packaged via
   `[tool.setuptools.package-data]`): `framework-instructions.md` (contract preamble) and
   `default-build-instructions.md` (default build instructions seeded into new automations).
-  `pyproject.toml` defines the `autowright` / `autowright-backend` entry points.
+  `pyproject.toml` defines the `autowright` / `autowright-backend` entry points, and
+  `constraints.txt` beside it pins the full runtime dependency closure (direct **and**
+  transitive) at exact versions, so two §3 distributables built from one commit ship the
+  same packages; `prod.sh` passes it as `pip install -c` (§18).
 - `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
   bridge), Vite + React + TS renderer under `src/` (`store.ts` central model, `api.ts` client,
   `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen —
@@ -127,7 +130,10 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   Renderer tests live here too: `app/tests/` (vitest unit/render suites) and `app/e2e/`
   (end-to-end specs driving the real Electron app, shared `harness.ts`); both Vitest configs
   (`vitest.config.ts`, `vitest.e2e.config.ts`) sit at the `app/` root — `npm run test:e2e`
-  passes the e2e one via `--config`. `ds-entry.ts` is the renderer entry point for the `.design-sync/`
+  passes the e2e one via `--config`. Two TypeScript configs sit there too: `tsconfig.json`
+  (the shipped renderer, `src` only) and `tsconfig.test.json` extending it over everything
+  else that is TypeScript but never shipped: `tests/`, `e2e/`, the Vite/Vitest configs, and
+  `ds-entry.ts` (§15). `ds-entry.ts` is the renderer entry point for the `.design-sync/`
   previews (below).
   `UI-GUIDE.md` records the renderer conventions.
 - `scripts/` — project scripts (`dev.sh`, `build.sh`, `prod.sh`, `build-clean.sh` — §18;
@@ -159,7 +165,8 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   tiers at the top level (shared `tests/conftest.py`), the live integration tier under
   `tests/integration/` (§15 — its own `conftest.py` + `it_harness.py`), the test doubles
   `tests/bin/claude` (fake agent CLI) and `tests/bin/osascript` (fake Messages sender),
-  and `tests/seed_data.py` (§16 fixture). `pytest.ini` at the repo root configures
+  `tests/seed_data.py` (§16 fixture), and `tests/test_drift_guards.py` (§15: the
+  cross-file version and §6.2 curated-list guards). `pytest.ini` at the repo root configures
   the suite. Renderer tests live under `app/` (above), not here.
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
   single self-contained page + `CNAME` with the custom domain + `robots.txt` and

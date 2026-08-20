@@ -92,6 +92,13 @@ animation animates `transform` and would knock the toast off-center while it pla
   the inset variant (`.ad-focus-inset` — outline-offset −2 px) so the ring draws inside the
   clip instead of being cut.
 - A page whose data hasn't loaded yet renders a centered `LoadingRow` — never a blank pane.
+- A render failure is **contained to the page it happened in**: the content region is wrapped
+  in an error boundary, so a throwing page is replaced by the §14 dashed notice ("Something
+  went wrong on this page" over the error message) carrying a "Back to Automations" button
+  that clears the failure and navigates, while the rail, toasts, and the rest of the shell keep
+  working. The renderer root carries a second boundary as the backstop, so a failure outside
+  any page still shows the notice instead of a blank window. This matters because much of what
+  the renderer displays is AI-authored or leniently loaded (§4, §8).
 - One-click destructive actions (delete, remove trigger, clear) always confirm first —
   `ConfirmModal` or the row's inline confirm swap; never a bare instant delete.
 - Popover menus with unbounded content scroll inside (`ScrollArea`) — rows never render

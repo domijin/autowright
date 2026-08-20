@@ -47,8 +47,9 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   `param list`, `trigger list`, `memory show`, `snapshot list`, `execution list|show`,
   `secret list`, `agent list`, `settings show`) prints the raw API JSON instead of the human
   columns — the machine mode agents parse.
-- **Needs fixing parity (§4.1 `problems`):** `automation list`'s human rows append a plain
-  `needs fixing` marker when an automation's `problems` list is non-empty, and
+- **Needs fixing parity (§4.1 `problems`):** `automation list`'s human rows carry a plain
+  `needs fixing` marker, after the status column and immediately before the result chip,
+  when an automation's `problems` list is non-empty, and
   `automation show` prints a `needs fixing:` block — one indented line per problem label,
   in §4.1 order. `--json` carries the serialized `problems` field as always.
 - **Memory inspection** (`automation memory show <ref> [file]`) — the authoring surface's
@@ -66,13 +67,19 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   omitted when null) · time; iMessage prints sender · time (an iMessage payload has no
   channel — it must not KeyError on one). Then the text, indented. The `secret` is never
   printed. `--json` carries the raw payload (and list rows the §4.5 `triggerSender`) as always.
-- **Exit codes:** 0 success · 1 any error (connection, HTTP, validation, bad reference —
+- **Exit codes:** 0 success · 1 any error (connection, HTTP, validation, bad reference,
+  a file the command cannot read or write —
   message on stderr, §3 guidance style, never a traceback; an HTTP error prints the API's
   `detail` message, never the raw JSON body, and a list-shaped validation `detail` (the
   pydantic 422 form) prints as the first error's field path and message) · 2 from `automation execute -f`,
   `execution retry -f`, and `execution tail` when the followed execution ends in any
   terminal status other than
   `succeeded` — so a harness can branch on the exit code without parsing prose.
+  **2 is exclusively that follow-failure signal**, so nothing else may return it: a usage
+  error (unknown command, missing argument, bad flag) exits **1** with the usage message on
+  stderr, overriding argparse's own default of 2. Interrupting a follow with Ctrl-C is an
+  error too, not a crash: it exits 1 after a plain `interrupted` line, never a
+  `KeyboardInterrupt` traceback.
 - **HTTP timeouts:** every backend request runs with a 30 s timeout, except the three calls
   that legitimately take long — package install (the §6.2 ensure runs pip), URL import (a
   remote download rides the request), and automation delete (§19 waits for cancelled engine
@@ -95,7 +102,9 @@ create take the workdir as a required positional; only pull's is optional. Files
   stored crons only), `params` (full §4.2 definitions with
   defaults, **value fields stripped** — values are user-owned operational state, set via
   `param set`, never round-tripped through versions), `packages`, `steps` (file, name, description,
-  `agent`/`why`/`agents`, `secrets`, `timeout`/`no_timeout`).
+  `agent`/`why`/`agents`, `secrets`, `packages`, `timeout`/`no_timeout`,
+  `retries`/`infinite_retries`: the per-step §4.1 keys, snake_case where the API spells
+  them camelCase, written by `pull` and accepted by `push`).
 - `NN-name.py` — one file per step, matching `steps[].file`.
 - `instructions.md` — the version's build instructions (`instructions`), when present.
 - `notes.md` — the version's §4.1 notes document, when nonempty; push saves it verbatim.

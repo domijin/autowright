@@ -7,8 +7,8 @@
 #
 #   ./scripts/build.sh --deps   deps only: venv + backend deps (re-install when
 #                               backend/pyproject.toml changed, stamp file
-#                               .venv/.backend-stamp), npm install when
-#                               app/package.json changed. Used by dev.sh, which
+#                               .venv/.backend-stamp), npm ci (from the lockfile)
+#                               when app/package.json changed. Used by dev.sh, which
 #                               serves the renderer via Vite instead of app/dist.
 #
 # Production distributables (.app + DMG) are built by ./scripts/prod.sh.
@@ -28,14 +28,21 @@ PY_STAMP="$ROOT/.venv/.backend-stamp"
 if [ ! -f "$PY_STAMP" ] || [ "$ROOT/backend/pyproject.toml" -nt "$PY_STAMP" ]; then
   echo "· installing backend (pyproject.toml changed)"
   "$ROOT/.venv/bin/pip" -q install -e "$ROOT/backend[dev]"
+  # setuptools leaves a full copy of the package tree in backend/build/ plus the
+  # egg-info metadata. Nothing reads them (the editable install points at
+  # backend/autowright), but a stale copy poisons every repo-wide search, so
+  # drop them the moment the install is done.
+  rm -rf "$ROOT/backend/build" "$ROOT/backend"/*.egg-info
   touch "$PY_STAMP"
 fi
 
 # ---- app deps ----
 if [ ! -d "$ROOT/app/node_modules" ] \
    || [ "$ROOT/app/package.json" -nt "$ROOT/app/node_modules/.package-lock.json" ]; then
-  echo "· npm install"
-  (cd "$ROOT/app" && npm install --no-audit --no-fund)
+  # npm ci, not npm install: the lockfile is the source of truth, so a build
+  # can never silently float a dependency to a newer version.
+  echo "· npm ci"
+  (cd "$ROOT/app" && npm ci --no-audit --no-fund)
 fi
 
 # ---- acknowledgements (§4.9) — regenerate so it tracks dependency changes ----

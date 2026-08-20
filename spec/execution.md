@@ -229,7 +229,16 @@ color-coded log view (kinds sys/out/wrn/err); logs load lazily per selected step
 blinking cursor on the live attempt. Empty states: "No logs — this execution never
 started." when the execution has no steps; an empty Setup log shows "No setup events —
 installs, retries, and failures would appear here."; an empty step attempt shows "No log
-lines here." The RESULT card, when the execution has no result, is a dashed placeholder ("No result") with a
+lines here."
+The pane is **capped at the last 2000 lines** of the selected log, the same cap the §7 text
+preview uses: the lazy fetch asks the §19 logs endpoint for that tail (`tail`), and live WS
+lines trim the kept buffer back to it, so a chatty run can never grow the view without bound.
+Whenever lines were dropped — the initial fetch came back full, or live appends trimmed — a
+note in the §7 truncation style reads "Truncated — showing the last 2000 lines. The full log
+is on disk." It sits **above** the kept lines, since the dropped ones are the oldest and the
+pane's live auto-scroll owns the bottom. The complete log always stays in the §5 execution
+directory.
+The RESULT card, when the execution has no result, is a dashed placeholder ("No result") with a
 status-specific reason (still executing / failed before a result was built / cancelled / no
 result produced); with a result it is a collapsible **Results section** holding a stack of individually
 collapsible **result views**, each with a chevron + title header and right-aligned mono meta

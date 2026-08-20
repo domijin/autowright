@@ -41,11 +41,12 @@ def reset_module_globals():
     """Module-global caches leak between tests inside one worker — reset the
     known offenders before every test: the §19 `ollama serve` spawn cooldown
     and the §6 robots/site throttle caches."""
-    from autowright import executor, harness
+    from autowright import executor, harness, packages
 
     harness._serve_last_spawn = 0.0
     executor._robots.clear()
     executor._site_last.clear()
+    packages.invalidate_scan()  # §6.2 installed-scan cache (keyed on the home dir)
 
 
 @pytest.fixture()

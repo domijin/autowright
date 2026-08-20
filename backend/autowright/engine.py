@@ -21,7 +21,8 @@ from . import harness, keychain, listeners, notify, packages as pkglib, timefmt
 from .events import hub
 from .executor import CTRL
 from .firing import finish_queued
-from .storage import (SECRET_REF_RE, Store, clamp_max_parallel, exec_ver_label,
+from .storage import (DRAFT_MEM_STAGE_PREFIX, SECRET_REF_RE, Store,
+                      clamp_max_parallel, exec_ver_label, new_id,
                       resolve_param_value, trigger_label)
 
 log = logging.getLogger("autowright.engine")
@@ -385,7 +386,10 @@ class Engine:
         The §6 capacity check and the record creation happen under one lock — two
         concurrent starters can never both pass into the same slot.
         `adopt` promotes an existing §6 queued record instead of creating one, so
-        a queued firing produces exactly one record from admission to finish."""
+        a queued firing produces exactly one record from admission to finish.
+        The §6.3 pre-version snapshot is only *decided* here - the copy runs on
+        the worker thread, before step 1, because a memory dir can be gigabytes
+        and no copytree may run under store.lock."""
         with self.store.lock:
             if self.at_capacity(auto):
                 raise RuntimeError("already executing")
@@ -395,7 +399,7 @@ class Engine:
             ver = self._resolve_version(auto, kind, version)
             if ver is None:
                 raise LookupError(f"version {version_label or f'v{version}'} not found")
-            self._snapshot_pre_version(auto, kind, version)
+            pre_snapshot = self._needs_pre_version(auto, kind, version)
             # `sha` snapshots each step's script (§4.5) so a Draft retry can
             # detect a re-saved draft whose code changed under the same names.
             steps = [{"name": s["name"], "file": s.get("file"), "agent": bool(s.get("agent")),
@@ -409,6 +413,10 @@ class Engine:
                 h = self.store.create_execution(auto, kind, version, trigger, steps,
                                                 params=params,
                                                 trigger_payload=payload)
+            if pre_snapshot:
+                # In-memory only (like `_test`): write_exec_yaml persists a
+                # fixed key set, so this never reaches disk.
+                h["_pre_snapshot"] = f"v{version}"
             return self._launch(auto, ver, h)
 
     @staticmethod
@@ -425,20 +433,68 @@ class Engine:
         except ValueError:
             return "version", -1
 
-    def _snapshot_pre_version(self, auto: dict, kind: str, version: int | None) -> None:
+    def _needs_pre_version(self, auto: dict, kind: str, version: int | None) -> bool:
         """§6.3 pre-version snapshot: first execution of a real version with no
         recorded execution yet — memory as the previous version left it,
         restorable after rollback. Records that never ran (§4.1) must not
-        suppress the snapshot. Callers hold `store.lock` for the whole admission,
-        so two parallel first-executions of a version can't both take one."""
+        suppress the snapshot. Decided under the admission lock, in the same
+        critical section that creates the `executing` record, so two parallel
+        first-executions of a version can never both answer True; the copy
+        itself happens on the worker thread (`_take_pre_version`)."""
         if kind != "version":
-            return
+            return False
         if any(x["automation_id"] == auto["id"] and x.get("kind") == "version"
                and x.get("version") == version
                and not self.store.never_ran(x)
                for x in self.store.execs.values()):
+            return False
+        # Belt and braces after a retention sweep removed the version's records.
+        return not self.store.pre_version_snapshot_exists(auto, f"v{version}")
+
+    def _seed_draft_memory(self, auto: dict) -> bool:
+        """§4.4: the first Draft execution seeds draft/memory as a copy of the
+        live memory; later Draft executions (and draft re-saves) reuse it.
+        "Never written" is the test (exists-and-empty counts — §19 /draft/open
+        pre-creates an empty memory/). Staged outside store.lock and swapped in
+        by rename under it, so two first executions racing under maxParallel > 1
+        still produce exactly one seeded dir. True when a copy was made."""
+        dmem = self._memory_dir(auto, "draft")
+        live_mem = self.store.auto_dir(auto) / "memory"
+
+        def _seeded() -> bool:
+            return dmem.exists() and any(dmem.iterdir())
+
+        with self.store.lock:
+            if _seeded():
+                return False
+            if not (live_mem.exists() and any(live_mem.iterdir())):
+                dmem.mkdir(parents=True, exist_ok=True)
+                return False
+            staging = dmem.parent / f"{DRAFT_MEM_STAGE_PREFIX}{new_id()}"
+        try:
+            shutil.copytree(live_mem, staging)
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
+        with self.store.lock:
+            if _seeded():
+                shutil.rmtree(staging, ignore_errors=True)  # lost the race
+                return False
+            if dmem.exists():
+                dmem.rmdir()  # empty by the check above
+            staging.rename(dmem)
+        return True
+
+    def _take_pre_version(self, auto: dict, h: dict) -> None:
+        """§6.3: the snapshot `start` decided on, taken before step 1 - staged
+        outside store.lock (a memory dir can be gigabytes) and renamed into
+        place under it."""
+        label = h.pop("_pre_snapshot", None)
+        if not label:
             return
-        self.store.snapshot_memory(auto, "pre-version", version=f"v{version}")
+        staged = self.store.stage_snapshot(auto, "pre-version")
+        if staged is not None:
+            self.store.commit_snapshot(auto, staged, "pre-version", version=label)
 
     def retry(self, auto: dict, h: dict) -> dict:
         """§7 in-place retry: the same execution record re-executes from the
@@ -709,6 +765,9 @@ class Engine:
         redactions: dict[str, str] = {}
         failed = False
         try:
+            # §6.3: the pre-version snapshot `start` decided on stands before
+            # anything else this execution does.
+            self._take_pre_version(auto, h)
             # §6: a missing secret stops the execution before any step —
             # declared (`secrets` entry ids in the manifest) and the
             # code-referenced secrets["<id>"] literals alike. Ids are the
@@ -782,21 +841,9 @@ class Engine:
             for w in warns:
                 self._log(h, "wrn", w, redactions)
 
-            # §4.4: first Draft execution seeds draft/memory as a copy of the
-            # live memory; later Draft executions (and draft re-saves) reuse it.
-            # "Never written" is the test (exists-and-empty counts — §19
-            # /draft/open pre-creates an empty memory/); the store lock
-            # serializes two first executions racing under maxParallel > 1.
             if h["kind"] == "draft" and not failed:
-                with self.store.lock:
-                    dmem = self._memory_dir(auto, "draft")
-                    if not dmem.exists() or not any(dmem.iterdir()):
-                        live_mem = self.store.auto_dir(auto) / "memory"
-                        if live_mem.exists() and any(live_mem.iterdir()):
-                            shutil.copytree(live_mem, dmem, dirs_exist_ok=True)
-                            self._log(h, "sys", "draft memory created — copied from the automation's memory", redactions)
-                        else:
-                            dmem.mkdir(parents=True, exist_ok=True)
+                if self._seed_draft_memory(auto):
+                    self._log(h, "sys", "draft memory created — copied from the automation's memory", redactions)
 
             # §11 test executions carry their own script/memory dirs (`_test` is
             # in-memory only — write_exec_yaml persists a fixed key set).

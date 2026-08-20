@@ -135,6 +135,13 @@ async function ensureCliFirstRun(settings: Settings): Promise<void> {
 const EXECUTION_CACHE_KEEP = 6
 let executionMru: string[] = []
 
+// §7 log cap: a log bucket only ever holds the last 2000 lines — the fetch asks
+// for that tail (§19 `tail`) and live appends trim back to it, so a chatty run
+// can't grow the bucket (or the pane's rows) without bound. Log lines are
+// per-file gapless from 1 (§5), so a kept head whose `sequence` is past 1 is
+// exactly the "this view was truncated" signal the §7 notice reads.
+export const LOG_TAIL = 2000
+
 function touchExecutionMru(id: string) {
   executionMru = [id, ...executionMru.filter((x) => x !== id)].slice(0, EXECUTION_CACHE_KEEP)
 }
@@ -379,7 +386,15 @@ export const useStore = create<Model>((set, get) => ({
         // sequence dedupe: a line already covered by a fetched snapshot is dropped
         const last = bucket.length ? bucket[bucket.length - 1].sequence : 0
         if (line.sequence > last) {
-          set({ execLogs: { ...m.execLogs, [executionId]: { ...buckets, [key]: [...bucket, line] } } })
+          // §7 log cap: keep only the last LOG_TAIL lines — a chatty run would
+          // otherwise grow the array (and the pane's rows) without bound.
+          const next = [...bucket, line]
+          set({
+            execLogs: {
+              ...m.execLogs,
+              [executionId]: { ...buckets, [key]: next.length > LOG_TAIL ? next.slice(-LOG_TAIL) : next },
+            },
+          })
         }
       }
       return
@@ -478,14 +493,21 @@ export const useStore = create<Model>((set, get) => ({
       if (!buckets[key]) set({ execLogs: { ...all, [executionId]: { ...buckets, [key]: [] } } })
     }
     try {
-      const { lines } = await api.getExecutionLogs(executionId, step, attempt)
+      // §7 log cap: only the last LOG_TAIL lines are ever fetched or kept.
+      const { lines } = await api.getExecutionLogs(executionId, step, attempt, LOG_TAIL)
       const all = get().execLogs
       const buckets = all[executionId] ?? {}
       const bucket = buckets[key]
       // keep WS lines that streamed in past the fetched snapshot
       const sequence = lines.length ? lines[lines.length - 1].sequence : 0
       const tail = bucket ? bucket.filter((l) => l.sequence > sequence) : []
-      set({ execLogs: { ...all, [executionId]: { ...buckets, [key]: [...lines, ...tail] } } })
+      const merged = [...lines, ...tail]
+      set({
+        execLogs: {
+          ...all,
+          [executionId]: { ...buckets, [key]: merged.length > LOG_TAIL ? merged.slice(-LOG_TAIL) : merged },
+        },
+      })
     } catch { /* deleted */ }
   },
 

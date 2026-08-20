@@ -58,7 +58,7 @@ describe('edit loop e2e', () => {
     await shot(page, 'edit-loop-restored.png')
 
     const auto = await backend.api('GET', `/automations/${id}`) as {
-      version: number; versions: Array<{ v: number; note: string | null }>
+      version: number; versions: Array<{ version: number; note: string | null }>
     }
     expect(auto.version).toBe(3)
     // The "Restored from v1" note lands on v3's record; the API only lists

@@ -67,8 +67,12 @@ tar -xzf "$TARBALL" -C "$PYSTAGE" --strip-components 1   # tarball root is pytho
 echo "· upgrading bundled pip"
 "$PYSTAGE/bin/python3" -m pip -q install --upgrade pip
 
-echo "· installing backend into bundled Python"
-"$PYSTAGE/bin/python3" -m pip -q install "$ROOT/backend"
+# -c backend/constraints.txt pins the whole runtime closure (SPEC §17): the
+# pyproject floors alone would let two DMGs from the same commit ship different
+# fastapi/lxml/requests, and the §6.2 curated packages are the user-facing step
+# environment.
+echo "· installing backend into bundled Python (pinned by backend/constraints.txt)"
+"$PYSTAGE/bin/python3" -m pip -q install -c "$ROOT/backend/constraints.txt" "$ROOT/backend"
 
 # ---- app icon (checked-in, SPEC §14) ----
 cp "$ROOT/app/electron/icon/icon.icns" "$BUILD/icon.icns"

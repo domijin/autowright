@@ -1128,6 +1128,49 @@ def test_pre_version_snapshot_on_first_execution(store):
     assert len(store.list_snapshots(a)) == 1  # vN's later executions don't snapshot again
 
 
+def test_pre_version_snapshot_copy_runs_outside_the_store_lock(store, monkeypatch):
+    """§6.3: a memory dir can be gigabytes - the copy must never run under
+    store.lock, or a cron firing stalls every API request for its duration."""
+    import shutil
+    import threading
+
+    from autowright import storage as st
+    from autowright.engine import Engine
+
+    engine = Engine(store)
+    a = store.create_automation(make_version(), "Snap Lock", None)
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    (store.auto_dir(a) / "memory" / "seen.yaml").write_text("x: 1\n")
+    n = store.save_new_version(a, make_version())
+
+    free = []
+    real = shutil.copytree
+
+    def spy(src, dst, *args, **kw):
+        # Probed from another thread: store.lock is an RLock, so the copying
+        # thread could re-enter it and see nothing.
+        got = []
+
+        def probe():
+            ok = store.lock.acquire(blocking=False)
+            if ok:
+                store.lock.release()
+            got.append(ok)
+
+        t = threading.Thread(target=probe)
+        t.start()
+        t.join()
+        free.append(got[0])
+        return real(src, dst, *args, **kw)
+
+    monkeypatch.setattr(st.shutil, "copytree", spy)
+    h2 = engine.start(a, "manual")
+    wait_done(engine, h2["id"])
+    assert free == [True]  # one copy, and the lock was free throughout it
+    assert [(s["reason"], s["version"]) for s in store.list_snapshots(a)] == [("pre-version", f"v{n}")]
+
+
 def test_pre_version_snapshot_toggle_off(store):
     # §6.3: the pre_version toggle off → the first-execution snapshot is skipped.
     from autowright.engine import Engine
@@ -1989,3 +2032,25 @@ def test_queue_drain_failure_never_breaks_finalize(store, monkeypatch):
     wait_done(engine, h["id"])
     assert h["status"] == "succeeded"
     assert not engine.is_live(h["id"])
+
+
+def test_wait_finished_waits_for_a_test_execution(store, monkeypatch):
+    """§19: delete waits on `wait_finished` so an rmtree can't race a step
+    still dying - a test execution's thread must be registered like any
+    other's, or the wait is a silent no-op."""
+    from autowright import testexec as tr
+    from autowright.engine import Engine
+
+    monkeypatch.setattr(tr, "store", store)
+    engine = Engine(store)
+    ver = make_version()
+    ver["steps"] = [{"file": "01-slow.py", "name": "Slow", "description": "",
+                     "code": "import time\ntime.sleep(1.0)\n"}]
+    a = store.create_automation(ver, "Slow Tester", None)
+    store.save_draft(a, ver)
+
+    eid = tr.start(engine, ver, a, [], [], {})
+    t0 = time.time()
+    assert engine.wait_finished([eid]) is True
+    assert time.time() - t0 > 0.5  # it really waited for the step
+    assert not engine.is_live(eid)

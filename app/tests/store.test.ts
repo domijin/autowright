@@ -7,7 +7,7 @@
 // are exercised through their observable behavior — the onOpenTarget deep-link
 // callback and history.pushState dedupe — instead of direct calls.
 import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import type { Execution, LogLine } from '../src/types'
+import type { Automation, Execution, LogLine, WsEvent } from '../src/types'
 
 vi.mock('../src/api', () => ({
   connectInfo: vi.fn(async () => false),
@@ -40,9 +40,18 @@ beforeAll(async () => {
 
 const ex = (id: string, startedMs: number, over: Partial<Execution> = {}): Execution => ({
   id, automationId: 'a1', automationName: 'Automation', automationDeleted: false, ver: 'v1',
-  status: 'succeeded', trigger: 'Manual', test: false, duration: '1s',
-  started: 'now', startedMs, note: null, error: null, ...over,
+  status: 'succeeded', trigger: 'Manual', triggerSender: null, test: false, duration: '1s',
+  started: 'now', startedMs, endedMs: 0, queuedMs: 0, note: null, error: null, ...over,
 })
+// Fully-typed execution event — the backend always sends executionId/automationId
+// alongside the record; automation stubs stay partial (`as never`) where the
+// store only routes them.
+const execEv = (
+  event: 'execution.started' | 'execution.queued' | 'execution.finished',
+  execution: Execution, automation: Automation | null = null,
+): WsEvent => ({ event, executionId: execution.id, automationId: execution.automationId, execution, automation })
+const logEv = (executionId: string, l: LogLine): WsEvent =>
+  ({ event: 'execution.log', executionId, automationId: null, stepIndex: null, attempt: null, line: l })
 const line = (sequence: number, text = 'line'): LogLine => ({ time: '00:00', kind: 'out', sequence, text })
 
 beforeEach(() => {
@@ -104,9 +113,9 @@ describe('applyEvent', () => {
   it('exec.started inserts and re-sorts by startedMs description, replacing an existing id', () => {
     store.useStore.setState({ executions: [ex('e1', 100), ex('e2', 50)] })
     const m = store.useStore.getState()
-    m.applyEvent({ event: 'execution.started', execution: ex('e3', 200, { status: 'executing' }) })
+    m.applyEvent(execEv('execution.started', ex('e3', 200, { status: 'executing' })))
     expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['e3', 'e1', 'e2'])
-    store.useStore.getState().applyEvent({ event: 'execution.started', execution: ex('e2', 300) })
+    store.useStore.getState().applyEvent(execEv('execution.started', ex('e2', 300)))
     expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['e2', 'e3', 'e1'])
   })
 
@@ -117,10 +126,8 @@ describe('applyEvent', () => {
       result: { chip: 'done' },
     }
     store.useStore.setState({ executions: [ex('e1', 100, { status: 'executing' })], executionFull: { e1: full } })
-    store.useStore.getState().applyEvent({
-      event: 'execution.finished',
-      execution: ex('e1', 100, { status: 'failed', test: true }), // header: no steps/result
-    })
+    store.useStore.getState().applyEvent( // header: no steps/result
+      execEv('execution.finished', ex('e1', 100, { status: 'failed', test: true })))
     const got = store.useStore.getState().executionFull.e1
     expect(got.status).toBe('failed')
     expect(got.steps).toEqual(full.steps)     // body kept through the merge
@@ -130,33 +137,66 @@ describe('applyEvent', () => {
   it('exec.log dedupes by sequence against the bucket tail, gaps accepted', () => {
     store.useStore.setState({ execLogs: { e9: { 'x.0': [line(5)] } } })
     const m = store.useStore.getState()
-    m.applyEvent({ event: 'execution.log', executionId: 'e9', stepIndex: null, attempt: null, line: line(5) })
+    m.applyEvent(logEv('e9', line(5)))
     expect(store.useStore.getState().execLogs.e9['x.0']).toHaveLength(1)
-    store.useStore.getState().applyEvent({ event: 'execution.log', executionId: 'e9', stepIndex: null, attempt: null, line: line(4) })
+    store.useStore.getState().applyEvent(logEv('e9', line(4)))
     expect(store.useStore.getState().execLogs.e9['x.0']).toHaveLength(1)
-    store.useStore.getState().applyEvent({ event: 'execution.log', executionId: 'e9', stepIndex: null, attempt: null, line: line(7) })
+    store.useStore.getState().applyEvent(logEv('e9', line(7)))
     expect(store.useStore.getState().execLogs.e9['x.0'].map((l) => l.sequence)).toEqual([5, 7])
     // no bucket open → the line is dropped, not crashed on
-    store.useStore.getState().applyEvent({ event: 'execution.log', executionId: 'nope', stepIndex: null, attempt: null, line: line(1) })
+    store.useStore.getState().applyEvent(logEv('nope', line(1)))
     expect(store.useStore.getState().execLogs.nope).toBeUndefined()
+  })
+
+  it('exec.log trims the bucket to the last LOG_TAIL lines (§7 log cap)', () => {
+    const N = store.LOG_TAIL
+    // a bucket already at the cap
+    store.useStore.setState({
+      execLogs: { e9: { 'x.0': Array.from({ length: N }, (_, i) => line(i + 1)) } },
+    })
+    store.useStore.getState().applyEvent({
+      event: 'execution.log', executionId: 'e9', stepIndex: null, attempt: null, line: line(N + 1),
+    } as never)
+    let bucket = store.useStore.getState().execLogs.e9['x.0']
+    expect(bucket).toHaveLength(N)                      // capped, not N + 1
+    expect(bucket[0].sequence).toBe(2)                  // the oldest line dropped
+    expect(bucket[bucket.length - 1].sequence).toBe(N + 1)
+    // and it stays capped as more lines stream in
+    for (let i = 2; i <= 5; i++) {
+      store.useStore.getState().applyEvent({
+        event: 'execution.log', executionId: 'e9', stepIndex: null, attempt: null, line: line(N + i),
+      } as never)
+    }
+    bucket = store.useStore.getState().execLogs.e9['x.0']
+    expect(bucket).toHaveLength(N)
+    expect(bucket[0].sequence).toBe(6)                  // > 1 → the §7 truncation signal
+    expect(bucket[bucket.length - 1].sequence).toBe(N + 5)
+  })
+
+  it('loadExecLogs asks for the tail and never keeps more than LOG_TAIL lines', async () => {
+    const N = store.LOG_TAIL
+    const getExecutionLogs = vi.mocked(apiMod.api.getExecutionLogs)
+    getExecutionLogs.mockClear()
+    // a backend that ignores `tail` still can't blow the cap
+    getExecutionLogs.mockResolvedValueOnce({
+      lines: Array.from({ length: N + 50 }, (_, i) => line(i + 1)),
+    } as never)
+    await store.useStore.getState().loadExecLogs('e7')
+    expect(getExecutionLogs).toHaveBeenCalledWith('e7', undefined, undefined, N)
+    const bucket = store.useStore.getState().execLogs.e7['x.0']
+    expect(bucket).toHaveLength(N)
+    expect(bucket[0].sequence).toBe(51)
+    expect(bucket[bucket.length - 1].sequence).toBe(N + 50)
   })
 
   it('exec.finished toasts a summary for real executions', () => {
     vi.useFakeTimers()
-    store.useStore.getState().applyEvent({
-      event: 'execution.finished',
-      execution: ex('e5', 1, { status: 'succeeded' }),
-      automation: { name: 'My Automation', resultChip: '3 changes' },
-    })
+    store.useStore.getState().applyEvent(execEv('execution.finished', ex('e5', 1, { status: 'succeeded' }), { name: 'My Automation', resultChip: '3 changes' } as never))
     expect(store.useStore.getState().toast).toBe('My Automation finished — 3 changes.')
     vi.runAllTimers()
     expect(store.useStore.getState().toast).toBeNull()
 
-    store.useStore.getState().applyEvent({
-      event: 'execution.finished',
-      execution: ex('e6', 2, { status: 'failed' }),
-      automation: { name: 'My Automation', resultChip: null },
-    })
+    store.useStore.getState().applyEvent(execEv('execution.finished', ex('e6', 2, { status: 'failed' }), { name: 'My Automation', resultChip: null } as never))
     expect(store.useStore.getState().toast).toBe('My Automation failed — needs attention.')
     vi.runAllTimers()
   })
@@ -167,8 +207,8 @@ describe('applyEvent', () => {
       { name: 's2', status: 'executing', duration: '', attempts: [] },
     ] as NonNullable<Execution['steps']>
     store.useStore.setState({ executionFull: { e1: { ...ex('e1', 100), steps } } })
-    const updated = { name: 's2', status: 'succeeded', duration: '2s', attempts: [] }
-    store.useStore.getState().applyEvent({ event: 'execution.step', executionId: 'e1', index: 1, step: updated })
+    const updated: NonNullable<Execution['steps']>[number] = { name: 's2', status: 'succeeded', duration: '2s', attempts: [] }
+    store.useStore.getState().applyEvent({ event: 'execution.step', executionId: 'e1', automationId: null, index: 1, step: updated })
     const got = store.useStore.getState().executionFull.e1.steps!
     expect(got[0]).toEqual(steps[0])   // untouched
     expect(got[1]).toEqual(updated)    // replaced wholesale
@@ -179,12 +219,12 @@ describe('applyEvent', () => {
     store.useStore.setState({ executionFull: { other: { ...ex('other', 1) } } }) // no steps either
     const before = store.useStore.getState().executionFull
     store.useStore.getState().applyEvent({
-      event: 'execution.step', executionId: 'nope', index: 0,
+      event: 'execution.step', executionId: 'nope', automationId: null, index: 0,
       step: { name: 's', status: 'succeeded', duration: '1s', attempts: [] },
     })
     // header-only record (no steps) is also left alone
     store.useStore.getState().applyEvent({
-      event: 'execution.step', executionId: 'other', index: 0,
+      event: 'execution.step', executionId: 'other', automationId: null, index: 0,
       step: { name: 's', status: 'succeeded', duration: '1s', attempts: [] },
     })
     expect(store.useStore.getState().executionFull).toEqual(before)
@@ -206,27 +246,15 @@ describe('applyEvent', () => {
     // §7/§9.2 Fix with AI: the store only carries the failed executionId to the
     // editor; no event mutates it — CreateFlow consumes and clears it on mount.
     store.useStore.setState({ fixExec: 'eF' })
-    store.useStore.getState().applyEvent({
-      event: 'execution.finished',
-      execution: ex('eF', 1, { status: 'failed' }),
-      automation: { name: 'A', resultChip: null },
-    })
+    store.useStore.getState().applyEvent(execEv('execution.finished', ex('eF', 1, { status: 'failed' }), { name: 'A', resultChip: null } as never))
     expect(store.useStore.getState().fixExec).toBe('eF')
   })
 
   it('toast suppressed for test executions and for cancelled status', () => {
     vi.useFakeTimers()
-    store.useStore.getState().applyEvent({
-      event: 'execution.finished',
-      execution: ex('e7', 3, { status: 'succeeded', test: true }),
-      automation: { name: 'My Automation', resultChip: null },
-    })
+    store.useStore.getState().applyEvent(execEv('execution.finished', ex('e7', 3, { status: 'succeeded', test: true }), { name: 'My Automation', resultChip: null } as never))
     expect(store.useStore.getState().toast).toBeNull()
-    store.useStore.getState().applyEvent({
-      event: 'execution.finished',
-      execution: ex('e8', 4, { status: 'cancelled' }),
-      automation: { name: 'My Automation', resultChip: null },
-    })
+    store.useStore.getState().applyEvent(execEv('execution.finished', ex('e8', 4, { status: 'cancelled' }), { name: 'My Automation', resultChip: null } as never))
     expect(store.useStore.getState().toast).toBeNull()
   })
 
@@ -234,11 +262,8 @@ describe('applyEvent', () => {
     const getAutomation = vi.mocked(apiMod.api.getAutomation)
     const row = (over: Record<string, unknown> = {}) =>
       ({ id: 'a1', name: 'Auto', lastStatus: 'none', triggers: [], live: [], ...over }) as never
-    const finished = (id: string, over: Partial<Execution> = {}) => ({
-      event: 'execution.finished',
-      execution: ex(id, 1, { status: 'cancelled', ...over }), // cancelled: no toast timer to flush
-      automation: row(),
-    })
+    const finished = (id: string, over: Partial<Execution> = {}) => // cancelled: no toast timer to flush
+      execEv('execution.finished', ex(id, 1, { status: 'cancelled', ...over }), row())
     // list-shape row only (detail page never opened) → no refetch
     getAutomation.mockClear()
     store.useStore.setState({ automations: [row()] })
@@ -389,7 +414,7 @@ describe('applyEvent — harness.install / ollama.pull live progress (§10/§12)
     expect(store.useStore.getState().execLogs.e1['x.0']).toEqual([])
     // …so a line streamed while the fetch is in flight buffers there
     store.useStore.getState().applyEvent({
-      event: 'execution.log', executionId: 'e1', stepIndex: null, attempt: null, line: line(10),
+      event: 'execution.log', executionId: 'e1', automationId: null, stepIndex: null, attempt: null, line: line(10),
     })
     // snapshot only covers up to sequence 8 — the WS line past it must survive
     resolveFetch({ lines: [line(7), line(8)] })
@@ -451,9 +476,7 @@ describe('applyEvent — changed nudges and ws.open recovery (§19)', () => {
     const getExecution = vi.mocked(apiMod.api.getExecution)
     getExecution.mockClear()
     store.useStore.setState({ executionFull: { e1: ex('e1', 100) } })
-    store.useStore.getState().applyEvent({
-      event: 'execution.started', execution: ex('e1', 100, { status: 'executing' }),
-    })
+    store.useStore.getState().applyEvent(execEv('execution.started', ex('e1', 100, { status: 'executing' })))
     expect(getExecution).toHaveBeenCalledWith('e1')
   })
 
@@ -476,9 +499,9 @@ describe('applyEvent — changed nudges and ws.open recovery (§19)', () => {
     expect(getExecution).toHaveBeenCalledWith('live')
     expect(getExecution).toHaveBeenCalledWith('viewed')
     expect(getExecution).not.toHaveBeenCalledWith('done')
-    // 'x.0' → the execution log, '1.2' → step 1 attempt 2
-    expect(getExecutionLogs).toHaveBeenCalledWith('live', undefined, undefined)
-    expect(getExecutionLogs).toHaveBeenCalledWith('live', 1, 2)
+    // 'x.0' → the execution log, '1.2' → step 1 attempt 2; both ask for the §7 tail
+    expect(getExecutionLogs).toHaveBeenCalledWith('live', undefined, undefined, store.LOG_TAIL)
+    expect(getExecutionLogs).toHaveBeenCalledWith('live', 1, 2, store.LOG_TAIL)
   })
 
   it('refresh refetches when a WS execution event lands while /state is in flight', async () => {
@@ -490,9 +513,7 @@ describe('applyEvent — changed nudges and ws.open recovery (§19)', () => {
     state.mockClear()
     state.mockImplementationOnce(async () => {
       // the event makes this snapshot stale on arrival — it must not land
-      store.useStore.getState().applyEvent({
-        event: 'execution.started', execution: ex('mid', 5, { status: 'executing' }),
-      })
+      store.useStore.getState().applyEvent(execEv('execution.started', ex('mid', 5, { status: 'executing' })))
       return snap([]) as never
     })
     state.mockResolvedValueOnce(snap([ex('mid', 5)]) as never)

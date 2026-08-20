@@ -105,6 +105,10 @@ def start(engine: Engine, draft: dict, auto: dict | None,
                     execution=store.exec_json(h), automation=None)
         t = threading.Thread(target=_run, args=(engine, shadow, ver, h, state, dbase, scratch),
                              daemon=True)
+        # §19 delete waits on `engine.wait_finished`, which finds the thread
+        # here - an unregistered one makes that wait a no-op and the rmtree can
+        # race a step still dying.
+        state["thread"] = t
         t.start()
         return h["id"]
     except BaseException:

@@ -60,14 +60,14 @@ const summary = (over: Partial<ImportSummary> = {}): ImportSummary => ({
 describe('§9.1 Needs fixing chip', () => {
   it('shows with a tooltip listing every problem label', () => {
     seed([auto({ problems: [
-      { kind: 'secret-unset', label: 'Secret API_KEY has no value yet - add it on the Secrets page.' },
-      { kind: 'os-mismatch', label: 'Built on Windows - its steps may need rewriting before they run on this Mac.' },
+      { kind: 'secret-unset', label: 'Secret API_KEY has no value yet — add it on the Secrets page.' },
+      { kind: 'os-mismatch', label: 'Built on Windows — its steps may need rewriting before they run on this Mac.' },
     ] })])
     render(<AutomationsList />)
     const chip = screen.getByText('Needs fixing')
     expect(chip.getAttribute('title')).toBe(
-      'Secret API_KEY has no value yet - add it on the Secrets page.\n'
-      + 'Built on Windows - its steps may need rewriting before they run on this Mac.')
+      'Secret API_KEY has no value yet — add it on the Secrets page.\n'
+      + 'Built on Windows — its steps may need rewriting before they run on this Mac.')
   })
 
   it('is absent when the problems list is empty', () => {

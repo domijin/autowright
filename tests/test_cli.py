@@ -707,6 +707,53 @@ def test_followed_execution_failure_exits_2(monkeypatch, capsys):
     assert "→ failed in 3s" in capsys.readouterr().out
 
 
+def test_usage_errors_exit_1_not_2():
+    """§20: 2 is exclusively the follow-failure signal, so argparse's own
+    usage-error exit code (2) is overridden: usage errors take the ordinary
+    error exit with the message on stderr."""
+    import contextlib
+
+    from autowright import cli
+
+    for argv in (["nosuchcommand"],
+                 ["automation"],                       # missing required verb
+                 ["automation", "show"],               # missing positional
+                 ["automation", "list", "--nope"],     # unknown flag
+                 ["service", "frobnicate"]):           # bad choice
+        with pytest.raises(SystemExit) as ei, contextlib.redirect_stderr(io.StringIO()):
+            cli.build_parser(full=True).parse_args(argv)
+        # a str code exits 1 and prints itself on stderr; 2 must never appear
+        assert isinstance(ei.value.code, str), f"{argv} exited {ei.value.code!r}"
+        assert "autowright" in ei.value.code
+
+    # --help still exits 0 through argparse's own path
+    with pytest.raises(SystemExit) as ei, contextlib.redirect_stdout(io.StringIO()):
+        cli.build_parser(full=True).parse_args(["--help"])
+    assert ei.value.code == 0
+
+
+def test_follow_exec_ctrl_c_exits_cleanly(monkeypatch, capsys):
+    """§20: Ctrl-C while following exits 1 with a plain line, never a
+    KeyboardInterrupt traceback, and never 2."""
+    from autowright import cli
+
+    class _InterruptClient:
+        def req(self, method, path, body=None, timeout=30):
+            if path == "/executions/e1":
+                return {"status": "executing", "duration": "1s", "steps": []}
+            return {"lines": []}
+
+    def boom(_s):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cli.time, "sleep", boom)
+    with pytest.raises(SystemExit) as ei:
+        cli.follow_exec(_InterruptClient(), "e1")
+    assert ei.value.code != 2
+    assert "interrupted" in str(ei.value.code)
+    assert "still running" in str(ei.value.code)
+
+
 def test_client_exits_cleanly_when_backend_port_is_dead(home):
     """§3: a well-formed backend.json pointing at a dead backend (SIGKILL
     leftovers) exits with restart guidance at request time — never a traceback."""
@@ -904,6 +951,46 @@ def test_cmd_automation_list_row_format_and_json(capsys):
     assert json.loads(capsys.readouterr().out) == autos
 
 
+def test_cmd_automation_list_marks_needs_fixing(capsys):
+    """§20 needs-fixing parity: a non-empty §4.1 `problems` list puts a plain
+    `needs fixing` marker after the status column, before the result chip."""
+    broken = {"id": "abc12345-x", "name": "Daily Report", "triggerChip": "Daily 8:00",
+              "lastStatus": "failed", "resultChip": "0 new",
+              "problems": [{"kind": "secret", "label": "API_TOKEN has no value"}]}
+    clean = dict(broken, id="def67890-x", name="Fine One", problems=[])
+    _run(_RouteClient({"/automations": [broken, clean]}), "automation", "list")
+    rows = capsys.readouterr().out.splitlines()
+    assert "needs fixing" in rows[0]
+    assert rows[0].index("needs fixing") < rows[0].index("0 new")  # before the chip
+    assert "needs fixing" not in rows[1]  # an empty problems list marks nothing
+
+    # --json carries the serialized field untouched
+    _run(_RouteClient({"/automations": [broken]}), "automation", "list", "--json")
+    assert json.loads(capsys.readouterr().out)[0]["problems"] == broken["problems"]
+
+
+def test_cmd_automation_show_prints_problems_block(capsys):
+    """§20: `automation show` prints a `needs fixing:` block, one indented line
+    per §4.1 problem label, in order."""
+    full = dict(FULL_AUTO, specMeta="v2 · edited today", lastStatus="failed",
+                problems=[{"kind": "secret", "label": "API_TOKEN has no value"},
+                          {"kind": "agent", "label": "Fast local needs setup"}])
+    gets = {**_auto_gets(full),
+            "/secrets": [{"id": API_TOKEN_ID, "name": "API_TOKEN", "set": False,
+                          "usedBy": []}]}
+    _run(_RouteClient(gets), "automation", "show", "Daily Report")
+    out = capsys.readouterr().out.splitlines()
+    i = out.index("needs fixing:")
+    assert out[i + 1] == "  API_TOKEN has no value"
+    assert out[i + 2] == "  Fast local needs setup"
+
+    # no problems → no block at all
+    clean = dict(full, problems=[])
+    _run(_RouteClient({**_auto_gets(clean), "/secrets": gets["/secrets"]}),
+         "automation", "show", "Daily Report")
+    assert "needs fixing" not in capsys.readouterr().out
+
+
 def test_cmd_automation_show_prints_record(capsys):
     full = dict(FULL_AUTO, specMeta="v2 · edited today", lastStatus="failed",
                 resultChip="0 new", versions=[{"version": 1}, {"version": 2}], draft={"x": 1},
@@ -958,6 +1045,22 @@ def test_cmd_automation_execute_posts_manual_trigger(capsys):
     assert c.calls[-1][2] == {"trigger": "manual", "version": "draft"}
 
 
+def test_cmd_automation_execute_queue_flag(capsys):
+    """§20: `--queue` forwards the §19 `queue: true` field, and a queued reply
+    says so instead of claiming the execution started."""
+    c = _RouteClient(_auto_gets(), reply={"executionId": "e9", "queued": True})
+    _run(c, "automation", "execute", "Daily Report", "--queue")
+    assert c.calls == [("POST", f"/automations/{AUTO_ID}/execute",
+                        {"trigger": "manual", "queue": True})]
+    assert "queued — execution e9 (waiting for a free slot)" in capsys.readouterr().out
+
+    # without the flag the body carries no queue key: a busy automation stays a
+    # plain 409 refusal
+    c = _RouteClient(_auto_gets(), reply={"executionId": "e9"})
+    _run(c, "automation", "execute", "Daily Report")
+    assert "queue" not in c.calls[-1][2]
+
+
 def test_cmd_automation_export_writes_archive(tmp_path, capsys):
     c = _RouteClient(_auto_gets(), raw=b"ZIPDATA")
     out_file = tmp_path / "out.autowright"
@@ -1005,6 +1108,36 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
     assert "package requests 2.32.3 installed" in out
     assert "triggers imported off" in out
 
+
+def test_cmd_automation_import_reports_os_mismatch(tmp_path, capsys):
+    """§5.1/§20: an archive exported on another platform prints the warning line
+    naming the origin platform token; a matching archive prints nothing."""
+    src = tmp_path / "in.autowright"
+    src.write_bytes(b"ARCHIVE")
+    summary = {"secretsCreated": [], "secretsExisting": [], "agentsCreated": [],
+               "agentsReused": [], "packages": [], "osMismatch": True, "os": "windows"}
+    raw = json.dumps({"automation": {"name": "Ported", "id": "deadbeef-1"},
+                      "summary": summary}).encode()
+    _run(_RouteClient(raw=raw), "automation", "import", str(src))
+    assert ("built on windows - its steps may need rewriting on this machine"
+            in capsys.readouterr().out)
+
+    same = json.dumps({"automation": {"name": "Ported", "id": "deadbeef-1"},
+                       "summary": {**summary, "osMismatch": False}}).encode()
+    _run(_RouteClient(raw=same), "automation", "import", str(src))
+    assert "may need rewriting" not in capsys.readouterr().out
+
+
+def test_cmd_automation_export_unwritable_path_exits_1(tmp_path, capsys):
+    """§20: an unwritable output path is a plain message on stderr and exit 1,
+    never a bare OSError traceback out of `open`."""
+    c = _RouteClient(_auto_gets(), raw=b"ZIPDATA")
+    with pytest.raises(SystemExit) as ei:
+        _run(c, "automation", "export", "Daily Report",
+             str(tmp_path / "no-such-dir" / "out.autowright"))
+    assert ei.value.code != 2  # 2 stays the follow-failure signal
+    assert "can't write" in str(ei.value.code)
+    assert "out.autowright" in str(ei.value.code)
 
 
 def test_cmd_automation_import_url_confirms_immediately(capsys):
@@ -1377,6 +1510,45 @@ def test_cmd_execution_show_payload_fallbacks(capsys):
     assert "trigger message: dave · 42 · 08:00" in capsys.readouterr().out
 
 
+def test_cmd_execution_tail_follows_and_exits_by_status(monkeypatch, capsys):
+    """§20: `execution tail` resolves the reference (default: latest), streams
+    the log lines, and carries the follow exit code: 0 on success, 2 when the
+    execution ends any other way."""
+    from autowright import cli
+
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+
+    class _TailClient:
+        base = "http://127.0.0.1:5151"
+
+        def __init__(self, status):
+            self.status = status
+            self.polls = 0
+
+        def req(self, method, path, body=None, timeout=30):
+            if path == "/executions":
+                return [FULL_EXEC]
+            if path == f"/executions/{FULL_EXEC['id']}":
+                self.polls += 1
+                # one live poll first, so the loop really iterates
+                return {"status": "executing" if self.polls == 1 else self.status,
+                        "duration": "3s", "steps": []}
+            assert path == f"/executions/{FULL_EXEC['id']}/logs"
+            return {"lines": [{"sequence": self.polls, "time": f"T{self.polls}",
+                               "kind": "log", "text": f"line {self.polls}"}]}
+
+    c = _TailClient("succeeded")
+    _run(c, "execution", "tail")  # no ref → latest, and a clean exit (no raise)
+    out = capsys.readouterr().out
+    assert "T1 [log] line 1" in out and "→ succeeded in 3s" in out
+
+    c = _TailClient("failed")
+    with pytest.raises(SystemExit) as ei:
+        _run(c, "execution", "tail", "e12")
+    assert ei.value.code == 2
+    assert "→ failed in 3s" in capsys.readouterr().out
+
+
 def test_cmd_execution_cancel_and_retry(capsys):
     gets = {"/executions": [FULL_EXEC]}
     c = _RouteClient(gets)
@@ -1455,6 +1627,20 @@ def test_cmd_secret_commands(monkeypatch, capsys):
         _run(c, "secret", "delete", "NOPE")
     assert c.calls == []
     assert "removed from your Keychain" in capsys.readouterr().out
+
+
+def test_cmd_secret_set_empty_value_exits_on_stderr(monkeypatch, capsys):
+    """§20: an empty value saves nothing and exits 1 through sys.exit, so the
+    message lands on stderr like every other error, not on stdout."""
+    from autowright import cli
+
+    monkeypatch.setattr(cli.sys, "stdin", io.StringIO("\n"))
+    c = _RouteClient({"/secrets": []})
+    with pytest.raises(SystemExit) as ei:
+        _run(c, "secret", "set", "API_TOKEN", "--stdin")
+    assert "no value given" in str(ei.value.code)
+    assert c.calls == []                       # nothing written
+    assert capsys.readouterr().out == ""       # and nothing on stdout
 
 
 AGENTS = [{"id": "ag1", "name": "Fast local", "harness": "OpenCode", "model": "qwen3",

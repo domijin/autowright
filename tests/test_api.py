@@ -3156,3 +3156,31 @@ def test_ws_streams_events_and_lifespan_repairs(client, monkeypatch):
         api.hub._loop = None
     # §3: shutdown cancelled the still-building drafting jobs too
     assert killed == [True]
+
+
+def test_exec_logs_tail_param(client):
+    """§19 `tail`: same response shape, only the last N lines of the selected
+    log. Below 1 is a 422; absent means the whole log, as before."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Tail Me", "mock")
+    h = store.create_execution(a, "version", a["current_version"], "manual",
+                               steps=[{"name": "One", "file": "01-say.py"}])
+    for i in range(1, 51):
+        store.append_log_line(h["id"], store.EXEC_LOG,
+                              {"timestamp": "2026-07-27T10:00:00+00:00", "kind": "out",
+                               "sequence": i, "text": f"line {i}"})
+
+    full = client.get(f"/executions/{h['id']}/logs").json()["lines"]
+    assert len(full) == 50 and full[0]["text"] == "line 1"
+
+    tailed = client.get(f"/executions/{h['id']}/logs", params={"tail": 5}).json()["lines"]
+    assert [l["text"] for l in tailed] == [f"line {i}" for i in range(46, 51)]
+    assert all({"time", "kind", "sequence", "text"} == set(l) for l in tailed)
+    assert tailed[0]["time"]  # the derived local clock label still rides along
+
+    # a tail bigger than the log is the whole log
+    assert len(client.get(f"/executions/{h['id']}/logs",
+                          params={"tail": 500}).json()["lines"]) == 50
+    assert client.get(f"/executions/{h['id']}/logs", params={"tail": 0}).status_code == 422
+    assert client.get(f"/executions/{h['id']}/logs", params={"tail": -3}).status_code == 422

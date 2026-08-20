@@ -919,7 +919,7 @@ describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () 
     // the param definitions (what versions store) keep their old value
     expect(d.params[0]).toMatchObject({ name: 'greeting', value: 'hello' })
     // and the live automation in the store still holds the stored value
-    expect((storeMod.useStore.getState().automations[0].params[0] as { value?: string }).value).toBe('hello')
+    expect((storeMod.useStore.getState().automations[0].params![0] as { value?: string }).value).toBe('hello')
   })
 
   it('hold-and-flush: a sync-arming response lands its staged chip beneath the sync trail (§11)', async () => {
@@ -1482,7 +1482,7 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     // The removed create pipeline's spec-call errors carried a Try-again pill;
     // unified chat failures never do — legacy persisted entries render plain.
     // A pending draft resumes here, so the slot thread merges (§4.4).
-    storeMod.useStore.setState({ createFrom: 'new', automationId: null })
+    storeMod.useStore.setState({ createFrom: 'app', automationId: null })
     ;(mockedApi.getDraft as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       draft: { spec: [{ kind: 'h1', text: 'Kept' }, { kind: 'p', text: 'Body.' }], steps: [] },
       agentId: null,
@@ -1502,7 +1502,7 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
   it('fresh create entry discards a leftover slot thread — the suggestions stay (§4.4 fresh-entry clear)', async () => {
     // No pending draft to resume: the settled session's thread must never
     // replay over the create empty state — it is dropped and unlinked.
-    storeMod.useStore.setState({ createFrom: 'new', automationId: null })
+    storeMod.useStore.setState({ createFrom: 'app', automationId: null })
     getChatMock().mockResolvedValueOnce({ chat: [
       { id: 'a1', kind: 'activity', title: 'Working on the request…', text: 'Choosing what to do', outcome: 'done' },
       { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft discarded.' },
@@ -1516,7 +1516,7 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
   })
 
   it('a resumed pending draft keeps its slot thread (§4.4 — the clear is entry-without-draft only)', async () => {
-    storeMod.useStore.setState({ createFrom: 'new', automationId: null })
+    storeMod.useStore.setState({ createFrom: 'app', automationId: null })
     ;(mockedApi.getDraft as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       draft: { spec: [{ kind: 'h1', text: 'Kept' }, { kind: 'p', text: 'Body.' }], steps: [] },
       agentId: null,

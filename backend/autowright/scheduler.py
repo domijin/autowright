@@ -70,73 +70,16 @@ class Scheduler:
         now_utc = self._utc_clock()
         with self.store.lock:
             autos = list(self.store.autos.values())
-        live_keys: set[tuple[str, str]] = set()
+        # Collected before the per-automation work, so a raising automation can
+        # never cost another one its baselines in the prune below.
+        live_keys = {(a["id"], t["id"]) for a in autos for t in list(a["triggers"])}
         for a in autos:
-            due: list[tuple[datetime, dict]] = []
-            for t in list(a["triggers"]):  # consume_trigger below mutates the list
-                key = (a["id"], t["id"])
-                live_keys.add(key)
-                if key not in self._baseline:
-                    self._set_baseline(key, now, now_utc)
-                base = self._baseline[key]
-                if base > now and now_utc < self._baseline_utc[key]:
-                    # A backward clock step (NTP) must not silence every
-                    # trigger until the wall clock re-reaches the old baseline.
-                    # UTC moved back too, so this is a real step — not a DST
-                    # fall-back, where holding the baseline is what makes the
-                    # repeated hour fire once (§4.3).
-                    base = now
-                    self._set_baseline(key, now, now_utc)
-                if t["enabled"] and base > now and (base - now).total_seconds() > 3900:
-                    # §4.3: the wall clock rewound with UTC steady, by more
-                    # than any DST fall-back shifts (> 65 min) — almost
-                    # certainly a system-timezone change. Deliberately handled
-                    # like fall-back (occurrences in the rewound span never
-                    # re-fire; a pending one-shot there is consumed unfired) —
-                    # this line exists so a reported miss is diagnosable.
-                    if key not in self._warned_rewind:
-                        self._warned_rewind.add(key)
-                        log.warning(
-                            "wall clock rewound %d min with UTC steady — looks like a "
-                            "system timezone change; occurrences of trigger %s on %r "
-                            "before the old baseline will not fire",
-                            int((base - now).total_seconds() // 60), t["id"], a["name"])
-                else:
-                    self._warned_rewind.discard(key)
-                if not t["enabled"]:
-                    # Occurrences passing while off never fire, even after a re-enable.
-                    self._set_baseline(key, now, now_utc)
-                    if triggerlib.time_elapsed(t, now):
-                        # §4.3: a spent one-shot never lingers — consumed even
-                        # when its moment passed while the trigger was off.
-                        self.store.consume_trigger(a, t["id"])
-                        self._publish_changed(a)
-                    continue
-                occ = triggerlib.trigger_next(t, after=base)
-                if occ and occ <= now:
-                    # §6: at most one catch-up per wake — swallow every older occurrence.
-                    self._set_baseline(key, now, now_utc)
-                    due.append((occ, t))
-                elif occ is None and triggerlib.time_elapsed(t, now):
-                    # §4.3: the one-shot's moment passed before the baseline
-                    # (backend down when it passed) — consumed, never fired.
-                    self.store.consume_trigger(a, t["id"])
-                    self._publish_changed(a)
-            if due:
-                # §6: same-moment (and same-wake) occurrences coalesce into one execution.
-                due.sort(key=lambda p: p[0])
-                self._fire(a, due[0][1])
-                consumed = False
-                for _, t in due:
-                    if t["kind"] == "time":
-                        self.store.consume_trigger(a, t["id"])
-                        consumed = True
-                if consumed:
-                    self._publish_changed(a)
-            # §6: drain here as well as on every execution finish — a raised
-            # maxParallel, or a finish whose drain lost a race, is picked up
-            # within a tick rather than waiting for the next firing.
-            drain_queue(self.store, self.engine, a["id"])
+            try:
+                self._tick_automation(a, now, now_utc)
+            except Exception:  # noqa: BLE001
+                # §6: one automation's firing must never silence every
+                # automation after it in the list - same rule as the tick loop.
+                log.exception("scheduler tick failed for automation %r", a.get("name"))
         # Forget baselines of deleted automations / removed triggers.
         self._baseline = {k: v for k, v in self._baseline.items() if k in live_keys}
         self._baseline_utc = {k: v for k, v in self._baseline_utc.items() if k in live_keys}
@@ -146,6 +89,74 @@ class Scheduler:
             removed = self.store.retention_cleanup()
             if removed:
                 hub.publish("automation.changed")
+
+    def _tick_automation(self, a: dict, now: datetime, now_utc: datetime) -> None:
+        """One automation's share of a tick - its own unit of failure (§6): the
+        caller logs and moves on, so a broken automation can't stop the rest."""
+        due: list[tuple[datetime, dict]] = []
+        for t in list(a["triggers"]):  # consume_trigger below mutates the list
+            key = (a["id"], t["id"])
+            if key not in self._baseline:
+                self._set_baseline(key, now, now_utc)
+            base = self._baseline[key]
+            if base > now and now_utc < self._baseline_utc[key]:
+                # A backward clock step (NTP) must not silence every
+                # trigger until the wall clock re-reaches the old baseline.
+                # UTC moved back too, so this is a real step — not a DST
+                # fall-back, where holding the baseline is what makes the
+                # repeated hour fire once (§4.3).
+                base = now
+                self._set_baseline(key, now, now_utc)
+            if t["enabled"] and base > now and (base - now).total_seconds() > 3900:
+                # §4.3: the wall clock rewound with UTC steady, by more
+                # than any DST fall-back shifts (> 65 min) — almost
+                # certainly a system-timezone change. Deliberately handled
+                # like fall-back (occurrences in the rewound span never
+                # re-fire; a pending one-shot there is consumed unfired) —
+                # this line exists so a reported miss is diagnosable.
+                if key not in self._warned_rewind:
+                    self._warned_rewind.add(key)
+                    log.warning(
+                        "wall clock rewound %d min with UTC steady — looks like a "
+                        "system timezone change; occurrences of trigger %s on %r "
+                        "before the old baseline will not fire",
+                        int((base - now).total_seconds() // 60), t["id"], a["name"])
+            else:
+                self._warned_rewind.discard(key)
+            if not t["enabled"]:
+                # Occurrences passing while off never fire, even after a re-enable.
+                self._set_baseline(key, now, now_utc)
+                if triggerlib.time_elapsed(t, now):
+                    # §4.3: a spent one-shot never lingers — consumed even
+                    # when its moment passed while the trigger was off.
+                    self.store.consume_trigger(a, t["id"])
+                    self._publish_changed(a)
+                continue
+            occ = triggerlib.trigger_next(t, after=base)
+            if occ and occ <= now:
+                # §6: at most one catch-up per wake — swallow every older occurrence.
+                self._set_baseline(key, now, now_utc)
+                due.append((occ, t))
+            elif occ is None and triggerlib.time_elapsed(t, now):
+                # §4.3: the one-shot's moment passed before the baseline
+                # (backend down when it passed) — consumed, never fired.
+                self.store.consume_trigger(a, t["id"])
+                self._publish_changed(a)
+        if due:
+            # §6: same-moment (and same-wake) occurrences coalesce into one execution.
+            due.sort(key=lambda p: p[0])
+            self._fire(a, due[0][1])
+            consumed = False
+            for _, t in due:
+                if t["kind"] == "time":
+                    self.store.consume_trigger(a, t["id"])
+                    consumed = True
+            if consumed:
+                self._publish_changed(a)
+        # §6: drain here as well as on every execution finish — a raised
+        # maxParallel, or a finish whose drain lost a race, is picked up
+        # within a tick rather than waiting for the next firing.
+        drain_queue(self.store, self.engine, a["id"])
 
     def _fire(self, a: dict, t: dict) -> None:
         # The tick evaluated a snapshot taken outside the lock - a PATCH landing

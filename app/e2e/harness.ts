@@ -63,21 +63,37 @@ export class Backend {
     return this.spawnAndWait()
   }
 
-  /** §3 restart: SIGKILL the process, then boot a NEW backend on the SAME
+  /** §3 restart: SIGKILL the process (a crash simulation — no lifespan
+   * cleanup runs, which is the point), then boot a NEW backend on the SAME
    * home — it binds a new port/token and rewrites backend.json. */
   async restart(): Promise<this> {
-    if (this.proc && this.proc.exitCode === null) {
-      const gone = new Promise<void>((r) => this.proc!.once('exit', () => r()))
-      this.proc.kill('SIGKILL')
-      await Promise.race([gone, new Promise((r) => setTimeout(r, 5000))])
-    }
+    await this.endProcess('SIGKILL')
     await rm(path.join(this.home, 'backend.json'), { force: true })
     return this.spawnAndWait()
   }
 
+  /** Signal the backend and wait (bounded) for it to exit; SIGTERM falls back
+   * to SIGKILL when the wait runs out. Mirrors it_harness.stop/kill. */
+  private async endProcess(signal: 'SIGTERM' | 'SIGKILL'): Promise<void> {
+    const proc = this.proc
+    if (!proc || proc.exitCode !== null) return
+    const gone = new Promise<void>((r) => proc.once('exit', () => r()))
+    proc.kill(signal)
+    let timer: NodeJS.Timeout | undefined
+    const waited = await Promise.race([
+      gone.then(() => true),
+      new Promise<boolean>((r) => { timer = setTimeout(() => r(false), 5000) }),
+    ])
+    clearTimeout(timer)
+    if (!waited && signal === 'SIGTERM' && proc.exitCode === null) {
+      proc.kill('SIGKILL')
+      await Promise.race([gone, new Promise((r) => setTimeout(r, 5000))])
+    }
+  }
+
   private async spawnAndWait(): Promise<this> {
     this.out = ''
-    this.proc = spawn(PYTHON, ['-m', 'autowright.main'], {
+    const proc = spawn(PYTHON, ['-m', 'autowright.main'], {
       env: {
         ...process.env,
         AUTOWRIGHT_HOME: this.home,
@@ -85,15 +101,25 @@ export class Backend {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
-    this.proc.stdout?.on('data', (d: Buffer) => { this.out += d.toString() })
-    this.proc.stderr?.on('data', (d: Buffer) => { this.out += d.toString() })
+    this.proc = proc
+    proc.stdout?.on('data', (d: Buffer) => { this.out += d.toString() })
+    proc.stderr?.on('data', (d: Buffer) => { this.out += d.toString() })
 
-    const info = await waitFor(async () => {
-      const raw = await readFile(path.join(this.home, 'backend.json'), 'utf-8').catch(() => null)
-      if (!raw) return null
-      const j = JSON.parse(raw) as { port: number; token: string; pid: number }
-      return (await tcpOpen(j.port)) ? j : null
-    }, 20_000, `backend.json + open port (output so far:\n${this.out.slice(-2000)})`)
+    let info: { port: number; token: string; pid: number }
+    try {
+      info = await waitFor(async () => {
+        const raw = await readFile(path.join(this.home, 'backend.json'), 'utf-8').catch(() => null)
+        if (!raw) return null
+        const j = JSON.parse(raw) as { port: number; token: string; pid: number }
+        return (await tcpOpen(j.port)) ? j : null
+      }, 20_000, `backend.json + open port (output so far:\n${this.out.slice(-2000)})`)
+    } catch (e) {
+      // A startup timeout throws before `new Backend().start()` ever returns,
+      // so the caller holds no handle and afterEach's stop() never runs — tear
+      // the half-started python down here or it outlives the whole suite (§15).
+      await this.stop()
+      throw e
+    }
     this.port = info.port
     this.token = info.token
     return this
@@ -174,12 +200,13 @@ export class Backend {
     }) as { id: string }
   }
 
+  /** §15 teardown: stop the backend GRACEFULLY (SIGTERM, bounded wait, SIGKILL
+   * only as a fallback) so its lifespan cleanup kills the live step and
+   * drafting process groups. Those children run in their own sessions, so a
+   * bare SIGKILL here would orphan them — and the home this deletes next is
+   * exactly what a successor's startup recovery would have used to reap them. */
   async stop(): Promise<void> {
-    if (this.proc && this.proc.exitCode === null) {
-      const gone = new Promise<void>((r) => this.proc!.once('exit', () => r()))
-      this.proc.kill('SIGKILL')
-      await Promise.race([gone, new Promise((r) => setTimeout(r, 5000))])
-    }
+    await this.endProcess('SIGTERM')
     this.proc = null
     if (this.home) await rm(this.home, { recursive: true, force: true }).catch(() => {})
   }

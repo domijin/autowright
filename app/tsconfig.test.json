@@ -1,0 +1,24 @@
+{
+  // §15 typecheck coverage: tsconfig.json checks only `src` (the shipped
+  // renderer). This config extends it over the TypeScript that never ships but
+  // must still typecheck: the two test tiers, the Vite/Vitest configs, and the
+  // design-sync entry, so untypechecked TS cannot accumulate outside `src`.
+  // Same strict settings; only the ambient `node` types are added, which the
+  // harnesses and config files need.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    // The ambient `?raw` / `.svg` module declarations `src` relies on: nothing
+    // imports this file, so it must be named or the src modules these tests
+    // pull in fail to resolve their asset imports.
+    "src/vite-env.d.ts",
+    "tests",
+    "e2e",
+    "ds-entry.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "vitest.e2e.config.ts"
+  ]
+}

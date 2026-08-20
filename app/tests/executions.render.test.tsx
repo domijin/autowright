@@ -13,11 +13,13 @@ vi.mock('../src/api', () => ({
   api: {
     state: vi.fn(() => Promise.reject(new Error('offline'))),
     getExecution: vi.fn(() => Promise.reject(new Error('offline'))),
+    getExecutionLogs: vi.fn(() => Promise.reject(new Error('offline'))),
   },
 }))
 
 let storeMod: typeof import('../src/store')
 let ExecutionsList: typeof import('../src/pages/ExecutionsList').default
+let ExecutionPage: typeof import('../src/pages/ExecutionPage').default
 
 beforeAll(async () => {
   ;(window as unknown as Record<string, unknown>).autowright = {
@@ -26,13 +28,14 @@ beforeAll(async () => {
   }
   storeMod = await import('../src/store')
   ExecutionsList = (await import('../src/pages/ExecutionsList')).default
+  ExecutionPage = (await import('../src/pages/ExecutionPage')).default
 })
 
 const NOW = 1_700_000_000_000
 
 const ex = (id: string, over: Partial<Execution> = {}): Execution => ({
   id, automationId: 'a1', automationName: 'Automation', automationDeleted: false, ver: 'v1',
-  status: 'succeeded', trigger: 'Manual', test: false, duration: '1.0s',
+  status: 'succeeded', trigger: 'Manual', triggerSender: null, test: false, duration: '1.0s',
   started: 'Today, 8:00 AM', startedMs: NOW, endedMs: NOW, queuedMs: 0,
   note: null, error: null, ...over,
 })
@@ -122,5 +125,43 @@ describe('executions list sections (§7)', () => {
     // …but the waiting row is outside the filter and stays visible
     expect(screen.getByText('WAITING')).toBeTruthy()
     expect(screen.getByText('e-wait')).toBeTruthy()
+  })
+})
+
+// §7 log cap: the LOGS pane shows the last 2000 lines and says so when earlier
+// lines were dropped. Log sequences are gapless from 1 (§5), so a kept head past
+// 1 is the truncation signal.
+describe('execution page log cap (§7)', () => {
+  const line = (sequence: number) => ({ time: '00:00', kind: 'out' as const, sequence, text: `line ${sequence}` })
+  const withLogs = (lines: ReturnType<typeof line>[]) => {
+    const full: Execution = {
+      ...ex('e1'),
+      steps: [{
+        name: 'Step one', status: 'succeeded', duration: '1s',
+        attempts: [{ number: 1, status: 'succeeded', duration: '1s', startedMs: NOW }],
+      }],
+      result: null,
+    }
+    storeMod.useStore.setState({
+      page: 'execution', executionId: 'e1', executions: [ex('e1')],
+      executionFull: { e1: full },
+      execLogs: { e1: { '0.1': lines } },
+    })
+  }
+
+  it('shows the truncation notice when the kept log starts past line 1', () => {
+    withLogs([line(51), line(52), line(53)])
+    render(<ExecutionPage />)
+
+    expect(screen.getByText('Truncated — showing the last 2000 lines. The full log is on disk.')).toBeTruthy()
+    expect(screen.getByText('line 51')).toBeTruthy()
+  })
+
+  it('shows no notice for a whole log', () => {
+    withLogs([line(1), line(2)])
+    render(<ExecutionPage />)
+
+    expect(screen.getByText('line 1')).toBeTruthy()
+    expect(screen.queryByText(/Truncated/)).toBeNull()
   })
 })

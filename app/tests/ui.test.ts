@@ -193,11 +193,11 @@ const COLOR = {
 interface Tok { text: string; color?: string; italic?: boolean }
 function tokens(code: string): Tok[] {
   const el = PyCode({ code }) as React.ReactElement
-  const children = el.props.children as React.ReactNode[]
+  const children = (el.props as { children: React.ReactNode[] }).children
   return children.map((n) => {
     if (typeof n === 'string') return { text: n }
-    const e = n as React.ReactElement
-    const style = (e.props.style ?? {}) as React.CSSProperties
+    const e = n as React.ReactElement<{ style?: React.CSSProperties; children?: React.ReactNode }>
+    const style = e.props.style ?? {}
     return { text: String(e.props.children), color: style.color, italic: style.fontStyle === 'italic' }
   })
 }

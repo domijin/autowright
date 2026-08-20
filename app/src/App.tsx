@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from './store'
 import { CountPill, Logo, ScrollArea, Spinner, Toast } from './ui'
 import DevLogOverlay from './devlog'
+import { ErrorBoundary } from './ErrorBoundary'
 import AboutPage from './pages/AboutPage'
 import AgentNewPage from './pages/AgentNewPage'
 import AgentsPage from './pages/AgentsPage'
@@ -204,6 +205,8 @@ function BootSplash({ waiting }: { waiting: boolean }) {
 export default function App() {
   const connected = useStore((s) => s.connected)
   const surface = useStore((s) => s.surface)
+  // Only the error boundary's key needs this — the pages select it themselves.
+  const page = useStore((s) => s.page)
   const toast = useStore((s) => s.toast)
   const reportOpen = useStore((s) => s.reportOpen)
   const boot = useStore((s) => s.boot)
@@ -243,7 +246,12 @@ export default function App() {
         {/* Pure OS drag surface (§9): pointer-transparent so overlays beneath it
             stay DOM-clickable; must never hold children. */}
         <div className="ad-drag" style={{ position: 'sticky', top: 0, height: 40, zIndex: 101, pointerEvents: 'none' }} />
-        {surface === 'create' ? <CreateFlow /> : <Content />}
+        {/* §9: a render failure is contained to the page — the rail, toasts and
+            the rest of the shell survive it. Keyed by surface+page so leaving a
+            broken page mounts a fresh boundary instead of a latched one. */}
+        <ErrorBoundary key={surface === 'create' ? 'create' : page}>
+          {surface === 'create' ? <CreateFlow /> : <Content />}
+        </ErrorBoundary>
       </ScrollArea>
       <Toast msg={toast} />
       {/* §9.5 report bug modal — opened by the nav row, never a page */}

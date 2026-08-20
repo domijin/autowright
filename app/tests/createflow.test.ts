@@ -187,7 +187,7 @@ describe('amendSpec', () => {
 
 describe('mergeDraftTriggers', () => {
   const cron = (over: Partial<DraftTrigger>): DraftTrigger =>
-    ({ kind: 'cron', enabled: true, ...over })
+    ({ kind: 'cron', enabled: true, ...over } as DraftTrigger)
 
   it('drafted cron matching an existing expression+timezone keeps the existing entry (id and enabled)', () => {
     const cur: DraftTrigger[] = [
@@ -256,7 +256,7 @@ describe('mergeDraftTriggers', () => {
 
 describe('applyTriggerOps (§8 chat trigger ops)', () => {
   const cron = (over: Partial<DraftTrigger>): DraftTrigger =>
-    ({ kind: 'cron', enabled: true, ...over })
+    ({ kind: 'cron', enabled: true, ...over } as DraftTrigger)
   const base: DraftTrigger[] = [
     cron({ id: 'c1', expression: '0 8 * * *', source: 'spec' }),
     { id: 'd1', kind: 'discord', channel: '123', secret: 'BOT', enabled: true },
@@ -352,9 +352,9 @@ describe('needsMessageTriggerSetup', () => {
 
 describe('mergeDraftTriggers — non-cron drafted entries', () => {
   const disc = (over: Partial<DraftTrigger> = {}): DraftTrigger =>
-    ({ kind: 'discord', enabled: true, channel: '123', secret: 'BOT_TOKEN', ...over })
+    ({ kind: 'discord', enabled: true, channel: '123', secret: 'BOT_TOKEN', ...over } as DraftTrigger)
   const imsg = (over: Partial<DraftTrigger> = {}): DraftTrigger =>
-    ({ kind: 'imessage', enabled: true, from: '+15550123', ...over })
+    ({ kind: 'imessage', enabled: true, from: '+15550123', ...over } as DraftTrigger)
 
   it('drafted discord/imessage with no matching existing entry are appended with enabled:true', () => {
     const cur: DraftTrigger[] = [

@@ -380,3 +380,46 @@ def test_upgrade_always_runs_pip_and_reports(home, monkeypatch):
     assert out[1]["status"] == "installed" and out[1]["version"] == "9.9.9"
     assert out[2] == {"pip": "leftpad", "import": "leftpad", "status": "failed",
                       "error": "no matching distribution"}
+
+
+def test_installed_scan_is_cached_until_the_directory_changes(home, monkeypatch):
+    """§6.2/§4.1: the installed-check is served from a cached scan - the §4.1
+    problems audit runs it per automation on every /state, so it must not walk
+    site-packages every time. The cache drops when the directory changes."""
+    from autowright import packages
+
+    scans = []
+    real = packages._scan_installed
+    monkeypatch.setattr(packages, "_scan_installed",
+                        lambda: scans.append(1) or real())
+
+    entries = [{"pip": "requests", "import": "requests"}]
+    assert packages.check(entries)[0]["status"] == "missing"
+    packages.check(entries)
+    packages.check(entries)
+    assert len(scans) == 1  # repeated checks hit the cache
+
+    _fake_dist(home, "requests", "2.31.0")  # a new dist-info moves the key
+    assert packages.check(entries)[0]["version"] == "2.31.0"
+    assert len(scans) == 2
+    packages.check(entries)
+    assert len(scans) == 2  # cached again at the new key
+
+    packages.invalidate_scan()  # what ensure/upgrade call after every pip run
+    packages.check(entries)
+    assert len(scans) == 3
+
+
+def test_ensure_invalidates_the_scan_after_installing(home, monkeypatch):
+    """§6.2: a pip run inside one ensure must be visible to the check that
+    reads back the installed version, even at an unchanged directory key."""
+    from autowright import packages
+
+    def fake_pip(name, pin_installed=False, should_stop=None):
+        _fake_dist(home, name, "1.2.3")
+        return None
+
+    monkeypatch.setattr(packages, "_pip_install", fake_pip)
+    packages.check([{"pip": "leftpad", "import": "leftpad"}])  # seeds the cache
+    out = packages.ensure([{"pip": "leftpad", "import": "leftpad"}])
+    assert out[0]["status"] == "installed" and out[0]["version"] == "1.2.3"

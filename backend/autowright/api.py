@@ -153,9 +153,15 @@ def _publish_auto_changed(a: dict) -> None:
 
 
 def _agent_or_404(agent_id: str) -> dict:
-    for a in store.agents:
-        if a["id"] == agent_id:
-            return a
+    # Every helper below that walks a store collection takes the lock itself
+    # (it is an RLock, so the call sites already holding it are unaffected):
+    # an unlocked walk can hit "dictionary changed size during iteration" when
+    # the scheduler or engine writes mid-request. Same rule as
+    # `_auto_json_locked`.
+    with store.lock:
+        for a in store.agents:
+            if a["id"] == agent_id:
+                return a
     raise HTTPException(404, "agent not found")
 
 
@@ -163,7 +169,8 @@ def _check_agent_refs(agent_id: str | None, step_agents: list | None) -> None:
     """§19 cross-field rule: `agentId` and `stepAgents` entries must reference
     configured agents. Needs store state, so it lives here as a 422 rather
     than in the request model."""
-    ids = {g["id"] for g in store.agents}
+    with store.lock:
+        ids = {g["id"] for g in store.agents}
     if agent_id is not None and agent_id not in ids:
         raise HTTPException(422, f"agentId {agent_id!r} isn't a configured agent")
     for x in step_agents or ():
@@ -183,11 +190,13 @@ def _check_automation_name_free(name: str, exclude_id: str | None = None) -> Non
     resolution rely on it. Write-time only: duplicates already on disk still
     load (the §4.7 rule)."""
     wanted = name.lower()
-    for other in store.autos.values():
-        if other["id"] != exclude_id and other["name"].strip().lower() == wanted:
-            raise HTTPException(
-                422, f"an automation named {other['name']!r} already exists - "
-                     "automation names must be unique")
+    with store.lock:
+        clash = next((o for o in store.autos.values()
+                      if o["id"] != exclude_id and o["name"].strip().lower() == wanted), None)
+    if clash is not None:
+        raise HTTPException(
+            422, f"an automation named {clash['name']!r} already exists - "
+                 "automation names must be unique")
 
 
 def _check_grant_name_free(agent: dict, exclude_id: str | None = None) -> None:
@@ -196,17 +205,20 @@ def _check_grant_name_free(agent: dict, exclude_id: str | None = None) -> None:
     case-insensitive name flags, and unambiguous display all rely on it.
     Write-time only: duplicates already on disk still load."""
     wanted = harness.grant_name(agent).lower()
-    for other in store.agents:
-        if other["id"] != exclude_id and harness.grant_name(other).lower() == wanted:
-            raise HTTPException(
-                422, f"an agent named {harness.grant_name(other)!r} already exists - "
-                     "agent names must be unique")
+    with store.lock:
+        clash = next((o for o in store.agents
+                      if o["id"] != exclude_id and harness.grant_name(o).lower() == wanted), None)
+    if clash is not None:
+        raise HTTPException(
+            422, f"an agent named {harness.grant_name(clash)!r} already exists - "
+                 "agent names must be unique")
 
 
 def _check_secret_refs(allowed_secrets: list | None) -> None:
     """§19 cross-field rule: `allowedSecrets` entries must reference stored
     secrets by their §4.8 id — the same shape rule as `stepAgents`."""
-    ids = {s["id"] for s in store.secrets}
+    with store.lock:
+        ids = {s["id"] for s in store.secrets}
     for x in allowed_secrets or ():
         if x not in ids:
             raise HTTPException(422, f"allowedSecrets entry {x!r} isn't a stored secret id")
@@ -310,16 +322,17 @@ def _data_size_label() -> str:
 
 def _agents_json() -> list[dict]:
     out = []
-    for ag in store.agents:
-        # §4.7 usedBy: { id, name } entries — the id is what the §12 chips
-        # navigate by (a name lookup would be ambiguous under duplicate names).
-        used = [{"id": a["id"], "name": a["name"]} for a in store.autos.values()
-                if a["agent_id"] == ag["id"]
-                or any(ag["id"] == e.get("id")
-                       for s in a["versions"].get(a["current_version"], {}).get("steps", [])
-                       for e in (s.get("agents") or []))]
-        out.append({**ag, "usedBy": used,
-                    "default": ag["id"] == store.default_agent_id})
+    with store.lock:
+        for ag in store.agents:
+            # §4.7 usedBy: { id, name } entries — the id is what the §12 chips
+            # navigate by (a name lookup would be ambiguous under duplicate names).
+            used = [{"id": a["id"], "name": a["name"]} for a in store.autos.values()
+                    if a["agent_id"] == ag["id"]
+                    or any(ag["id"] == e.get("id")
+                           for s in a["versions"].get(a["current_version"], {}).get("steps", [])
+                           for e in (s.get("agents") or []))]
+            out.append({**ag, "usedBy": used,
+                        "default": ag["id"] == store.default_agent_id})
     return out
 
 
@@ -332,10 +345,11 @@ def _settings_json() -> dict:
 
 
 def _secrets_json() -> list[dict]:
-    return [{"id": s["id"], "name": s["name"], "description": s.get("description") or "",
-             "set": bool(s.get("set", True)),
-             "usedBy": store.secret_used_by(s["id"])}
-            for s in sorted(store.secrets, key=lambda s: s["name"])]
+    with store.lock:
+        return [{"id": s["id"], "name": s["name"], "description": s.get("description") or "",
+                 "set": bool(s.get("set", True)),
+                 "usedBy": store.secret_used_by(s["id"])}
+                for s in sorted(store.secrets, key=lambda s: s["name"])]
 
 
 def _agent_grant(g: dict) -> dict:
@@ -353,7 +367,8 @@ def _agent_grant(g: dict) -> dict:
 def _secret_grant(secret_id: str) -> dict | None:
     """§8 grants yaml entry: id, name + description (omitted when empty).
     A dangling id grants nothing — None, skipped by the caller."""
-    s = next((s for s in store.secrets if s["id"] == secret_id), None)
+    with store.lock:
+        s = next((s for s in store.secrets if s["id"] == secret_id), None)
     if s is None:
         return None
     e = {"id": s["id"], "name": s["name"]}
@@ -1295,11 +1310,13 @@ def get_exec(execution_id: str) -> dict:
 
 
 @app.get("/executions/{execution_id}/logs", dependencies=[Depends(auth)])
-def get_exec_logs(execution_id: str, step: int | None = None, attempt: int | None = None) -> dict:
-    """§19: lazy per-step-attempt log — no params selects the execution log."""
+def get_exec_logs(execution_id: str, step: int | None = None, attempt: int | None = None,
+                  tail: int | None = Query(None, ge=1)) -> dict:
+    """§19: lazy per-step-attempt log — no params selects the execution log.
+    `tail` keeps only the last N lines of the selected log (same shape)."""
     if execution_id not in store.execs:
         raise HTTPException(404, "execution not found")
-    lines = store.read_log(execution_id, step, attempt)
+    lines = store.read_log(execution_id, step, attempt, tail=tail)
     return {"lines": [{"time": l.get("time", ""), "kind": l.get("kind", "out"),
                        "sequence": l.get("sequence", 0), "text": l.get("text", "")} for l in lines]}
 
@@ -1671,10 +1688,11 @@ def list_secrets() -> list[dict]:
 def _secret_entity(s: dict) -> dict:
     """§19: the entity shape (a GET /secrets entry) the write routes return,
     so a creating client learns the minted id without a second fetch."""
-    return {"id": s["id"], "name": s["name"],
-            "description": s.get("description") or "",
-            "set": bool(s.get("set", True)),
-            "usedBy": store.secret_used_by(s["id"])}
+    with store.lock:
+        return {"id": s["id"], "name": s["name"],
+                "description": s.get("description") or "",
+                "set": bool(s.get("set", True)),
+                "usedBy": store.secret_used_by(s["id"])}
 
 
 @app.post("/secrets", dependencies=[Depends(auth)])

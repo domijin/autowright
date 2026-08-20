@@ -10,8 +10,12 @@ cd "$(dirname "$0")/.."
 echo "── 1/3 Vitest unit (app/tests) ──"
 (cd app && npx vitest run)
 
-echo "── 2/3 tsc --noEmit ──"
-(cd app && npx tsc --noEmit)
+# Two configs, because one `include` cannot hold both (§15 typecheck coverage):
+# tsconfig.json is the shipped renderer (src), tsconfig.test.json is everything
+# else that is TypeScript but never ships: tests/, e2e/, the Vite/Vitest
+# configs, ds-entry.ts.
+echo "── 2/3 tsc --noEmit (src, then tests/e2e/configs) ──"
+(cd app && npx tsc --noEmit && npx tsc --noEmit -p tsconfig.test.json)
 
 echo "── 3/3 pytest unit (parallel) ──"
 .venv/bin/python -m pytest

@@ -80,7 +80,8 @@ remain plain dicts (§2).
   written. Validates and labels a list of §4.3-shaped trigger dicts (kind plus its stored
   fields, `timezone` where relevant) with the same `triggers.py` code that gates the PATCH,
   answering one result per request entry in order. `valid` says whether the entry would
-  store; `error` is the plain-word reason otherwise ("Not a valid cron expression", the
+  store; `error` is the plain-word reason otherwise ("a cron expression needs 5 fields
+  (minute hour day month weekday)", the
   §4.3 field rules) — an invalid entry is a `valid: false` result, never a 422 (the editors
   preview half-typed state); only a body that isn't a list of trigger dicts gets the
   ordinary 422. `label`/`short` are the §4.3 display strings; `nextAt` the next-occurrence
@@ -398,9 +399,12 @@ remain plain dicts (§2).
   `triggerSender`) · `GET /executions/{id}` (steps
   with attempts + params + error + result + `triggerPayload` (§4.5) — logs are lazy, never
   inline) ·
-  `GET /executions/{id}/logs?step=&attempt=` → `{ lines: [{time, kind, sequence, text}] }` — both params
+  `GET /executions/{id}/logs?step=&attempt=&tail=` → `{ lines: [{time, kind, sequence, text}] }` — both
+  `step` and `attempt`
   select that step attempt's file, neither selects `logs/execution.ndjson`, a missing file
-  answers empty lines ·
+  answers empty lines. `tail` (optional int ≥ 1; anything lower answers 422) keeps only the
+  last `tail` lines of the selected log, same response shape - the §7 log views send it so a
+  multi-thousand-line file never has to cross the wire whole ·
   `GET /executions/{id}/result/{name}` (raw result-dir file for the §7 file views; plain
   filenames only — no path traversal) ·
   `POST /executions/{id}/cancel` (a running execution is killed per §7; a §6 `queued` one leaves

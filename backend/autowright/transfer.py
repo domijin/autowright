@@ -588,106 +588,28 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
     with _open_archive(data) as z:
         arch = _validate(z)
     with store.lock:
-        # Secrets: a missing referenced name becomes a §4.8 placeholder;
-        # an existing name is the same secret by definition — untouched.
-        created_secrets, existing_secrets = [], []
         created_secret_ids: list[str] = []
-        for s in arch["secrets"]:
-            if any(x["name"] == s["name"] for x in store.secrets):
-                existing_secrets.append(s["name"])
-            else:
-                rec = {"id": new_id(), "name": s["name"],
-                       "description": s.get("description") or "", "set": False}
-                store.secrets.append(rec)
-                created_secrets.append(s["name"])
-                created_secret_ids.append(rec["id"])
-        if created_secrets:
-            store.save_secrets()
-        # Agents: exact config match (name + harness + mode + model) reuses the
-        # local record; anything else is created, its grant name deduped
-        # (§5.1) — the archive's name-form references map to the record here,
-        # so the rename repoints nothing.
-        created_recs, reused_agents = [], []
         created_ids: list[str] = []
-        matched: dict[str, dict] = {}   # archive name → local record
-        for g in arch["agents"]:
-            model = g.get("model") if g.get("mode", "default") != "default" else None
-            local = _agent_match(store, g)
-            if local:
-                matched[g["name"]] = local
-                reused_agents.append(g["name"])
-            else:
-                rec = {"id": new_id(), "name": _free_grant_name(store, g["name"]),
-                       "description": g.get("description") or "",
-                       "harness": g["harness"], "mode": g.get("mode", "default"),
-                       "model": model}
-                store.agents.append(rec)
-                if store.default_agent_id is None:
-                    store.default_agent_id = rec["id"]  # §4.7: the first agent is the default
-                matched[g["name"]] = rec
-                created_recs.append(rec)
-                created_ids.append(rec["id"])
-        if created_recs:
-            store.save_agents()
-        # The drafting agent_id maps by name; no archive agents → local default.
-        drafting = matched.get(arch["agent"]) if arch.get("agent") else None
-        if drafting is None:
-            drafting = next((x for x in store.agents
-                             if x["id"] == store.default_agent_id), None)
-        # §5.1: rewrite the archive's name-form references to the matched or
-        # created records' LOCAL ids — step grant entries, code subscripts,
-        # and each discord trigger's token secret. On disk, ids are the only
-        # reference format (§4.1/§4.3/§4.8).
-        secret_id_by_name = {s["name"]: s["id"] for s in store.secrets}
-        agent_id_by_name = {name: rec["id"] for name, rec in matched.items()}
-
-        def _local_code(code: str) -> str:
-            # _validate guaranteed every name resolves against the archive's
-            # yaml, and every archive agent/secret has a local record by now.
-            code = ARCHIVE_SECRET_REF_RE.sub(
-                lambda m: f'secrets["{secret_id_by_name[m.group(1)]}"]', code)
-            return ARCHIVE_AGENT_REF_RE.sub(
-                lambda m: f'agents["{agent_id_by_name[m.group(1)]}"]', code)
-
-        steps = []
-        for s in arch["steps"]:
-            entry = dict(s)
-            entry["code"] = _local_code(entry.get("code", ""))
-            if entry.get("agents"):
-                entry["agents"] = [
-                    {"id": agent_id_by_name[g["name"]],
-                     **({"why": g["why"]} if g.get("why") else {})}
-                    for g in entry["agents"]]
-            if entry.get("secrets"):
-                entry["secrets"] = [
-                    {"id": secret_id_by_name[g["name"]],
-                     **({"why": g["why"]} if g.get("why") else {})}
-                    for g in entry["secrets"]]
-            steps.append(entry)
-        ver = {"description": arch["description"], "note": "Imported", "params": arch["params"],
-               "packages": arch["packages"], "steps": steps,
-               "spec": arch["spec"], "instructions": arch["instructions"], "notes": arch["notes"]}
-        triggers = [{"id": new_id(), "enabled": False,
-                     **(t if t.get("kind") != "discord"
-                        else {**t, "secret": secret_id_by_name[t["secret"]]})}
-                    for t in arch["triggers"]]
-        # §5.1 grants: only what this import created, passed directly into the
-        # creation call as its grant lists (one write) — no post-create grant
-        # patch, so no window ever exists in which the automation is stored
-        # with different grants (an explicit empty list also overrides
-        # create_automation's drafting-agent fallback).
-        a = store.create_automation(ver, name=arch["name"],
-                                    agent_id=drafting["id"] if drafting else None,
-                                    triggers=triggers,
-                                    enabled_agents=list(created_ids),
-                                    allowed_secrets=list(created_secret_ids),
-                                    # §5.1: the manifest's platform token
-                                    # stamps §4.1 originOs — a mismatch flags
-                                    # the os-mismatch problem, never rejects.
-                                    origin_os=arch["os"])
-        if arch["param_values"]:
-            # Values are the one manifest field creation can't seed.
-            store.patch_automation(a, {"paramValues": arch["param_values"]})
+        prev_default = store.default_agent_id
+        try:
+            a, created_secrets, existing_secrets, created_recs, reused_agents = \
+                _land_archive(store, arch, created_secret_ids, created_ids)
+        except BaseException:
+            # §5.1: a failed import writes nothing. The secret and agent records
+            # are persisted before the automation exists (their ids are what the
+            # steps reference), so a failure past that point has to take them
+            # back out - otherwise the retry lands duplicates and the user is
+            # left with orphans no automation uses.
+            if created_secret_ids:
+                doomed = set(created_secret_ids)
+                store.secrets = [s for s in store.secrets if s["id"] not in doomed]
+                store.save_secrets()
+            if created_ids:
+                doomed = set(created_ids)
+                store.agents = [g for g in store.agents if g["id"] not in doomed]
+                store.default_agent_id = prev_default
+                store.save_agents()
+            raise
     # §5.1 summary: each created agent carries `ready` — the one §19 check-ready
     # rule, run outside the store lock (it may spawn a status subprocess) and
     # memoized per harness config so agents sharing one harness check once.
@@ -709,6 +631,112 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                "os": arch["os"],
                "osMismatch": bool(arch["os"]) and arch["os"] != paths.current_os()}
     return a, summary
+
+
+def _land_archive(store: Store, arch: dict, created_secret_ids: list[str],
+                  created_ids: list[str]) -> tuple:
+    """The §5.1 import's write half - caller holds store.lock and owns the
+    rollback. The two id lists are filled in as records land, so the caller can
+    undo exactly what this call appended."""
+    # Secrets: a missing referenced name becomes a §4.8 placeholder;
+    # an existing name is the same secret by definition — untouched.
+    created_secrets, existing_secrets = [], []
+    for s in arch["secrets"]:
+        if any(x["name"] == s["name"] for x in store.secrets):
+            existing_secrets.append(s["name"])
+        else:
+            rec = {"id": new_id(), "name": s["name"],
+                   "description": s.get("description") or "", "set": False}
+            store.secrets.append(rec)
+            created_secrets.append(s["name"])
+            created_secret_ids.append(rec["id"])
+    if created_secrets:
+        store.save_secrets()
+    # Agents: exact config match (name + harness + mode + model) reuses the
+    # local record; anything else is created, its grant name deduped
+    # (§5.1) — the archive's name-form references map to the record here,
+    # so the rename repoints nothing.
+    created_recs, reused_agents = [], []
+    matched: dict[str, dict] = {}   # archive name → local record
+    for g in arch["agents"]:
+        model = g.get("model") if g.get("mode", "default") != "default" else None
+        local = _agent_match(store, g)
+        if local:
+            matched[g["name"]] = local
+            reused_agents.append(g["name"])
+        else:
+            rec = {"id": new_id(), "name": _free_grant_name(store, g["name"]),
+                   "description": g.get("description") or "",
+                   "harness": g["harness"], "mode": g.get("mode", "default"),
+                   "model": model}
+            store.agents.append(rec)
+            if store.default_agent_id is None:
+                store.default_agent_id = rec["id"]  # §4.7: the first agent is the default
+            matched[g["name"]] = rec
+            created_recs.append(rec)
+            created_ids.append(rec["id"])
+    if created_recs:
+        store.save_agents()
+    # The drafting agent_id maps by name; no archive agents → local default.
+    drafting = matched.get(arch["agent"]) if arch.get("agent") else None
+    if drafting is None:
+        drafting = next((x for x in store.agents
+                         if x["id"] == store.default_agent_id), None)
+    # §5.1: rewrite the archive's name-form references to the matched or
+    # created records' LOCAL ids — step grant entries, code subscripts,
+    # and each discord trigger's token secret. On disk, ids are the only
+    # reference format (§4.1/§4.3/§4.8).
+    secret_id_by_name = {s["name"]: s["id"] for s in store.secrets}
+    agent_id_by_name = {name: rec["id"] for name, rec in matched.items()}
+
+    def _local_code(code: str) -> str:
+        # _validate guaranteed every name resolves against the archive's
+        # yaml, and every archive agent/secret has a local record by now.
+        code = ARCHIVE_SECRET_REF_RE.sub(
+            lambda m: f'secrets["{secret_id_by_name[m.group(1)]}"]', code)
+        return ARCHIVE_AGENT_REF_RE.sub(
+            lambda m: f'agents["{agent_id_by_name[m.group(1)]}"]', code)
+
+    steps = []
+    for s in arch["steps"]:
+        entry = dict(s)
+        entry["code"] = _local_code(entry.get("code", ""))
+        if entry.get("agents"):
+            entry["agents"] = [
+                {"id": agent_id_by_name[g["name"]],
+                 **({"why": g["why"]} if g.get("why") else {})}
+                for g in entry["agents"]]
+        if entry.get("secrets"):
+            entry["secrets"] = [
+                {"id": secret_id_by_name[g["name"]],
+                 **({"why": g["why"]} if g.get("why") else {})}
+                for g in entry["secrets"]]
+        steps.append(entry)
+    ver = {"description": arch["description"], "note": "Imported", "params": arch["params"],
+           "packages": arch["packages"], "steps": steps,
+           "spec": arch["spec"], "instructions": arch["instructions"], "notes": arch["notes"]}
+    triggers = [{"id": new_id(), "enabled": False,
+                 **(t if t.get("kind") != "discord"
+                    else {**t, "secret": secret_id_by_name[t["secret"]]})}
+                for t in arch["triggers"]]
+    # §5.1 grants: only what this import created, passed directly into the
+    # creation call as its grant lists (one write) — no post-create grant
+    # patch, so no window ever exists in which the automation is stored
+    # with different grants (an explicit empty list also overrides
+    # create_automation's drafting-agent fallback).
+    a = store.create_automation(ver, name=arch["name"],
+                                agent_id=drafting["id"] if drafting else None,
+                                triggers=triggers,
+                                enabled_agents=list(created_ids),
+                                allowed_secrets=list(created_secret_ids),
+                                # §5.1: the manifest's platform token
+                                # stamps §4.1 originOs — a mismatch flags
+                                # the os-mismatch problem, never rejects.
+                                origin_os=arch["os"])
+    if arch["param_values"]:
+        # Values are the one manifest field creation can't seed.
+        store.patch_automation(a, {"paramValues": arch["param_values"]})
+    return a, created_secrets, existing_secrets, created_recs, reused_agents
 
 
 # ---------- URL import (§5.2) ----------

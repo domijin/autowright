@@ -5,7 +5,7 @@
 // record renders the waiting state instead of that body.
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { logKey, useStore } from '../store'
+import { LOG_TAIL, logKey, useStore } from '../store'
 import { BackLink, Badge, badgeOf, Chip, EmptyNotice, Eyebrow, FailureNotice, HeaderActions, logColor, paramSummary, PULSE, ScrollArea, Spinner, waitedLabel } from '../ui'
 import { ResultSection } from '../result'
 import type { Execution, ExecutionStep, LogLine, TriggerPayload } from '../types'
@@ -176,7 +176,18 @@ function WaitingBody({ pos, total, payload }: {
 }
 
 export default function ExecutionPage() {
-  const { executionId, executions, executionFull, execLogs, automations, go, showToast, loadExecution, loadExecLogs } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() would re-render this page
+  // on every store write anywhere — including each execution.log event of every
+  // other execution.
+  const executionId = useStore((s) => s.executionId)
+  const executions = useStore((s) => s.executions)
+  const executionFull = useStore((s) => s.executionFull)
+  const execLogs = useStore((s) => s.execLogs)
+  const automations = useStore((s) => s.automations)
+  const go = useStore((s) => s.go)
+  const showToast = useStore((s) => s.showToast)
+  const loadExecution = useStore((s) => s.loadExecution)
+  const loadExecLogs = useStore((s) => s.loadExecLogs)
   const full = executionId ? executionFull[executionId] : undefined
   const e = full ?? (executionId ? executions.find((x) => x.id === executionId) : undefined)
   const auto = e ? automations.find((a) => a.id === e.automationId) : undefined
@@ -245,12 +256,19 @@ export default function ExecutionPage() {
     : undefined) ?? []
   const liveSelected = executing && sel?.step === liveIdx && liveIdx >= 0
     && sel.attempt === latestN(steps[liveIdx])
+  // §7 log cap: the store keeps only the last LOG_TAIL lines (fetched tail plus
+  // trimmed live appends). Sequences are gapless from 1 (§5), so a kept head
+  // past 1 means earlier lines were dropped — say so, like the §7 text preview.
+  const logsTruncated = logs.length > 0 && logs[0].sequence > 1
 
   // Live auto-scroll — only while executing and only if the user hasn't scrolled up.
+  // Keyed on the newest line, not the length: past the §7 cap the length stops
+  // changing (each append trims one off the head) and the follow would freeze.
+  const lastSeq = logs.length ? logs[logs.length - 1].sequence : 0
   useEffect(() => {
     const el = logRef.current
     if (el && liveSelected && stickRef.current) el.scrollTop = el.scrollHeight
-  }, [logs.length, liveSelected])
+  }, [logs.length, lastSeq, liveSelected])
 
   if (!executionId) return null
 
@@ -561,6 +579,17 @@ export default function ExecutionPage() {
                   <Spinner size={14} />
                 ) : (
                   <>
+                    {/* §7 truncation notice — the dropped lines are the oldest,
+                        so it sits above the kept tail (and clear of the live
+                        auto-scroll at the bottom). */}
+                    {logsTruncated && (
+                      <div style={{
+                        marginBottom: 8, fontFamily: 'var(--sans)', fontSize: 11.5,
+                        lineHeight: 1.6, color: 'var(--text-faint)',
+                      }}>
+                        Truncated — showing the last {LOG_TAIL} lines. The full log is on disk.
+                      </div>
+                    )}
                     {logs.map((l) => (
                       <div key={l.sequence} style={{ display: 'flex', gap: 12 }}>
                         <span style={{ color: 'var(--text-deco)', flex: 'none' }}>{l.time}</span>

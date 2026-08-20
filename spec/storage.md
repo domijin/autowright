@@ -91,6 +91,9 @@ automations/<uuid>/
                                # param_values {name: value} (user data, never pruned),
                                # max_parallel / max_queued — §6 concurrency settings
                                # (absent keys default 1 and 0),
+                               # origin_os — §4.1 originOs, the §5.1 platform token of the
+                               # archive this automation was imported from; written only
+                               # when set, absent otherwise,
                                # created_at, updated_at
   memory/                      # memory directory carried between executions (engine contract, §6) — scripts
                                # store whatever files and formats they need; shared across

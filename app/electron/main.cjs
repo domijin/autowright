@@ -32,12 +32,16 @@ if (!gotLock) app.quit()
 // window itself, so the early signal needs no replay.
 app.on('second-instance', () => { if (app.isReady()) showApp() })
 
-function backendInfo() {
-  const home = process.env.AUTOWRIGHT_HOME
+// §5 app-support root — the backend's home (AUTOWRIGHT_HOME overrides it, §15).
+function appSupportDir() {
+  return process.env.AUTOWRIGHT_HOME
     ? process.env.AUTOWRIGHT_HOME
     : path.join(os.homedir(), 'Library', 'Application Support', 'Autowright')
+}
+
+function backendInfo() {
   try {
-    return JSON.parse(fs.readFileSync(path.join(home, 'backend.json'), 'utf-8'))
+    return JSON.parse(fs.readFileSync(path.join(appSupportDir(), 'backend.json'), 'utf-8'))
   } catch {
     return null
   }
@@ -371,6 +375,7 @@ async function refreshTrayAlert() {
   try {
     const res = await fetch(`http://127.0.0.1:${info.port}/automations`, {
       headers: { Authorization: `Bearer ${info.token}` },
+      signal: AbortSignal.timeout(5000),
     })
     if (!res.ok) return
     const autos = await res.json()
@@ -385,7 +390,13 @@ async function refreshTrayAlert() {
 // settings change.
 let automaticUpdateTimer = null
 
+// §5 executions data dir. Relocatable, so its location is only known from the
+// backend's settings — the periodic sync above carries it (the renderer's
+// apply-settings push never does). Feeds the reveal-path root check below.
+let dataRoot = null
+
 function applyShellSettings(s) {
+  if (typeof s?.dataPath === 'string' && s.dataPath) dataRoot = s.dataPath
   if (typeof s?.login === 'boolean'
       && app.getLoginItemSettings().openAtLogin !== s.login) {
     app.setLoginItemSettings({ openAtLogin: s.login })
@@ -421,6 +432,7 @@ async function syncShellSettings() {
   try {
     const res = await fetch(`http://127.0.0.1:${info.port}/settings`, {
       headers: { Authorization: `Bearer ${info.token}` },
+      signal: AbortSignal.timeout(5000),
     })
     if (res.ok) applyShellSettings(await res.json())
   } catch { /* backend down — keep the current state */ }
@@ -575,14 +587,48 @@ ipcMain.handle('backend-status', () => ensureStatus)
 ipcMain.handle('cli-status', () => cliStatus())
 ipcMain.handle('cli-install', () => cliInstall())
 ipcMain.handle('cli-uninstall', () => cliUninstall())
-ipcMain.handle('open-app', (_e, hash) => { showApp(hash); if (panel) panel.hide() })
+// IPC arguments come from the renderer and are validated here, at the trust
+// boundary: a bad type is a no-op, never a throw (read-request-log's basename
+// check is the precedent).
+ipcMain.handle('open-app', (_e, hash) => {
+  if (hash !== undefined && typeof hash !== 'string') return
+  showApp(hash)
+  if (panel) panel.hide()
+})
 ipcMain.handle('resize-panel', (_e, h) => {
+  if (!Number.isFinite(h)) return
   if (panel) panel.setSize(334, Math.min(Math.max(Math.round(h), 120), 640))
 })
-ipcMain.handle('reveal-path', (_e, p) => {
-  const abs = p === '~' || p.startsWith('~/')
+
+// §5 reveal roots: the only trees a reveal may point into — the app-support
+// home (memory, drafts, harness workspaces), the logs dir, and the executions
+// data dir. Result HTML is AI-authored and can echo attacker-controlled text
+// (§9.4), so a path it hands us must not be able to reach an arbitrary file,
+// and openPath on the wrong directory would *launch* something.
+function revealRoots() {
+  return [appSupportDir(), logsDir(), ...(dataRoot ? [dataRoot] : [])]
+}
+
+function insideRevealRoots(abs) {
+  return revealRoots().some((root) => {
+    const r = path.resolve(root)
+    return abs === r || abs.startsWith(r + path.sep)
+  })
+}
+
+ipcMain.handle('reveal-path', async (_e, p) => {
+  if (typeof p !== 'string' || !p) return
+  // `..` is collapsed here, so a traversal cannot dress itself up as a path
+  // under one of the roots.
+  const abs = path.resolve(p === '~' || p.startsWith('~/')
     ? path.join(os.homedir(), p.slice(1))
-    : p
+    : p)
+  if (!insideRevealRoots(abs)) {
+    // The data dir moves (§5), so a miss may just mean our cached copy is one
+    // poll behind — refresh once, then give up.
+    await syncShellSettings()
+    if (!insideRevealRoots(abs)) return
+  }
   let isDir = false
   try { isDir = fs.statSync(abs).isDirectory() } catch { /* fall through */ }
   // A macOS bundle (.app, .pkg, …) is a directory, and openPath on one *launches*
@@ -604,7 +650,9 @@ ipcMain.handle('save-file', async (_e, defaultName, data) => {
     defaultPath: path.join(app.getPath('downloads'), defaultName),
   })
   if (r.canceled || !r.filePath) return null
-  fs.writeFileSync(r.filePath, Buffer.from(data))
+  // Async IO: archives run to 64 MB (§5.1) and the target can be a network
+  // volume — a sync write here would stall the whole main process.
+  await fs.promises.writeFile(r.filePath, Buffer.from(data))
   return r.filePath
 })
 ipcMain.handle('open-archive', async () => {
@@ -613,7 +661,7 @@ ipcMain.handle('open-archive', async () => {
     filters: [{ name: 'Autowright automation', extensions: ['autowright'] }],
   })
   if (r.canceled || !r.filePaths[0]) return null
-  return { name: path.basename(r.filePaths[0]), data: fs.readFileSync(r.filePaths[0]) }
+  return { name: path.basename(r.filePaths[0]), data: await fs.promises.readFile(r.filePaths[0]) }
 })
 // §9.3 developer log overlay: tail of each existing log file. Polled by the
 // renderer while the overlay is open — no watchers, nothing runs while closed.
@@ -732,6 +780,10 @@ ipcMain.handle('update-download', async () => {
   const tmpZip = path.join(app.getPath('temp'), `autowright-update-${randomUUID()}.zip`)
   let server = null
   const cleanup = () => {
+    // closeAllConnections first: close() alone only stops new connections, so
+    // a kept-alive Squirrel socket would hold the loopback server open for the
+    // rest of the app's life.
+    server?.closeAllConnections?.()
     server?.close()
     fs.rm(tmpZip, { force: true }, () => {})
   }
@@ -794,13 +846,21 @@ ipcMain.handle('update-download', async () => {
     })
 
     return await new Promise((resolve) => {
+      let settled = false
       const settle = (result) => {
+        if (settled) return
+        settled = true
+        clearTimeout(giveUp)
         autoUpdater.removeListener('update-downloaded', onDone)
         autoUpdater.removeListener('update-not-available', onNone)
         autoUpdater.removeListener('error', onErr)
         cleanup()
         resolve(result)
       }
+      // Squirrel can emit none of the three events (a hand-off it silently
+      // drops). Without this the loopback server and the staged zip leak and
+      // the §9.4 About page waits on this promise forever.
+      const giveUp = setTimeout(() => settle({ error: 'the updater stopped responding' }), 10 * 60_000)
       const onDone = () => settle({ ok: true })
       const onNone = () => settle({ error: 'no update available' })
       const onErr = (err) => settle({ error: String(err?.message || err) })

@@ -161,27 +161,31 @@ problems: [{ kind, label }] — derived at serialization, never stored: the "wou
   successfully" audit backing the §9.1 Needs fixing chip, the §9.2 banner, and §20 output.
   Computed from stored facts plus one §6.2 installed-check — never a Keychain read or a
   harness probe (deliberate exclusions: §12 owns probe-based harness readiness, and a set
-  secret whose Keychain entry vanished is caught by the §7 pre-step gate). Each condition
-  mirrors a real §7 pre-step gate or a §6.2/§5.1 fact, so the chip never cries wolf. Kinds,
+  secret whose Keychain entry vanished is caught by the §7 pre-step gate). The
+  installed-check is served from a cached scan of the §6.2 environment, refreshed when that
+  environment changes, so the audit never re-walks site-packages per automation. Each
+  condition mirrors a real §7 pre-step gate or a §6.2/§5.1 fact (an unresolvable agent has
+  no pre-step gate - it fails its step at step time), so the chip never cries wolf. Kinds,
   in serialized order (each `label` is the exact UI copy):
   - `secret-missing` — an effective step secret (manifest entries ∪ code subscripts) or a
     discord trigger's token secret references an id no stored record holds. "A step
     references a deleted secret." / "A trigger references a deleted secret."
   - `secret-ungranted` — an effective step secret exists but isn't in `allowedSecrets`
     (discord trigger secrets are not grant-gated, §4.3). "Secret NAME isn't allowed for
-    this automation yet - grant it on the edit page."
+    this automation yet — grant it on the edit page."
   - `secret-unset` — a referenced secret (step or discord trigger) whose record has
-    `set: false`. "Secret NAME has no value yet - add it on the Secrets page."
-  - `agent-missing` — a step `agents:` entry id no stored record holds. "A step references
-    a deleted agent."
-  - `agent-ungranted` — a step `agents:` entry not in `stepAgents`. "Agent NAME isn't
-    enabled for this automation yet - enable it on the edit page."
+    `set: false`. "Secret NAME has no value yet — add it on the Secrets page."
+  - `agent-missing` — an effective step agent (manifest `agents:` entries ∪ code
+    subscripts, the same union as secrets above) references an id no stored record holds.
+    "A step references a deleted agent."
+  - `agent-ungranted` — an effective step agent that exists but isn't in `stepAgents`.
+    "Agent NAME isn't enabled for this automation yet — enable it on the edit page."
   - `package-missing` — a current-version declared package whose distribution the §6.2
     fast installed-check doesn't find (the softest condition: ensure self-heals it before
     step 1; it is listed because a failed install then blocks the run, and import is the
     one path that lands declared packages uninstalled). "Package NAME isn't installed
-    yet - it installs on the first execution."
-  - `os-mismatch` — `originOs` present and ≠ the running platform. "Built on <OS> - its
+    yet — it installs on the first execution."
+  - `os-mismatch` — `originOs` present and ≠ the running platform. "Built on <OS> — its
     steps may need rewriting before they run on this Mac." (<OS> is the display name:
     macOS / Windows / Linux; an unrecognized stored token shows verbatim and always
     mismatches.)

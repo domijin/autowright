@@ -189,6 +189,20 @@ class _Conn(threading.Thread):
                 pass
 
     def run(self) -> None:
+        # The thread body is guarded whole: anything escaping the reconnect loop
+        # (a set_status raise, a failed import) would leave a dead thread the
+        # manager still counts as this secret's connection - §6 says the
+        # listener reconnects, so nothing here may be fatal to the loop.
+        try:
+            self._run()
+        except BaseException:  # noqa: BLE001
+            log.exception("discord listener for %s died", self.secret[:8])
+
+    def _run(self) -> None:
+        # Imported at the top of the loop, never inside the except handler: an
+        # ImportError there would replace the real failure with its own.
+        from websockets.exceptions import ConnectionClosed
+
         backoff = 1.0
         while not self._stop.is_set():
             token = keychain.get_secret(self.secret)  # §4.8: Keychain keyed by id
@@ -203,8 +217,6 @@ class _Conn(threading.Thread):
                 if self._session(token):
                     backoff = 1.0  # a healthy session resets the backoff
             except Exception as e:  # noqa: BLE001 — closes, network errors, DNS, TLS, …
-                from websockets.exceptions import ConnectionClosed
-
                 code = e.rcvd.code if isinstance(e, ConnectionClosed) and e.rcvd else None
                 reason = _CLOSE_REASONS.get(code)
                 if reason:
@@ -350,8 +362,15 @@ class _ImsgWatcher:
         # good, never re-scanned.
         self._cursor = top
         for m in rows:
-            if not imessage.stale(m):  # §6 backlog fence
+            if imessage.stale(m):  # §6 backlog fence
+                continue
+            try:
                 self.mgr.dispatch_imessage(m)
+            except Exception:  # noqa: BLE001
+                # The cursor already moved past this batch, so one bad row must
+                # not take the rows behind it with it - they would never be
+                # re-read.
+                log.exception("iMessage dispatch failed for row %s", m.get("rowid"))
 
 
 class Listeners:
@@ -398,6 +417,13 @@ class Listeners:
 
     def _reconcile(self) -> None:
         desired, senders = self._desired_secrets()
+        # A connection whose thread is gone is no connection at all - treat it
+        # as missing so the loop below recreates it (§6: the listener for an
+        # enabled trigger is always running or reconnecting, never absent).
+        for secret, conn in list(self._conns.items()):
+            if not conn.is_alive():
+                log.warning("discord listener for %s died - restarting it", secret[:8])
+                self._conns.pop(secret).stop()
         for secret in desired - self._conns.keys():
             conn = _Conn(secret, self)
             self._conns[secret] = conn
@@ -455,11 +481,16 @@ class Listeners:
                 if t:
                     hits.append((a, t))
         for a, t in hits:
-            fire_trigger(self.store, self.engine, a, t,
-                         payload=trigger_payload(
-                             t, d,
-                             channel_name=(chan_names or {}).get(d.get("channel_id")),
-                             guild_name=(guild_names or {}).get(d.get("guild_id"))))
+            # Per hit: one automation's firing must never drop the others'
+            # (§6 - the same rule the §19 app-start fan-out follows).
+            try:
+                fire_trigger(self.store, self.engine, a, t,
+                             payload=trigger_payload(
+                                 t, d,
+                                 channel_name=(chan_names or {}).get(d.get("channel_id")),
+                                 guild_name=(guild_names or {}).get(d.get("guild_id"))))
+            except Exception:  # noqa: BLE001
+                log.exception("discord firing on %r failed", a["name"])
 
     def dispatch_imessage(self, m: dict) -> None:
         """Route one decoded chat.db row to every matching enabled imessage
@@ -473,5 +504,8 @@ class Listeners:
                 if t:
                     hits.append((a, t))
         for a, t in hits:
-            fire_trigger(self.store, self.engine, a, t,
-                         payload=imessage.trigger_payload(m))
+            try:
+                fire_trigger(self.store, self.engine, a, t,
+                             payload=imessage.trigger_payload(m))
+            except Exception:  # noqa: BLE001 - per hit, as in `dispatch`
+                log.exception("iMessage firing on %r failed", a["name"])

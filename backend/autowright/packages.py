@@ -39,8 +39,34 @@ def _norm(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def _installed_versions() -> dict[str, str]:
-    """Normalized distribution name → version, in the §6.2 directory only."""
+# §6.2: the installed scan walks every dist-info in the directory. Cheap once,
+# but §4.1's derived `problems` audit runs it per automation on every /state
+# publish, under store.lock - so it is cached behind the directory's own
+# (mtime, entry count). pip only ever writes through this directory, so either
+# half of the key moves when anything is installed, upgraded or removed by
+# hand; ensure/upgrade also drop the cache explicitly, so an install landing in
+# the same mtime granule can't be missed.
+_scan_lock = threading.Lock()
+_scan_cache: tuple[tuple, dict[str, str]] | None = None
+
+
+def _scan_key() -> tuple:
+    d = site_packages_dir()
+    try:
+        with os.scandir(d) as it:
+            return (d.stat().st_mtime_ns, sum(1 for _ in it))
+    except OSError:  # absent (or unreadable) directory - one stable key
+        return ()
+
+
+def invalidate_scan() -> None:
+    """Drop the cached §6.2 installed scan - called after every pip run."""
+    global _scan_cache
+    with _scan_lock:
+        _scan_cache = None
+
+
+def _scan_installed() -> dict[str, str]:
     import importlib.metadata as md
 
     out: dict[str, str] = {}
@@ -55,6 +81,22 @@ def _installed_versions() -> dict[str, str]:
             out[_norm(name)] = dist.version
         except Exception:  # noqa: BLE001 — a broken dist-info never blocks the check
             continue
+    return out
+
+
+def _installed_versions() -> dict[str, str]:
+    """Normalized distribution name → version, in the §6.2 directory only.
+    Served from the cached scan while the directory key is unchanged; the
+    returned mapping is shared, so callers must treat it as read-only."""
+    global _scan_cache
+    key = _scan_key()
+    with _scan_lock:
+        cached = _scan_cache
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    out = _scan_installed()
+    with _scan_lock:
+        _scan_cache = (key, out)
     return out
 
 
@@ -256,7 +298,9 @@ def ensure(entries: list[dict], on_progress=None, should_stop=None) -> list[dict
                 continue
             if on_progress:
                 on_progress(r["pip"])
-            if err := _pip_install(r["pip"], pin_installed=True, should_stop=should_stop):
+            err = _pip_install(r["pip"], pin_installed=True, should_stop=should_stop)
+            invalidate_scan()  # pip may have written even on failure
+            if err:
                 r["status"] = "failed"
                 r["error"] = err
             else:
@@ -277,7 +321,9 @@ def upgrade(entries: list[dict]) -> list[dict]:
                 r["error"] = "not a bare distribution name"
                 r.pop("version", None)
                 continue
-            if err := _pip_install(r["pip"]):
+            err = _pip_install(r["pip"])
+            invalidate_scan()
+            if err:
                 r["status"] = "failed"
                 r["error"] = err
                 r.pop("version", None)

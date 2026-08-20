@@ -919,21 +919,21 @@ def test_problems_audit_kinds_order_and_precedence(store):
     probs = store.auto_json(a)["problems"]
     assert [(p["kind"], p["label"]) for p in probs] == [
         ("secret-missing", "A step references a deleted secret."),
-        ("secret-ungranted", "Secret BOTH_BAD isn't allowed for this automation yet - "
+        ("secret-ungranted", "Secret BOTH_BAD isn't allowed for this automation yet — "
                              "grant it on the edit page."),
-        ("secret-ungranted", "Secret LOCKED_ONE isn't allowed for this automation yet - "
+        ("secret-ungranted", "Secret LOCKED_ONE isn't allowed for this automation yet — "
                              "grant it on the edit page."),
-        ("secret-unset", "Secret BOT_TOKEN has no value yet - add it on the Secrets page."),
-        ("secret-unset", "Secret EMPTY_ONE has no value yet - add it on the Secrets page."),
+        ("secret-unset", "Secret BOT_TOKEN has no value yet — add it on the Secrets page."),
+        ("secret-unset", "Secret EMPTY_ONE has no value yet — add it on the Secrets page."),
         ("agent-missing", "A step references a deleted agent."),
         # §8 grant name: an unnamed agent shows its harness name
-        ("agent-ungranted", "Agent OpenCode isn't enabled for this automation yet - "
+        ("agent-ungranted", "Agent OpenCode isn't enabled for this automation yet — "
                             "enable it on the edit page."),
-        ("package-missing", "Package aaa-nonexistent-dist isn't installed yet - "
+        ("package-missing", "Package aaa-nonexistent-dist isn't installed yet — "
                             "it installs on the first execution."),
-        ("package-missing", "Package zzz-nonexistent-dist isn't installed yet - "
+        ("package-missing", "Package zzz-nonexistent-dist isn't installed yet — "
                             "it installs on the first execution."),
-        ("os-mismatch", "Built on Linux - its steps may need rewriting "
+        ("os-mismatch", "Built on Linux — its steps may need rewriting "
                         "before they run on this Mac."),
     ]
 
@@ -953,3 +953,28 @@ def test_problems_empty_when_everything_is_wired(store):
                    "channel": "42", "secret": sid}],
         allowed_secrets=[sid])
     assert store.auto_json(a)["problems"] == []
+
+
+def test_execution_serializers_are_lenient_about_timestamps(store):
+    """§5 lenient serialization: hand-damaged execution timestamps drop their
+    labels instead of 500ing every /state."""
+    a = store.create_automation(make_version(), "Damaged Clock", None)
+    h = store.create_execution(a, "version", a["current_version"], "manual",
+                               steps=[{"name": "One"}], status="queued")
+    h["queued_at"] = "not-a-timestamp"
+    h["started_at"] = "also-broken"
+    h["finished_at"] = "still-broken"
+    h["steps"][0]["attempts"] = [{"number": 1, "status": "failed",
+                                  "started_at": "nope", "duration_ms": None}]
+    j = store.exec_json(h, full=True)
+    assert (j["started"], j["startedMs"], j["endedMs"], j["queuedMs"]) == ("", 0, 0, 0)
+    assert j["steps"][0]["attempts"][0]["startedMs"] == 0
+
+    # the automation payload rides the same damaged record: `latest` still
+    # serializes, just without the "from <when>" label
+    h["status"] = "succeeded"
+    h["chip"] = "All good"
+    a["_last_exec_at"] = "not-a-timestamp"
+    aj = store.auto_json(a)
+    assert aj["lastExecutionLabel"] == ""
+    assert aj["latest"]["chip"] == "All good" and aj["latest"]["when"] == ""

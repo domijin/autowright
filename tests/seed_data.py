@@ -14,6 +14,12 @@ from autowright import keychain
 from autowright.storage import Store, new_id
 
 
+# §4.1/§4.8 fixed fixture ids — step code references secrets by id, so the
+# seeded records and the code strings below must agree.
+SMTP_PASSWORD_ID = "51111111-1111-4111-8111-111111111111"
+VAULT_DRIVE_KEY_ID = "52222222-2222-4222-8222-222222222222"
+
+
 def _mk_ver(desc, params, steps, spec, instr=None, note=None):
     return {"description": desc, "params": params, "steps": steps, "spec": spec,
             "instructions": instr, "note": note}
@@ -25,13 +31,16 @@ def seed(store: Store) -> None:
 
     now = datetime.now()
 
-    # ---------- secrets (values → Keychain; names + descs → secrets.yaml) ----------
+    # ---------- secrets (values → Keychain; ids + names + descs → secrets.yaml) ----------
+    # Fixed ids: the seeded step code references secrets by id (§4.1), so the
+    # ids must be stable across the fixture's code strings below.
+    secret_ids = {"SMTP_PASSWORD": SMTP_PASSWORD_ID, "VAULT_DRIVE_KEY": VAULT_DRIVE_KEY_ID}
     for name, value, desc in [
             ("SMTP_PASSWORD", "mail-app-2291-kx7f", "App password for outgoing mail"),
             ("VAULT_DRIVE_KEY", "bk-2f91-aa07-51d3", "Encryption key for the backup drive")]:
         keychain.set_secret(name, value)
         if not any(s["name"] == name for s in store.secrets):
-            store.secrets.append({"name": name, "description": desc})
+            store.secrets.append({"id": secret_ids[name], "name": name, "description": desc})
     store.save_secrets()
 
     # ---------- agents ----------
@@ -165,7 +174,7 @@ def seed(store: Store) -> None:
          "description": "Unlocks the Vault drive with its key from the Keychain, then copies with checksums so a bad copy is caught immediately.",
          "code": 'import json, os, shutil\n\nfrom autowright import log, params, secrets\n\n'
                  'changed = json.load(open("changed.json"))\n'
-                 'key = secrets.VAULT_DRIVE_KEY  # never logged\n'
+                 f'key = secrets["{VAULT_DRIVE_KEY_ID}"]  # VAULT_DRIVE_KEY — never logged\n'
                  'dest = params["backup_destination"]\n'
                  'if not os.path.isdir(dest):\n'
                  '    raise RuntimeError(f"backup destination {dest} isn\'t mounted")\n'
@@ -202,7 +211,7 @@ def seed(store: Store) -> None:
         "Nightly folder backup", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 2 * * *"}])
     store.save_new_version(backup, _mk_ver(backup["description"], backup_params, backup_steps,
                                            backup_spec, note="Copies are now verified with checksums."))
-    store.patch_automation(backup, {"allowedSecrets": ["VAULT_DRIVE_KEY"]})
+    store.patch_automation(backup, {"allowedSecrets": [VAULT_DRIVE_KEY_ID]})
 
     # ---------- Weekly report email ----------
     report_steps = [
@@ -224,7 +233,7 @@ def seed(store: Store) -> None:
          "description": "Sends via your mail account. The password comes from the Keychain.",
          "code": 'import smtplib\n\nfrom autowright import log, result, secrets\n\n'
                  'summary = open("summary.txt").read()\n'
-                 'password = secrets.SMTP_PASSWORD  # never logged\n'
+                 f'password = secrets["{SMTP_PASSWORD_ID}"]  # SMTP_PASSWORD — never logged\n'
                  'log("connecting to smtp.fastmail.com…")\n'
                  'with smtplib.SMTP("smtp.fastmail.com", 587, timeout=15) as s:\n'
                  '    s.starttls()\n    s.login("me", password)\n'
@@ -260,7 +269,7 @@ def seed(store: Store) -> None:
         store.save_new_version(report, _mk_ver(report["description"], report_params,
                                                report_steps, report_spec, note=note))
     store.patch_automation(report, {
-        "allowedSecrets": ["SMTP_PASSWORD"],
+        "allowedSecrets": [SMTP_PASSWORD_ID],
         "paramValues": {"recipients": ["team@northbeam.studio", "sam@northbeam.studio", "priya@northbeam.studio"],
                         "subject_line": "Weekly numbers", "attach_the_spreadsheet": True},
     })

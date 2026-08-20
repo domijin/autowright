@@ -11,7 +11,7 @@ vi.mock('../src/api', () => ({
 }))
 
 import {
-  specToText, textToSpec, amendSpec, stepSecretNames, stepSecretTags, secretRefsOf,
+  specToText, textToSpec, amendSpec, stepSecretIds, stepSecretTags, secretRefsOf,
   instrToMd, mergeDraftTriggers, needsMessageTriggerSetup, persistChat, chatSinceBoundary, applyTestValues,
   applyTriggerOps, coerceParamValue,
   stripTrigger,
@@ -19,6 +19,15 @@ import {
 
 const step = (over: Partial<Step> = {}): Step =>
   ({ name: 's', description: '', code: '', ...over })
+
+// §4.8 fixture ids — step entries and secrets["<id>"] code refs use uuids
+const ALPHA_ID = '11111111-1111-1111-1111-111111111111'
+const BETA_ID = '22222222-2222-2222-2222-222222222222'
+const DB_ID = '33333333-3333-3333-3333-333333333333'
+const SECRETS = [
+  { id: ALPHA_ID, name: 'ALPHA', description: '', set: true, usedBy: [] },
+  { id: BETA_ID, name: 'BETA', description: '', set: true, usedBy: [] },
+]
 
 describe('specToText / textToSpec', () => {
   const blocks: SpecBlock[] = [
@@ -47,42 +56,42 @@ describe('specToText / textToSpec', () => {
   })
 })
 
-describe('stepSecretNames', () => {
-  it('unions declared secrets with secrets.NAME code refs, deduped', () => {
+describe('stepSecretIds', () => {
+  it('unions declared entry ids with secrets["<id>"] code refs, deduped', () => {
     const s = step({
-      secrets: [{ name: 'ALPHA', why: 'signs the request' }],
-      code: 'x = secrets.BETA + secrets.ALPHA\ny = secrets.BETA',
+      secrets: [{ id: ALPHA_ID, why: 'signs the request' }],
+      code: `x = secrets["${BETA_ID}"] + secrets["${ALPHA_ID}"]\ny = secrets["${BETA_ID}"]`,
     })
-    expect(stepSecretNames(s)).toEqual(['ALPHA', 'BETA'])
+    expect(stepSecretIds(s)).toEqual([ALPHA_ID, BETA_ID])
   })
-  it('stepSecretTags keeps the declared why; code-referenced names carry none', () => {
+  it('stepSecretTags keeps the declared why and resolves live names; code refs carry none', () => {
     const s = step({
-      secrets: [{ name: 'ALPHA', why: 'signs the request' }],
-      code: 'x = secrets.BETA',
+      secrets: [{ id: ALPHA_ID, why: 'signs the request' }],
+      code: `x = secrets["${BETA_ID}"]`,
     })
-    expect(stepSecretTags(s)).toEqual([
-      { name: 'ALPHA', why: 'signs the request' },
-      { name: 'BETA' },
+    expect(stepSecretTags(s, SECRETS)).toEqual([
+      { id: ALPHA_ID, name: 'ALPHA', missing: false, why: 'signs the request' },
+      { id: BETA_ID, name: 'BETA', missing: false },
     ])
   })
-  it('lowercase secrets.foo is NOT matched', () => {
-    expect(stepSecretNames(step({ code: 'y = secrets.foo' }))).toEqual([])
+  it('a variable subscript or secrets.NAME attribute is NOT matched', () => {
+    expect(stepSecretIds(step({ code: 'y = secrets[x]\nz = secrets.FOO' }))).toEqual([])
   })
   it('empty step → empty list', () => {
-    expect(stepSecretNames(step())).toEqual([])
+    expect(stepSecretIds(step())).toEqual([])
   })
 })
 
 describe('secretRefsOf', () => {
-  it('aggregates name → step indices', () => {
+  it('aggregates id → step indices', () => {
     const steps = [
-      step({ code: 'a = secrets.API_KEY' }),
-      step({ code: 'b = secrets.API_KEY + secrets.DB_PASS' }),
+      step({ code: `a = secrets["${ALPHA_ID}"]` }),
+      step({ code: `b = secrets["${ALPHA_ID}"] + secrets["${DB_ID}"]` }),
       step({ code: 'plain' }),
     ]
     expect(secretRefsOf(steps)).toEqual([
-      { name: 'API_KEY', steps: [0, 1] },
-      { name: 'DB_PASS', steps: [1] },
+      { id: ALPHA_ID, steps: [0, 1] },
+      { id: DB_ID, steps: [1] },
     ])
   })
 })
@@ -464,37 +473,37 @@ const agent = (id: string, over: Partial<Agent> = {}): Agent => ({
   id, name: id, harness: 'Claude Code', mode: 'default', model: null, ...over,
 })
 const AGENTS = [agent('g1'), agent('g2', { harness: 'OpenCode', mode: 'ollama', model: 'qwen3:8b' })]
-const SECRETS = ['MAIL_PASSWORD', 'CRM_API_KEY']
+const SECRET_IDS = ['MAIL_PASSWORD', 'CRM_API_KEY'] // §4.1: opaque secret ids to the seeds
 
 describe('grant seeds (§11 Review checkboxes)', () => {
   it('a fresh drafting Rev starts all-on — every agent enabled, every secret allowed', () => {
-    const r = seedEmpty(AGENTS, SECRETS)
+    const r = seedEmpty(AGENTS, SECRET_IDS)
     expect(r.enabledAgents).toEqual(['g1', 'g2'])
-    expect(r.allowedSecrets).toEqual(SECRETS)
+    expect(r.allowedSecrets).toEqual(SECRET_IDS)
   })
 
   it('a resumed pending draft restores its own grant selections (§4.4)', () => {
     const d = { stepAgents: ['g2'], allowedSecrets: ['CRM_API_KEY'] } as DraftPayload
-    const r = seedFromPayload(d, AGENTS, SECRETS)
+    const r = seedFromPayload(d, AGENTS, SECRET_IDS)
     expect(r.enabledAgents).toEqual(['g2'])
     expect(r.allowedSecrets).toEqual(['CRM_API_KEY'])
   })
 
   it('a payload without grant keys defaults to everything (fresh job payloads carry none)', () => {
-    const r = seedFromPayload({} as DraftPayload, AGENTS, SECRETS)
+    const r = seedFromPayload({} as DraftPayload, AGENTS, SECRET_IDS)
     expect(r.enabledAgents).toEqual(['g1', 'g2'])
-    expect(r.allowedSecrets).toEqual(SECRETS)
+    expect(r.allowedSecrets).toEqual(SECRET_IDS)
   })
 
   it('stale grant ids pointing at deleted agents/secrets are filtered out', () => {
     const d = { stepAgents: ['g1', 'gone'], allowedSecrets: ['CRM_API_KEY', 'DELETED_KEY'] } as DraftPayload
-    const r = seedFromPayload(d, AGENTS, SECRETS)
+    const r = seedFromPayload(d, AGENTS, SECRET_IDS)
     expect(r.enabledAgents).toEqual(['g1'])
     const a = seedFromAuto({
       name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
       triggers: [], stepAgents: ['g2', 'gone'], allowedSecrets: ['MAIL_PASSWORD', 'DELETED_KEY'],
       agentId: null, draft: null,
-    } as unknown as Automation, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRET_IDS)
     expect(a.enabledAgents).toEqual(['g2'])
     expect(a.allowedSecrets).toEqual(['MAIL_PASSWORD'])
   })
@@ -506,7 +515,7 @@ describe('grant seeds (§11 Review checkboxes)', () => {
       agentId: null,
       draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '',
                stepAgents: ['g2'], allowedSecrets: ['CRM_API_KEY'] },
-    } as unknown as Automation, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRET_IDS)
     expect(a.enabledAgents).toEqual(['g2'])
     expect(a.allowedSecrets).toEqual(['CRM_API_KEY'])
   })
@@ -519,7 +528,7 @@ describe('seedFromAuto packages (§4.1 curated deps)', () => {
       name: 'A', description: '', spec: [], steps: [], instructions: '', notes: '',
       params: [], packages: pkgs, triggers: [], stepAgents: [], allowedSecrets: [],
       agentId: null, draft: null,
-    } as unknown as Automation, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRET_IDS)
     expect(r.packages).toEqual(pkgs)
     expect(r.packages[0]).not.toBe(pkgs[0])
   })
@@ -527,7 +536,7 @@ describe('seedFromAuto packages (§4.1 curated deps)', () => {
 
 describe('serializeDraft (§4.4 draft payload)', () => {
   it('maps the editor grant state onto stepAgents/allowedSecrets — unchecked entries gone', () => {
-    const r = { ...seedEmpty(AGENTS, SECRETS), enabledAgents: ['g2'], allowedSecrets: [] }
+    const r = { ...seedEmpty(AGENTS, SECRET_IDS), enabledAgents: ['g2'], allowedSecrets: [] }
     const d = serializeDraft(r)
     expect(d.stepAgents).toEqual(['g2'])
     expect(d.allowedSecrets).toEqual([])
@@ -535,7 +544,7 @@ describe('serializeDraft (§4.4 draft payload)', () => {
 
   it('strips package status fields down to { pip, import } declarations', () => {
     const r = {
-      ...seedEmpty(AGENTS, SECRETS),
+      ...seedEmpty(AGENTS, SECRET_IDS),
       packages: [{ pip: 'pandas', import: 'pandas', status: 'installed', version: '2.2' }],
     } as ReturnType<typeof seedEmpty>
     expect(serializeDraft(r).packages).toEqual([{ pip: 'pandas', import: 'pandas' }])
@@ -543,7 +552,7 @@ describe('serializeDraft (§4.4 draft payload)', () => {
 
   it('never carries the thread — chat persists via /chat/{owner} (§4.4 thread lifetime)', () => {
     const r = {
-      ...seedEmpty(AGENTS, SECRETS),
+      ...seedEmpty(AGENTS, SECRET_IDS),
       chat: [entry('user'), entry('error'), entry('answer')],
     }
     expect(serializeDraft(r)).not.toHaveProperty('chat')
@@ -561,55 +570,55 @@ describe('serializeDraft (§4.4 draft payload)', () => {
   })
 
   it('round-trips the drafted §8 test-value map as testValues (§4.4 draft-only key)', () => {
-    const r = { ...seedEmpty(AGENTS, SECRETS), testValues: { city: 'Bergen' } }
+    const r = { ...seedEmpty(AGENTS, SECRET_IDS), testValues: { city: 'Bergen' } }
     expect(serializeDraft(r).testValues).toEqual({ city: 'Bergen' })
     // absent / empty maps drop the key
-    expect('testValues' in serializeDraft(seedEmpty(AGENTS, SECRETS))).toBe(false)
-    expect('testValues' in serializeDraft({ ...seedEmpty(AGENTS, SECRETS), testValues: {} })).toBe(false)
+    expect('testValues' in serializeDraft(seedEmpty(AGENTS, SECRET_IDS))).toBe(false)
+    expect('testValues' in serializeDraft({ ...seedEmpty(AGENTS, SECRET_IDS), testValues: {} })).toBe(false)
     // both resume paths restore it
-    expect(seedFromPayload({ testValues: { city: 'Bergen' } } as unknown as DraftPayload, AGENTS, SECRETS).testValues)
+    expect(seedFromPayload({ testValues: { city: 'Bergen' } } as unknown as DraftPayload, AGENTS, SECRET_IDS).testValues)
       .toEqual({ city: 'Bergen' })
-    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRETS).testValues).toBeNull()
+    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRET_IDS).testValues).toBeNull()
     const a = seedFromAuto({
       name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
       triggers: [], stepAgents: ['g1'], allowedSecrets: [],
       agentId: null,
       draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '', testValues: { city: 'Bergen' } },
-    } as unknown as Automation, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRET_IDS)
     expect(a.testValues).toEqual({ city: 'Bergen' })
   })
 
   it('round-trips the §8 staged concurrency object (§4.4 draft-only key)', () => {
-    const r = { ...seedEmpty(AGENTS, SECRETS), concurrency: { maxParallel: 2 } }
+    const r = { ...seedEmpty(AGENTS, SECRET_IDS), concurrency: { maxParallel: 2 } }
     expect(serializeDraft(r).concurrency).toEqual({ maxParallel: 2 })
     // nothing staged drops the key
-    expect('concurrency' in serializeDraft(seedEmpty(AGENTS, SECRETS))).toBe(false)
+    expect('concurrency' in serializeDraft(seedEmpty(AGENTS, SECRET_IDS))).toBe(false)
     // both resume paths restore it
-    expect(seedFromPayload({ concurrency: { maxQueued: 5 } } as unknown as DraftPayload, AGENTS, SECRETS).concurrency)
+    expect(seedFromPayload({ concurrency: { maxQueued: 5 } } as unknown as DraftPayload, AGENTS, SECRET_IDS).concurrency)
       .toEqual({ maxQueued: 5 })
-    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRETS).concurrency).toBeNull()
+    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRET_IDS).concurrency).toBeNull()
     const a = seedFromAuto({
       name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
       triggers: [], stepAgents: ['g1'], allowedSecrets: [],
       agentId: null,
       draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '', concurrency: { maxParallel: 3, maxQueued: 1 } },
-    } as unknown as Automation, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRET_IDS)
     expect(a.concurrency).toEqual({ maxParallel: 3, maxQueued: 1 })
   })
 
   it('round-trips the §11 dirty gate as outOfSync — resume must not unlock Save (§4.4)', () => {
-    const dirty = { ...seedEmpty(AGENTS, SECRETS), dirty: true }
+    const dirty = { ...seedEmpty(AGENTS, SECRET_IDS), dirty: true }
     expect(serializeDraft(dirty).outOfSync).toBe(true)
-    expect('outOfSync' in serializeDraft(seedEmpty(AGENTS, SECRETS))).toBe(false)
+    expect('outOfSync' in serializeDraft(seedEmpty(AGENTS, SECRET_IDS))).toBe(false)
     // both resume paths restore it
-    expect(seedFromPayload({ outOfSync: true } as DraftPayload, AGENTS, SECRETS).dirty).toBe(true)
-    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRETS).dirty).toBe(false)
+    expect(seedFromPayload({ outOfSync: true } as DraftPayload, AGENTS, SECRET_IDS).dirty).toBe(true)
+    expect(seedFromPayload({} as DraftPayload, AGENTS, SECRET_IDS).dirty).toBe(false)
     const a = seedFromAuto({
       name: 'A', description: '', spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '',
       triggers: [], stepAgents: ['g1'], allowedSecrets: [],
       agentId: null,
       draft: { spec: [{ kind: 'h1', text: 'T' }], steps: [], instructions: '', note: '', outOfSync: true },
-    } as unknown as Automation, AGENTS, SECRETS)
+    } as unknown as Automation, AGENTS, SECRET_IDS)
     expect(a.dirty).toBe(true)
   })
 })

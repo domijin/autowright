@@ -489,13 +489,18 @@ Sections top to bottom:
   what it shows (one shape everywhere: what the tag is, then " — `<why>`" appended when a
   why exists, never a why alone): an agent step carries one microchip-icon tag per entry in
   its `agents`
-  list (tooltip "This step calls the `<name>` AI agent", with " — `<why>`" appended — the
+  list — the entry's id resolved to the LIVE agent's name, so a rename updates the tag
+  immediately; an id matching no stored agent renders the red deleted state (short id
+  prefix, tooltip "This step calls an agent that no longer exists — this step would fail") —
+  (tooltip "This step calls the `<name>` AI agent", with " — `<why>`" appended — the
   entry's §4.1 per-agent role note, falling back to the step's `why`; an empty list shows a
   single tag naming the automation's first enabled agent, fallback "agent", with the
   step-`why` tooltip rule), a step carries one key-icon tag per secret it
-  uses (its `secrets` entries' names unioned with the `secrets.NAME` references in its code;
+  uses (its `secrets` entries' ids unioned with the literal `secrets["<id>"]` references in
+  its code, each resolved to the live §4.8 secret's name — a dangling id gets the same red
+  deleted treatment (short id prefix);
   tooltip "This step uses the `<NAME>` secret from your Keychain", with " — `<why>`"
-  appended when the declared entry carries its §4.1 per-use note — code-referenced names
+  appended when the declared entry carries its §4.1 per-use note — code-referenced ids
   with no declared entry have none), and every
   step carries one clock-icon tag showing its §4.1 time limit: the step's `timeout` humanized
   ("60s", "15m", "1h" — hours when divisible by 3600, else minutes when divisible by 60, else
@@ -867,7 +872,7 @@ the line reads "No description yet — add one in Edit to tell the drafting AI w
 is for." —
 and a **USED BY** row of clickable automation chips (fallback "Not used by any automation yet.").
 USED BY means actual reference, not permission: an automation is listed when the agent is its
-writer (`agent_id`) or a current-version step names the agent's grant name in its `agents` list. The
+writer (`agent_id`) or a current-version step carries the agent's id in its `agents` list. The
 `enabled_agents` grant alone never counts — same rule as secrets, whose usage is step-code
 references, not `allowed_secrets` (§12 Secrets).
 There is no Edit button and no per-card menu — the whole card is
@@ -945,7 +950,10 @@ submit button renders disabled-styled until valid but stays clickable: submittin
 name shows an inline red error "A name is required — give this agent a name before saving." (red
 input border, clears on typing) and smooth-scrolls the Name field to the center of the view,
 focusing the input — the submit button sits at the bottom of a long page, so the error must be
-brought on-screen; an uninstalled picked harness toasts "Download and set up
+brought on-screen; submitting a name that collides with another agent's effective §4.7 grant
+name (case-insensitive, excluding the agent being edited) shows the same inline treatment
+with "An agent named `<name>` already exists — pick a different name.", and a backend 422
+from the same rule surfaces identically; an uninstalled picked harness toasts "Download and set up
 `<Harness>` first."; missing Ollama toasts "Install Ollama first."; otherwise "Pick
 a harness and a model first." Success toasts: "`<name>` added — ready to write automations." /
 "Changes saved — `<name>` is ready." When editing a signed-out agent, the form shows a reconnect
@@ -987,7 +995,10 @@ cell shows the secret's `description` as a muted sub-line when present, and an a
 clears once a value is saved, and the placeholder's VALUE cell shows a faint "—" instead of
 the mask. The name field is a
 single-line input (Enter saves, Escape closes); its placeholder is a hint, not a literal example
-value: "A short name, like MAIL_PASSWORD or CRM_API_KEY". Below the name sits an optional
+value: "A short name, like MAIL_PASSWORD or CRM_API_KEY". In edit mode the name is not an
+input at all — it renders as a read-only chip (§4.8: names are immutable; only description
+and value are editable). Add mode refuses a name that already exists (client-side guard —
+"already exists — edit it from the list instead" — because the §19 PUT is an upsert). Below the name sits an optional
 single-line DESCRIPTION input (placeholder "What this secret is for — helps the drafting agent
 pick the right secret"), pre-filled when editing. The value field is a 3-row vertically
 resizable textarea (multi-line values allowed, §4.8) masked with `-webkit-text-security` unless
@@ -998,11 +1009,12 @@ password or API key — or leave blank to add the value later"; the success toas
 "Saved — add the value before an automation needs it."). The edit modal is titled
 "Edit secret" with submit "Save changes"; add is "New secret" / "Save to Keychain". The
 add/edit modal is a shared component (`SecretModal.tsx`) — the §9.2 Discord trigger editor
-opens it in add mode from its New secret button and receives the saved name via an
+opens it in add mode from its New secret button and receives the saved secret (the §19 PUT
+response entity — id included) via an
 `onSaved` callback. Toasts:
 "Saved to your Keychain." / "Secret updated." / "Removed from your Keychain." When no secrets exist, the table is replaced by an
 empty state (dashed card, same pattern as the Automations list): "No secrets yet. Add a password
-or API key once, and your automations use it by name — the value never appears in a script or a
+or API key once, and your automations use it wherever they need it — the value never appears in a script or a
 log." with an accent CTA "Add your first secret" that opens the add modal (all three empty-state
 CTAs — automations, agents, secrets — are accent-primary; the page-header Add buttons on Agents
 and Secrets are accent-primary too — each page's single main create action, §9 — no icons).

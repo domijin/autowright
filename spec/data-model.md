@@ -85,14 +85,21 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, packag
   human-readable script; agent
   marks a step that makes query-only runtime model calls (§6) — the script itself still does any
   changes. agents (agent steps only): ordered list of §8 grants the step may call, as
-  { name, why? } entries — the first is agent.ask's default, the others are addressable per
-  call by name; empty/absent falls back to the automation's first enabled agent. An entry's
+  { id, why? } entries - id is a §4.7 agent uuid, the binding a rename can never repoint.
+  The first entry is what the bare `agent` handle is bound to; the others are addressable
+  via `agents["<id>"]` (§6.1); empty/absent falls back to the automation's first enabled
+  agent. An entry's
   why is that agent's role note (appended to its §9.2/§11 tag tooltip); §8 validation requires one on every
   entry when the step lists two or more agents. secrets: §8 grants the step uses, as
-  { name, why } entries — why is the per-use note (§8 rule 6, required on every declared
-  entry) appended to the key tag's tooltip (§9.2). A step's effective secrets are these names
-  unioned with the secrets.NAME references in its code; a code-referenced name with no
-  declared entry carries no why and its tooltip states only what the tag is. packages: §6.2 declared
+  { id, why } entries - id is a §4.8 secret uuid; why is the per-use note (§8 rule 6,
+  required on every declared
+  entry) appended to the key tag's tooltip (§9.2). A step's effective secrets are these ids
+  unioned with the literal `secrets["<id>"]` subscripts in its code; a code-referenced id
+  with no
+  declared entry carries no why and its tooltip states only what the tag is. Display
+  surfaces resolve entry ids to the LIVE agent/secret name (a rename updates every tag and
+  tooltip immediately); an id matching no stored record renders a red deleted state showing
+  a short id prefix. packages: §6.2 declared
   packages the step uses, as { import, why } entries — import names a declared package's
   module (§8 validation rejects an import the version's packages list doesn't declare) and
   why is the per-step note (§8 rule 5, required on every declared entry: what THIS step uses
@@ -129,7 +136,8 @@ versions: [{ version, when, note, spec, steps, instructions, notes, params, pack
   history, newest-first (the current version is not repeated in this list)
 draft: unsaved edit snapshot (create-flow shape) | null
 agentId: agent that writes/edits this automation
-stepAgents, allowedSecrets: string[] — per-automation enablement (set on save)
+stepAgents, allowedSecrets: string[] — per-automation enablement (set on save); both are id
+  lists: stepAgents holds §4.7 agent uuids, allowedSecrets holds §4.8 secret uuids
 ```
 
 ### 4.2 Parameter kinds
@@ -711,20 +719,32 @@ model it is already configured with. Display shows "Default model" when the mode
 the app default: a single `default_agent` id pointer in `agents.yaml` (§5) — never a
 per-record flag, so "exactly one default" holds structurally; the API serializes each
 agent's derived `default` bool and its derived `usedBy` — the names of automations that use
-the agent, as their drafting agent or via a current-version step's `agents:` grant list
+the agent, as their drafting agent or via a current-version step's `agents:` entry ids
 (§4.1). Deleting the default agent repoints the pointer and warns
 which automations use it.
+**Grant-name uniqueness:** an agent's effective §8 grant name (`name`, falling back to the
+harness name when unnamed) is unique across agents, compared case-insensitively. The API
+rejects a create, and a rename that would change the effective grant name into a collision,
+with 422 ("an agent named X already exists - agent names must be unique"); the §12 form
+shows the same rule inline. Enforcement is write-time only - duplicates already on disk
+still load. Steps bind agents by id (§4.1), so a rename never repoints a step; uniqueness
+exists for the §8 grants yaml, the §20 case-insensitive name flags, and unambiguous display.
 All four harnesses are selectable. The app can install any of them (plus Ollama, for the
 local-model mode) and help the user sign in when the harness needs an account (§10 step 2,
 §19 install/login endpoints).
 
 ### 4.8 Secret
 
-`{ name, description, set, usedBy }` — the value itself is never part of the entity (Keychain-only,
-below). `usedBy` is the list of automation names whose current
+`{ id, name, description, set, usedBy }` — the value itself is never part of the entity (Keychain-only,
+below). `id` is a uuid minted when the secret is created; loading a stored entry without one
+mints and persists it (self-heal, like the §4.7 `default_agent` pointer). Steps bind secrets
+by this id (§4.1) - the id, not the name, is the reference identity. `usedBy` is the list of automation names whose current
 version uses the secret (the UI joins it; empty list renders "Not used yet"). Names uppercase, `[A-Z][A-Z0-9_]*` — sanitization (uppercase,
 invalid chars → `_`) is UI input behavior; the backend validates strictly and rejects nonconforming
-names with HTTP 422. `description` is an optional free-text description ("What this secret is for — shown
+names with HTTP 422. Names are **unique** (structural: the name keys `secrets.yaml`, the
+Keychain entry, and the §19 routes) and **immutable** - no rename path exists anywhere
+(`PUT /secrets/{name}` upserts under the path name and edits only value/description; the §12
+edit modal renders the name read-only). `description` is an optional free-text description ("What this secret is for — shown
 on the Secrets page and given to the drafting agent"), stored next to the name in `secrets.yaml`
 (never in the Keychain) and carried into the §8 grants yaml so the drafting agent knows which
 secret to use. Values are arbitrary strings and may be multi-line (e.g. a PEM key). Values stored
@@ -738,11 +758,13 @@ keeps the stored state (a set secret keeps its value, an unset one stays unset) 
 the description. An execution needing an unset secret fails before any step with "secret `NAME`
 has no value yet — add it on the Secrets page" (same pre-step gate as a missing Keychain entry,
 §7). Import (§5.1) creates placeholders for referenced secrets that don't exist locally.
-Step scripts reference them by name
-(`secrets.NAME`); values are injected at runtime and redacted from logs. Because log lines are
+Step scripts reference them by id subscript with the name in a trailing comment
+(`secrets["<id>"]  # NAME`, §6.1 — always a literal quoted id); values are injected at
+runtime and redacted from logs. Redaction labels, error copy, and `redactedSecrets` stay
+names — ids are the binding, names are the display. Because log lines are
 redacted one at a time, each non-blank line of a multi-line value is redacted individually as well,
 and the §6 agent-prompt scan likewise checks every non-blank line of a multi-line value, not just
-the whole string. Deleting a secret in use warns: the automation "uses it by name and will stop
+the whole string. Deleting a secret in use warns: the automation "uses it and will stop
 working."
 
 ### 4.9 Settings

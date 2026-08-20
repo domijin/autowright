@@ -183,7 +183,10 @@ export const api = {
   ollamaStatus: () => req<{ ready: boolean; installed: boolean; models: string[] }>('GET', '/ollama/status'),
   ollamaPull: (model: string) => req('POST', '/ollama/pull', { model }),
   putSecret: (name: string, value: string, description?: string) =>
-    req('PUT', `/secrets/${name}`, description === undefined ? { value } : { value, description }),
+    // §19: returns the serialized secret entity — the creating client learns
+    // the minted §4.8 id without a second fetch.
+    req<import('./types').SecretMeta>('PUT', `/secrets/${name}`,
+      description === undefined ? { value } : { value, description }),
   deleteSecret: (name: string) => req('DELETE', `/secrets/${name}`),
   patchSettings: (patch: Record<string, unknown>) =>
     req<import('./types').Settings>('PATCH', '/settings', patch),

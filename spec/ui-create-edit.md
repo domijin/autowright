@@ -801,9 +801,11 @@ editors enter with
   keeping a locked draft and reopening it must not unlock Save around the gate. Grant
   toggles (agent enablement, secret allowance) never mark the workflow out of sync by
   themselves — grants are permissions (§5), not versioned content. Instead, grant sync state is
-  **derived** from steps vs grants: the workflow is out of sync exactly while some step needs a
-  grant it doesn't have — an agent step whose assigned agent (or, unassigned, any agent at all)
-  isn't enabled, or step code referencing a Keychain secret that isn't allowed. Consequences:
+  **derived** from steps vs grants, matched by id: the workflow is out of sync exactly while
+  some step needs a
+  grant it doesn't have — an agent step whose listed agent id (or, listing none, any agent
+  at all)
+  isn't enabled, or a step referencing a stored secret's id that isn't allowed. Consequences:
   checking a grant no step uses, or unchecking an unused grant, leaves the workflow in sync and
   saves directly; check-then-uncheck is a no-op; unchecking a grant steps use locks saving, and
   either re-checking it (instant, no sync) or a sync (steps rewritten without it) unlocks.
@@ -933,16 +935,22 @@ editors enter with
   tooltip bubble, custom, not the native `title`; every tooltip follows one shape — what
   the tag is, then " — `<why>`" appended when a why exists, never a why alone): an agent step
   shows one microchip-icon tag per entry in its `agents`
-  list (tooltip "This step calls `<name>` · `<model>` mid-execution", with " — `<why>`"
+  list — the entry's id resolved to the LIVE agent (name and model update on rename, §4.1) —
+  (tooltip "This step calls `<name>` · `<model>` mid-execution", with " — `<why>`"
   appended — the entry's §4.1 role note, falling back to the step's own `why`; a tag turns
   red when its
-  name matches no enabled agent — red tooltip "`<name>` isn't enabled for steps — this step
+  id matches an agent that isn't enabled — red tooltip "`<name>` isn't enabled for steps —
+  this step
+  would fail" — and renders the red deleted state (short id prefix) when the id matches no
+  agent at all — red tooltip "This step calls an agent that no longer exists — this step
   would fail"; an empty list shows one tag
   naming the automation's first enabled agent (step-`why` tooltip rule), and reads "no agent"
   in red when none is
   enabled — red tooltip "No agent is enabled for steps — this step would fail"), a step shows
-  one key-icon tag per secret it uses (its `secrets` entries' names unioned with
-  the `secrets.NAME` references in its code; same §9.2 secret tooltip — "This step uses the
+  one key-icon tag per secret it uses (its `secrets` entries' ids unioned with
+  the literal `secrets["<id>"]` references in its code, each resolved to the live §4.8
+  secret's name — a dangling id renders the red deleted state with its short id prefix;
+  same §9.2 secret tooltip — "This step uses the
   `<NAME>` secret from your Keychain", with " — `<why>`" appended when the declared entry
   carries its §4.1 per-use note), a step shows one box-icon tag per declared §6.2 package
   it uses (its `packages` entries' imports unioned with the declared `import` names appearing
@@ -962,13 +970,15 @@ editors enter with
   `code` with Python syntax highlighting — a self-contained tokenizer (`PyCode` in `ui.tsx`, no
   dependency) coloring keywords, constants, strings, numbers, comments, decorators, builtins,
   `def`/`class` names, and call names over the base mono `pre`. Language is always
-  Python (§15); the same `PyCode` renders the detail page and the draft/create step editor. Agent steps without a named agent
+  Python (§15); the same `PyCode` renders the detail page and the draft/create step editor. Agent steps listing no agent
   and no enabled agent show a red warning ("Step N needs an agent, but none is enabled — the
-  execution would fail there. Enable one below."). A step naming an agent that exists but isn't
+  execution would fail there. Enable one below."). A step whose entry id resolves to an
+  agent that isn't
   enabled warns ("Step N calls <Agent>, but it isn't enabled here — the execution would fail
   there. Enable it below.") — a grant gap (Dirty gating above), locking Save until the agent is
-  re-enabled or a sync rewrites the steps. A step naming an agent that no longer exists warns
-  ("<Agent> isn't one of your agents — the execution would fail at step N."). Per-automation
+  re-enabled or a sync rewrites the steps. A step whose entry id matches no agent at all
+  warns ("This step calls an agent that no longer exists — the execution would fail at
+  step N."). All three derivations compare ids, never names — a rename changes nothing here. Per-automation
   agent enablement list with "X of Y enabled"; agents called by steps — including
   named-but-disabled ones — show a "called by step N" note. Agents created anywhere else
   (Agents page) arrive unchecked in edit mode — stored grants never widen silently, same rule
@@ -978,8 +988,11 @@ editors enter with
   rule above) — and is
   forced open while its warning shows (the same collapsed-when-healthy, forced-open-on-problem
   pattern as the Packages card).
-- **Secrets** — card eyebrow "SECRETS · ALLOWED FOR STEPS". Step code is scanned for `secrets.NAME`; secrets in Keychain but not allowed, and
-  secrets missing from Keychain, each produce warnings with fix affordances. A used-but-not-allowed
+- **Secrets** — card eyebrow "SECRETS · ALLOWED FOR STEPS". Step code is scanned for literal
+  `secrets["<id>"]` subscripts (unioned with the declared entry ids); secrets that exist but
+  aren't allowed, and
+  referenced ids matching no stored secret, each produce warnings with fix affordances. The
+  card's checkboxes toggle secret **ids** in `allowedSecrets` (§4.1); all matching is by id. A used-but-not-allowed
   secret is a grant gap (Dirty gating above): it locks saving until the secret is re-allowed or a
   sync rewrites the steps. A missing-from-Keychain secret only warns — adding the value through the
   fix row also allows it. "X of Y allowed". **Default state: on a new automation (create mode)

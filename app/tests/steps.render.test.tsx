@@ -5,31 +5,53 @@
 // kinds with each variant's cosmetic contract.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { Agent, PackageDep, ParamDef, Step } from '../src/types'
+import type { Agent, PackageDep, ParamDef, SecretMeta, Step } from '../src/types'
 import { ParamValueEditor, StepList, stepPackageTags, stepSecretTags } from '../src/steps'
 
 afterEach(() => cleanup())
 
 const AGENT: Agent = { id: 'g1', name: 'Cloud writer', harness: 'Claude Code', mode: 'default', model: null }
+// §4.8 fixture secrets — step entries and code subscripts reference these ids
+const MAIL_ID = '11111111-1111-1111-1111-111111111111'
+const CRM_ID = '22222222-2222-2222-2222-222222222222'
+const GONE_ID = '99999999-9999-4999-8999-999999999999'
+const SECRETS: SecretMeta[] = [
+  { id: MAIL_ID, name: 'MAIL_PASSWORD', description: '', set: true, usedBy: [] },
+  { id: CRM_ID, name: 'CRM_API_KEY', description: '', set: true, usedBy: [] },
+]
 const step = (over: Partial<Step> = {}): Step => ({ name: 'Fetch page', description: 'reads it', code: '', ...over })
 
 describe('StepList (shared)', () => {
-  it('detail variant: secret tags from code refs, fallback agent tag, script on expand', () => {
-    const steps = [step({ agent: true, code: 'x = secrets.MAIL_PASSWORD\nlog(x)' })]
-    render(<StepList variant="detail" steps={steps} fallbackAgent="Cloud writer" />)
+  it('detail variant: secret tags from code refs resolve to live names, fallback agent tag, script on expand', () => {
+    const steps = [step({ agent: true, code: `x = secrets["${MAIL_ID}"]  # MAIL_PASSWORD\nlog(x)` })]
+    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} fallbackAgent="Cloud writer" />)
     expect(screen.getByText('MAIL_PASSWORD')).toBeTruthy()
     expect(screen.getByText('Cloud writer')).toBeTruthy()
     // gutter number, no dot
     expect(screen.getByText('1')).toBeTruthy()
     // the script renders inside the collapsible body
     fireEvent.click(screen.getByText('Fetch page'))
-    expect(screen.getByText(/MAIL_PASSWORD/, { selector: 'pre *, pre' })).toBeTruthy()
+    expect(screen.getByText(new RegExp(MAIL_ID), { selector: 'pre *, pre' })).toBeTruthy()
+  })
+
+  it('detail variant: a dangling secret or agent id renders the red deleted state', () => {
+    const steps = [step({
+      agent: true,
+      agents: [{ id: GONE_ID }],
+      code: `x = secrets["${GONE_ID}"]`,
+    })]
+    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} fallbackAgent="Cloud writer" />)
+    const tags = screen.getAllByText('99999999…')
+    expect(tags.length).toBe(2) // one agent tag, one secret tag
+    const labels = tags.map((el) => el.closest('span')?.getAttribute('aria-label'))
+    expect(labels).toContain('This step calls an agent that no longer exists — this step would fail')
+    expect(labels).toContain('This step uses a secret that no longer exists — this step would fail')
   })
 
   it('editor variant: package tag for imported deps and red no-agent tag when none enabled', () => {
     const packages: PackageDep[] = [{ pip: 'beautifulsoup4', import: 'bs4', why: 'parse pages' }]
     const steps = [step({ agent: true, code: 'import bs4' })]
-    render(<StepList variant="editor" steps={steps} availAgents={[]} packages={packages} />)
+    render(<StepList variant="editor" steps={steps} availAgents={[]} allAgents={[]} secrets={[]} packages={packages} />)
     // 'bs4' also appears in the (collapsed) script body — assert the tag itself
     // (the tooltip text rides the tag's aria-label — §14 Tag tooltip)
     const pkgTag = screen.getAllByText('bs4').find((el) =>
@@ -45,23 +67,39 @@ describe('StepList (shared)', () => {
   it('editor variant: a declared per-step package why wins the tooltip', () => {
     const packages: PackageDep[] = [{ pip: 'pandas', import: 'pandas', why: 'data wrangling', version: '2.2' }]
     const steps = [step({ code: 'import pandas', packages: [{ import: 'pandas', why: 'parses the price tables' }] })]
-    render(<StepList variant="editor" steps={steps} availAgents={[]} packages={packages} />)
+    render(<StepList variant="editor" steps={steps} availAgents={[]} allAgents={[]} secrets={[]} packages={packages} />)
     const pkgTag = screen.getAllByText('pandas').find((el) =>
       el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
     expect(pkgTag!.closest('span')?.getAttribute('aria-label'))
       .toBe('This step uses the pandas Python package, version 2.2 — parses the price tables')
   })
 
-  it('editor variant: named agent resolves against the enabled agents', () => {
-    const steps = [step({ agent: true, agents: [{ name: 'Cloud writer', why: 'writes prose' }] })]
-    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} packages={[]} />)
+  it('editor variant: agent entry ids resolve to the live agent', () => {
+    const steps = [step({ agent: true, agents: [{ id: 'g1', why: 'writes prose' }] })]
+    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />)
     const tag = screen.getByText('Cloud writer')
     expect(tag.closest('span')?.getAttribute('aria-label')).toContain('mid-execution — writes prose')
   })
 
+  it('editor variant: an existing-but-disabled agent id warns red with the live name', () => {
+    const steps = [step({ agent: true, agents: [{ id: 'g1' }] })]
+    render(<StepList variant="editor" steps={steps} availAgents={[]} allAgents={[AGENT]} secrets={[]} packages={[]} />)
+    const tag = screen.getByText('Cloud writer')
+    expect(tag.closest('span')?.getAttribute('aria-label'))
+      .toBe('Cloud writer isn’t enabled for steps — this step would fail')
+  })
+
+  it('editor variant: a deleted agent id renders the red deleted state', () => {
+    const steps = [step({ agent: true, agents: [{ id: GONE_ID }] })]
+    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />)
+    const tag = screen.getByText('99999999…')
+    expect(tag.closest('span')?.getAttribute('aria-label'))
+      .toBe('This step calls an agent that no longer exists — this step would fail')
+  })
+
   it('editor variant: an agent entry without a why falls back to the step why', () => {
-    const steps = [step({ agent: true, why: 'needs judgment on titles', agents: [{ name: 'Cloud writer' }] })]
-    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} packages={[]} />)
+    const steps = [step({ agent: true, why: 'needs judgment on titles', agents: [{ id: 'g1' }] })]
+    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />)
     const tag = screen.getByText('Cloud writer')
     expect(tag.closest('span')?.getAttribute('aria-label'))
       .toContain('mid-execution — needs judgment on titles')
@@ -69,17 +107,17 @@ describe('StepList (shared)', () => {
 
   it('editor variant: the empty-list fallback agent tag carries the step why', () => {
     const steps = [step({ agent: true, why: 'summarizes the page' })]
-    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} packages={[]} />)
+    render(<StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />)
     const tag = screen.getByText('Cloud writer')
     expect(tag.closest('span')?.getAttribute('aria-label')).toContain('— summarizes the page')
   })
 
   it('secret tag tooltip: what + why when declared, what alone for code refs', () => {
     const steps = [step({
-      secrets: [{ name: 'CRM_API_KEY', why: 'authenticates the CRM fetch' }],
-      code: 'a = secrets.CRM_API_KEY\nb = secrets.MAIL_PASSWORD',
+      secrets: [{ id: CRM_ID, why: 'authenticates the CRM fetch' }],
+      code: `a = secrets["${CRM_ID}"]\nb = secrets["${MAIL_ID}"]`,
     })]
-    render(<StepList variant="editor" steps={steps} availAgents={[]} packages={[]} />)
+    render(<StepList variant="editor" steps={steps} availAgents={[]} allAgents={[]} secrets={SECRETS} packages={[]} />)
     expect(screen.getByText('CRM_API_KEY').closest('span')?.getAttribute('aria-label'))
       .toBe('This step uses the CRM_API_KEY secret from your Keychain — authenticates the CRM fetch')
     expect(screen.getByText('MAIL_PASSWORD').closest('span')?.getAttribute('aria-label'))
@@ -89,7 +127,7 @@ describe('StepList (shared)', () => {
   it('package tag tooltip: no why at all drops the why clause', () => {
     const packages: PackageDep[] = [{ pip: 'requests', import: 'requests', why: '' }]
     const steps = [step({ code: 'import requests' })]
-    render(<StepList variant="editor" steps={steps} availAgents={[]} packages={packages} />)
+    render(<StepList variant="editor" steps={steps} availAgents={[]} allAgents={[]} secrets={[]} packages={packages} />)
     const pkgTag = screen.getAllByText('requests').find((el) =>
       el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
     expect(pkgTag!.closest('span')?.getAttribute('aria-label'))
@@ -98,7 +136,7 @@ describe('StepList (shared)', () => {
 
   it('detail variant: agent tag tooltip reads what + why', () => {
     const steps = [step({ agent: true, why: 'writes the final summary' })]
-    render(<StepList variant="detail" steps={steps} fallbackAgent="Cloud writer" />)
+    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} fallbackAgent="Cloud writer" />)
     const tag = screen.getByText('Cloud writer')
     expect(tag.closest('span')?.getAttribute('aria-label'))
       .toBe('This step calls the Cloud writer AI agent — writes the final summary')
@@ -106,12 +144,20 @@ describe('StepList (shared)', () => {
 })
 
 describe('stepSecretTags', () => {
-  it('unions declared entries (with why) and code references', () => {
+  it('unions declared entries (with why) and code references, resolving live names', () => {
     const tags = stepSecretTags(step({
-      secrets: [{ name: 'CRM_API_KEY', why: 'auth' }],
-      code: 'a = secrets.CRM_API_KEY\nb = secrets.MAIL_PASSWORD',
-    }))
-    expect(tags).toEqual([{ name: 'CRM_API_KEY', why: 'auth' }, { name: 'MAIL_PASSWORD' }])
+      secrets: [{ id: CRM_ID, why: 'auth' }],
+      code: `a = secrets["${CRM_ID}"]\nb = secrets["${MAIL_ID}"]`,
+    }), SECRETS)
+    expect(tags).toEqual([
+      { id: CRM_ID, name: 'CRM_API_KEY', missing: false, why: 'auth' },
+      { id: MAIL_ID, name: 'MAIL_PASSWORD', missing: false },
+    ])
+  })
+
+  it('a dangling id keeps its short prefix and missing flag', () => {
+    const tags = stepSecretTags(step({ code: `a = secrets["${GONE_ID}"]` }), SECRETS)
+    expect(tags).toEqual([{ id: GONE_ID, name: '99999999…', missing: true }])
   })
 })
 

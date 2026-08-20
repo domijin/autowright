@@ -3,12 +3,12 @@
 // the chat-thread/blocker helpers. No React here — everything is plain data
 // in/data out, unit-tested via the CreateFlow page's re-exports.
 import type { Agent, Automation, Blocker, ChatEntry, ConcurrencyStage, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, TriggerOp, VersionInfo } from '../../types'
-import { stepSecretNames, stepSecretTags } from '../../steps'
+import { shortId, stepSecretIds, stepSecretTags } from '../../steps'
 
 // The step-secret scanners live in the shared step-list module (../../steps)
 // — the automation detail page reads the same tags — and re-export here so
 // the model stays the one import for the editor's pure helpers.
-export { stepSecretNames, stepSecretTags }
+export { shortId, stepSecretIds, stepSecretTags }
 
 // markdown-ish text ↔ SpecBlock[] ('# ', '## ', '- ', plain lines)
 export function specToText(blocks: SpecBlock[]): string {
@@ -125,13 +125,17 @@ export function needsMessageTriggerSetup(steps: Step[], triggers: DraftTrigger[]
     && steps.some((s) => /\btrigger_payload\b/.test(s.code))
 }
 
-export interface SecretRef { name: string; steps: number[] }
+// §11: which steps reference which agent — keyed by §4.7 agent id; `name` is
+// the live agent's name resolved at derivation time (display only).
+export interface AgentRef { id: string; name: string; steps: number[] }
+// §11: which steps reference which secret — keyed by §4.8 secret id.
+export interface SecretRef { id: string; steps: number[] }
 export function secretRefsOf(steps: Step[]): SecretRef[] {
   const refs: SecretRef[] = []
   steps.forEach((s, i) => {
-    for (const nm of stepSecretNames(s)) {
-      let e = refs.find((z) => z.name === nm)
-      if (!e) { e = { name: nm, steps: [] }; refs.push(e) }
+    for (const id of stepSecretIds(s)) {
+      let e = refs.find((z) => z.id === id)
+      if (!e) { e = { id, steps: [] }; refs.push(e) }
       if (!e.steps.includes(i)) e.steps.push(i)
     }
   })
@@ -263,7 +267,7 @@ const revDefaults = {
 // §11: the editor mounts on the create empty state — empty thread, placeholder
 // cards, the default build instructions pre-filled; the first chat message is
 // an ordinary §8 chat job (the new-automation rule).
-export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
+export function seedEmpty(agents: Agent[], secretIds: string[]): Rev {
   return {
     ...revDefaults,
     name: 'New automation', description: '', note: '',
@@ -272,11 +276,11 @@ export function seedEmpty(agents: Agent[], secretNames: string[]): Rev {
     instructions: instructionCache.defaultBuild,
     notes: '',
     enabledAgents: agents.map((g) => g.id),
-    allowedSecrets: secretNames,
+    allowedSecrets: secretIds,
   }
 }
 
-export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: string[]): Rev {
+export function seedFromPayload(d: DraftPayload, agents: Agent[], secretIds: string[]): Rev {
   return {
     ...revDefaults,
     name: d.name || 'New automation', description: d.description || '', note: d.note || '',
@@ -295,7 +299,7 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
     enabledAgents: d.stepAgents
       ? d.stepAgents.filter((id) => agents.some((g) => g.id === id))
       : agents.map((g) => g.id),
-    allowedSecrets: d.allowedSecrets ?? secretNames,
+    allowedSecrets: d.allowedSecrets ?? secretIds,
     lastTest: d.test ?? null,
     // §4.4/§11: restore the persisted dirty-gate state — resuming a kept
     // out-of-sync draft must not unlock Save around the gate.
@@ -303,7 +307,7 @@ export function seedFromPayload(d: DraftPayload, agents: Agent[], secretNames: s
   }
 }
 
-export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string[]): Rev {
+export function seedFromAuto(a: Automation, agents: Agent[], secretIds: string[]): Rev {
   // §4.4/§19: the draft container payload when one is kept, else the current version
   const src: Pick<DraftPayload, 'spec' | 'steps' | 'instructions' | 'notes' | 'params' | 'packages'> =
     a.draft ?? {
@@ -326,7 +330,7 @@ export function seedFromAuto(a: Automation, agents: Agent[], secretNames: string
     notes: src.notes || '',
     // §4.4: a draft carries its own grant selections — resume restores them
     enabledAgents: (a.draft?.stepAgents ?? a.stepAgents).filter((id) => agents.some((x) => x.id === id)),
-    allowedSecrets: (a.draft?.allowedSecrets ?? a.allowedSecrets).filter((n) => secretNames.includes(n)),
+    allowedSecrets: (a.draft?.allowedSecrets ?? a.allowedSecrets).filter((id) => secretIds.includes(id)),
     lastTest: a.draft?.test ?? null,
     touched: !!a.draft,
     // §4.4/§11: restore the persisted dirty-gate state — resuming a kept

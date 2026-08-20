@@ -152,7 +152,7 @@ def test_scan_map_is_not_reachable_from_the_step_sdk():
 
     ctx = {"secrets": {}, "scan_secrets": {"OTHER": "v"}, "is_agent_step": True}
     scan = ctx.pop("scan_secrets")
-    agent = Agent(ctx, scan)
+    agent = Agent(ctx, scan, None)
     assert "scan_secrets" not in agent._ctx
     assert "OTHER" not in (agent._ctx.get("secrets") or {})
 

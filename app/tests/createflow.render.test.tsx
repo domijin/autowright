@@ -61,16 +61,19 @@ const AGENTS: Agent[] = [
   { id: 'g1', name: 'Cloud writer', harness: 'Claude Code', mode: 'default', model: null, default: true },
   { id: 'g2', name: 'Fast local', harness: 'OpenCode', mode: 'ollama', model: 'qwen3:8b' },
 ]
+// §4.8: secrets carry uuids — grants and step references key on them
+const MAIL_ID = '11111111-1111-1111-1111-111111111111'
+const CRM_ID = '22222222-2222-2222-2222-222222222222'
 const SECRETS: SecretMeta[] = [
-  { name: 'MAIL_PASSWORD', description: '', set: true, usedBy: '' },
-  { name: 'CRM_API_KEY', description: '', set: true, usedBy: '' },
+  { id: MAIL_ID, name: 'MAIL_PASSWORD', description: '', set: true, usedBy: '' },
+  { id: CRM_ID, name: 'CRM_API_KEY', description: '', set: true, usedBy: '' },
 ]
 const AUTO = {
   id: 'a1', name: 'My auto', description: '', version: 1,
   triggers: [], triggerChip: 'No triggers', triggersOff: false, nextAt: null,
   instructions: '- keep it simple',
   lastStatus: 'none', live: [], resultChip: null, resultStatus: null, lastExecutionLabel: '',
-  agentId: 'g1', stepAgents: ['g1', 'g2'], allowedSecrets: ['MAIL_PASSWORD', 'CRM_API_KEY'],
+  agentId: 'g1', stepAgents: ['g1', 'g2'], allowedSecrets: [MAIL_ID, CRM_ID],
   snapshotSettings: { preVersion: true, preClear: true, preRestore: true },
   specMeta: '', params: [],
   steps: [{ file: '01-a.py', name: 'Fetch pages', description: '', code: 'log("a")' }],
@@ -147,11 +150,11 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
     expect(body.mode).toBe('sync')
     expect(body.automationId).toBe('a1')
     expect(body.enabledAgents).toEqual(['g1'])                    // g2 gone
-    expect(body.allowedSecrets).toEqual(['MAIL_PASSWORD'])        // CRM_API_KEY gone
+    expect(body.allowedSecrets).toEqual([MAIL_ID])        // CRM_API_KEY gone
     // the serialized in-editor draft carries the same trimmed grants
     const current = body.current as { stepAgents: string[]; allowedSecrets: string[] }
     expect(current.stepAgents).toEqual(['g1'])
-    expect(current.allowedSecrets).toEqual(['MAIL_PASSWORD'])
+    expect(current.allowedSecrets).toEqual([MAIL_ID])
   })
 
   it('unchecking everything sends explicit empty arrays, not missing keys', async () => {
@@ -184,7 +187,7 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
     expect(body.mode).toBe('chat')
     expect(body.text).toBe('Also check on weekends')
     expect(body.enabledAgents).toEqual(['g1', 'g2'])              // agents untouched
-    expect(body.allowedSecrets).toEqual(['MAIL_PASSWORD'])        // unchecked secret gone
+    expect(body.allowedSecrets).toEqual([MAIL_ID])        // unchecked secret gone
     // §19: the recent thread rides the body (empty on a fresh editor)
     expect(Array.isArray(body.chat)).toBe(true)
     // the message renders as a user entry in the thread
@@ -209,7 +212,7 @@ describe('CreateFlow Build & test panel (§11)', () => {
     storeMod.useStore.setState({
       automations: [{
         ...AUTO,
-        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'log("a")', agent: true, why: 'w', agents: [{ name: 'Fast local' }] }],
+        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'log("a")', agent: true, why: 'w', agents: [{ id: 'g2' }] }],
       } as unknown as Automation],
     })
     render(<CreateFlow />)
@@ -1267,7 +1270,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     storeMod.useStore.setState({
       automations: [{
         ...AUTO,
-        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'x = secrets.CRM_API_KEY', agent: true, why: 'w', agents: [{ name: 'Fast local' }] }],
+        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: `x = secrets["${CRM_ID}"]`, agent: true, why: 'w', agents: [{ id: 'g2' }] }],
       } as unknown as Automation],
     })
     render(<CreateFlow />)

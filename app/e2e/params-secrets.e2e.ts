@@ -15,10 +15,12 @@ const PARAM_STEP = {
   file: '01-use-params.py', name: 'Use params', description: 'logs param values',
   code: 'from autowright import log, params, result\nlog(f"greeting={params[\'greeting\']}")\nlog(f"limit={params[\'limit\']}")\nresult.status("ok")\nresult.chip("Params")\n',
 }
-const SECRET_STEP = {
+// §4.1/§6.1: step code references secrets by id subscript — the fixture id is
+// injected once the placeholder is created (see the test body).
+const secretStep = (id: string) => ({
   file: '01-secret.py', name: 'Use secret', description: 'references a secret',
-  code: 'from autowright import log, result, secrets\nlog(secrets.MY_TOKEN)\nresult.status("ok")\n',
-}
+  code: `from autowright import log, result, secrets\nlog(secrets["${id}"])  # MY_TOKEN\nresult.status("ok")\n`,
+})
 
 interface ParamJson { name: string; value?: unknown; on?: boolean }
 
@@ -81,8 +83,8 @@ describe('params and secrets e2e', () => {
 
   it('surfaces the missing-secret failure for a placeholder secret', async () => {
     backend = await new Backend().start()
-    await backend.putSecretPlaceholder('MY_TOKEN', 'Placeholder for the e2e secret flow')
-    const { id } = await backend.createAutomation('Secret e2e', [SECRET_STEP], { allowedSecrets: ['MY_TOKEN'] })
+    const secret = await backend.putSecretPlaceholder('MY_TOKEN', 'Placeholder for the e2e secret flow')
+    const { id } = await backend.createAutomation('Secret e2e', [secretStep(secret.id)], { allowedSecrets: [secret.id] })
     const exec = await backend.executeAndWait(id)
     expect(exec.status).toBe('failed') // stops before any step (§6)
 

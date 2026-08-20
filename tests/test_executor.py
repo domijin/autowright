@@ -25,33 +25,51 @@ def ctrl(monkeypatch):
 
 # ---------- Secrets ----------
 
+# §4.8/§6.1: secrets are addressed by id subscript; errors label by NAME via
+# the id→name map. Fixed test uuids keep the assertions readable.
+TOKEN_ID = "11111111-1111-1111-1111-111111111111"
+OTHER_ID = "22222222-2222-2222-2222-222222222222"
+NOPE_ID = "33333333-3333-3333-3333-333333333333"
+SECRET_NAMES = {TOKEN_ID: "TOKEN", OTHER_ID: "OTHER"}
+
+
 def test_secrets_allowed_and_injected():
     from autowright.executor import Secrets
 
-    s = Secrets({"TOKEN": "abc"}, ["TOKEN", "OTHER"])
-    assert s.TOKEN == "abc"
+    s = Secrets({TOKEN_ID: "abc"}, [TOKEN_ID, OTHER_ID], SECRET_NAMES)
+    assert s[TOKEN_ID] == "abc"
 
 
 def test_secrets_allowed_but_not_in_keychain():
     from autowright.executor import MissingSecret, Secrets
 
-    s = Secrets({"TOKEN": "abc"}, ["TOKEN", "OTHER"])
+    s = Secrets({TOKEN_ID: "abc"}, [TOKEN_ID, OTHER_ID], SECRET_NAMES)
     with pytest.raises(MissingSecret, match="OTHER wasn't injected into this step"):
-        s.OTHER
+        s[OTHER_ID]
 
 
 def test_secrets_not_allowed():
     from autowright.executor import MissingSecret, Secrets
 
-    s = Secrets({"TOKEN": "abc"}, ["TOKEN"])
-    with pytest.raises(MissingSecret, match="NOPE is not allowed for this automation"):
-        s.NOPE
+    s = Secrets({TOKEN_ID: "abc"}, [TOKEN_ID], SECRET_NAMES)
+    # an unknown id has no name to label with — the short id prefix stands in
+    with pytest.raises(MissingSecret, match="33333333… is not allowed for this automation"):
+        s[NOPE_ID]
+
+
+def test_secrets_attribute_access_is_retired():
+    from autowright.executor import MissingSecret, Secrets
+
+    s = Secrets({TOKEN_ID: "abc"}, [TOKEN_ID], SECRET_NAMES)
+    # §6.1: secrets.NAME does not exist anymore — the message points at ids
+    with pytest.raises(MissingSecret, match=r'use secrets\["<secret id>"\]'):
+        s.TOKEN
 
 
 def test_secrets_underscore_attrs_raise_attribute_error():
     from autowright.executor import Secrets
 
-    s = Secrets({}, [])
+    s = Secrets({}, [], {})
     with pytest.raises(AttributeError):
         s._missing
 
@@ -78,10 +96,14 @@ def test_result_chip_coerces_to_str(tmp_path, ctrl):
 
 # ---------- Agent._ask guard rails ----------
 
+HELPER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+LOCAL_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+
+
 def make_ctx(**over):
     ctx = {
         "is_agent_step": True,
-        "agents": [{"name": "helper", "harness": "claude"}],
+        "agents": [{"id": HELPER_ID, "name": "helper", "harness": "claude"}],
         "secrets": {"TOKEN": "s3cr3t-value"},
         "secret_names_with_values": ["TOKEN"],
         "agent_timeout": 5,
@@ -91,13 +113,23 @@ def make_ctx(**over):
 
 
 def make_agent(ctx=None, **over):
-    """Build an Agent the way main() does: the automation-wide scan map comes
-    off the context, then is handed to Agent explicitly (§6)."""
+    """Build the bare `agent` handle the way main() does: bound to the step's
+    first agents entry, with the automation-wide scan map handed over
+    explicitly (§6)."""
     from autowright.executor import Agent
 
     ctx = make_ctx(**over) if ctx is None else ctx
     scan = ctx.pop("scan_secrets", None) or ctx.get("secrets", {})
-    return Agent(ctx, scan)
+    return Agent(ctx, scan, (ctx.get("agents") or [None])[0])
+
+
+def make_agents(ctx=None, **over):
+    """Build the `agents["<id>"]` container the way main() does."""
+    from autowright.executor import Agents
+
+    ctx = make_ctx(**over) if ctx is None else ctx
+    scan = ctx.pop("scan_secrets", None) or ctx.get("secrets", {})
+    return Agents(ctx, scan)
 
 
 @pytest.fixture()
@@ -155,13 +187,24 @@ def test_ask_caps_prompt_at_200k(ctrl, invoke_spy):
     assert a.ask("x" * 200_000) == "the reply"  # exactly at the cap still goes
 
 
-def test_ask_unknown_agent_name_lists_available(ctrl, invoke_spy):
-    ctx = make_ctx(agents=[{"name": "helper", "harness": "claude"},
-                           {"name": None, "harness": "opencode"}])
-    a = make_agent(ctx)
-    # §8 grant names: explicit name, or the harness name for unnamed agents
-    with pytest.raises(RuntimeError, match=r"'nope' isn't available.*helper, opencode"):
-        a.ask("hi", agent="nope")
+def test_agents_subscript_picks_declared_entry_by_id(ctrl, invoke_spy):
+    ctx = make_ctx(agents=[{"id": HELPER_ID, "name": "helper", "harness": "claude"},
+                           {"id": LOCAL_ID, "name": None, "harness": "opencode"}])
+    ags = make_agents(ctx)
+    assert ags[LOCAL_ID].ask("hi") == "the reply"
+    assert invoke_spy[0][0]["id"] == LOCAL_ID
+
+
+def test_agents_unknown_id_lists_available(ctrl, invoke_spy):
+    ctx = make_ctx(agents=[{"id": HELPER_ID, "name": "helper", "harness": "claude"},
+                           {"id": LOCAL_ID, "name": None, "harness": "opencode"}])
+    ags = make_agents(ctx)
+    # §6.1: the error lists the step's agents as `Name (id)` — grant names,
+    # falling back to the harness name for unnamed agents
+    with pytest.raises(RuntimeError,
+                       match=rf"isn't among this step's declared agents.*helper \({HELPER_ID}\), "
+                             rf"opencode \({LOCAL_ID}\)"):
+        ags["44444444-4444-4444-4444-444444444444"]
     assert invoke_spy == []
 
 
@@ -533,12 +576,12 @@ def test_main_declared_package_extends_allowlist(run_main):
 
 
 def test_main_missing_secret_exit_code(run_main):
-    rc, lines = run_main("from autowright import secrets\nsecrets.NOPE\n",
+    rc, lines = run_main(f'from autowright import secrets\nsecrets["{NOPE_ID}"]\n',
                          secrets={}, allowed_secrets=[])
     assert rc == 3
     err = next(l for l in lines if l["op"] == "error")
     assert err["type"] == "MissingSecret"
-    assert "NOPE" in err["message"]
+    assert NOPE_ID[:8] in err["message"]
 
 
 def test_main_sys_exit_zero_is_ordinary_early_exit(run_main):
@@ -585,8 +628,9 @@ def test_main_reply_outside_message_trigger_raises(run_main):
 
 def test_main_reply_scans_outbound_for_secret_values(run_main):
     rc, lines = run_main(
-        "from autowright import reply, secrets\nreply('key is ' + secrets.TOKEN)\n",
-        can_reply=True, secrets={"TOKEN": "s3cr3t"}, allowed_secrets=["TOKEN"],
+        f'from autowright import reply, secrets\nreply(\'key is \' + secrets["{TOKEN_ID}"])\n',
+        can_reply=True, secrets={TOKEN_ID: "s3cr3t"}, allowed_secrets=[TOKEN_ID],
+        secret_names={TOKEN_ID: "TOKEN"},
         scan_secrets={"TOKEN": "s3cr3t"})
     assert rc == 1
     err = next(l for l in lines if l["op"] == "error")

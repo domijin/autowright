@@ -740,74 +740,146 @@ def test_chat_blocker_stream_label_never_flips():
     assert job["stage"] == "Working on the request"
 
 
+FAST_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+SMART_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+TOKEN_ID = "11111111-1111-1111-1111-111111111111"
+GONE_ID = "99999999-9999-4999-8999-999999999999"
+
+
 def test_step_agents_and_secrets_validate_against_grants():
-    # §8 rules 6/7: per-step `agents`/`secrets` must name granted entries; both
+    # §8 rules 6/7: per-step `agents`/`secrets` carry granted entry IDS; both
     # ride the normalized steps.
     files = {
         "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
-                          "  - { file: 01-a.py, name: A, description: x, secrets: [{ name: TOKEN, why: auth }] }\n"
-                          "  - { file: 02-b.py, name: B, description: y, agent: true, why: w, agents: [{ name: Fast }] }\n"),
+                          f"  - {{ file: 01-a.py, name: A, description: x, secrets: [{{ id: {TOKEN_ID}, why: auth }}] }}\n"
+                          f"  - {{ file: 02-b.py, name: B, description: y, agent: true, why: w, agents: [{{ id: {FAST_ID} }}] }}\n"),
         "01-a.py": "from autowright import log\nlog('a')\n",
         "02-b.py": "from autowright import log\nlog('b')\n",
     }
-    grants = {"agents": [{"name": "Fast", "harness": "Codex", "model": "harness default"}],
-              "secrets": [{"name": "TOKEN"}]}
+    grants = {"agents": [{"id": FAST_ID, "name": "Fast", "harness": "Codex", "model": "harness default"}],
+              "secrets": [{"id": TOKEN_ID, "name": "TOKEN"}]}
     draft, errors = validate_steps(files, grants)
     assert errors == []
-    assert draft["steps"][0]["secrets"] == [{"name": "TOKEN", "why": "auth"}]
+    assert draft["steps"][0]["secrets"] == [{"id": TOKEN_ID, "why": "auth"}]
     assert draft["steps"][0]["agents"] == []
-    assert draft["steps"][1]["agents"] == [{"name": "Fast"}]
+    assert draft["steps"][1]["agents"] == [{"id": FAST_ID}]
 
-    # Names outside the grants are validation errors.
+    # Ids outside the grants are validation errors — the copy lists the
+    # granted entries as `Name (id)` so the agent can fix the typo.
     bad = dict(files, **{"manifest.yaml": files["manifest.yaml"]
-                         .replace("name: Fast", "name: Nope").replace("name: TOKEN", "name: NOPE")})
+                         .replace(FAST_ID, GONE_ID).replace(TOKEN_ID, GONE_ID)})
     _, errors = validate_steps(bad, grants)
-    assert any("Nope" in e for e in errors)
-    assert any("NOPE" in e for e in errors)
+    assert any("isn't among the granted agents" in e and f"Fast ({FAST_ID})" in e for e in errors)
+    assert any("isn't among the allowed secrets" in e and f"TOKEN ({TOKEN_ID})" in e for e in errors)
 
     # `agents` only makes sense on agent steps.
     bad2 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
-                          .replace("secrets: [{ name: TOKEN, why: auth }]", "agents: [{ name: Fast }]")})
+                          .replace(f"secrets: [{{ id: {TOKEN_ID}, why: auth }}]",
+                                   f"agents: [{{ id: {FAST_ID} }}]")})
     _, errors = validate_steps(bad2, grants)
     assert any("only valid on agent" in e for e in errors)
 
-    # §8 rule 6: a declared secret without a why, and the old bare-name shape,
-    # are both rejected.
+    # §8 rule 6: a declared secret without a why, and the pre-id shapes
+    # (bare string, name key), are all rejected.
     bad4 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
-                          .replace("{ name: TOKEN, why: auth }", "{ name: TOKEN }")})
+                          .replace(f"{{ id: {TOKEN_ID}, why: auth }}", f"{{ id: {TOKEN_ID} }}")})
     _, errors = validate_steps(bad4, grants)
     assert any("needs a why" in e for e in errors)
     bad5 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
-                          .replace("[{ name: TOKEN, why: auth }]", "[TOKEN]")})
+                          .replace(f"[{{ id: {TOKEN_ID}, why: auth }}]", "[TOKEN]")})
     _, errors = validate_steps(bad5, grants)
-    assert any("{ name, why }" in e for e in errors)
+    assert any("{ id, why }" in e for e in errors)
+    bad6 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                          .replace(f"[{{ id: {TOKEN_ID}, why: auth }}]",
+                                   "[{ name: TOKEN, why: auth }]")})
+    _, errors = validate_steps(bad6, grants)
+    assert any("{ id, why }" in e for e in errors)
 
-    # §8 rule 7: bare name strings are the old shape — rejected.
+    # §8 rule 7: bare strings and name-keyed entries are the old shape — rejected.
     bad3 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
-                          .replace("[{ name: Fast }]", "[Fast]")})
+                          .replace(f"[{{ id: {FAST_ID} }}]", "[Fast]")})
     _, errors = validate_steps(bad3, grants)
-    assert any("{ name, why? }" in e for e in errors)
+    assert any("{ id, why? }" in e for e in errors)
+    bad7 = dict(files, **{"manifest.yaml": files["manifest.yaml"]
+                          .replace(f"[{{ id: {FAST_ID} }}]", "[{ name: Fast }]")})
+    _, errors = validate_steps(bad7, grants)
+    assert any("{ id, why? }" in e for e in errors)
+
+
+def test_step_duplicate_ids_in_one_list_rejected():
+    # §8 rules 6/7: the same id twice in one step's list is an error — it
+    # breaks the ask-default/why semantics and duplicates the fetch.
+    grants = {"agents": [{"id": FAST_ID, "name": "Fast"}],
+              "secrets": [{"id": TOKEN_ID, "name": "TOKEN"}]}
+    files = {
+        "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
+                          f"  - {{ file: 01-a.py, name: A, description: x, agent: true, why: w,\n"
+                          f"      agents: [{{ id: {FAST_ID}, why: a }}, {{ id: {FAST_ID}, why: b }}],\n"
+                          f"      secrets: [{{ id: {TOKEN_ID}, why: a }}, {{ id: {TOKEN_ID}, why: b }}] }}\n"),
+        "01-a.py": "from autowright import log\nlog('a')\n",
+    }
+    _, errors = validate_steps(files, grants)
+    assert any("agent 'Fast' is listed twice" in e for e in errors)
+    assert any("secret 'TOKEN' is listed twice" in e for e in errors)
+
+
+def test_code_scanned_ids_validate_against_grants():
+    # §8 rules 6/7: secrets["<id>"] literals must be granted secrets, and
+    # agents["<id>"] literals must be among the step's own declared entries.
+    grants = {"agents": [{"id": FAST_ID, "name": "Fast"}],
+              "secrets": [{"id": TOKEN_ID, "name": "TOKEN"}]}
+    files = {
+        "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
+                          "  - { file: 01-a.py, name: A, description: x }\n"),
+        "01-a.py": f'from autowright import secrets\nx = secrets["{GONE_ID}"]\n',
+    }
+    _, errors = validate_steps(files, grants)
+    assert any(f"code subscripts secrets['{GONE_ID}']" in e for e in errors)
+
+    # a granted secret id in code is fine with no declared entry (§4.1 union)
+    ok = dict(files, **{"01-a.py": f'from autowright import secrets\nx = secrets["{TOKEN_ID}"]\n'})
+    draft, errors = validate_steps(ok, grants)
+    assert errors == []
+    assert draft["secretReferences"] == [TOKEN_ID]
+
+    # agents["<id>"] outside the step's declared entries — declared or not
+    files2 = {
+        "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
+                          f"  - {{ file: 01-a.py, name: A, description: x, agent: true, why: w,\n"
+                          f"      agents: [{{ id: {FAST_ID} }}] }}\n"),
+        "01-a.py": f'from autowright import agents\na = agents["{GONE_ID}"].ask("hi")\n',
+    }
+    _, errors = validate_steps(files2, grants)
+    assert any("isn't among this step's declared agents entries" in e for e in errors)
+    files3 = {
+        "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
+                          "  - { file: 01-a.py, name: A, description: x, agent: true, why: w }\n"),
+        "01-a.py": f'from autowright import agents\na = agents["{FAST_ID}"].ask("hi")\n',
+    }
+    _, errors = validate_steps(files3, grants)
+    assert any("declares no agents entries" in e for e in errors)
 
 
 def test_step_multiple_agents_need_per_entry_why():
     # §8 rule 7: two or more agents entries → every one carries its own why.
-    grants = {"agents": [{"name": "Fast"}, {"name": "Smart"}], "secrets": []}
+    grants = {"agents": [{"id": FAST_ID, "name": "Fast"}, {"id": SMART_ID, "name": "Smart"}],
+              "secrets": []}
     files = {
         "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
                           "  - { file: 01-a.py, name: A, description: x, agent: true, why: w,\n"
-                          "      agents: [{ name: Fast }, { name: Smart }] }\n"),
+                          f"      agents: [{{ id: {FAST_ID} }}, {{ id: {SMART_ID} }}] }}\n"),
         "01-a.py": "from autowright import log\nlog('a')\n",
     }
     _, errors = validate_steps(files, grants)
     assert sum("needs a why" in e for e in errors) == 2
 
     good = dict(files, **{"manifest.yaml": files["manifest.yaml"].replace(
-        "[{ name: Fast }, { name: Smart }]",
-        "[{ name: Fast, why: classifies rows }, { name: Smart, why: writes the summary }]")})
+        f"[{{ id: {FAST_ID} }}, {{ id: {SMART_ID} }}]",
+        f"[{{ id: {FAST_ID}, why: classifies rows }}, {{ id: {SMART_ID}, why: writes the summary }}]")})
     draft, errors = validate_steps(good, grants)
     assert errors == []
-    assert draft["steps"][0]["agents"] == [{"name": "Fast", "why": "classifies rows"},
-                                           {"name": "Smart", "why": "writes the summary"}]
+    assert draft["steps"][0]["agents"] == [{"id": FAST_ID, "why": "classifies rows"},
+                                           {"id": SMART_ID, "why": "writes the summary"}]
 
 
 def test_step_packages_validate_against_declared():
@@ -1500,8 +1572,8 @@ def test_empty_grants_render_literal_none_in_every_prompt():
     # `none` — the drafting agent is told explicitly there is nothing to use.
     for p in (build_chat_prompt("x", None, GRANTS),
               build_steps_prompt("# T\n\nBody.", None, GRANTS)):
-        assert "allowed only if nonempty):\nnone" in p
-        assert "reference by secrets.NAME):\nnone" in p
+        assert "the id, copied exactly):\nnone" in p
+        assert 'secrets["<id>"]  # NAME):\nnone' in p
 
 
 # ---------- §8 envelope tolerance: per-block END, fences, clipping ----------

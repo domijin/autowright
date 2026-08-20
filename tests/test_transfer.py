@@ -142,7 +142,10 @@ def test_import_on_fresh_machine(store, monkeypatch, tmp_path_factory):
     assert summary["secretsExisting"] == []
     assert sorted(g["name"] for g in summary["agentsCreated"]) == ["Coder", "Researcher"]
     assert all(not s["set"] for s in s2.secrets)
-    assert sorted(b["allowed_secrets"]) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
+    # §4.1: allowed_secrets holds the created placeholders' ids
+    created_ids = {s["name"]: s["id"] for s in s2.secrets}
+    assert sorted(b["allowed_secrets"]) == sorted(
+        created_ids[n] for n in ("API_KEY", "BOT_TOKEN", "MAIL_PASS"))
     assert set(b["enabled_agents"]) == {g["id"] for g in s2.agents}
     # drafting agent mapped by name
     drafting = next(g for g in s2.agents if g["name"] == "Researcher")
@@ -598,10 +601,12 @@ def test_import_grants_ride_the_creation_call(store, monkeypatch, tmp_path_facto
     b, _ = transfer.import_automation(s2, data)
     assert patches == [{"paramValues": {"count": 7}}]
     assert set(b["enabled_agents"]) == {g["id"] for g in s2.agents}
-    assert sorted(b["allowed_secrets"]) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
+    created_ids = sorted(s["id"] for s in s2.secrets
+                         if s["name"] in ("API_KEY", "BOT_TOKEN", "MAIL_PASS"))
+    assert sorted(b["allowed_secrets"]) == created_ids
     # the grants are already in the on-disk top-level yaml (the one write)
     top = yaml.safe_load((s2.auto_dir(b) / "automation.yaml").read_text())
-    assert sorted(top["allowed_secrets"]) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
+    assert sorted(top["allowed_secrets"]) == created_ids
     assert set(top["enabled_agents"]) == set(b["enabled_agents"])
 
     # an archive without values patches nothing at all; everything referenced

@@ -26,7 +26,11 @@ from .execdb import ExecDB
 from .specmd import blocks_to_md, md_to_blocks
 from .yamlio import atomic_write_text, load_yaml, save_yaml
 
-SECRET_REF_RE = re.compile(r"\bsecrets\.([A-Z][A-Z0-9_]*)")
+# §4.1/§6.1 code-reference scans: literal quoted uuid subscripts only — a
+# variable subscript is invisible here by design (§8 forbids it).
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+SECRET_REF_RE = re.compile(r"\bsecrets\[\s*[\"'](" + _UUID + r")[\"']\s*\]")
+AGENT_REF_RE = re.compile(r"\bagents\[\s*[\"'](" + _UUID + r")[\"']\s*\]")
 
 log = logging.getLogger("autowright.storage")
 
@@ -251,10 +255,22 @@ class Store:
             default = self._load_toplevel_mapping(paths.agents_file()).get("default_agent")
             self.default_agent_id = (default if any(a.get("id") == default for a in self.agents)
                                      else (self.agents[0]["id"] if self.agents else None))
-            self.secrets = [{"name": s["name"], "description": s.get("description") or "",
-                             "set": bool(s.get("set", True))}
-                            for s in self._load_toplevel_list(paths.secrets_file(), "secrets")
-                            if s.get("name")]
+            # §4.8: every secret carries a uuid — the reference identity steps
+            # bind by. Entries missing one (pre-id files) self-heal at load,
+            # like the default_agent pointer above.
+            minted = False
+            self.secrets = []
+            for s in self._load_toplevel_list(paths.secrets_file(), "secrets"):
+                if not s.get("name"):
+                    continue
+                if not s.get("id"):
+                    s["id"] = new_id()
+                    minted = True
+                self.secrets.append({"id": s["id"], "name": s["name"],
+                                     "description": s.get("description") or "",
+                                     "set": bool(s.get("set", True))})
+            if minted:
+                self.save_secrets()
             self.autos = {}
             for d in sorted(paths.automations_dir().iterdir()) if paths.automations_dir().exists() else []:
                 if not d.is_dir() or not (d / "automation.yaml").exists():
@@ -1298,13 +1314,13 @@ class Store:
     def save_settings(self) -> None:
         save_yaml(paths.settings_file(), self.settings)
 
-    def secret_used_by(self, name: str) -> list[str]:
+    def secret_used_by(self, secret_id: str) -> list[str]:
         used = []
         for a in self.autos.values():
             cur = a["versions"].get(a["current_version"], {})
             for s in cur.get("steps", []):
-                if (any(e.get("name") == name for e in s.get("secrets", []))
-                        or name in SECRET_REF_RE.findall(s.get("code", ""))):
+                if (any(e.get("id") == secret_id for e in s.get("secrets", []))
+                        or secret_id in SECRET_REF_RE.findall(s.get("code", ""))):
                     used.append(a["name"])
                     break
         return used

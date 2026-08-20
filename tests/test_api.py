@@ -29,15 +29,20 @@ def test_secret_crud_and_usedby(client):
     from autowright.storage import store
 
     assert client.put("/secrets/bad-name", json={"value": "x"}).status_code == 422
-    assert client.put("/secrets/MY_TOKEN", json={"value": "abc"}).status_code == 200
+    # §19: PUT returns the serialized entity — id included, so a creating
+    # client learns the minted §4.8 uuid without a second fetch.
+    put = client.put("/secrets/MY_TOKEN", json={"value": "abc"})
+    assert put.status_code == 200
+    token_id = put.json()["id"]
+    assert put.json()["name"] == "MY_TOKEN" and put.json()["set"] is True
     assert client.put("/secrets/UNUSED_KEY", json={"value": "z"}).status_code == 200
-    names = [s["name"] for s in client.get("/secrets").json()]
-    assert "MY_TOKEN" in names
+    listed = client.get("/secrets").json()
+    assert next(s for s in listed if s["name"] == "MY_TOKEN")["id"] == token_id
     # §4.8 usedBy: automation names whose current version references the secret —
-    # via a step's secrets list or a `secrets.NAME` reference in step code.
+    # via a step's secrets entry ids or a `secrets["<id>"]` reference in step code.
     store.create_automation(make_version(steps=[
         {"file": "01-use.py", "name": "Use", "description": "",
-         "code": "from autowright import log, secrets\nlog(secrets.MY_TOKEN)\n"}]),
+         "code": f'from autowright import log, secrets\nlog(secrets["{token_id}"])\n'}]),
         "Token user", "mock")
     by_name = {s["name"]: s["usedBy"] for s in client.get("/secrets").json()}
     assert by_name["MY_TOKEN"] == ["Token user"]
@@ -293,10 +298,11 @@ def test_draft_chat_honors_in_editor_grants(client):
 
     # saved grants: no agents enabled, no secrets allowed
     a = store.create_automation(make_version(), "Ask target", "mock", enabled_agents=[])
+    secret_id = client.put("/secrets/MY_SECRET", json={"value": "v"}).json()["id"]
     r = client.post("/drafts", json={
         "mode": "chat", "automationId": a["id"], "agentId": "mock",
         "text": "Also check on weekends",
-        "enabledAgents": ["mock"], "allowedSecrets": ["MY_SECRET"],  # in-editor grants win
+        "enabledAgents": ["mock"], "allowedSecrets": [secret_id],  # in-editor grants win
     })
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
@@ -304,8 +310,10 @@ def test_draft_chat_honors_in_editor_grants(client):
     assert j["draft"]["spec"] is not None
     assert "steps" not in j["draft"]
     logged = paths.app_log().read_text(encoding="utf-8")
-    assert "allowed only if nonempty):\n- name: Claude Code" in logged
-    assert "reference by secrets.NAME):\n- name: MY_SECRET" in logged
+    # §8 grants yaml: entries carry the id first — what the manifest entries
+    # and code subscripts must copy — then the display name.
+    assert "the id, copied exactly):\n- id: mock\n  name: Claude Code" in logged
+    assert f"- id: {secret_id}\n  name: MY_SECRET" in logged
     assert "Also check on weekends" in logged      # the USER REQUEST reached the prompt
     assert "Build the automation that implements" not in logged  # no steps call on chat
 
@@ -684,16 +692,21 @@ def test_patch_automation_triggers_and_grants(client):
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Patchable", "mock")
+    # §19: allowedSecrets entries are §4.8 secret ids — checked against the
+    # store like stepAgents (an unknown id is a 422, below).
+    x_token = client.put("/secrets/X_TOKEN", json={"value": "v"}).json()["id"]
+    assert client.patch(f"/automations/{a['id']}", json={
+        "allowedSecrets": ["99999999-9999-4999-8999-999999999999"]}).status_code == 422
     r = client.patch(f"/automations/{a['id']}", json={
         "triggers": [{"kind": "cron", "expression": "15 6 * * 3", "enabled": False}],
-        "allowedSecrets": ["X_TOKEN"], "paramValues": {"greeting": "yo"},
+        "allowedSecrets": [x_token], "paramValues": {"greeting": "yo"},
     })
     j = r.json()
     assert [t["label"] for t in j["triggers"]] == ["Wednesdays at 6:15"]
     assert j["triggers"][0]["id"]  # backend assigned an id
     assert j["triggerChip"] == "Wed 6:15"
     assert j["triggersOff"] is True
-    assert j["allowedSecrets"] == ["X_TOKEN"]
+    assert j["allowedSecrets"] == [x_token]
     assert next(p for p in j["params"] if p["name"] == "greeting")["value"] == "yo"
 
     # whole-list replace: ids survive, additions get fresh ids
@@ -1312,10 +1325,11 @@ def test_seed_then_state(client, home):
     assert manga["latest"]["chip"] == "2 new chapters"
     assert manga["triggerChip"] == "Daily 8:00"
     assert len(manga["versions"]) == 2  # v2, v1 in history
-    secrets = {s["name"] for s in r["secrets"]}
-    assert secrets == {"SMTP_PASSWORD", "VAULT_DRIVE_KEY"}
+    secrets = {s["name"]: s["id"] for s in r["secrets"]}
+    assert set(secrets) == {"SMTP_PASSWORD", "VAULT_DRIVE_KEY"}
     report = next(a for a in r["automations"] if a["name"] == "Weekly report email")
-    assert "SMTP_PASSWORD" in report["allowedSecrets"]
+    # §4.1: allowedSecrets holds §4.8 secret ids, not names
+    assert secrets["SMTP_PASSWORD"] in report["allowedSecrets"]
 
     # terminal seeded executions carry finished_at (started + duration)
     for h in store.execs.values():
@@ -1922,8 +1936,8 @@ def test_unchecked_grants_render_none_in_prompt(client):
     j = _wait_job(client, r.json()["jobId"])
     assert j["status"] == "done", j
     logged = paths.app_log().read_text(encoding="utf-8")
-    assert "allowed only if nonempty):\nnone" in logged     # agents
-    assert "reference by secrets.NAME):\nnone" in logged    # secrets
+    assert "the id, copied exactly):\nnone" in logged            # agents
+    assert 'secrets["<id>"]  # NAME):\nnone' in logged           # secrets
     assert "MY_TOKEN" not in logged
     assert "s3cret-value" not in logged
 
@@ -1934,29 +1948,31 @@ def test_grant_subset_excludes_unchecked_entries(client, monkeypatch):
 
     store.agents.append({"id": "second", "name": "Fast local", "harness": "OpenCode",
                          "mode": "ollama", "model": "qwen3:8b", "default": False})
-    client.put("/secrets/KEEP_KEY", json={"value": "a"})
+    keep_id = client.put("/secrets/KEEP_KEY", json={"value": "a"}).json()["id"]
     client.put("/secrets/DROP_KEY", json={"value": "b"})
     captured = _capture_draft_grants(monkeypatch)
     r = client.post("/drafts", json={"mode": "chat", "text": "x", "agentId": "mock",
                                      "enabledAgents": ["second"],
-                                     "allowedSecrets": ["KEEP_KEY"]})
+                                     "allowedSecrets": [keep_id]})
     assert r.status_code == 200
     assert [g["name"] for g in captured["grants"]["agents"]] == ["Fast local"]
+    assert captured["grants"]["agents"][0]["id"] == "second"
     assert captured["grants"]["agents"][0]["model"] == "qwen3:8b"
     assert [s["name"] for s in captured["grants"]["secrets"]] == ["KEEP_KEY"]
+    assert captured["grants"]["secrets"][0]["id"] == keep_id
 
 
 def test_create_draft_grants_all_secrets_by_default(client, monkeypatch):
     # §19: no allowedSecrets + no stored automation → every stored secret is
-    # granted (the all-on seed the Review page starts from). Names only — the
-    # grant entries never carry values.
+    # granted (the all-on seed the Review page starts from). Ids + names only —
+    # the grant entries never carry values.
     client.put("/secrets/A_KEY", json={"value": "a", "description": "first"})
     client.put("/secrets/B_KEY", json={"value": "b"})
     captured = _capture_draft_grants(monkeypatch)
     client.post("/drafts", json={"mode": "chat", "text": "x", "agentId": "mock"})
     grants = captured["grants"]["secrets"]
     assert sorted(s["name"] for s in grants) == ["A_KEY", "B_KEY"]
-    assert all(set(s) <= {"name", "description"} for s in grants)
+    assert all(set(s) <= {"id", "name", "description"} for s in grants)
 
 
 def test_chat_draft_falls_back_to_stored_grants(client, monkeypatch):
@@ -1965,11 +1981,11 @@ def test_chat_draft_falls_back_to_stored_grants(client, monkeypatch):
 
     store.agents.append({"id": "second", "name": "Fast local", "harness": "OpenCode",
                          "mode": "ollama", "model": "qwen3:8b", "default": False})
-    client.put("/secrets/STORED_KEY", json={"value": "a"})
+    stored_id = client.put("/secrets/STORED_KEY", json={"value": "a"}).json()["id"]
     client.put("/secrets/OTHER_KEY", json={"value": "b"})
     a = store.create_automation(make_version(), "Grant fallback", "mock",
                                 enabled_agents=["second"],
-                                allowed_secrets=["STORED_KEY"])
+                                allowed_secrets=[stored_id])
     captured = _capture_draft_grants(monkeypatch)
     client.post("/drafts", json={"mode": "chat", "automationId": a["id"], "agentId": "mock",
                                  "text": "change something"})
@@ -1992,8 +2008,9 @@ def test_test_grant_arrays_propagate(client, monkeypatch):
 
     monkeypatch.setattr(api.testexec, "start", fake_start)
     d = _echo_draft()
+    x_key = client.put("/secrets/X_KEY", json={"value": "v"}).json()["id"]
     auto = client.post("/automations", json={"draft": d, "stepAgents": ["mock"],
-                                             "allowedSecrets": ["X_KEY"]}).json()
+                                             "allowedSecrets": [x_key]}).json()
 
     r = client.post("/tests", json={"draft": d, "automationId": auto["id"],
                                     "enabledAgents": [], "allowedSecrets": []})
@@ -2001,11 +2018,11 @@ def test_test_grant_arrays_propagate(client, monkeypatch):
     assert (captured["enabled"], captured["allowed"]) == ([], [])
 
     client.post("/tests", json={"draft": d, "automationId": auto["id"]})
-    assert (captured["enabled"], captured["allowed"]) == (["mock"], ["X_KEY"])
+    assert (captured["enabled"], captured["allowed"]) == (["mock"], [x_key])
 
     client.post("/tests", json={"draft": d})
     assert captured["enabled"] == [g["id"] for g in api.store.agents]
-    assert captured["allowed"] == [s["name"] for s in api.store.secrets]
+    assert captured["allowed"] == [s["id"] for s in api.store.secrets]
 
 
 # ---------- §10/§19 detection + Ollama endpoints ----------
@@ -2197,12 +2214,47 @@ def test_add_agent_validation_matrix(client):
                                         "model": "qwen3:8b"}).status_code == 422
     assert client.post("/agents", json={"harness": "OpenCode", "mode": "ollama"}).status_code == 422
     assert client.post("/agents", json={"harness": "Codex", "mode": "custom"}).status_code == 422
+    # §4.7 uniqueness: an unnamed agent's grant name is its harness — a second
+    # unnamed Claude Code agent collides with the fixture's "mock" and 422s.
+    r = client.post("/agents", json={"harness": "Claude Code", "mode": "default",
+                                     "model": "ignored-in-default-mode"})
+    assert r.status_code == 422 and "must be unique" in r.json()["detail"]
     ag = client.post("/agents", json={"harness": "Claude Code", "mode": "default",
-                                      "model": "ignored-in-default-mode"}).json()
+                                      "model": "ignored-in-default-mode",
+                                      "name": "Second Claude"}).json()
     assert ag["model"] is None
     good = client.post("/agents", json={"harness": "OpenCode", "mode": "ollama",
                                         "model": "qwen3:8b", "name": "Fast local"}).json()
     assert good["model"] == "qwen3:8b" and good["harness"] == "OpenCode"
+    # case-insensitive: "fast local" collides with "Fast local"
+    r = client.post("/agents", json={"harness": "Codex", "mode": "default",
+                                     "name": "fast local"})
+    assert r.status_code == 422 and "must be unique" in r.json()["detail"]
+
+
+def test_agent_rename_uniqueness_and_id_binding(client):
+    # §4.7: a rename into another agent's grant name 422s; unrelated-field
+    # patches never run the check; a rename that lands never repoints steps —
+    # they bind by id.
+    from autowright.storage import store
+
+    ag = client.post("/agents", json={"harness": "Codex", "mode": "default",
+                                      "name": "Fast"}).json()
+    r = client.patch(f"/agents/{ag['id']}", json={"name": "claude code"})
+    assert r.status_code == 422 and "must be unique" in r.json()["detail"]
+    # self-rename (case change only) is not a collision
+    assert client.patch(f"/agents/{ag['id']}", json={"name": "FAST"}).status_code == 200
+    # unrelated-field patch of an existing record never runs the check
+    assert client.patch(f"/agents/{ag['id']}", json={"description": "d"}).status_code == 200
+    # usedBy matches step entries by id — a rename keeps the automation listed
+    store.create_automation(make_version(steps=[
+        {"file": "01-a.py", "name": "A", "description": "", "agent": True, "why": "w",
+         "agents": [{"id": ag["id"], "why": "judgment"}],
+         "code": "from autowright import agent\n"}]),
+        "Uses Fast", "mock", enabled_agents=[ag["id"]])
+    client.patch(f"/agents/{ag['id']}", json={"name": "Renamed"})
+    renamed = next(g for g in client.get("/agents").json() if g["id"] == ag["id"])
+    assert renamed["usedBy"] == ["Uses Fast"]
 
 
 def test_patch_agent_validation_and_default_switch(client):
@@ -2761,14 +2813,22 @@ def test_save_version_rejects_invalid_step_drafts(client):
     assert r.status_code == 422
     assert "numpy" in r.json()["detail"]
     assert store.autos[a["id"]]["current_version"] == 1  # no version minted
-    # per-step secret entries must name real stored secrets (the §8 validators)
+    # per-step secret entries must carry real stored secrets' ids (the §8
+    # validators) — a name-keyed entry is the pre-id shape and rejected too
+    r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
+        **make_version(),
+        "steps": [{"file": "01-s.py", "name": "S", "description": "", "code": "x = 1\n",
+                   "secrets": [{"id": "99999999-9999-4999-8999-999999999999", "why": "w"}]}],
+    }})
+    assert r.status_code == 422
+    assert "99999999" in r.json()["detail"]
     r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
         **make_version(),
         "steps": [{"file": "01-s.py", "name": "S", "description": "", "code": "x = 1\n",
                    "secrets": [{"name": "NOT_A_SECRET", "why": "w"}]}],
     }})
     assert r.status_code == 422
-    assert "NOT_A_SECRET" in r.json()["detail"]
+    assert "{ id, why }" in r.json()["detail"]
 
 
 def test_chat_assembles_pkg_state_section(client):

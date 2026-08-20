@@ -4,6 +4,7 @@
 import React, { useState } from 'react'
 import { api } from './api'
 import { useStore } from './store'
+import type { SecretMeta } from './types'
 import { BtnGhost, BtnPrimary, Eyebrow, Modal } from './ui'
 
 const NAME_RE = /^[A-Z][A-Z0-9_]*$/
@@ -18,7 +19,8 @@ export type SecretModalState = { mode: 'add' } | { mode: 'edit'; name: string; d
 export function SecretModal({ modal, onClose, onSaved }: {
   modal: SecretModalState
   onClose: () => void
-  onSaved?: (name: string) => void
+  // §19: the PUT response entity — carries the (possibly just-minted) §4.8 id
+  onSaved?: (saved: SecretMeta) => void
 }) {
   const { showToast, secrets } = useStore()
   const isAdd = modal.mode === 'add'
@@ -44,12 +46,12 @@ export function SecretModal({ modal, onClose, onSaved }: {
           try {
             // §4.8: a blank value on edit keeps the stored one (description-only
             // update); a blank value on add creates a placeholder (set: false).
-            await api.putSecret(name, value, description)
+            const saved = await api.putSecret(name, value, description)
             close()
             showToast(isAdd
               ? (value ? 'Saved to your Keychain.' : 'Saved — add the value before an automation needs it.')
               : 'Secret updated.')
-            onSaved?.(name)
+            onSaved?.(saved)
           } catch (e) { showToast((e as Error).message) }
         }
 
@@ -70,7 +72,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
             </h2>
             <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 18px' }}>
               {isAdd
-                ? 'A password or API key your automations use by name — the value itself never appears in a script or a log.'
+                ? 'A password or API key your automations use — the value itself never appears in a script or a log.'
                 : 'A new value is used from the next execution onward — leave the value blank to keep the current one.'}
             </p>
             <Eyebrow style={{ margin: '0 0 6px' }}>NAME</Eyebrow>

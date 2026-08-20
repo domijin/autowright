@@ -133,21 +133,19 @@ def build_redactions(secret_values: dict[str, str]) -> dict[str, str]:
 
 
 def agents_for_step(agents: dict[str, dict], enabled: list, s: dict) -> list[dict]:
-    """§6: the step's named agents (§8 grant names) resolved against the
-    enabled agents, in the step's order. The first-enabled-agent fallback
-    applies only when the step names no agents at all — named agents that all
-    fail to resolve (revoked grants, renamed agents) return [] so the caller
+    """§6: the step's listed agent ids (§4.1 entries) resolved against the
+    enabled agents, in the step's order — a rename can never repoint a step.
+    The first-enabled-agent fallback
+    applies only when the step lists no agents at all — listed agents that all
+    fail to resolve (revoked grants, deleted agents) return [] so the caller
     fails the step like an agent step with no enabled agent, never a silent
-    hand-off to an agent the step didn't name. Shared by executions and §11
+    hand-off to an agent the step didn't list. Shared by executions and §11
     tests."""
-    pool = [agents[a] for a in enabled if a in agents]
+    pool = {a: agents[a] for a in enabled if a in agents}
     entries = s.get("agents") or []
     if not entries:
-        return pool[:1]
-    by_name: dict[str, dict] = {}
-    for g in pool:  # duplicate grant names: the first enabled agent wins
-        by_name.setdefault(harness.grant_name(g), g)
-    return [by_name[e["name"]] for e in entries if e.get("name") in by_name]
+        return list(pool.values())[:1]
+    return [pool[e["id"]] for e in entries if e.get("id") in pool]
 
 
 def ensure_declared_packages(declared: list, log, should_stop=None) -> str | None:
@@ -708,39 +706,54 @@ class Engine:
         failed = False
         try:
             # §6: a missing secret stops the execution before any step —
-            # declared (`secrets` in the manifest) and code-referenced alike.
+            # declared (`secrets` entry ids in the manifest) and the
+            # code-referenced secrets["<id>"] literals alike. Ids are the
+            # binding (§4.8); every message resolves the id to the secret's
+            # name — names are the display, never the identity.
             needed: set[str] = set()
             for s in ver["steps"]:
                 needed |= set(SECRET_REF_RE.findall(s.get("code", "")))
-                needed |= {e["name"] for e in s.get("secrets") or []}
-            secret_values: dict[str, str] = {}
-            for name in sorted(needed):
-                if name not in auto["allowed_secrets"]:
-                    msg = f"secret {name} isn't allowed for this automation — the execution can't start"
+                needed |= {e["id"] for e in s.get("secrets") or [] if e.get("id")}
+            by_id = {x["id"]: x for x in self.store.secrets}
+            secret_values: dict[str, str] = {}   # id → value (§6 step scoping keys on ids)
+            secret_names: dict[str, str] = {}    # id → name (error copy + redaction labels)
+            for sid in sorted(needed):
+                sec = by_id.get(sid)
+                if sec is None:
+                    msg = (f"a step references a secret that no longer exists "
+                           f"({sid[:8]}…) — the execution can't start")
+                    self._log(h, "err", msg, {})
+                    if not h.get("error"):
+                        h["error"] = {"step": None, "message": msg,
+                                      "reason": f"A step references a secret that no longer exists ({sid[:8]}…)."}
+                    failed = True
+                elif sid not in auto["allowed_secrets"]:
+                    msg = f"secret {sec['name']} isn't allowed for this automation — the execution can't start"
                     self._log(h, "err", msg, {})
                     if not h.get("error"):
                         h["error"] = {"step": None, "message": msg,
                                       "reason": "A step references a secret this automation isn't allowed to use."}
                     failed = True
                 else:
-                    v = keychain.get_secret(name)
+                    v = keychain.get_secret(sec["name"])
                     if v is None:
                         # §4.8: a placeholder (set: False) gets the clearer message —
                         # the secret exists, only its value was never added.
-                        if any(x["name"] == name and not x.get("set", True)
-                               for x in self.store.secrets):
-                            msg = f"secret {name} has no value yet — add it on the Secrets page"
+                        if not sec.get("set", True):
+                            msg = f"secret {sec['name']} has no value yet — add it on the Secrets page"
                             reason = "A step references a secret whose value hasn't been added yet."
                         else:
-                            msg = f"secret {name} isn't in your Keychain — the execution can't start"
+                            msg = f"secret {sec['name']} isn't in your Keychain — the execution can't start"
                             reason = "A step references a secret that isn't in your Keychain."
                         self._log(h, "err", msg, {})
                         if not h.get("error"):
                             h["error"] = {"step": None, "message": msg, "reason": reason}
                         failed = True
                     else:
-                        secret_values[name] = v
-            redactions = build_redactions(secret_values)
+                        secret_values[sid] = v
+                        secret_names[sid] = sec["name"]
+            # Redaction labels are names (§4.5 redactedSecrets), never ids.
+            redactions = build_redactions({secret_names[i]: v for i, v in secret_values.items()})
 
             # §7: ensure the version's declared packages (§6.2) before step 1 —
             # the fast check costs milliseconds when everything is present;
@@ -828,7 +841,8 @@ class Engine:
                                 "reason": "No enabled agent can serve this step — enable one for this automation."}
                     if not (s.get("agent") and not agent_cfgs):
                         rc = self._execute_step(auto, ver, h, s, i + 1, vdir, params, secret_values,
-                                                agent_cfgs, state, redactions, result, notify_holder)
+                                                secret_names, agent_cfgs, state, redactions,
+                                                result, notify_holder)
                     if notify_holder.get("text"):
                         notify_text = notify_holder["text"]
                     if notify_holder.get("result_touched"):
@@ -990,7 +1004,7 @@ class Engine:
         return agents_for_step(agents, auto["enabled_agents"], s)
 
     def _execute_step(self, auto: dict, ver: dict, h: dict, s: dict, step_index: int, vdir: Path,
-                  params: dict, secret_values: dict, agent_cfgs: list[dict],
+                  params: dict, secret_values: dict, secret_names: dict, agent_cfgs: list[dict],
                   state: dict, redactions: dict, result: dict, notify_holder: dict) -> int:
         script = vdir / (s.get("file") or "")
         if not script.exists():
@@ -999,10 +1013,11 @@ class Engine:
             notify_holder["error"] = {"type": "MissingScript", "message": msg}
             return 1
         # §6 secret scoping: a step only receives the secrets it declares in the
-        # manifest plus those its own source references. The full value map stays
+        # manifest plus those its own source references — all keyed by §4.8 id.
+        # The full value map stays
         # engine-side for log redaction; reading an uninjected secret raises in
         # the executor and fails the execution.
-        step_refs = set(SECRET_REF_RE.findall(s.get("code", ""))) | {e["name"] for e in s.get("secrets") or []}
+        step_refs = set(SECRET_REF_RE.findall(s.get("code", ""))) | {e["id"] for e in s.get("secrets") or [] if e.get("id")}
         step_secrets = {k: v for k, v in secret_values.items() if k in step_refs}
         ctx = {
             "params": params,
@@ -1010,9 +1025,12 @@ class Engine:
             # §6 prompt scan: ANY of the automation's secret values must fail
             # an agent prompt — a value can reach a later step through
             # workspace/memory, so scanning only the step's own secrets would
-            # miss it. Scan-only; secrets.NAME access stays step-scoped.
+            # miss it. Scan-only; secrets["<id>"] access stays step-scoped.
             "scan_secrets": secret_values,
             "allowed_secrets": auto["allowed_secrets"],
+            # id → name, for the executor's error copy and log labels — names
+            # are the display, ids the identity (§4.8).
+            "secret_names": secret_names,
             "site_packages": str(pkglib.site_packages_dir()),
             "package_imports": [p["import"] for p in ver.get("packages") or []],
             "memory_dir": h["_test"]["mem"] if h.get("_test")

@@ -144,9 +144,11 @@ export class Backend {
     }) as { id: string }
   }
 
-  /** §4.8 placeholder secret — blank value, so NOTHING touches the Keychain. */
-  async putSecretPlaceholder(name: string, description: string): Promise<void> {
-    await this.api('PUT', `/secrets/${name}`, { value: '', description })
+  /** §4.8 placeholder secret — blank value, so NOTHING touches the Keychain.
+   * Returns the entity so callers get the minted id (§4.1: steps and grants
+   * reference secrets by id). */
+  async putSecretPlaceholder(name: string, description: string): Promise<{ id: string; name: string }> {
+    return await this.api('PUT', `/secrets/${name}`, { value: '', description }) as { id: string; name: string }
   }
 
   /** Fire an execution and return its id without waiting. */

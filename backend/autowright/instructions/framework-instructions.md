@@ -70,13 +70,16 @@ Work down this ladder and stop at the first rung that does the job:
 
 ## Choosing agents and secrets
 
-Each step declares what it uses in `manifest.yaml`: `agents` (agent steps only —
-the granted agents the step may call, as `{ name, why? }` entries; the first is
-`agent.ask`'s default, and a step may list several and pick one per call with
-`agent.ask(..., agent="Name")`) and `secrets` (the granted secrets the step
-uses, as `{ name, why }` entries — every entry carries a one-line `why` saying
+Each step declares what it uses in `manifest.yaml`, referencing every agent and
+secret by the `id` shown in the grants yaml — copy ids EXACTLY; never invent or
+abbreviate one: `agents` (agent steps only —
+the granted agents the step may call, as `{ id, why? }` entries; the first is
+what the bare `agent` handle is bound to, and a step may list several and pick
+one in code with `agents["<id>"]`) and `secrets` (the granted secrets the step
+uses, as `{ id, why }` entries — every entry carries a one-line `why` saying
 what the step needs that secret for, e.g.
-`secrets: [{ name: API_TOKEN, why: authenticates the CRM fetch }]`; the user
+`secrets: [{ id: 9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34, why: authenticates the CRM fetch }]  # API_TOKEN`;
+the user
 reads it on the step's key tag before trusting the automation with a
 credential). When a step lists two or more agents, give EVERY entry its own
 one-line `why` naming that agent's role in the step — the roles differ or you
@@ -84,8 +87,8 @@ wouldn't need two:
 
 ```yaml
 agents:
-  - { name: Fast local, why: classifies each scraped row }
-  - { name: Claude, why: writes the final summary }
+  - { id: 7c9e6679-7425-40de-944b-e07fc1f90ae7, why: classifies each scraped row }  # Fast local
+  - { id: 550e8400-e29b-41d4-a716-446655440000, why: writes the final summary }     # Claude
 ```
 
 With a single entry the `why` is optional — the step's own `why` already covers
@@ -126,7 +129,10 @@ The surface:
 
 ```python
 params                    # dict, by param name
-secrets.NAME              # Keychain values — never log them
+secrets["<id>"]           # Keychain values, by the secret's granted id — never log
+                          #   them. Always a literal quoted id (never a variable),
+                          #   with the name in a trailing comment:
+                          #   token = secrets["9b2f4e12-…"]  # API_TOKEN
 memory                    # persistent dir — a real path (memory / "cache.bin" works
                           #   for any file format), plus YAML helpers
                           #   .load(name, default) / .save(name, obj)
@@ -151,9 +157,13 @@ result.path               # dir for output files; a result.md there renders as
 notify(text)              # title = the automation name; a param literally named
                           #   notification_title overrides it
 fetch_page(url)
-agent.ask(prompt, data)   # only in steps marked agent: true; agent="Name"
-                          #   picks among the step's declared agents (default:
-                          #   the first)
+agent.ask(prompt, data)   # only in steps marked agent: true; `agent` is a handle
+                          #   bound to the step's FIRST declared agents: entry —
+                          #   also agent.read(data, prompt) / agent.write(data, prompt)
+agents["<id>"]            # handle for another declared agents: entry, by its granted
+                          #   id — literal quoted id, name in a trailing comment:
+                          #   big = agents["550e8400-…"]  # Claude
+                          #   big.ask("…", data)  — same ask/read/write surface
 ```
 
 A typical last step, end to end — load what earlier steps left in the workspace
@@ -480,8 +490,9 @@ Design for them, never re-implement them:
   notification, at the end, via `notify(text)` — the user's settings decide
   whether it is shown.
 - **Secrets & Keychain:** declare each step's secrets in its manifest entry
-  (`secrets: [{ name: NAME, why: ... }]`) and reference them by name
-  (`secrets.NAME`); values are injected at runtime and redacted from logs; a
+  (`secrets: [{ id: <granted id>, why: ... }]`) and reference them in code by
+  the same id (`secrets["<id>"]  # NAME` — literal quoted id, name in a
+  trailing comment); values are injected at runtime and redacted from logs; a
   missing secret stops the execution before any step. Never print or store them.
 
 ## Agent steps

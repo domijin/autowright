@@ -207,10 +207,12 @@ def read_workdir(d: Path) -> dict[str, str]:
 
 def _all_grants(c: Client) -> dict:
     """§20: the validators' *existence* context — all configured agents + all
-    stored secrets, so a manifest naming an unknown one fails with the §8
-    message. Which known names the automation may use is `_grants`'s job."""
-    agents = [{"name": a.get("name") or a["harness"]} for a in c.req("GET", "/agents")]
-    secrets = [{"name": s["name"]} for s in c.req("GET", "/secrets")]
+    stored secrets (ids; names ride along for the §8 error copy), so a
+    manifest referencing an unknown one fails with the §8
+    message. Which known ids the automation may use is `_grants`'s job."""
+    agents = [{"id": a["id"], "name": a.get("name") or a["harness"]}
+              for a in c.req("GET", "/agents")]
+    secrets = [{"id": s["id"], "name": s["name"]} for s in c.req("GET", "/secrets")]
     return {"agents": agents, "secrets": secrets}
 
 
@@ -365,52 +367,64 @@ def ensure_packages(c: Client, pkgs: list[dict]) -> None:
                   f"{p.get('error') or 'unknown error'}")
 
 
-def _step_grant_names(draft: dict, key: str) -> set[str]:
-    # `agents` holds {name, why?} entries (§4.1); `secrets` holds plain names.
-    return {v["name"] if isinstance(v, dict) else v
-            for s in draft.get("steps", []) for v in s.get(key) or []}
+def _step_grant_ids(draft: dict, key: str) -> set[str]:
+    # `agents` holds {id, why?} entries, `secrets` {id, why} (§4.1) — bare
+    # strings are tolerated as ids for hand-written manifests.
+    return {v["id"] if isinstance(v, dict) else v
+            for s in draft.get("steps", []) for v in s.get(key) or []
+            if (v.get("id") if isinstance(v, dict) else v)}
 
 
 def _grants(c: Client, args, draft: dict,
             stored_agents: list[str] = (), stored_secrets: list[str] = ()) -> tuple[list[str], list[str]]:
     """§20 grant model: the saved grants are the stored lists plus the explicit
     --grant-agent/--grant-secret flags — no all-on seed, no silent widening.
-    Every name the workdir needs (per-step agents; per-step secrets plus
+    Both flags take NAMES (the human surface) and map to ids on save; the
+    needed-vs-granted comparison is id-set against id-set. Every id the
+    workdir needs (per-step agents; per-step secrets plus
     code-referenced secretReferences) must be granted, or this exits 1 naming the
     exact flags to add. Unknown flag names exit with the candidate list."""
     agents = c.req("GET", "/agents")
+    secrets = c.req("GET", "/secrets")
     known_agents = [a.get("name") or a["harness"] for a in agents]
-    known_secrets = [s["name"] for s in c.req("GET", "/secrets")]
+    known_secrets = [s["name"] for s in secrets]
+    # id → name maps, for the flag suggestions in error copy — names appear
+    # only in what gets printed, never in the comparison.
+    agent_name_by_id = {a["id"]: (a.get("name") or a["harness"]) for a in agents}
+    secret_name_by_id = {s["id"]: s["name"] for s in secrets}
 
-    # stepAgents stores agent ids (§4.1 enablement list); grant flags and step
-    # `agents:` entries use §8 grant names — compare at name level, save ids.
-    grant_name_by_id = {a["id"]: (a.get("name") or a["harness"]) for a in agents}
     granted_agent_ids = list(stored_agents)
     for name in args.grant_agent:
+        # §4.7 uniqueness makes the case-insensitive match unambiguous.
         match = [a for a in agents
                  if (a.get("name") or a["harness"]).lower() == name.lower()]
         if not match:
             sys.exit(f"no agent named {name!r} — have: {', '.join(known_agents) or '(none)'}")
         if match[0]["id"] not in granted_agent_ids:
             granted_agent_ids.append(match[0]["id"])
-    granted_agents = {grant_name_by_id[i] for i in granted_agent_ids if i in grant_name_by_id}
-    granted_secrets = set(stored_secrets)
+    granted_secret_ids = list(stored_secrets)
     for name in args.grant_secret:
-        if name not in known_secrets:
+        match = [s for s in secrets if s["name"] == name]
+        if not match:
             sys.exit(f"no stored secret named {name!r} — have: "
                      f"{', '.join(sorted(known_secrets)) or '(none)'}")
-        granted_secrets.add(name)
+        if match[0]["id"] not in granted_secret_ids:
+            granted_secret_ids.append(match[0]["id"])
 
-    need_agents = _step_grant_names(draft, "agents")
-    need_secrets = _step_grant_names(draft, "secrets") | set(draft.get("secretReferences") or [])
-    # Manifest names are existence-checked by the validators; code-referenced
+    need_agents = _step_grant_ids(draft, "agents")
+    need_secrets = _step_grant_ids(draft, "secrets") | set(draft.get("secretReferences") or [])
+    # Manifest ids are existence-checked by the validators; code-referenced
     # secrets (secretReferences) aren't, so a nonexistent one needs storing, not a flag.
-    unknown = sorted(n for n in need_secrets - granted_secrets if n not in known_secrets)
+    unknown = sorted(i for i in need_secrets - set(granted_secret_ids)
+                     if i not in secret_name_by_id)
     if unknown:
         sys.exit(f"the step code references secrets that don't exist: {', '.join(unknown)} — "
                  f"store them first with `autowright secret set <NAME>`")
-    missing = ([f"--grant-agent {n}" for n in sorted(need_agents - granted_agents)]
-               + [f"--grant-secret {n}" for n in sorted(need_secrets - granted_secrets)])
+    missing = ([f"--grant-agent {agent_name_by_id[i]}"
+                for i in sorted(need_agents - set(granted_agent_ids)) if i in agent_name_by_id]
+               + [f"--grant-secret {secret_name_by_id[i]}"
+                  for i in sorted(need_secrets - set(granted_secret_ids))
+                  if i in secret_name_by_id])
     if missing:
         sys.exit("the steps use agents/secrets this automation isn't granted — "
                  f"grants are explicit (§20); re-run with {' '.join(missing)}")
@@ -419,7 +433,7 @@ def _grants(c: Client, args, draft: dict,
     if not granted_agent_ids and any(s.get("agent") for s in draft.get("steps", [])):
         sys.exit("an agent step needs at least one granted agent — re-run with "
                  f"--grant-agent <NAME> (have: {', '.join(known_agents) or '(none)'})")
-    return granted_agent_ids, sorted(granted_secrets)
+    return granted_agent_ids, sorted(granted_secret_ids)
 
 
 # ---------------------------------------------------------------- top level
@@ -481,9 +495,16 @@ def cmd_automation_show(c: Client, args) -> None:
         print(f"trigger {i}: {t['label']}" + (" (off)" if not t["enabled"] else ""))
     for p in full.get("params") or []:
         print(f"param {p['name']} ({p['kind']}): {_param_value(p)!r}")
+    # §4.1: step secrets entries carry ids — resolve to names for display
+    # (a dangling id shows its short prefix).
+    secret_names = {s["id"]: s["name"] for s in c.req("GET", "/secrets")} \
+        if any(s.get("secrets") for s in full.get("steps") or []) else {}
     for i, s in enumerate(full.get("steps") or [], 1):
-        tags = "".join([" [agent]" if s.get("agent") else "",
-                        f" [secrets: {', '.join(e['name'] for e in s['secrets'])}]" if s.get("secrets") else ""])
+        tags = "".join([
+            " [agent]" if s.get("agent") else "",
+            (" [secrets: "
+             + ", ".join(secret_names.get(e["id"], f"{e['id'][:8]}…") for e in s["secrets"])
+             + "]") if s.get("secrets") else ""])
         print(f"step {i}: {s['name']}{tags}")
     vs = [f"v{v['version']}" for v in full.get("versions") or []]
     if vs:

@@ -324,6 +324,9 @@ def test_follow_exec_queued_can_settle_skipped(monkeypatch, capsys):
 
 # ---------------------------------------------------------------- workdir (§20)
 
+# §4.8 fixture id: step entries and allowedSecrets reference secrets by uuid.
+API_TOKEN_ID = "11111111-1111-1111-1111-111111111111"
+
 FULL_AUTO = {
     "id": "abc12345-0000-0000-0000-000000000000", "name": "Daily Report",
     "description": "Reports daily", "instructions": "- keep it short",
@@ -338,8 +341,9 @@ FULL_AUTO = {
                 "lines": ["https://a.example/x"]}],
     "packages": [],
     "steps": [{"file": "01-fetch.py", "name": "Fetch", "description": "fetch pages",
-               "code": "import json\nprint('hi')\n", "secrets": [{"name": "API_TOKEN", "why": "authenticates the fetch"}]}],
-    "stepAgents": [], "allowedSecrets": ["API_TOKEN"],
+               "code": "import json\nprint('hi')\n",
+               "secrets": [{"id": API_TOKEN_ID, "why": "authenticates the fetch"}]}],
+    "stepAgents": [], "allowedSecrets": [API_TOKEN_ID],
 }
 
 
@@ -361,7 +365,8 @@ class _WorkdirClient:
             return [{"id": "ag1", "name": "Fast local", "harness": "OpenCode",
                      "model": "qwen3"}]
         if method == "GET" and path == "/secrets":
-            return [{"name": "API_TOKEN", "set": True, "usedBy": []}]  # §4.8: a list
+            # §4.8: a list; id is the reference identity
+            return [{"id": API_TOKEN_ID, "name": "API_TOKEN", "set": True, "usedBy": []}]
         self.posted.append((method, path, body))
         self.timeouts.append((method, path, timeout))
         if method == "POST" and path == "/packages/install":
@@ -387,7 +392,7 @@ def test_workdir_pull_push_round_trip(tmp_path):
     assert draft["instructions"] == "- keep it short"
     assert [s["file"] for s in draft["steps"]] == ["01-fetch.py"]
     assert draft["steps"][0]["code"] == "import json\nprint('hi')\n"
-    assert draft["steps"][0]["secrets"] == [{"name": "API_TOKEN", "why": "authenticates the fetch"}]
+    assert draft["steps"][0]["secrets"] == [{"id": API_TOKEN_ID, "why": "authenticates the fetch"}]
 
     merged = cli.merge_draft_triggers(FULL_AUTO["triggers"], draft["triggers"])
     assert {t["kind"] for t in merged} == {"cron", "app_start"}
@@ -894,7 +899,10 @@ def test_cmd_automation_show_prints_record(capsys):
     full = dict(FULL_AUTO, specMeta="v2 · edited today", lastStatus="failed",
                 resultChip="0 new", versions=[{"version": 1}, {"version": 2}], draft={"x": 1},
                 triggers=[{"kind": "cron", "label": "Daily at 8:00", "enabled": False}])
-    _run(_RouteClient(_auto_gets(full)), "automation", "show", "Daily Report")
+    gets = {**_auto_gets(full),
+            # §4.1: step secret entries carry ids — show resolves them to names
+            "/secrets": [{"id": API_TOKEN_ID, "name": "API_TOKEN", "set": True, "usedBy": []}]}
+    _run(_RouteClient(gets), "automation", "show", "Daily Report")
     out = capsys.readouterr().out
     assert f"Daily Report [{AUTO_ID}] — v2 · edited today" in out
     assert "status: failed · 0 new" in out
@@ -1024,8 +1032,8 @@ def test_cmd_automation_push_keeps_stored_grants(tmp_path, capsys):
     method, path, body = c.posted[-1]
     assert (method, path) == ("POST", f"/automations/{AUTO_ID}/versions")
     assert body["draft"]["note"] == "tweak"
-    # §20 grant model: the stored grants ride along unchanged
-    assert body["allowedSecrets"] == ["API_TOKEN"]
+    # §20 grant model: the stored grants (secret ids) ride along unchanged
+    assert body["allowedSecrets"] == [API_TOKEN_ID]
     # §4.3 merge: the untouched cron keeps its id, the app_start trigger survives
     kinds = {t["kind"] for t in body["draft"]["triggers"]}
     assert kinds == {"cron", "app_start"}
@@ -1055,13 +1063,14 @@ def test_cmd_automation_push_grant_flag_widens(tmp_path, capsys):
     _run(c, "automation", "push", "Daily Report", str(d),
          "--grant-secret", "API_TOKEN")
     _, _, body = c.posted[-1]
-    assert body["allowedSecrets"] == ["API_TOKEN"]
+    # §20: the flag takes the name; the saved grant is the secret's id
+    assert body["allowedSecrets"] == [API_TOKEN_ID]
 
 
 AGENT_STEP_AUTO = {
     **FULL_AUTO,
     "steps": [{**FULL_AUTO["steps"][0], "agent": True, "why": "judgment call",
-               "agents": [{"name": "Fast local"}]}],
+               "agents": [{"id": "ag1"}]}],
 }
 
 
@@ -1131,9 +1140,9 @@ def test_cmd_automation_create_grants_only_the_flags(tmp_path, capsys):
     method, path, body = c.posted[-1]
     assert (method, path) == ("POST", "/automations")
     assert body["agentId"] == "ag1"
-    # §20 grant model: no all-on seed — exactly the flags
+    # §20 grant model: no all-on seed — exactly the flags (ids on the wire)
     assert body["stepAgents"] == []
-    assert body["allowedSecrets"] == ["API_TOKEN"]
+    assert body["allowedSecrets"] == [API_TOKEN_ID]
     assert body["name"] == "Daily Report"  # from the manifest
     assert "created 'Daily Report'" in capsys.readouterr().out
 

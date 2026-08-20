@@ -188,17 +188,24 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   notify only on changes (per the notifications setting). **Sender (decided):** the backend posts
   macOS notifications itself via `osascript -e 'display notification …'` — works headless with no
   UI process; the Electron app never posts.
-- **Secrets & Keychain** — scripts reference secrets by name; values injected at runtime — each
-  step receives only the secrets it declares in the manifest (`secrets`) plus those its own code
+- **Secrets & Keychain** — scripts reference secrets by id subscript (`secrets["<id>"]  # NAME`,
+  §6.1); values injected at runtime — each
+  step receives only the secrets it declares in the manifest (`secrets` entry ids) plus the
+  literal `secrets["<id>"]` subscripts its own code
   references — and redacted from logs; a missing secret stops the execution before any step.
+  The engine resolves each needed id to its stored §4.8 record (the Keychain lookup and every
+  error message use the record's name; a dangling id fails pre-step naming the short id
+  prefix); redaction labels and `redactedSecrets` are always names, never ids.
 - **Agent steps are query-only.** A step's runtime agent call is a pure question → text-answer
-  function; only step scripts make changes. A step may name several enabled agents (`agents`,
-  §8 grant names) and address each per call (`agent.ask(…, agent="Name")`); the engine resolves
-  the names against the automation's enabled agents at execution time. The first-enabled-agent
-  fallback applies **only when the step names no agents at all**: a step whose named agents
-  all fail to resolve (revoked grants, renamed agents) fails exactly like an agent step with
+  function; only step scripts make changes. A step may list several enabled agents (`agents`
+  entries, §4.1 agent ids) and address each in code via `agents["<id>"]` (§6.1); the engine
+  resolves
+  the ids against the automation's enabled agents at execution time - a rename can never
+  repoint a step. The first-enabled-agent
+  fallback applies **only when the step lists no agents at all**: a step whose listed agents
+  all fail to resolve (revoked grants, deleted agents) fails exactly like an agent step with
   no enabled agent — the §7 engine-level failure ("Step N needs an agent, but none is
-  enabled…"), never a silent hand-off to an agent the step didn't name. The engine invokes the harness one-shot and
+  enabled…"), never a silent hand-off to an agent the step didn't list. The engine invokes the harness one-shot and
   non-interactive with the strongest tool-disabling flags each harness supports: Claude Code
   `claude -p --tools "" --strict-mcp-config --no-session-persistence`, Codex
   `codex exec --sandbox read-only --skip-git-repo-check`; Gemini CLI and OpenCode expose no
@@ -257,9 +264,14 @@ SDK name it uses** — `from autowright import params, log, result` (or `import 
 `NameError` like any other undefined name. The names on that module:
 
 - `params` — dict-like, values by param name (definitions merged with §5 value-resolution rules).
-- `secrets` — attribute access by name (`secrets.SMTP_PASSWORD`); reading a missing/un-allowed
+- `secrets` — subscript access by secret id, with the name in a trailing comment
+  (`secrets["9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34"]  # API_TOKEN`); the id must be a literal
+  quoted string — the §6 pre-checks and the §8/§11 scans only see literals, so a variable
+  subscript fails at runtime instead of before step 1. Attribute access does not exist —
+  `secrets.NAME` raises. Reading a missing/un-allowed
   secret raises and fails the execution (the missing-secret pre-check in §6 catches known references
-  before step 1). Values never repr/print unredacted — the engine scans all log lines.
+  before step 1); error copy names the secret (id-resolved), never the raw id alone. Values
+  never repr/print unredacted — the engine scans all log lines.
   Only the step's own declared/referenced secrets are exposed on `secrets`. The full
   automation-wide value map the outbound scans need (`agent.ask`, `reply`) is taken off the
   step context before the SDK is built and passed to those two call sites explicitly, so an
@@ -318,12 +330,17 @@ SDK name it uses** — `from autowright import params, log, result` (or `import 
   param literally named `notification_title`. The body is **redacted like a log line** before it
   reaches the OS: a notification leaves the app's own storage (the `osascript` argv is visible
   to any local process, and the text persists in Notification Center's database).
-- `agent.ask(prompt, data=None, agent=None) -> str` — the §6 query-only runtime call, only in
-  steps marked `agent: true`; executor invokes one of the step's agents one-shot,
-  redaction-scans the prompt first. `agent` picks among the step's `agents` by grant name (§8);
-  omitted, the first is used; naming an agent the step doesn't carry raises. Convenience
-  aliases `agent.read(data, prompt, agent=None)` / `agent.write(data, prompt, agent=None)` wrap
-  it. Agent-step calls use a 120 s window (drafting calls use the §8 5-minute one); both are
+- `agent` / `agents` — the §6 query-only runtime calls, only in steps marked `agent: true`.
+  `agent` is a ready-made **handle** bound to the step's first `agents:` entry (or, when the
+  step lists none, the automation's first enabled agent); `agents["<id>"]` returns the handle
+  for the step's entry with that agent id (`agents["550e8400-…"]  # Claude big` — literal
+  quoted id with the name in a trailing comment, like `secrets`). Subscripting an id the step
+  doesn't carry raises, listing the step's agents as `Name (id)`. A handle offers
+  `ask(prompt, data=None) -> str` — executor invokes that agent one-shot,
+  redaction-scans the prompt first — plus the convenience
+  aliases `read(data, prompt)` / `write(data, prompt)` that wrap
+  it; there is no per-call agent argument — addressing is done by picking the handle.
+  Agent-step calls use a 120 s window (drafting calls use the §8 5-minute one); both are
   §8 idle windows under the same §8 hard cap.
 - `fetch_page(url) -> str` — HTTP GET honoring the §6 web policies (timeout, per-site spacing,
   retries, robots.txt, UA).

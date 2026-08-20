@@ -35,7 +35,7 @@ import yaml
 from . import harness, packages as pkglib, reqlog, triggers as triggerlib
 from .imports_check import ALLOWED_IMPORTS, disallowed_imports
 from .specmd import blocks_to_md, md_to_blocks
-from .storage import SECRET_REF_RE
+from .storage import AGENT_REF_RE, SECRET_REF_RE
 
 log = logging.getLogger("autowright.drafting")
 
@@ -101,11 +101,13 @@ steps:                                 # ordered; file names NN-name.py, two-dig
                                        # retries: automatic re-attempts when the step fails (1-10, see Retries above);
                                        # infinite_retries: true = retry until success, only for persistent/listening
                                        # steps — never combined with retries;
-                                       # secrets: granted secrets the step uses, as { name, why }
-                                       # entries — why: one line on why the step needs that secret
-                                       # (omit the key when the step uses none);
-                                       # agents: granted agents an agent step may call, as { name, why? }
-                                       # entries — first = agent.ask default (omit the key to use the
+                                       # secrets: granted secrets the step uses, as { id, why }
+                                       # entries — id copied EXACTLY from the grants yaml, why: one
+                                       # line on why the step needs that secret (omit the key when
+                                       # the step uses none);
+                                       # agents: granted agents an agent step may call, as { id, why? }
+                                       # entries — id from the grants yaml; the first is what the bare
+                                       # `agent` handle is bound to (omit the key to use the
                                        # automation's default); when a step lists two or more, every
                                        # entry needs its own why naming that agent's role in the step;
                                        # packages: declared packages the step uses, as { import, why }
@@ -113,10 +115,11 @@ steps:                                 # ordered; file names NN-name.py, two-dig
                                        # (one package can serve different jobs in different steps — name
                                        # this step's; omit the key when the step uses none)
   - { file: 01-fetch.py, name: ..., description: ..., timeout: 60,
-      secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }],
+      secrets: [{ id: 9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34,   # API_TOKEN
+                  why: authenticates the feed fetch }],
       packages: [{ import: pandas, why: parses the fetched price tables }] }
   - { file: 02-judge.py, name: ..., description: ..., timeout: 180, agent: true, why: one line — why judgment is needed,
-      agents: [{ name: Agent name }] }
+      agents: [{ id: 7c9e6679-7425-40de-944b-e07fc1f90ae7 }] }   # the granted agent's id
 ===FILE: 01-fetch.py===
 (python source)
 ===END===
@@ -189,9 +192,10 @@ def spec_as_md(current: dict | None) -> str:
 
 
 def _grants_yaml(entries: list[dict]) -> str:
-    """§8: grant lists render as yaml (agents: name/description/harness/model,
-    secrets: name/description) so the drafting agent can weigh each entry when
-    deciding which agents and secrets the automation should use."""
+    """§8: grant lists render as yaml (agents: id/name/description/harness/model,
+    secrets: id/name/description) so the drafting agent can weigh each entry when
+    deciding which agents and secrets the automation should use — and copy the
+    exact ids its manifest entries and code subscripts must carry."""
     if not entries:
         return "none"
     return yaml.safe_dump(entries, sort_keys=False, allow_unicode=True).strip()
@@ -201,10 +205,14 @@ def _common_context(current: dict | None, grants: dict) -> list[str]:
     """Grants + build instructions — the context stack both call shapes share."""
     parts = [
         "=== GRANTS FOR THIS AUTOMATION ===\n"
-        "Enabled agents (yaml: name, description, harness, model; agent: true steps "
-        "allowed only if nonempty):\n"
+        "Enabled agents (yaml: id, name, description, harness, model; agent: true steps "
+        "allowed only if nonempty; manifest agents: entries and agents[\"<id>\"] code "
+        "subscripts carry the id, copied exactly):\n"
         f"{_grants_yaml(grants.get('agents', []))}\n"
-        "Allowed secrets (yaml: name, description; reference by secrets.NAME):\n"
+        "Allowed secrets (yaml: id, name, description; reference in code by "
+        "secrets[\"<id>\"] — the id copied exactly, always a literal quoted string, never "
+        "a variable — with the secret's name in a trailing comment: "
+        "secrets[\"<id>\"]  # NAME):\n"
         f"{_grants_yaml(grants.get('secrets', []))}\n"
         "One rule decides which agents and secrets each step uses: when the SPEC or BUILD "
         "INSTRUCTIONS name a choice, follow them; otherwise pick the most appropriate "
@@ -973,10 +981,19 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
             errors.append(f"step file {fname!r} doesn't follow NN-name.py")
         elif int(m.group(1)) != i:
             errors.append(f"step file {fname!r} out of order — expected {i:02d}-…")
-    # §8 rule 7/6: per-step agents/secrets must name granted entries — the
-    # grants yaml is what the agent chose from, so anything else is a typo.
-    granted_agents = {g.get("name") for g in (grants or {}).get("agents", [])}
-    granted_secrets = {g.get("name") for g in (grants or {}).get("secrets", [])}
+    # §8 rule 7/6: per-step agents/secrets carry granted entry IDS — the grants
+    # yaml is what the agent chose from, so anything else is a typo. Errors
+    # list the granted entries as `Name (id)` because the agent thinks in
+    # names but must copy ids.
+    agent_names = {g.get("id"): g.get("name") for g in (grants or {}).get("agents", [])}
+    secret_names = {g.get("id"): g.get("name") for g in (grants or {}).get("secrets", [])}
+
+    def _granted(names: dict) -> str:
+        return ", ".join(f"{n} ({i})" for i, n in names.items()) or "none"
+
+    def _label(names: dict, entry_id: str) -> str:
+        return names.get(entry_id) or entry_id
+
     for s in steps:
         if not isinstance(s, dict):
             continue
@@ -987,18 +1004,39 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
             if not s.get("agent"):
                 errors.append(f"step {s.get('name')}: agents is only valid on agent: true steps")
             elif (not isinstance(ags, list)
-                  or not all(isinstance(x, dict) and isinstance(x.get("name"), str) for x in ags)):
+                  or not all(isinstance(x, dict) and isinstance(x.get("id"), str)
+                             and "name" not in x for x in ags)):
                 errors.append(f"step {s.get('name')}: agents must be a list of "
-                              "{ name, why? } granted-agent entries")
+                              "{ id, why? } granted-agent entries (ids from the grants yaml, "
+                              "no name key)")
             else:
+                seen_ids: set[str] = set()
                 for x in ags:
-                    if x["name"] not in granted_agents:
-                        errors.append(f"step {s.get('name')}: agent {x['name']!r} isn't among the granted agents")
+                    if x["id"] not in agent_names:
+                        errors.append(f"step {s.get('name')}: agent id {x['id']!r} isn't among "
+                                      f"the granted agents — granted: {_granted(agent_names)}")
+                    if x["id"] in seen_ids:
+                        errors.append(f"step {s.get('name')}: agent "
+                                      f"{_label(agent_names, x['id'])!r} is listed twice")
+                    seen_ids.add(x["id"])
                     # §8 rule 7: with several agents, one shared step `why`
                     # can't tell their jobs apart — each entry names its role.
                     if len(ags) > 1 and not str(x.get("why") or "").strip():
-                        errors.append(f"step {s.get('name')}: agent {x['name']!r} needs a why — "
+                        errors.append(f"step {s.get('name')}: agent "
+                                      f"{_label(agent_names, x['id'])!r} needs a why — "
                                       "one line on its role (required when a step lists several agents)")
+                # §8 rule 7: agents["<id>"] in code only resolves against the
+                # step's own declared entries at runtime.
+                for ref in set(AGENT_REF_RE.findall(files.get(s.get("file", ""), ""))):
+                    if ref not in seen_ids:
+                        errors.append(f"step {s.get('name')}: code subscripts agents[{ref!r}], "
+                                      "which isn't among this step's declared agents entries")
+        elif s.get("agent"):
+            # No agents: list — the bare `agent` handle is the only one the
+            # runtime container holds, so any agents["<id>"] subscript dangles.
+            for ref in set(AGENT_REF_RE.findall(files.get(s.get("file", ""), ""))):
+                errors.append(f"step {s.get('name')}: code subscripts agents[{ref!r}] but the "
+                              "step declares no agents entries")
         # §8 rule 8: short explicit timeout, or the explicit no-limit marker —
         # never both, never a sentinel value.
         t = s.get("timeout")
@@ -1023,17 +1061,32 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         secs = s.get("secrets")
         if secs is not None:
             if (not isinstance(secs, list)
-                    or not all(isinstance(x, dict) and isinstance(x.get("name"), str) for x in secs)):
+                    or not all(isinstance(x, dict) and isinstance(x.get("id"), str)
+                               and "name" not in x for x in secs)):
                 errors.append(f"step {s.get('name')}: secrets must be a list of "
-                              "{ name, why } allowed-secret entries")
+                              "{ id, why } allowed-secret entries (ids from the grants yaml, "
+                              "no name key)")
             else:
+                seen_sec: set[str] = set()
                 for x in secs:
-                    if x["name"] not in granted_secrets:
-                        errors.append(f"step {s.get('name')}: secret {x['name']!r} isn't among the allowed secrets")
+                    if x["id"] not in secret_names:
+                        errors.append(f"step {s.get('name')}: secret id {x['id']!r} isn't among "
+                                      f"the allowed secrets — allowed: {_granted(secret_names)}")
+                    if x["id"] in seen_sec:
+                        errors.append(f"step {s.get('name')}: secret "
+                                      f"{_label(secret_names, x['id'])!r} is listed twice")
+                    seen_sec.add(x["id"])
                     # §8 rule 6: every declared secret carries its per-use note.
                     if not str(x.get("why") or "").strip():
-                        errors.append(f"step {s.get('name')}: secret {x['name']!r} needs a why — "
+                        errors.append(f"step {s.get('name')}: secret "
+                                      f"{_label(secret_names, x['id'])!r} needs a why — "
                                       "one line on why the step uses it")
+        # §8 rule 6: every secrets["<id>"] literal in code must be an allowed
+        # secret's id — at runtime it would raise, so it fails validation here.
+        for ref in set(SECRET_REF_RE.findall(files.get(s.get("file", ""), ""))):
+            if ref not in secret_names:
+                errors.append(f"step {s.get('name')}: code subscripts secrets[{ref!r}], which "
+                              f"isn't among the allowed secrets — allowed: {_granted(secret_names)}")
         pkgs = s.get("packages")
         if pkgs is not None:
             if (not isinstance(pkgs, list)
@@ -1067,14 +1120,14 @@ def validate_steps(files: dict[str, str], grants: dict | None = None) -> tuple[d
         norm_steps.append({
             "file": s.get("file"), "name": s.get("name", ""), "description": s.get("description", ""),
             "agent": bool(s.get("agent")), "why": s.get("why", ""),
-            "agents": [{"name": x["name"],
+            "agents": [{"id": x["id"],
                         **({"why": str(x["why"]).strip()} if str(x.get("why") or "").strip() else {})}
                        for x in (s.get("agents") or [])
-                       if isinstance(x, dict) and isinstance(x.get("name"), str)]
+                       if isinstance(x, dict) and isinstance(x.get("id"), str)]
                       if s.get("agent") else [],
-            "secrets": [{"name": x["name"], "why": str(x.get("why") or "").strip()}
+            "secrets": [{"id": x["id"], "why": str(x.get("why") or "").strip()}
                         for x in (s.get("secrets") or [])
-                        if isinstance(x, dict) and isinstance(x.get("name"), str)],
+                        if isinstance(x, dict) and isinstance(x.get("id"), str)],
             "packages": [{"import": x["import"], "why": str(x.get("why") or "").strip()}
                          for x in (s.get("packages") or [])
                          if isinstance(x, dict) and isinstance(x.get("import"), str)],

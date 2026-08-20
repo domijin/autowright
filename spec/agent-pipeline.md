@@ -131,15 +131,19 @@ last. Every prompt section opens with a `=== NAME ===` header line — one diale
 visually distinct from the response envelope's `===FILE: …===`/`===END===` markers (spaces
 around the name, plain words). The **grants context** travels in every call, two sections:
 
-- **Available agents** — the enabled agents as a yaml list, one entry per agent with `name`
+- **Available agents** — the enabled agents as a yaml list, one entry per agent with `id`
+  (the §4.7 uuid — what manifest `agents:` entries and `agents["<id>"]` code subscripts must
+  carry, copied exactly), `name`
   (falling back to the harness name), `description` (the §4.7 description, omitted when empty),
   `harness`, and `model` (the literal `harness default` when the §4.7 model is null). An empty
   list renders the literal `none`. The header states its intent: these
   agents can power judgment steps when the automation is built — a spec must not
   promise AI judgment when the list is empty — and states the §8 selection rule (choices
   named in the spec or build instructions win; otherwise the drafting agent's own judgment).
-- **Available secrets** — the allowed secrets as a yaml list, one entry per secret with
-  `name` and `description` (the §4.8 description, omitted when empty) — never values, memory
+- **Available secrets** — the allowed secrets as a yaml list, one entry per secret with `id`
+  (the §4.8 uuid — what manifest `secrets:` entries and `secrets["<id>"]` code subscripts
+  must carry, copied exactly),
+  `name`, and `description` (the §4.8 description, omitted when empty) — never values, memory
   contents, or execution logs; empty list renders `none`. The header states the same
   selection rule for secrets. For both grant lists the
   §19 body's grant arrays (the in-editor toggles) win over the stored automation's; absent
@@ -417,11 +421,13 @@ arms, the panel's Sync now, a repair-block apply: always against the provided sp
                                      # retries: automatic re-attempts on failure (≤ 10, rule 8);
                                      # infinite_retries: true = retry until success — the
                                      # persistent-step shape, usually with no_timeout;
-                                     # secrets: granted secrets the step uses, as { name, why }
-                                     # entries (optional key; why required per entry — one line
+                                     # secrets: granted secrets the step uses, as { id, why }
+                                     # entries — id copied exactly from the grants yaml
+                                     # (optional key; why required per entry — one line
                                      # on why the step needs that secret);
                                      # agents: granted agents an agent step may call, as
-                                     # { name, why? } entries — first = agent.ask default
+                                     # { id, why? } entries — id from the grants yaml; the
+                                     # first is what the bare `agent` handle is bound to
                                      # (optional key; per-entry why required when a step
                                      # lists two or more agents, naming each agent's role);
                                      # packages: declared §6.2 packages the step uses, as
@@ -429,10 +435,12 @@ arms, the panel's Sync now, a repair-block apply: always against the provided sp
                                      # per entry — one line on what THIS step uses the
                                      # package for)
      - { file: 01-fetch.py, name: Fetch pages, description: ..., timeout: 60,
-         secrets: [{ name: API_TOKEN, why: authenticates the feed fetch }],
+         secrets: [{ id: 9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34,      # API_TOKEN
+                     why: authenticates the feed fetch }],
          packages: [{ import: pandas, why: parses the chapter tables }] }
      - { file: 02-classify.py, name: Classify updates, description: ..., timeout: 180, agent: true,
-         why: needs judgment on chapter titles, agents: [{ name: Fast local }] }
+         why: needs judgment on chapter titles,
+         agents: [{ id: 7c9e6679-7425-40de-944b-e07fc1f90ae7 }] }   # Fast local
    ===FILE: 01-fetch.py===
    ...python source...
    ===END===
@@ -448,7 +456,8 @@ arms, the panel's Sync now, a repair-block apply: always against the provided sp
    The TASK directive states this policy beside the shape.
 3. **Grants** — one section: enabled agents and allowed secrets, both rendered as the
    grants-context yaml lists above (`agent: true` steps allowed only if the agent list is nonempty;
-   secrets referenced by `secrets.NAME`), closing with the selection rule: when the SPEC or
+   secrets referenced by `secrets["<id>"]` with the name in a trailing comment), closing with
+   the selection rule: when the SPEC or
    build instructions name which agent or secret a step should use, follow them; otherwise
    pick the most appropriate granted entries by judgment.
 4. **Build instructions** — the user's standing rules (or the seeded default), context
@@ -515,16 +524,27 @@ notes rewrite (§11).
    `packages: [{ pip, import, status: installed | failed, version?, error? }]`. An install
    failure does **not** fail the job — the draft lands with the failure visible in the §11
    Packages card.
-6. Per-step `secrets` lists hold `{ name, why }` entries — the name must be an allowed
-   secret (an unknown name is a validation error) and `why` is a required one-line note on
+6. Per-step `secrets` lists hold `{ id, why }` entries — the id must be an allowed secret's
+   §4.8 uuid, copied from the grants yaml (an unknown id, a `name` key in an entry, or the
+   same id twice in one step's list is a validation error; the unknown-id error lists the
+   granted secrets as `NAME (id)`), and `why` is a required one-line note on
    why the step needs that secret (the key tag's tooltip, §9.2).
-   Step code is additionally scanned for `secrets.NAME` references → drives the Review-screen
-   secret warnings (§11). Unknown or un-allowed secret references in code are Review warnings,
-   not validation failures, and carry no `why`.
+   Step code is additionally scanned for literal `secrets["<id>"]` subscripts — every
+   code-referenced id must also be an allowed secret's id (a validation error otherwise:
+   the code would fail at runtime); the scan drives the Review-screen
+   secret warnings (§11). Ids must be literal quoted strings — a variable subscript is
+   invisible to the scan and forbidden by the prompt rules; the mandatory trailing `# NAME`
+   comment at each use is prompt-side convention only, never parsed.
 7. `agent: true` is the query-only marker (§6); `why` is required with it, and the optional
-   `agents` list (agent steps only) holds `{ name, why? }` entries whose names must be
-   enabled-agent grants — the engine resolves the names against the automation's enabled
-   agents at execution time; no per-step agent id is ever assigned or stored. An entry's
+   `agents` list (agent steps only) holds `{ id, why? }` entries whose ids must be
+   enabled-agent §4.7 uuids from the grants yaml (an unknown id, a `name` key in an entry,
+   or the same id twice in one list is a validation error; the unknown-id error lists the
+   granted agents as `Name (id)`) — the step stores the id, and the engine resolves ids
+   against the automation's enabled
+   agents at execution time. Step code is additionally scanned for literal `agents["<id>"]`
+   subscripts — every code-referenced id must be among that step's declared entries (the
+   runtime container only holds the step's own agents; a validation error otherwise). An
+   entry's
    `why` is that agent's role note (appended to its tag tooltip, §9.2/§11 — a single-entry
    or empty list shows the step's own `why` there instead, so both read as the user's plain
    words); a step listing two or more

@@ -120,17 +120,21 @@ learns about an install failure at build time, not when a trigger fires.
 - `automation create` saves `stepAgents`/`allowedSecrets` as exactly the grants passed via the
   repeatable `--grant-agent NAME` / `--grant-secret NAME` flags. Each flag must name a
   configured agent / stored secret; an unknown name exits 1 with the candidate list.
-  `--grant-agent` takes the agent's §8 grant name (case-insensitive), but `stepAgents` stores
-  agent **ids** (§4.1 — the enablement list the engine and UI resolve by id); the CLI maps the
-  matched name to its id on save. `allowedSecrets` stores secret names as given.
+  Both flags take **names** — the human-friendly surface — and the CLI maps each to its id on
+  save: `--grant-agent` the agent's §8 grant name (case-insensitive — safe, §4.7 uniqueness),
+  `--grant-secret` the secret's exact name (§4.8: canonical uppercase, unique); `stepAgents`
+  stores agent ids and `allowedSecrets` stores secret ids (§4.1 — the enablement lists the
+  engine and UI resolve by id).
 - `automation push` saves the automation's stored lists plus any `--grant-agent`/
   `--grant-secret` flags. Stored grants never shrink on push (they are user-owned state, like
   param values); the UI edit page remains the place to revoke.
-- After validation, the CLI computes the names the workdir actually needs — per-step `agents`,
-  per-step `secrets`, plus the code-referenced `secretReferences` — and any needed name outside the
-  saved grants exits 1 listing the exact flags to add, nothing written. Agent comparison
-  happens at grant-name level: stored `stepAgents` ids map back to their §8 grant names before
-  the needed-vs-granted check. An `agent: true` step with no `agents:` list runs on the first
+- After validation, the CLI computes the ids the workdir actually needs — per-step `agents`
+  entry ids,
+  per-step `secrets` entry ids, plus the code-referenced `secretReferences` (§8 — ids) — and
+  any needed id outside the
+  saved grants exits 1 listing the exact flags to add (ids mapped back to their names for
+  the flag suggestions), nothing written. The needed-vs-granted comparison is id-set
+  against id-set — names appear only in the printed flags. An `agent: true` step with no `agents:` list runs on the first
   enabled agent (§6), so it needs at least one granted agent: when none is granted, the save
   exits 1 asking for a `--grant-agent` flag with the configured-agent candidates. A
   granted-but-unused name is fine (a deliberate pre-grant).

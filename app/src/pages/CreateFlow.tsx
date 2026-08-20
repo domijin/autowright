@@ -29,7 +29,7 @@ import { LeftColumn, RightCards } from './createflow/SectionCards'
 // imports keep one stable import path.
 export {
   specToText, textToSpec, amendSpec, newEntry, persistChat, chatSinceBoundary,
-  stepSecretTags, stepSecretNames, secretRefsOf, instrToMd,
+  stepSecretTags, stepSecretIds, secretRefsOf, instrToMd,
   seedEmpty, seedFromPayload, seedFromAuto,
   stripTrigger, mergeDraftTriggers, serializeDraft, applyTestValues,
   applyTriggerOps, coerceParamValue,
@@ -221,7 +221,7 @@ export default function CreateFlow() {
   // drafting — §11 tests execute as execution records.
   useEffect(() => {
     if (isEdit) return
-    setRev((r) => r ?? seedEmpty(agents, secrets.map((s) => s.name)))
+    setRev((r) => r ?? seedEmpty(agents, secrets.map((s) => s.id)))
     void api.openDraft('pending').catch(() => { /* backend restarting */ })
     let dead = false
     void api.getDraft('pending').then(({ draft, agentId: gid }) => {
@@ -236,7 +236,7 @@ export default function CreateFlow() {
       // Only the untouched empty seed may be replaced — never in-flight work.
       if (cur && (cur.touched || cur.chatBusy || cur.syncBusy || cur.chat.length > 0 || cur.spec.length > 0)) return
       seededRef.current = true
-      const seeded = seedFromPayload(draft, agents, secrets.map((s) => s.name))
+      const seeded = seedFromPayload(draft, agents, secrets.map((s) => s.id))
       // A draft kept mid-steps-generation resumes spec-only — mark it out of
       // sync so the §11 sync panel offers the rebuild.
       setRev({ ...seeded, touched: true, ...(seeded.steps.length || !seeded.spec.length ? {} : { dirty: true }) })
@@ -275,23 +275,29 @@ export default function CreateFlow() {
     const availAgents = rev ? rev.enabledAgents.map((id) => agents.find((g) => g.id === id)).filter((g): g is Agent => !!g) : []
     const agName = (g: Agent) => g.name || g.harness
     const agentStepIdx = rev ? rev.steps.map((s, i) => (s.agent ? i : -1)).filter((i) => i >= 0) : []
-    // §11: per-name agent references — which steps name which agent, mirroring secRefs.
-    const agRefs: { name: string; steps: number[] }[] = []
+    // §11: per-id agent references — which steps list which agent, mirroring
+    // secRefs. `name` is the live agent's name (display), resolved by id.
+    const agRefs: { id: string; name: string; steps: number[] }[] = []
     if (rev) rev.steps.forEach((s, i) => {
       if (!s.agent) return
-      for (const { name: nm } of s.agents ?? []) {
-        const r = agRefs.find((x) => x.name === nm)
-        r ? r.steps.push(i) : agRefs.push({ name: nm, steps: [i] })
+      for (const { id } of s.agents ?? []) {
+        const r = agRefs.find((x) => x.id === id)
+        if (r) r.steps.push(i)
+        else {
+          const g = agents.find((x) => x.id === id)
+          agRefs.push({ id, name: g ? agName(g) : `${id.slice(0, 8)}…`, steps: [i] })
+        }
       }
     })
-    const agNotEnabled = agRefs.filter((r) => agents.some((g) => agName(g) === r.name) && !availAgents.some((g) => agName(g) === r.name))
-    const agMissing = agRefs.filter((r) => !agents.some((g) => agName(g) === r.name))
-    // steps with no named agent fall back to the first enabled agent — they only
+    // All three states compare ids, never names — a rename changes nothing here.
+    const agNotEnabled = agRefs.filter((r) => agents.some((g) => g.id === r.id) && !rev!.enabledAgents.includes(r.id))
+    const agMissing = agRefs.filter((r) => !agents.some((g) => g.id === r.id))
+    // steps with no listed agent fall back to the first enabled agent — they only
     // warn when nothing is enabled at all
     const agFallbackIdx = rev ? agentStepIdx.filter((i) => !(rev.steps[i].agents ?? []).length) : []
     const agNone = !!rev && agFallbackIdx.length > 0 && availAgents.length === 0
-    const secNotAllowed = secRefs.filter((r) => secrets.some((z) => z.name === r.name) && !(rev?.allowedSecrets ?? []).includes(r.name))
-    const secMissing = secRefs.filter((r) => !secrets.some((z) => z.name === r.name))
+    const secNotAllowed = secRefs.filter((r) => secrets.some((z) => z.id === r.id) && !(rev?.allowedSecrets ?? []).includes(r.id))
+    const secMissing = secRefs.filter((r) => !secrets.some((z) => z.id === r.id))
     const agWarn = !!rev && (agNone || agNotEnabled.length > 0 || agMissing.length > 0)
     const secWarn = !!rev && (secNotAllowed.length > 0 || secMissing.length > 0)
     // §11 dirty gating: grant sync state is derived, never stored — the workflow
@@ -299,9 +305,9 @@ export default function CreateFlow() {
     // have. Re-checking the grant clears it instantly; toggles alone never dirty.
     const agentGap = !!rev && agentStepIdx.some((i) => {
       const s = rev.steps[i]
-      const names = (s.agents ?? []).map((e) => e.name)
-      return names.length
-        ? names.some((nm) => !availAgents.some((g) => agName(g) === nm))
+      const ids = (s.agents ?? []).map((e) => e.id)
+      return ids.length
+        ? ids.some((id) => !rev.enabledAgents.includes(id) || !agents.some((g) => g.id === id))
         : rev.enabledAgents.length === 0
     })
     const secretGap = secNotAllowed.length > 0
@@ -399,7 +405,7 @@ export default function CreateFlow() {
   useEffect(() => {
     if (!isEdit || seededRef.current || !auto || !auto.spec) return
     seededRef.current = true
-    setRev(seedFromAuto(auto, agents, secrets.map((s) => s.name)))
+    setRev(seedFromAuto(auto, agents, secrets.map((s) => s.id)))
     if (auto.agentId) setAgentId(auto.agentId)
   }, [auto, isEdit, agents, secrets])
 
@@ -427,7 +433,7 @@ export default function CreateFlow() {
     try { chat = (await api.getChat('pending')).chat } catch { /* backend restarting */ }
     setNameEdit(null)
     setDescEdit(null)
-    setRev({ ...seedEmpty(agents, secrets.map((s) => s.name)), chat })
+    setRev({ ...seedEmpty(agents, secrets.map((s) => s.id)), chat })
     setChatText((cur) => cur || jobs.firstRequestRef.current)
   }
 
@@ -716,7 +722,7 @@ export default function CreateFlow() {
           pendingSync: false, pendingTest: null, viewing: 'draft' as const,
         }))
       } else if (auto.draft) {
-        setRev((r) => ({ ...seedFromAuto(auto, agents, secrets.map((s) => s.name)), chat: r ? r.chat : [] }))
+        setRev((r) => ({ ...seedFromAuto(auto, agents, secrets.map((s) => s.id)), chat: r ? r.chat : [] }))
       } else setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instructions: auto.instructions, notes: auto.notes, params: auto.params, packages: auto.packages }, 'draft'))
     } else if (key === auto.version) {
       setRev((r) => r && loadVersionInto(r, { spec: auto.spec ?? [], steps: auto.steps ?? [], instructions: auto.instructions, notes: auto.notes, params: auto.params, packages: auto.packages }, key))
@@ -1203,6 +1209,8 @@ export default function CreateFlow() {
                   outOfSync={outOfSync}
                   busyRewrite={busyRewrite}
                   availAgents={availAgents}
+                  agents={agents}
+                  secrets={secrets}
                   pkgSecOpenEff={pkgSecOpenEff}
                   updatePkgs={(pips) => void updatePkgs(pips)}
                   installPkgs={() => void installPkgs()}

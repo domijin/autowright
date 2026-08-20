@@ -21,10 +21,16 @@ import yaml
 from . import __version__, harness, timefmt, triggers as triggerlib
 from .drafting import STEP_FILE_RE
 from .specmd import blocks_to_md, md_to_blocks
-from .storage import SECRET_REF_RE, Store, new_id
+from .storage import Store, new_id
 
 FORMAT_VERSION = 1
 SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
+# §5.1 KNOWN GAP: transfer predates the §4.1 id-keyed step references and
+# stays name-based — this legacy scan only sees pre-id `secrets.NAME` code,
+# and id-shaped step entries contribute nothing to the reference lists. An
+# exported id-style automation's step references dangle on import until a
+# sync rebuilds the steps (spec §5.1).
+LEGACY_SECRET_REF_RE = re.compile(r"\bsecrets\.([A-Z][A-Z0-9_]*)")
 PARAM_KINDS = ("text", "number", "toggle", "list", "kv")
 MODES = ("default", "ollama", "custom")
 
@@ -43,8 +49,9 @@ def safe_filename(name: str) -> str:
 def _referenced_secrets(ver: dict, triggers: list[dict] | None = None) -> list[str]:
     names: set[str] = set()
     for s in ver.get("steps", []):
-        names |= {e["name"] for e in s.get("secrets") or []}
-        names |= set(SECRET_REF_RE.findall(s.get("code", "")))
+        # Pre-id entries only ({name, why}) — id entries are the §5.1 gap above.
+        names |= {e["name"] for e in s.get("secrets") or [] if e.get("name")}
+        names |= set(LEGACY_SECRET_REF_RE.findall(s.get("code", "")))
     # §5.1: a discord trigger's bot-token secret travels by name too, so the
     # import lands a §4.8 placeholder for it.
     names |= {t["secret"] for t in triggers or [] if t.get("kind") == "discord"}
@@ -439,13 +446,16 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
         # Secrets: a missing referenced name becomes a §4.8 placeholder;
         # an existing name is the same secret by definition — untouched.
         created_secrets, existing_secrets = [], []
+        created_secret_ids: list[str] = []
         for s in arch["secrets"]:
             if any(x["name"] == s["name"] for x in store.secrets):
                 existing_secrets.append(s["name"])
             else:
-                store.secrets.append({"name": s["name"], "description": s.get("description") or "",
-                                      "set": False})
+                rec = {"id": new_id(), "name": s["name"],
+                       "description": s.get("description") or "", "set": False}
+                store.secrets.append(rec)
                 created_secrets.append(s["name"])
+                created_secret_ids.append(rec["id"])
         if created_secrets:
             store.save_secrets()
         # Agents: exact config match (name + harness + mode + model) reuses the
@@ -489,7 +499,7 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                                     agent_id=drafting["id"] if drafting else None,
                                     triggers=triggers,
                                     enabled_agents=list(created_ids),
-                                    allowed_secrets=list(created_secrets))
+                                    allowed_secrets=list(created_secret_ids))
         if arch["param_values"]:
             # Values are the one manifest field creation can't seed.
             store.patch_automation(a, {"paramValues": arch["param_values"]})

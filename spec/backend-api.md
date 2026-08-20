@@ -23,8 +23,10 @@ fields, wrong shapes: `stepAgents`/`allowedSecrets` must be lists of strings, th
 booleans must be booleans with `days` an int) answers 422 before any handler logic runs.
 The store-state cross-field checks live in the handlers, answering the same 422:
 `paramValues` entries are checked against the automation's param definitions (names **and**
-kinds) and `agentId`/`stepAgents` entries must reference configured agents
-(`_check_param_values` / `_check_agent_refs` in `api.py` — they need store state the models
+kinds), `agentId`/`stepAgents` entries must reference configured agents, and
+`allowedSecrets` entries must reference stored secrets by their §4.8 id
+(`_check_param_values` / `_check_agent_refs` / `_check_secret_refs` in `api.py` — they need
+store state the models
 never see). Pydantic shapes **requests only** — response bodies
 remain plain dicts (§2).
 
@@ -153,7 +155,10 @@ remain plain dicts (§2).
   no new version." on the operational-only save
 - **Server-side step validation** — `POST /automations` and `POST /automations/{id}/versions`
   run the §8 step validators (`ast.parse`, the §6.2 import allowlist, manifest schema and
-  step-file ordering, the timeout/retry rules) on the sent draft and answer 422 with the
+  step-file ordering, the timeout/retry rules, the §8 rule-6/7 id checks — step `agents:` /
+  `secrets:` entries and the code-scanned `agents["<id>"]` / `secrets["<id>"]` literals
+  resolved against all configured agents and stored secrets) on the sent draft and answer
+  422 with the
   validation errors when it fails — an invalid draft can never land as a version, whatever
   client sent it. The §20 CLI keeps its own pre-save copy of the same validators only for
   friendlier errors (one per line, nothing sent); the server check is the enforcement
@@ -324,7 +329,8 @@ remain plain dicts (§2).
   else the default agent — 404 when neither resolves to a configured agent (including the
   zero-agents case); every job is stamped with its **owner** — the sent `automationId`'s
   draft container, or the pending slot when none was sent — so the draft-settle endpoints
-  (above) can cancel the owner's still-building jobs when the draft settles; the grant arrays, when present, override
+  (above) can cancel the owner's still-building jobs when the draft settles; the grant arrays (`enabledAgents` agent ids, `allowedSecrets` secret ids — like the
+  automation's stored grants), when present, override
   the stored automation's for the §8 grants context; when `enabledAgents` / `allowedSecrets`
   is absent and no stored automation exists (no `automationId` sent — a fresh create-flow
   draft), the
@@ -360,7 +366,12 @@ remain plain dicts (§2).
   the call can never be cancelled twice or missed by both) ·
   `POST /executions/{id}/retry` (§7 in-place retry; 409 unless failed and not live) ·
   `POST /executions/{id}/skip-step` `{ index }` (§7 skip; 409 unless that step is executing)
-- `GET/POST /agents` · `PATCH/DELETE /agents/{id}` · `POST /agents/{id}/check` (health/badge)
+- `GET/POST /agents` · `PATCH/DELETE /agents/{id}` · POST and a PATCH whose merged result
+  would change the agent's effective §4.7 grant name both enforce the §4.7 uniqueness rule —
+  a case-insensitive collision with another agent's grant name answers 422 ("an agent named X
+  already exists - agent names must be unique"); a PATCH that leaves the grant name unchanged
+  never runs the check, so unrelated-field edits of pre-existing duplicates keep working ·
+  `POST /agents/{id}/check` (health/badge)
   and `POST /agents/check-harness` `{ harness, mode?, model? }` (the same check before an agent
   record exists — onboarding's found-card auto-check) — one shared readiness check
   (`harness.check_ready`) decides ready vs. needs-setup everywhere: the harness binary must
@@ -500,15 +511,18 @@ remain plain dicts (§2).
   into `~/.config/opencode/opencode.json` (merge, never overwrite: provider `ollama` via npm
   `@ai-sdk/openai-compatible`, `baseURL` = `AUTOWRIGHT_OLLAMA_URL` + `/v1`, the agent's model
   listed under `models`) so `opencode run --model ollama/<model>` resolves.
-- `GET /secrets` (names + `description` + `set` + usedBy — a list of automation names — never
+- `GET /secrets` (each entry: `id` — the §4.8 uuid steps bind by — + name + `description` +
+  `set` + usedBy — a list of automation names — never
   values) · `PUT /secrets/{name}` `{ value, description? }` — `description` is
   presence-sensitive (`exclude_unset`): absent leaves the stored description untouched, sent
   (even blank) sets it. A blank
   value on a new name creates a §4.8 placeholder (`set: false`); on an existing name a blank
-  value edits only the description — the presence rule is what makes that read; answers 503
+  value edits only the description — the presence rule is what makes that read. Returns the
+  serialized secret entity (same shape as a `GET /secrets` entry) so a creating client
+  learns the minted id; answers 503
   when the Keychain refuses the write · `DELETE /secrets/{name}` —
   values go straight to the Keychain, never
-  into responses or files
+  into responses or files. Routes stay name-keyed (§4.8: names are unique and immutable)
 - `GET /settings` · `PATCH /settings` (validates before storing: `days` must be an int —
   strict, no coercion, 422 otherwise — and is
   clamped ≥ 1, `notifications` must be `attention | all` — 422 otherwise, so a bad value can never

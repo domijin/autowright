@@ -86,7 +86,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   again or retry from the edit page.") · missing secret — the §6 pre-step gate sets one of
   "A step references a secret this automation isn't allowed to use.", "A step references a
   secret whose value hasn't been added yet.", "A step references a secret that isn't in your
-  Keychain."; a step whose code reads a nonexistent secret at runtime gets "The script
+  Keychain.", or — a §4.1 secret id matching no stored record — "A step references a secret
+  that no longer exists (`<short id>`)."; a step whose code reads a nonexistent secret at
+  runtime gets "The script
   references a secret that doesn't exist." · undeclared secret — the step read
   a secret the automation allows but the step never declared or referenced, so it wasn't
   injected (§6 step scoping; the executor's message says so: "secret `NAME` wasn't injected

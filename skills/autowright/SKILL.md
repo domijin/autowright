@@ -19,7 +19,8 @@ operation the app's UI offers is available there.
 
 1. **Read the contract first.** Before writing or editing any step code, run
    `autowright instructions` and follow it — it defines the step SDK (`autowright` module:
-   `secrets.NAME`, `params`, `memory`/`workspace` dirs, `result.chip()`, `agent.ask()`), the
+   `secrets["<id>"]`, `params`, `memory`/`workspace` dirs, `result.chip()`, `agent.ask()` /
+   `agents["<id>"]`), the
    allowed imports (stdlib + curated packages + declared packages), and the engine policies.
    Do not guess the SDK from memory. Every SDK name a step uses must be imported
    (`from autowright import params, log, result`) — nothing is a global.
@@ -31,7 +32,9 @@ operation the app's UI offers is available there.
    on its own — a needed-but-ungranted name makes the command exit 1 naming the flags to add.
    Never add a grant flag the user hasn't seen.
 3. **Never invent secret values.** `secret set NAME` prompts, or ask the user for the value.
-   Reference them in code as `secrets.NAME`; never hardcode credentials.
+   Reference them in code as `secrets["<id>"]  # NAME` — the id comes from
+   `autowright secret list --json`, always a literal quoted string with the name in a
+   trailing comment; never hardcode credentials.
 4. **Destructive actions** (`automation delete --yes`, `secret delete`, `snapshot delete`,
    `memory clear`) only on the user's explicit request.
 5. If the backend is unreachable, the CLI's error message says how to start it
@@ -72,12 +75,15 @@ resolve); executions and snapshots by id prefix.
      packages: []                 # beyond-curated pip packages: {pip, import} — see below
      steps:                       # files NN-name.py, two-digit, gapless order
        - { file: 01-fetch.py, name: Fetch pages, description: Download each source,
-           timeout: 60, secrets: [] }
+           timeout: 60 }          # secrets: [{ id: <secret uuid>, why: one line }] when used
        - { file: 02-report.py, name: Write report, description: Diff against memory, timeout: 60 }
      ```
    - `NN-name.py` — one file per step. Steps small and single-purpose; deterministic code
      over AI; fail loudly naming what was expected vs found. An `agent: true` step (requires
-     `why`, optional `agents: [granted names]`) may call `agent.ask()` for judgment.
+     `why`, optional `agents: [{ id: <agent uuid>, why? }]` — ids from
+     `autowright agent list --json`) may call `agent.ask()` for judgment; `agents["<id>"]`
+     addresses a specific declared entry. Step manifests and code reference agents and
+     secrets by their uuids — the grant FLAGS still take names.
    - **Dependencies:** any PyPI package beyond the curated list is fine — declare it under
      `packages` as `{ pip: <bare distribution name>, import: <module> }` (no versions; the app
      manages them). Autowright installs declared packages automatically on `create`/`push`

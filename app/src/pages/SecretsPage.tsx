@@ -35,11 +35,11 @@ export default function SecretsPage() {
         Secrets
       </PageTitle>
       <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 20px' }}>
-        Stored in your Mac’s Keychain. Scripts use them by name — the values never appear in logs.
+        Stored in your Mac’s Keychain. Scripts read them at execution time — the values never appear in logs.
       </p>
       {secrets.length === 0 ? (
         <EmptyState
-          text="No secrets yet. Add a password or API key once, and your automations use it by name — the value never appears in a script or a log."
+          text="No secrets yet. Add a password or API key once, and your automations use it wherever they need it — the value never appears in a script or a log."
           cta={<BtnPrimary onClick={() => setModal({ mode: 'add' })}>Add your first secret</BtnPrimary>}
         />
       ) : (
@@ -117,7 +117,7 @@ export default function SecretsPage() {
               {' '}will be removed from your Keychain. This can’t be undone.
               {del.usedBy.length > 0 && (
                 <p style={{ color: 'var(--red-text)', margin: '8px 0 0' }}>
-                  “{del.usedBy.join(', ')}” uses it by name and will stop working.
+                  “{del.usedBy.join(', ')}” uses it and will stop working.
                 </p>
               )}
             </>

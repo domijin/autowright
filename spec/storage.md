@@ -25,7 +25,10 @@ On-disk layout under `~/Library/Application Support/Autowright/`:
 ```
 settings.yaml
 agents.yaml                    # agents list + default_agent (§4.7 single default-id pointer)
-secrets.yaml                   # names + metadata only; values live in the macOS Keychain
+secrets.yaml                   # ids + names + metadata only; values live in the macOS Keychain.
+                               # Every entry carries its §4.8 uuid; load self-heals an entry
+                               # missing one (mints + persists it, like the default_agent
+                               # pointer heal)
 backend.json                   # port+token discovery handshake (§3), rewritten each backend start
 electron/                      # Electron's Chromium profile (Cache, Cookies, Local Storage, …) —
                                # main.cjs redirects userData here so the root stays app data only
@@ -81,7 +84,8 @@ automations/<uuid>/
                                # triggers [{id, kind, enabled, expression | at | channel+secret…}]
                                # (§4.3 stored fields per kind; never the derived
                                # label/short/connection), agent_id,
-                               # enabled_agents, allowed_secrets,
+                               # enabled_agents (§4.7 agent uuids), allowed_secrets
+                               # (§4.8 secret uuids),
                                # memory_snapshots {pre_version, pre_clear, pre_restore} —
                                # §6.3 automatic-snapshot toggles (absent keys default true),
                                # param_values {name: value} (user data, never pruned),
@@ -139,7 +143,8 @@ automations/<uuid>/
                                #          packages?, timeout?, no_timeout?, retries?, infinite_retries?}]
                                #          (§4.1 per-step time limits and retry pair — both
                                #          also travel in §5.1 archives; agents entries are
-                               #          {name, why?}, secrets entries {name, why} —
+                               #          {id, why?} — §4.7 agent uuids — and secrets entries
+                               #          {id, why} — §4.8 secret uuids; the whys are the
                                #          §4.1 per-agent role notes and per-use secret notes)
                                # + declared packages (§6.2, absent when none):
                                # packages: [{pip: pandas, import: pandas, why: one-line purpose}]
@@ -452,9 +457,14 @@ secrets.yaml                 # referenced secret names (union of every step's se
 
 **Identity across machines.** Uuids are meaningless on another Mac, so none travel and import
 mints everything fresh: a new automation id + directory, new trigger ids. Secrets are matched
-by **name** (name IS a secret's identity — `secrets.NAME` in scripts, name-keyed Keychain);
-agents are matched by name + config; step `agents:`/`secrets:` references travel verbatim
-because they are already grant names.
+by **name** (unique + immutable, §4.8); agents are matched by name + config.
+**Known gap (transfer predates §4.1 id-keyed step references):** step `agents:`/`secrets:`
+entries and the `secrets["<id>"]`/`agents["<id>"]` subscripts in step code carry
+install-local uuids that this format neither translates nor rewrites — an imported
+automation's id references dangle until a sync rebuilds the steps. Future work: translate
+id → name at export and name → local id at import (well-defined, since names are unique on
+both sides); until then the passages below that speak of matching step references by grant
+name describe the pre-id format.
 
 **Import behavior** (the whole archive validates before anything is written — any failure
 answers 422 and writes nothing):

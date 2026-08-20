@@ -43,25 +43,41 @@ class AgentCallError(Exception):
 
 
 class Secrets:
-    def __init__(self, values: dict[str, str], allowed: list[str]):
+    """§6.1: `secrets["<secret id>"]` — subscript by the §4.8 secret id (a
+    literal quoted string). Errors label secrets by NAME via the id→name map —
+    ids are the identity, names the display."""
+
+    def __init__(self, values: dict[str, str], allowed: list[str], names: dict[str, str]):
         self._values = values
         self._allowed = set(allowed)
+        self._names = names
 
-    def __getattr__(self, name: str) -> str:
-        if name.startswith("_"):
-            raise AttributeError(name)
-        if name not in self._allowed:
-            raise MissingSecret(f"secret {name} is not allowed for this automation")
-        if name not in self._values:
+    def _label(self, secret_id: str) -> str:
+        name = self._names.get(secret_id)
+        return name if name else f"{secret_id[:8]}…"
+
+    def __getitem__(self, secret_id: str) -> str:
+        if secret_id not in self._allowed:
+            raise MissingSecret(
+                f"secret {self._label(secret_id)} is not allowed for this automation")
+        if secret_id not in self._values:
             # Allowed but not injected: the step never declared or referenced
             # it, so §6 scoping withheld it — the Keychain may well hold it.
             # Saying "not in your Keychain" here would send the user to the
             # wrong fix.
             raise MissingSecret(
-                f"secret {name} wasn't injected into this step — steps only receive "
-                f"the secrets they reference in code or declare in the step's "
-                f"secrets list; add {name} there")
-        return self._values[name]
+                f"secret {self._label(secret_id)} wasn't injected into this step — steps "
+                f"only receive the secrets they reference in code or declare in the "
+                f"step's secrets list; add it there")
+        return self._values[secret_id]
+
+    def __getattr__(self, name: str) -> str:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        # §6.1: attribute access does not exist — secrets are addressed by id.
+        raise MissingSecret(
+            f"secrets.{name} isn't how secrets are read — use secrets[\"<secret id>\"] "
+            f"with the secret's granted id")
 
 
 class Memory:
@@ -196,7 +212,11 @@ def scan_outbound(text: str, what: str, scan: dict[str, str]) -> None:
 
 
 class Agent:
-    def __init__(self, ctx: dict, scan: dict[str, str]):
+    """§6.1 agent handle — bound to ONE of the step's agents. The bare `agent`
+    global is the handle for the step's first `agents:` entry; `agents["<id>"]`
+    returns the handle for another declared entry."""
+
+    def __init__(self, ctx: dict, scan: dict[str, str], cfg: dict | None):
         self._ctx = ctx
         # §6: held apart from _ctx so a step that declared no secrets can't read
         # another step's value off this object. Required, not defaulted — a
@@ -204,31 +224,24 @@ class Agent:
         # Scoping hygiene, not a boundary: a step is arbitrary in-process Python
         # (§6.2 — the engine is not a sandbox).
         self._scan = scan
+        self._cfg = cfg
 
-    def ask(self, prompt: str, data=None, agent: str | None = None) -> str:
-        return self._ask(prompt, data, agent)
+    def ask(self, prompt: str, data=None) -> str:
+        return self._ask(prompt, data)
 
     # prototype scripts use agent.read(page, q) / agent.write(rows, q)
-    def read(self, data, prompt: str, agent: str | None = None) -> str:
-        return self._ask(prompt, data, agent)
+    def read(self, data, prompt: str) -> str:
+        return self._ask(prompt, data)
 
-    def write(self, data, prompt: str, agent: str | None = None) -> str:
-        return self._ask(prompt, data, agent)
+    def write(self, data, prompt: str) -> str:
+        return self._ask(prompt, data)
 
-    def _ask(self, prompt: str, data, name: str | None = None) -> str:
+    def _ask(self, prompt: str, data) -> str:
         if not self._ctx.get("is_agent_step"):
             raise RuntimeError("agent calls are only available in steps marked as agent steps")
-        cfgs = self._ctx.get("agents") or []
-        if not cfgs:
+        cfg = self._cfg
+        if cfg is None:
             raise RuntimeError("no enabled agent for this step")
-        if name is None:
-            cfg = cfgs[0]
-        else:
-            # §6: pick among the step's agents by §8 grant name.
-            cfg = next((c for c in cfgs if _harness.grant_name(c) == name), None)
-            if cfg is None:
-                avail = ", ".join(_harness.grant_name(c) for c in cfgs)
-                raise RuntimeError(f"agent {name!r} isn't available to this step — it can call: {avail}")
         full = str(prompt) if data is None else f"question: {prompt}\n\ndata:\n{data}"
         # §6: secret values must never enter a prompt — scan before sending,
         # against ALL of the automation's secret values, not just this step's
@@ -248,6 +261,25 @@ class Agent:
         # §6: the FULL prompt/reply go to logs for audit (already size-capped above).
         emit("agent_audit", prompt=full, reply=reply)
         return reply.strip()
+
+
+class Agents:
+    """§6.1: `agents["<agent id>"]` — the handle for one of the step's declared
+    `agents:` entries, addressed by the §4.7 agent id (a literal quoted string,
+    like `secrets["<id>"]`). Subscripting an id the step doesn't carry raises."""
+
+    def __init__(self, ctx: dict, scan: dict[str, str]):
+        self._ctx = ctx
+        self._scan = scan
+
+    def __getitem__(self, agent_id: str) -> Agent:
+        cfgs = self._ctx.get("agents") or []
+        cfg = next((c for c in cfgs if c.get("id") == agent_id), None)
+        if cfg is None:
+            avail = ", ".join(f"{_harness.grant_name(c)} ({c.get('id')})" for c in cfgs) or "none"
+            raise RuntimeError(f"agents[{agent_id!r}] isn't among this step's declared agents — "
+                               f"it can call: {avail}")
+        return Agent(self._ctx, self._scan, cfg)
 
 
 _site_last: dict[str, float] = {}
@@ -391,7 +423,8 @@ def main() -> int:
 
     sdk = {
         "params": ctx.get("params", {}),
-        "secrets": Secrets(ctx.get("secrets", {}), ctx.get("allowed_secrets", [])),
+        "secrets": Secrets(ctx.get("secrets", {}), ctx.get("allowed_secrets", []),
+                           ctx.get("secret_names", {})),
         "memory": Memory(ctx["memory_dir"]),
         "workspace": workspace,
         "execution": Execution(exec_meta),
@@ -399,7 +432,11 @@ def main() -> int:
         "result": Result(ctx["result_dir"]),
         "notify": notify,
         "reply": reply,
-        "agent": Agent(ctx, scan_secrets),
+        # §6.1: `agent` is the ready-made handle for the step's FIRST agents:
+        # entry (or the engine's first-enabled fallback when the step lists
+        # none); `agents["<id>"]` addresses the other declared entries.
+        "agent": Agent(ctx, scan_secrets, (ctx.get("agents") or [None])[0]),
+        "agents": Agents(ctx, scan_secrets),
         "fetch_page": fetch_page,
     }
     # §6.1: the SDK reaches a step only through `import autowright` — nothing is

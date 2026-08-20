@@ -6,21 +6,37 @@
 // (toggle/list/kv/number/text) for both the editor's test-value card and the
 // detail page's debounced ParamRow.
 import React, { useEffect, useState } from 'react'
-import type { Agent, PackageDep, ParamDef, Step } from './types'
+import type { Agent, PackageDep, ParamDef, SecretMeta, Step } from './types'
 import { Caret, Collapse, MiniBadge, PyCode, Tag, Toggle, agName, dispModel, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
 
-// A step's secrets are its declared `secrets` entries unioned with the
-// `secrets.NAME` references in its code (§4.1). Tags carry the declared
-// entry's per-use `why`; a code-referenced name with no entry has none.
-export function stepSecretTags(s: Step): { name: string; why?: string }[] {
-  const tags = (s.secrets ?? []).map((e) => ({ ...e }))
-  for (const m of (s.code || '').matchAll(/\bsecrets\.([A-Z][A-Z0-9_]*)/g)) {
-    if (!tags.some((t) => t.name === m[1])) tags.push({ name: m[1] })
+// §4.1/§6.1 code-reference scan: literal quoted uuid subscripts only.
+const SECRET_REF_RE = /\bsecrets\[\s*["']([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']\s*\]/g
+export const shortId = (id: string) => `${id.slice(0, 8)}…`
+
+// A step's secrets are its declared `secrets` entry ids unioned with the
+// literal secrets["<id>"] references in its code (§4.1). Tags carry the
+// declared entry's per-use `why`; a code-referenced id with no entry has none.
+// Display resolves ids to LIVE names; a dangling id renders the red deleted
+// state under its short id prefix (missing: true).
+export function stepSecretTags(s: Step, secrets: SecretMeta[]):
+    { id: string; name: string; missing: boolean; why?: string }[] {
+  const resolve = (id: string, why?: string) => {
+    const sec = secrets.find((z) => z.id === id)
+    return { id, name: sec ? sec.name : shortId(id), missing: !sec, ...(why ? { why } : {}) }
+  }
+  const tags = (s.secrets ?? []).map((e) => resolve(e.id, e.why))
+  for (const m of (s.code || '').matchAll(SECRET_REF_RE)) {
+    if (!tags.some((t) => t.id === m[1])) tags.push(resolve(m[1]))
   }
   return tags
 }
-export function stepSecretNames(s: Step): string[] {
-  return stepSecretTags(s).map((t) => t.name)
+// The step's referenced secret ids — declared entries plus code references.
+export function stepSecretIds(s: Step): string[] {
+  const ids = (s.secrets ?? []).map((e) => e.id)
+  for (const m of (s.code || '').matchAll(SECRET_REF_RE)) {
+    if (!ids.includes(m[1])) ids.push(m[1])
+  }
+  return ids
 }
 
 // A step's packages are its declared `packages` entries unioned with the §6.2
@@ -49,22 +65,28 @@ type StepRowProps = {
   open: boolean
   onToggle: () => void
   last: boolean
+  secrets: SecretMeta[]
 } & (
-  | { variant: 'editor'; availAgents: Agent[]; packages: PackageDep[] }
-  | { variant: 'detail'; fallbackAgent: string }
+  | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[]; packages: PackageDep[] }
+  | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
 )
 
 function StepRow(props: StepRowProps) {
   const { step, i, open, onToggle, last } = props
-  const stepSecrets = stepSecretTags(step)
+  const stepSecrets = stepSecretTags(step, props.secrets)
   if (props.variant === 'editor') {
-    const { availAgents, packages } = props
-    // §4.1: one tag per entry in the step's `agents` list; an empty list falls
+    const { availAgents, allAgents, packages } = props
+    // §4.1: one tag per entry in the step's `agents` list, resolved BY ID to
+    // the live agent (a rename updates the tag); an empty list falls
     // back to the automation's first enabled agent ("no agent" when none is).
-    const agentTags: { nm: string | null; why?: string; ag: Agent | null }[] = step.agent
+    // enabled=false + ag → exists but not enabled; ag=null → deleted agent.
+    const agentTags: { nm: string | null; why?: string; ag: Agent | null; enabled: boolean }[] = step.agent
       ? ((step.agents ?? []).length
-        ? (step.agents ?? []).map((e) => ({ nm: e.name, why: e.why, ag: availAgents.find((g) => agName(g) === e.name) ?? null }))
-        : [{ nm: availAgents[0] ? agName(availAgents[0]) : null, ag: availAgents[0] ?? null }])
+        ? (step.agents ?? []).map((e) => {
+          const ag = allAgents.find((g) => g.id === e.id) ?? null
+          return { nm: ag ? agName(ag) : shortId(e.id), why: e.why, ag, enabled: availAgents.some((g) => g.id === e.id) }
+        })
+        : [{ nm: availAgents[0] ? agName(availAgents[0]) : null, ag: availAgents[0] ?? null, enabled: !!availAgents[0] }])
       : []
     const stepPkgs = stepPackageTags(step, packages)
     return (
@@ -80,19 +102,21 @@ function StepRow(props: StepRowProps) {
                 <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{i + 1}.</span> {step.name}
               </div>
               {/* §11: why = the entry's role note, falling back to the step's own why */}
-              {agentTags.map(({ nm, why, ag }, j) => (
+              {agentTags.map(({ nm, why, ag, enabled }, j) => (
                 <Tag
                   key={j}
-                  title={ag
+                  title={ag && enabled
                     ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution${(why || step.why) ? ` — ${why || step.why}` : ''}`
-                    : nm
-                      ? `${nm} isn’t enabled for steps — this step would fail`
-                      : 'No agent is enabled for steps — this step would fail'}
+                    : ag
+                      ? `${agName(ag)} isn’t enabled for steps — this step would fail`
+                      : nm
+                        ? 'This step calls an agent that no longer exists — this step would fail'
+                        : 'No agent is enabled for steps — this step would fail'}
                   icon="fa-microchip"
-                  c={ag ? 'var(--accent-hover)' : 'var(--red-text)'}
+                  c={ag && enabled ? 'var(--accent-hover)' : 'var(--red-text)'}
                   style={{
-                    background: ag ? 'var(--accent-chip-bg)' : 'var(--red-bg)',
-                    border: `1px solid ${ag ? 'var(--border-card-hover)' : 'oklch(0.7 0.19 25 / .4)'}`,
+                    background: ag && enabled ? 'var(--accent-chip-bg)' : 'var(--red-bg)',
+                    border: `1px solid ${ag && enabled ? 'var(--border-card-hover)' : 'oklch(0.7 0.19 25 / .4)'}`,
                   }}
                 >
                   {nm ?? 'no agent'}
@@ -100,10 +124,14 @@ function StepRow(props: StepRowProps) {
               ))}
               {stepSecrets.map((t) => (
                 <Tag
-                  key={t.name}
-                  title={`This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
-                  icon="fa-key" c="var(--text-muted)"
-                  style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
+                  key={t.id}
+                  title={t.missing
+                    ? 'This step uses a secret that no longer exists — this step would fail'
+                    : `This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
+                  icon="fa-key" c={t.missing ? 'var(--red-text)' : 'var(--text-muted)'}
+                  style={t.missing
+                    ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
+                    : { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
                 >
                   {t.name}
                 </Tag>
@@ -153,8 +181,15 @@ function StepRow(props: StepRowProps) {
       </div>
     )
   }
-  // 'detail' variant — §9.2: gutter step number, accent-only agent tags
-  const agentTags = step.agents?.length ? step.agents : [{ name: props.fallbackAgent }]
+  // 'detail' variant — §9.2: gutter step number, accent-only agent tags;
+  // entry ids resolve to LIVE names (a rename updates the tag); a dangling id
+  // renders the red deleted state under its short id prefix.
+  const agentTags: { name: string; why?: string; missing: boolean }[] = step.agents?.length
+    ? step.agents.map((e) => {
+      const ag = props.agents.find((g) => g.id === e.id)
+      return { name: ag ? agName(ag) : shortId(e.id), why: e.why, missing: !ag }
+    })
+    : [{ name: props.fallbackAgent, missing: false }]
   return (
     <div style={{ borderBottom: last ? 'none' : '1px solid var(--hairline-dim)' }}>
       <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
@@ -162,23 +197,32 @@ function StepRow(props: StepRowProps) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{step.name}</span>
-            {step.agent && agentTags.map((t) => (
+            {step.agent && agentTags.map((t, j) => (
               <Tag
-                key={t.name}
+                key={j}
                 icon="fa-microchip"
-                c="var(--accent)"
-                title={`This step calls the ${t.name} AI agent${(t.why || step.why) ? ` — ${t.why || step.why}` : ''}`}
-                style={{ background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' }}
+                c={t.missing ? 'var(--red-text)' : 'var(--accent)'}
+                title={t.missing
+                  ? 'This step calls an agent that no longer exists — this step would fail'
+                  : `This step calls the ${t.name} AI agent${(t.why || step.why) ? ` — ${t.why || step.why}` : ''}`}
+                style={t.missing
+                  ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
+                  : { background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' }}
               >
                 {t.name}
               </Tag>
             ))}
             {stepSecrets.map((t) => (
               <Tag
-                key={t.name}
+                key={t.id}
                 icon="fa-key"
-                title={`This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
-                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
+                c={t.missing ? 'var(--red-text)' : undefined}
+                title={t.missing
+                  ? 'This step uses a secret that no longer exists — this step would fail'
+                  : `This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
+                style={t.missing
+                  ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
+                  : { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
               >
                 {t.name}
               </Tag>
@@ -224,9 +268,9 @@ function StepRow(props: StepRowProps) {
 // §14 collapse transition and the expand reads as a pop. Steps open
 // independently: auto-closing the previous step would run its collapse
 // simultaneously and the two motions cancel into a layout shuffle.
-export type StepListProps = { steps: Step[] } & (
-  | { variant: 'editor'; availAgents: Agent[]; packages: PackageDep[] }
-  | { variant: 'detail'; fallbackAgent: string }
+export type StepListProps = { steps: Step[]; secrets: SecretMeta[] } & (
+  | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[]; packages: PackageDep[] }
+  | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
 )
 
 export function StepList(props: StepListProps) {

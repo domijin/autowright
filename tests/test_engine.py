@@ -1,6 +1,15 @@
 import time
+import uuid
 
 from conftest import make_version, read_all_logs
+
+
+def add_secret(store, name, *, set_=True) -> str:
+    """§4.8 test helper: store a secret record and return its id — steps
+    reference secrets by id (`secrets["<id>"]`), so tests need it."""
+    secret_id = str(uuid.uuid4())
+    store.secrets.append({"id": secret_id, "name": name, "description": "", "set": set_})
+    return secret_id
 
 
 def wait_done(engine, execution_id, timeout=30):
@@ -67,15 +76,17 @@ def test_missing_secret_stops_before_step_one(store):
     from autowright.engine import Engine
 
     engine = Engine(store)
+    # NOT_THERE exists as a record (set: True) but has no Keychain value.
+    not_there = add_secret(store, "NOT_THERE")
     ver = make_version()
-    ver["steps"][0]["code"] = "from autowright import secrets\nx = secrets.NOT_THERE\n"
+    ver["steps"][0]["code"] = f'from autowright import secrets\nx = secrets["{not_there}"]\n'
     a = store.create_automation(ver, "Secretless", None)
-    store.patch_automation(a, {"allowedSecrets": ["NOT_THERE"]})
+    store.patch_automation(a, {"allowedSecrets": [not_there]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "failed"
     logs = read_all_logs(store, h["id"])
-    assert any("isn't in your Keychain" in l["text"] for l in logs)
+    assert any("secret NOT_THERE isn't in your Keychain" in l["text"] for l in logs)
     # no step ever started
     assert not any(l["text"].startswith("▸ Step") for l in logs)
 
@@ -86,8 +97,9 @@ def test_secret_not_allowed_stops_before_step_one(store):
     from autowright.engine import Engine
 
     engine = Engine(store)
+    forbidden = add_secret(store, "FORBIDDEN")
     ver = make_version()
-    ver["steps"][0]["code"] = "from autowright import secrets\nx = secrets.FORBIDDEN\n"
+    ver["steps"][0]["code"] = f'from autowright import secrets\nx = secrets["{forbidden}"]\n'
     a = store.create_automation(ver, "NotAllowed", None)  # allowed_secrets stays []
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
@@ -101,17 +113,40 @@ def test_secret_not_allowed_stops_before_step_one(store):
     assert all(s["status"] == "queued" for s in h["steps"])
 
 
+def test_dangling_secret_id_stops_before_step_one(store):
+    """§6 pre-flight: a code-referenced id matching no stored secret fails the
+    execution before any step, naming the short id prefix — after a secret is
+    deleted, its name is gone too."""
+    from autowright.engine import Engine
+
+    engine = Engine(store)
+    gone = "99999999-9999-4999-8999-999999999999"
+    ver = make_version()
+    ver["steps"][0]["code"] = f'from autowright import secrets\nx = secrets["{gone}"]\n'
+    a = store.create_automation(ver, "Dangling", None)
+    store.patch_automation(a, {"allowedSecrets": []})
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "failed"
+    logs = read_all_logs(store, h["id"])
+    assert any("a secret that no longer exists (99999999…)" in l["text"] for l in logs)
+    assert not any(l["text"].startswith("▸ Step") for l in logs)
+    assert h["error"]["step"] is None
+    assert h["error"]["reason"] == \
+        "A step references a secret that no longer exists (99999999…)."
+
+
 def test_placeholder_secret_without_value_stops_before_step_one(store):
     """§4.8 pre-flight: a placeholder secret (set: False) with no Keychain value
     gets the clearer 'no value yet' message, not 'isn't in your Keychain'."""
     from autowright.engine import Engine
 
     engine = Engine(store)
-    store.secrets.append({"name": "PENDING", "description": "", "set": False})
+    pending = add_secret(store, "PENDING", set_=False)
     ver = make_version()
-    ver["steps"][0]["code"] = "from autowright import secrets\nx = secrets.PENDING\n"
+    ver["steps"][0]["code"] = f'from autowright import secrets\nx = secrets["{pending}"]\n'
     a = store.create_automation(ver, "Placeholder", None)
-    store.patch_automation(a, {"allowedSecrets": ["PENDING"]})
+    store.patch_automation(a, {"allowedSecrets": [pending]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "failed"
@@ -212,12 +247,13 @@ def test_secret_redacted_from_logs(store):
     from autowright.engine import Engine
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "description": ""})
+    api_key = add_secret(store, "API_KEY")
     engine = Engine(store)
     ver = make_version()
-    ver["steps"][0]["code"] = 'from autowright import log, secrets\nk = secrets.API_KEY\nlog(f"using {k} now")\n'
+    ver["steps"][0]["code"] = (f'from autowright import log, secrets\nk = secrets["{api_key}"]\n'
+                               'log(f"using {k} now")\n')
     a = store.create_automation(ver, "Leaky", None)
-    store.patch_automation(a, {"allowedSecrets": ["API_KEY"]})
+    store.patch_automation(a, {"allowedSecrets": [api_key]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "succeeded"
@@ -233,18 +269,18 @@ def test_multiline_secret_lines_redacted_from_logs(store):
 
     pem = "-----BEGIN KEY-----\nabc123line\n-----END KEY-----"
     keychain.set_secret("PEM_KEY", pem)
-    store.secrets.append({"name": "PEM_KEY", "description": ""})
+    pem_key = add_secret(store, "PEM_KEY")
     engine = Engine(store)
     ver = make_version()
     # Each log() call is a separate log line, so the whole value never
     # appears in one line — only its individual lines do.
     ver["steps"][0]["code"] = (
-        "from autowright import log, secrets\nk = secrets.PEM_KEY\n"
+        f'from autowright import log, secrets\nk = secrets["{pem_key}"]\n'
         "for part in k.splitlines():\n"
         '    log(f"line: {part}")\n'
     )
     a = store.create_automation(ver, "PemLeaky", None)
-    store.patch_automation(a, {"allowedSecrets": ["PEM_KEY"]})
+    store.patch_automation(a, {"allowedSecrets": [pem_key]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "succeeded"
@@ -834,20 +870,22 @@ def test_secrets_scoped_per_step(store):
 
     keychain.set_secret("API_ONE", "value-one")
     keychain.set_secret("API_TWO", "value-two")
-    store.secrets += [{"name": "API_ONE", "description": ""}, {"name": "API_TWO", "description": ""}]
+    one = add_secret(store, "API_ONE")
+    two = add_secret(store, "API_TWO")
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        # references only API_ONE in source; sneaks at API_TWO via getattr
+        # references only API_ONE as a literal subscript; sneaks at API_TWO
+        # through a variable subscript the §6 literal scan can't see
         {"file": "01-sneak.py", "name": "Sneak", "description": "",
-         "code": 'from autowright import log, secrets\nok = secrets.API_ONE\nlog("got one")\n'
-                 'x = getattr(secrets, "API_TWO")\nlog("got two")\n'},
+         "code": f'from autowright import log, secrets\nok = secrets["{one}"]\nlog("got one")\n'
+                 f'i2 = "{two}"\nx = secrets[i2]\nlog("got two")\n'},
         # makes API_TWO a known reference so the engine pre-check fetches it
         {"file": "02-legit.py", "name": "Legit", "description": "",
-         "code": "from autowright import secrets\ny = secrets.API_TWO\n"},
+         "code": f'from autowright import secrets\ny = secrets["{two}"]\n'},
     ]
     a = store.create_automation(ver, "Scoped", None)
-    store.patch_automation(a, {"allowedSecrets": ["API_ONE", "API_TWO"]})
+    store.patch_automation(a, {"allowedSecrets": [one, two]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "failed"
@@ -1000,12 +1038,13 @@ def test_failure_error_message_redacted(store):
     from autowright.engine import Engine
 
     keychain.set_secret("API_KEY", "sekret-42")
-    store.secrets.append({"name": "API_KEY", "description": ""})
+    api_key = add_secret(store, "API_KEY")
     engine = Engine(store)
     ver = make_version()
-    ver["steps"][0]["code"] = 'from autowright import secrets\nk = secrets.API_KEY\nraise RuntimeError(f"bad key {k}")\n'
+    ver["steps"][0]["code"] = (f'from autowright import secrets\nk = secrets["{api_key}"]\n'
+                               'raise RuntimeError(f"bad key {k}")\n')
     a = store.create_automation(ver, "Leaky fail", None)
-    store.patch_automation(a, {"allowedSecrets": ["API_KEY"]})
+    store.patch_automation(a, {"allowedSecrets": [api_key]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert "sekret-42" not in h["error"]["message"]
@@ -1049,10 +1088,11 @@ def test_failure_reason_missing_secret_before_step_one(store):
     from autowright.engine import Engine
 
     engine = Engine(store)
+    not_there = add_secret(store, "NOT_THERE")
     ver = make_version()
-    ver["steps"][0]["code"] = "from autowright import secrets\nx = secrets.NOT_THERE\n"
+    ver["steps"][0]["code"] = f'from autowright import secrets\nx = secrets["{not_there}"]\n'
     a = store.create_automation(ver, "No secret", None)
-    store.patch_automation(a, {"allowedSecrets": ["NOT_THERE"]})
+    store.patch_automation(a, {"allowedSecrets": [not_there]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["error"]["step"] is None
@@ -1208,27 +1248,29 @@ def test_create_mode_test_records_without_automation(store, monkeypatch):
     assert eid not in store.execs
 
 
-def test_agent_step_multiple_agents_pick_by_name(store):
-    """§6: a step's `agents` grant names resolve in order — the first serves
-    plain agent.ask, and agent.ask(..., agent="Name") picks another."""
+def test_agent_step_multiple_agents_pick_by_id(store):
+    """§6: a step's `agents` entry ids resolve in order — the first is the
+    bare `agent` handle, and agents["<id>"] picks another."""
     from autowright.engine import Engine
 
+    fast_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    slow_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     store.agents = [
-        {"id": "f", "name": "Fast", "harness": "Claude Code", "model": "x"},
-        {"id": "s", "name": "Slow", "harness": "Claude Code", "model": "y"},
+        {"id": fast_id, "name": "Fast", "harness": "Claude Code", "model": "x"},
+        {"id": slow_id, "name": "Slow", "harness": "Claude Code", "model": "y"},
     ]
-    store.default_agent_id = "f"
+    store.default_agent_id = fast_id
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
         {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
-         "agents": [{"name": "Slow", "why": "answers question one"},
-                    {"name": "Fast", "why": "answers question two"}],
-         "code": 'from autowright import agent, result\na = agent.ask("question: one")\n'
-                 'b = agent.ask("question: two", agent="Fast")\n'
+         "agents": [{"id": slow_id, "why": "answers question one"},
+                    {"id": fast_id, "why": "answers question two"}],
+         "code": 'from autowright import agent, agents, result\na = agent.ask("question: one")\n'
+                 f'b = agents["{fast_id}"].ask("question: two")\n'
                  'result.status("ok")\n'},
     ]
-    a = store.create_automation(ver, "Multi", None, enabled_agents=["f", "s"])
+    a = store.create_automation(ver, "Multi", None, enabled_agents=[fast_id, slow_id])
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "succeeded"
@@ -1239,19 +1281,23 @@ def test_agent_step_multiple_agents_pick_by_name(store):
 
 def test_declared_step_secrets_injected(store):
     """§6: a secret declared in the step manifest is injected even when the
-    code never references it as a literal secrets.NAME."""
+    code never references it as a literal secrets["<id>"] subscript."""
     from autowright import keychain
     from autowright.engine import Engine
 
     keychain.set_secret("MY_TOKEN", "sekret")
+    my_token = add_secret(store, "MY_TOKEN")
     engine = Engine(store)
     ver = make_version()
     ver["steps"] = [
-        {"file": "01-use.py", "name": "Use", "description": "", "secrets": [{"name": "MY_TOKEN", "why": "authenticates the call"}],
-         "code": 'from autowright import log, result, secrets\nv = getattr(secrets, "MY" + "_TOKEN")\n'
+        {"file": "01-use.py", "name": "Use", "description": "",
+         "secrets": [{"id": my_token, "why": "authenticates the call"}],
+         # a variable subscript is invisible to the literal scan — the
+         # declared entry alone is what injects the value
+         "code": f'from autowright import log, result, secrets\ni = "{my_token}"\nv = secrets[i]\n'
                  'log(f"got {len(v)} chars")\nresult.status("ok")\n'},
     ]
-    a = store.create_automation(ver, "Sec", None, allowed_secrets=["MY_TOKEN"])
+    a = store.create_automation(ver, "Sec", None, allowed_secrets=[my_token])
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "succeeded"
@@ -1374,38 +1420,38 @@ def test_notification_title_param_overrides_automation_name(store, monkeypatch):
     assert calls == [("My Title", "Execution failed")]
 
 
-def test_agents_for_step_duplicate_grant_names_first_enabled_wins():
-    """§6/§8: two enabled agents sharing a grant name — the first enabled one
-    serves the step."""
+def test_agents_for_step_same_name_resolves_by_id():
+    """§6/§4.1: two enabled agents can share a display name without ambiguity —
+    entries bind by id, so each step gets exactly the agent it lists."""
     from autowright.engine import agents_for_step
 
     a1 = {"id": "a1", "name": "Shared", "harness": "Claude Code", "model": "x"}
     a2 = {"id": "a2", "name": "Shared", "harness": "Codex", "model": "y"}
     agents = {"a1": a1, "a2": a2}
-    assert agents_for_step(agents, ["a1", "a2"], {"agents": [{"name": "Shared"}]}) == [a1]
-    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"name": "Shared"}]}) == [a2]
+    assert agents_for_step(agents, ["a1", "a2"], {"agents": [{"id": "a2"}]}) == [a2]
+    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"id": "a1"}]}) == [a1]
 
 
-def test_agents_for_step_fallback_only_when_step_names_no_agents():
-    """§6: the first-enabled-agent fallback applies only when the step names no
-    agents at all; named agents that all fail to resolve return [] so the
-    caller fails the step — never a silent hand-off to an unnamed agent."""
+def test_agents_for_step_fallback_only_when_step_lists_no_agents():
+    """§6: the first-enabled-agent fallback applies only when the step lists no
+    agents at all; listed agents that all fail to resolve return [] so the
+    caller fails the step — never a silent hand-off to an unlisted agent."""
     from autowright.engine import agents_for_step
 
     a1 = {"id": "a1", "name": "Helper", "harness": "Claude Code", "model": "x"}
     a2 = {"id": "a2", "name": "Other", "harness": "Codex", "model": "y"}
     agents = {"a1": a1, "a2": a2}
-    # no named agents (absent or empty list) → first enabled agent
+    # no listed agents (absent or empty list) → first enabled agent
     assert agents_for_step(agents, ["a2", "a1"], {}) == [a2]
     assert agents_for_step(agents, ["a2", "a1"], {"agents": []}) == [a2]
-    # named agents that don't resolve (revoked grant, renamed agent) → []
-    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"name": "Nope"}]}) == []
+    # listed agents that don't resolve (revoked grant, deleted agent) → []
+    assert agents_for_step(agents, ["a2", "a1"], {"agents": [{"id": "gone"}]}) == []
     # a mix resolves what it can, in the step's order
     assert agents_for_step(agents, ["a2", "a1"],
-                           {"agents": [{"name": "Nope"}, {"name": "Helper"}]}) == [a1]
+                           {"agents": [{"id": "gone"}, {"id": "a1"}]}) == [a1]
     # no enabled agents at all → [] either way
     assert agents_for_step(agents, [], {}) == []
-    assert agents_for_step(agents, [], {"agents": [{"name": "Helper"}]}) == []
+    assert agents_for_step(agents, [], {"agents": [{"id": "a1"}]}) == []
 
 
 def test_draft_retry_rejected_after_step_code_drift(store):
@@ -1466,19 +1512,19 @@ def test_chip_and_notification_are_redacted(store, monkeypatch):
     monkeypatch.setattr(notify, "post", lambda title, body: posted.append((title, body)))
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "description": ""})
+    api_key = add_secret(store, "API_KEY")
     engine = Engine(store)
     ver = make_version()
     # the last step owns the chip (the fixture's step 2 would overwrite it)
     ver["steps"][-1]["code"] = (
         "from autowright import notify, result, secrets\n"
-        "k = secrets.API_KEY\n"
+        f'k = secrets["{api_key}"]\n'
         # 'attention' so the §4.9 default notification setting actually fires
         "result.status('attention')\n"
         "result.chip(f'balance {k}')\n"
         "notify(f'done {k}')\n")
     a = store.create_automation(ver, "Chippy", None)
-    store.patch_automation(a, {"allowedSecrets": ["API_KEY"]})
+    store.patch_automation(a, {"allowedSecrets": [api_key]})
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "succeeded"
@@ -1502,14 +1548,14 @@ def test_reply_carrying_a_secret_is_never_sent(store, monkeypatch):
                         lambda payload, text: sent.append(text) or None)
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "description": ""})
+    api_key = add_secret(store, "API_KEY")
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (
         "from autowright import reply, secrets\n"
-        "reply(f'token is {secrets.API_KEY}')\n")
+        f'reply("token is " + secrets["{api_key}"])\n')
     a = store.create_automation(ver, "Leaky reply", None)
-    store.patch_automation(a, {"allowedSecrets": ["API_KEY"]})
+    store.patch_automation(a, {"allowedSecrets": [api_key]})
     h = engine.start(a, "discord", payload={"kind": "discord", "channel": "c1",
                                             "secret": "BOT", "sender": "u1"})
     wait_done(engine, h["id"])
@@ -1532,16 +1578,16 @@ def test_engine_side_reply_gate_blocks_raw_control_line(store, monkeypatch):
                         lambda payload, text: sent.append(text) or None)
 
     keychain.set_secret("API_KEY", "super-secret-value-123")
-    store.secrets.append({"name": "API_KEY", "description": ""})
+    api_key = add_secret(store, "API_KEY")
     engine = Engine(store)
     ver = make_version()
     ver["steps"][0]["code"] = (
         "import json, os\n"
         "from autowright import secrets\n"
-        f"line = {CTRL!r} + json.dumps({{'op': 'reply', 'text': secrets.API_KEY}}) + '\\n'\n"
+        f"line = {CTRL!r} + json.dumps({{'op': 'reply', 'text': secrets['{api_key}']}}) + '\\n'\n"
         "os.write(1, line.encode())\n")
     a = store.create_automation(ver, "Sneaky reply", None)
-    store.patch_automation(a, {"allowedSecrets": ["API_KEY"]})
+    store.patch_automation(a, {"allowedSecrets": [api_key]})
     h = engine.start(a, "discord", payload={"kind": "discord", "channel": "c1",
                                             "secret": "BOT", "sender": "u1"})
     wait_done(engine, h["id"])
@@ -1554,9 +1600,9 @@ def test_engine_side_reply_gate_blocks_raw_control_line(store, monkeypatch):
 
 
 def test_agent_step_with_unresolvable_named_agents_fails(store):
-    """§6: a step naming agents that all fail to resolve (revoked grant,
-    renamed agent) fails like an agent step with no enabled agent — never a
-    silent hand-off to the enabled agent the step didn't name."""
+    """§6: a step listing agents that all fail to resolve (revoked grant,
+    deleted agent) fails like an agent step with no enabled agent — never a
+    silent hand-off to the enabled agent the step didn't list."""
     from autowright.engine import Engine
 
     store.agents = [{"id": "mock", "name": "Mock", "harness": "Claude Code", "model": "x"}]
@@ -1565,7 +1611,7 @@ def test_agent_step_with_unresolvable_named_agents_fails(store):
     ver = make_version()
     ver["steps"] = [
         {"file": "01-ask.py", "name": "Ask", "description": "", "agent": True, "why": "judgment",
-         "agents": [{"name": "Revoked", "why": "gone"}],
+         "agents": [{"id": "99999999-9999-4999-8999-999999999999", "why": "gone"}],
          "code": 'from autowright import agent\nagent.ask("hi")\n'},
     ]
     a = store.create_automation(ver, "Revoked Agents", None, enabled_agents=["mock"])

@@ -5,14 +5,12 @@
 // Build & test panel. The page shell wires state and derived gating in.
 import React, { useState } from 'react'
 import { SecretModal } from '../../SecretModal'
-import { api } from '../../api'
-import { useStore } from '../../store'
 import { useTriggerPreview } from '../../triggers'
 import { StepList } from '../../steps'
 import type { Agent, SecretMeta } from '../../types'
-import { BtnPrimary, Caret, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
+import { Caret, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
 import { Markdown, SpecMarkdown } from '../../result'
-import { type Rev, type SecretRef, applyTestValues, instrToMd, instructionCache, specToText, stepList, textToSpec } from './model'
+import { type AgentRef, type Rev, type SecretRef, applyTestValues, instrToMd, instructionCache, shortId, specToText, stepList, textToSpec } from './model'
 
 export const cardStyle: React.CSSProperties = {
   background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden',
@@ -131,68 +129,6 @@ function WarnBanner({ text }: { text: string }) {
   )
 }
 
-// ---------- missing secret inline add ----------
-
-function MissingSecretRow({ name, sub, onAdded }: { name: string; sub: string; onAdded: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [val, setVal] = useState('')
-  const [busy, setBusy] = useState(false)
-  const showToast = useStore((s) => s.showToast)
-  const add = async () => {
-    if (!val.trim() || busy) return
-    setBusy(true)
-    try {
-      await api.putSecret(name, val)
-      showToast('Saved to your Keychain.')
-      onAdded()
-    } catch (e) {
-      showToast((e as Error).message)
-    }
-    setBusy(false)
-  }
-  return (
-    <div style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
-      <div
-        className="ad-hover-row ad-focus-inset"
-        // §9: keyboard parity for a clickable row — no nested control here,
-        // so the row itself carries the button semantics.
-        role="button" tabIndex={0}
-        onClick={() => setOpen(!open)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open) } }}
-        title={`Add ${name} to your Keychain`}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', cursor: 'pointer', userSelect: 'none' }}
-      >
-        <span style={{ width: 15, height: 15, borderRadius: 4, flex: 'none', border: '1px dashed oklch(0.7 0.19 25 / .5)' }} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: "500 12px var(--mono)", color: 'var(--text)' }}>{name}</div>
-          <div style={{ font: "400 11.5px var(--sans)", color: 'var(--text-muted)' }}>{sub}</div>
-        </div>
-        <span style={{
-          display: 'inline-flex', padding: '3px 8px', borderRadius: 6, font: "600 10px var(--mono)",
-          background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)',
-          color: 'var(--red-text)', flex: 'none', whiteSpace: 'nowrap',
-        }}>
-          add to Keychain
-        </span>
-      </div>
-      {open && (
-        <div className="ad-anim-item" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '0 20px 12px 47px' }}>
-          <input
-            className="ad-input"
-            type="password" value={val} autoFocus placeholder="Value — goes straight to your Keychain"
-            onChange={(e) => setVal(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void add() }}
-            style={{ flex: 1, minWidth: 0, color: 'var(--text)', font: "400 12px var(--mono)", padding: '7px 10px' }}
-          />
-          <BtnPrimary onClick={() => void add()} disabled={!val.trim() || busy}>
-            Add secret
-          </BtnPrimary>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ---------- left column ----------
 
 export interface LeftColumnProps {
@@ -211,8 +147,8 @@ export interface LeftColumnProps {
   agentStepIdx: number[]
   agWarn: boolean
   agNone: boolean
-  agNotEnabled: SecretRef[]
-  agMissing: SecretRef[]
+  agNotEnabled: AgentRef[]
+  agMissing: AgentRef[]
   agFallbackIdx: number[]
   secWarn: boolean
   secNotAllowed: SecretRef[]
@@ -447,8 +383,8 @@ export function LeftColumn({
               // warned row still shows where it's called; unnamed steps fall back to
               // the first enabled agent.
               const used = agentStepIdx.filter((i) => {
-                const names = (rev.steps[i].agents ?? []).map((e) => e.name)
-                return names.length ? names.includes(agName(g)) : availAgents[0]?.id === g.id
+                const ids = (rev.steps[i].agents ?? []).map((e) => e.id)
+                return ids.length ? ids.includes(g.id) : availAgents[0]?.id === g.id
               })
               return (
                 <button
@@ -491,7 +427,9 @@ export function LeftColumn({
         open={secSecOpenEff}
         onToggle={(o) => up({ secSecOpen: o })}
         hint="Only checked secrets are handed to this automation at execution time. Values come from your Keychain."
-        preview={rev.allowedSecrets.length ? rev.allowedSecrets.join(' · ') : null}
+        preview={rev.allowedSecrets.length
+          ? rev.allowedSecrets.map((id) => secrets.find((z) => z.id === id)?.name ?? shortId(id)).join(' · ')
+          : null}
         right={
           <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-muted)', whiteSpace: 'nowrap', flex: 'none' }}>
             {rev.allowedSecrets.length} of {secrets.length} allowed
@@ -501,23 +439,26 @@ export function LeftColumn({
           <div>
             {secWarn && (
               <WarnBanner text={[
-                ...secNotAllowed.map((r) => `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} use${r.steps.length > 1 ? '' : 's'} ${r.name}, but it isn’t allowed here — the execution would fail there. Allow it below.`),
-                ...secMissing.map((r) => `${r.name} isn’t in your Keychain — the execution would fail at step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)}. Click it below to add the value.`),
+                ...secNotAllowed.map((r) => {
+                  const nm = secrets.find((z) => z.id === r.id)?.name ?? shortId(r.id)
+                  return `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} use${r.steps.length > 1 ? '' : 's'} ${nm}, but it isn’t allowed here — the execution would fail there. Allow it below.`
+                }),
+                ...secMissing.map((r) => `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} use${r.steps.length > 1 ? '' : 's'} a secret that no longer exists (${shortId(r.id)}) — the execution would fail there. Sync the steps to rewrite them.`),
               ].join(' ')} />
             )}
             {secrets.map((s) => {
-              const ref = secRefs.find((r) => r.name === s.name)
-              const on = rev.allowedSecrets.includes(s.name)
+              const ref = secRefs.find((r) => r.id === s.id)
+              const on = rev.allowedSecrets.includes(s.id)
               return (
                 <button
-                  key={s.name}
+                  key={s.id}
                   onClick={() => {
                     if (busyRewrite) return
                     if (on) {
-                      up({ allowedSecrets: rev.allowedSecrets.filter((z) => z !== s.name), ...(isEdit ? { touched: true } : {}) })
+                      up({ allowedSecrets: rev.allowedSecrets.filter((z) => z !== s.id), ...(isEdit ? { touched: true } : {}) })
                       if (ref) showToast(`Step${ref.steps.length > 1 ? 's' : ''} ${stepList(ref.steps)} use${ref.steps.length > 1 ? '' : 's'} ${s.name} — re-allow it or sync the steps before saving.`, 4500)
                     } else {
-                      up({ allowedSecrets: [...rev.allowedSecrets, s.name], ...(isEdit ? { touched: true } : {}) })
+                      up({ allowedSecrets: [...rev.allowedSecrets, s.id], ...(isEdit ? { touched: true } : {}) })
                     }
                   }}
                   className="ad-btn-bare ad-focus-inset ad-hover-row"
@@ -535,13 +476,20 @@ export function LeftColumn({
                 </button>
               )
             })}
+            {/* §11: a dangling secret id can't be fixed by re-creating the name —
+                a new secret mints a NEW id (§4.8). The fix is a sync. */}
             {secMissing.map((r) => (
-              <div key={r.name} style={lockStyle}>
-                <MissingSecretRow
-                  name={r.name}
-                  sub={`used by step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} — not in your Keychain`}
-                  onAdded={() => up({ allowedSecrets: [...rev.allowedSecrets, r.name], ...(isEdit ? { touched: true } : {}) })}
-                />
+              <div key={r.id} style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px',
+                borderBottom: '1px solid var(--hairline-dim)', ...lockStyle,
+              }}>
+                <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 11, color: 'var(--red-text)' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ font: "500 12px var(--mono)", color: 'var(--red-text)' }}>{shortId(r.id)}</div>
+                  <div style={{ font: "400 11px var(--sans)", color: 'var(--text-muted)' }}>
+                    used by step{r.steps.length > 1 ? 's' : ''} {stepList(r.steps)} — this secret no longer exists; sync the steps
+                  </div>
+                </div>
               </div>
             ))}
             {secrets.length === 0 && secRefs.length === 0 && (
@@ -565,8 +513,10 @@ export function LeftColumn({
         <SecretModal
           modal={{ mode: 'add' }}
           onClose={() => setSecretModal(false)}
-          onSaved={(name) => {
-            up({ allowedSecrets: [...rev.allowedSecrets, name], ...(isEdit ? { touched: true } : {}) })
+          onSaved={(saved) => {
+            // §11: a secret saved from this card is an explicit grant — the
+            // §19 PUT entity response carries the minted id.
+            up({ allowedSecrets: [...rev.allowedSecrets, saved.id], ...(isEdit ? { touched: true } : {}) })
           }}
         />
       )}
@@ -692,6 +642,8 @@ export interface RightCardsProps {
   outOfSync: boolean
   busyRewrite: boolean
   availAgents: Agent[]
+  agents: Agent[]           // every configured agent — the step tags resolve entry ids
+  secrets: SecretMeta[]     // every stored secret — the step tags resolve entry ids
   pkgSecOpenEff: boolean
   updatePkgs: (pips: string[]) => void
   installPkgs: () => void
@@ -699,7 +651,7 @@ export interface RightCardsProps {
 
 export function RightCards({
   rev, up, liveParams, liveConcurrency, drafting, isCreateEmpty, outOfSync, busyRewrite,
-  availAgents, pkgSecOpenEff, updatePkgs, installPkgs,
+  availAgents, agents, secrets, pkgSecOpenEff, updatePkgs, installPkgs,
 }: RightCardsProps) {
   // §19: the §11 draft-trigger chips label through POST /triggers/preview —
   // the renderer keeps no local trigger-math mirror (§4.3)
@@ -719,7 +671,7 @@ export function RightCards({
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', opacity: outOfSync || busyRewrite ? 0.45 : 1, transition: 'opacity var(--t-hover) var(--ease-enter)', marginBottom: -1 }}>
-          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} packages={rev.packages} />
+          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} packages={rev.packages} />
         </div>
       </div>
 

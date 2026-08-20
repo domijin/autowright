@@ -82,6 +82,32 @@ describe('AgentNewPage (§12)', () => {
     scrollSpy.mockRestore()
   })
 
+  it('a duplicate effective grant name shows the inline taken error, posts nothing (§4.7)', async () => {
+    storeMod.useStore.setState({
+      agents: [
+        // an unnamed agent grants under its harness name — "Codex" is taken too
+        { id: 'g0', name: null, harness: 'Codex', mode: 'default', model: null },
+        { id: 'g1', name: 'Fast local', harness: 'OpenCode', mode: 'ollama', model: 'qwen3:8b' },
+      ] as never,
+    })
+    render(<AgentNewPage />)
+    fireEvent.click(screen.getByText('Claude Code'))
+    // case-insensitive collision with the named agent
+    fireEvent.change(screen.getByPlaceholderText('Name this agent'), { target: { value: 'fast LOCAL' } })
+    fireEvent.click(screen.getByText('Add agent'))
+    expect(await screen.findByText('An agent named fast LOCAL already exists — pick a different name.')).toBeTruthy()
+    expect(mockedApi.addAgent).not.toHaveBeenCalled()
+    // collision with the unnamed agent's harness fallback
+    fireEvent.change(screen.getByPlaceholderText('Name this agent'), { target: { value: 'codex' } })
+    fireEvent.click(screen.getByText('Add agent'))
+    expect(await screen.findByText('An agent named codex already exists — pick a different name.')).toBeTruthy()
+    expect(mockedApi.addAgent).not.toHaveBeenCalled()
+    // a free name clears the error and saves
+    fireEvent.change(screen.getByPlaceholderText('Name this agent'), { target: { value: 'Fresh name' } })
+    fireEvent.click(screen.getByText('Add agent'))
+    await waitFor(() => expect(mockedApi.addAgent).toHaveBeenCalledTimes(1))
+  })
+
   it('custom mode posts the typed model string verbatim', async () => {
     render(<AgentNewPage />)
     fireEvent.click(screen.getByText('OpenCode'))

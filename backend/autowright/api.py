@@ -22,7 +22,7 @@ from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
 from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger, queue_manual
-from .storage import _kind_ok, is_test, iter_file_stats, size_label, store
+from .storage import _kind_ok, is_test, iter_file_stats, new_id, size_label, store
 from . import testexec
 
 log = logging.getLogger("autowright.api")
@@ -168,6 +168,28 @@ def _check_agent_refs(agent_id: str | None, step_agents: list | None) -> None:
             raise HTTPException(422, f"stepAgents entry {x!r} isn't a configured agent")
 
 
+def _check_grant_name_free(agent: dict, exclude_id: str | None = None) -> None:
+    """§4.7 uniqueness: the effective grant name (name, else harness) is unique
+    across agents, case-insensitively — the §8 grants yaml, the §20
+    case-insensitive name flags, and unambiguous display all rely on it.
+    Write-time only: duplicates already on disk still load."""
+    wanted = harness.grant_name(agent).lower()
+    for other in store.agents:
+        if other["id"] != exclude_id and harness.grant_name(other).lower() == wanted:
+            raise HTTPException(
+                422, f"an agent named {harness.grant_name(other)!r} already exists - "
+                     "agent names must be unique")
+
+
+def _check_secret_refs(allowed_secrets: list | None) -> None:
+    """§19 cross-field rule: `allowedSecrets` entries must reference stored
+    secrets by their §4.8 id — the same shape rule as `stepAgents`."""
+    ids = {s["id"] for s in store.secrets}
+    for x in allowed_secrets or ():
+        if x not in ids:
+            raise HTTPException(422, f"allowedSecrets entry {x!r} isn't a stored secret id")
+
+
 def _check_param_values(a: dict, values: dict) -> None:
     """§19 cross-field rule: every paramValues entry must match the
     automation's param definitions by name AND kind — a typo'd name or a
@@ -220,7 +242,7 @@ def _validate_draft_steps(d: dict) -> None:
     timeout/retry rules) on the sent draft and answer 422 with the errors —
     an invalid draft can never land as a version, whatever client sent it.
     Grants context mirrors the §20 CLI's existence check: all configured
-    agents + all stored secret names."""
+    agents + all stored secrets (ids; names ride along for error copy)."""
     import yaml
 
     files: dict[str, str] = {}
@@ -239,8 +261,8 @@ def _validate_draft_steps(d: dict) -> None:
     manifest = {"steps": man_steps, "params": d.get("params") or [],
                 "packages": d.get("packages") or []}
     files["manifest.yaml"] = yaml.safe_dump(manifest, sort_keys=False)
-    grants = {"agents": [{"name": harness.grant_name(g)} for g in store.agents],
-              "secrets": [{"name": s["name"]} for s in store.secrets]}
+    grants = {"agents": [{"id": g["id"], "name": harness.grant_name(g)} for g in store.agents],
+              "secrets": [{"id": s["id"], "name": s["name"]} for s in store.secrets]}
     _, errors = drafting.validate_steps(files, grants)
     if errors:
         raise HTTPException(422, "the draft doesn't validate: " + "; ".join(errors))
@@ -269,7 +291,7 @@ def _agents_json() -> list[dict]:
     for ag in store.agents:
         used = [a["name"] for a in store.autos.values()
                 if a["agent_id"] == ag["id"]
-                or any(harness.grant_name(ag) == e.get("name")
+                or any(ag["id"] == e.get("id")
                        for s in a["versions"].get(a["current_version"], {}).get("steps", [])
                        for e in (s.get("agents") or []))]
         out.append({**ag, "usedBy": used,
@@ -286,16 +308,17 @@ def _settings_json() -> dict:
 
 
 def _secrets_json() -> list[dict]:
-    return [{"name": s["name"], "description": s.get("description") or "",
+    return [{"id": s["id"], "name": s["name"], "description": s.get("description") or "",
              "set": bool(s.get("set", True)),
-             "usedBy": store.secret_used_by(s["name"])}
+             "usedBy": store.secret_used_by(s["id"])}
             for s in sorted(store.secrets, key=lambda s: s["name"])]
 
 
 def _agent_grant(g: dict) -> dict:
-    """§8 grants yaml entry: name, description, harness, model — the fields the
-    drafting agent weighs when deciding which agents to use; ids stay internal."""
-    e = {"name": harness.grant_name(g)}
+    """§8 grants yaml entry: id, name, description, harness, model — the id is
+    what the drafted manifest entries and agents["<id>"] code subscripts must
+    carry, so the drafting agent needs it verbatim."""
+    e = {"id": g["id"], "name": harness.grant_name(g)}
     if g.get("description"):
         e["description"] = g["description"]
     e["harness"] = g.get("harness", "")
@@ -303,12 +326,15 @@ def _agent_grant(g: dict) -> dict:
     return e
 
 
-def _secret_grant(name: str) -> dict:
-    """§8 grants yaml entry: name + description (omitted when empty)."""
-    e = {"name": name}
-    description = next((s.get("description") for s in store.secrets if s["name"] == name), "")
-    if description:
-        e["description"] = description
+def _secret_grant(secret_id: str) -> dict | None:
+    """§8 grants yaml entry: id, name + description (omitted when empty).
+    A dangling id grants nothing — None, skipped by the caller."""
+    s = next((s for s in store.secrets if s["id"] == secret_id), None)
+    if s is None:
+        return None
+    e = {"id": s["id"], "name": s["name"]}
+    if s.get("description"):
+        e["description"] = s["description"]
     return e
 
 
@@ -362,6 +388,8 @@ def patch_auto(automation_id: str, body: models.AutomationPatch) -> dict:
     patch = body.model_dump(exclude_unset=True)
     if "agentId" in patch or "stepAgents" in patch:
         _check_agent_refs(patch.get("agentId"), patch.get("stepAgents"))
+    if "allowedSecrets" in patch:
+        _check_secret_refs(patch.get("allowedSecrets"))
     if "paramValues" in patch:
         _check_param_values(a, patch["paramValues"])
     if "triggers" in patch:
@@ -479,6 +507,7 @@ def create_auto(body: models.AutomationCreate) -> dict:
     if not d.get("steps"):
         raise HTTPException(422, "draft has no steps")
     _check_agent_refs(body.agentId, body.stepAgents)
+    _check_secret_refs(body.allowedSecrets)
     # Create: no automation exists yet, so no trigger id is "already stored" —
     # a staged one-shot whose moment passed while the draft sat is the §4.3
     # spent case and drops out of the list; a no-id past time still 422s.
@@ -528,6 +557,8 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
     sent = body.model_dump(exclude_unset=True)
     if "agentId" in sent or "stepAgents" in sent:
         _check_agent_refs(sent.get("agentId"), sent.get("stepAgents"))
+    if "allowedSecrets" in sent:
+        _check_secret_refs(sent.get("allowedSecrets"))
     # §4.3/§4.4: the draft's trigger list (merged in the editor) replaces the
     # automation's — validated like the PATCH, and before the version lands.
     triggers = None
@@ -952,7 +983,7 @@ def post_test(body: models.TestStart) -> dict:
         enabled = auto["enabled_agents"] if auto else [g["id"] for g in store.agents]
     allowed = body.allowedSecrets
     if allowed is None:
-        allowed = auto["allowed_secrets"] if auto else [s["name"] for s in store.secrets]
+        allowed = auto["allowed_secrets"] if auto else [s["id"] for s in store.secrets]
     try:
         execution_id = testexec.start(engine, d, auto, enabled, allowed,
                                  body.paramValues or {}, trigger_payload=payload)
@@ -1143,10 +1174,11 @@ def post_draft(body: models.DraftJobStart) -> dict:
     if allowed is None:
         # no automation defaults to every stored secret — the same all-on seed
         # the Review page's secrets card starts from
-        allowed = auto["allowed_secrets"] if auto else [s["name"] for s in store.secrets]
+        allowed = auto["allowed_secrets"] if auto else [s["id"] for s in store.secrets]
     grants = {
         "agents": [_agent_grant(g) for g in store.agents if g["id"] in enabled_ids],
-        "secrets": [_secret_grant(n) for n in allowed],
+        # a dangling allowed id grants nothing (the secret was deleted)
+        "secrets": [e for e in (_secret_grant(sid) for sid in allowed) if e],
     }
     executions = pkg_state = None
     if mode == "chat":
@@ -1296,6 +1328,7 @@ def add_agent(body: models.AgentAdd) -> dict:
     with store.lock:
         ag = {"id": str(uuid.uuid4()), "name": body.name or None, "description": body.description or "",
               "harness": harness_name, "mode": mode, "model": model}
+        _check_grant_name_free(ag)
         store.agents.append(ag)
         if store.default_agent_id is None:
             store.default_agent_id = ag["id"]  # §4.7: the first agent is the default
@@ -1324,6 +1357,12 @@ def patch_agent(agent_id: str, patch: models.AgentPatch) -> dict:
             raise HTTPException(422, "custom-model mode needs a model")
         if body.get("default"):
             store.default_agent_id = agent_id  # §4.7: single pointer
+        # §4.7 uniqueness — checked only when the merged result would CHANGE
+        # the effective grant name (name, else harness): unrelated-field
+        # patches of pre-existing on-disk duplicates keep working.
+        merged = {**ag, **{k: body[k] for k in ("name", "harness") if k in body}}
+        if harness.grant_name(merged).lower() != harness.grant_name(ag).lower():
+            _check_grant_name_free(merged, exclude_id=agent_id)
         if "harness" in body:
             ag["harness"] = body["harness"]
         for k in ("name", "model", "mode", "description"):
@@ -1587,15 +1626,22 @@ def put_secret(name: str, body: models.SecretPut) -> dict:
         existing = next((s for s in store.secrets if s["name"] == name), None)
         if existing is None:
             # §4.8: a blank value on a new name creates a placeholder (set: False).
-            existing = {"name": name, "description": "", "set": False}
+            # The minted id is the reference identity steps bind by.
+            existing = {"id": new_id(), "name": name, "description": "", "set": False}
             store.secrets.append(existing)
         if value:
             existing["set"] = True
         if "description" in sent:
             existing["description"] = body.description or ""
         store.save_secrets()
+        # §19: return the entity (a GET /secrets entry) so a creating client
+        # learns the minted id without a second fetch.
+        out = {"id": existing["id"], "name": existing["name"],
+               "description": existing.get("description") or "",
+               "set": bool(existing.get("set", True)),
+               "usedBy": store.secret_used_by(existing["id"])}
     hub.publish("secrets.changed")
-    return {"ok": True}
+    return out
 
 
 @app.delete("/secrets/{name}", dependencies=[Depends(auth)])

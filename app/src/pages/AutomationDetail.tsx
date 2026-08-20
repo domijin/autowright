@@ -528,7 +528,7 @@ function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             <SecretModal
               modal={{ mode: 'add' }}
               onClose={() => setSecretModal(false)}
-              onSaved={(name) => setSecret(name)}
+              onSaved={(saved) => setSecret(saved.name)}
             />
           )}
           <input
@@ -915,7 +915,7 @@ function ParamRow({ automationId, p, last }: { automationId: string; p: ParamDef
 // ---------- page ----------
 
 export default function AutomationDetail() {
-  const { automationId, automations, agents, executions, go, setSurface, showToast, loadAuto } = useStore()
+  const { automationId, automations, agents, secrets, executions, go, setSurface, showToast, loadAuto } = useStore()
   const auto: Automation | undefined = automations.find((a) => a.id === automationId)
 
   const [verOpen, setVerOpen, verRef] = usePopover()
@@ -1692,11 +1692,14 @@ export default function AutomationDetail() {
             <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Written by your AI — read them anytime.</span>
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
-            {/* §9.2: one agent tag per name in a step's agents list; empty →
+            {/* §9.2: one agent tag per entry id in a step's agents list,
+                resolved to the live agent's name; empty →
                 the automation's first enabled agent, fallback "agent". */}
             <StepList
               variant="detail"
               steps={steps}
+              agents={agents}
+              secrets={secrets}
               fallbackAgent={(() => {
                 const first = auto.stepAgents.map((id) => agents.find((z) => z.id === id)).find((g) => !!g)
                 return first ? (first.name || first.harness) : 'agent'

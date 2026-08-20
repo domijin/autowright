@@ -28,12 +28,14 @@ export interface Step {
   code: string
   file?: string
   agent?: boolean
-  agents?: { name: string; why?: string }[] // §8 grant entries the step may call — the first
-                      // name is agent.ask's default; why = that agent's role note (§9.2 tag tooltip),
-                      // required by §8 validation when a step lists two or more
-  secrets?: { name: string; why?: string }[] // §8 secret grants the step uses beyond its code
-                      // references; why = the per-use note (§9.2 key-tag tooltip), required by
-                      // §8 validation on every declared entry
+  agents?: { id: string; why?: string }[] // §8 grant entries the step may call, by §4.7 agent
+                      // uuid — the first is the bare `agent` handle's binding; why = that
+                      // agent's role note (§9.2 tag tooltip), required by §8 validation when
+                      // a step lists two or more. Display resolves id → live name.
+  secrets?: { id: string; why?: string }[] // §8 secret grants the step uses beyond its
+                      // secrets["<id>"] code references, by §4.8 secret uuid; why = the
+                      // per-use note (§9.2 key-tag tooltip), required by §8 validation on
+                      // every declared entry. Display resolves id → live name.
   packages?: { import: string; why?: string }[] // §6.2 declared packages the step uses beyond its
                       // import statements; why = the per-step note (§11 box-tag tooltip: what THIS
                       // step uses the package for), required by §8 validation on every entry
@@ -174,8 +176,8 @@ export interface Automation {
   resultStatus: 'changes' | 'ok' | 'attention' | null
   lastExecutionLabel: string
   agentId: string | null
-  stepAgents: string[]
-  allowedSecrets: string[]
+  stepAgents: string[]      // §4.1 agent-enablement grants — §4.7 agent uuids
+  allowedSecrets: string[]  // §4.1 secret-allowance grants — §4.8 secret uuids
   snapshotSettings: SnapshotSettings // §6.3 automatic-snapshot toggles
   specMeta: string
   latest?: (ExecutionResult & { executionId: string; when: string }) | null
@@ -269,9 +271,10 @@ export interface Agent {
   usedBy?: string[]
 }
 
-// §4.8: set=false → placeholder (name reserved, no Keychain value yet).
+// §4.8: id = the uuid steps bind by (names are unique + immutable display);
+// set=false → placeholder (name reserved, no Keychain value yet).
 // usedBy is the list of automation names using the secret — the UI joins it.
-export interface SecretMeta { name: string; description: string; set: boolean; usedBy: string[] }
+export interface SecretMeta { id: string; name: string; description: string; set: boolean; usedBy: string[] }
 
 // §5.1 import summary — what the import created vs. matched (§19).
 // Created agents carry `ready` (backend §19 check-ready rule at import time)
@@ -355,8 +358,8 @@ export interface DraftPayload {
   instructions?: string | null
   notes?: string             // §4.1 notes doc — rides drafts and §8 chat/sync payloads
   triggers?: DraftTrigger[]  // §8: cron-only in drafts
-  secretReferences?: string[]
-  // §4.4: grant selections carried by the draft snapshot
+  secretReferences?: string[] // §8: code-referenced secret ids
+  // §4.4: grant selections carried by the draft snapshot (agent / secret uuids)
   stepAgents?: string[]
   allowedSecrets?: string[]
   // §4.2: the chat-staged stored-value map — rides the draft snapshot, lands

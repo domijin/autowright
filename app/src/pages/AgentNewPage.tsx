@@ -93,7 +93,9 @@ export default function AgentNewPage() {
   const [model, setModel] = useState<string | null>(editAgent?.model ?? null)
   const [name, setName] = useState(editAgent ? (editAgent.name || editAgent.harness) : '')
   const [description, setDesc] = useState(editAgent?.description ?? '')
-  const [nameErr, setNameErr] = useState(false)
+  // §12/§4.7: 'required' = empty name; 'taken' = collides with another agent's
+  // effective grant name (name || harness, case-insensitive, excluding self)
+  const [nameErr, setNameErr] = useState<null | 'required' | 'taken'>(null)
   const nameRef = useRef<HTMLInputElement | null>(null)
   const [fix, setFix] = useState<'needs' | 'busy' | 'done'>(
     () => (editAgent && agentChecks[editAgent.id] === 'needs' ? 'needs' : 'done'))
@@ -344,21 +346,29 @@ export default function AgentNewPage() {
 
   const delUses = liveAgent?.usedBy ?? []
 
+  // §4.7 uniqueness: effective grant name (name || harness), case-insensitive,
+  // excluding the agent being edited — the same rule the backend 422s on.
+  const nameTaken = (nm: string) => agents.some((g) =>
+    g.id !== editAgent?.id && (g.name || g.harness).toLowerCase() === nm.toLowerCase())
+
+  const flagNameErr = (kind: 'required' | 'taken') => {
+    setNameErr(kind)
+    // Submit button sits at the bottom of a long page — bring the error on-screen (§12).
+    nameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    nameRef.current?.focus({ preventScroll: true })
+  }
+
   const addAgent = async () => {
     if (!canAdd) {
       const needsName = harness && mode && !name.trim()
       const missingOllama = needsOllama && !ready
-      if (needsName) {
-        setNameErr(true)
-        // Submit button sits at the bottom of a long page — bring the error on-screen (§12).
-        nameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        nameRef.current?.focus({ preventScroll: true })
-      }
+      if (needsName) flagNameErr('required')
       if (harness && !hInstalled) showToast(`Download and set up ${HARNESS_NAME[harness]} first.`)
       else if (missingOllama) showToast('Install Ollama first.')
       else if (!needsName) showToast('Pick a harness and a model first.')
       return
     }
+    if (nameTaken(name.trim())) { flagNameErr('taken'); return }
     const h = harness as HarnessId
     const payload = {
       harness: HARNESS_NAME[h],
@@ -379,7 +389,12 @@ export default function AgentNewPage() {
         go('agents')
         showToast(`${payload.name} added — ready to write automations.`)
       }
-    } catch (e) { showToast((e as Error).message) }
+    } catch (e) {
+      // §4.7/§19: the backend's duplicate-name 422 surfaces like the inline
+      // check (a race with another writer can slip past the client-side test).
+      if (/already exists/.test((e as Error).message)) flagNameErr('taken')
+      else showToast((e as Error).message)
+    }
   }
 
   const olMissingMsg = 'Local models need Ollama, which isn’t installed on this Mac yet.'
@@ -455,7 +470,7 @@ export default function AgentNewPage() {
         ref={nameRef}
         className={`ad-input${nameErr ? ' invalid' : ''}`}
         value={name}
-        onChange={(e) => { setName(e.target.value); if (e.target.value.trim()) setNameErr(false) }}
+        onChange={(e) => { setName(e.target.value); if (e.target.value.trim()) setNameErr(null) }}
         placeholder="Name this agent"
         style={{
           width: '100%', boxSizing: 'border-box', padding: '11px 14px', fontWeight: 500, fontSize: 13,
@@ -466,7 +481,9 @@ export default function AgentNewPage() {
         <div className="ad-anim-item" style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '-10px 0 16px' }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: P.red, flex: 'none' }} />
           <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--red-text)' }}>
-            A name is required — give this agent a name before saving.
+            {nameErr === 'taken'
+              ? `An agent named ${name.trim()} already exists — pick a different name.`
+              : 'A name is required — give this agent a name before saving.'}
           </span>
         </div>
       )}

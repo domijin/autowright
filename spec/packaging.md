@@ -26,11 +26,8 @@ the update bullets below).
 
 - **Identifiers (decided):** reverse-DNS of the product domain `autowright.ai` — app bundle id
   `ai.autowright.app` (set by `prod.sh` at packaging time), backend LaunchAgent label
-  `ai.autowright.backend`. Builds through v0.3.5 shipped `com.autowright.*`; `service install`
-  therefore also migrates: it boots out any legacy `com.autowright.backend` registration and
-  deletes its plist before loading the current label, so an update never leaves two KeepAlive
-  backends running. The Keychain service name is the plain string `Autowright` (§4.8), not
-  reverse-DNS, and is unaffected.
+  `ai.autowright.backend`. The Keychain service name is the plain string `Autowright` (§4.8),
+  not reverse-DNS.
 - The backend ships inside the Electron `.app` bundle
   (`Contents/Resources/python/`). **Ensure-backend:** at every app launch, the Electron main
   process probes the backend (`backend.json` + unauthenticated `GET /health`, short timeout); if
@@ -268,11 +265,9 @@ the update bullets below).
   bundle's `LSMinimumSystemVersion`); `auto_updates true`, because the in-app Squirrel updater
   swaps the bundle in place and Homebrew's recorded version goes stale by design — `brew
   upgrade` skips the cask unless `--greedy`; `uninstall launchctl:` before `quit:`, since
-  launchd would otherwise keep restarting a backend whose bundled interpreter was just removed —
-  both stanzas list both identifier generations (`ai.autowright.*` current, `com.autowright.*`
-  shipped through v0.3.5, the §3 migration) so uninstall works for installs from either; and
-  `zap trash:` covering the §5 data directory, the logs directory, both generations' LaunchAgent
-  plists and preferences/saved-state, and the `~/.local/bin/autowright` shim — never the
+  launchd would otherwise keep restarting a backend whose bundled interpreter was just removed;
+  and `zap trash:` covering the §5 data directory, the logs directory, the LaunchAgent plist
+  and preferences/saved-state, and the `~/.local/bin/autowright` shim — never the
   Keychain secrets (§4.8), which the user removes by hand.
   A `livecheck` block reads `currentRelease` from the same arch feed the updater uses, so the
   cask stays checkable by `brew livecheck` and would be autobump-eligible if it ever moved to

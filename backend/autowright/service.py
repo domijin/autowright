@@ -19,16 +19,11 @@ from pathlib import Path
 from . import paths
 
 LABEL = "ai.autowright.backend"
-LEGACY_LABEL = "com.autowright.backend"  # builds ≤ 0.3.5 (§3 migration)
 SHIM_MARKER = "# autowright CLI shim"
 
 
 def plist_path() -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
-
-
-def legacy_plist_path() -> Path:
-    return Path.home() / "Library" / "LaunchAgents" / f"{LEGACY_LABEL}.plist"
 
 
 def shim_paths() -> list[Path]:
@@ -101,26 +96,11 @@ def _remove_shim() -> str | None:
     return " · ".join(notes) if notes else None
 
 
-def _registered(label: str = LABEL) -> bool:
+def _registered() -> bool:
     """Whether launchd currently knows the job (running or not)."""
-    r = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{label}"],
+    r = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{LABEL}"],
                        capture_output=True)
     return r.returncode == 0
-
-
-def _purge_legacy() -> None:
-    """§3 migration: builds ≤ 0.3.5 registered the job as com.autowright.backend.
-    Boot that registration out and delete its plist before loading the current
-    label, or an update leaves two KeepAlive backends running."""
-    if _registered(LEGACY_LABEL):
-        subprocess.run(["launchctl",
-                        "bootout", f"gui/{os.getuid()}/{LEGACY_LABEL}"],
-                       capture_output=True)
-        for _ in range(40):
-            if not _registered(LEGACY_LABEL):
-                break
-            time.sleep(0.25)
-    legacy_plist_path().unlink(missing_ok=True)
 
 
 def _unload(p: Path) -> None:
@@ -159,7 +139,6 @@ def _load(p: Path) -> str | None:
 
 
 def install() -> str:
-    _purge_legacy()
     plist = {
         "Label": LABEL,
         "ProgramArguments": [sys.executable, "-m", "autowright.main"],

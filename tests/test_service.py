@@ -19,8 +19,6 @@ def svc(home, monkeypatch):
 
     plist = home / "LaunchAgents" / f"{service.LABEL}.plist"
     monkeypatch.setattr(service, "plist_path", lambda: plist)
-    legacy_plist = home / "LaunchAgents" / f"{service.LEGACY_LABEL}.plist"
-    monkeypatch.setattr(service, "legacy_plist_path", lambda: legacy_plist)
     # Two candidate locations (§3): user-local first, then system.
     shim = home / "bin" / "autowright"
     shim2 = home / "sysbin" / "autowright"
@@ -53,7 +51,7 @@ def svc(home, monkeypatch):
         """Recorded calls minus the `print` state probes."""
         return [c for c in calls if c[1] != "print"]
 
-    return SimpleNamespace(mod=service, plist=plist, legacy_plist=legacy_plist,
+    return SimpleNamespace(mod=service, plist=plist,
                            shim=shim, shim2=shim2,
                            calls=calls, results=results, actions=actions,
                            registered=registered)
@@ -78,41 +76,7 @@ def test_install_writes_plist_and_reloads(svc):
 
     # stop-then-start, in that order: modern bootout/bootstrap against the
     # per-user gui domain (the legacy verbs are fallbacks, not tried when the
-    # modern ones succeed). No legacy registration, no legacy plist → the §3
-    # migration touches nothing (no com.autowright.backend bootout).
-    assert svc.actions() == [
-        ["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"],
-        ["launchctl", "bootstrap", _gui_domain(), str(svc.plist)],
-    ]
-
-
-def test_install_migrates_legacy_label(svc):
-    # §3 migration: a ≤ 0.3.5 install left com.autowright.backend registered
-    # and its plist on disk — install boots that label out and deletes its
-    # plist before loading the current one, so an update never leaves two
-    # KeepAlive backends running.
-    svc.legacy_plist.parent.mkdir(parents=True, exist_ok=True)
-    svc.legacy_plist.write_bytes(b"<plist/>")
-    svc.registered["job"] = True
-    out = svc.mod.install()
-    assert out.startswith("installed and started")
-    assert not svc.legacy_plist.exists()
-    assert svc.plist.exists()
-    assert svc.actions() == [
-        ["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LEGACY_LABEL}"],
-        ["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"],
-        ["launchctl", "bootstrap", _gui_domain(), str(svc.plist)],
-    ]
-
-
-def test_install_removes_stale_legacy_plist_without_bootout(svc):
-    # Legacy plist on disk but launchd no longer knows the job (stopped by
-    # hand): the plist still goes, and no legacy bootout is issued.
-    svc.legacy_plist.parent.mkdir(parents=True, exist_ok=True)
-    svc.legacy_plist.write_bytes(b"<plist/>")
-    out = svc.mod.install()
-    assert out.startswith("installed and started")
-    assert not svc.legacy_plist.exists()
+    # modern ones succeed).
     assert svc.actions() == [
         ["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"],
         ["launchctl", "bootstrap", _gui_domain(), str(svc.plist)],

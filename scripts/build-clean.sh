@@ -33,18 +33,15 @@ kill_stale() {
 # ---- stop running pieces (same patterns as dev.sh's stale-process sweep) ----
 # Unregister the backend service only when its plist points into this repo —
 # a service installed by the /Applications app must survive a repo clean.
-# Both labels: ai.autowright.backend (current) and com.autowright.backend
-# (builds ≤ 0.3.5, §3 migration).
-for LBL in ai.autowright.backend com.autowright.backend; do
-  PLIST="$HOME/Library/LaunchAgents/$LBL.plist"
-  if [ -f "$PLIST" ] \
-    && /usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$PLIST" 2>/dev/null \
-       | grep -q "^$ROOT/"; then
-    "$ROOT/.venv/bin/autowright" service uninstall > /dev/null 2>&1 || true
-    launchctl bootout "gui/$(id -u)/$LBL" > /dev/null 2>&1 || true
-    rm -f "$PLIST"
-  fi
-done
+LBL=ai.autowright.backend
+PLIST="$HOME/Library/LaunchAgents/$LBL.plist"
+if [ -f "$PLIST" ] \
+  && /usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$PLIST" 2>/dev/null \
+     | grep -q "^$ROOT/"; then
+  "$ROOT/.venv/bin/autowright" service uninstall > /dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)/$LBL" > /dev/null 2>&1 || true
+  rm -f "$PLIST"
+fi
 kill_stale "[Pp]ython -m autowright"                 # backend (python -m autowright.main)
 kill_stale "$ROOT/.venv/bin/autowright"              # autowright / autowright-backend entry points
 kill_stale "$ROOT/app/node_modules/electron"         # electron (incl. helper processes)

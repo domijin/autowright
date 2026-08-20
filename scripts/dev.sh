@@ -4,7 +4,7 @@
 # (HMR — edits to app/src apply live), and Electron pointed at it via
 # AUTOWRIGHT_RENDERER_URL (§15). Same real code everywhere: real data dir
 # (~/Library/Application Support/Autowright), macOS Keychain, random free port,
-# backend as the real launchd LaunchAgent (com.autowright.backend, §3:
+# backend as the real launchd LaunchAgent (ai.autowright.backend, §3:
 # RunAtLoad/KeepAlive, survives Electron quit), no mocks, no seed data.
 # Backend edits still need a restart (the backend is not hot-reloaded).
 # Ctrl+C shuts the whole app down (Electron, vite, and the backend);

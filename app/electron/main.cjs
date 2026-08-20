@@ -153,7 +153,7 @@ async function verifyBackendUp() {
       + 'Gatekeeper may be blocking an unsigned build. Details in app.log.',
   }
   appLog('ensure-backend: backend did not come up within 30 s of install')
-  execFile('launchctl', ['print', `gui/${process.getuid()}/com.autowright.backend`],
+  execFile('launchctl', ['print', `gui/${process.getuid()}/ai.autowright.backend`],
     (err, stdout, stderr) => {
       appLog(`ensure-backend: launchctl print:\n${String(stdout || stderr || err?.message || '').trim()}`)
     })

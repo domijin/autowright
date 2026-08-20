@@ -81,7 +81,7 @@ echo "· packaging Autowright.app"
 (cd "$ROOT/app" && npx electron-packager . "Autowright" \
   --platform=darwin --arch="$EP_ARCH" --out "$BUILD/pkg" --overwrite \
   --icon "$BUILD/icon.icns" \
-  --app-bundle-id com.autowright.app \
+  --app-bundle-id ai.autowright.app \
   --ignore '^/src($|/)' \
   --ignore '^/node_modules($|/)' \
   --ignore '^/e2e($|/)' \

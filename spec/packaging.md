@@ -24,6 +24,13 @@ the DMG, then submits and staples the DMG as well — so both artifacts pass Gat
 The launch-time version-compare/re-register flow and the in-app updater are implemented (see
 the update bullets below).
 
+- **Identifiers (decided):** reverse-DNS of the product domain `autowright.ai` — app bundle id
+  `ai.autowright.app` (set by `prod.sh` at packaging time), backend LaunchAgent label
+  `ai.autowright.backend`. Builds through v0.3.5 shipped `com.autowright.*`; `service install`
+  therefore also migrates: it boots out any legacy `com.autowright.backend` registration and
+  deletes its plist before loading the current label, so an update never leaves two KeepAlive
+  backends running. The Keychain service name is the plain string `Autowright` (§4.8), not
+  reverse-DNS, and is unaffected.
 - The backend ships inside the Electron `.app` bundle
   (`Contents/Resources/python/`). **Ensure-backend:** at every app launch, the Electron main
   process probes the backend (`backend.json` + unauthenticated `GET /health`, short timeout); if
@@ -45,7 +52,7 @@ the update bullets below).
   Gatekeeper silently refuses to exec an unsigned, quarantined bundled Python as a LaunchAgent —
   the GUI app's user approval does not extend to launchd). So after a `service install`, the main
   process polls `/health` every 2 s for up to 30 s. Success and failure both append to `app.log`;
-  on failure the main process also captures `launchctl print gui/<uid>/com.autowright.backend`
+  on failure the main process also captures `launchctl print gui/<uid>/ai.autowright.backend`
   into `app.log` and records a failed ensure-backend status. The renderer reads that status over
   the preload bridge (`backend-status` IPC: `{ state: 'idle'|'installing'|'ok'|'failed', detail }`)
   and the §9 boot splash shows the failure detail instead of waiting silently. The renderer keeps
@@ -260,11 +267,13 @@ the update bullets below).
   follows from this section: `depends_on arch: :arm64` and `depends_on macos: :monterey` (the
   bundle's `LSMinimumSystemVersion`); `auto_updates true`, because the in-app Squirrel updater
   swaps the bundle in place and Homebrew's recorded version goes stale by design — `brew
-  upgrade` skips the cask unless `--greedy`; `uninstall launchctl: "com.autowright.backend"`
-  before `quit: "com.autowright.app"`, since launchd would otherwise keep restarting a backend
-  whose bundled interpreter was just removed; and `zap trash:` covering the §5 data directory,
-  the logs directory, the LaunchAgent plist, the `~/.local/bin/autowright` shim, and the app's
-  preferences/saved-state — never the Keychain secrets (§4.8), which the user removes by hand.
+  upgrade` skips the cask unless `--greedy`; `uninstall launchctl:` before `quit:`, since
+  launchd would otherwise keep restarting a backend whose bundled interpreter was just removed —
+  both stanzas list both identifier generations (`ai.autowright.*` current, `com.autowright.*`
+  shipped through v0.3.5, the §3 migration) so uninstall works for installs from either; and
+  `zap trash:` covering the §5 data directory, the logs directory, both generations' LaunchAgent
+  plists and preferences/saved-state, and the `~/.local/bin/autowright` shim — never the
+  Keychain secrets (§4.8), which the user removes by hand.
   A `livecheck` block reads `currentRelease` from the same arch feed the updater uses, so the
   cask stays checkable by `brew livecheck` and would be autobump-eligible if it ever moved to
   core. Version bumps are `release.sh`'s job (§18), never a manual edit.

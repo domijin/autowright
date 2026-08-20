@@ -329,7 +329,7 @@ Dev workflow:
   `python3 -m autowright.main` / `-m autowright.cli` — pip's `bin/` entry scripts carry absolute
   staging-path shebangs), uses the checked-in app icon `app/electron/icon/icon.icns`
   (§14), packages `Autowright.app` with `@electron/packager` (bundle id
-  `com.autowright.app`; ships only `electron/`, `dist/`, and `package.json` — the renderer is
+  `ai.autowright.app`; ships only `electron/`, `dist/`, and `package.json` — the renderer is
   fully bundled and main/preload use Electron builtins only, so no `node_modules`), copies
   the interpreter to `Contents/Resources/python/`, smoke-checks that the bundled interpreter
   imports `autowright` + every curated package from inside the bundle, codesigns and
@@ -344,7 +344,7 @@ Dev workflow:
   process stuck in shutdown; the §19 ws handler exits on client disconnect, so uvicorn's
   graceful shutdown no longer waits on WebSockets), stale Electron, and stale Vite;
   then (re)installs the real launchd LaunchAgent (`autowright service uninstall` +
-  `service install`, `com.autowright.backend`, §3) so the backend behaves exactly as in release:
+  `service install`, `ai.autowright.backend`, §3) so the backend behaves exactly as in release:
   launchd-managed, RunAtLoad/KeepAlive, cwd `/`, minimal launchd PATH, random free port,
   macOS Keychain, developerMode-gated request logging (§5) to `backend.out.log`/`backend.err.log`
   and per-request files under `<logs>/requests/` (§5) under the logs

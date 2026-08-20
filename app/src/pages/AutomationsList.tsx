@@ -433,11 +433,6 @@ export default function AutomationsList() {
             <BtnGhost onClick={() => setImportOpen(true)}>
               Import…
             </BtnGhost>
-            {slotJob && (
-              <span style={{ fontSize: 11.5, color: 'var(--text-faint)', alignSelf: 'center' }}>
-                {draftJobNote(slotJob.status)}
-              </span>
-            )}
             {(pendingDraft || slotJob) && (
               <BtnGhost onClick={() => setSurface('create', 'app')}>
                 Resume draft

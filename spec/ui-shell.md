@@ -197,8 +197,9 @@ work is never invisible): while an automation's draft container owns a **buildin
 drafting job (`draftJobs` on `GET /state`, kept current by the `draftjob.changed` event)
 its card carries the faint one-line note "Your AI is drafting…", and while it owns a
 **held** outcome (the job settled unobserved) the note reads "Your AI finished — reopen
-the draft to review." — faint text only, never a spinner (§11 owns live progress); the
-header's Resume draft button shows the same two notes beside it for the `pending` owner. Empty state (dashed card):
+the draft to review." — faint text only, never a spinner (§11 owns live progress). The
+header's Resume draft button carries no such note: for the `pending` owner the button
+itself is the only surface (the create flow shows the job's state on entry). Empty state (dashed card):
 "No automations yet. Describe a job in plain words — your AI writes it as scripts you can read,
 and Autowright executes them on your schedule." with accent CTA "Create your first automation" —
 the CTA behaves exactly like the header New automation button: with a pending draft it shows

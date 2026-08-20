@@ -1572,6 +1572,25 @@ describe('CreateFlow send/sync edit guard + settle flush + poll retry (§11)', (
     await waitFor(() => expect(screen.getByText(STAGED_CHIP)).toBeTruthy())
   })
 
+  it('leaving mid-chat-job keeps the user entry and appends the cancelled chip', async () => {
+    render(<CreateFlow />)
+    send('rename everything')
+    await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
+    // leave via the header back - the exit flush cancels the job with no
+    // composer to return the request to: the pending user entry stays and
+    // the chip right after it says the turn never ran (§11)
+    fireEvent.click(screen.getAllByText('My auto').find((el) => el.closest('button'))!)
+    await waitFor(() => {
+      const calls = (mockedApi.putChat as ReturnType<typeof vi.fn>).mock.calls
+      const flushed = calls.map((c) => c[1] as Array<{ kind: string; text?: string }>)
+      expect(flushed.some((list) => {
+        const i = list.findIndex((e) => e.kind === 'user' && e.text === 'rename everything')
+        return i >= 0 && list[i + 1]?.kind === 'system'
+          && list[i + 1]?.text === 'Edit stopped — the spec is unchanged.'
+      })).toBe(true)
+    })
+  })
+
   it('sending under an unsaved spec edit asks first; cancel keeps both texts, confirm proceeds', async () => {
     render(<CreateFlow />)
     fireEvent.click(screen.getByTestId('spec-edit'))

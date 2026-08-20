@@ -2963,15 +2963,19 @@ def test_data_path_switch_moves_the_executions_root(client, tmp_path):
 
 # ---------- §19 websocket streaming + app lifespan ----------
 
-def test_ws_streams_events_and_lifespan_repairs(client):
+def test_ws_streams_events_and_lifespan_repairs(client, monkeypatch):
     """§3/§19: startup binds the hub loop and repairs stale records; an
     authenticated /ws socket receives published events; shutdown runs the
-    kill-all hook. The nested TestClient context drives the real lifespan."""
+    kill-all hooks (step groups and drafting harnesses). The nested
+    TestClient context drives the real lifespan."""
     from fastapi.testclient import TestClient
 
     from autowright import api
     from autowright.storage import store
 
+    killed = []
+    monkeypatch.setattr(api.draft_jobs, "kill_all_building",
+                        lambda: killed.append(True))
     a = store.create_automation(make_version(), "WS", "mock")
     stale = store.create_execution(a, "version", 1, "manual",
                                    [{"name": "Say hello", "file": "01-say.py",
@@ -2989,3 +2993,5 @@ def test_ws_streams_events_and_lifespan_repairs(client):
         # the loop died with the context — unbind so later tests' publishes
         # fall back to the no-op path instead of hitting a closed loop
         api.hub._loop = None
+    # §3: shutdown cancelled the still-building drafting jobs too
+    assert killed == [True]

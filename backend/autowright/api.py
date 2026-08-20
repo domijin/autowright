@@ -54,6 +54,9 @@ async def _lifespan(_: FastAPI):
     # recovery marks their records interrupted, and an orphan must not keep
     # writing memory/ beside the second copy the next cron tick starts.
     engine.kill_all_live()
+    # §3: drafting harnesses die with it too — a stopping backend must never
+    # leave an agent harness session group running with nobody to collect it.
+    draft_jobs.kill_all_building()
 
 
 # §19: no interactive docs. /health is the only unauthenticated route, and any

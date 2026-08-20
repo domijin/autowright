@@ -411,7 +411,14 @@ applies unchanged; the chat pane never collapses.
   anywhere on the page fires the same cancel while a §8 job is in flight — it is a
   keyboard shortcut for this Cancel button, nothing more (it never cancels a draft test,
   whose Cancel lives in the Build & test panel), and it yields to surfaces that own Esc
-  while open: the modal stack and the §9.3 developer log overlay. Every other place on the page
+  while open: the modal stack and the §9.3 developer log overlay. Exits cancel too: leaving
+  the editor any way, Discard draft, and Start over all cancel an in-flight chat job
+  (client-side, beside the §19 owner cancel and unpolled reap). With no composer left to
+  return the request to, the pending user entry stays in the persisted thread, and every
+  exit or settle flush that cancels an in-flight chat job appends the system chip "Edit
+  stopped — the spec is unchanged." (the composer cancel's toast copy, icon `fa-ban`) right
+  after it, so a kept thread never resumes on a request that looks unanswered and a later
+  §8 CONVERSATION context sees the turn was cancelled. Every other place on the page
   shows only static text while a job runs — no second spinner, live `detail` line, or
   Cancel anywhere. The draft **test** is not a §8 job and never appears here: while a test
   is executing the input stays, disabled with the hint "Wait for the test to finish." (a

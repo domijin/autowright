@@ -352,7 +352,13 @@ remain plain dicts (§2).
   (or its deterministic fallback) additionally carries `diagnosed: true`, and `failed` is
   reserved for harness errors and crashes — a validation double-failure always ends `blocked`
   (§8 failure policy); `DELETE /drafts/{jobId}` cancels
-  (kills the harness process)
+  (kills the harness process). Two backstops guarantee a building job never outlives its
+  audience: every `GET /drafts/{jobId}` poll stamps the job's last-poll time, and a building
+  job left unpolled for `AUTOWRIGHT_DRAFT_REAP_S` seconds (§15, default 120) is cancelled by
+  the backend exactly like a `DELETE` (clients poll about once a second, so only a client
+  that died mid-job trips it: window closed, app quit, renderer crash); and backend shutdown
+  cancels every still-building job (§3), so a stopping backend never leaves an agent harness
+  running.
 - `GET /executions?auto=&status=` (headers only — no steps; rows carry the §4.5
   `triggerSender`) · `GET /executions/{id}` (steps
   with attempts + params + error + result + `triggerPayload` (§4.5) — logs are lazy, never

@@ -102,7 +102,13 @@ export default function CreateFlow() {
     if (!chatLoaded.current || !r || !owner) return
     const held = jobs.takeHeldChips()
     if (held.length) setRev((x) => x && ({ ...x, chat: [...x.chat, ...held] }))
-    try { await api.putChat(owner, persistChat([...r.chat, ...held])) } catch { /* backend restarting */ }
+    // §11: an exit/settle flush past an in-flight chat job cancels it with no
+    // composer to return the request to - the pending user entry stays, so the
+    // chip right after it says the turn never ran (composer-cancel toast copy).
+    const stopped = r.chatBusy
+      ? [newEntry({ kind: 'system' as const, icon: 'fa-ban', text: 'Edit stopped — the spec is unchanged.' })]
+      : []
+    try { await api.putChat(owner, persistChat([...r.chat, ...held, ...stopped])) } catch { /* backend restarting */ }
   }
   useEffect(() => () => {
     const r = revRef.current
@@ -113,7 +119,12 @@ export default function CreateFlow() {
     // outcome, so any held workflow chips land in the persisted thread here.
     if (chatLoaded.current && r) {
       const owner = isEdit ? a?.id : 'pending'
-      if (owner) void api.putChat(owner, persistChat([...r.chat, ...jobs.takeHeldChips()])).catch(() => { /* backend restarting */ })
+      // §11: same cancelled-chat chip as flushChat - leaving mid-chat-job
+      // keeps the pending user entry, and the chip says the turn never ran.
+      const stopped = r.chatBusy
+        ? [newEntry({ kind: 'system' as const, icon: 'fa-ban', text: 'Edit stopped — the spec is unchanged.' })]
+        : []
+      if (owner) void api.putChat(owner, persistChat([...r.chat, ...jobs.takeHeldChips(), ...stopped])).catch(() => { /* backend restarting */ })
     }
     if (isEdit) {
       if (!a) return

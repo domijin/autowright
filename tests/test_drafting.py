@@ -1404,6 +1404,75 @@ def test_draft_jobs_cancel_for_owner():
     assert jobs.jobs["b"]["status"] == "cancelled"
 
 
+def test_draft_jobs_reap_unpolled(monkeypatch):
+    # §19 unpolled reap: a building job whose poller died is cancelled like a
+    # DELETE; a fresh stamp keeps it alive and terminal jobs are ignored.
+    import time as _t
+
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setenv("AUTOWRIGHT_DRAFT_REAP_S", "60")
+    jobs = DraftJobs()
+    old = _t.monotonic() - 120
+    jobs.jobs["stale"] = {"id": "stale", "status": "building", "_cancel": False,
+                          "_proc": {}, "_polled": old}
+    jobs.jobs["fresh"] = {"id": "fresh", "status": "building", "_cancel": False,
+                          "_proc": {}, "_polled": _t.monotonic()}
+    jobs.jobs["done"] = {"id": "done", "status": "done", "_cancel": False,
+                         "_proc": {}, "_polled": old}
+    jobs._reap_once()
+    assert jobs.jobs["stale"]["status"] == "cancelled"
+    assert jobs.jobs["stale"]["_cancel"] is True
+    assert jobs.jobs["fresh"]["status"] == "building"
+    assert jobs.jobs["done"]["status"] == "done"
+
+
+def test_draft_jobs_get_refreshes_poll_stamp(monkeypatch):
+    # §19: every GET refreshes the last-poll stamp — a polled job never reaps.
+    import time as _t
+
+    from autowright.drafting import DraftJobs
+
+    monkeypatch.setenv("AUTOWRIGHT_DRAFT_REAP_S", "60")
+    jobs = DraftJobs()
+    jobs.jobs["j"] = {"id": "j", "status": "building", "stage": "s",
+                      "detail": None, "events": [], "error": None,
+                      "draft": None, "mode": "chat",
+                      "_cancel": False, "_proc": {},
+                      "_polled": _t.monotonic() - 120}
+    assert jobs.get("j")["status"] == "building"
+    jobs._reap_once()
+    assert jobs.jobs["j"]["status"] == "building"
+
+
+def test_draft_jobs_kill_all_building_kills_harness_group():
+    # §3 shutdown: building jobs cancel and their harness session groups die
+    # outright (SIGKILL, no grace window); terminal jobs stay untouched.
+    import subprocess
+    import time as _t
+
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    jobs.jobs["b"] = {"id": "b", "status": "building", "_cancel": False,
+                      "_proc": {"proc": proc}}
+    jobs.jobs["d"] = {"id": "d", "status": "done", "_cancel": False, "_proc": {}}
+    try:
+        jobs.kill_all_building()
+        assert jobs.jobs["b"]["status"] == "cancelled"
+        assert jobs.jobs["b"]["_cancel"] is True
+        assert jobs.jobs["d"]["status"] == "done"
+        deadline = _t.monotonic() + 5
+        while proc.poll() is None and _t.monotonic() < deadline:
+            _t.sleep(0.02)
+        assert proc.poll() is not None
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=5)
+
+
 def test_cancel_after_call_never_starts_next_harness_call(monkeypatch):
     # §8 cancel semantics: a cancel that lands while the chat call's response
     # is in hand raises Cancelled out of _invoke (post-return check) — no

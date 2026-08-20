@@ -46,6 +46,10 @@ Backend env knobs (configuration only):
   (default 1, clamped 0–5; 0 = no repair, an invalid response goes straight to the §8
   build diagnosis). Configuration only, never a different code path; read per call, so a
   running backend picks up changes.
+- `AUTOWRIGHT_DRAFT_REAP_S`: §19 unpolled drafting-job reap window in seconds (default 120).
+  A building job whose last `GET /drafts/{jobId}` poll is older gets cancelled like a
+  `DELETE`. Configuration only, never a different code path; read per scan, so a running
+  backend picks up changes.
 - `AUTOWRIGHT_TICK_S` — scheduler tick period in seconds (default 15). Same loop re-tuned,
   never a different code path; the integration harness sets `1` so live-scheduler tests wait
   seconds instead of sitting out real 15 s ticks.

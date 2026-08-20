@@ -1212,6 +1212,15 @@ class Cancelled(Exception):
     pipeline in one place — `_run` catches it once. No boolean plumbing."""
 
 
+def _reap_window_s() -> float:
+    """§19 unpolled reap window (§15 `AUTOWRIGHT_DRAFT_REAP_S`, default 120).
+    Read per scan, like the harness timeouts."""
+    try:
+        return float(os.environ.get("AUTOWRIGHT_DRAFT_REAP_S") or 120)
+    except ValueError:
+        return 120.0
+
+
 class DraftJobs:
     """§19 POST /drafts — the §8 chat/sync calls as background jobs, with
     automatic repair rounds per call (§8)."""
@@ -1219,6 +1228,7 @@ class DraftJobs:
     def __init__(self) -> None:
         self.jobs: dict[str, dict] = {}
         self._lock = threading.Lock()
+        self._reaper_started = False
 
     def start(self, mode: str, agent: dict, user_text: str | None,
               current: dict | None, grants: dict,
@@ -1236,7 +1246,8 @@ class DraftJobs:
         # the draft-settle endpoints cancel the container's building jobs.
         job = {"id": job_id, "status": "building", "stage": stage, "detail": None,
                "events": [], "error": None, "draft": None, "mode": mode,
-               "_cancel": False, "_proc": {}, "_owner": owner_id}
+               "_cancel": False, "_proc": {}, "_owner": owner_id,
+               "_polled": time.monotonic()}
         with self._lock:
             # Terminal jobs hold full draft payloads (all step code) — keep only
             # a recent tail so the process doesn't grow for its whole lifetime.
@@ -1244,6 +1255,10 @@ class DraftJobs:
             for k in terminal[:-20]:
                 del self.jobs[k]
             self.jobs[job_id] = job
+            if not self._reaper_started:
+                self._reaper_started = True
+                threading.Thread(target=self._reap_loop, daemon=True,
+                                 name="ad-draft-reap").start()
         t = threading.Thread(target=self._run,
                              args=(job, mode, agent, user_text, current, grants,
                                    chat_history, executions, pkg_state),
@@ -1256,6 +1271,8 @@ class DraftJobs:
             j = self.jobs.get(job_id)
             if not j:
                 return None
+            # §19 unpolled reap: every poll refreshes the stamp.
+            j["_polled"] = time.monotonic()
             # Copy under the lock — _settle inserts new keys (blockers,
             # errorDetail, …) and iterating the live dict outside it can raise
             # "dictionary changed size during iteration" mid-poll.
@@ -1300,6 +1317,43 @@ class DraftJobs:
                    if v["status"] == "building" and v.get("_owner") == owner_id]
         for k in ids:
             self.cancel(k)
+
+    def _reap_once(self) -> None:
+        """§19 unpolled reap: a building job whose poller died (window closed,
+        app quit, renderer crash) must not keep an agent harness working for a
+        result nobody will read. Cancelled exactly like a DELETE."""
+        window = _reap_window_s()
+        now = time.monotonic()
+        with self._lock:
+            stale = [k for k, v in self.jobs.items()
+                     if v["status"] == "building"
+                     and now - v.get("_polled", now) > window]
+        for k in stale:
+            log.warning("drafting job %s unpolled for %.0f s — cancelling", k, window)
+            self.cancel(k)
+
+    def _reap_loop(self) -> None:
+        """Daemon scan behind `_reap_once`, started with the first job. The
+        window is re-read per scan (§15) so tests and a running backend can
+        re-tune it — configuration only, never a different code path."""
+        while True:
+            time.sleep(min(5.0, max(0.05, _reap_window_s() / 4)))
+            self._reap_once()
+
+    def kill_all_building(self) -> None:
+        """§3 shutdown: drafting harnesses die with the backend. Mark every
+        building job cancelled and SIGKILL its harness session group outright —
+        the process is exiting, so cancel()'s term-then-kill grace thread would
+        never get to fire."""
+        with self._lock:
+            live = [j for j in self.jobs.values() if j["status"] == "building"]
+            for j in live:
+                j["_cancel"] = True
+                j["status"] = "cancelled"
+        for j in live:
+            proc = j["_proc"].get("proc")
+            if proc and proc.poll() is None:
+                harness.kill_group(proc, signal.SIGKILL)
 
     def _settle(self, job: dict, status: str, **fields) -> bool:
         """The only terminal transition — building → done/blocked/failed under

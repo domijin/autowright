@@ -365,10 +365,14 @@ ydl_opts = {"ffmpeg_location": imageio_ffmpeg.get_ffmpeg_exe(), ...}
   isn't installed or running, and includes the download URL. Name the
   dependency in the spec too (a "## What you need" bullet with a markdown
   link), so the user sees it before the first run.
-- You cannot see the user's Mac while drafting — assume the tool may be
-  present and build with the pre-flight. Return a `kind: user-action` blocker
-  instead only when you already know it's missing: the user said so, or a
-  recent run's error shows it.
+- The SYSTEM TOOLS section in each request lists curated CLIs found on the
+  user's Mac, probed just before the call. A listed tool is installed right
+  now: build against it confidently — no "you may need to install it" hedging
+  in the spec — but keep the pre-flight, since the tool can be uninstalled
+  before a run. A tool NOT listed may still exist (the list is curated, not
+  exhaustive): assume it may be present and build with the pre-flight. Return
+  a `kind: user-action` blocker instead only when you already know it's
+  missing: the user said so, or a recent run's error shows it.
 
 ## Triggers
 

@@ -449,6 +449,15 @@ isn't installed or running, and includes the download URL, so the failure reads 
 instructions and reaches later §8 chat calls verbatim via RECENT EXECUTIONS. A dependency the
 agent already **knows** is missing (the user said so; a run proved it) yields a §8
 `kind: user-action` blocker instead of steps that will fail.
+**Installed-tools probe.** The backend resolves a curated list of automation-relevant CLIs —
+`gh`, `git`, `brew`, `docker`, `node`, `npm`, `ffmpeg`, `ffprobe`, `yt-dlp`, `jq`, `pandoc`,
+`sqlite3`, `osascript`, `transmission-remote` — with `shutil.which` against the §6.1 step
+`PATH`, at prompt build (presence + resolved path only, pure stat calls — never a version
+subprocess, so no cache is needed). The result feeds the §8 SYSTEM TOOLS prompt section in
+every drafting call, so the drafting agent designs against CLIs that really exist on this
+Mac instead of hedging. Curated, not exhaustive: absence from the list never means absence
+from the Mac, and the pre-flight above stays mandatory either way — a tool can be
+uninstalled between drafting and a run.
 Future escalation, to build only when a real automation is blocked on a binary with no wheel:
 a `tools:` manifest channel backed by a bundled micromamba installing exactly-pinned
 conda-forge packages into `<app-support>/env/`, with the same ensure semantics (§8 install

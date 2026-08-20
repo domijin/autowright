@@ -482,6 +482,23 @@ def test_spawn_env_idempotent_and_binpath_dir_first(monkeypatch):
     assert env["PATH"] == "/opt/x:/fb1:/b:/a"  # binary's own dir leads
 
 
+def test_probe_tools_resolves_against_step_path(monkeypatch, tmp_path):
+    # §6 installed-tools probe: found tools come back as {name, path}, missing
+    # ones are omitted, and resolution uses the §6.1 step PATH — fallback dirs
+    # included — so the probe sees exactly what a step subprocess will see.
+    from autowright import harness
+
+    fb = tmp_path / "fallback"
+    fb.mkdir()
+    exe = fb / "gh"
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+    monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", (str(fb),))
+    monkeypatch.setattr(harness, "_PROBE_TOOLS", ("gh", "definitely-missing-tool"))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")  # the Dock launch's stripped PATH
+    assert harness.probe_tools() == [{"name": "gh", "path": str(exe)}]
+
+
 # ---------- Ollama runtime (§19 /ollama/status, §10 Free local AI card) ----------
 
 def test_ollama_status_ready_when_server_answers(monkeypatch):

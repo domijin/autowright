@@ -404,6 +404,32 @@ def test_prompts_carry_blocker_contract():
         assert "canonical tool" in p and "pre-flight" in p
 
 
+def test_prompts_carry_system_tools_section(monkeypatch):
+    # §8: the §6 installed-tools probe renders as SYSTEM TOOLS in both call
+    # shapes — name + resolved path per tool, with the two reliance rules
+    # (installed right now, but keep the pre-flight; curated, not exhaustive).
+    from autowright import harness
+
+    monkeypatch.setattr(harness, "probe_tools",
+                        lambda: [{"name": "gh", "path": "/opt/homebrew/bin/gh"}])
+    for p in (build_chat_prompt("x", None, GRANTS),
+              build_steps_prompt("# T\n\nBody.", None, GRANTS)):
+        assert "=== SYSTEM TOOLS" in p
+        assert "- name: gh\n  path: /opt/homebrew/bin/gh" in p
+        assert "curated, not exhaustive" in p and "pre-flight" in p
+
+
+def test_system_tools_section_renders_none_when_probe_is_empty(monkeypatch):
+    # §8: an empty probe still renders the section (literal `none`), so the
+    # framework-instructions' reference to SYSTEM TOOLS never dangles.
+    from autowright import harness
+
+    monkeypatch.setattr(harness, "probe_tools", lambda: [])
+    p = build_chat_prompt("x", None, GRANTS)
+    seg = p.split("=== SYSTEM TOOLS")[1].split("\n\n=== ")[0]
+    assert seg.rstrip().endswith("\nnone")
+
+
 def test_chat_prompt_fresh_draft_shape():
     # §8: a fresh draft's chat prompt renders an empty SPEC section and no
     # CURRENT sections beyond the always-present concurrency — the empty spec
@@ -437,7 +463,7 @@ def test_chat_prompt_section_order_and_content():
             {"kind": "error", "text": "The agent call failed: gemini exited 1."}]
     p = build_chat_prompt("also check weekends", cur, GRANTS, chat)
     order = [p.index("=== FRAMEWORK INSTRUCTIONS ==="), p.index("=== GRANTS FOR THIS AUTOMATION ==="),
-             p.index("=== BUILD INSTRUCTIONS"), p.index("=== CONVERSATION"),
+             p.index("=== BUILD INSTRUCTIONS"), p.index("=== SYSTEM TOOLS"), p.index("=== CONVERSATION"),
              p.index("=== AUTOMATION"), p.index("=== SPEC (spec.md) ==="),
              p.index("=== CURRENT parameters"), p.index("=== CURRENT triggers"),
              p.index("=== CURRENT concurrency"), p.index("=== CURRENT step"),

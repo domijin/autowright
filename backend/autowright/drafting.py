@@ -202,7 +202,8 @@ def _grants_yaml(entries: list[dict]) -> str:
 
 
 def _common_context(current: dict | None, grants: dict) -> list[str]:
-    """Grants + build instructions — the context stack both call shapes share."""
+    """Grants + build instructions + system tools — the context stack both
+    call shapes share."""
     parts = [
         "=== GRANTS FOR THIS AUTOMATION ===\n"
         "Enabled agents (yaml: id, name, description, harness, model; agent: true steps "
@@ -228,6 +229,19 @@ def _common_context(current: dict | None, grants: dict) -> list[str]:
     parts.append("=== BUILD INSTRUCTIONS (the user's standing rules — follow them; "
                  "rewritten only when the user asks to change them and the TASK "
                  "allows an instructions.md block) ===\n" + (instructions or "none"))
+    # §8 SYSTEM TOOLS: the §6 installed-tools probe, so the agent designs
+    # against CLIs that really exist on this Mac instead of hedging.
+    tools = harness.probe_tools()
+    parts.append(
+        "=== SYSTEM TOOLS (CLIs installed on this Mac — probed just now against "
+        "the PATH steps run with) ===\n"
+        "A listed tool is installed right now: steps may call it via subprocess "
+        "(argv list), and the spec needn't hedge about installing it — but keep "
+        "the shutil.which pre-flight, since a tool can be uninstalled before a "
+        "run. The list is curated, not exhaustive: a tool not listed here may "
+        "still exist — assume it may be present and build with the pre-flight "
+        "as usual.\n"
+        + (yaml.safe_dump(tools, sort_keys=False).strip() if tools else "none"))
     return parts
 
 

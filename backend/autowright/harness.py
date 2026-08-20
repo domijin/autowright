@@ -145,6 +145,27 @@ def step_env() -> dict:
     return env
 
 
+# §6 installed-tools probe: automation-relevant CLIs. Curated, not exhaustive —
+# the §8 SYSTEM TOOLS header tells the agent an unlisted tool may still exist.
+_PROBE_TOOLS = ("gh", "git", "brew", "docker", "node", "npm", "ffmpeg",
+                "ffprobe", "yt-dlp", "jq", "pandoc", "sqlite3", "osascript",
+                "transmission-remote")
+
+
+def probe_tools() -> list[dict]:
+    """§6: which curated CLIs exist on this Mac, as [{name, path}] — resolved
+    against the §6.1 step PATH so the answer matches what a step subprocess
+    will find at runtime. Presence + path only (pure stat calls, no version
+    subprocesses), so it's cheap enough to run at every prompt build."""
+    path = step_env().get("PATH", "")
+    out = []
+    for name in _PROBE_TOOLS:
+        found = shutil.which(name, path=path)
+        if found:
+            out.append({"name": name, "path": found})
+    return out
+
+
 def invoke(agent: dict, prompt: str, timeout: int | None = None,
            proc_holder: dict | None = None, on_chunk=None,
            should_abort=None, web: bool = False, on_tool=None) -> str:

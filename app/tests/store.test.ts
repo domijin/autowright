@@ -642,3 +642,33 @@ describe('execution cache eviction (MRU: current + 5 most recent)', () => {
     expect(m.executionFull.t1).toBeUndefined() // ordinary oldest still evicted
   })
 })
+
+describe('draftjob.changed — the §19 background-continuation snapshot', () => {
+  it('building and held statuses upsert the row; cancelled and consumed remove it', () => {
+    store.useStore.setState({ draftJobs: [] })
+    const apply = (status: string) => store.useStore.getState().applyEvent(
+      { event: 'draftjob.changed', owner: 'a1', jobId: 'j1', status, mode: 'chat' } as never)
+    apply('building')
+    expect(store.useStore.getState().draftJobs).toEqual(
+      [{ owner: 'a1', jobId: 'j1', status: 'building', mode: 'chat' }])
+    apply('done') // a held outcome stays listed until consumed
+    expect(store.useStore.getState().draftJobs).toEqual(
+      [{ owner: 'a1', jobId: 'j1', status: 'done', mode: 'chat' }])
+    apply('consumed')
+    expect(store.useStore.getState().draftJobs).toEqual([])
+    apply('building')
+    apply('cancelled')
+    expect(store.useStore.getState().draftJobs).toEqual([])
+  })
+
+  it('rows for other jobs survive an unrelated upsert or removal', () => {
+    store.useStore.setState({ draftJobs: [{ owner: 'pending', jobId: 'jp', status: 'building', mode: 'sync' }] })
+    store.useStore.getState().applyEvent(
+      { event: 'draftjob.changed', owner: 'a1', jobId: 'j1', status: 'building', mode: 'chat' } as never)
+    expect(store.useStore.getState().draftJobs).toHaveLength(2)
+    store.useStore.getState().applyEvent(
+      { event: 'draftjob.changed', owner: 'a1', jobId: 'j1', status: 'cancelled', mode: 'chat' } as never)
+    expect(store.useStore.getState().draftJobs).toEqual(
+      [{ owner: 'pending', jobId: 'jp', status: 'building', mode: 'sync' }])
+  })
+})

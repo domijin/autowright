@@ -287,9 +287,18 @@ function ImportModal({ onDone, onClose }: {
 }
 
 
+// §9.1/§19 drafting note — background work is never invisible: faint text
+// only, never a spinner (§11 owns live progress).
+const draftJobNote = (status: string) => (status === 'building'
+  ? 'Your AI is drafting…'
+  : 'Your AI finished — reopen the draft to review.')
+
 function AutoCard({ a }: { a: Automation }) {
   const go = useStore((s) => s.go)
   const showToast = useStore((s) => s.showToast)
+  // §9.1/§19: a building or held drafting job on this automation's draft
+  // container surfaces as the faint drafting note below.
+  const draftJob = useStore((s) => s.draftJobs.find((j) => j.owner === a.id))
   const executing = a.live.length > 0
 
   const execute = (e: React.MouseEvent) => {
@@ -375,6 +384,11 @@ function AutoCard({ a }: { a: Automation }) {
           </span>
         )}
       </div>
+      {draftJob && (
+        <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)' }}>
+          {draftJobNote(draftJob.status)}
+        </div>
+      )}
     </div>
   )
 }
@@ -383,6 +397,10 @@ export default function AutomationsList() {
   const automations = useStore((s) => s.automations)
   const setSurface = useStore((s) => s.setSurface)
   const pendingDraft = useStore((s) => s.pendingDraft)
+  // §9.1/§19: the pending slot's building or held drafting job — the Resume
+  // draft button shows for it too (a first message still in flight has landed
+  // no draft yet, but the session is resumable all the same).
+  const slotJob = useStore((s) => s.draftJobs.find((j) => j.owner === 'pending'))
   const refresh = useStore((s) => s.refresh)
   const [confirmFresh, setConfirmFresh] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
@@ -415,7 +433,12 @@ export default function AutomationsList() {
             <BtnGhost onClick={() => setImportOpen(true)}>
               Import…
             </BtnGhost>
-            {pendingDraft && (
+            {slotJob && (
+              <span style={{ fontSize: 11.5, color: 'var(--text-faint)', alignSelf: 'center' }}>
+                {draftJobNote(slotJob.status)}
+              </span>
+            )}
+            {(pendingDraft || slotJob) && (
               <BtnGhost onClick={() => setSurface('create', 'app')}>
                 Resume draft
               </BtnGhost>

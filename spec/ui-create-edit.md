@@ -307,7 +307,9 @@ applies unchanged; the chat pane never collapses.
     `triggers` ops edit the editor's trigger list (the TRIGGERS card) exactly like the
     §4.3 staged state a sync produces — applied in op order, indexes always meaning the
     CURRENT-triggers numbering the agent saw (an earlier `remove` never shifts a later
-    op onto a neighbor; an op naming an already-removed entry is inert), each with a
+    op onto a neighbor; an op naming an already-removed entry is inert; a re-attach
+    apply first proves the base list is still the one the agent saw — the §19
+    `sentTriggers` guard under Background continuation & re-attach below), each with a
     system entry
     ("Trigger added." / "Trigger 2 updated." / "Trigger 3 removed." / "Trigger 1 turned
     off." — details live on the card, which re-labels through §19 `/triggers/preview`);
@@ -411,11 +413,15 @@ applies unchanged; the chat pane never collapses.
   anywhere on the page fires the same cancel while a §8 job is in flight — it is a
   keyboard shortcut for this Cancel button, nothing more (it never cancels a draft test,
   whose Cancel lives in the Build & test panel), and it yields to surfaces that own Esc
-  while open: the modal stack and the §9.3 developer log overlay. Exits cancel too: leaving
-  the editor any way, Discard draft, and Start over all cancel an in-flight chat job
-  (client-side, beside the §19 owner cancel and unpolled reap). With no composer left to
-  return the request to, the pending user entry stays in the persisted thread, and every
-  exit or settle flush that cancels an in-flight chat job appends the system chip "Edit
+  while open: the modal stack and the §9.3 developer log overlay. **Settles cancel;
+  leaves don't:** Discard draft and Start over cancel an in-flight chat job (client-side,
+  beside the §19 owner cancel), but merely leaving the editor — navigation anywhere,
+  Keep draft, closing the window — never does: the job keeps building in the background
+  (§19 background continuation; its lifetime is the draft's, the same rule as the draft
+  test) and re-entering the editor re-attaches to it (Background continuation &
+  re-attach below). When a settle path does cancel, the pending user entry stays in the
+  persisted thread with no composer left to return the request to, so every settle flush
+  that cancels an in-flight chat job appends the system chip "Edit
   stopped — the spec is unchanged." (the composer cancel's toast copy, icon `fa-ban`) right
   after it, so a kept thread never resumes on a request that looks unanswered and a later
   §8 CONVERSATION context sees the turn was cancelled. Every other place on the page
@@ -440,8 +446,10 @@ applies unchanged; the chat pane never collapses.
   shows the thread instead, the composer placeholder ("Describe the job — one
   sentence is enough." while no spec) carrying the prompt. **A new automation always
   opens on this empty state:** entering the create flow when the pending slot holds
-  no draft to resume discards any leftover slot thread (the §4.4 fresh-entry clear) —
-  a settled session's conversation never replays over the suggestions.
+  no draft to resume — and no building or held §19 job (a slot that owns one is a
+  session to resume, never cleared over) — discards any leftover slot thread (the §4.4
+  fresh-entry clear) — a settled session's conversation never replays over the
+  suggestions.
   Edit-mode empty state (no stored thread): "Ask anything, or describe a change — your AI
   answers here and rewrites the spec when you ask for changes."
 - **Thread lifetime:** the thread **outlives the draft** (§4.4 thread lifetime; §5
@@ -479,7 +487,9 @@ applies unchanged; the chat pane never collapses.
   editor holds the stored-thread merge until the §19 `GET /draft/pending` answer, and
   with nothing to resume it drops the fetched thread and PUTs `[]` (unlinking
   `chat.jsonl`) instead of rendering it — so a new automation always opens on the create
-  empty state; the slot thread survives entry only beside a kept draft. The
+  empty state; the slot thread survives entry only beside a kept draft **or a building
+  or held §19 job** (the `GET /draft/pending` `job` ref counts as something to resume —
+  Background continuation & re-attach below). The
   thread is otherwise deleted only by **Clear chat**, with its automation, or by the §9.1
   discard-and-start-new confirm (which clears the pending slot's thread right after the
   discard, so the fresh create flow opens with an empty thread) — never by any other
@@ -493,6 +503,52 @@ applies unchanged; the chat pane never collapses.
   snapshot would allow an invisible undo, Draft undo below) and takes open blockers
   entries with it; the draft documents, the dirty/out-of-sync state, and the session's
   "Previously resolved" list are untouched, so no sync or save gate is bypassed.
+
+**Background continuation & re-attach.** A §8 job's lifetime is the draft's, never the
+page's — the same rule the draft test already follows, so everything the editor starts
+survives leaving it and dies when the draft settles. Leaving the editor while a job is
+building (navigation, Keep draft, closing the window) detaches the UI and nothing more:
+the job keeps building in the background (§19 background continuation) and no "Edit
+stopped" chip is appended — only the settle paths cancel. Editor-armed state does **not**
+travel: a pending sync or test that hasn't fired yet is dropped by the leave (the
+persisted out-of-sync state and the Sync now button remain, so nothing dead-ends — and
+nothing is rebuilt while the user is away), and a background-settled response's own
+`sync: true` / `test: true` actions arm only when its outcome is applied on return —
+apply points are editor-owned, so the pipeline pauses between calls until the user is
+back. Re-entering the editor (either mode) reads the owner's §19 `job` ref, after the
+stored thread and draft load and before any queued send (the Fix-with-AI send waits for
+this reconciliation like it waits for the thread), and reconciles:
+
+- **Building** — the editor re-attaches its poll and rebuilds the live progress entry at
+  the job's current stage. Stages that finished while away settle into the thread first
+  as ordinary activity entries — each stage's slice of the stage-stamped §8 `events`
+  feed, the seeded "Working on the request" stage and the canned bullet for an empty
+  slice included — deduped by stage title against the current turn's entries (those after
+  the thread's last user entry), so a stage that settled live never lands twice; a §19
+  `plan` that streamed unobserved lands its "The plan" answer entry exactly as at a live
+  flip (skipped when it already landed). From there the inputs lock, the composer's
+  Cancel, and every other in-flight rule apply as if the editor had never been left.
+- **Settled (a held outcome — done, blocked, or failed)** — the editor first lands the
+  stage trail exactly as above, then applies the whole outcome exactly like a live
+  settle — same entry order, same apply order, same hold-and-flush — and then consumes
+  the job (§19 ack; the editor acks every settled job it applies, live settles exactly
+  the same way — an unacked outcome would resurface as held on the next entry), so a
+  crash between
+  apply and ack re-applies on the next entry instead of losing the outcome (rewrites are
+  full-document replacements — a re-apply costs at worst a duplicate receipt chip).
+  Actions the apply arms (a chained sync, a pending test) fire under the same watcher
+  gating as a live session, evaluated with whatever is running at return time — a draft
+  test that outlived the visit included. One guard is stricter than a live apply:
+  `triggers` ops apply only when the editor's base trigger list equals the job's §19
+  `sentTriggers` echo — the list the agent's indexes refer to; on any difference (a §9.2
+  trigger edit while the job ran unattended) every `triggers` op in the response is
+  dropped with the one system chip "Trigger changes dropped — the triggers changed while
+  your AI worked. Ask again." (`fa-clock`, like the other trigger chips). A live apply
+  never hits this: the inputs lock keeps the base list still.
+- **No job ref, but the thread's current session ends on an unanswered user entry** — the
+  job vanished without a trace (a backend restart lost the in-memory record, §19): the
+  editor appends the "Edit stopped — the spec is unchanged." chip after the orphaned user
+  entry, so the thread never resumes on a request that looks unanswered.
 
 **The first build on Review.** A fresh draft's first chat message is an ordinary §8 chat
 turn — the new-automation rule: the chat job lands the spec rewrite, the `name` /
@@ -1148,10 +1204,12 @@ editors enter with
   record deletes itself once it lands — it never survives the draft and never writes a
   last-test summary into the settled container, so a discarded draft leaves no test residue.
   The same settle also cancels any **still-building §8 drafting job** stamped with the
-  container as its owner (§19 — the cancel kills the harness process): a settled draft
-  leaves no agent process running either. The editor cancels its own in-flight job
-  client-side too (Discard draft / Start over call the same cancel as leaving the page —
-  belt-and-braces beside the server-side owner cancel).
+  container as its owner and drops its held outcome (§19 — the cancel kills the harness
+  process): a settled draft
+  leaves no agent process running and no unconsumed outcome behind. The editor cancels
+  its own in-flight job
+  client-side too (Discard draft / Start over — belt-and-braces beside the server-side
+  owner cancel; merely leaving the page cancels nothing, §19 background continuation).
   Deleting the automation deletes them too.
   **Test setup section (create and edit mode):** the test button (**Test draft**)
   is a **disclosure toggle**, not the run trigger — it never starts a

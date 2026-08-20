@@ -138,7 +138,10 @@ actions and sit alone in the right slot.
 ### 9.1 Automations list
 
 1200 px page, "Automations" title + New button. When the §4.4 pending create-mode slot
-holds a draft (`pendingDraft` on `GET /state`), the header shows two buttons: a bordered
+holds a draft (`pendingDraft` on `GET /state`) — or owns a building or held §19 drafting
+job (`draftJobs`, the `pending` owner: a first message still in flight has landed no
+draft yet, but the session is resumable all the same) — the header shows two buttons: a
+bordered
 **Resume draft** button (opens the create flow, which resumes the slot straight on Review)
 to the left of the primary **New automation** button — which then starts fresh: a danger
 confirm (title "Start a new automation?", body "Your unsaved draft “`<name>`” will be
@@ -189,7 +192,13 @@ while that automation is executing it swaps to a spinner, dims, and is disabled 
 explains why). The card carries no last-execution label — `lastExecutionLabel` appears on the detail page and in the
 menu bar. The card name stays on one line — ellipsized with the full name as a `title`
 tooltip (same treatment as the detail-page title), so long names never wrap and desync card
-heights across a grid row. Empty state (dashed card):
+heights across a grid row. **Drafting notes** (§19 background continuation — background
+work is never invisible): while an automation's draft container owns a **building** §19
+drafting job (`draftJobs` on `GET /state`, kept current by the `draftjob.changed` event)
+its card carries the faint one-line note "Your AI is drafting…", and while it owns a
+**held** outcome (the job settled unobserved) the note reads "Your AI finished — reopen
+the draft to review." — faint text only, never a spinner (§11 owns live progress); the
+header's Resume draft button shows the same two notes beside it for the `pending` owner. Empty state (dashed card):
 "No automations yet. Describe a job in plain words — your AI writes it as scripts you can read,
 and Autowright executes them on your schedule." with accent CTA "Create your first automation" —
 the CTA behaves exactly like the header New automation button: with a pending draft it shows

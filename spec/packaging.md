@@ -152,8 +152,10 @@ the update bullets below).
   still-building drafting job and SIGKILLs its harness session group outright (the process is
   exiting, so cancel's term-then-kill grace thread would never get to fire). Unlike step
   groups they leave no persisted record, so crash recovery cannot sweep one; a harness
-  orphaned by a backend crash simply runs to its own completion, and the §19 unpolled reap
-  covers the mirror case of a client that died while the backend lives on.
+  orphaned by a backend crash simply runs to its own completion. The mirror case — a
+  client that dies or navigates away while the backend lives on — is not an orphan at
+  all: the job keeps building and its outcome is held for the §11 re-attach (§19
+  background continuation), bounded by the §8 idle window and wall-clock hard cap.
 - Quitting the Electron app (window and menu bar) never stops the backend; the scheduler keeps
   running. The §4.9 `login` setting controls only whether the UI starts at login — the backend
   service stays registered regardless once onboarding completes.

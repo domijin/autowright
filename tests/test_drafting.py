@@ -1385,8 +1385,9 @@ def test_draft_jobs_cancel_building_and_terminal_noop():
 
 
 def test_draft_jobs_cancel_for_owner():
-    # §19 draft settle: cancel_for kills only the owner's building jobs —
-    # other owners' jobs and terminal jobs are untouched; None = pending slot.
+    # §19 draft settle: cancel_for kills the owner's building jobs AND drops
+    # its held terminal records — other owners' jobs are untouched; None =
+    # pending slot.
     from autowright.drafting import DraftJobs
 
     jobs = DraftJobs()
@@ -1399,50 +1400,108 @@ def test_draft_jobs_cancel_for_owner():
     jobs.cancel_for("auto-1")
     assert jobs.jobs["a"]["status"] == "cancelled"
     assert jobs.jobs["b"]["status"] == "building"
-    assert jobs.jobs["c"]["status"] == "done"
+    assert "c" not in jobs.jobs  # held outcome dropped with the settle
     jobs.cancel_for(None)
     assert jobs.jobs["b"]["status"] == "cancelled"
 
 
-def test_draft_jobs_reap_unpolled(monkeypatch):
-    # §19 unpolled reap: a building job whose poller died is cancelled like a
-    # DELETE; a fresh stamp keeps it alive and terminal jobs are ignored.
-    import time as _t
-
+def test_draft_jobs_no_unpolled_reap():
+    # §19 background continuation: there is no unpolled reap — a building job
+    # deliberately survives losing its poller (the editor navigated away); the
+    # §8 idle window and hard cap are what bound a runaway call.
     from autowright.drafting import DraftJobs
 
-    monkeypatch.setenv("AUTOWRIGHT_DRAFT_REAP_S", "60")
     jobs = DraftJobs()
-    old = _t.monotonic() - 120
-    jobs.jobs["stale"] = {"id": "stale", "status": "building", "_cancel": False,
-                          "_proc": {}, "_polled": old}
-    jobs.jobs["fresh"] = {"id": "fresh", "status": "building", "_cancel": False,
-                          "_proc": {}, "_polled": _t.monotonic()}
-    jobs.jobs["done"] = {"id": "done", "status": "done", "_cancel": False,
-                         "_proc": {}, "_polled": old}
-    jobs._reap_once()
-    assert jobs.jobs["stale"]["status"] == "cancelled"
-    assert jobs.jobs["stale"]["_cancel"] is True
-    assert jobs.jobs["fresh"]["status"] == "building"
-    assert jobs.jobs["done"]["status"] == "done"
+    assert not hasattr(jobs, "_reap_once")
+    assert not hasattr(jobs, "_reap_loop")
 
 
-def test_draft_jobs_get_refreshes_poll_stamp(monkeypatch):
-    # §19: every GET refreshes the last-poll stamp — a polled job never reaps.
-    import time as _t
-
+def test_draft_jobs_ack_consumes_settled_only():
+    # §19 POST /drafts/{jobId}/ack: consuming drops a settled record; a
+    # building job answers "building" (the route's 409) and an unknown id
+    # "missing" (404).
     from autowright.drafting import DraftJobs
 
-    monkeypatch.setenv("AUTOWRIGHT_DRAFT_REAP_S", "60")
     jobs = DraftJobs()
-    jobs.jobs["j"] = {"id": "j", "status": "building", "stage": "s",
-                      "detail": None, "events": [], "error": None,
-                      "draft": None, "mode": "chat",
-                      "_cancel": False, "_proc": {},
-                      "_polled": _t.monotonic() - 120}
-    assert jobs.get("j")["status"] == "building"
-    jobs._reap_once()
-    assert jobs.jobs["j"]["status"] == "building"
+    jobs.jobs["d"] = {"id": "d", "status": "done", "_cancel": False,
+                      "_proc": {}, "_owner": "auto-1", "mode": "chat"}
+    jobs.jobs["b"] = {"id": "b", "status": "building", "_cancel": False,
+                      "_proc": {}, "_owner": "auto-1", "mode": "chat"}
+    assert jobs.ack("d") == "ok"
+    assert "d" not in jobs.jobs
+    assert jobs.ack("b") == "building"
+    assert "b" in jobs.jobs
+    assert jobs.ack("never-existed") == "missing"
+
+
+def test_draft_jobs_job_for_prefers_building_and_skips_cancelled():
+    # §19 `job` ref: the owner's building job wins over a held outcome; a
+    # cancelled record holds nothing; unknown owners answer None.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    jobs.jobs["h"] = {"id": "h", "status": "blocked", "_cancel": False,
+                      "_proc": {}, "_owner": "auto-1", "mode": "chat"}
+    jobs.jobs["x"] = {"id": "x", "status": "cancelled", "_cancel": True,
+                      "_proc": {}, "_owner": "auto-2", "mode": "sync"}
+    assert jobs.job_for("auto-1") == {"jobId": "h", "status": "blocked", "mode": "chat"}
+    assert jobs.job_for("auto-2") is None
+    assert jobs.job_for(None) is None
+    jobs.jobs["b"] = {"id": "b", "status": "building", "_cancel": False,
+                      "_proc": {}, "_owner": "auto-1", "mode": "sync"}
+    assert jobs.job_for("auto-1") == {"jobId": "b", "status": "building", "mode": "sync"}
+
+
+def test_draft_jobs_all_jobs_lists_building_and_held():
+    # §19 GET /state draftJobs: building + held rows, owner-keyed (None →
+    # "pending"); cancelled records never list.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    jobs.jobs["b"] = {"id": "b", "status": "building", "_cancel": False,
+                      "_proc": {}, "_owner": None, "mode": "chat"}
+    jobs.jobs["h"] = {"id": "h", "status": "failed", "_cancel": False,
+                      "_proc": {}, "_owner": "auto-1", "mode": "sync"}
+    jobs.jobs["x"] = {"id": "x", "status": "cancelled", "_cancel": True,
+                      "_proc": {}, "_owner": "auto-1", "mode": "chat"}
+    assert jobs.all_jobs() == [
+        {"owner": "pending", "jobId": "b", "status": "building", "mode": "chat"},
+        {"owner": "auto-1", "jobId": "h", "status": "failed", "mode": "sync"},
+    ]
+
+
+def test_draft_jobs_start_supersedes_owners_held_outcome(monkeypatch):
+    # §19: one held outcome per owner — a new job for the same owner drops the
+    # previous terminal record; other owners' held outcomes stay.
+    from autowright import drafting as d
+
+    jobs = d.DraftJobs()
+    monkeypatch.setattr(d.threading.Thread, "start", lambda self: None)
+    jobs.jobs["old"] = {"id": "old", "status": "done", "_cancel": False,
+                        "_proc": {}, "_owner": "auto-1", "mode": "chat"}
+    jobs.jobs["other"] = {"id": "other", "status": "done", "_cancel": False,
+                          "_proc": {}, "_owner": "auto-2", "mode": "chat"}
+    jid = jobs.start("chat", {"harness": "claude"}, "hi", None, {}, owner_id="auto-1")
+    assert "old" not in jobs.jobs
+    assert "other" in jobs.jobs
+    assert jobs.jobs[jid]["status"] == "building"
+
+
+def test_draft_jobs_chat_start_echoes_sent_triggers(monkeypatch):
+    # §19 `sentTriggers`: a chat job echoes the resolved trigger list its
+    # CURRENT-triggers section renders from (the §11 re-attach guard); sync
+    # jobs echo nothing.
+    from autowright import drafting as d
+
+    jobs = d.DraftJobs()
+    monkeypatch.setattr(d.threading.Thread, "start", lambda self: None)
+    trig = [{"id": "t1", "kind": "cron", "cron": "0 8 * * *", "enabled": True}]
+    jid = jobs.start("chat", {"harness": "claude"}, "hi",
+                     {"triggers": trig}, {}, owner_id=None)
+    assert jobs.get(jid)["sentTriggers"] == trig
+    jid2 = jobs.start("sync", {"harness": "claude"}, None,
+                      {"triggers": trig}, {}, owner_id=None)
+    assert "sentTriggers" not in jobs.get(jid2)
 
 
 def test_draft_jobs_kill_all_building_kills_harness_group():

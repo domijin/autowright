@@ -33,6 +33,7 @@ from pathlib import Path
 import yaml
 
 from . import harness, packages as pkglib, reqlog, triggers as triggerlib
+from .events import hub
 from .imports_check import ALLOWED_IMPORTS, disallowed_imports
 from .specmd import blocks_to_md, md_to_blocks
 from .storage import AGENT_REF_RE, SECRET_REF_RE
@@ -1212,23 +1213,33 @@ class Cancelled(Exception):
     pipeline in one place — `_run` catches it once. No boolean plumbing."""
 
 
-def _reap_window_s() -> float:
-    """§19 unpolled reap window (§15 `AUTOWRIGHT_DRAFT_REAP_S`, default 120).
-    Read per scan, like the harness timeouts."""
-    try:
-        return float(os.environ.get("AUTOWRIGHT_DRAFT_REAP_S") or 120)
-    except ValueError:
-        return 120.0
+# §19 background continuation: terminal statuses whose outcome is held for the
+# §11 re-attach until consumed (a cancelled job holds nothing to apply).
+_HELD_STATUSES = ("done", "blocked", "failed")
 
 
 class DraftJobs:
     """§19 POST /drafts — the §8 chat/sync calls as background jobs, with
-    automatic repair rounds per call (§8)."""
+    automatic repair rounds per call (§8). A job's lifetime is its owner
+    draft's, never its poller's (§19 background continuation): there is no
+    unpolled reap, and a settled job's outcome is held until the §11 editor
+    consumes it (ack), the owner's draft settles, or a new job supersedes it."""
 
     def __init__(self) -> None:
         self.jobs: dict[str, dict] = {}
         self._lock = threading.Lock()
-        self._reaper_started = False
+
+    @staticmethod
+    def _ref(j: dict) -> dict:
+        """The §19 `job` ref shape (`GET /draft/{owner}` envelope, `draftjob.changed`)."""
+        return {"jobId": j["id"], "status": j["status"], "mode": j.get("mode")}
+
+    @staticmethod
+    def _publish(j: dict, status: str | None = None) -> None:
+        """§19 `draftjob.changed` — owner-keyed so clients patch their
+        `draftJobs` snapshot (`cancelled`/`consumed` remove, the rest upsert)."""
+        hub.publish("draftjob.changed", owner=j.get("_owner") or "pending",
+                    jobId=j["id"], status=status or j["status"], mode=j.get("mode"))
 
     def start(self, mode: str, agent: dict, user_text: str | None,
               current: dict | None, grants: dict,
@@ -1243,22 +1254,34 @@ class DraftJobs:
         stage = ("Syncing the workflow" if mode == "sync"
                  else "Working on the request")
         # §19: the owner stamp (automation id, None = the pending slot) lets
-        # the draft-settle endpoints cancel the container's building jobs.
+        # the draft-settle endpoints cancel the container's building jobs and
+        # lets the §11 re-attach find the owner's job again.
         job = {"id": job_id, "status": "building", "stage": stage, "detail": None,
                "events": [], "error": None, "draft": None, "mode": mode,
-               "_cancel": False, "_proc": {}, "_owner": owner_id,
-               "_polled": time.monotonic()}
+               "_cancel": False, "_proc": {}, "_owner": owner_id}
+        if mode == "chat":
+            # §19 `sentTriggers`: echo the resolved trigger list the §8
+            # CURRENT-triggers section renders from, so a §11 re-attach apply
+            # can prove the base list `triggers` ops index is still this one.
+            job["sentTriggers"] = list((current or {}).get("triggers") or [])
+        superseded: list[dict] = []
         with self._lock:
+            # §19: one held outcome per owner — a new job for the same owner
+            # supersedes (consumes) the previous terminal record.
+            for k, v in list(self.jobs.items()):
+                if v["status"] != "building" and v.get("_owner") == owner_id:
+                    superseded.append(self.jobs.pop(k))
             # Terminal jobs hold full draft payloads (all step code) — keep only
-            # a recent tail so the process doesn't grow for its whole lifetime.
+            # a recent tail so the process doesn't grow for its whole lifetime
+            # (a backstop for clients that never ack, e.g. a died CLI).
             terminal = [k for k, v in self.jobs.items() if v["status"] != "building"]
             for k in terminal[:-20]:
-                del self.jobs[k]
+                superseded.append(self.jobs.pop(k))
             self.jobs[job_id] = job
-            if not self._reaper_started:
-                self._reaper_started = True
-                threading.Thread(target=self._reap_loop, daemon=True,
-                                 name="ad-draft-reap").start()
+        for v in superseded:
+            if v["status"] in _HELD_STATUSES:
+                self._publish(v, "consumed")
+        self._publish(job)
         t = threading.Thread(target=self._run,
                              args=(job, mode, agent, user_text, current, grants,
                                    chat_history, executions, pkg_state),
@@ -1271,8 +1294,6 @@ class DraftJobs:
             j = self.jobs.get(job_id)
             if not j:
                 return None
-            # §19 unpolled reap: every poll refreshes the stamp.
-            j["_polled"] = time.monotonic()
             # Copy under the lock — _settle inserts new keys (blockers,
             # errorDetail, …) and iterating the live dict outside it can raise
             # "dictionary changed size during iteration" mid-poll.
@@ -1290,6 +1311,7 @@ class DraftJobs:
                 return False
             j["_cancel"] = True
             j["status"] = "cancelled"
+        self._publish(j)
         proc = j["_proc"].get("proc")
         if proc and proc.poll() is None:
             # The whole session group (§8 "cancelling the job kills the harness
@@ -1310,35 +1332,57 @@ class DraftJobs:
 
     def cancel_for(self, owner_id: str | None) -> None:
         """§19 draft settle: cancel every still-building job stamped with this
-        owner (None = the pending slot), so a settled draft never leaves an
-        agent harness process running."""
+        owner (None = the pending slot) and drop its held terminal records, so
+        a settled draft never leaves an agent harness process running or an
+        unconsumed outcome behind."""
         with self._lock:
             ids = [k for k, v in self.jobs.items()
                    if v["status"] == "building" and v.get("_owner") == owner_id]
+            dropped = [self.jobs.pop(k) for k, v in list(self.jobs.items())
+                       if v["status"] != "building" and v.get("_owner") == owner_id]
         for k in ids:
             self.cancel(k)
+        for v in dropped:
+            if v["status"] in _HELD_STATUSES:
+                self._publish(v, "consumed")
 
-    def _reap_once(self) -> None:
-        """§19 unpolled reap: a building job whose poller died (window closed,
-        app quit, renderer crash) must not keep an agent harness working for a
-        result nobody will read. Cancelled exactly like a DELETE."""
-        window = _reap_window_s()
-        now = time.monotonic()
+    def ack(self, job_id: str) -> str:
+        """§19 POST /drafts/{jobId}/ack — the §11 editor consumed a settled
+        job's outcome (applied + persisted). Drops the record. Returns
+        "ok" | "missing" | "building" for the route's 200/404/409."""
         with self._lock:
-            stale = [k for k, v in self.jobs.items()
-                     if v["status"] == "building"
-                     and now - v.get("_polled", now) > window]
-        for k in stale:
-            log.warning("drafting job %s unpolled for %.0f s — cancelling", k, window)
-            self.cancel(k)
+            j = self.jobs.get(job_id)
+            if not j:
+                return "missing"
+            if j["status"] == "building":
+                return "building"
+            del self.jobs[job_id]
+        if j["status"] in _HELD_STATUSES:
+            self._publish(j, "consumed")
+        return "ok"
 
-    def _reap_loop(self) -> None:
-        """Daemon scan behind `_reap_once`, started with the first job. The
-        window is re-read per scan (§15) so tests and a running backend can
-        re-tune it — configuration only, never a different code path."""
-        while True:
-            time.sleep(min(5.0, max(0.05, _reap_window_s() / 4)))
-            self._reap_once()
+    def job_for(self, owner_id: str | None) -> dict | None:
+        """§19 `GET /draft/{owner}` `job` ref: the owner's building job, else
+        its newest held outcome, else None (cancelled jobs hold nothing)."""
+        with self._lock:
+            building = held = None
+            for v in self.jobs.values():  # insertion-ordered → last wins
+                if v.get("_owner") != owner_id:
+                    continue
+                if v["status"] == "building":
+                    building = v
+                elif v["status"] in _HELD_STATUSES:
+                    held = v
+            j = building or held
+            return self._ref(j) if j else None
+
+    def all_jobs(self) -> list[dict]:
+        """§19 GET /state `draftJobs`: every building or held owner-stamped
+        job (backs the §9.1 drafting notes)."""
+        with self._lock:
+            return [{"owner": v["_owner"] or "pending", **self._ref(v)}
+                    for v in self.jobs.values()
+                    if v["status"] == "building" or v["status"] in _HELD_STATUSES]
 
     def kill_all_building(self) -> None:
         """§3 shutdown: drafting harnesses die with the backend. Mark every
@@ -1364,7 +1408,10 @@ class DraftJobs:
                 return False
             job["status"] = status
             job.update(fields)
-            return True
+        # §19 draftjob.changed: a held outcome upserts the clients' snapshot
+        # (the §9.1 "finished" note) — published outside the lock.
+        self._publish(job)
+        return True
 
     def _run(self, job: dict, mode: str, agent: dict, user_text: str | None,
              current: dict | None, grants: dict, chat_history: list | None,

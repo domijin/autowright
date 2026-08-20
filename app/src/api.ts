@@ -134,7 +134,9 @@ export const api = {
   // (the §4.4 create-mode slot <root>/draft/). agentId rides beside the
   // pending payload only — the identity no automation record exists to hold.
   getDraft: (owner: string) =>
-    req<{ draft: import('./types').DraftPayload | null; agentId: string | null }>('GET', `/draft/${owner}`),
+    req<{ draft: import('./types').DraftPayload | null; agentId: string | null
+      // §19 background continuation: the owner's building job or held outcome
+      job?: import('./types').DraftJobRef }>('GET', `/draft/${owner}`),
   putDraft: (owner: string, draft: unknown, agentId?: string | null) =>
     req('PUT', `/draft/${owner}`, { draft, ...(agentId !== undefined ? { agentId } : {}) }),
   openDraft: (owner: string) => req('POST', `/draft/${owner}/open`),
@@ -163,6 +165,8 @@ export const api = {
   postDraftJob: (body: Record<string, unknown>) => req<{ jobId: string }>('POST', '/drafts', body),
   getDraftJob: (jobId: string) => req<DraftJob>('GET', `/drafts/${jobId}`),
   cancelDraftJob: (jobId: string) => req('DELETE', `/drafts/${jobId}`),
+  // §19 background continuation: the editor consumed a settled job's outcome
+  ackDraftJob: (jobId: string) => req('POST', `/drafts/${jobId}/ack`),
   addAgent: (body: Record<string, unknown>) => req<import('./types').Agent>('POST', '/agents', body),
   patchAgent: (id: string, body: Record<string, unknown>) => req('PATCH', `/agents/${id}`, body),
   deleteAgent: (id: string) => req('DELETE', `/agents/${id}`),

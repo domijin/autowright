@@ -1,7 +1,7 @@
 // One central model drives everything (§4 top-level, §9 navigation).
 import { create } from 'zustand'
 import { api, connectInfo, openWs } from './api'
-import type { Agent, Automation, Execution, LogLine, SecretMeta, Settings, StateSnapshot, WsEvent } from './types'
+import type { Agent, Automation, DraftJobRow, Execution, LogLine, SecretMeta, Settings, StateSnapshot, WsEvent } from './types'
 
 type Surface = 'onboard' | 'app' | 'create' | 'menubar'
 export type Page =
@@ -39,6 +39,10 @@ interface Model {
   updateAvailable: string | null
   // §4.4 pending create-mode slot — drives the §9.1 Resume draft button
   pendingDraft: { name: string; updatedAt: string | null } | null
+  // §19 background continuation: every building or held drafting job, owner-
+  // keyed — drives the §9.1 drafting notes and the §11 re-attach; kept
+  // current by the draftjob.changed event.
+  draftJobs: DraftJobRow[]
   // §9.5 report issue modal — opened by the §9 "Report an issue" nav row; not a page.
   reportOpen: boolean
 
@@ -166,6 +170,7 @@ export const useStore = create<Model>((set, get) => ({
   settings: null,
   updateAvailable: null,
   pendingDraft: null,
+  draftJobs: [],
   reportOpen: false,
   surface: 'app',
   page: 'automations',
@@ -221,7 +226,7 @@ export const useStore = create<Model>((set, get) => ({
         ...(n === refreshSeq ? {
           version: s.version, automations: s.automations, executions: s.executions,
           agents: s.agents, secrets: s.secrets, settings: s.settings,
-          pendingDraft: s.pendingDraft,
+          pendingDraft: s.pendingDraft, draftJobs: s.draftJobs ?? [],
         } : {}),
       })
       if (onboarded) passedOnboard = true
@@ -268,7 +273,7 @@ export const useStore = create<Model>((set, get) => ({
         // fresher (or will be); applying this one would roll state backwards.
         if (n !== refreshSeq) return
         if (mut !== eventSeq && attempt < 3) continue
-        set({ automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft })
+        set({ automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft, draftJobs: s.draftJobs ?? [] })
         updateTrayAlert(s.automations)
         return
       }
@@ -403,6 +408,17 @@ export const useStore = create<Model>((set, get) => ({
       } else {
         void m.refresh()
       }
+      return
+    }
+    if (ev === 'draftjob.changed') {
+      // §19 background continuation: cancelled/consumed remove the row,
+      // everything else upserts it (a held outcome stays listed until consumed).
+      const others = m.draftJobs.filter((j) => j.jobId !== msg.jobId)
+      set({
+        draftJobs: msg.status === 'cancelled' || msg.status === 'consumed'
+          ? others
+          : [...others, { owner: msg.owner, jobId: msg.jobId, status: msg.status, mode: msg.mode }],
+      })
       return
     }
     if (ev === 'agents.changed' || ev === 'secrets.changed' || ev === 'settings.changed' || ev === 'draft.changed') {

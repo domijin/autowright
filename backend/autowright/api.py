@@ -370,6 +370,10 @@ def state() -> dict:
             "secrets": _secrets_json(),
             "settings": settings,
             "pendingDraft": store.pending_draft_summary(),
+            # §19 background continuation: every building or held drafting job,
+            # owner-keyed — backs the §9.1 drafting notes (kept current by the
+            # draftjob.changed event).
+            "draftJobs": draft_jobs.all_jobs(),
         }
 
 
@@ -663,7 +667,14 @@ def _publish_draft_changed(a: dict | None) -> None:
 
 @app.get("/draft/{owner}", dependencies=[Depends(auth)])
 def get_draft_container(owner: str) -> dict:
-    return store.draft_container_json(_draft_owner(owner))
+    a = _draft_owner(owner)
+    out = store.draft_container_json(a)
+    # §19 background continuation: the owner's building job or held outcome
+    # rides the envelope (not inside `draft` — a first message still in flight
+    # may have landed no draft at all), backing the §11 re-attach.
+    if job := draft_jobs.job_for(a["id"] if a is not None else None):
+        out["job"] = job
+    return out
 
 
 @app.post("/draft/{owner}/open", dependencies=[Depends(auth)])
@@ -1216,6 +1227,18 @@ def get_draft(job_id: str) -> dict:
 @app.delete("/drafts/{job_id}", dependencies=[Depends(auth)])
 def cancel_draft(job_id: str) -> dict:
     return {"ok": draft_jobs.cancel(job_id)}
+
+
+@app.post("/drafts/{job_id}/ack", dependencies=[Depends(auth)])
+def ack_draft(job_id: str) -> dict:
+    """§19 background continuation: the §11 editor consumed a settled job's
+    outcome (applied + persisted) — drop the held record."""
+    result = draft_jobs.ack(job_id)
+    if result == "missing":
+        raise HTTPException(404, "job not found")
+    if result == "building":
+        raise HTTPException(409, "job is still building — only settled jobs are consumable")
+    return {"ok": True}
 
 # ---------- executions ----------
 @app.get("/executions", dependencies=[Depends(auth)])

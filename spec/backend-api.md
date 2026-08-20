@@ -34,7 +34,10 @@ remain plain dicts (§2).
 - `GET /state` → boot snapshot: automations (full), execution headers, agents, secrets (the
   `GET /secrets` entries — id, name, description, set, usedBy; never values), settings, app
   version, `pendingDraft` (`{ name, updatedAt } | null` — the §4.4
-  slot's identity summary; backs the §9.1 Resume draft button)
+  slot's identity summary; backs the §9.1 Resume draft button), and `draftJobs`
+  (`[{ owner, jobId, status, mode }]` — every §19 drafting job currently building or held
+  for consumption, `owner` an automation id or the literal `pending`; backs the §9.1
+  drafting notes, kept current by the `draftjob.changed` event below)
 - `GET /instructions` → `{ framework, defaultBuild }` — the two §8 instruction files verbatim
   (backs the §11 Framework-instructions and Build-instructions cards)
 - `GET /automations` · `GET /automations/{id}` · `DELETE /automations/{id}` — delete cancels
@@ -190,8 +193,9 @@ remain plain dicts (§2).
   so it deletes itself when it lands instead of surviving as an orphan or rewriting the
   settled container's `test.yaml`, **and cancels the owner's still-building §8 drafting
   jobs** (`POST /drafts` stamps every job with its owner, below; the cancel kills the
-  harness process exactly like `DELETE /drafts/{jobId}`) — a settled draft never leaves
-  an agent process or test process running. `DELETE` settles the
+  harness process exactly like `DELETE /drafts/{jobId}`) **and drops the owner's held
+  terminal job record** (background continuation, below) — a settled draft never leaves
+  an agent process, test process, or unconsumed outcome behind. `DELETE` settles the
   draft but **never deletes the thread** (§4.4 thread lifetime): it appends the "Draft
   discarded." boundary marker to the owner's `chat.jsonl` and, for the pending owner,
   empties the slot's draft contents while leaving `chat.jsonl` in place. The §8 drafting-job
@@ -352,13 +356,30 @@ remain plain dicts (§2).
   (or its deterministic fallback) additionally carries `diagnosed: true`, and `failed` is
   reserved for harness errors and crashes — a validation double-failure always ends `blocked`
   (§8 failure policy); `DELETE /drafts/{jobId}` cancels
-  (kills the harness process). Two backstops guarantee a building job never outlives its
-  audience: every `GET /drafts/{jobId}` poll stamps the job's last-poll time, and a building
-  job left unpolled for `AUTOWRIGHT_DRAFT_REAP_S` seconds (§15, default 120) is cancelled by
-  the backend exactly like a `DELETE` (clients poll about once a second, so only a client
-  that died mid-job trips it: window closed, app quit, renderer crash); and backend shutdown
-  cancels every still-building job (§3), so a stopping backend never leaves an agent harness
-  running.
+  (kills the harness process). **Background continuation** — a job's lifetime is its
+  owner draft's, never its poller's (the same rule as the §11 draft test): a building job
+  deliberately survives losing its audience — leaving the §11 editor, closing the window —
+  and there is no unpolled reap; the §8 idle window and wall-clock hard cap are what bound
+  a runaway call. A job that settles unobserved **holds its terminal state** until it is
+  consumed: `POST /drafts/{jobId}/ack` is the consume — the §11 editor calls it after
+  applying **any** settled job's outcome, a live settle exactly like a re-attach one
+  (an unacked live settle would resurface as a held outcome on the next editor entry
+  and re-apply), and the backend drops the job record (unknown id answers 404; a
+  still-building job answers 409 — only terminal jobs are consumable). A held record is also dropped when the
+  owner's draft settles (the draft-settle endpoints' owner cancel above) and when a new
+  `POST /drafts` job starts for the same owner (one held outcome per owner — superseding
+  is consuming). Job records live in memory only: a backend restart loses them, and the
+  §11 re-attach reconciliation marks the orphaned turn cancelled rather than leaving it
+  looking unanswered. Backend shutdown still cancels every still-building job (§3), so a
+  stopping backend never leaves an agent harness running. For re-attach, the
+  `GET /draft/{owner}` envelope (both owners) carries a top-level
+  `job: { jobId, status, mode }` beside `draft`/`agentId` while the owner has a building
+  or held job (absent otherwise — and deliberately on the envelope, not inside `draft`:
+  a first message still in flight may have landed no draft at all). A `chat` job additionally echoes,
+  as `sentTriggers`, the resolved trigger list its §8 CURRENT-triggers section was
+  rendered from (the §4.3 entries, exactly as sourced for the prompt), so a re-attach
+  apply can prove the base list that `triggers` ops index is still the one the agent saw
+  (§11 — on any difference the ops are dropped, never applied to a changed list).
 - `GET /executions?auto=&status=` (headers only — no steps; rows carry the §4.5
   `triggerSender`) · `GET /executions/{id}` (steps
   with attempts + params + error + result + `triggerPayload` (§4.5) — logs are lazy, never
@@ -554,7 +575,13 @@ remain plain dicts (§2).
   fetch-vs-stream dedupe), `execution.finished`, `automation.changed`, `agents.changed`,
   `secrets.changed`, `settings.changed`, `draft.changed` (the §4.4 pending slot was kept
   or discarded — clients re-`GET /state`; §11 test executions stream over the
-  ordinary `execution.*` events),
+  ordinary `execution.*` events), `draftjob.changed` (`{ owner, jobId, status, mode }` —
+  published when an owner-stamped §19 drafting job starts, settles, is consumed, or is
+  cancelled; `owner` an automation id or the literal `pending`; `status` is the job's
+  (`building` / `done` / `blocked` / `failed`) plus the two removal notices `cancelled`
+  and `consumed`. Clients patch their `draftJobs` snapshot from it — `cancelled` and
+  `consumed` remove the entry, everything else upserts it (a held outcome stays listed
+  until consumed) — backing the §9.1 drafting notes without polling),
   `harness.install` (provider install progress — the payload shape lives on the Install
   bullet above), `ollama.pull` (model-pull progress). Entity payloads ride the events under camelCase
   keys matching the REST shapes: `execution.started`/`queued`/`finished` carry `execution`

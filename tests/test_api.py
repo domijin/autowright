@@ -699,6 +699,90 @@ def test_draft_job_owner_stamp(client, monkeypatch):
     assert captured["owner"] == a["id"]
 
 
+def test_ack_consumes_settled_job(client):
+    # §19 background continuation: POST /drafts/{id}/ack drops a settled
+    # record (the editor applied it); building → 409, unknown → 404.
+    from autowright.api import draft_jobs
+
+    draft_jobs.jobs["held"] = {"id": "held", "status": "done", "_cancel": False,
+                               "_proc": {}, "_owner": None, "mode": "chat"}
+    draft_jobs.jobs["live"] = {"id": "live", "status": "building", "_cancel": False,
+                               "_proc": {}, "_owner": None, "mode": "chat"}
+    try:
+        assert client.post("/drafts/held/ack").json()["ok"]
+        assert "held" not in draft_jobs.jobs
+        assert client.post("/drafts/live/ack").status_code == 409
+        assert client.post("/drafts/never/ack").status_code == 404
+    finally:
+        for k in ("held", "live"):
+            draft_jobs.jobs.pop(k, None)
+
+
+def test_state_lists_building_and_held_draft_jobs(client):
+    # §19 GET /state draftJobs: building + held rows, owner-keyed (None →
+    # "pending"); cancelled records never list.
+    from autowright.api import draft_jobs
+
+    draft_jobs.jobs["b1"] = {"id": "b1", "status": "building", "_cancel": False,
+                             "_proc": {}, "_owner": None, "mode": "chat"}
+    draft_jobs.jobs["h1"] = {"id": "h1", "status": "blocked", "_cancel": False,
+                             "_proc": {}, "_owner": "auto-x", "mode": "sync"}
+    draft_jobs.jobs["x1"] = {"id": "x1", "status": "cancelled", "_cancel": True,
+                             "_proc": {}, "_owner": None, "mode": "chat"}
+    try:
+        rows = client.get("/state").json()["draftJobs"]
+        assert {"owner": "pending", "jobId": "b1", "status": "building",
+                "mode": "chat"} in rows
+        assert {"owner": "auto-x", "jobId": "h1", "status": "blocked",
+                "mode": "sync"} in rows
+        assert not any(r["jobId"] == "x1" for r in rows)
+    finally:
+        for k in ("b1", "h1", "x1"):
+            draft_jobs.jobs.pop(k, None)
+
+
+def test_draft_container_envelope_carries_job_ref(client):
+    # §19: the GET /draft/{owner} envelope carries the owner's building job or
+    # held outcome as a top-level `job` ref (absent otherwise) — the §11
+    # re-attach reads it; a building job wins over a held one.
+    from autowright.api import draft_jobs
+    from autowright.storage import store
+
+    assert "job" not in client.get("/draft/pending").json()
+    a = store.create_automation(make_version(), "Ref owner", "mock")
+    draft_jobs.jobs["h"] = {"id": "h", "status": "done", "_cancel": False,
+                            "_proc": {}, "_owner": a["id"], "mode": "chat"}
+    draft_jobs.jobs["p"] = {"id": "p", "status": "building", "_cancel": False,
+                            "_proc": {}, "_owner": None, "mode": "chat"}
+    try:
+        assert client.get(f"/draft/{a['id']}").json()["job"] == {
+            "jobId": "h", "status": "done", "mode": "chat"}
+        assert client.get("/draft/pending").json()["job"] == {
+            "jobId": "p", "status": "building", "mode": "chat"}
+        draft_jobs.jobs["b"] = {"id": "b", "status": "building", "_cancel": False,
+                                "_proc": {}, "_owner": a["id"], "mode": "sync"}
+        assert client.get(f"/draft/{a['id']}").json()["job"]["jobId"] == "b"
+    finally:
+        for k in ("h", "p", "b"):
+            draft_jobs.jobs.pop(k, None)
+
+
+def test_discard_draft_drops_held_outcome(client):
+    # §19 draft settle: discarding also drops the owner's HELD terminal
+    # record — a settled draft leaves no unconsumed outcome behind.
+    from autowright.api import draft_jobs
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Held owner", "mock")
+    draft_jobs.jobs["heldx"] = {"id": "heldx", "status": "done", "_cancel": False,
+                                "_proc": {}, "_owner": a["id"], "mode": "chat"}
+    try:
+        assert client.delete(f"/draft/{a['id']}").json()["ok"]
+        assert "heldx" not in draft_jobs.jobs
+    finally:
+        draft_jobs.jobs.pop("heldx", None)
+
+
 def test_patch_automation_triggers_and_grants(client):
     from autowright.storage import store
 

@@ -17,6 +17,8 @@ vi.mock('../src/api', () => ({
     patchAutomation: vi.fn(async () => ({})),
     getDraftJob: vi.fn(() => new Promise(() => { /* poll never answers in tests */ })),
     cancelDraftJob: vi.fn(async () => ({})),
+    // §19 background continuation: the editor consumes settled outcomes
+    ackDraftJob: vi.fn(async () => ({})),
     // §19 one draft-container surface (owner = automation id | 'pending')
     putDraft: vi.fn(async () => ({})),
     deleteDraft: vi.fn(async () => ({})),
@@ -1572,23 +1574,23 @@ describe('CreateFlow send/sync edit guard + settle flush + poll retry (§11)', (
     await waitFor(() => expect(screen.getByText(STAGED_CHIP)).toBeTruthy())
   })
 
-  it('leaving mid-chat-job keeps the user entry and appends the cancelled chip', async () => {
+  it('leaving mid-chat-job never cancels it — the job keeps building in the background (§19)', async () => {
     render(<CreateFlow />)
     send('rename everything')
     await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(1))
-    // leave via the header back - the exit flush cancels the job with no
-    // composer to return the request to: the pending user entry stays and
-    // the chip right after it says the turn never ran (§11)
+    // leave via the header back — §19 background continuation: the exit
+    // flushes the thread with the pending user entry as-is (no "Edit stopped"
+    // chip: the turn is still running) and never DELETEs the job.
     fireEvent.click(screen.getAllByText('My auto').find((el) => el.closest('button'))!)
     await waitFor(() => {
       const calls = (mockedApi.putChat as ReturnType<typeof vi.fn>).mock.calls
       const flushed = calls.map((c) => c[1] as Array<{ kind: string; text?: string }>)
-      expect(flushed.some((list) => {
-        const i = list.findIndex((e) => e.kind === 'user' && e.text === 'rename everything')
-        return i >= 0 && list[i + 1]?.kind === 'system'
-          && list[i + 1]?.text === 'Edit stopped — the spec is unchanged.'
-      })).toBe(true)
+      expect(flushed.some((list) =>
+        list.some((e) => e.kind === 'user' && e.text === 'rename everything'))).toBe(true)
+      expect(flushed.some((list) =>
+        list.some((e) => e.text === 'Edit stopped — the spec is unchanged.'))).toBe(false)
     })
+    expect(mockedApi.cancelDraftJob).not.toHaveBeenCalled()
   })
 
   it('sending under an unsaved spec edit asks first; cancel keeps both texts, confirm proceeds', async () => {
@@ -1673,5 +1675,96 @@ describe('CreateFlow send/sync edit guard + settle flush + poll retry (§11)', (
     send('hello')
     await waitFor(() => expect(screen.getByText('Something went wrong')).toBeTruthy(), { timeout: 8000 })
     expect(screen.getByText('backend gone')).toBeTruthy()
+  })
+})
+
+describe('CreateFlow background continuation & re-attach (§11/§19)', () => {
+  beforeEach(() => {
+    armPendingPoll()
+    storeMod.useStore.setState({ draftJobs: [] })
+  })
+  const USER_ENTRY = { id: 'u1', at: '2026-08-20T08:00:00', kind: 'user' as const, text: 'add weekends' }
+  const jobRow = (status: string, mode: 'chat' | 'sync' = 'chat') =>
+    [{ owner: 'a1', jobId: 'jx', status, mode }]
+
+  it('re-attaches a building chat job on entry — poll resumes, no cancel, no chip', async () => {
+    storeMod.useStore.setState({ draftJobs: jobRow('building') })
+    ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValue({ chat: [USER_ENTRY] })
+    render(<CreateFlow />)
+    await waitFor(() => expect(mockedApi.getDraftJob).toHaveBeenCalledWith('jx'))
+    // the composer swaps Send for the running job's Cancel (§11 in-flight rules)
+    await waitFor(() => expect(screen.getByText('Cancel')).toBeTruthy())
+    expect(screen.queryByText('Edit stopped — the spec is unchanged.')).toBeNull()
+    expect(mockedApi.postDraftJob).not.toHaveBeenCalled()
+    expect(mockedApi.cancelDraftJob).not.toHaveBeenCalled()
+  })
+
+  it('applies a held chat outcome on entry exactly like a live settle, then acks', async () => {
+    storeMod.useStore.setState({ draftJobs: jobRow('done') })
+    ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValue({ chat: [USER_ENTRY] })
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'jx', status: 'done', stage: 'Working on the request', detail: null, error: null,
+      mode: 'chat', events: [], draft: { spec: null, answer: 'All set.' },
+    })
+    render(<CreateFlow />)
+    await waitFor(() => expect(screen.getByText('All set.')).toBeTruthy(), { timeout: 4000 })
+    expect(screen.getByText('From your AI')).toBeTruthy()
+    await waitFor(() => expect(mockedApi.ackDraftJob).toHaveBeenCalledWith('jx'))
+    // the settled stage trail landed too — never a bare outcome
+    expect(screen.getByText(/Working on the request/)).toBeTruthy()
+  })
+
+  it('a vanished job closes the orphaned turn with the Edit-stopped chip', async () => {
+    ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValue({ chat: [USER_ENTRY] })
+    render(<CreateFlow />)
+    await waitFor(() => expect(screen.getByText('Edit stopped — the spec is unchanged.')).toBeTruthy())
+    expect(mockedApi.getDraftJob).not.toHaveBeenCalled()
+  })
+
+  it('a background settle drops trigger ops when the base list is not the one the agent saw', async () => {
+    storeMod.useStore.setState({ draftJobs: jobRow('done') })
+    ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValue({ chat: [USER_ENTRY] })
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'jx', status: 'done', stage: 'Working on the request', detail: null, error: null,
+      mode: 'chat', events: [],
+      // the agent saw a one-entry list; the editor's base list is empty now
+      sentTriggers: [{ kind: 'cron', expression: '0 8 * * *', enabled: true }],
+      draft: { spec: null, actions: { triggers: [{ op: 'add', trigger: { kind: 'cron', expression: '0 9 * * *', enabled: true } }] } },
+    })
+    render(<CreateFlow />)
+    await waitFor(() => expect(screen.getByText('Trigger changes dropped — the triggers changed while your AI worked. Ask again.')).toBeTruthy(), { timeout: 4000 })
+    expect(screen.queryByText('Trigger added.')).toBeNull()
+  })
+
+  it('a background settle applies trigger ops when the base list still matches', async () => {
+    storeMod.useStore.setState({ draftJobs: jobRow('done') })
+    ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValue({ chat: [USER_ENTRY] })
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'jx', status: 'done', stage: 'Working on the request', detail: null, error: null,
+      mode: 'chat', events: [], sentTriggers: [],
+      draft: { spec: null, actions: { triggers: [{ op: 'add', trigger: { kind: 'cron', expression: '0 9 * * *', enabled: true } }] } },
+    })
+    render(<CreateFlow />)
+    await waitFor(() => expect(screen.getByText('Trigger added.')).toBeTruthy(), { timeout: 4000 })
+    expect(screen.queryByText(/Trigger changes dropped/)).toBeNull()
+  })
+
+  it('a slot that owns a building job keeps its thread and re-attaches (fresh-entry clear skipped)', async () => {
+    storeMod.useStore.setState({
+      createFrom: 'new' as never, automationId: null,
+      draftJobs: [{ owner: 'pending', jobId: 'jp', status: 'building', mode: 'chat' }],
+    })
+    ;(mockedApi.getDraft as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      draft: null, agentId: null, job: { jobId: 'jp', status: 'building', mode: 'chat' },
+    })
+    ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValue({
+      chat: [{ id: 'u9', at: '2026-08-20T08:00:00', kind: 'user', text: 'watch a price' }],
+    })
+    render(<CreateFlow />)
+    // §11: the job ref counts as something to resume — the thread stays
+    // (never PUT [] over it) and the poll re-attaches to the slot's job.
+    await waitFor(() => expect(mockedApi.getDraftJob).toHaveBeenCalledWith('jp'))
+    expect(mockedApi.putChat).not.toHaveBeenCalledWith('pending', [])
+    expect(screen.getByText('watch a price')).toBeTruthy()
   })
 })

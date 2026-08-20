@@ -411,6 +411,20 @@ export interface DraftEvent {
   stage?: string
 }
 
+// §19 background continuation: one building-or-held job, owner-keyed
+// ('pending' = the create-mode slot) — the GET /state `draftJobs` rows and
+// the store snapshot the §9.1 drafting notes and §11 re-attach read.
+export interface DraftJobRow {
+  owner: string
+  jobId: string
+  status: string
+  mode: 'chat' | 'sync'
+}
+
+// §19: the GET /draft/{owner} envelope's `job` ref (present while the owner
+// has a building or held job) — same shape minus the owner.
+export type DraftJobRef = Omit<DraftJobRow, 'owner'>
+
 export interface DraftJob {
   id: string
   status: 'building' | 'done' | 'failed' | 'cancelled' | 'blocked'
@@ -435,6 +449,10 @@ export interface DraftJob {
   // §8 build diagnosis: true when the blockers came from a validation
   // double-failure (agent diagnosis or deterministic fallback), not a refusal
   diagnosed?: boolean
+  // §19 background continuation (chat jobs): the resolved trigger list the §8
+  // CURRENT-triggers section was rendered from — the §11 re-attach apply
+  // proves the base list `triggers` ops index is still this one
+  sentTriggers?: DraftTrigger[]
 }
 
 export interface StateSnapshot {
@@ -446,6 +464,8 @@ export interface StateSnapshot {
   settings: Settings
   // §4.4 pending create-mode slot summary — backs the §9.1 Resume draft button
   pendingDraft: { name: string; updatedAt: string | null } | null
+  // §19 background continuation: every building or held drafting job
+  draftJobs: DraftJobRow[]
 }
 
 // §19 WS events — one envelope per publish, discriminated on `event`. Entity
@@ -477,3 +497,6 @@ export type WsEvent =
   | { event: 'secrets.changed' }
   | { event: 'settings.changed' }
   | { event: 'draft.changed' }
+  // §19 background continuation: cancelled/consumed remove the snapshot row,
+  // everything else upserts it (a held outcome stays listed until consumed)
+  | { event: 'draftjob.changed'; owner: string; jobId: string; status: string; mode: 'chat' | 'sync' }

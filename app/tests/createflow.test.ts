@@ -672,3 +672,32 @@ describe('applyTestValues', () => {
     expect(applyTestValues([P({})], { p: 42 })[0].value).toBe('42')
   })
 })
+
+describe('sameTriggerList — the §11/§19 re-attach trigger guard', () => {
+  const cron = (expression: string, extra: Record<string, unknown> = {}) =>
+    ({ kind: 'cron', expression, enabled: true, ...extra })
+  it('matches identical lists entry for entry, key order irrelevant', async () => {
+    const { sameTriggerList } = await import('../src/pages/createflow/model')
+    expect(sameTriggerList([], [])).toBe(true)
+    expect(sameTriggerList([cron('0 8 * * *')], [{ enabled: true, expression: '0 8 * * *', kind: 'cron' }])).toBe(true)
+  })
+  it('any difference — length, fields, order, enabled — reads as changed', async () => {
+    const { sameTriggerList } = await import('../src/pages/createflow/model')
+    expect(sameTriggerList([cron('0 8 * * *')], [])).toBe(false)
+    expect(sameTriggerList([cron('0 8 * * *')], [cron('0 9 * * *')])).toBe(false)
+    expect(sameTriggerList([cron('0 8 * * *')], [cron('0 8 * * *', { enabled: false })])).toBe(false)
+    expect(sameTriggerList(
+      [cron('0 8 * * *'), cron('0 9 * * *')],
+      [cron('0 9 * * *'), cron('0 8 * * *')],
+    )).toBe(false)
+    expect(sameTriggerList(
+      [{ kind: 'discord', channel: '1', secret: 's1', enabled: true }],
+      [{ kind: 'discord', channel: '2', secret: 's1', enabled: true }],
+    )).toBe(false)
+  })
+  it('non-arrays compare as empty lists (a missing echo only drops ops, never misapplies)', async () => {
+    const { sameTriggerList } = await import('../src/pages/createflow/model')
+    expect(sameTriggerList(null, [])).toBe(true)
+    expect(sameTriggerList(null, [cron('0 8 * * *')])).toBe(false)
+  })
+})

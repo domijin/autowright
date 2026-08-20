@@ -459,7 +459,8 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   when the pending slot holds no draft to resume discards the leftover slot thread
   (the editor drops the fetched thread and PUTs `[]`) — a new automation always opens
   on the §11 create empty state, and the slot thread survives entry only beside a
-  kept draft. Instead, every settle **appends a boundary marker** — a `system` entry with
+  kept draft or a building or held §19 drafting job (§11 background continuation —
+  a slot that owns one is a session to resume, never cleared over). Instead, every settle **appends a boundary marker** — a `system` entry with
   `boundary: true`, `icon: fa-flag-checkered`, and the settle's text ("Draft saved as vN." ·
   "Changes saved — no new version." for the §4.4 operational-only save · "Draft discarded." ·
   "Created as v1.") — written **backend-side by the settle endpoint itself** (§19: save,
@@ -482,7 +483,12 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   exit paths write one final time. A quit, force-quit, or crash therefore loses at most the
   debounce window — never the draft (unmount cleanup alone doesn't run when the app
   quits). Settling (discard, save, Create, Start over) stops the debounced writer before
-  deleting, so a trailing write can't resurrect a settled draft.
+  deleting, so a trailing write can't resurrect a settled draft. A §8 drafting job is
+  **runtime state, never part of the serialized draft**: like the §11 draft test it
+  outlives the editor page — leaving the editor keeps it building in the background
+  (§19 background continuation; the §11 re-attach reconciliation picks it back up) — but
+  it does not survive a backend restart, and settling the draft cancels it and drops any
+  held outcome (§19).
 - **Create-mode drafts persist too**, in the single pending slot `<root>/draft/` (§5).
   Opening the create flow creates the slot's container first — `draft/` with an empty
   `memory/` (`POST /draft/pending/open`, §19) — before any drafting; §11 create-mode tests execute

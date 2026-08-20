@@ -95,17 +95,19 @@ export default function CreateFlow() {
   // chips land in the thread and its write here. The discard paths (Start
   // over, Discard draft) take the chips first, so receipts for discarded
   // staging never reach a later session's thread.
-  const flushChat = async () => {
+  const flushChat = async (cancelling = false) => {
     await chatPutInFlight.current
     const r = revRef.current
     const owner = chatOwner()
     if (!chatLoaded.current || !r || !owner) return
     const held = jobs.takeHeldChips()
     if (held.length) setRev((x) => x && ({ ...x, chat: [...x.chat, ...held] }))
-    // §11: an exit/settle flush past an in-flight chat job cancels it with no
+    // §11: a SETTLE flush past an in-flight chat job cancels it with no
     // composer to return the request to - the pending user entry stays, so the
     // chip right after it says the turn never ran (composer-cancel toast copy).
-    const stopped = r.chatBusy
+    // A plain leave (close, unmount) cancels nothing — the job keeps building
+    // in the background (§19) and no chip lands.
+    const stopped = cancelling && r.chatBusy
       ? [newEntry({ kind: 'system' as const, icon: 'fa-ban', text: 'Edit stopped — the spec is unchanged.' })]
       : []
     try { await api.putChat(owner, persistChat([...r.chat, ...held, ...stopped])) } catch { /* backend restarting */ }
@@ -119,12 +121,10 @@ export default function CreateFlow() {
     // outcome, so any held workflow chips land in the persisted thread here.
     if (chatLoaded.current && r) {
       const owner = isEdit ? a?.id : 'pending'
-      // §11: same cancelled-chat chip as flushChat - leaving mid-chat-job
-      // keeps the pending user entry, and the chip says the turn never ran.
-      const stopped = r.chatBusy
-        ? [newEntry({ kind: 'system' as const, icon: 'fa-ban', text: 'Edit stopped — the spec is unchanged.' })]
-        : []
-      if (owner) void api.putChat(owner, persistChat([...r.chat, ...jobs.takeHeldChips(), ...stopped])).catch(() => { /* backend restarting */ })
+      // §19 background continuation: leaving mid-job cancels nothing — the
+      // job keeps building and the re-attach picks it up, so no "Edit
+      // stopped" chip lands here (only the settle paths cancel and chip).
+      if (owner) void api.putChat(owner, persistChat([...r.chat, ...jobs.takeHeldChips()])).catch(() => { /* backend restarting */ })
     }
     if (isEdit) {
       if (!a) return
@@ -235,11 +235,14 @@ export default function CreateFlow() {
     setRev((r) => r ?? seedEmpty(agents, secrets.map((s) => s.id)))
     void api.openDraft('pending').catch(() => { /* backend restarting */ })
     let dead = false
-    void api.getDraft('pending').then(({ draft, agentId: gid }) => {
+    void api.getDraft('pending').then(({ draft, agentId: gid, job }) => {
       if (dead) return
       // §4.4 fresh-entry clear: the thread merge above waits on this answer.
+      // §19 background continuation: a slot that owns a building or held job
+      // is a session to resume — never cleared over, even before any draft
+      // landed (a first message still in flight).
       if (slotResume.current == null) {
-        slotResume.current = !!draft
+        slotResume.current = !!draft || !!job
         setChatMergeTick((t) => t + 1)
       }
       if (!draft || seededRef.current) return
@@ -374,6 +377,31 @@ export default function CreateFlow() {
     anyJobBusy, testLive, viewingOld,
   })
 
+  // §11 Background continuation & re-attach: once the draft and thread have
+  // loaded, pick the owner's job back up — re-attach a building job or apply
+  // a held outcome (the first poll tick handles both: a settled job applies
+  // exactly like a live settle, then acks). With no job left but a
+  // current-session turn still ending on its user entry, the job vanished
+  // without a trace (backend restart) — the "Edit stopped" chip closes the
+  // turn so the thread never resumes on a request that looks unanswered.
+  const reconciledRef = useRef(false)
+  useEffect(() => {
+    if (reconciledRef.current || !rev || !chatReady) return
+    if (isEdit && !seededRef.current) return // wait for the stored-automation seed
+    reconciledRef.current = true
+    const owner = isEdit ? automationId : 'pending'
+    if (!owner) return
+    const jobRef = useStore.getState().draftJobs.find((j) => j.owner === owner)
+    if (jobRef) {
+      jobs.attachJob({ jobId: jobRef.jobId, mode: jobRef.mode })
+      return
+    }
+    const turn = chatSinceBoundary(rev.chat)
+    if (turn.at(-1)?.kind === 'user') {
+      appendEntry({ kind: 'system', icon: 'fa-ban', text: 'Edit stopped — the spec is unchanged.' })
+    }
+  }, [rev, chatReady]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // §11 turn action row wiring: the Test-the-draft pill starts a draft test
   // through the Build & test panel (signal consumed there — same run as its
   // Run test button); the Analyze-the-failure pill sends the canned message
@@ -437,7 +465,7 @@ export default function CreateFlow() {
     // flushes first so every entry lands before the boundary marker; bumping
     // chatGen kills armed debounce timers that would clobber the marker.
     chatGen.current++
-    await flushChat()
+    await flushChat(true) // a settle path: an in-flight job was cancelled above
     await putInFlight.current
     try { await api.deleteDraft('pending') } catch { /* none kept */ }
     let chat: ChatEntry[] = []
@@ -798,7 +826,7 @@ export default function CreateFlow() {
       // staging - receipts for discarded staging never reach the kept thread.
       jobs.takeHeldChips()
       draftSettled.current = true
-      await flushChat()
+      await flushChat(true) // a settle path: an in-flight job was cancelled above
       await putInFlight.current
       try { await api.deleteDraft(auto.id) } catch { /* none saved yet */ }
       draftSnap.current = null

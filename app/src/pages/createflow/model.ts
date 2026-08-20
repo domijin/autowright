@@ -485,6 +485,24 @@ export function coerceParamValue(p: ParamDef, v: unknown): unknown {
   return String(v)
 }
 
+// §11 re-attach trigger guard (§19 sentTriggers): are two trigger lists the
+// same list, entry for entry, on the fields the agent's 1-based indexes refer
+// to? Compared through a stable per-entry projection rather than raw JSON so
+// key order and backend normalization can never fake a difference — and an
+// entry the projection misses errs toward "changed", which only drops ops
+// (never misapplies them).
+export function sameTriggerList(a: unknown, b: unknown): boolean {
+  const xs = Array.isArray(a) ? a : []
+  const ys = Array.isArray(b) ? b : []
+  const key = (t: Record<string, unknown>) => JSON.stringify([
+    t.id ?? null, t.kind ?? null, t.expression ?? null, t.at ?? null,
+    t.timezone ?? null, t.from ?? null, t.channel ?? null, t.secret ?? null,
+    t.pattern ?? null, t.mention ?? null, t.author ?? null, t.enabled !== false,
+  ])
+  return xs.length === ys.length
+    && xs.every((t, i) => key(t as Record<string, unknown>) === key(ys[i] as Record<string, unknown>))
+}
+
 // §11 chat `triggers` ops — applied to the editor's trigger list in op order,
 // each yielding the system-chip text the thread shows. An `add` matching an
 // existing trigger on the §4.3 identity fields is a no-op backstop chip

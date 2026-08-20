@@ -233,7 +233,9 @@ remain plain dicts (§2).
   `values=0` omits `param_values` from the manifest (default `1`)
 - `POST /automations/import` — the §5.1 archive as the raw request body
   (`application/octet-stream`, no multipart) → `{ automation, summary }` where `summary` is
-  `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages }` —
+  `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages, renamedFrom }` —
+  `renamedFrom` is the archive's automation name when the §4.1 dedupe renamed the landed
+  automation, else `null`;
   `agentsCreated` is `[{ name, ready }]`, `ready` computed at import time by the one §19
   check-ready rule (`/agents/{id}/check`) for the created agent's harness/mode/model — it
   backs the §9.1 summary modal's Needs setup badge (created agents can share a name with a
@@ -247,10 +249,11 @@ remain plain dicts (§2).
   (same caps) → `{ token, preview }`: validates fully, writes nothing, parks the bytes under
   the one-time `token` (§5.2 — 15-minute expiry; at most 4 archives are parked at once, and
   a 5th preview evicts the oldest — a confirm against an evicted token answers 404 exactly
-  like an expired one). `preview` is `{ name, description, steps: [{name,
+  like an expired one). `preview` is `{ name, landsAs, description, steps: [{name,
   description, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
   model, reused}], secrets: [{name, description, exists}] }` — `reused`/`exists` are the §5.1 match
-  rules run dry
+  rules run dry, and `landsAs` the §4.1 name dedupe run dry (§5.2 — equal to `name` when free,
+  best-effort until confirm)
 - `POST /automations/import/url` `{ url }` → same `{ token, preview }` shape plus
   `preview.sourceUrl` (as given) and `preview.resolvedUrl` (after §5.2 GitHub resolution;
   equal for direct links). Any §5.2 URL-rule failure — non-HTTPS, unresolvable page, download

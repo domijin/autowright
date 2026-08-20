@@ -295,12 +295,17 @@ export interface ImportSummary {
   agentsCreated: { name: string; ready: boolean }[]
   agentsReused: string[]
   packages: PackageDep[]
+  // §5.1: the archive's name when the §4.1 dedupe renamed the landed automation.
+  renamedFrom: string | null
 }
 
 // §5.2 import preview — the archive's contents plus the §5.1 match rules run
 // dry (`exists`/`reused`); sourceUrl/resolvedUrl only on URL fetches (§19)
 export interface ImportPreview {
   name: string
+  // §5.2: the §4.1 name dedupe run dry — what the import will land as
+  // (equal to `name` when the name is free; best-effort until confirm).
+  landsAs: string
   description: string
   steps: { name: string; description: string; agent: boolean }[]
   params: { name: string; kind: string }[]

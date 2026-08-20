@@ -36,6 +36,11 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
           <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '6px 0 0' }}>
             Its triggers are off until you enable them.
           </p>
+          {summary.renamedFrom && (
+            <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '2px 0 0' }}>
+              Renamed from “{summary.renamedFrom}”, which already exists on this Mac.
+            </p>
+          )}
           {summary.secretsCreated.length > 0 && section('SECRETS THAT NEED VALUES', (
             <>
               {summary.secretsCreated.map((n) => nameRow(n, (
@@ -205,7 +210,7 @@ function ImportModal({ onDone, onClose }: {
         ) : (
           <>
             <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text)' }}>
-              {pv.preview.name}
+              {pv.preview.landsAs}
             </h2>
             {pv.preview.description && (
               <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '6px 0 0' }}>
@@ -228,6 +233,12 @@ function ImportModal({ onDone, onClose }: {
                 {pv.source}
               </span>
             </div>
+            {pv.preview.landsAs !== pv.preview.name && (
+              // §5.1 name dedupe run dry — the title above shows what lands.
+              <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: '8px 0 0' }}>
+                An automation named “{pv.preview.name}” already exists, so this one arrives as “{pv.preview.landsAs}”.
+              </p>
+            )}
             {pv.preview.triggers.length > 0 && section('TRIGGERS', (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {pv.preview.triggers.map((_, i) => trigPreviews[i] && (

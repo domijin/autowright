@@ -484,6 +484,17 @@ def _validate(z: zipfile.ZipFile) -> dict:
             if g["name"] not in secret_names:
                 raise TransferError(f"step {s['file']!r} references secret {g['name']} "
                                     "that isn't listed in the archive's secrets.yaml")
+        # §5.1: the name-form code subscripts must resolve too — an unmapped
+        # name would land code the executor rejects at execution time instead
+        # of the promised up-front 422 with nothing written.
+        for m in ARCHIVE_AGENT_REF_RE.finditer(s["code"]):
+            if m.group(1) not in agent_names:
+                raise TransferError(f"step {s['file']!r} code references agent {m.group(1)!r} "
+                                    "that isn't listed in the archive's agents.yaml")
+        for m in ARCHIVE_SECRET_REF_RE.finditer(s["code"]):
+            if m.group(1) not in secret_names:
+                raise TransferError(f"step {s['file']!r} code references secret {m.group(1)} "
+                                    "that isn't listed in the archive's secrets.yaml")
 
     agent_name = manifest.get("agent")
     if agent_name is not None and not isinstance(agent_name, str):
@@ -547,7 +558,10 @@ def preview_archive(store: Store, data: bytes) -> dict:
                    "model": g.get("model") if g.get("mode", "default") != "default" else None,
                    "reused": _agent_match(store, g) is not None}
                   for g in arch["agents"]]
-    return {"name": arch["name"], "description": arch["description"],
+        # §5.2: the §4.1 name dedupe run dry — the name the import will land
+        # under (best-effort: confirm re-runs the dedupe on the store then).
+        lands_as = store.free_automation_name(arch["name"])
+    return {"name": arch["name"], "landsAs": lands_as, "description": arch["description"],
             "steps": [{"name": s["name"], "description": s.get("description", ""),
                        "agent": bool(s.get("agent"))} for s in arch["steps"]],
             "params": [{"name": p["name"], "kind": p["kind"]} for p in arch["params"]],
@@ -614,12 +628,12 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
         agent_id_by_name = {name: rec["id"] for name, rec in matched.items()}
 
         def _local_code(code: str) -> str:
+            # _validate guaranteed every name resolves against the archive's
+            # yaml, and every archive agent/secret has a local record by now.
             code = ARCHIVE_SECRET_REF_RE.sub(
-                lambda m: (f'secrets["{secret_id_by_name[m.group(1)]}"]'
-                           if m.group(1) in secret_id_by_name else m.group(0)), code)
+                lambda m: f'secrets["{secret_id_by_name[m.group(1)]}"]', code)
             return ARCHIVE_AGENT_REF_RE.sub(
-                lambda m: (f'agents["{agent_id_by_name[m.group(1)]}"]'
-                           if m.group(1) in agent_id_by_name else m.group(0)), code)
+                lambda m: f'agents["{agent_id_by_name[m.group(1)]}"]', code)
 
         steps = []
         for s in arch["steps"]:
@@ -670,7 +684,10 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
     summary = {"secretsCreated": created_secrets, "secretsExisting": existing_secrets,
                "agentsCreated": [{"name": r["name"], "ready": _ready(r)} for r in created_recs],
                "agentsReused": reused_agents,
-               "packages": arch["packages"]}
+               "packages": arch["packages"],
+               # §5.1: the archive's name when the §4.1 dedupe renamed the
+               # landed automation, else None.
+               "renamedFrom": arch["name"] if a["name"] != arch["name"] else None}
     return a, summary
 
 

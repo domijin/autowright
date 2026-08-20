@@ -94,7 +94,9 @@ def test_export_import_endpoints(client):
     assert body["automation"]["id"] != a["id"]
     assert body["automation"]["triggersOff"] is True
     assert set(body["summary"]) == {"secretsCreated", "secretsExisting",
-                                    "agentsCreated", "agentsReused", "packages"}
+                                    "agentsCreated", "agentsReused", "packages",
+                                    "renamedFrom"}
+    assert body["summary"]["renamedFrom"] == "Port me"
     assert client.post("/automations/import", content=b"junk",
                        headers={"Content-Type": "application/octet-stream"}).status_code == 422
     assert client.get("/automations/nope/export").status_code == 404
@@ -120,6 +122,8 @@ def test_import_preview_confirm_flow(client):
     # §5.2: preview writes nothing — the automation lands only on confirm
     assert len(store.autos) == n_before
     assert body["preview"]["name"] == "Previewed"
+    # §5.2: the §4.1 dedupe run dry — the name the confirm below lands under
+    assert body["preview"]["landsAs"] == "Previewed 2"
     assert [s["name"] for s in body["preview"]["steps"]] == ["Go"]
     assert body["preview"]["triggers"] == [{"kind": "cron", "expression": "0 9 * * *"}]
 

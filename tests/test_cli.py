@@ -979,11 +979,12 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
     src = tmp_path / "in.autowright"
     src.write_bytes(b"ARCHIVE")
     raw = json.dumps({
-        "automation": {"name": "Imported", "id": "deadbeef-1"},
+        "automation": {"name": "Imported 2", "id": "deadbeef-1"},
         "summary": {"secretsCreated": ["BOT_TOKEN"], "secretsExisting": ["API_TOKEN"],
                     "agentsCreated": [{"name": "Fast local", "ready": False}],
                     "agentsReused": ["Claude"],
-                    "packages": [{"pip": "requests"}]},
+                    "packages": [{"pip": "requests"}],
+                    "renamedFrom": "Imported"},
     }).encode()
     c = _RouteClient(raw=raw, reply={"packages": [
         {"pip": "requests", "import": "requests", "status": "installed",
@@ -994,7 +995,9 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
         ("POST", "/packages/install", {"packages": [{"pip": "requests"}]}),
     ]
     out = capsys.readouterr().out
-    assert "imported 'Imported' [deadbeef]" in out
+    assert "imported 'Imported 2' [deadbeef]" in out
+    # §5.1 name dedupe surfaces in the summary lines
+    assert "renamed from 'Imported' - that name already exists" in out
     assert "secrets that need values: BOT_TOKEN" in out
     assert "existing secrets to grant on the edit page: API_TOKEN" in out
     assert "agents added: Fast local (needs setup)" in out

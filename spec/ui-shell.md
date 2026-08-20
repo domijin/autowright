@@ -164,7 +164,11 @@ main-process IPC, filtered to `.autowright`). Footer: quiet Cancel / accent **Im
 `/automations/import/url`; a chosen file's bytes to `/automations/import/preview`; while in
 flight the buttons disable. A 422 shows inline in red — under the field for URL failures,
 under the dashed button for file failures — never as a toast. Success swaps the modal to
-the **preview step**: the automation's name + description, a source row (inset box — link or
+the **preview step**: the automation's landing name + description (the title is the
+preview's `landsAs` — what the import will actually create; when it differs from the
+archive's `name`, a faint caption under the source row says
+"An automation named "`<name>`" already exists, so this one arrives as "`<landsAs>`"."),
+a source row (inset box — link or
 file-zipper icon, mono text: the resolved URL, or the chosen file's name), then only the
 sections that apply — TRIGGERS as §4.3 `triggerLabel` chips, STEPS as numbered rows (faint
 mono index, step name, accent AGENT mini-badge where `agent`), SECRETS (amber NOT SET
@@ -175,8 +179,11 @@ editor before enabling them." Footer: quiet **Back** (returns to the input step)
 **Import** — POSTs `/automations/import/confirm` with the preview's token, closes the
 modal, and opens the **import summary modal** (a 404 — expired token — surfaces inline on
 the preview step).
-The summary modal: title "Imported "`<name>`"", a fixed muted intro line under it ("Its
-triggers are off until you enable them."), then only the sections that apply — "Secrets that
+The summary modal: title "Imported "`<name>`"" (the landed — possibly deduped — name), a
+fixed muted intro line under it ("Its
+triggers are off until you enable them."), and when the summary carries `renamedFrom` a
+second muted line ("Renamed from "`<renamedFrom>`", which already exists on this Mac."),
+then only the sections that apply — "Secrets that
 need values" (one row per created placeholder: name + amber Not set tag — "add values on
 the Secrets page"), "Already on this Mac — not granted" (pre-existing secrets/agents the
 automation references, §5.1: "review and grant them on the edit page"), "Agents added"

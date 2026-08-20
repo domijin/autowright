@@ -630,6 +630,9 @@ def cmd_automation_import(c: Client, args) -> None:
         r = json.loads(c.req_raw("POST", "/automations/import", data).decode() or "{}")
     s = r.get("summary", {})
     print(f"imported {r.get('automation', {}).get('name', '?')!r} [{r.get('automation', {}).get('id', '')[:8]}]")
+    if s.get("renamedFrom"):
+        # §5.1 name dedupe — the archive's name was taken.
+        print(f"  renamed from {s['renamedFrom']!r} - that name already exists")
     if s.get("secretsCreated"):
         print(f"  secrets that need values: {', '.join(s['secretsCreated'])}")
     if s.get("secretsExisting"):

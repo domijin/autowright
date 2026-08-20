@@ -5,7 +5,7 @@ import zipfile
 import pytest
 import yaml
 
-from autowright import transfer
+from autowright import __version__, transfer
 from autowright.storage import Store, new_id
 
 
@@ -86,6 +86,9 @@ def test_export_layout_and_sanitization(store):
             "automation/instructions.md", "agents.yaml", "secrets.yaml"} <= names
     manifest = yaml.safe_load(z.read("manifest.yaml"))
     assert manifest["format_version"] == 1
+    # §5.1: every export records the app version (not read on import today —
+    # reserved for future version gating)
+    assert manifest["app_version"] == __version__
     assert manifest["name"] == "Watcher"
     assert manifest["agent"] == "Researcher"
     # cron + app_start + discord + imessage, no ids/off; the one-shot time
@@ -278,6 +281,52 @@ def test_import_agent_name_collision_creates_second_record(store):
     assert created["mode"] == "custom"
     # the archive's name-form step references map to the created record
     assert b["enabled_agents"] == [created["id"]]
+
+
+def test_import_name_dedupe_previews_and_reports(store, monkeypatch, tmp_path_factory):
+    """§4.1/§5.1: a taken automation name previews (`landsAs`) and lands
+    deduped, and the summary carries `renamedFrom`; a free name previews as
+    itself and the summary reports no rename."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    pv = transfer.preview_archive(store, data)
+    assert pv["name"] == "Watcher"
+    assert pv["landsAs"] == "Watcher 2"
+    b, summary = transfer.import_automation(store, data)
+    assert b["name"] == "Watcher 2"
+    assert summary["renamedFrom"] == "Watcher"
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    pv2 = transfer.preview_archive(s2, data)
+    assert pv2["landsAs"] == pv2["name"] == "Watcher"
+    c, summary2 = transfer.import_automation(s2, data)
+    assert c["name"] == "Watcher"
+    assert summary2["renamedFrom"] is None
+
+
+def test_import_rejects_unlisted_code_subscripts(store):
+    """§5.1: a name-form code subscript resolving against neither agents.yaml
+    nor secrets.yaml is a 422 up front, nothing written — never code that only
+    fails at execution time."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    before = (len(store.autos), len(store.secrets), len(store.agents))
+
+    def bad_secret(nm, body):
+        if nm == "automation/01-fetch.py":
+            return body.decode() + 'y = secrets["UNKNOWN"]\n'
+
+    with pytest.raises(transfer.TransferError,
+                       match="secret UNKNOWN.*secrets.yaml"):
+        transfer.import_automation(store, _rezip(data, bad_secret))
+
+    def bad_agent(nm, body):
+        if nm == "automation/02-summarize.py":
+            return body.decode() + 'z = agents["Nobody"]("hi")\n'
+
+    with pytest.raises(transfer.TransferError,
+                       match="agent 'Nobody'.*agents.yaml"):
+        transfer.import_automation(store, _rezip(data, bad_agent))
+    assert (len(store.autos), len(store.secrets), len(store.agents)) == before
 
 
 def test_import_rejects_duplicate_archive_agent_names(store):

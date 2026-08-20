@@ -429,7 +429,10 @@ grants, uuids, and local state never do.** Archive layout:
 
 ```
 manifest.yaml                # format_version: 1 (import rejects any other with 422),
-                             # exported_at, app_version (diagnostics only), name,
+                             # exported_at, app_version (recorded on every export; import
+                             #   does not read it today — diagnostics plus a reserved hook
+                             #   for future version gating; format_version stays the only
+                             #   hard gate), name,
                              # agent: the drafting agent's name (absent when none) — names
                              #   the agents.yaml entry the imported agent_id maps to,
                              # triggers: [{kind, expression? | timezone? | channel+secret… | from…}] —
@@ -485,7 +488,11 @@ answers 422 and writes nothing):
   (step `agents:`/`secrets:` entries in the archive's `{ name, why }` form — the §4.1 id
   form is rejected: ids never travel), §4.2 param kinds, §4.7 agent configs
   (harness/mode/model rules), §4.8 secret names, trigger
-  kinds with at most one `app_start`. Imported steps obey the §8 step bounds: `retries`
+  kinds with at most one `app_start`. Every name-form reference must resolve against the
+  archive's own `agents.yaml`/`secrets.yaml` — step `agents:`/`secrets:` entries, each
+  discord trigger's token secret, and the `secrets["NAME"]`/`agents["Name"]` subscripts
+  inside step code alike; a miss answers 422 naming the step (or trigger), so import can
+  never land code whose references only fail later at execution time. Imported steps obey the §8 step bounds: `retries`
   is 1–10, `timeout` never combines with `no_timeout`, and `retries` never combines with
   `infinite_retries` — an archive can't land a step no drafting call could produce. Step
   filenames obey the §8 `NN-name.py` rule in listed order (`01-…`, `02-…`), like every other
@@ -493,7 +500,9 @@ answers 422 and writes nothing):
 - The automation lands as **v1** of a brand-new automation (note "Imported") — version history
   is local editing history and never travels. A name another automation already holds dedupes
   per §4.1 (case-insensitive; smallest free "Name n" suffix) - import never fails on a name
-  collision; re-importing your own export creates a copy ("Name 2"), never overwrites.
+  collision; re-importing your own export creates a copy ("Name 2"), never overwrites. When
+  the dedupe renamed, the summary carries `renamedFrom` (the archive's name) so the §9.1
+  summary modal and the §20 CLI can say so.
 - Every trigger imports **off** — nothing fires unexpectedly on a new machine.
 - `param_values` from the manifest seed the top-level file (§5 name+kind matching applies at
   execution time as usual); absent values fall back to definition defaults.
@@ -527,7 +536,8 @@ The import response carries a **summary** — secrets created (need values), exi
 referenced but not granted, agents created (each with a `ready` flag — the §19 check-ready
 rule run at import time on the created agent's harness/mode/model, so the §9.1 modal badges
 a not-ready harness Needs setup) vs. reused, declared packages (the app installs
-them on first execution as usual, §6.2; a §20 CLI import runs the ensure right away) —
+them on first execution as usual, §6.2; a §20 CLI import runs the ensure right away), and
+`renamedFrom` (the archive's name; only when the §4.1 dedupe renamed the automation) —
 rendered by the §9.1 summary modal.
 
 ### 5.2 URL import (decided)
@@ -560,7 +570,10 @@ that will land (no re-download between review and import):
   expiry; a handful of slots, oldest evicted). The response carries the token plus a
   **preview**: name, description, steps (name/description/agent flag), param definitions, triggers,
   declared packages, and the §5.1 match rules run dry — each referenced secret with
-  `exists`, each agent with `reused`; URL fetches add `sourceUrl` (as pasted) and
+  `exists`, each agent with `reused`, and `landsAs`: the automation name the import will
+  land under, the §4.1 dedupe run dry (equal to `name` when the name is free; best-effort —
+  confirm re-runs the dedupe, so a name taken between preview and confirm still lands
+  deduped); URL fetches add `sourceUrl` (as pasted) and
   `resolvedUrl` (after GitHub resolution; equal for direct links).
 - `POST /automations/import/confirm` `{token}` lands the parked bytes through the §5.1
   import. A spent, expired, or unknown token answers 404.

@@ -477,8 +477,11 @@ def cmd_automation_list(c: Client, args) -> None:
         return
     for a in autos:
         chip = a["triggerChip"] + (" (off)" if a.get("triggersOff") else "")
+        # §20 needs-fixing parity: mark rows whose §4.1 problems list is
+        # non-empty; `automation show` prints the labels.
+        fixing = "needs fixing  " if a.get("problems") else ""
         print(f"{a['name']:<32} {chip:<16} {a['lastStatus']:<11} "
-              f"{a.get('resultChip') or ''}  [{a['id'][:8]}]")
+              f"{fixing}{a.get('resultChip') or ''}  [{a['id'][:8]}]")
 
 
 def cmd_automation_show(c: Client, args) -> None:
@@ -492,6 +495,11 @@ def cmd_automation_show(c: Client, args) -> None:
         print(full["description"])
     print(f"status: {full['lastStatus']}"
           + (f" · {full['resultChip']}" if full.get("resultChip") else ""))
+    if full.get("problems"):
+        # §20 needs-fixing parity: one indented line per §4.1 problem label.
+        print("needs fixing:")
+        for p in full["problems"]:
+            print(f"  {p['label']}")
     for i, t in enumerate(full.get("triggers") or [], 1):
         print(f"trigger {i}: {t['label']}" + (" (off)" if not t["enabled"] else ""))
     for p in full.get("params") or []:
@@ -633,6 +641,9 @@ def cmd_automation_import(c: Client, args) -> None:
     if s.get("renamedFrom"):
         # §5.1 name dedupe — the archive's name was taken.
         print(f"  renamed from {s['renamedFrom']!r} - that name already exists")
+    if s.get("osMismatch"):
+        # §5.1: the archive was exported on another platform.
+        print(f"  built on {s.get('os')} - its steps may need rewriting on this machine")
     if s.get("secretsCreated"):
         print(f"  secrets that need values: {', '.join(s['secretsCreated'])}")
     if s.get("secretsExisting"):

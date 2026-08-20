@@ -840,3 +840,84 @@ def test_import_without_optional_members_succeeds(store):
     a = _build(store)
     with pytest.raises(transfer.TransferError, match="isn't listed in the archive's"):
         transfer.import_automation(store, _strip(transfer.export_automation(store, a)))
+
+
+def _rezip_manifest(data, edit):
+    """Rewrite manifest.yaml through `edit` (a dict → dict function)."""
+    src = zipfile.ZipFile(io.BytesIO(data))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as out:
+        for n in src.namelist():
+            out.writestr(n, yaml.safe_dump(edit(yaml.safe_load(src.read(n)))).encode()
+                         if n == "manifest.yaml" else src.read(n))
+    return buf.getvalue()
+
+
+def test_export_records_os_and_same_platform_round_trip(store, monkeypatch, tmp_path_factory):
+    """§5.1: every export records the exporting machine's platform token; a
+    same-platform import stamps §4.1 originOs and flags nothing."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    manifest = yaml.safe_load(zipfile.ZipFile(io.BytesIO(data)).read("manifest.yaml"))
+    assert manifest["os"] == "macos"
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    pv = transfer.preview_archive(s2, data)
+    assert (pv["os"], pv["osMismatch"]) == ("macos", False)
+    b, summary = transfer.import_automation(s2, data)
+    assert (summary["os"], summary["osMismatch"]) == ("macos", False)
+    assert b["origin_os"] == "macos"
+    assert not any(p["kind"] == "os-mismatch" for p in s2.auto_json(b)["problems"])
+
+
+def test_import_from_another_os_flags_needs_fixing(store, monkeypatch, tmp_path_factory):
+    """§5.1/§4.1: a foreign platform token never rejects — it stamps originOs,
+    rides preview/summary as osMismatch, and surfaces as the os-mismatch
+    problem until an edit save clears it (a §5 reload keeps it)."""
+    a = _build(store)
+    win = _rezip_manifest(transfer.export_automation(store, a),
+                          lambda m: {**m, "os": "windows"})
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    pv = transfer.preview_archive(s2, win)
+    assert (pv["os"], pv["osMismatch"]) == ("windows", True)
+    b, summary = transfer.import_automation(s2, win)
+    assert (summary["os"], summary["osMismatch"]) == ("windows", True)
+    assert b["origin_os"] == "windows"
+    os_rows = [p for p in s2.auto_json(b)["problems"] if p["kind"] == "os-mismatch"]
+    assert os_rows == [{"kind": "os-mismatch",
+                        "label": "Built on Windows - its steps may need rewriting "
+                                 "before they run on this Mac."}]
+    # §5 disk-first: originOs survives a reload …
+    s3 = Store()
+    s3.load_all()
+    b2 = s3.autos[b["id"]]
+    assert b2["origin_os"] == "windows"
+    # … and an edit save clears it (§4.1: a local rework supersedes
+    # "built elsewhere")
+    s3.save_new_version(b2, dict(b2["versions"][1]))
+    assert "origin_os" not in b2
+    s4 = Store()
+    s4.load_all()
+    assert "origin_os" not in s4.autos[b["id"]]
+
+
+def test_import_os_token_rules(store, monkeypatch, tmp_path_factory):
+    """§5.1: an absent token is legal (older archives — nothing stamps, nothing
+    flags); an unrecognized token is legal and always mismatches (label shows
+    it verbatim); a malformed token rejects."""
+    a = _build(store)
+    data = transfer.export_automation(store, a)
+    s2 = _fresh_home(monkeypatch, tmp_path_factory)
+    legacy = _rezip_manifest(data, lambda m: {k: v for k, v in m.items() if k != "os"})
+    pv = transfer.preview_archive(s2, legacy)
+    assert (pv["os"], pv["osMismatch"]) == (None, False)
+    b, summary = transfer.import_automation(s2, legacy)
+    assert (summary["os"], summary["osMismatch"]) == (None, False)
+    assert "origin_os" not in b
+    assert not any(p["kind"] == "os-mismatch" for p in s2.auto_json(b)["problems"])
+    unknown = _rezip_manifest(data, lambda m: {**m, "os": "beos"})
+    b2, summary2 = transfer.import_automation(s2, unknown)
+    assert (summary2["os"], summary2["osMismatch"]) == ("beos", True)
+    row = next(p for p in s2.auto_json(b2)["problems"] if p["kind"] == "os-mismatch")
+    assert "Built on beos" in row["label"]
+    with pytest.raises(transfer.TransferError, match="os must be a non-empty string"):
+        transfer.import_automation(s2, _rezip_manifest(data, lambda m: {**m, "os": "  "}))

@@ -174,15 +174,20 @@ sections that apply — TRIGGERS as §4.3 `triggerLabel` chips, STEPS as numbere
 mono index, step name, accent AGENT mini-badge where `agent`), SECRETS (amber NOT SET
 mini-badge when `exists` is false — it will be created as a placeholder; gray ON THIS MAC
 when true), AGENTS (gray REUSED / plain when new) — and a hairline-divided footer note:
-the packages count when any, plus "Its triggers arrive off — review the scripts in the
+when the preview carries `osMismatch`, an amber first line "Built on `<OS>` — its steps
+may need rewriting before they run on this Mac." (`<OS>` per the §4.1 display-name rule),
+then the packages count when any, plus "Its triggers arrive off — review the scripts in the
 editor before enabling them." Footer: quiet **Back** (returns to the input step) / accent
 **Import** — POSTs `/automations/import/confirm` with the preview's token, closes the
 modal, and opens the **import summary modal** (a 404 — expired token — surfaces inline on
 the preview step).
 The summary modal: title "Imported "`<name>`"" (the landed — possibly deduped — name), a
 fixed muted intro line under it ("Its
-triggers are off until you enable them."), and when the summary carries `renamedFrom` a
+triggers are off until you enable them."), when the summary carries `renamedFrom` a
 second muted line ("Renamed from "`<renamedFrom>`", which already exists on this Mac."),
+and when it carries `osMismatch` an amber line ("Built on `<OS>` — its steps may need
+rewriting before they run on this Mac.", the §4.1 display-name rule — the same warning
+persists on the automation as the §4.1 os-mismatch problem),
 then only the sections that apply — "Secrets that
 need values" (one row per created placeholder: name + amber Not set tag — "add values on
 the Secrets page"), "Already on this Mac — not granted" (pre-existing secrets/agents the
@@ -190,7 +195,10 @@ automation references, §5.1: "review and grant them on the edit page"), "Agents
 (created agent names; a not-ready harness shows the §12 Needs setup badge), and a packages
 note ("`<n>` packages install on the first execution") when the manifest declares any.
 Footer: accent **Open automation** (navigates to the new detail page) / quiet Close. One card per automation: name, description,
-status badge, trigger chip (`triggerChip`, plus an OFF tag when `triggersOff`), result-summary chip when
+status badge, trigger chip (`triggerChip`, plus an OFF tag when `triggersOff`), an amber
+**Needs fixing** chip when the automation's §4.1 `problems` list is non-empty (the §7
+attention tint; its tooltip lists every problem label, one per line — the full detail
+lives in the §9.2 banner), result-summary chip when
 the last execution set one (tinted by `resultStatus` with the §7 chip colors — same tint as the detail
 and execution pages), and
 a square accent-filled **inline execute button** per card (rounded square, solid accent/orange
@@ -259,6 +267,15 @@ only; the §9.1 inline execute button, the §13 menu bar, and the execution page
 plain toast (§7).
 Sections top to bottom:
 
+- Optional **Needs fixing banner** — shown first, whenever the §4.1 `problems` list is
+  non-empty: an amber-bordered banner (the §7 attention tint), title "This automation
+  needs fixing", then one row per problem in §4.1 order — the problem's `label` as the row
+  text, with a quiet right-aligned action link per kind: `secret-unset` → **Open Secrets**
+  (navigates to the Secrets page); `secret-missing`, `secret-ungranted`, `agent-missing`,
+  `agent-ungranted`, and `os-mismatch` → **Edit** (opens the §11 edit page, where steps
+  are rewritten and grants are set on save); `package-missing` → no action (its label
+  already says it installs on the first execution). The banner is pure §4.1 `problems`
+  rendering — no probe, no dismiss state: it disappears by the problems being fixed.
 - Optional **Draft banner** (§4.4), then **LATEST RESULT** card — the execution's chip (if it set one)
   + metadata chips, then a **trimmed** version of the §7 result view stack for the latest
   execution: one file view for `result.md` (that exact name) expanded, and nothing else in the

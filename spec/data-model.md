@@ -150,6 +150,44 @@ draft: unsaved edit snapshot (create-flow shape) | null
 agentId: agent that writes/edits this automation
 stepAgents, allowedSecrets: string[] — per-automation enablement (set on save); both are id
   lists: stepAgents holds §4.7 agent uuids, allowedSecrets holds §4.8 secret uuids
+originOs: macos | windows | linux | absent — the platform the automation was exported from,
+  stamped only by §5.1 import (the archive manifest's `os`, when present; an unrecognized
+  token stores as-is). Stored top-level (§5 automation.yaml, snake_case `origin_os`), never
+  versioned, not serialized (`problems` below carries its user-facing form). Cleared by the
+  next edit save on this machine (§4.4 save-new-version) — a local rework supersedes "built
+  elsewhere"; a version restore keeps it (restoring is not a rework) — and set by no other
+  write path.
+problems: [{ kind, label }] — derived at serialization, never stored: the "would this fire
+  successfully" audit backing the §9.1 Needs fixing chip, the §9.2 banner, and §20 output.
+  Computed from stored facts plus one §6.2 installed-check — never a Keychain read or a
+  harness probe (deliberate exclusions: §12 owns probe-based harness readiness, and a set
+  secret whose Keychain entry vanished is caught by the §7 pre-step gate). Each condition
+  mirrors a real §7 pre-step gate or a §6.2/§5.1 fact, so the chip never cries wolf. Kinds,
+  in serialized order (each `label` is the exact UI copy):
+  - `secret-missing` — an effective step secret (manifest entries ∪ code subscripts) or a
+    discord trigger's token secret references an id no stored record holds. "A step
+    references a deleted secret." / "A trigger references a deleted secret."
+  - `secret-ungranted` — an effective step secret exists but isn't in `allowedSecrets`
+    (discord trigger secrets are not grant-gated, §4.3). "Secret NAME isn't allowed for
+    this automation yet - grant it on the edit page."
+  - `secret-unset` — a referenced secret (step or discord trigger) whose record has
+    `set: false`. "Secret NAME has no value yet - add it on the Secrets page."
+  - `agent-missing` — a step `agents:` entry id no stored record holds. "A step references
+    a deleted agent."
+  - `agent-ungranted` — a step `agents:` entry not in `stepAgents`. "Agent NAME isn't
+    enabled for this automation yet - enable it on the edit page."
+  - `package-missing` — a current-version declared package whose distribution the §6.2
+    fast installed-check doesn't find (the softest condition: ensure self-heals it before
+    step 1; it is listed because a failed install then blocks the run, and import is the
+    one path that lands declared packages uninstalled). "Package NAME isn't installed
+    yet - it installs on the first execution."
+  - `os-mismatch` — `originOs` present and ≠ the running platform. "Built on <OS> - its
+    steps may need rewriting before they run on this Mac." (<OS> is the display name:
+    macOS / Windows / Linux; an unrecognized stored token shows verbatim and always
+    mismatches.)
+  A secret or agent yields at most one entry — precedence missing > ungranted > unset,
+  the order the §7 gates fail in — and entries dedupe per referenced record (a secret
+  three steps use is one row), sorted by name within a kind. Empty list = nothing to fix.
 ```
 
 ### 4.2 Parameter kinds

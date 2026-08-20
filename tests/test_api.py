@@ -95,8 +95,11 @@ def test_export_import_endpoints(client):
     assert body["automation"]["triggersOff"] is True
     assert set(body["summary"]) == {"secretsCreated", "secretsExisting",
                                     "agentsCreated", "agentsReused", "packages",
-                                    "renamedFrom"}
+                                    "renamedFrom", "os", "osMismatch"}
     assert body["summary"]["renamedFrom"] == "Port me"
+    # §5.1: a same-machine round trip records the platform and never mismatches
+    assert body["summary"]["os"] == "macos"
+    assert body["summary"]["osMismatch"] is False
     assert client.post("/automations/import", content=b"junk",
                        headers={"Content-Type": "application/octet-stream"}).status_code == 422
     assert client.get("/automations/nope/export").status_code == 404

@@ -179,6 +179,12 @@ export interface Automation {
   agentId: string | null
   stepAgents: string[]      // §4.1 agent-enablement grants — §4.7 agent uuids
   allowedSecrets: string[]  // §4.1 secret-allowance grants — §4.8 secret uuids
+  // §4.1 problems — the derived would-this-fire-successfully audit; non-empty
+  // drives the §9.1 Needs fixing chip and the §9.2 banner. `label` is the
+  // exact UI copy; `kind` picks the banner row's action link.
+  problems: { kind: 'secret-missing' | 'secret-ungranted' | 'secret-unset'
+                  | 'agent-missing' | 'agent-ungranted' | 'package-missing'
+                  | 'os-mismatch'; label: string }[]
   snapshotSettings: SnapshotSettings // §6.3 automatic-snapshot toggles
   specMeta: string
   latest?: (ExecutionResult & { executionId: string; when: string }) | null
@@ -297,6 +303,10 @@ export interface ImportSummary {
   packages: PackageDep[]
   // §5.1: the archive's name when the §4.1 dedupe renamed the landed automation.
   renamedFrom: string | null
+  // §5.1: the archive manifest's platform token (null when absent) and
+  // whether it differs from the running platform.
+  os: string | null
+  osMismatch: boolean
 }
 
 // §5.2 import preview — the archive's contents plus the §5.1 match rules run
@@ -313,6 +323,9 @@ export interface ImportPreview {
   packages: PackageDep[]
   agents: { name: string; harness: string; mode: string; model: string | null; reused: boolean }[]
   secrets: { name: string; description: string; exists: boolean }[]
+  // §5.1 platform token + mismatch flag — same rule as the import summary.
+  os: string | null
+  osMismatch: boolean
   sourceUrl?: string
   resolvedUrl?: string
 }

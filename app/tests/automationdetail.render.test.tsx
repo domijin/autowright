@@ -36,7 +36,7 @@ const auto = (over: Partial<Automation> = {}): Automation => ({
   id: 'a1', name: 'Job', description: '', version: 1, triggers: [], triggerChip: 'No triggers',
   triggersOff: false, nextAt: null, instructions: '', notes: '', lastStatus: 'succeeded',
   live: [], maxParallel: 1, maxQueued: 10, resultChip: null, resultStatus: null,
-  lastExecutionLabel: 'Today', agentId: null, stepAgents: [], allowedSecrets: [],
+  lastExecutionLabel: 'Today', agentId: null, stepAgents: [], allowedSecrets: [], problems: [],
   snapshotSettings: { preVersion: true, preClear: true, preRestore: true }, specMeta: '',
   ...over,
 })
@@ -124,5 +124,40 @@ describe('§9.2 capacity popup', () => {
     expect(screen.getByText('Execution and queue capacity is full')).toBeTruthy()
     expect(screen.getByText(/1 executing\./)).toBeTruthy()
     expect(mockedApi.executeNow).not.toHaveBeenCalled()
+  })
+})
+
+describe('§9.2 needs-fixing banner', () => {
+  it('is absent when the problems list is empty', () => {
+    seed(auto())
+    render(<AutomationDetail />)
+    expect(screen.queryByText('This automation needs fixing')).toBeNull()
+  })
+
+  it('secret-unset rows link to the Secrets page', () => {
+    seed(auto({ problems: [
+      { kind: 'secret-unset', label: 'Secret API_KEY has no value yet - add it on the Secrets page.' },
+    ] }))
+    render(<AutomationDetail />)
+    expect(screen.getByText('This automation needs fixing')).toBeTruthy()
+    expect(screen.getByText('Secret API_KEY has no value yet - add it on the Secrets page.')).toBeTruthy()
+    fireEvent.click(screen.getByText('Open Secrets'))
+    expect(storeMod.useStore.getState().page).toBe('secrets')
+  })
+
+  it('grant rows open the editor; package rows carry no action', () => {
+    seed(auto({ problems: [
+      { kind: 'agent-ungranted', label: "Agent Coder isn't enabled for this automation yet - enable it on the edit page." },
+      { kind: 'package-missing', label: "Package pandas isn't installed yet - it installs on the first execution." },
+    ] }))
+    render(<AutomationDetail />)
+    // one Edit per grant row, plus the §9.2 header's own Edit button — the
+    // package row adds none (its label already says it self-installs).
+    const edits = screen.getAllByText('Edit')
+    expect(edits.length).toBe(2)
+    expect(screen.queryByText('Open Secrets')).toBeNull()
+    // a banner row's Edit opens the §11 editor surface
+    fireEvent.click(edits[edits.length - 1])
+    expect(storeMod.useStore.getState().surface).toBe('create')
   })
 })

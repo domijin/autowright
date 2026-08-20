@@ -47,6 +47,10 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   `param list`, `trigger list`, `memory show`, `snapshot list`, `execution list|show`,
   `secret list`, `agent list`, `settings show`) prints the raw API JSON instead of the human
   columns — the machine mode agents parse.
+- **Needs fixing parity (§4.1 `problems`):** `automation list`'s human rows append a plain
+  `needs fixing` marker when an automation's `problems` list is non-empty, and
+  `automation show` prints a `needs fixing:` block — one indented line per problem label,
+  in §4.1 order. `--json` carries the serialized `problems` field as always.
 - **Memory inspection** (`automation memory show <ref> [file]`) — the authoring surface's
   only read access to §6 memory contents (§8 drafting calls never carry them). With no
   `file`, lists the memory directory's files — memory-relative path, size, updated — via §19
@@ -155,9 +159,10 @@ archive asset). A URL goes through §19 `POST /automations/import/url` and confi
 immediately — the typed command is the user's explicit action, so no interactive preview;
 when GitHub resolution changed the URL, the resolved source is printed. A file path POSTs
 `/automations/import` unchanged. Both paths print the same summary lines — a created agent
-whose harness isn't ready (summary `ready: false`, §19) is marked "(needs setup)", and a
+whose harness isn't ready (summary `ready: false`, §19) is marked "(needs setup)", a
 summary carrying `renamedFrom` (§5.1 name dedupe) prints
-`renamed from "<renamedFrom>" - that name already exists` — and run
+`renamed from "<renamedFrom>" - that name already exists`, and one carrying `osMismatch`
+(§5.1) prints `built on <os> - its steps may need rewriting on this machine` — and run
 the package ensure.
 
 **Trigger semantics on push** — the §4.3 trigger merge, performed client-side exactly

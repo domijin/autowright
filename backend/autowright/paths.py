@@ -3,9 +3,20 @@ AUTOWRIGHT_HOME overrides both for dev/tests (logs go to <home>/logs)."""
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 APP_NAME = "Autowright"
+
+
+def current_os() -> str:
+    """§5.1 platform token (macos | windows | linux) — the archive manifest's
+    `os` vocabulary, compared against §4.1 `originOs`."""
+    if sys.platform == "darwin":
+        return "macos"
+    if sys.platform.startswith("win"):
+        return "windows"
+    return "linux"
 
 
 def app_support() -> Path:

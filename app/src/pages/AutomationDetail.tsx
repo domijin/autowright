@@ -1298,6 +1298,39 @@ export default function AutomationDetail() {
         </span>
       </div>
 
+      {/* §9.2/§4.1 needs-fixing banner — pure problems rendering: no probe,
+          no dismiss state; it disappears by the problems being fixed. */}
+      {auto.problems.length > 0 && (
+        <div className="ad-anim-item" style={{
+          margin: '0 0 24px', background: 'var(--notice-amber-bg)',
+          border: '1px solid var(--notice-amber-border)',
+          borderRadius: 12, padding: '12px 16px',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--amber)', marginBottom: 6 }}>
+            This automation needs fixing
+          </div>
+          {auto.problems.map((p, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '3px 0' }}>
+              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2)' }}>
+                {p.label}
+              </span>
+              {/* §9.2 per-kind action: unset values live on the Secrets page;
+                  references and grants (and step rewrites) live in the editor;
+                  package-missing needs nothing — it installs on first run. */}
+              {p.kind === 'secret-unset' ? (
+                <button className="ad-btn-text dim" onClick={() => go('secrets')} style={{ flex: 'none' }}>
+                  Open Secrets
+                </button>
+              ) : p.kind !== 'package-missing' ? (
+                <button className="ad-btn-text dim" onClick={() => setSurface('create', 'edit')} style={{ flex: 'none' }}>
+                  Edit
+                </button>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* §4.4 draft banner */}
       {auto.draft && (
         <div className="ad-anim-item" style={{

@@ -874,3 +874,82 @@ def test_atomic_write_failure_unlinks_tmp_and_keeps_original(tmp_path):
         atomic_write_text(target, "broken \ud800 surrogate")
     assert target.read_text(encoding="utf-8") == "keep: me\n"  # original intact
     assert not list(tmp_path.glob(".ad-tmp-*"))               # temp cleaned up
+
+
+def test_problems_audit_kinds_order_and_precedence(store):
+    """§4.1 `problems`: mirrors the §7 pre-step gates from stored facts only —
+    at most one entry per record (missing > ungranted > unset), kinds in
+    serialized order, names sorted within a kind."""
+    from autowright.storage import new_id
+
+    sid_ok, sid_unset, sid_ungranted, sid_both = new_id(), new_id(), new_id(), new_id()
+    sid_gone, trig_unset = new_id(), new_id()
+    store.secrets = [
+        {"id": sid_ok, "name": "OK_ONE", "description": "", "set": True},
+        {"id": sid_unset, "name": "EMPTY_ONE", "description": "", "set": False},
+        {"id": sid_ungranted, "name": "LOCKED_ONE", "description": "", "set": True},
+        # ungranted AND unset — precedence keeps only the ungranted row
+        {"id": sid_both, "name": "BOTH_BAD", "description": "", "set": False},
+        {"id": trig_unset, "name": "BOT_TOKEN", "description": "", "set": False},
+    ]
+    aid_ok, aid_off, aid_gone = new_id(), new_id(), new_id()
+    store.agents = [
+        {"id": aid_ok, "name": "Researcher", "description": "",
+         "harness": "Claude Code", "mode": "default", "model": None},
+        {"id": aid_off, "name": None, "description": "",
+         "harness": "OpenCode", "mode": "default", "model": None},
+    ]
+    ver = make_version(packages=[{"pip": "zzz-nonexistent-dist", "import": "zzz", "why": "w"},
+                                 {"pip": "aaa-nonexistent-dist", "import": "aaa", "why": "w"}])
+    # manifest entries and code subscripts both count (§4.1 effective refs)
+    ver["steps"][0]["secrets"] = [{"id": sid_ok, "why": "w"}, {"id": sid_unset, "why": "w"},
+                                  {"id": sid_ungranted, "why": "w"}, {"id": sid_both, "why": "w"}]
+    ver["steps"][0]["code"] += f'x = secrets["{sid_gone}"]  # GONE\n'
+    ver["steps"][1]["agent"] = True
+    ver["steps"][1]["why"] = "judgment"
+    ver["steps"][1]["agents"] = [{"id": aid_ok}, {"id": aid_off, "why": "w"}]
+    ver["steps"][1]["code"] += f'y = agents["{aid_gone}"]\n'
+    a = store.create_automation(
+        ver, "Audit me", aid_ok,
+        triggers=[{"id": new_id(), "kind": "discord", "enabled": False,
+                   "channel": "42", "secret": trig_unset}],
+        enabled_agents=[aid_ok],
+        allowed_secrets=[sid_ok, sid_unset])
+    a["origin_os"] = "linux"
+    probs = store.auto_json(a)["problems"]
+    assert [(p["kind"], p["label"]) for p in probs] == [
+        ("secret-missing", "A step references a deleted secret."),
+        ("secret-ungranted", "Secret BOTH_BAD isn't allowed for this automation yet - "
+                             "grant it on the edit page."),
+        ("secret-ungranted", "Secret LOCKED_ONE isn't allowed for this automation yet - "
+                             "grant it on the edit page."),
+        ("secret-unset", "Secret BOT_TOKEN has no value yet - add it on the Secrets page."),
+        ("secret-unset", "Secret EMPTY_ONE has no value yet - add it on the Secrets page."),
+        ("agent-missing", "A step references a deleted agent."),
+        # §8 grant name: an unnamed agent shows its harness name
+        ("agent-ungranted", "Agent OpenCode isn't enabled for this automation yet - "
+                            "enable it on the edit page."),
+        ("package-missing", "Package aaa-nonexistent-dist isn't installed yet - "
+                            "it installs on the first execution."),
+        ("package-missing", "Package zzz-nonexistent-dist isn't installed yet - "
+                            "it installs on the first execution."),
+        ("os-mismatch", "Built on Linux - its steps may need rewriting "
+                        "before they run on this Mac."),
+    ]
+
+
+def test_problems_empty_when_everything_is_wired(store):
+    """A fully wired automation audits clean — and discord trigger secrets are
+    checked for value, not for grants (§4.3: triggers aren't grant-gated)."""
+    from autowright.storage import new_id
+
+    sid = new_id()
+    store.secrets = [{"id": sid, "name": "TOKEN_ONE", "description": "", "set": True}]
+    ver = make_version()
+    ver["steps"][0]["secrets"] = [{"id": sid, "why": "w"}]
+    a = store.create_automation(
+        ver, "Clean", None,
+        triggers=[{"id": new_id(), "kind": "discord", "enabled": False,
+                   "channel": "42", "secret": sid}],
+        allowed_secrets=[sid])
+    assert store.auto_json(a)["problems"] == []

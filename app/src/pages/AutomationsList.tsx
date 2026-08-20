@@ -6,6 +6,11 @@ import type { Automation, ImportPreview, ImportSummary } from '../types'
 import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, P, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
 import { useTriggerPreview } from '../triggers'
 
+// §4.1 display-name rule for §5.1 platform tokens: known tokens display
+// friendly; an unrecognized token shows verbatim (it always mismatches).
+const OS_DISPLAY: Record<string, string> = { macos: 'macOS', windows: 'Windows', linux: 'Linux' }
+const osName = (os: string | null) => (os ? OS_DISPLAY[os] ?? os : '')
+
 // §5.1/§9.1 import summary modal — only the sections that apply render.
 function ImportSummaryModal({ name, automationId, summary, onClose }: {
   name: string
@@ -39,6 +44,13 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
           {summary.renamedFrom && (
             <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '2px 0 0' }}>
               Renamed from “{summary.renamedFrom}”, which already exists on this Mac.
+            </p>
+          )}
+          {summary.osMismatch && (
+            // §5.1: the same warning persists on the automation as the §4.1
+            // os-mismatch problem.
+            <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--amber)', margin: '2px 0 0' }}>
+              Built on {osName(summary.os)} — its steps may need rewriting before they run on this Mac.
             </p>
           )}
           {summary.secretsCreated.length > 0 && section('SECRETS THAT NEED VALUES', (
@@ -274,6 +286,12 @@ function ImportModal({ onDone, onClose }: {
                 ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">REUSED</MiniBadge> : undefined))
             ))}
             <div style={{ borderTop: '1px solid var(--hairline)', marginTop: 18, paddingTop: 12 }}>
+              {pv.preview.osMismatch && (
+                // §5.1/§9.1: the archive was exported on another platform.
+                <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--amber)', margin: '0 0 4px' }}>
+                  Built on {osName(pv.preview.os)} — its steps may need rewriting before they run on this Mac.
+                </p>
+              )}
               {pv.preview.packages.length > 0 && (
                 <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)', margin: '0 0 4px' }}>
                   {pv.preview.packages.length} package{pv.preview.packages.length === 1 ? '' : 's'} install on the first execution.
@@ -384,6 +402,21 @@ function AutoCard({ a }: { a: Automation }) {
             animation: a.lastStatus === 'executing' ? PULSE : 'none',
           }}
         />
+        {a.problems.length > 0 && (
+          // §9.1/§4.1: amber Needs fixing chip — tooltip lists every problem
+          // label; the full detail lives in the §9.2 banner.
+          <span
+            title={a.problems.map((p) => p.label).join('\n')}
+            style={{
+              fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 11.5, letterSpacing: '.03em',
+              color: resultChipColors('attention').c,
+              background: resultChipColors('attention').bg,
+              borderRadius: 6, padding: '3px 10px',
+            }}
+          >
+            Needs fixing
+          </span>
+        )}
         {a.resultChip && (
           <span style={{
             fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 11.5, letterSpacing: '.03em',

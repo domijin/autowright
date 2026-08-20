@@ -233,9 +233,11 @@ remain plain dicts (§2).
   `values=0` omits `param_values` from the manifest (default `1`)
 - `POST /automations/import` — the §5.1 archive as the raw request body
   (`application/octet-stream`, no multipart) → `{ automation, summary }` where `summary` is
-  `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages, renamedFrom }` —
+  `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages, renamedFrom,
+  os, osMismatch }` —
   `renamedFrom` is the archive's automation name when the §4.1 dedupe renamed the landed
-  automation, else `null`;
+  automation, else `null`; `os` is the manifest's platform token (`null` when absent) and
+  `osMismatch` whether it differs from the running platform (`false` when absent), §5.1;
   `agentsCreated` is `[{ name, ready }]`, `ready` computed at import time by the one §19
   check-ready rule (`/agents/{id}/check`) for the created agent's harness/mode/model — it
   backs the §9.1 summary modal's Needs setup badge (created agents can share a name with a
@@ -251,9 +253,11 @@ remain plain dicts (§2).
   a 5th preview evicts the oldest — a confirm against an evicted token answers 404 exactly
   like an expired one). `preview` is `{ name, landsAs, description, steps: [{name,
   description, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
-  model, reused}], secrets: [{name, description, exists}] }` — `reused`/`exists` are the §5.1 match
-  rules run dry, and `landsAs` the §4.1 name dedupe run dry (§5.2 — equal to `name` when free,
-  best-effort until confirm)
+  model, reused}], secrets: [{name, description, exists}], os, osMismatch }` — `reused`/`exists`
+  are the §5.1 match
+  rules run dry, `landsAs` the §4.1 name dedupe run dry (§5.2 — equal to `name` when free,
+  best-effort until confirm), and `os`/`osMismatch` the §5.1 platform token + mismatch flag
+  (same rule as the import summary)
 - `POST /automations/import/url` `{ url }` → same `{ token, preview }` shape plus
   `preview.sourceUrl` (as given) and `preview.resolvedUrl` (after §5.2 GitHub resolution;
   equal for direct links). Any §5.2 URL-rule failure — non-HTTPS, unresolvable page, download

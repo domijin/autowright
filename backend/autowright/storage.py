@@ -402,6 +402,10 @@ class Store:
             # rather than dropping the automation at load.
             "max_parallel": clamp_max_parallel(top.get("max_parallel")),
             "max_queued": clamp_max_queued(top.get("max_queued")),
+            # §4.1 originOs — an unrecognized token loads as-is (it always
+            # counts as a mismatch); a non-string is dropped, not fatal.
+            **({"origin_os": top["origin_os"].strip()}
+               if isinstance(top.get("origin_os"), str) and top["origin_os"].strip() else {}),
             "created_at": top.get("created_at"),
             "updated_at": top.get("updated_at"),
             "versions": {},
@@ -563,6 +567,7 @@ class Store:
             "param_values": a["param_values"],
             "max_parallel": a["max_parallel"],
             "max_queued": a["max_queued"],
+            **({"origin_os": a["origin_os"]} if a.get("origin_os") else {}),
             "created_at": a["created_at"],
             "updated_at": a["updated_at"],
         })
@@ -660,7 +665,8 @@ class Store:
     def create_automation(self, ver: dict, name: str, agent_id: str | None,
                           triggers: list[dict] | None = None,
                           enabled_agents: list[str] | None = None,
-                          allowed_secrets: list[str] | None = None) -> dict:
+                          allowed_secrets: list[str] | None = None,
+                          origin_os: str | None = None) -> dict:
         with self.lock:
             name = self.free_automation_name(name)  # §4.1 uniqueness
             automation_id = new_id()
@@ -678,6 +684,10 @@ class Store:
                 "memory_snapshots": {"pre_version": True, "pre_clear": True, "pre_restore": True},
                 "param_values": {}, "created_at": now, "updated_at": now,
                 "max_parallel": DEFAULT_MAX_PARALLEL, "max_queued": DEFAULT_MAX_QUEUED,
+                # §4.1 originOs: stamped only by §5.1 import; cleared by the
+                # next edit save (save_new_version) — a local rework
+                # supersedes "built elsewhere".
+                **({"origin_os": origin_os} if origin_os else {}),
                 "versions": {}, "draft": None,
                 # §4.1 `live` is a set: maxParallel may allow several at once.
                 "_last_status": "none", "_last_exec_at": None, "_live": set(),
@@ -702,6 +712,9 @@ class Store:
             a["versions"][n] = self._load_version_folder(vd)
             a["current_version"] = n
             a["updated_at"] = timefmt.now_iso()
+            # §4.1: an edit save clears originOs — a local rework supersedes
+            # "built elsewhere" (a restore keeps it: not a rework).
+            a.pop("origin_os", None)
             self._write_toplevel(a)
             return n
 
@@ -1648,6 +1661,82 @@ class Store:
                 return {**r, "executionId": h["id"], "when": f"from {timefmt.started_label(dt)}"}
         return None
 
+    def problems_json(self, a: dict, cur: dict) -> list[dict]:
+        """§4.1 `problems` — the would-this-fire-successfully audit, derived at
+        serialization from stored facts plus the §6.2 fast installed-check.
+        Mirrors the §7 pre-step gates: at most one entry per referenced record,
+        precedence missing > ungranted > unset (the order the gates fail in).
+        Never a Keychain read or a harness probe (§4.1 exclusions)."""
+        out: list[dict] = []
+        secrets_by_id = {s["id"]: s for s in self.secrets}
+        agents_by_id = {g["id"]: g for g in self.agents}
+        # §4.1 effective references: manifest entries ∪ code subscripts.
+        step_secret_ids: set[str] = set()
+        step_agent_ids: set[str] = set()
+        for s in cur.get("steps", []) or []:
+            step_secret_ids |= {e["id"] for e in s.get("secrets") or [] if e.get("id")}
+            step_secret_ids |= set(SECRET_REF_RE.findall(s.get("code", "") or ""))
+            step_agent_ids |= {e["id"] for e in s.get("agents") or [] if e.get("id")}
+            step_agent_ids |= set(AGENT_REF_RE.findall(s.get("code", "") or ""))
+        trigger_secret_ids = {t["secret"] for t in a["triggers"]
+                              if t.get("kind") == "discord" and t.get("secret")}
+        allowed = set(a["allowed_secrets"] or [])
+        missing_step = missing_trigger = 0
+        ungranted: list[str] = []
+        unset: list[str] = []
+        for sid in step_secret_ids | trigger_secret_ids:
+            sec = secrets_by_id.get(sid)
+            if sec is None:
+                if sid in step_secret_ids:
+                    missing_step += 1
+                else:
+                    missing_trigger += 1
+            elif sid in step_secret_ids and sid not in allowed:
+                # §4.3: discord trigger secrets are not grant-gated.
+                ungranted.append(sec["name"])
+            elif not sec.get("set", True):
+                unset.append(sec["name"])
+        out += [{"kind": "secret-missing",
+                 "label": "A step references a deleted secret."}] * missing_step
+        out += [{"kind": "secret-missing",
+                 "label": "A trigger references a deleted secret."}] * missing_trigger
+        out += [{"kind": "secret-ungranted",
+                 "label": f"Secret {n} isn't allowed for this automation yet - "
+                          "grant it on the edit page."} for n in sorted(ungranted)]
+        out += [{"kind": "secret-unset",
+                 "label": f"Secret {n} has no value yet - add it on the Secrets page."}
+                for n in sorted(unset)]
+        agent_missing = 0
+        agent_ungranted: list[str] = []
+        enabled = set(a["enabled_agents"] or [])
+        for aid in step_agent_ids:
+            g = agents_by_id.get(aid)
+            if g is None:
+                agent_missing += 1
+            elif aid not in enabled:
+                # §8 grant name: the agent's name, or its harness when unnamed.
+                agent_ungranted.append(g.get("name") or g.get("harness", ""))
+        out += [{"kind": "agent-missing",
+                 "label": "A step references a deleted agent."}] * agent_missing
+        out += [{"kind": "agent-ungranted",
+                 "label": f"Agent {n} isn't enabled for this automation yet - "
+                          "enable it on the edit page."} for n in sorted(agent_ungranted)]
+        pkgs = cur.get("packages", []) or []
+        if pkgs:
+            from . import packages as pkglib
+            missing_pkgs = sorted(e["pip"] for e in pkglib.check(pkgs)
+                                  if e["status"] == "missing")
+            out += [{"kind": "package-missing",
+                     "label": f"Package {n} isn't installed yet - "
+                              "it installs on the first execution."} for n in missing_pkgs]
+        origin = a.get("origin_os")
+        if origin and origin != paths.current_os():
+            display = {"macos": "macOS", "windows": "Windows", "linux": "Linux"}.get(origin, origin)
+            out.append({"kind": "os-mismatch",
+                        "label": f"Built on {display} - its steps may need rewriting "
+                                 "before they run on this Mac."})
+        return out
+
     def auto_json(self, a: dict, full: bool = True) -> dict:
         cur = a["versions"].get(a["current_version"], {})
         last_at = a.get("_last_exec_at")
@@ -1691,6 +1780,7 @@ class Store:
             "agentId": a["agent_id"],
             "stepAgents": a["enabled_agents"],
             "allowedSecrets": a["allowed_secrets"],
+            "problems": self.problems_json(a, cur),
             "snapshotSettings": {"preVersion": a["memory_snapshots"]["pre_version"],
                                  "preClear": a["memory_snapshots"]["pre_clear"],
                                  "preRestore": a["memory_snapshots"]["pre_restore"]},

@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from . import __version__, harness, timefmt, triggers as triggerlib
+from . import __version__, harness, paths, timefmt, triggers as triggerlib
 from .drafting import STEP_FILE_RE
 from .specmd import blocks_to_md, md_to_blocks
 from .storage import AGENT_REF_RE, SECRET_REF_RE, Store, new_id
@@ -134,6 +134,9 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
             "format_version": FORMAT_VERSION,
             "exported_at": timefmt.now_iso(),
             "app_version": __version__,
+            # §5.1: the exporting machine's platform token — import stamps it
+            # as §4.1 originOs and flags a mismatch, never a rejection.
+            "os": paths.current_os(),
             "name": a["name"],
         }
         drafting = next((g for g in store.agents if g["id"] == a["agent_id"]), None)
@@ -290,6 +293,13 @@ def _validate(z: zipfile.ZipFile) -> dict:
     name = manifest.get("name")
     if not isinstance(name, str) or not name.strip():
         raise TransferError("the manifest has no automation name")
+    # §5.1: the optional platform token — unrecognized values are legal (they
+    # store and compare as-is, §4.1 originOs), so a newer platform token never
+    # blocks an import.
+    os_token = manifest.get("os")
+    if os_token is not None and (not isinstance(os_token, str) or not os_token.strip()):
+        raise TransferError("the manifest's os must be a non-empty string")
+    os_token = os_token.strip() if os_token else None
     triggers_in = manifest.get("triggers") or []
     if not isinstance(triggers_in, list):
         raise TransferError("manifest triggers must be a list")
@@ -505,7 +515,7 @@ def _validate(z: zipfile.ZipFile) -> dict:
     spec_md = _text(z, "automation/spec.md")
     instr = _text(z, "automation/instructions.md", required=False)
     notes = _text(z, "automation/notes.md", required=False)
-    return {"name": name.strip(), "agent": agent_name,
+    return {"name": name.strip(), "agent": agent_name, "os": os_token,
             "triggers": triggers, "param_values": values,
             "description": meta.get("description", ""), "params": params, "packages": packages,
             "steps": steps, "spec": md_to_blocks(spec_md), "instructions": (instr or "").strip() or None,
@@ -566,7 +576,11 @@ def preview_archive(store: Store, data: bytes) -> dict:
                        "agent": bool(s.get("agent"))} for s in arch["steps"]],
             "params": [{"name": p["name"], "kind": p["kind"]} for p in arch["params"]],
             "triggers": arch["triggers"], "packages": arch["packages"],
-            "agents": agents, "secrets": secrets}
+            "agents": agents, "secrets": secrets,
+            # §5.1: the archive's platform token + mismatch flag — same rule
+            # as the import summary (absent token: null, never a mismatch).
+            "os": arch["os"],
+            "osMismatch": bool(arch["os"]) and arch["os"] != paths.current_os()}
 
 
 def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
@@ -666,7 +680,11 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                                     agent_id=drafting["id"] if drafting else None,
                                     triggers=triggers,
                                     enabled_agents=list(created_ids),
-                                    allowed_secrets=list(created_secret_ids))
+                                    allowed_secrets=list(created_secret_ids),
+                                    # §5.1: the manifest's platform token
+                                    # stamps §4.1 originOs — a mismatch flags
+                                    # the os-mismatch problem, never rejects.
+                                    origin_os=arch["os"])
         if arch["param_values"]:
             # Values are the one manifest field creation can't seed.
             store.patch_automation(a, {"paramValues": arch["param_values"]})
@@ -687,7 +705,9 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
                "packages": arch["packages"],
                # §5.1: the archive's name when the §4.1 dedupe renamed the
                # landed automation, else None.
-               "renamedFrom": arch["name"] if a["name"] != arch["name"] else None}
+               "renamedFrom": arch["name"] if a["name"] != arch["name"] else None,
+               "os": arch["os"],
+               "osMismatch": bool(arch["os"]) and arch["os"] != paths.current_os()}
     return a, summary
 
 

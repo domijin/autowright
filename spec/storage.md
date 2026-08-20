@@ -433,6 +433,12 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              #   does not read it today — diagnostics plus a reserved hook
                              #   for future version gating; format_version stays the only
                              #   hard gate), name,
+                             # os: macos | windows | linux — the exporting machine's
+                             #   platform (recorded on every export; needed once
+                             #   Windows/Linux builds exist, meaningful in archives now:
+                             #   import stamps it as §4.1 `originOs` and a mismatch with
+                             #   the running platform flags the §4.1 os-mismatch problem
+                             #   — never a rejection),
                              # agent: the drafting agent's name (absent when none) — names
                              #   the agents.yaml entry the imported agent_id maps to,
                              # triggers: [{kind, expression? | timezone? | channel+secret… | from…}] —
@@ -488,7 +494,9 @@ answers 422 and writes nothing):
   (step `agents:`/`secrets:` entries in the archive's `{ name, why }` form — the §4.1 id
   form is rejected: ids never travel), §4.2 param kinds, §4.7 agent configs
   (harness/mode/model rules), §4.8 secret names, trigger
-  kinds with at most one `app_start`. Every name-form reference must resolve against the
+  kinds with at most one `app_start`. The manifest's optional `os` must be a non-empty
+  string when present — unrecognized values are legal (they store and compare as-is,
+  §4.1 `originOs`), so a newer platform token never blocks an import. Every name-form reference must resolve against the
   archive's own `agents.yaml`/`secrets.yaml` — step `agents:`/`secrets:` entries, each
   discord trigger's token secret, and the `secrets["NAME"]`/`agents["Name"]` subscripts
   inside step code alike; a miss answers 422 naming the step (or trigger), so import can
@@ -503,6 +511,11 @@ answers 422 and writes nothing):
   collision; re-importing your own export creates a copy ("Name 2"), never overwrites. When
   the dedupe renamed, the summary carries `renamedFrom` (the archive's name) so the §9.1
   summary modal and the §20 CLI can say so.
+- The manifest's `os` (when present) stamps the landed automation's §4.1 `originOs`.
+  Import never rejects on it — the steps are readable Python the user can rewrite — but a
+  value differing from the running platform flags the §4.1 os-mismatch problem, shows as
+  the §9.1 preview/summary note, and rides the §19 preview and summary as `os` +
+  `osMismatch`.
 - Every trigger imports **off** — nothing fires unexpectedly on a new machine.
 - `param_values` from the manifest seed the top-level file (§5 name+kind matching applies at
   execution time as usual); absent values fall back to definition defaults.
@@ -536,9 +549,10 @@ The import response carries a **summary** — secrets created (need values), exi
 referenced but not granted, agents created (each with a `ready` flag — the §19 check-ready
 rule run at import time on the created agent's harness/mode/model, so the §9.1 modal badges
 a not-ready harness Needs setup) vs. reused, declared packages (the app installs
-them on first execution as usual, §6.2; a §20 CLI import runs the ensure right away), and
-`renamedFrom` (the archive's name; only when the §4.1 dedupe renamed the automation) —
-rendered by the §9.1 summary modal.
+them on first execution as usual, §6.2; a §20 CLI import runs the ensure right away),
+`renamedFrom` (the archive's name; only when the §4.1 dedupe renamed the automation), and
+`os` + `osMismatch` (the manifest's platform token — null when absent — and whether it
+differs from the running platform) — rendered by the §9.1 summary modal.
 
 ### 5.2 URL import (decided)
 

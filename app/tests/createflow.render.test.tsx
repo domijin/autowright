@@ -75,7 +75,7 @@ const AUTO = {
   triggers: [], triggerChip: 'No triggers', triggersOff: false, nextAt: null,
   instructions: '- keep it simple',
   lastStatus: 'none', live: [], resultChip: null, resultStatus: null, lastExecutionLabel: '',
-  agentId: 'g1', stepAgents: ['g1', 'g2'], allowedSecrets: [MAIL_ID, CRM_ID],
+  agentId: 'g1', stepAgents: ['g1', 'g2'], allowedSecrets: [MAIL_ID, CRM_ID], problems: [],
   snapshotSettings: { preVersion: true, preClear: true, preRestore: true },
   specMeta: '', params: [],
   steps: [{ file: '01-a.py', name: 'Fetch pages', description: '', code: 'log("a")' }],

@@ -99,8 +99,9 @@ the update bullets below).
   retries, and, unlike the toggle flow, never patches the setting to false (a transient
   failure must not become a permanent opt-out). Successful card installs set the marker too.
   Once the marker is set the app never creates a shim on its own again: a hand-deleted shim
-  stays deleted (the §4.9 missing row is the explicit way back), and turning the toggle off
-  still touches no files. The preference itself is the stored
+  stays deleted (the §4.9 missing row is the explicit way back). Turning the toggle off also
+  deletes the shim, behind the §4.9 disable confirm — never silently. The preference itself
+  is the stored
   `cliEnabled` setting (§4.9); the shim files on disk stay the truth about what's installed. `~/.local/bin` may be absent from the user's PATH — the shell checks the
   **login-shell** PATH (GUI apps inherit a stripped one, so it asks
   `$SHELL -l -c 'printf %s "$PATH"'` with a ~2 s timeout, caches the answer per app run, and
@@ -124,7 +125,7 @@ the update bullets below).
     the shim, `chmod 755`. No dialog, no password. A `stale` legacy shim is not rewritten by
     it — the card's fix is a fresh user-local install plus the manual
     `sudo rm /usr/local/bin/autowright`, and the card says so). A third IPC, `cli-uninstall`
-    (the §4.9 Delete button), removes ours-marker shims from every candidate location — same
+    (fired by the §4.9 disable confirm), removes ours-marker shims from every candidate location — same
     rules as `service uninstall` below: marker required, foreign files never touched, and an
     undeletable one (root-owned legacy dir) is reported back as the manual `sudo rm` command
     instead of an error.

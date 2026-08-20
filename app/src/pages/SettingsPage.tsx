@@ -30,6 +30,8 @@ export default function SettingsPage() {
   // re-read on every Settings visit (this mount).
   const [cli, setCli] = useState<Cli | null>(null)
   const [cliBusy, setCliBusy] = useState(false)
+  // §4.9 disable confirm: turning the toggle off also deletes the command.
+  const [cliOffConfirm, setCliOffConfirm] = useState(false)
   // §4.9 QUIT card (§3 explicit-quit exception)
   const [quitConfirm, setQuitConfirm] = useState(false)
   const [quitBusy, setQuitBusy] = useState(false)
@@ -60,20 +62,26 @@ export default function SettingsPage() {
     })()
   }
 
-  // §4.9 toggle: turning on also installs,
-  // and a failed install flips the setting back — the toggle just returns.
-  // Turning off touches no files (Delete below is the explicit removal).
+  // §4.9 toggle: turning on also installs, and a failed install flips the
+  // setting back — the toggle just returns. Turning off also deletes the
+  // command: with an ours shim on disk the flip asks first (confirm below);
+  // with nothing installed it just patches false.
   const setCliEnabled = (on: boolean) => {
-    patch({ cliEnabled: on })
-    if (on) {
-      void cliInstall().then((ok) => { if (!ok) patch({ cliEnabled: false }) })
+    if (!on) {
+      if (cli && (cli.state === 'installed' || cli.state === 'stale')) setCliOffConfirm(true)
+      else patch({ cliEnabled: false })
+      return
     }
+    patch({ cliEnabled: true })
+    void cliInstall().then((ok) => { if (!ok) patch({ cliEnabled: false }) })
   }
 
-  // §4.9 Delete: §3 cli-uninstall removes ours-marker shims; an undeletable
-  // legacy one comes back as a manual-command hint, toasted.
-  const cliDelete = () => {
+  // §4.9 disable confirm accepted: patch off, then §3 cli-uninstall removes
+  // ours-marker shims; an undeletable legacy one comes back as a
+  // manual-command hint, toasted — the setting still turns off.
+  const cliDisable = () => {
     if (cliBusy) return
+    patch({ cliEnabled: false })
     setCliBusy(true)
     void (async () => {
       const r = await window.autowright?.cliUninstall().catch(() => null)
@@ -286,12 +294,10 @@ export default function SettingsPage() {
           <Eyebrow style={{ paddingLeft: 2 }}>COMMAND LINE</Eyebrow>
           <div className="ad-card" style={card}>
             {(() => {
-              // §4.9: at most one second row — Delete (toggle off, ours-marker
-              // shim still on disk), the missing warning (toggle on, no
-              // working user-local install), or the PATH row (toggle on,
-              // installed).
-              const deleteRow = cli.state !== 'foreign' && !settings.cliEnabled
-                && (cli.state === 'installed' || cli.state === 'stale')
+              // §4.9: at most one second row — the missing warning (toggle on,
+              // no working user-local install) or the PATH row (toggle on,
+              // installed). No standalone Delete row: removal rides the
+              // disable confirm.
               const warnRow = cli.state !== 'foreign' && settings.cliEnabled
                 && (cli.state === 'missing' || cli.state === 'stale')
               // §4.9 PATH row: on + installed, regardless of onPath.
@@ -300,7 +306,7 @@ export default function SettingsPage() {
                 <>
                   <div style={{
                     padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-                    ...(deleteRow || warnRow || pathRow ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
+                    ...(warnRow || pathRow ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
                   }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={rowTitle}>The <code>autowright</code> command</div>
@@ -340,23 +346,6 @@ export default function SettingsPage() {
                           Copy
                         </button>
                       </div>
-                    </div>
-                  )}
-                  {deleteRow && (
-                    <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={rowTitle}>Delete the command</div>
-                        <div style={rowSub}>
-                          Removes the command file from this Mac. Your automations, settings, and executions aren’t affected.
-                        </div>
-                      </div>
-                      <button className="ad-btn-soft" onClick={cliDelete} disabled={cliBusy} style={{ flex: 'none' }}>
-                        {cliBusy ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                            <Spinner size={12} /> Deleting…
-                          </span>
-                        ) : 'Delete'}
-                      </button>
                     </div>
                   )}
                   {warnRow && (
@@ -424,6 +413,17 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {cliOffConfirm && (
+        <ConfirmModal
+          title="Turn off the autowright command?"
+          body="This also deletes the command file from this Mac. Your automations, settings, and executions aren’t affected."
+          confirmLabel="Turn off and delete"
+          danger
+          onConfirm={() => { setCliOffConfirm(false); cliDisable() }}
+          onCancel={() => setCliOffConfirm(false)}
+        />
       )}
 
       {quitConfirm && (

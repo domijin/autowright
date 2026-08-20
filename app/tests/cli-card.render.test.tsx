@@ -1,8 +1,10 @@
 // §4.9 COMMAND LINE card: a Toggle bound to the stored cliEnabled setting;
 // disk state from the §3 cli-status preload IPC. Turning on patches the
 // setting and installs (silent, ~/.local/bin); a failed install patches it
-// back. Turning off touches no files — Delete is the explicit removal, and
-// an undeletable legacy shim comes back as a toasted manual command.
+// back. Turning off also deletes the command: with an ours shim on disk a
+// danger confirm asks first (confirming patches off + fires cli-uninstall;
+// an undeletable legacy shim comes back as a toasted manual command); with
+// nothing installed the flip just patches false. No standalone Delete row.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settings } from '../src/types'
@@ -117,32 +119,69 @@ describe('COMMAND LINE card (§4.9)', () => {
     expect(localStorage.getItem('ad-cli-installed')).toBeNull()
   })
 
-  it('off + still installed: Delete row (own title + description) removes the shim; turning off never deleted it', async () => {
-    setup(false)
+  it('on + installed: turning off opens the danger confirm; Cancel patches nothing, deletes nothing', async () => {
+    setup(true)
+    cliStatus.mockResolvedValue({ state: 'installed', path: USER, onPath: true })
+    render(<SettingsPage />)
+    const card = (await screen.findByText('COMMAND LINE')).parentElement as HTMLElement
+    fireEvent.click(card.querySelector('[role="switch"]') as Element)
+    // §4.9 disable confirm: own title, delete consequence, danger label.
+    await screen.findByText('Turn off the autowright command?')
+    await screen.findByText(/This also deletes the command file from this Mac\. Your automations, settings, and executions aren’t affected\./)
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByText('Turn off the autowright command?')).toBeNull())
+    expect(patchSettings).not.toHaveBeenCalled()
+    expect(cliUninstall).not.toHaveBeenCalled()
+  })
+
+  it('on + installed: confirming turns off AND deletes — patch false + cli-uninstall', async () => {
+    setup(true)
     cliStatus.mockResolvedValueOnce({ state: 'installed', path: USER, onPath: true })
     cliUninstall.mockResolvedValue({ ok: true })
     cliStatus.mockResolvedValueOnce({ state: 'missing', path: USER, onPath: true })
     render(<SettingsPage />)
-    await screen.findByText(new RegExp(`Still installed at ${USER.replace(/[/.]/g, '\\$&')} — turn on to keep it up to date`))
-    // §4.9: Delete lives in its own row below the toggle row.
-    await screen.findByText('Delete the command')
-    await screen.findByText(/Removes the command file from this Mac\. Your automations, settings, and executions aren’t affected\./)
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    const card = (await screen.findByText('COMMAND LINE')).parentElement as HTMLElement
+    fireEvent.click(card.querySelector('[role="switch"]') as Element)
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn off and delete' }))
+    await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ cliEnabled: false }))
     await waitFor(() => expect(cliUninstall).toHaveBeenCalledTimes(1))
+    // Simulate the settings.changed refresh, then the card shows off+missing.
+    useStore.setState({ settings: { ...SETTINGS, cliEnabled: false } })
     await screen.findByText(/Not installed — manage automations from the Terminal/)
-    expect(screen.queryByText('Delete the command')).toBeNull()
   })
 
-  it('undeletable legacy shim: Delete toasts the manual command, row stays', async () => {
-    setup(false)
+  it('on + missing: turning off needs no confirm — nothing to delete, plain patch', async () => {
+    setup(true)
+    cliStatus.mockResolvedValue({ state: 'missing', path: USER, onPath: true })
+    render(<SettingsPage />)
+    const card = (await screen.findByText('COMMAND LINE')).parentElement as HTMLElement
+    fireEvent.click(card.querySelector('[role="switch"]') as Element)
+    expect(screen.queryByText('Turn off the autowright command?')).toBeNull()
+    await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ cliEnabled: false }))
+    expect(cliUninstall).not.toHaveBeenCalled()
+  })
+
+  it('undeletable legacy shim: confirmed disable toasts the manual command, setting still turns off', async () => {
+    setup(true)
     cliStatus.mockResolvedValue({ state: 'stale', path: LEGACY, onPath: true })
     cliUninstall.mockResolvedValue({ ok: false, hint: `Remove it with: sudo rm ${LEGACY}` })
     render(<SettingsPage />)
     await screen.findByText(/An old autowright command at \/usr\/local\/bin points at an old location\./)
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }))
+    const card = (await screen.findByText('COMMAND LINE')).parentElement as HTMLElement
+    fireEvent.click(card.querySelector('[role="switch"]') as Element)
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn off and delete' }))
+    await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ cliEnabled: false }))
     await waitFor(() => expect(cliUninstall).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(useStore.getState().toast).toContain('sudo rm'))
-    await screen.findByRole('button', { name: 'Delete' })
+  })
+
+  it('off + still installed (failed uninstall leftover): no Delete row anywhere', async () => {
+    setup(false)
+    cliStatus.mockResolvedValue({ state: 'installed', path: USER, onPath: true })
+    render(<SettingsPage />)
+    await screen.findByText(new RegExp(`Still installed at ${USER.replace(/[/.]/g, '\\$&')} — turn on to keep it up to date`))
+    expect(screen.queryByText('Delete the command')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
   })
 
   it('on + missing: amber warning row below the toggle with a Reinstall button', async () => {

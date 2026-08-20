@@ -828,8 +828,15 @@ installed; the setting only records the user's choice). Turning the toggle **on*
 failed install patches the setting back to false — the toggle just returns, never an error
 banner. Any successful card install (toggle-on or the Reinstall button) also sets the §3
 `ad-cli-installed` first-run marker, so a later hand-deletion is never undone by the
-launch-time one-shot. Turning it **off** patches false and touches no files — removal is the explicit
-Delete button below, never a side effect of the flip. Detail line + extra action by
+launch-time one-shot. Turning it **off** deletes the command too: when an ours-marker shim is
+on disk (`installed`/`stale`) the flip first opens a danger ConfirmModal — title "Turn off
+the `autowright` command?", body "This also deletes the command file from this Mac. Your
+automations, settings, and executions aren't affected.", confirm label "Turn off and
+delete" — and only confirming patches false and fires the §3 `cli-uninstall` IPC (an
+undeletable legacy shim comes back as the toasted manual `sudo rm` command, same as ever;
+the setting still turns off). Cancel leaves the toggle on and touches nothing. With no shim
+on disk (`missing`) the flip just patches false — no modal, nothing to delete. Detail line +
+extra action by
 setting × disk state: on+`installed` → "Installed at `<path>`" (`onPath` no longer affects
 the card — the PATH help lives in the PATH row below, shown for every on+`installed`); on+`missing` (the user deleted the file by hand) → "Not
 installed — manage automations from the Terminal."; on+`stale` (legacy `/usr/local/bin`
@@ -839,14 +846,11 @@ date."; off+`stale` → amber "An old `autowright` command at /usr/local/bin poi
 location."; off+`missing` → "Not installed — manage automations from the Terminal. Turning
 this on installs to ~/.local/bin — no password needed."; `foreign` (either setting) → "A
 different `autowright` is already at `<path>` — Autowright won't touch it.", no toggle, no
-buttons. The card can grow **one second row** below the toggle row, separated by the
-standard hairline divider — exactly one of:
-- **Delete row** — toggle off and an ours-marker shim still on disk (off+`installed` /
-  off+`stale`): title "Delete the command", description "Removes the command file from this
-  Mac. Your automations, settings, and executions aren't affected.", with the "Delete"
-  button. It fires the §3 `cli-uninstall` IPC (removes ours-marker shims only); when a shim
-  can't be deleted (root-owned legacy dir) the returned manual command is shown as a toast
-  and the row stays.
+buttons. There is no standalone Delete button — removal rides the disable confirm above
+(an off+`installed` / off+`stale` leftover, possible after a failed uninstall or from an
+older build, is removed by turning the toggle on and off again). The card can grow **one
+second row** below the toggle row, separated by the standard hairline divider — exactly one
+of:
 - **Missing-warning row** — toggle on but no working user-local install (on+`missing` /
   on+`stale`): amber title "The `autowright` CLI is missing", description "autowright wasn't found in
   ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the
@@ -862,8 +866,8 @@ standard hairline divider — exactly one of:
   reads, matching the §3 login-PATH probe) with a "Copy" button that writes the command to
   the clipboard and toasts "Copied to clipboard." The command wraps instead of truncating —
   it must stay fully readable at any card width.
-Delete/Reinstall show the §9 busy-commit spinner while running, then the card re-reads
-`cli-status`. A **DEVELOPER**
+Reinstall (and the uninstall behind the disable confirm) show the §9 busy-commit spinner
+while running, then the card re-reads `cli-status`. A **DEVELOPER**
 card sits last on the page with
 the single **Developer mode** toggle row (developerMode above). A **QUIT** card sits at the
 very bottom of the page (below DEVELOPER), rendered only when the preload bridge exists (like

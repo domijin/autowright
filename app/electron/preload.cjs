@@ -44,7 +44,7 @@ contextBridge.exposeInMainWorld('autowright', {
     ipcRenderer.removeAllListeners('update-available')
     ipcRenderer.on('update-available', (_e, version) => cb(version))
   },
-  // Deep-link target ('/app?auto=<id>') pushed by main when the window already
+  // Deep-link target ('/app?automation=<id>') pushed by main when the window already
   // exists — a reload would drop the WS and all renderer state. Re-registering
   // replaces the previous listener, like the two above: under §15's renderer
   // dev server a re-evaluated module would otherwise stack subscribers.

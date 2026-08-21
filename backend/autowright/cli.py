@@ -369,8 +369,8 @@ def ensure_packages(c: Client, pkgs: list[dict]) -> None:
     r = c.req("POST", "/packages/install", {"packages": pkgs}, timeout=600)
     for p in r.get("packages", []):
         if p.get("status") == "installed":
-            ver = f" {p['version']}" if p.get("version") else ""
-            print(f"  package {p['pip']}{ver} installed")
+            version = f" {p['version']}" if p.get("version") else ""
+            print(f"  package {p['pip']}{version} installed")
         else:
             print(f"  warning: package {p['pip']} failed to install — "
                   f"{p.get('error') or 'unknown error'}")
@@ -484,7 +484,7 @@ def cmd_automation_list(c: Client, args) -> None:
         _pjson(autos)
         return
     for a in autos:
-        chip = a["triggerChip"] + (" (off)" if a.get("triggersOff") else "")
+        chip = a["triggerChip"] + (" (off)" if a.get("allTriggersOff") else "")
         # §20 needs-fixing parity: mark rows whose §4.1 problems list is
         # non-empty; `automation show` prints the labels.
         fixing = "needs fixing  " if a.get("problems") else ""
@@ -924,7 +924,7 @@ def cmd_snapshot_delete(c: Client, args) -> None:
 def cmd_execution_list(c: Client, args) -> None:
     q = []
     if args.automation:
-        q.append(f"auto={find_automation(c, args.automation)['id']}")
+        q.append(f"automation={find_automation(c, args.automation)['id']}")
     if args.status:
         q.append(f"status={args.status}")
     execs = c.req("GET", "/executions" + ("?" + "&".join(q) if q else ""))
@@ -932,7 +932,7 @@ def cmd_execution_list(c: Client, args) -> None:
         _pjson(execs[: args.n])
         return
     for e in execs[: args.n]:
-        print(f"{e['started']:<22} {e['automationName']:<30} {e['ver']:<6} {e['status']:<11} "
+        print(f"{e['started']:<22} {e['automationName']:<30} {e['versionLabel']:<6} {e['status']:<11} "
               f"{e['duration']:<8} {e['trigger']:<9} [{e['id'][:8]}]")
 
 
@@ -942,7 +942,7 @@ def cmd_execution_show(c: Client, args) -> None:
     if args.json:
         _pjson(full)
         return
-    print(f"{full['automationName']} {full['ver']} — {full['status']} in {full['duration']} "
+    print(f"{full['automationName']} {full['versionLabel']} — {full['status']} in {full['duration']} "
           f"({full['trigger']}, {full['started']}) [{full['id']}]")
     p = full.get("triggerPayload")
     if p:

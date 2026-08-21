@@ -946,7 +946,7 @@ export default function AutomationDetail() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [snapAsk, setSnapAsk] = useState(false)
   const [snapName, setSnapName] = useState('')
-  const [snapRow, setSnapRow] = useState<{ sid: string; kind: 'restore' | 'rename' | 'delete' } | null>(null)
+  const [snapRow, setSnapRow] = useState<{ snapshotId: string; kind: 'restore' | 'rename' | 'delete' } | null>(null)
   const [renameVal, setRenameVal] = useState('')
   const [, setTick] = useState(0)
 
@@ -982,7 +982,7 @@ export default function AutomationDetail() {
   const waiting = executions.filter((e) => e.automationId === auto.id && e.status === 'queued' && !e.test).length
   const trigs = auto.triggers
   const noTrigs = trigs.length === 0
-  const allOff = auto.triggersOff
+  const allOff = auto.allTriggersOff
   const countdown = auto.nextAt == null ? '' : nextIn(auto)
   const nextShort = nextTriggerShort(trigs, trigPreviews)
   // §4.3: enabled app_start/message triggers have no computable next — nextAt stays null.
@@ -1107,11 +1107,11 @@ export default function AutomationDetail() {
       }
     })()
   }
-  const doRestoreSnap = (sid: string) => {
+  const doRestoreSnap = (snapshotId: string) => {
     setSnapRow(null)
     void (async () => {
       try {
-        await api.restoreSnapshot(auto.id, sid)
+        await api.restoreSnapshot(auto.id, snapshotId)
         showToast('Memory restored — the next execution continues from the snapshot.')
         void loadAuto(auto.id)
       } catch (err) {
@@ -1119,12 +1119,12 @@ export default function AutomationDetail() {
       }
     })()
   }
-  const doRenameSnap = (sid: string) => {
+  const doRenameSnap = (snapshotId: string) => {
     const name = renameVal.trim()
     setSnapRow(null)
     void (async () => {
       try {
-        await api.renameSnapshot(auto.id, sid, name || null)
+        await api.renameSnapshot(auto.id, snapshotId, name || null)
         void loadAuto(auto.id)
       } catch (err) {
         showToast((err as Error).message)
@@ -1143,11 +1143,11 @@ export default function AutomationDetail() {
     })()
   }
 
-  const doDeleteSnap = (sid: string) => {
+  const doDeleteSnap = (snapshotId: string) => {
     setSnapRow(null)
     void (async () => {
       try {
-        await api.deleteSnapshot(auto.id, sid)
+        await api.deleteSnapshot(auto.id, snapshotId)
         showToast('Snapshot deleted.')
         void loadAuto(auto.id)
       } catch (err) {
@@ -1535,7 +1535,7 @@ export default function AutomationDetail() {
                 <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)', flex: 'none' }}>{e.id.slice(0, 8)}</span>
                 <span style={{ fontSize: 12.5, color: 'var(--text-muted)', flex: 'none' }}>
                   {/* §9.2: message-triggered rows read "Discord · Dave · v3" */}
-                  {e.trigger}{e.triggerSender ? ` · ${e.triggerSender}` : ''}{e.ver ? ` · ${e.ver}` : ''}
+                  {e.trigger}{e.triggerSender ? ` · ${e.triggerSender}` : ''}{e.versionLabel ? ` · ${e.versionLabel}` : ''}
                 </span>
                 {e.note && <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)' }}>{e.note}</span>}
                 <div style={{ flex: 1 }} />
@@ -1624,14 +1624,14 @@ export default function AutomationDetail() {
                 {(auto.snapshots ?? []).map((s) => (
                   <div
                     // §14: keyed remount + fade on the row's inline action/confirm swaps
-                    key={`${s.id}:${snapRow?.sid === s.id ? snapRow.kind : 'row'}`}
+                    key={`${s.id}:${snapRow?.snapshotId === s.id ? snapRow.kind : 'row'}`}
                     className="ad-anim-fade"
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
                       padding: '9px 0', borderBottom: '1px solid var(--hairline-dim)',
                     }}
                   >
-                    {snapRow?.sid === s.id && snapRow.kind === 'restore' ? (
+                    {snapRow?.snapshotId === s.id && snapRow.kind === 'restore' ? (
                       <>
                         <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>
                           {auto.snapshotSettings.preRestore
@@ -1655,7 +1655,7 @@ export default function AutomationDetail() {
                           Keep
                         </button>
                       </>
-                    ) : snapRow?.sid === s.id && snapRow.kind === 'rename' ? (
+                    ) : snapRow?.snapshotId === s.id && snapRow.kind === 'rename' ? (
                       <>
                         <input
                           className="ad-input"
@@ -1674,7 +1674,7 @@ export default function AutomationDetail() {
                           Cancel
                         </button>
                       </>
-                    ) : snapRow?.sid === s.id && snapRow.kind === 'delete' ? (
+                    ) : snapRow?.snapshotId === s.id && snapRow.kind === 'delete' ? (
                       <>
                         <span style={{ fontSize: 12.5, color: 'var(--text-2)' }}>Delete this snapshot?</span>
                         <div style={{ flex: 1 }} />
@@ -1694,16 +1694,16 @@ export default function AutomationDetail() {
                           {s.reason} · {s.version} · {s.size} · {s.files} {s.files === 1 ? 'file' : 'files'} · {s.when}
                         </span>
                         <div style={{ flex: 1 }} />
-                        <button className="ad-btn-text" onClick={() => setSnapRow({ sid: s.id, kind: 'restore' })}>
+                        <button className="ad-btn-text" onClick={() => setSnapRow({ snapshotId: s.id, kind: 'restore' })}>
                           Restore
                         </button>
                         <button
                           className="ad-btn-text"
-                          onClick={() => { setRenameVal(s.name ?? ''); setSnapRow({ sid: s.id, kind: 'rename' }) }}
+                          onClick={() => { setRenameVal(s.name ?? ''); setSnapRow({ snapshotId: s.id, kind: 'rename' }) }}
                         >
                           Rename
                         </button>
-                        <button className="ad-btn-text danger" onClick={() => setSnapRow({ sid: s.id, kind: 'delete' })}>
+                        <button className="ad-btn-text danger" onClick={() => setSnapRow({ snapshotId: s.id, kind: 'delete' })}>
                           Delete
                         </button>
                       </>

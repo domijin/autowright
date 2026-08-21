@@ -93,7 +93,7 @@ def test_export_import_endpoints(client):
     # §4.1/§5.1: re-importing your own export creates a copy under a deduped name
     assert body["automation"]["name"] == "Port me 2"
     assert body["automation"]["id"] != a["id"]
-    assert body["automation"]["triggersOff"] is True
+    assert body["automation"]["allTriggersOff"] is True
     assert set(body["summary"]) == {"secretsCreated", "secretsExisting",
                                     "agentsCreated", "agentsReused", "packages",
                                     "renamedFrom", "os", "osMismatch"}
@@ -134,7 +134,7 @@ def test_import_preview_confirm_flow(client):
     assert r2.status_code == 200
     # §4.1/§5.1: the archive name collides with the original → "Name 2"
     assert r2.json()["automation"]["name"] == "Previewed 2"
-    assert r2.json()["automation"]["triggersOff"] is True
+    assert r2.json()["automation"]["allTriggersOff"] is True
     assert len(store.autos) == n_before + 1
 
     # the token is one-time; unknown tokens 404 too
@@ -517,7 +517,7 @@ def test_test_param_values_override(client, monkeypatch):
     eid = r.json()["executionId"]
     assert _until_finished(events, eid)["execution"]["status"] == "succeeded"
     full = client.get(f"/executions/{eid}").json()
-    assert full["test"] is True and full["ver"] == "Test" and full["trigger"] == "Test"
+    assert full["test"] is True and full["versionLabel"] == "Test" and full["trigger"] == "Test"
     assert full["result"]["chip"] == "bonjour"
     logs = [e["line"]["text"] for e in events if e["event"] == "execution.log"]
     assert any("greeting=bonjour" in t for t in logs)
@@ -862,7 +862,7 @@ def test_patch_automation_triggers_and_grants(client):
     assert [t["label"] for t in j["triggers"]] == ["Wednesdays at 6:15"]
     assert j["triggers"][0]["id"]  # backend assigned an id
     assert j["triggerChip"] == "Wed 6:15"
-    assert j["triggersOff"] is True
+    assert j["allTriggersOff"] is True
     assert j["allowedSecrets"] == [x_token]
     assert next(p for p in j["params"] if p["name"] == "greeting")["value"] == "yo"
 
@@ -874,7 +874,7 @@ def test_patch_automation_triggers_and_grants(client):
     j = r.json()
     assert j["triggers"][0]["id"] == tid
     assert j["triggerChip"] == "2 triggers"
-    assert j["triggersOff"] is False
+    assert j["allTriggersOff"] is False
 
 
 def test_app_started_fires_enabled_app_start_triggers(client, monkeypatch):

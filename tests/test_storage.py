@@ -78,7 +78,7 @@ def test_no_triggers_roundtrip(store, home):
     assert b["triggers"] == []
     j = s2.auto_json(b)
     assert j["triggerChip"] == "No triggers"
-    assert j["triggersOff"] is False
+    assert j["allTriggersOff"] is False
     assert j["nextAt"] is None
 
 

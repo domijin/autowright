@@ -267,7 +267,7 @@ Build & test run lands here like any other (the §11 panel's View-run button sta
 shortcut). A test row reads like any row: `automationName` is the §11 shadow record's name (the
 automation's; in create mode the draft's name, "New automation" fallback), never marked
 "(deleted)" (a create-mode test has no automation by design), and its trigger column prints
-"Test" **once** — the §4.5 trigger and ver labels are both "Test", and the row never prints
+"Test" **once** — the §4.5 trigger and versionLabel labels are both "Test", and the row never prints
 the redundant pair (a mocked sender still appears between: "Test · Dave"). Test rows share
 the record's draft-scoped lifetime (§11 keep-latest): starting the next test replaces the
 previous row, and a settling draft removes its rows. Three sections, top to bottom —

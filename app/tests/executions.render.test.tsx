@@ -34,7 +34,7 @@ beforeAll(async () => {
 const NOW = 1_700_000_000_000
 
 const ex = (id: string, over: Partial<Execution> = {}): Execution => ({
-  id, automationId: 'a1', automationName: 'Automation', automationDeleted: false, ver: 'v1',
+  id, automationId: 'a1', automationName: 'Automation', automationDeleted: false, versionLabel: 'v1',
   status: 'succeeded', trigger: 'Manual', triggerSender: null, test: false, duration: '1.0s',
   started: 'Today, 8:00 AM', startedMs: NOW, endedMs: NOW, queuedMs: 0,
   note: null, error: null, ...over,
@@ -102,11 +102,11 @@ describe('executions list sections (§7)', () => {
   })
 
   it('lists §11 test executions like any run, printing "Test" once in the trigger column', () => {
-    seed([ex('e-test', { test: true, trigger: 'Test', ver: 'Test', automationName: 'New automation' })])
+    seed([ex('e-test', { test: true, trigger: 'Test', versionLabel: 'Test', automationName: 'New automation' })])
     const { container } = render(<ExecutionsList />)
 
     expect(screen.getByText('e-test')).toBeTruthy()
-    // trigger and ver labels are both "Test" — the row never prints the pair (§7)
+    // trigger and versionLabel labels are both "Test" — the row never prints the pair (§7)
     expect(container.textContent).not.toContain('Test · Test')
     expect(screen.getByText('Test')).toBeTruthy()
   })

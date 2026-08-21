@@ -18,7 +18,7 @@ from pathlib import Path
 from . import paths, timefmt
 from .engine import Engine, _step_sha
 from .events import hub
-from .storage import exec_ver_label, is_test, safe_step_filename, store
+from .storage import exec_version_label, is_test, safe_step_filename, store
 from .yamlio import save_yaml
 
 LOG_TAIL = 40      # lines per step handed to the §8 RECENT EXECUTIONS section
@@ -202,7 +202,7 @@ def _execution_block(h: dict, cur_shas: list[str], detail: bool) -> str:
     started = ""
     if h.get("started_at"):
         started = timefmt.started_label(timefmt.parse_local(h["started_at"]))
-    head = (f"--- {exec_ver_label(h)} execution · {h.get('status')} · started {started} · "
+    head = (f"--- {exec_version_label(h)} execution · {h.get('status')} · started {started} · "
             f"trigger {h.get('trigger')} · {stale} ---")
     lines = [head]
     err = h.get("error") or {}

@@ -44,7 +44,7 @@ triggers: ordered trigger list (§4.3) — user-owned, never versioned; the draf
   triggers are merged in when an edit is saved (§4.3 trigger merge)
 triggerChip: derived chip string (§4.3): one trigger → its short label, several → "N triggers",
   empty → "No triggers"
-triggersOff: bool — derived: the list is nonempty and every trigger is off (drives the OFF tag)
+allTriggersOff: bool — derived: the list is nonempty and every trigger is off (drives the OFF tag)
 nextAt: epoch ms of the next enabled occurrence across all triggers (§4.3) | null
 instructions: optional multiline free-text user instructions to the agent
 notes: agent-owned working-knowledge document (markdown string, may be empty) — selectors and
@@ -414,7 +414,7 @@ across them, null when no enabled trigger has one. The countdown renders "next i
 "Xh Xm" and refreshes every 30 s.
 
 **Derived display:** `triggerChip` — one trigger in the list → its short label; several →
-"N triggers"; empty list → "No triggers". `triggersOff` — nonempty list, every entry off; list
+"N triggers"; empty list → "No triggers". `allTriggersOff` — nonempty list, every entry off; list
 rows add an OFF tag to the chip (§9.1).
 
 Detail-page trigger status line (under the §9.2 TRIGGERS rows):
@@ -620,7 +620,7 @@ automationDeleted: bool — derived: automationId names an automation that no lo
   automationId is null — a create-mode test never had one to lose),
 kind: version | draft | test — what was executed (§11 test executions are kind `test`), status,
 version: int | null — the executed version number; null unless kind is `version`. The API
-  serialization derives the display pair from these two: `ver` ("v3", "Draft", "Test") and
+  serialization derives the display pair from these two: `versionLabel` ("v3", "Draft", "Test") and
   `test` (kind == test) — neither is stored. Test executions appear in the Executions list
   (§7) but are excluded from the detail page's RECENT EXECUTIONS and an automation's
   execution-derived display state (lastStatus / latest result / live); deleted when the

@@ -27,7 +27,7 @@ export default function MenuBarPanel() {
     return () => ro.disconnect()
   }, [])
 
-  const openAuto = (id: string) => { void window.autowright?.openApp(`/app?auto=${id}`) }
+  const openAutomation = (id: string) => { void window.autowright?.openApp(`/app?automation=${id}`) }
 
   return (
     <div
@@ -59,12 +59,12 @@ export default function MenuBarPanel() {
               className="ad-hover-row"
               role="button"
               tabIndex={0}
-              onClick={() => openAuto(a.id)}
+              onClick={() => openAutomation(a.id)}
               onKeyDown={(e) => {
                 if (e.key !== 'Enter' && e.key !== ' ') return
                 if ((e.target as HTMLElement).closest('button')) return
                 e.preventDefault()
-                openAuto(a.id)
+                openAutomation(a.id)
               }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px',

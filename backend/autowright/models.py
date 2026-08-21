@@ -195,7 +195,7 @@ class SnapshotCreate(BaseModel):
 
 
 class SnapshotRename(BaseModel):
-    """PATCH /automations/{id}/memory/snapshots/{sid} — null/"" clears."""
+    """PATCH /automations/{id}/memory/snapshots/{snapshot_id} — null/"" clears."""
 
     name: StrictStr | None = None
 

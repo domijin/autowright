@@ -161,9 +161,9 @@ function evictExecutionCaches(
   return { executionFull, execLogs }
 }
 
-// '/app?auto=<uuid>' — the §13 menu-bar row deep link.
-function autoIdFromHash(hash: string): string | null {
-  const m = hash.match(/auto=([0-9a-f-]{36})/)
+// '/app?automation=<uuid>' — the §13 menu-bar row deep link.
+function automationIdFromHash(hash: string): string | null {
+  const m = hash.match(/automation=([0-9a-f-]{36})/)
   return m ? m[1] : null
 }
 
@@ -225,11 +225,11 @@ export const useStore = create<Model>((set, get) => ({
       // prior data its Continue goes straight to the app (§10).
       const onboarded = localStorage.getItem('ad-onboarded') === '1'
       const hash = location.hash
-      const deepAuto = onboarded ? autoIdFromHash(hash) : null
+      const deepAutomationId = onboarded ? automationIdFromHash(hash) : null
       set({
         connected: true,
         surface: hash.includes('menubar') ? 'menubar' : onboarded ? 'app' : 'onboard',
-        ...(deepAuto ? { page: 'automation' as const, automationId: deepAuto } : {}),
+        ...(deepAutomationId ? { page: 'automation' as const, automationId: deepAutomationId } : {}),
         ...(n === refreshSeq ? {
           version: s.version, automations: s.automations, executions: s.executions,
           agents: s.agents, secrets: s.secrets, settings: s.settings,
@@ -604,6 +604,6 @@ window.addEventListener('popstate', (e) => {
 window.autowright?.onOpenTarget?.((hash) => {
   const m = useStore.getState()
   if (m.surface === 'onboard' || m.surface === 'menubar') return
-  const automationId = autoIdFromHash(hash)
+  const automationId = automationIdFromHash(hash)
   if (automationId) m.go('automation', { automationId })
 })

@@ -742,7 +742,7 @@ export default function CreateFlow() {
     if (!isEdit || !rev || !chatLoaded.current || draftRunSeeded.current) return
     draftRunSeeded.current = true
     const dr = executions
-      .filter((e) => e.automationId === automationId && e.ver === 'Draft'
+      .filter((e) => e.automationId === automationId && e.versionLabel === 'Draft'
         && (e.status === 'failed' || e.status === 'succeeded'))
       .sort((a, b) => b.startedMs - a.startedMs)[0]
     if (!dr) return

@@ -761,7 +761,7 @@ def test_run_draft_version_lowercase_label(store):
     wait_done(engine, h["id"])
     # §4.5: the record stores the kind; "Draft" is derived at serialization
     assert h["kind"] == "draft" and h.get("version") is None
-    assert store.exec_json(h)["ver"] == "Draft"
+    assert store.exec_json(h)["versionLabel"] == "Draft"
     assert h["status"] == "succeeded"
     assert any("from the draft" in l["text"] for l in read_all_logs(store, h["id"]))
 
@@ -1219,7 +1219,7 @@ def test_draft_test_is_a_test_execution_record(store, monkeypatch):
 
     h = store.execs[eid]
     assert h["kind"] == "test" and h["trigger"] == "test"
-    assert store.exec_json(h)["test"] is True and store.exec_json(h)["ver"] == "Test"
+    assert store.exec_json(h)["test"] is True and store.exec_json(h)["versionLabel"] == "Test"
     assert h["status"] == "succeeded"
     ed = store.exec_dir(eid)
     assert (ed / "steps" / "01-make.py").exists()

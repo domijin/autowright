@@ -941,7 +941,7 @@ def test_cmd_instructions_prints_framework_text(capsys):
 
 def test_cmd_automation_list_row_format_and_json(capsys):
     autos = [{"id": "abc12345-x", "name": "Daily Report", "triggerChip": "Daily 8:00",
-              "triggersOff": True, "lastStatus": "succeeded", "resultChip": "3 new"}]
+              "allTriggersOff": True, "lastStatus": "succeeded", "resultChip": "3 new"}]
     _run(_RouteClient({"/automations": autos}), "automation", "list")
     out = capsys.readouterr().out
     assert "Daily Report" in out and "Daily 8:00 (off)" in out
@@ -1465,7 +1465,7 @@ def test_find_snapshot_ambiguous_prefix_exits():
 
 
 FULL_EXEC = {
-    "id": "e1234567-0000", "automationName": "Daily Report", "ver": "v2", "status": "failed",
+    "id": "e1234567-0000", "automationName": "Daily Report", "versionLabel": "v2", "status": "failed",
     "duration": "3s", "trigger": "Discord", "started": "2026-07-29 08:00",
     "triggerPayload": {"kind": "discord", "sender": "dave", "channel": "42",
                        "channelName": "general", "guildName": "Ops",
@@ -1479,7 +1479,7 @@ FULL_EXEC = {
 
 def test_cmd_execution_list_filters_and_limit(capsys):
     execs = [dict(FULL_EXEC, id=f"e{i}") for i in range(3)]
-    gets = _auto_gets(**{f"/executions?auto={AUTO_ID}&status=failed": execs})
+    gets = _auto_gets(**{f"/executions?automation={AUTO_ID}&status=failed": execs})
     _run(_RouteClient(gets), "execution", "list", "-n", "2",
          "--automation", "Daily Report", "--status", "failed")
     out = capsys.readouterr().out.splitlines()

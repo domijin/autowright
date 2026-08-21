@@ -285,13 +285,13 @@ remain plain dicts (§2).
   mid-execution clear could delete files a step is reading; then §6.3 pre-clear snapshot,
   then empty the §4.1 memory directory (backs §9.2 "Clear memory")
 - `POST /automations/{id}/memory/snapshots` `{ name? }` — §6.3 manual snapshot (409 while
-  live, 422 when memory is empty) · `PATCH /automations/{id}/memory/snapshots/{sid}`
-  `{ name }` — rename; null/"" clears · `POST /automations/{id}/memory/snapshots/{sid}/restore`
-  — §6.3 restore (409 while live) · `DELETE /automations/{id}/memory/snapshots/{sid}` —
-  delete the snapshot; unknown `sid` answers 404
+  live, 422 when memory is empty) · `PATCH /automations/{id}/memory/snapshots/{snapshot_id}`
+  `{ name }` — rename; null/"" clears · `POST /automations/{id}/memory/snapshots/{snapshot_id}/restore`
+  — §6.3 restore (409 while live) · `DELETE /automations/{id}/memory/snapshots/{snapshot_id}` —
+  delete the snapshot; unknown `snapshot_id` answers 404
 - `POST /tests` `{ automationId?, draft, enabledAgents?, allowedSecrets?, paramValues?, triggerMock? }`
   → `{ executionId }` — the §11 Test: starts a §4.5 **test execution record** of the sent draft's
-  steps (§4.5 kind `test`, trigger kind `test` — serialized as `test: true`, `ver: "Test"`,
+  steps (§4.5 kind `test`, trigger kind `test` — serialized as `test: true`, `versionLabel: "Test"`,
   `trigger: "Test"`; a stale `automationId` answers 404; 409
   while a test for the same draft container is executing; starting a test deletes the
   container's previous test record). Scratch memory is copied to a temp dir — when `automationId`
@@ -308,7 +308,7 @@ remain plain dicts (§2).
   fields — `sender` is the handle). The backend builds the §4.5 payload from it (fields it
   can't truthfully supply are null — discord `channelName`/`guildName`/`guildId`/`messageId`,
   iMessage `chat`/`messageId`; `at` is the test start) and stores it on the record: the
-  trigger kind stays `test` (`ver`/`trigger` still serialize "Test"), but `triggerSender`
+  trigger kind stays `test` (`versionLabel`/`trigger` still serialize "Test"), but `triggerSender`
   and every payload surface fill like a real message execution, and §6.1 `reply()` becomes
   callable (§6.1 mocked-payload rules). Progress, logs, and the result flow over the ordinary `execution.*` events and
   `/executions/*` endpoints; cancel and skip-step are `POST /executions/{id}/cancel` and
@@ -400,7 +400,7 @@ remain plain dicts (§2).
   rendered from (the §4.3 entries, exactly as sourced for the prompt), so a re-attach
   apply can prove the base list that `triggers` ops index is still the one the agent saw
   (§11 — on any difference the ops are dropped, never applied to a changed list).
-- `GET /executions?auto=&status=` (headers only — no steps; rows carry the §4.5
+- `GET /executions?automation=&status=` (headers only — no steps; rows carry the §4.5
   `triggerSender`) · `GET /executions/{id}` (steps
   with attempts + params + error + result + `triggerPayload` (§4.5) — logs are lazy, never
   inline) ·

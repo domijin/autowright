@@ -72,7 +72,7 @@ const SECRETS: SecretMeta[] = [
 ]
 const AUTO = {
   id: 'a1', name: 'My auto', description: '', version: 1,
-  triggers: [], triggerChip: 'No triggers', triggersOff: false, nextAt: null,
+  triggers: [], triggerChip: 'No triggers', allTriggersOff: false, nextAt: null,
   instructions: '- keep it simple',
   lastStatus: 'none', live: [], resultChip: null, resultStatus: null, lastExecutionLabel: '',
   agentId: 'g1', stepAgents: ['g1', 'g2'], allowedSecrets: [MAIL_ID, CRM_ID], problems: [],
@@ -1239,7 +1239,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     storeMod.useStore.setState({
       test: { executionId: 'e9' },
       executions: [{
-        id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'v1',
+        id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, versionLabel: 'v1',
         status: 'executing', trigger: 'Test', triggerSender: null, test: true,
         duration: '', started: '', startedMs: 1, endedMs: 0, queuedMs: 0, note: null, error: null,
       }] as never,
@@ -1343,7 +1343,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
 
   it('Analyze failure posts the canned chat message with the run id', async () => {
     const failed = {
-      id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'v1',
+      id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, versionLabel: 'v1',
       status: 'failed', trigger: 'Test', triggerSender: null, test: true,
       duration: '1s', started: '', startedMs: 1, endedMs: 2, queuedMs: 0, note: null,
       error: { step: 'Fetch pages', message: 'boom', reason: null }, steps: [],
@@ -1537,7 +1537,7 @@ describe('CreateFlow old-version view: thread survival + test gating (§11)', ()
     spec: AUTO.spec, steps: AUTO.steps, instructions: '', notes: '', params: [], packages: [],
   }
   const testRow = (status: string) => ({
-    id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'Test',
+    id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, versionLabel: 'Test',
     status, trigger: 'Test', triggerSender: null, test: true, steps: [],
     duration: '', started: '', startedMs: 1, endedMs: status === 'executing' ? 0 : 2,
     queuedMs: 0, note: null, error: null,
@@ -1681,7 +1681,7 @@ describe('CreateFlow send/sync edit guard + settle flush + poll retry (§11)', (
       { id: 'c1', at: '2026-08-01T00:00:00Z', kind: 'user', text: 'Earlier question' },
     ] })
     const failed = {
-      id: 'e7', automationId: 'a1', automationName: 'My auto', automationDeleted: false, ver: 'v1',
+      id: 'e7', automationId: 'a1', automationName: 'My auto', automationDeleted: false, versionLabel: 'v1',
       status: 'failed', trigger: 'Manual', triggerSender: null, test: false, steps: [],
       duration: '1s', started: '', startedMs: 1, endedMs: 2, queuedMs: 0, note: null,
       error: { step: 'Fetch pages', message: 'boom', reason: null },

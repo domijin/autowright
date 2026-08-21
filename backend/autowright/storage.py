@@ -47,7 +47,7 @@ def trigger_label(kind: str | None) -> str:
     return TRIGGER_LABELS.get(kind or "", kind or "")
 
 
-def exec_ver_label(h: dict) -> str:
+def exec_version_label(h: dict) -> str:
     """§4.5 derived display label for the stored (kind, version) pair."""
     kind = h.get("kind")
     if kind == "draft":
@@ -1824,7 +1824,7 @@ class Store:
             "version": a["current_version"],
             "triggers": [self.trigger_json(t) for t in a["triggers"]],
             "triggerChip": triggerlib.trigger_chip(a["triggers"]),
-            "triggersOff": bool(a["triggers"]) and all(not t["enabled"] for t in a["triggers"]),
+            "allTriggersOff": bool(a["triggers"]) and all(not t["enabled"] for t in a["triggers"]),
             "nextAt": int(nxt.timestamp() * 1000) if nxt else None,
             "instructions": cur.get("instructions") or "",
             "notes": cur.get("notes") or "",
@@ -1880,7 +1880,7 @@ class Store:
             "automationDeleted": h["automation_id"] is not None and h["automation_id"] not in self.autos,
             # §4.5 derived display pair + trigger label — the stored fields are
             # kind/version and the trigger's machine kind.
-            "ver": exec_ver_label(h), "status": h["status"],
+            "versionLabel": exec_version_label(h), "status": h["status"],
             "trigger": trigger_label(h["trigger"]),
             # §4.5 triggerSender rides on every row; the full payload stays
             # full-record-only. Stamped once at record creation (§5) — every

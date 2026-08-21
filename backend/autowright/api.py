@@ -1202,33 +1202,33 @@ def create_snapshot(automation_id: str, body: models.SnapshotCreate | None = Non
     return {"snapshot": store.snapshot_json(meta)}
 
 
-@app.patch("/automations/{automation_id}/memory/snapshots/{sid}", dependencies=[Depends(auth)])
-def rename_snapshot(automation_id: str, sid: str, body: models.SnapshotRename | None = None) -> dict:
+@app.patch("/automations/{automation_id}/memory/snapshots/{snapshot_id}", dependencies=[Depends(auth)])
+def rename_snapshot(automation_id: str, snapshot_id: str, body: models.SnapshotRename | None = None) -> dict:
     a = _auto_or_404(automation_id)
-    meta = store.rename_snapshot(a, sid, body.name if body else None)
+    meta = store.rename_snapshot(a, snapshot_id, body.name if body else None)
     if meta is None:
         raise HTTPException(404, "snapshot not found")
     _publish_auto_changed(a)
     return {"snapshot": store.snapshot_json(meta)}
 
 
-@app.post("/automations/{automation_id}/memory/snapshots/{sid}/restore", dependencies=[Depends(auth)])
-def restore_snapshot(automation_id: str, sid: str) -> dict:
+@app.post("/automations/{automation_id}/memory/snapshots/{snapshot_id}/restore", dependencies=[Depends(auth)])
+def restore_snapshot(automation_id: str, snapshot_id: str) -> dict:
     a = _auto_or_404(automation_id)
     # Same lock span as create_snapshot: no execution may start mid-restore.
     with store.lock:
         if a.get("_live"):
             raise HTTPException(409, "an execution is in progress")
-        if store.restore_snapshot(a, sid) is None:
+        if store.restore_snapshot(a, snapshot_id) is None:
             raise HTTPException(404, "snapshot not found")
     _publish_auto_changed(a)
     return {"ok": True}
 
 
-@app.delete("/automations/{automation_id}/memory/snapshots/{sid}", dependencies=[Depends(auth)])
-def delete_snapshot(automation_id: str, sid: str) -> dict:
+@app.delete("/automations/{automation_id}/memory/snapshots/{snapshot_id}", dependencies=[Depends(auth)])
+def delete_snapshot(automation_id: str, snapshot_id: str) -> dict:
     a = _auto_or_404(automation_id)
-    if not store.delete_snapshot(a, sid):
+    if not store.delete_snapshot(a, snapshot_id):
         raise HTTPException(404, "snapshot not found")
     _publish_auto_changed(a)
     return {"ok": True}
@@ -1299,7 +1299,7 @@ def post_draft(body: models.DraftJobStart) -> dict:
     grants = {
         "agents": [_agent_grant(g) for g in store.agents if g["id"] in enabled_ids],
         # a dangling allowed id grants nothing (the secret was deleted)
-        "secrets": [e for e in (_secret_grant(sid) for sid in allowed) if e],
+        "secrets": [e for e in (_secret_grant(secret_id) for secret_id in allowed) if e],
     }
     executions = pkg_state = None
     if mode == "chat":
@@ -1347,11 +1347,11 @@ def ack_draft(job_id: str) -> dict:
 
 # ---------- executions ----------
 @app.get("/executions", dependencies=[Depends(auth)])
-def list_execs(auto: str | None = None, status: str | None = None) -> list[dict]:
+def list_execs(automation: str | None = None, status: str | None = None) -> list[dict]:
     with store.lock:
         hs = list(store.execs.values())
-        if auto:
-            hs = [h for h in hs if h["automation_id"] == auto]
+        if automation:
+            hs = [h for h in hs if h["automation_id"] == automation]
         if status:
             hs = [h for h in hs if h["status"] == status]
         return sorted((store.exec_json(h) for h in hs), key=lambda e: e["startedMs"], reverse=True)
@@ -1762,12 +1762,12 @@ def create_secret(body: models.SecretCreate) -> dict:
         # §4.8 uniqueness — enforced at create; the name is immutable after.
         if any(s["name"] == name for s in store.secrets):
             raise HTTPException(422, f"a secret named {name} already exists")
-    sid = new_id()  # §4.8: the minted id is the reference identity — it also keys the Keychain
+    secret_id = new_id()  # §4.8: the minted id is the reference identity — it also keys the Keychain
     if body.value:
         # Keychain IPC can block for seconds (locked keychain, consent prompt) —
         # never hold store.lock across it; the engine would stall mid-execution.
         try:
-            keychain.set_secret(sid, body.value)
+            keychain.set_secret(secret_id, body.value)
         except Exception as e:  # noqa: BLE001 — keyring's error zoo is open-ended
             # A locked keychain or a denied consent prompt is a routine macOS
             # condition, not a server bug: clean 503, nothing stored.
@@ -1777,9 +1777,9 @@ def create_secret(body: models.SecretCreate) -> dict:
         if any(s["name"] == name for s in store.secrets):
             # A racing create landed the name while the Keychain IPC ran —
             # undo the fresh entry (best-effort) and answer the same 422.
-            keychain.delete_secret(sid)
+            keychain.delete_secret(secret_id)
             raise HTTPException(422, f"a secret named {name} already exists")
-        entry = {"id": sid, "name": name, "description": body.description or "",
+        entry = {"id": secret_id, "name": name, "description": body.description or "",
                  "set": bool(body.value)}
         store.secrets.append(entry)
         store.save_secrets()
@@ -1788,22 +1788,22 @@ def create_secret(body: models.SecretCreate) -> dict:
     return out
 
 
-@app.put("/secrets/{sid}", dependencies=[Depends(auth)])
-def put_secret(sid: str, body: models.SecretPut) -> dict:
+@app.put("/secrets/{secret_id}", dependencies=[Depends(auth)])
+def put_secret(secret_id: str, body: models.SecretPut) -> dict:
     with store.lock:
-        if not any(s["id"] == sid for s in store.secrets):
+        if not any(s["id"] == secret_id for s in store.secrets):
             raise HTTPException(404, "no such secret")
     sent = body.model_dump(exclude_unset=True)
     if body.value:
         # Keychain IPC outside the lock — see create_secret.
         try:
-            keychain.set_secret(sid, body.value)
+            keychain.set_secret(secret_id, body.value)
         except Exception as e:  # noqa: BLE001 — keyring's error zoo is open-ended
             raise HTTPException(503, f"your Keychain didn't accept the value ({e}) — "
                                      "unlock the login Keychain and try again") from e
     with store.lock:
         # Re-find: the entry may have been deleted while the Keychain IPC ran.
-        existing = next((s for s in store.secrets if s["id"] == sid), None)
+        existing = next((s for s in store.secrets if s["id"] == secret_id), None)
         if existing is None:
             raise HTTPException(404, "no such secret")
         if body.value:
@@ -1816,14 +1816,14 @@ def put_secret(sid: str, body: models.SecretPut) -> dict:
     return out
 
 
-@app.delete("/secrets/{sid}", dependencies=[Depends(auth)])
-def delete_secret(sid: str) -> dict:
+@app.delete("/secrets/{secret_id}", dependencies=[Depends(auth)])
+def delete_secret(secret_id: str) -> dict:
     with store.lock:
-        if not any(s["id"] == sid for s in store.secrets):
+        if not any(s["id"] == secret_id for s in store.secrets):
             raise HTTPException(404, "no such secret")
-    keychain.delete_secret(sid)  # Keychain IPC — outside the lock (see create_secret)
+    keychain.delete_secret(secret_id)  # Keychain IPC — outside the lock (see create_secret)
     with store.lock:
-        store.secrets = [s for s in store.secrets if s["id"] != sid]
+        store.secrets = [s for s in store.secrets if s["id"] != secret_id]
         store.save_secrets()
     hub.publish("secrets.changed")
     return {"ok": True}

@@ -165,7 +165,7 @@ export interface Automation {
   version: number
   triggers: Trigger[]        // §4.3 — user-owned, never versioned
   triggerChip: string        // one → its short label · several → "N triggers" · none → "No triggers"
-  triggersOff: boolean       // nonempty list, every trigger off (drives the OFF tag)
+  allTriggersOff: boolean    // nonempty list, every trigger off (drives the OFF tag)
   nextAt: number | null      // epoch ms of the next enabled occurrence
   instructions: string
   notes: string              // §4.1 — the current version's notes doc ("" when empty)
@@ -241,7 +241,7 @@ export interface Execution {
   automationId: string | null  // §4.5: null on a create-mode test — no automation record exists
   automationName: string
   automationDeleted: boolean
-  ver: string
+  versionLabel: string
   status: Status
   trigger: 'Manual' | 'Menu bar' | 'Cron' | 'Once' | 'App start' | 'Discord' | 'iMessage' | 'Test'  // §4.5 labels
   triggerSender: string | null  // §4.5 — payload sender on every row ("Discord · Dave · v3")

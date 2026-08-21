@@ -53,7 +53,7 @@ function Row({ e, onOpen, waiting }: { e: Execution; onOpen: () => void; waiting
       {/* §4.5: message-triggered rows read "Discord · Dave · v3"; a test row's
         * trigger and ver labels are both "Test" — print it once (§7). */}
       <span style={{ fontSize: 12, color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {e.trigger + (e.triggerSender ? ' · ' + e.triggerSender : '') + (e.ver && e.ver !== e.trigger ? ' · ' + e.ver : '')}
+        {e.trigger + (e.triggerSender ? ' · ' + e.triggerSender : '') + (e.versionLabel && e.versionLabel !== e.trigger ? ' · ' + e.versionLabel : '')}
       </span>
       <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>
         {/* A queued row has no duration — it hasn't started (§7). */}

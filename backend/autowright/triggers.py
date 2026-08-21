@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 # §4.3 discord `secret` = a §4.8 secret id (uuid, lowercase hyphenated — the §4 id form).
@@ -71,22 +71,22 @@ def _parse_field(text: str, name: str, lo: int, hi: int) -> tuple[set[int], bool
     return out, text == "*"
 
 
-def parse_cron(expr: str) -> list[tuple[set[int], bool]]:
+def parse_cron(expression: str) -> list[tuple[set[int], bool]]:
     """Validate + expand a §4.3 cron expression; raises CronError."""
-    if expr is not None and not isinstance(expr, str):
-        # A non-string expr (YAML int in an import archive, a raw API payload)
-        # must answer the ordinary 422, not crash with AttributeError.
+    if expression is not None and not isinstance(expression, str):
+        # A non-string expression (YAML int in an import archive, a raw API
+        # payload) must answer the ordinary 422, not crash with AttributeError.
         raise CronError("the cron expression must be a string")
-    fields = (expr or "").split()
+    fields = (expression or "").split()
     if len(fields) != 5:
         raise CronError("a cron expression needs 5 fields (minute hour day month weekday)")
     return [_parse_field(f, n, lo, hi)
             for f, n, (lo, hi) in zip(fields, _FIELD_NAMES, _FIELD_RANGES)]
 
 
-def cron_next(expr: str, after: datetime | None = None) -> datetime | None:
+def cron_next(expression: str, after: datetime | None = None) -> datetime | None:
     """Next match strictly after `after` (local wall clock), None if unsatisfiable."""
-    (mins, _), (hours, _), (doms, dom_star), (months, _), (dows, dow_star) = parse_cron(expr)
+    (mins, _), (hours, _), (doms, dom_star), (months, _), (dows, dow_star) = parse_cron(expression)
     t = (after or datetime.now()).replace(second=0, microsecond=0) + timedelta(minutes=1)
     hhmm = [(hh, mm) for hh in sorted(hours) for mm in sorted(mins)]
     day = t.date()
@@ -113,30 +113,30 @@ def zone_of(t: dict) -> ZoneInfo | None:
     return ZoneInfo(t["timezone"]) if t.get("timezone") else None
 
 
-def _to_wall(local: datetime, tz: ZoneInfo) -> datetime:
+def _to_wall(local: datetime, zone: ZoneInfo) -> datetime:
     """Local naive → the zone's naive wall clock."""
-    return local.astimezone(tz).replace(tzinfo=None)
+    return local.astimezone(zone).replace(tzinfo=None)
 
 
-def _round_trips(wall: datetime, tz: ZoneInfo) -> bool:
-    """True when `wall` is a real wall time in `tz` (not erased by a
+def _round_trips(wall: datetime, zone: ZoneInfo) -> bool:
+    """True when `wall` is a real wall time in `zone` (not erased by a
     spring-forward gap)."""
-    return wall.replace(tzinfo=tz, fold=0).astimezone(timezone.utc) \
-               .astimezone(tz).replace(tzinfo=None) == wall
+    return wall.replace(tzinfo=zone, fold=0).astimezone(UTC) \
+               .astimezone(zone).replace(tzinfo=None) == wall
 
 
-def _wall_to_local(wall: datetime, tz: ZoneInfo, after: datetime | None) -> datetime | None:
+def _wall_to_local(wall: datetime, zone: ZoneInfo, after: datetime | None) -> datetime | None:
     """The zone's naive wall clock → local naive, DST-transition-aware.
 
-    The naive `wall.replace(tzinfo=tz)` conversion is non-monotonic around the
+    The naive `wall.replace(tzinfo=zone)` conversion is non-monotonic around the
     zone's transitions (an ambiguous fall-back time reads as the *earlier*
     instant, which can land before `after` and make the scheduler re-fire one
     occurrence every tick). Rules here: an ambiguous wall time picks the
     earliest reading strictly after `after` (§4.3: one repeated by fall-back
     fires once); a nonexistent wall time fires at the next valid minute
     (§4.3); returns None when every reading is ≤ `after`."""
-    d0, d1 = wall.replace(tzinfo=tz, fold=0), wall.replace(tzinfo=tz, fold=1)
-    if d0.utcoffset() != d1.utcoffset() and not _round_trips(wall, tz):
+    d0, d1 = wall.replace(tzinfo=zone, fold=0), wall.replace(tzinfo=zone, fold=1)
+    if d0.utcoffset() != d1.utcoffset() and not _round_trips(wall, zone):
         # Erased by the spring-forward gap: fold=0 reads it with the
         # pre-transition offset, i.e. the occurrence fires shifted forward by
         # the gap width ("2:30" fires at 3:30) — §4.3, and the renderer's
@@ -164,34 +164,34 @@ def _local_gap_fix(d: datetime, after: datetime | None) -> datetime | None:
         return d
     # Transition zone: a round trip through UTC tells erased from ambiguous -
     # an ambiguous wall time survives it, an erased one comes back shifted.
-    rt = d0.astimezone(timezone.utc).astimezone().replace(tzinfo=None)
+    rt = d0.astimezone(UTC).astimezone().replace(tzinfo=None)
     if rt == d:
         return d
     return rt if after is None or rt > after else None
 
 
-def _to_local(wall: datetime, tz: ZoneInfo) -> datetime:
+def _to_local(wall: datetime, zone: ZoneInfo) -> datetime:
     """The zone's naive wall clock → local naive (first/earliest reading —
     use `_wall_to_local` when monotonicity against a baseline matters)."""
-    return _wall_to_local(wall, tz, None) or wall.replace(tzinfo=tz).astimezone().replace(tzinfo=None)
+    return _wall_to_local(wall, zone, None) or wall.replace(tzinfo=zone).astimezone().replace(tzinfo=None)
 
 
-def tz_error(tz) -> str | None:
+def timezone_error(timezone) -> str | None:
     """Error message for an unusable timezone value, None when valid (or absent)."""
-    if tz is None:
+    if timezone is None:
         return None
     try:
-        if not isinstance(tz, str):
+        if not isinstance(timezone, str):
             raise ValueError
-        ZoneInfo(tz)
+        ZoneInfo(timezone)
     except Exception:  # noqa: BLE001 — ZoneInfoNotFoundError, ValueError, ...
-        return f"unknown timezone {tz!r} — use an IANA name like Asia/Tokyo"
+        return f"unknown timezone {timezone!r} — use an IANA name like Asia/Tokyo"
     return None
 
 
-def _tz_suffix(tz: str | None) -> str:
+def _timezone_suffix(timezone: str | None) -> str:
     """§4.3: labels append the zone's city — last IANA segment, _ → space."""
-    return f" ({tz.rsplit('/', 1)[-1].replace('_', ' ')})" if tz else ""
+    return f" ({timezone.rsplit('/', 1)[-1].replace('_', ' ')})" if timezone else ""
 
 
 # ---------- triggers (§4.3) ----------
@@ -266,7 +266,7 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
         # §4.3 provenance: absent reads as "spec" (legacy); anything else is a 422.
         if t.get("source") not in (None, "spec", "user"):
             return 'a cron trigger\'s source must be "spec" or "user"'
-        if err := tz_error(t.get("timezone")):
+        if err := timezone_error(t.get("timezone")):
             return err
         try:
             parse_cron(t.get("expression") or "")
@@ -274,7 +274,7 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             return str(e)
         return None
     if kind == "time":
-        if err := tz_error(t.get("timezone")):
+        if err := timezone_error(t.get("timezone")):
             return err
         try:
             at = datetime.fromisoformat(t.get("at") or "")
@@ -282,10 +282,10 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             return "invalid timestamp — use local ISO format like 2026-07-20T15:00"
         if at.tzinfo is not None:
             # An offset-aware `at` would make the naive comparison below (and
-            # trigger_next) raise TypeError — the zone belongs in `tz`.
+            # trigger_next) raise TypeError — the zone belongs in `timezone`.
             return "the timestamp must not carry a UTC offset — use timezone for the zone"
-        tz = zone_of(t)
-        if not allow_past and (_to_local(at, tz) if tz else at) <= datetime.now():
+        zone = zone_of(t)
+        if not allow_past and (_to_local(at, zone) if zone else at) <= datetime.now():
             return PAST_ERROR
         return None
     return f"unknown trigger kind {kind!r}"
@@ -350,10 +350,10 @@ def _hm(hour: int, minute: int) -> str:
     return f"{hour}:{minute:02d}"
 
 
-def cron_display(expr: str, tz: str | None = None) -> tuple[str, str]:
+def cron_display(expression: str, timezone: str | None = None) -> tuple[str, str]:
     """§4.3 humanized labels — exactly two simple shapes get words."""
-    sfx = _tz_suffix(tz)
-    p = expr.split()
+    sfx = _timezone_suffix(timezone)
+    p = expression.split()
     if len(p) == 5 and p[0].isdigit() and p[1].isdigit() and p[2] == "*" and p[3] == "*":
         t = _hm(int(p[1]), int(p[0]))
         if p[4] == "*":
@@ -361,12 +361,12 @@ def cron_display(expr: str, tz: str | None = None) -> tuple[str, str]:
         if len(p[4]) == 1 and p[4] in "0123456":
             d = int(p[4])
             return f"{DOW_LONG[d]} at {t}{sfx}", f"{DOW_SHORT[d]} {t}{sfx}"
-    return expr.strip() + sfx, expr.strip() + sfx
+    return expression.strip() + sfx, expression.strip() + sfx
 
 
-def time_display(at: str, tz: str | None = None) -> tuple[str, str]:
+def time_display(at: str, timezone: str | None = None) -> tuple[str, str]:
     dt = datetime.fromisoformat(at)
-    sfx = _tz_suffix(tz)
+    sfx = _timezone_suffix(timezone)
     # §4.3: seconds show only when non-zero — matching the renderer's timeLabels.
     ss = f":{dt.second:02d}" if dt.second else ""
     ampm = f"{(dt.hour % 12) or 12}:{dt.minute:02d}{ss} {'AM' if dt.hour < 12 else 'PM'}"
@@ -399,10 +399,10 @@ def trigger_next(t: dict, after: datetime | None = None) -> datetime | None:
     A `timezone` trigger is evaluated on its zone's wall clock (the enabled flag is the caller's concern)."""
     if t["kind"] in ("app_start", "discord", "imessage"):
         return None  # §4.3: no computable next occurrence
-    tz = zone_of(t)
+    zone = zone_of(t)
     base = after or datetime.now()
     if t["kind"] == "cron":
-        if not tz:
+        if not zone:
             # Same non-monotonicity as the zoned path, on the system zone: a
             # candidate erased by spring-forward shifts forward by the gap
             # width and must still land strictly after `base`.
@@ -419,18 +419,18 @@ def trigger_next(t: dict, after: datetime | None = None) -> datetime | None:
         # advancing until a reading lands strictly after `base` — the
         # scheduler's contract (occurrences at or before the baseline never
         # fire) depends on it.
-        nxt = cron_next(t["expression"], _to_wall(base, tz))
+        nxt = cron_next(t["expression"], _to_wall(base, zone))
         for _ in range(1000):
             if nxt is None:
                 return None
-            loc = _wall_to_local(nxt, tz, base)
+            loc = _wall_to_local(nxt, zone, base)
             if loc is not None:
                 return loc
             nxt = cron_next(t["expression"], nxt)
         return None
     at = datetime.fromisoformat(t["at"])
-    if tz:
-        at = _to_local(at, tz)
+    if zone:
+        at = _to_local(at, zone)
     else:
         at = _local_gap_fix(at, None) or at
     return at if at > base else None
@@ -445,9 +445,9 @@ def time_elapsed(t: dict, now: datetime | None = None) -> bool:
         at = datetime.fromisoformat(t["at"])
     except (KeyError, TypeError, ValueError):
         return True  # unreadable stored `at` — spent, drop it
-    tz = zone_of(t)
-    if tz:
-        at = _to_local(at, tz)
+    zone = zone_of(t)
+    if zone:
+        at = _to_local(at, zone)
     return at <= (now or datetime.now())
 
 

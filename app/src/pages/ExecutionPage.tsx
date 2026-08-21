@@ -430,7 +430,7 @@ export default function ExecutionPage() {
       </div>
       <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 18 }}>
         <span>{e.id}</span>
-        {` · ${e.trigger}`}{e.ver ? ` · ${e.ver}` : ''}
+        {` · ${e.trigger}`}{e.versionLabel ? ` · ${e.versionLabel}` : ''}
         {/* A queued record has not started and has no duration (§7) — it reports
           * when it was queued and how long it has been waiting instead. */}
         {queued

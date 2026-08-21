@@ -638,7 +638,7 @@ def parse_dialect_entry(t, allow_time: bool = False,
                  **({"source": cron_source} if cron_source else {})}
         if "timezone" in t:
             entry["timezone"] = str(t["timezone"])
-            if err := triggerlib.tz_error(entry["timezone"]):
+            if err := triggerlib.timezone_error(entry["timezone"]):
                 return None, f"triggers: {err}"
         try:
             triggerlib.parse_cron(entry["expression"])

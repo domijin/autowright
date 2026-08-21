@@ -1201,7 +1201,7 @@ editors enter with
   inputs-lock. Both also disable while an old version is viewed (like the sync
   button): an old version is never synced or tested.
   **Test** — executes the draft's **real steps** as a **test execution record** (§4.5:
-  `test: true`, `ver: "Test"`, `trigger: "Test"`) through the exact engine path a real
+  `test: true`, `versionLabel: "Test"`, `trigger: "Test"`) through the exact engine path a real
   execution takes (there is no simulation mode): the record and its `steps/` (the sent
   draft's scripts), `workspace/`, `result/`, and per-step-attempt logs all live under
   `executions/<uuid>/`, progress streams over the ordinary `execution.*` WS events, and the

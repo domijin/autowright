@@ -39,7 +39,7 @@ beforeAll(async () => {
 })
 
 const ex = (id: string, startedMs: number, over: Partial<Execution> = {}): Execution => ({
-  id, automationId: 'a1', automationName: 'Automation', automationDeleted: false, ver: 'v1',
+  id, automationId: 'a1', automationName: 'Automation', automationDeleted: false, versionLabel: 'v1',
   status: 'succeeded', trigger: 'Manual', triggerSender: null, test: false, duration: '1s',
   started: 'now', startedMs, endedMs: 0, queuedMs: 0, note: null, error: null, ...over,
 })
@@ -76,7 +76,7 @@ describe('logKey', () => {
 describe('autoIdFromHash (via the onOpenTarget deep link)', () => {
   it('a valid 36-char uuid in the hash navigates to the automation', () => {
     expect(openTarget).toBeTypeOf('function')
-    openTarget!('#/app?auto=123e4567-e89b-12d3-a456-426614174000')
+    openTarget!('#/app?automation=123e4567-e89b-12d3-a456-426614174000')
     const m = store.useStore.getState()
     expect(m.page).toBe('automation')
     expect(m.automationId).toBe('123e4567-e89b-12d3-a456-426614174000')
@@ -84,9 +84,9 @@ describe('autoIdFromHash (via the onOpenTarget deep link)', () => {
   it('missing or malformed auto id does not navigate', () => {
     openTarget!('#/app')
     expect(store.useStore.getState().page).toBe('automations')
-    openTarget!('#/app?auto=SHORT')
+    openTarget!('#/app?automation=SHORT')
     expect(store.useStore.getState().page).toBe('automations')
-    openTarget!('#/app?auto=123E4567-E89B-12D3-A456-426614174000') // uppercase → no match
+    openTarget!('#/app?automation=123E4567-E89B-12D3-A456-426614174000') // uppercase → no match
     expect(store.useStore.getState().page).toBe('automations')
   })
 })
@@ -610,7 +610,7 @@ describe('history restore (popstate, §9)', () => {
 describe('onOpenTarget surface guard (§13)', () => {
   it('deep links are ignored on the menubar surface', () => {
     store.useStore.setState({ surface: 'menubar' })
-    openTarget!('#/app?auto=123e4567-e89b-12d3-a456-426614174000')
+    openTarget!('#/app?automation=123e4567-e89b-12d3-a456-426614174000')
     expect(store.useStore.getState().page).toBe('automations')
     expect(store.useStore.getState().automationId).toBeNull()
   })

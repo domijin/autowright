@@ -34,7 +34,7 @@ beforeAll(async () => {
 
 const auto = (over: Partial<Automation> = {}): Automation => ({
   id: 'a1', name: 'Job', description: '', version: 1, triggers: [], triggerChip: 'No triggers',
-  triggersOff: false, nextAt: null, instructions: '', notes: '', lastStatus: 'succeeded',
+  allTriggersOff: false, nextAt: null, instructions: '', notes: '', lastStatus: 'succeeded',
   live: [], maxParallel: 1, maxQueued: 10, resultChip: null, resultStatus: null,
   lastExecutionLabel: 'Today', agentId: null, stepAgents: [], allowedSecrets: [], problems: [],
   snapshotSettings: { preVersion: true, preClear: true, preRestore: true }, specMeta: '',
@@ -44,7 +44,7 @@ const auto = (over: Partial<Automation> = {}): Automation => ({
 const NOW = 1_700_000_000_000
 
 const queuedRow = (id: string): Execution => ({
-  id, automationId: 'a1', automationName: 'Job', automationDeleted: false, ver: 'v1',
+  id, automationId: 'a1', automationName: 'Job', automationDeleted: false, versionLabel: 'v1',
   status: 'queued', trigger: 'Manual', triggerSender: null, test: false, duration: '',
   started: 'Today, 8:00 AM', startedMs: NOW, endedMs: 0, queuedMs: NOW - 5_000,
   note: null, error: null,

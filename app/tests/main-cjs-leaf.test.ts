@@ -193,7 +193,7 @@ describe('main.cjs IPC argument validation', () => {
     m.invoke('open-app', 7)
     expect(m.windows).toEqual([])
     // …and a real deep link still opens the window.
-    m.invoke('open-app', '/app?auto=abc')
+    m.invoke('open-app', '/app?automation=abc')
     expect(m.windows).toHaveLength(1)
   })
 

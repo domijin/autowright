@@ -388,12 +388,12 @@ function AutoCard({ a }: { a: Automation }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
         <span style={{
           fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
-          color: (a.triggersOff || a.triggers.length === 0) ? 'var(--text-faint)' : 'var(--text-muted)',
+          color: (a.allTriggersOff || a.triggers.length === 0) ? 'var(--text-faint)' : 'var(--text-muted)',
           background: 'var(--hairline-dim)', borderRadius: 6, padding: '3px 8px',
         }}>
           {a.triggerChip}
         </span>
-        {a.triggersOff && (
+        {a.allTriggersOff && (
           <MiniBadge c="var(--gray)" bg="var(--gray-bg)">OFF</MiniBadge>
         )}
         <Badge

@@ -207,7 +207,7 @@ automation references, §5.1: "review and grant them on the edit page"), "Agents
 (created agent names; a not-ready harness shows the §12 Needs setup badge), and a packages
 note ("`<n>` packages install on the first execution") when the manifest declares any.
 Footer: accent **Open automation** (navigates to the new detail page) / quiet Close. One card per automation: name, description,
-status badge, trigger chip (`triggerChip`, plus an OFF tag when `triggersOff`), an amber
+status badge, trigger chip (`triggerChip`, plus an OFF tag when `allTriggersOff`), an amber
 **Needs fixing** chip when the automation's §4.1 `problems` list is non-empty (the §7
 attention tint; its tooltip lists every problem label, one per line — the full detail
 lives in the §9.2 banner), result-summary chip when
@@ -1109,9 +1109,9 @@ braces: a `closed` handler clears the reference anyway. The panel is visible on 
 Spaces including over fullscreen apps (`setVisibleOnAllWorkspaces` with
 `visibleOnFullScreen`) — opening it never switches the user out of a fullscreen Space.
 
-**Deep-link mechanism:** a row click sends the target `'/app?auto=<id>'` to the main process.
+**Deep-link mechanism:** a row click sends the target `'/app?automation=<id>'` to the main process.
 With no main window, the window is created loading that hash and the renderer's boot reads
-`auto=<id>` to land on the automation's detail page. With an existing window, main pushes the
+`automation=<id>` to land on the automation's detail page. With an existing window, main pushes the
 target over IPC (`open-target`) and the renderer navigates in place — never a page reload,
 which would drop the WebSocket and all renderer state. The footer link sends plain `'/app'`
 (focus only). Deep links are ignored while onboarding hasn't completed.

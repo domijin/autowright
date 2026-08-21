@@ -75,6 +75,14 @@ Keychain; request bodies are validated by pydantic request models — `models.py
 while response bodies remain plain dicts). Transport is localhost HTTP (JSON) plus one WebSocket for live events —
 the full API surface is §19. Packaging is decided — see §3. Storage is decided — see §5.
 
+**Naming policy:** identifiers spell out full words on every surface - stored fields, serialized
+API fields, routes and query params, code identifiers, CLI flags: `expression` not `expr`,
+`timezone` not `tz`, `automation` not `auto`, `versionLabel` not `ver`, `snapshot_id` /
+`secret_id` not `sid`. Exceptions are established conventions only: `id`, universal domain
+terms (`cron`, `os`, the `Ms` epoch-milliseconds suffix), and the backend's internal `exec_*`
+helper prefix. Renames carry no compatibility aliasing (the §4.7 lenient-load rule covers old
+data on disk); both ends of a served surface change in the same commit.
+
 ## 17. Repository structure
 
 - `SPEC.md` + `spec/` — the spec: `SPEC.md` is the index (holds §1, §2, §17 and the section map);

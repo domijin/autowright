@@ -22,7 +22,7 @@ from .events import hub
 from .executor import CTRL
 from .firing import finish_queued
 from .storage import (DRAFT_MEM_STAGE_PREFIX, SECRET_REF_RE, Store,
-                      clamp_max_parallel, exec_ver_label, new_id,
+                      clamp_max_parallel, exec_version_label, new_id,
                       resolve_param_value, trigger_label)
 
 log = logging.getLogger("autowright.engine")
@@ -517,7 +517,7 @@ class Engine:
                 raise RuntimeError("only failed executions can be retried")
             ver = self._resolve_version(auto, h["kind"], h.get("version"))
             if ver is None:
-                raise LookupError(f"version {exec_ver_label(h)} not found")
+                raise LookupError(f"version {exec_version_label(h)} not found")
             full = self.store.exec_full(h["id"])
             if full is None:
                 raise LookupError("execution not found")

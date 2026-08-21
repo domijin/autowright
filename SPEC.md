@@ -173,8 +173,12 @@ data on disk); both ends of a served surface change in the same commit.
   automations via pull/push workdirs, execute and follow, inspect results, manage params,
   triggers, secrets, settings. The skill presents a summary for user confirmation before
   saving or executing — the full command including `--grant-*` flags (§20 review-promise and
-  grant-model rules). Checked in beside the code; users copy or symlink it into their agent's
-  skill directory.
+  grant-model rules). The CLI is the skill's only surface: if `autowright` isn't found on
+  PATH, the skill has the agent stop and ask the user to enable it — pointing at the §4.9
+  COMMAND LINE card (toggle on to install, Reinstall if missing, and the card's copyable
+  add-to-PATH command when the Terminal can't find an installed shim) — never falling back
+  to the backend HTTP API. Checked in beside the code; users copy or symlink it into their
+  agent's skill directory.
 - `tests/` — pytest suite for the backend (storage, drafting, engine, triggers, API): the fast
   tiers at the top level (shared `tests/conftest.py`), the live integration tier under
   `tests/integration/` (§15 — its own `conftest.py` + `it_harness.py`), the test doubles

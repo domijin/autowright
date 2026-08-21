@@ -40,6 +40,14 @@ operation the app's UI offers is available there.
 5. If the backend is unreachable, the CLI's error message says how to start it
    (`autowright service install` / `service restart`). Don't debug beyond that message —
    relay it.
+6. **If `autowright` isn't found on PATH**, the CLI is disabled or not installed. Stop and
+   ask the user to enable it — never talk to the backend's HTTP API directly, and never
+   install or move files yourself. Tell them: open **Autowright → Settings → COMMAND LINE**
+   and turn on "The `autowright` command" (installs to `~/.local/bin`, no password needed).
+   If the toggle is already on, the card shows either a **Reinstall** button (the command
+   file is missing) or an **Add it to your PATH** row with a copyable command — that command
+   is `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile && source ~/.zprofile`,
+   which they can also run directly, then open a fresh shell and retry.
 
 ## Orientation
 

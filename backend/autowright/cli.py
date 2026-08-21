@@ -655,8 +655,10 @@ def cmd_automation_import(c: Client, args) -> None:
         # §5.1 name dedupe — the archive's name was taken.
         print(f"  renamed from {s['renamedFrom']!r} - that name already exists")
     if s.get("osMismatch"):
-        # §5.1: the archive was exported on another platform.
-        print(f"  built on {s.get('os')} - its steps may need rewriting on this machine")
+        # §5.1: the archive was exported on another platform. §20 names it the
+        # §4.1 display way ("macOS"), never the raw §5.1 token ("macos").
+        print(f"  built on {paths.os_display_name(s.get('os'))} - "
+              "its steps may need rewriting on this machine")
     if s.get("secretsCreated"):
         print(f"  secrets that need values: {', '.join(s['secretsCreated'])}")
     if s.get("secretsExisting"):

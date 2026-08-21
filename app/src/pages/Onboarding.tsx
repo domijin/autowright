@@ -729,6 +729,7 @@ export default function Onboarding() {
     return (
       <div
         key={f.id}
+        data-testid="onboard-agent-card"
         style={{
           background: 'var(--bg-card)', border: '1px solid var(--border-card)',
           borderRadius: 12, padding: '16px 18px',

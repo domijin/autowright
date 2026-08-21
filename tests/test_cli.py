@@ -1111,7 +1111,9 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
 
 def test_cmd_automation_import_reports_os_mismatch(tmp_path, capsys):
     """§5.1/§20: an archive exported on another platform prints the warning line
-    naming the origin platform token; a matching archive prints nothing."""
+    naming the origin platform the §4.1 display way ("Windows", never the raw
+    "windows" token — the CLI and the UI name a platform alike); a matching
+    archive prints nothing."""
     src = tmp_path / "in.autowright"
     src.write_bytes(b"ARCHIVE")
     summary = {"secretsCreated": [], "secretsExisting": [], "agentsCreated": [],
@@ -1119,8 +1121,14 @@ def test_cmd_automation_import_reports_os_mismatch(tmp_path, capsys):
     raw = json.dumps({"automation": {"name": "Ported", "id": "deadbeef-1"},
                       "summary": summary}).encode()
     _run(_RouteClient(raw=raw), "automation", "import", str(src))
-    assert ("built on windows - its steps may need rewriting on this machine"
+    assert ("built on Windows - its steps may need rewriting on this machine"
             in capsys.readouterr().out)
+
+    # an unrecognized token has no display form — it prints verbatim (§4.1)
+    odd = json.dumps({"automation": {"name": "Ported", "id": "deadbeef-1"},
+                      "summary": {**summary, "os": "beos"}}).encode()
+    _run(_RouteClient(raw=odd), "automation", "import", str(src))
+    assert "built on beos - " in capsys.readouterr().out
 
     same = json.dumps({"automation": {"name": "Ported", "id": "deadbeef-1"},
                        "summary": {**summary, "osMismatch": False}}).encode()

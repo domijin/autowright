@@ -18,6 +18,9 @@ __pycache__/
 venv/
 .pytest_cache/
 .coverage
+.coverage.*
+htmlcov/
+coverage.xml
 .ruff_cache/
 *.egg-info/
 build/

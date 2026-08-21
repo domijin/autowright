@@ -38,15 +38,20 @@ def no_notifications(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_module_globals():
-    """Module-global caches leak between tests inside one worker — reset the
-    known offenders before every test: the §19 `ollama serve` spawn cooldown
-    and the §6 robots/site throttle caches."""
-    from autowright import executor, harness, packages
+    """Module-global state leaks between tests inside one worker — reset the
+    known offenders before every test: the §19 `ollama serve` spawn cooldown,
+    the §6 robots/site throttle caches, the §6.2 installed scan, and the two
+    process-lifetime dedupe/parking maps in `api` (a served launch id or a
+    parked import token from an earlier test must never decide a later one)."""
+    from autowright import api, executor, harness, packages
 
     harness._serve_last_spawn = 0.0
     executor._robots.clear()
     executor._site_last.clear()
     packages.invalidate_scan()  # §6.2 installed-scan cache (keyed on the home dir)
+    api._served_launches.clear()  # §19 app-start dedupe memory
+    for token in list(api._import_parked):  # §5.2 parked previews + their spool files
+        api._drop_parked(token)
 
 
 @pytest.fixture()

@@ -4,6 +4,7 @@ import zipfile
 
 import pytest
 import yaml
+from conftest import make_version
 
 from autowright import __version__, transfer
 from autowright.storage import Store, new_id
@@ -955,3 +956,42 @@ def test_failed_import_leaves_no_orphan_secrets_or_agents(store, monkeypatch,
     transfer.import_automation(s2, data)
     assert sorted(s["name"] for s in s2.secrets) == ["API_KEY", "BOT_TOKEN", "MAIL_PASS"]
     assert len(s2.agents) == 2
+
+
+# ---------- archive rejection rules ----------
+
+
+def test_import_rejects_oversized_member(client):
+    from autowright import transfer
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.yaml", "\0" * (transfer._MAX_MEMBER_BYTES + 1))
+    r = client.post("/automations/import", content=buf.getvalue())
+    assert r.status_code == 422
+    assert "large" in r.json()["detail"]
+
+
+def test_import_rejects_unordered_step_filenames(store):
+    """§5.1: step filenames obey the NN-name.py rule in listed order — a
+    looser archive used to import fine and then 422 on every later save."""
+    import yaml as pyyaml
+
+    from autowright import transfer
+
+    a = store.create_automation(make_version(), "Archivey", None)
+    data = transfer.export_automation(store, a)
+    zin = zipfile.ZipFile(io.BytesIO(data))
+    meta = pyyaml.safe_load(zin.read("automation/automation.yaml"))
+    meta["steps"][0]["file"] = "say.py"  # no NN- prefix
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zout:
+        for n in zin.namelist():
+            if n == "automation/automation.yaml":
+                zout.writestr(n, pyyaml.safe_dump(meta))
+            elif n == "automation/01-say.py":
+                zout.writestr("automation/say.py", zin.read(n))
+            else:
+                zout.writestr(n, zin.read(n))
+    with pytest.raises(transfer.TransferError, match="NN-name.py"):
+        transfer.import_automation(store, buf.getvalue())

@@ -661,3 +661,49 @@ def test_main_site_packages_joins_sys_path(run_main, tmp_path):
         site_packages=str(sp), package_imports=["declared_pkg"])
     assert rc == 0
     assert any(l.get("text") == "got 42" for l in lines)
+
+
+# ---------- §6.1 containment: outbound secrets, scan map, memory keys ----------
+
+
+def test_reply_and_prompt_refuse_secret_values():
+    """§6.1: text bound for a third party (agent prompt, message reply) is
+    refused outright when it carries a secret value."""
+    from autowright.executor import scan_outbound
+
+    scan = {"API_TOKEN": "s3cret-value", "PEM": "line-one\nline-two"}
+    for what in ("prompt", "reply"):
+        with pytest.raises(RuntimeError, match="API_TOKEN"):
+            scan_outbound("here you go: s3cret-value", what, scan)
+        # a partial paste of a multi-line value is caught line by line
+        with pytest.raises(RuntimeError, match="PEM"):
+            scan_outbound("line-two", what, scan)
+    scan_outbound("nothing sensitive here", "reply", scan)  # clean text passes
+
+
+def test_scan_map_is_not_reachable_from_the_step_sdk():
+    """§6: a step that declared no secrets must not read another step's value
+    off the agent object."""
+    from autowright.executor import Agent
+
+    ctx = {"secrets": {}, "scan_secrets": {"OTHER": "v"}, "is_agent_step": True}
+    scan = ctx.pop("scan_secrets")
+    agent = Agent(ctx, scan, None)
+    assert "scan_secrets" not in agent._ctx
+    assert "OTHER" not in (agent._ctx.get("secrets") or {})
+
+
+def test_memory_names_cannot_escape_the_memory_dir(tmp_path):
+    """§6.1: snapshots and Clear memory operate on the memory dir — a key must
+    never address a file outside it."""
+    from autowright.executor import Memory
+
+    m = Memory(str(tmp_path / "mem"))
+    for bad in ("../escape", "sub/dir", "/abs", ".."):
+        with pytest.raises(ValueError):
+            m.save(bad, {"a": 1})
+        with pytest.raises(ValueError):
+            m.load(bad)
+    m.save("fine", {"a": 1})
+    assert m.load("fine") == {"a": 1}
+    assert not (tmp_path / "escape.yaml").exists()

@@ -171,8 +171,11 @@ when GitHub resolution changed the URL, the resolved source is printed. A file p
 whose harness isn't ready (summary `ready: false`, §19) is marked "(needs setup)", a
 summary carrying `renamedFrom` (§5.1 name dedupe) prints
 `renamed from "<renamedFrom>" - that name already exists`, and one carrying `osMismatch`
-(§5.1) prints `built on <os> - its steps may need rewriting on this machine` — and run
-the package ensure.
+(§5.1) prints `built on <OS> - its steps may need rewriting on this machine` — and run
+the package ensure. `<OS>` is the §4.1 `os-mismatch` display name (macOS / Windows / Linux;
+an unrecognized token shows verbatim), never the raw §5.1 lowercase platform token: the CLI
+and the UI name a platform the same way. Every CLI surface that prints a platform follows
+this rule.
 
 **Trigger semantics on push** — the §4.3 trigger merge, performed client-side exactly
 like the editor: the manifest's cron entries are matched against the stored list on

@@ -42,7 +42,7 @@ describe('autowright e2e', () => {
     // Scoped to the Claude Code card: every connected card carries the same
     // "Use as default →" label, and real CLIs on the dev Mac also get found.
     await page
-      .getByText('Claude Code', { exact: true }).locator('..').locator('..')
+      .getByTestId('onboard-agent-card').filter({ hasText: 'Claude Code' })
       .getByRole('button', { name: 'Use as default →' })
       .waitFor({ timeout: 20_000 })
     await shot(page, 'onboarding-step2.png')
@@ -51,7 +51,7 @@ describe('autowright e2e', () => {
     // no CLI step — the shim install lives only on the Settings card).
     // (Suggestion-card "Set up …" buttons stay untouched: real installs.)
     await page
-      .getByText('Claude Code', { exact: true }).locator('..').locator('..')
+      .getByTestId('onboard-agent-card').filter({ hasText: 'Claude Code' })
       .getByRole('button', { name: 'Use as default →' })
       .click()
     // App shell: the empty automations list invites the first automation.

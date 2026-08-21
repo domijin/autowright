@@ -128,6 +128,58 @@ describe('executions list sections (§7)', () => {
   })
 })
 
+// §7 Finished cap: retention can be off entirely (`keepForever`), so the finished
+// list is unbounded; the page paints 200 rows and reveals the rest 200 at a time.
+describe('executions list finished cap (§7)', () => {
+  const finishedRows = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      ex(`e-${String(i).padStart(4, '0')}`, { endedMs: NOW - i * 1000, startedMs: NOW - i * 1000 }))
+
+  it('renders 200 finished rows and says how many are hidden', () => {
+    seed(finishedRows(1250))
+    render(<ExecutionsList />)
+
+    expect(screen.getAllByTestId('execution-row').length).toBe(200)
+    expect(screen.getByText('Show more (1,050 hidden)')).toBeTruthy()
+    // the cap keeps the newest rows: the sort is by endedMs, newest first
+    expect(screen.getByText('e-0000')).toBeTruthy()
+    expect(screen.queryByText('e-0200')).toBeNull()
+  })
+
+  it('reveals the next 200 on each click, then drops the control', () => {
+    seed(finishedRows(450))
+    render(<ExecutionsList />)
+
+    fireEvent.click(screen.getByText('Show more (250 hidden)'))
+    expect(screen.getAllByTestId('execution-row').length).toBe(400)
+
+    fireEvent.click(screen.getByText('Show more (50 hidden)'))
+    expect(screen.getAllByTestId('execution-row').length).toBe(450)
+    expect(screen.queryByText(/Show more/)).toBeNull()
+  })
+
+  it('shows no control when the finished list fits the cap', () => {
+    seed(finishedRows(200))
+    render(<ExecutionsList />)
+
+    expect(screen.getAllByTestId('execution-row').length).toBe(200)
+    expect(screen.queryByText(/Show more/)).toBeNull()
+  })
+
+  it('never caps Running or Waiting', () => {
+    seed([
+      ...Array.from({ length: 3 }, (_, i) =>
+        ex(`r-${i}`, { status: 'executing', duration: '', endedMs: 0 })),
+      ...finishedRows(250),
+    ])
+    render(<ExecutionsList />)
+
+    // 3 running + the 200-row finished page
+    expect(screen.getAllByTestId('execution-row').length).toBe(203)
+    expect(screen.getByText('Show more (50 hidden)')).toBeTruthy()
+  })
+})
+
 // §7 log cap: the LOGS pane shows the last 2000 lines and says so when earlier
 // lines were dropped. Log sequences are gapless from 1 (§5), so a kept head past
 // 1 is the truncation signal.

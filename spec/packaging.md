@@ -237,7 +237,9 @@ the update bullets below).
     JSON — rewritten so `updateTo.url` points at the server's own zip route — and the zip
     file; `autoUpdater.setFeedURL` targets that local feed (`serverType: 'json'`),
     `checkForUpdates()` runs, and the handler resolves `{ ok: true }` on `update-downloaded`
-    or `{ error }` on the first `error` event. Server and temp zip are cleaned up on either
+    or `{ error }` on the first `error` event; if Squirrel emits neither within 10 minutes
+    the handler settles with a plain-word error instead of hanging the §9.4 flow forever.
+    Server and temp zip are cleaned up on every
     outcome. There is no dev fork: an unsigned dev build takes
     the same path and surfaces Squirrel's real signature error in the UI.
     `update-install` asks the backend for live executions
@@ -313,7 +315,10 @@ CLI is enabled, so the full surface below is live:
   code polls `launchctl print` until the job is gone (up to 10 s) before loading; (b) legacy
   `launchctl load` (the non-Aqua fallback) can exit 0 without loading anything, so after any load
   the code verifies the job actually exists in launchd and reports failure otherwise — install
-  must never claim success for an unregistered service.
+  must never claim success for an unregistered service; (c) a wedged `launchctl` must never hang
+  the caller (the app's ensure-backend step waits on it), so every `launchctl` invocation carries
+  a 30-second timeout and a timed-out call reports the same plain-word failure as a non-zero
+  exit ("launchctl timed out"), never a traceback.
 - **Keychain constraint** — secrets live in the login Keychain, which is locked until the user
   session unlocks. Headless operation requires a logged-in (auto-login acceptable) session on the
   Mac; pure SSH-only operation without a login session cannot read secrets. Documented, not worked

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import queue
 import threading
 import time
 
@@ -138,18 +139,53 @@ def send_reply(payload: dict, text: str,
     return None
 
 
+# §6 busy-notice delivery: ONE long-lived worker draining this queue, started
+# on the first notice and never stopped. A dropped-message burst must not spawn
+# an OS thread per message (each send is an HTTP round trip up to 10 s, so a
+# thread-per-notice design keeps hundreds alive at once). Queueing is not
+# coalescing — every entry is still sent, in arrival order.
+_busy_q: "queue.Queue[dict]" = queue.Queue()
+_busy_worker: threading.Thread | None = None
+_busy_lock = threading.Lock()
+
+
 def notify_busy(payload: dict) -> None:
     """§6: a dropped message firing answers its sender with a short busy
     notice — one per dropped message, never rate-limited or coalesced, so a
     retry that is itself dropped is answered too instead of leaving the sender
     waiting on a silent bot.
-    The send runs on its own thread — this is called from the gateway read loop,
-    which must never block on an HTTP round trip (a stalled read misses
-    heartbeats and drops the connection)."""
+    The send is handed to the shared worker below — this is called from the
+    gateway read loop, which must never block on an HTTP round trip (a stalled
+    read misses heartbeats and drops the connection)."""
     if (payload or {}).get("kind") not in ("discord", "imessage"):
         return  # cron/app-start firings have nobody to answer
-    threading.Thread(target=_send_busy, args=(payload,), daemon=True,
-                     name="ad-busy-reply").start()
+    _busy_q.put(payload)  # queued before the worker check, so none is stranded
+    _start_busy_worker()
+
+
+def _start_busy_worker() -> None:
+    """Lazily start the single delivery thread (never on import — a backend that
+    never drops a message never spawns it)."""
+    global _busy_worker
+    with _busy_lock:
+        if _busy_worker is not None and _busy_worker.is_alive():
+            return
+        _busy_worker = threading.Thread(target=_busy_loop, daemon=True,
+                                        name="ad-busy-reply")
+        _busy_worker.start()
+
+
+def _busy_loop() -> None:
+    while True:
+        payload = _busy_q.get()
+        try:
+            _send_busy(payload)
+        except Exception:  # noqa: BLE001
+            # The worker is the only one there is: an unexpected error in one
+            # send must never end the thread and silence every later notice.
+            log.exception("busy notice failed")
+        finally:
+            _busy_q.task_done()
 
 
 def _send_busy(payload: dict) -> None:

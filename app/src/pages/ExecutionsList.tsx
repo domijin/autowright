@@ -91,9 +91,16 @@ function Table({ rows, go, waiting }: {
 
 const sectionLabel: React.CSSProperties = { ...headCell, display: 'block', margin: '0 0 8px 2px' }
 
+// §7 Finished cap: retention defaults to 90 days and `keepForever` turns cleanup
+// off entirely, so the finished list is unbounded: render a page at a time.
+const FINISHED_PAGE = 200
+
 export default function ExecutionsList() {
-  const { executions, go } = useStore()
+  const executions = useStore((s) => s.executions)
+  const go = useStore((s) => s.go)
   const [filt, setFilt] = useState<Filter>('All')
+  // View state only: unmounting the page resets the cap (§7).
+  const [cap, setCap] = useState(FINISHED_PAGE)
 
   const running = executions
     .filter((e) => e.status === 'executing')
@@ -123,6 +130,9 @@ export default function ExecutionsList() {
 
   // Labels appear as soon as the page holds more than one section (§7).
   const labelled = running.length > 0 || waiting.length > 0
+
+  const shown = finished.slice(0, cap)
+  const hidden = finished.length - shown.length
 
   return (
     <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
@@ -169,7 +179,19 @@ export default function ExecutionsList() {
               : 'Executions matching this filter will appear here.'}
         />
       ) : (
-        <Table rows={finished} go={go} />
+        <>
+          <Table rows={shown} go={go} />
+          {hidden > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+              <button
+                className="ad-btn-text dim"
+                onClick={() => setCap((c) => c + FINISHED_PAGE)}
+              >
+                {`Show more (${hidden.toLocaleString('en-US')} hidden)`}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

@@ -302,3 +302,16 @@ second line beneath it, status badge, a trigger column combining trigger and ver
 text — skipped/cancelled notes appear on the detail page's RECENT EXECUTIONS rows and on the
 execution page.
 
+**Finished cap.** The Finished section renders at most **200 rows** at a time. Retention (§5)
+defaults to 90 days and `keepForever` turns cleanup off entirely, so finished history has no
+upper bound, and §19 `GET /state` hands the renderer every header; painting thousands of grid
+rows would cost the page its responsiveness for history nobody scrolls to. When the active
+filter matched more rows than the cap shows, one quiet text control sits under the finished
+table: "Show more (N hidden)", N being the withheld count, thousands-separated
+("Show more (1,240 hidden)"). Each click raises the cap by another 200, and the control stops
+rendering once every matching row is on screen. The cap is view state only, held by the page
+component: it resets to 200 when the page unmounts, it is never stored or synced, and changing
+the filter leaves it where the user put it. Running and Waiting are never capped. Both are
+naturally small (`AUTOWRIGHT_QUEUE_TTL_S`, §15, caps a wait at 120 s by default) and both are
+the live rows the page exists to surface.
+

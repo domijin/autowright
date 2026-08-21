@@ -99,6 +99,11 @@ animation animates `transform` and would knock the toast off-center while it pla
   working. The renderer root carries a second boundary as the backstop, so a failure outside
   any page still shows the notice instead of a blank window. This matters because much of what
   the renderer displays is AI-authored or leniently loaded (§4, §8).
+- Every "Show in Finder"/reveal action rides one main-process IPC (`reveal-path`) that
+  confines the resolved path to the app's own roots — the app-support home, the logs dir,
+  and the executions data dir — and no-ops on anything else, so renderer state (much of it
+  AI-authored, per the boundary rationale above) can never open an arbitrary filesystem
+  location.
 - One-click destructive actions (delete, remove trigger, clear) always confirm first —
   `ConfirmModal` or the row's inline confirm swap; never a bare instant delete.
 - Popover menus with unbounded content scroll inside (`ScrollArea`) — rows never render

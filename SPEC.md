@@ -105,7 +105,8 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
   (spec.md ↔ §4.1 block-list conversion), `events.py` (in-process pubsub hub feeding the §19
   WebSocket), and the small utilities `keychain.py` (§4.8 Keychain values via keyring),
   `notify.py` (osascript notifications), `paths.py` (§5 filesystem locations,
-  `AUTOWRIGHT_HOME` override, the §5.1 `current_os` platform token), `timefmt.py` (§4.1 display labels + §5 canonical UTC
+  `AUTOWRIGHT_HOME` override, the §5.1 `current_os` platform token and its §4.1
+  `os_display_name` form, shared by every surface that names a platform), `timefmt.py` (§4.1 display labels + §5 canonical UTC
   timestamps), `yamlio.py` (§5 atomic temp-write + rename IO).
   `autowright/instructions/` holds the §8 prompt texts as markdown (packaged via
   `[tool.setuptools.package-data]`): `framework-instructions.md` (contract preamble) and

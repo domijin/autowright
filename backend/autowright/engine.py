@@ -167,6 +167,18 @@ def ensure_declared_packages(declared: list, log, should_stop=None) -> str | Non
     return None
 
 
+def _close_pipe(f) -> None:
+    """Close one of a step process's pipes, tolerating an already-closed or
+    already-broken one. Closing is never optional: an fd left to the garbage
+    collector accumulates across the steps of a long-lived backend."""
+    if f is None:
+        return
+    try:
+        f.close()
+    except (OSError, ValueError):
+        pass
+
+
 def kill_step_group(proc: subprocess.Popen, sig: int | None = None) -> None:
     """Signal a step's whole process group (it runs in its own session).
     `sig=None` means kill hard (SIGKILL, not importable on Windows)."""
@@ -247,10 +259,7 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
         pipe_closed.set()
         if proc.poll() is None:
             kill_step_group(proc)
-        try:
-            proc.stdout.close()  # type: ignore[union-attr]
-        except OSError:
-            pass
+        _close_pipe(proc.stdout)
 
     state["hard_kill"] = _hard_kill
 
@@ -280,9 +289,9 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
     try:
         try:
             proc.stdin.write(json.dumps(ctx))
-            proc.stdin.close()
-        except BrokenPipeError:
+        except OSError:  # BrokenPipeError: the group died before it read ctx
             pass
+        _close_pipe(proc.stdin)  # closed on every path, so no fd is left open
         try:
             while True:
                 # Size-capped readline: a step (or an inherited-fd child)
@@ -346,14 +355,16 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
             # persisting a log line) — never leave the group alive with no
             # handle to cancel it by.
             kill_step_group(proc)
-            try:
-                proc.stdout.close()  # type: ignore[union-attr]
-            except OSError:
-                pass
+            _close_pipe(proc.stdout)
             try:
                 proc.wait(timeout=5)
             except (subprocess.TimeoutExpired, OSError):
                 pass
+        # Both pipes close on EVERY path, not just the still-alive one: a normal
+        # EOF exit used to leave the read end open until the garbage collector
+        # got to it, leaking an fd per step on a long-lived backend.
+        _close_pipe(proc.stdout)
+        _close_pipe(proc.stdin)
         state["proc"] = None
         state.pop("hard_kill", None)
     if timed_out.is_set() and proc.returncode != 0:

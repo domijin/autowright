@@ -2600,3 +2600,18 @@ def test_blocker_details_quoting_file_marker_still_valid():
     assert blockers and blockers[0]["reason"] == "need the format"
     assert "===FILE: notes.md===" in blockers[0]["details"]
     assert notes is None
+
+
+def test_validate_steps_rejects_non_dict_entries():
+    """§8: a manifest whose steps are bare strings (a plausible agent
+    shorthand) must fail validation — it used to slip through every per-step
+    filter and settle a stepless 'done' draft."""
+    manifest = (
+        "name: Hello\n"
+        "description: Says hello\n"
+        "note: Created\n"
+        "steps:\n"
+        "  - 01-fetch.py\n"
+    )
+    _, errors = validate_steps({"manifest.yaml": manifest})
+    assert any("must be a mapping" in e for e in errors)

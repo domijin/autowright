@@ -978,3 +978,179 @@ def test_execution_serializers_are_lenient_about_timestamps(store):
     aj = store.auto_json(a)
     assert aj["lastExecutionLabel"] == ""
     assert aj["latest"]["chip"] == "All good" and aj["latest"]["when"] == ""
+
+
+# ---------- damage tolerance & crash recovery: loads, reconcile, swaps ----------
+
+
+def test_restore_survives_unnamed_prune(store):
+    """Restoring the oldest of 5 unnamed snapshots must not prune the restore
+    source mid-restore: the pre-restore snapshot taken inside restore is the
+    6th unnamed, so the §6.3 prune targets exactly the snapshot being restored
+    (it used to rmtree the target, then crash after wiping live memory)."""
+    a = store.create_automation(make_version(), "Pruney", None)
+    _write_memory(store, a, text="items: [0]\n")
+    oldest = store.snapshot_memory(a, "manual")  # unnamed
+    for i in range(1, 5):
+        _write_memory(store, a, text=f"items: [{i}]\n")
+        store.snapshot_memory(a, "manual")
+    _write_memory(store, a, text="items: [99]\n")
+
+    meta = store.restore_snapshot(a, oldest["id"])
+    assert meta is not None and meta["id"] == oldest["id"]
+    mem = store.auto_dir(a) / "memory" / "seen.yaml"
+    assert mem.read_text() == "items: [0]\n"
+    # §6.3: restore is repeatable — the source snapshot still exists
+    assert store.get_snapshot(a, oldest["id"]) is not None
+    assert store.restore_snapshot(a, oldest["id"]) is not None
+
+
+def test_offset_aware_trigger_on_disk_does_not_brick_load(store, home):
+    from autowright.storage import Store
+    from autowright.yamlio import load_yaml, save_yaml
+
+    a = store.create_automation(make_version(), "Diskey", None)
+    y = home / "automations" / a["id"] / "automation.yaml"
+    data = load_yaml(y)
+    data["triggers"] = [{"id": "t-1", "kind": "time", "at": "2030-01-01T10:00+02:00"}]
+    save_yaml(y, data)
+
+    s2 = Store()
+    s2.load_all()  # used to raise TypeError out of validate_trigger
+    assert s2.autos[a["id"]]["triggers"] == []
+
+
+def test_step_without_file_does_not_brick_load(store, home):
+    from autowright.storage import Store
+    from autowright.yamlio import load_yaml, save_yaml
+
+    a = store.create_automation(make_version(), "NoFile", None)
+    y = home / "automations" / a["id"] / "versions" / "v1" / "automation.yaml"
+    data = load_yaml(y)
+    del data["steps"][0]["file"]
+    save_yaml(y, data)
+
+    s2 = Store()
+    s2.load_all()  # used to raise IsADirectoryError
+    steps = s2.autos[a["id"]]["versions"][1]["steps"]
+    assert steps[0]["code"] == "" and steps[1]["code"]
+
+
+def test_reconcile_skips_unparsable_started_at(store, home):
+    """§5: a hand-damaged started_at must stay out of the index — it used to
+    be restored by the reconcile and 500 the whole executions list (and, via
+    _latest_exec, the automations list) on every request."""
+    from autowright.storage import Store
+    from autowright.yamlio import load_yaml, save_yaml
+
+    a = store.create_automation(make_version(), "Recon", None)
+    h = store.create_execution(a, "version", 1, "manual", steps=[])
+    h["status"] = "succeeded"
+    store.update_execution(h)
+    y = store.exec_dir(h["id"]) / "execution.yaml"
+    data = load_yaml(y)
+    data["started_at"] = "banana"
+    save_yaml(y, data)
+    store.close_exec_db()
+    for suffix in ("", "-wal", "-shm"):
+        (store.executions_dir() / ("executions.db" + suffix)).unlink(missing_ok=True)
+
+    s2 = Store()
+    s2.load_all()
+    assert h["id"] not in s2.execs  # left out of the index, not restored broken
+    # the serializers that used to 500 still work for the rest of the store
+    assert isinstance(s2.auto_json(s2.autos[a["id"]]), dict)
+
+
+def test_retention_never_deletes_queued(store, monkeypatch):
+    """§5/§6: queued records ARE the firing queue — retention used to delete
+    one older than the cutoff, silently dropping a waiting firing."""
+    from datetime import datetime, timedelta, timezone
+
+    a = store.create_automation(make_version(), "Queuey", None)
+    old = (datetime.now(timezone.utc) - timedelta(days=40)).isoformat()
+    q = store.create_execution(a, "version", 1, "discord", steps=[], status="queued")
+    q["queued_at"] = q["started_at"] = old
+    store.update_execution(q)
+    done = store.create_execution(a, "version", 1, "manual", steps=[])
+    done["status"] = "succeeded"
+    done["started_at"] = old
+    store.update_execution(done)
+    store.settings["days"] = 7
+
+    deleted = store.retention_cleanup()
+    assert deleted == 1
+    assert q["id"] in store.execs          # the queued firing survives
+    assert done["id"] not in store.execs   # ordinary old records still go
+
+
+def test_damaged_snapshot_yaml_never_500s_detail(store):
+    """§5: a hand-damaged snapshot.yaml is skipped, never fatal to the
+    automation detail that serializes it."""
+    a = store.create_automation(make_version(), "Snappy", None)
+    d = store.auto_dir(a) / "memory"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "seen.yaml").write_text("x: 1\n")
+    good = store.snapshot_memory(a, "manual")
+    bad = store.snapshot_memory(a, "manual")
+    (store.snapshots_dir(a) / bad["id"] / "snapshot.yaml").write_text("just a string\n")
+
+    metas = store.list_snapshots(a)
+    assert [m["id"] for m in metas] == [good["id"]]
+    assert store.get_snapshot(a, bad["id"]) is None
+    assert isinstance(store.auto_json(a), dict)  # used to AttributeError/KeyError
+
+
+def test_load_yaml_survives_permission_error(home, monkeypatch):
+    """§5: an unreadable top-level yaml (permissions) must fall back to the
+    default, not crash startup into a launchd crash loop."""
+    import builtins
+
+    from autowright.yamlio import load_yaml
+
+    real_open = builtins.open
+
+    def deny(path, *a, **kw):
+        if str(path).endswith("settings.yaml"):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_open(path, *a, **kw)
+
+    monkeypatch.setattr(builtins, "open", deny)
+    assert load_yaml(home / "settings.yaml", {"d": 1}) == {"d": 1}
+
+
+def test_save_draft_swap_recovers_from_crash(store):
+    """§5 staged-dir swap: a save crashing between the two renames leaves the
+    old copy renamed aside — loads and the next save put it back, so a draft
+    is never a mix of old manifest and new step files."""
+    a = store.create_automation(make_version(), "Swappy", None)
+    store.save_draft(a, {**make_version(), "note": "draft v1"})
+    container = store.draft_dir(a)
+
+    # crash point: old renamed aside, new never renamed in
+    (container / "automation").rename(container / ".ad-old-automation")
+    from autowright.storage import Store
+    s2 = Store()
+    s2.load_all()
+    recovered = s2.autos[a["id"]]["draft"]
+    assert recovered is not None and recovered["note"] == "draft v1"
+    assert not (container / ".ad-old-automation").exists()
+
+    # crash point: staged copy written, swap never started — stale temp goes
+    (container / ".ad-new-automation").mkdir()
+    store.save_draft(a, {**make_version(), "note": "draft v2"})
+    assert a["draft"]["note"] == "draft v2"
+    assert not (container / ".ad-new-automation").exists()
+    assert not (container / ".ad-old-automation").exists()
+
+
+def test_pending_draft_swap_recovers_from_crash(store):
+    """Same swap recovery for the create-mode pending slot."""
+    from autowright import paths
+
+    store.save_draft(None, {**make_version(), "note": "pending v1"}, name="Pendy")
+    slot = paths.pending_draft_dir()
+    (slot / "automation").rename(slot / ".ad-old-automation")
+    d = store.load_pending_draft()
+    assert d is not None and d["note"] == "pending v1" and d["name"] == "Pendy"
+    assert not (slot / ".ad-old-automation").exists()

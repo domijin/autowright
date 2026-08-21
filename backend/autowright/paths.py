@@ -19,6 +19,17 @@ def current_os() -> str:
     return "linux"
 
 
+OS_DISPLAY = {"macos": "macOS", "windows": "Windows", "linux": "Linux"}
+
+
+def os_display_name(token: str | None) -> str:
+    """§4.1 display form of a §5.1 platform token — "macOS" / "Windows" /
+    "Linux". An unrecognized stored token shows verbatim. Shared by every
+    surface that names a platform (the §4.1 `os-mismatch` label, the §20 CLI
+    import summary), so they never drift apart."""
+    return OS_DISPLAY.get(token or "", token or "")
+
+
 def app_support() -> Path:
     env = os.environ.get("AUTOWRIGHT_HOME")
     if env:
@@ -54,6 +65,13 @@ def pending_draft_dir() -> Path:
     """§4.4: the single pending create-mode draft slot — created when the
     create flow opens, deleted when Create or Start over settles it."""
     return app_support() / "draft"
+
+
+def import_spool_dir() -> Path:
+    """§5.2: parked import archives, one file per preview token. Transient and
+    disposable — deleted on confirm/eviction/expiry, and the whole directory is
+    cleared at backend startup (a crashed process leaves its files behind)."""
+    return app_support() / "import-spool"
 
 
 def harness_workspace(provider_id: str) -> Path:

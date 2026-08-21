@@ -920,3 +920,49 @@ def test_fire_trigger_finishes_a_record_left_behind_by_a_failed_start(store):
     # and the automation can fire again
     assert fire_trigger(store, Boom(), a, {"id": "t1", "kind": "cron"}) is False
     assert a["_live"] == set()
+
+
+def test_scheduler_warns_once_on_timezone_rewind(store, monkeypatch, caplog):
+    """§4.3: a wall rewind too large for DST (system-timezone change) is
+    handled like fall-back but logs one diagnosable warning — and does not
+    double-fire the rewound span."""
+    import logging
+    from datetime import datetime, timedelta, timezone
+
+    from autowright.engine import Engine
+    from autowright.scheduler import Scheduler
+
+    class Clock:
+        def __init__(self, now):
+            self.now = now
+
+        def __call__(self):
+            return self.now
+
+    local = Clock(datetime(2026, 7, 10, 15, 0))
+    utc = Clock(datetime(2026, 7, 10, 19, 0, tzinfo=timezone.utc))
+    sched = Scheduler(store, Engine(store), clock=local, utc_clock=utc)
+    fires = []
+    from autowright import scheduler as sched_mod
+    monkeypatch.setattr(sched_mod, "fire_trigger",
+                        lambda store, engine, a, t: fires.append(t["id"]) or True)
+    store.create_automation(make_version(), "Zoney", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 13 * * *"},
+        # a disabled trigger could never fire — it must not add rewind noise
+        {"id": "t2", "kind": "cron", "enabled": False, "expression": "0 13 * * *"}])
+
+    sched._tick()  # baseline at 15:00
+    # user moves the Mac three zones west: wall rewinds, UTC keeps advancing
+    local.now = datetime(2026, 7, 10, 12, 1)
+    utc.now += timedelta(minutes=1)
+    with caplog.at_level(logging.WARNING, logger="autowright.scheduler"):
+        sched._tick()
+        sched._tick()
+    warnings = [r for r in caplog.records if "timezone change" in r.message]
+    assert len(warnings) == 1          # once per rewind, not once per tick
+    assert fires == []                 # the 13:00 in the rewound span stays unfired
+    # the clock catching back up clears the state and normal firing resumes
+    local.now = datetime(2026, 7, 11, 13, 1)
+    utc.now += timedelta(days=1, hours=1)
+    sched._tick()
+    assert fires == ["t1"]

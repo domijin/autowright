@@ -83,6 +83,25 @@ def test_install_writes_plist_and_reloads(svc):
     ]
 
 
+def test_wedged_launchctl_times_out_into_a_plain_failure(svc, monkeypatch):
+    """§3: every launchctl call is time-boxed — the app's ensure-backend step
+    waits on this, so a wedged launchctl must report an ordinary failure line
+    (exit 1) rather than hanging or raising TimeoutExpired at the caller."""
+    import subprocess
+
+    def wedged(cmd, **kw):
+        assert kw["timeout"] == svc.mod.LAUNCHCTL_TIMEOUT_S  # bounded, every call
+        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
+
+    monkeypatch.setattr(svc.mod.subprocess, "run", wedged)
+    out = svc.mod.install()
+    assert out == "install failed: launchctl timed out"
+    assert svc.mod.result_code(out) == 1
+    # and the read-only actions degrade instead of raising
+    assert svc.mod.status() == "stopped (plist present) — returns at next login or app launch"
+    assert svc.mod.restart() == "restart failed: launchctl timed out"
+
+
 # ---------------------------------------------------------------- CLI shim
 
 def test_install_never_creates_shim(svc):

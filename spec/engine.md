@@ -84,7 +84,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   dropped message's `messageId` (§4.5 payload, `fail_if_not_exists` false so a since-deleted
   message still gets a plain channel post), so a burst reads as one threaded receipt per
   message; iMessage has no reply references, so its notices are plain texts to the chat. Only
-  message firings do this; a skipped cron or app-start firing has nobody to answer. A failed
+  message firings do this; a skipped cron or app-start firing has nobody to answer. Sending
+  happens off the gateway read loop (a stalled read misses heartbeats and drops the
+  connection), on **one** long-lived background worker draining a notice queue — a burst of
+  dropped messages must not spawn one HTTP thread per message, and queueing is not coalescing:
+  every dropped message still gets its own notice, in arrival order. A failed
   send is logged and otherwise ignored, exactly as for
   §6.1 `reply()`. Apart from this notice the listeners send nothing outbound on their own —
   outbound messages happen only through a step's explicit §6.1 `reply()`.

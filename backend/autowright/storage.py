@@ -1789,7 +1789,7 @@ class Store:
                               "it installs on the first execution."} for n in missing_pkgs]
         origin = a.get("origin_os")
         if origin and origin != paths.current_os():
-            display = {"macos": "macOS", "windows": "Windows", "linux": "Linux"}.get(origin, origin)
+            display = paths.os_display_name(origin)  # §4.1 display rule, shared with §20
             out.append({"kind": "os-mismatch",
                         "label": f"Built on {display} — its steps may need rewriting "
                                  "before they run on this Mac."})

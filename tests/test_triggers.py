@@ -373,3 +373,10 @@ def test_dst_spring_forward_gap_local_no_timezone():
         else:
             os.environ["TZ"] = old
         _time.tzset()
+
+
+def test_cron_trailing_slash_rejected():
+    """Backend and renderer cron parsers must agree: "5/" is invalid, not step 1."""
+    with pytest.raises(CronError):
+        parse_cron("5/ * * * *")
+    parse_cron("*/5 * * * *")  # real steps still parse

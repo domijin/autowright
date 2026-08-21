@@ -237,6 +237,8 @@ around them changes. `.first()` stays legal only to collapse duplicates of the *
 target (a text that legitimately renders twice), never to choose between different
 controls. Test ids in the app (all in `app/src`): `nav-rail` (the §9 nav rail — the
 harness's `clickNav` measures its width), `agent-card` (§12 agent cards),
+`onboard-agent-card` (§10 step-2 found-agent cards; every connected card carries the same
+"Use as default →" button, so the id is what scopes an assertion to one agent),
 `execution-row` (§9 executions-list rows), `param-row-<name>` (§9.2 parameter rows, one
 per param), `spec-edit` / `spec-editor` (§11 SPEC card's Edit button and its edit
 textarea), `sync-steps` (§11 Build panel's Sync now / Sync spec button), `test-draft-toggle` (§11 test

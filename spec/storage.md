@@ -35,6 +35,13 @@ electron/                      # Electron's Chromium profile (Cache, Cookies, Lo
 site-packages/                 # §6.2 declared packages, installed by the app via
                                # `pip install --target` — user-writable, survives app updates,
                                # safe to delete (re-ensured before the next execution)
+import-spool/                  # §5.2 parked import archives — one file per parked preview
+                               # token, holding the exact bytes the user reviewed. Transient
+                               # and disposable: the file is deleted on confirm, eviction, or
+                               # expiry, and the whole directory is cleared at backend startup
+                               # (a crashed process leaves its spool files behind). Nothing
+                               # here is ever read back after a restart — the tokens that
+                               # addressed these files lived in memory only
 harness/                       # per-provider workspaces for provider CLI children (§6)
   <provider-id>/               #   §19 provider id: claude · codex · gemini · opencode · ollama
     workspace/                 #   cwd for that provider's children (invocations, installs,
@@ -583,8 +590,12 @@ that will land (no re-download between review and import):
 
 - §19 `POST /automations/import/url` (a URL) and `POST /automations/import/preview` (raw
   archive bytes — the file path through the same review step) validate the archive fully,
-  write nothing, and park the bytes in backend memory under a one-time **token** (15-minute
-  expiry; a handful of slots, oldest evicted). The response carries the token plus a
+  write nothing into the store, and park the bytes under a one-time **token** (15-minute
+  expiry; a handful of slots, oldest evicted). Parked bytes are **spooled to a file** under
+  `import-spool/` (below) rather than pinned in backend memory — four 64 MB archives are a
+  quarter gigabyte of resident memory otherwise. Only the token, its timestamp, and the spool
+  path stay in memory; eviction, expiry, and confirm delete the file, and backend startup
+  clears the whole directory (a crashed process leaves its spool files behind). The response carries the token plus a
   **preview**: name, description, steps (name/description/agent flag), param definitions, triggers,
   declared packages, and the §5.1 match rules run dry — each referenced secret with
   `exists`, each agent with `reused`, and `landsAs`: the automation name the import will

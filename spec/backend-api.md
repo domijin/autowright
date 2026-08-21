@@ -111,7 +111,10 @@ remain plain dicts (§2).
   app process, and a repeat call carrying a `launchId` already served fires nothing and returns
   `fired: 0`. The caller retries while the backend is still coming up, and a response lost after
   the server already fired (socket reset, backend restarting mid-request) would otherwise execute
-  every app-start automation a second time. One automation failing to start is logged and skipped
+  every app-start automation a second time. The served-launch memory is bounded (the most recent
+  256 ids, oldest dropped first) so a long-lived backend never grows it without limit; retries
+  arrive seconds apart, so an id can only fall out long after any retry for it could still be in
+  flight. One automation failing to start is logged and skipped
   rather than failing the batch — a 500 halfway through would leave the rest unfired and provoke
   exactly that retry.
 - `GET /imessage/permissions` → `{ fullDisk: bool, automation: "granted" | "denied" |
@@ -249,10 +252,12 @@ remain plain dicts (§2).
   capped at 64 MB (413), one member at 32 MB decompressed and the whole archive at 256 MB
   decompressed (422) — a crafted archive can't balloon into memory
 - `POST /automations/import/preview` — raw archive body exactly like `/automations/import`
-  (same caps) → `{ token, preview }`: validates fully, writes nothing, parks the bytes under
-  the one-time `token` (§5.2 — 15-minute expiry; at most 4 archives are parked at once, and
+  (same caps) → `{ token, preview }`: validates fully, writes nothing into the store, parks the
+  bytes under the one-time `token` (§5.2 — spooled to a file under `import-spool/`, not held in
+  memory; 15-minute expiry; at most 4 archives are parked at once, and
   a 5th preview evicts the oldest — a confirm against an evicted token answers 404 exactly
-  like an expired one). `preview` is `{ name, landsAs, description, steps: [{name,
+  like an expired one; a spool file that can't be written answers 507 with the reason, and one
+  that has vanished by confirm time answers the same 404 as an expired token). `preview` is `{ name, landsAs, description, steps: [{name,
   description, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
   model, reused}], secrets: [{name, description, exists}], os, osMismatch }` — `reused`/`exists`
   are the §5.1 match

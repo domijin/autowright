@@ -2,6 +2,7 @@
 sending, dispatch, and the engine/executor plumbing around triggerPayload."""
 import json
 import logging
+import threading
 import time
 
 import pytest
@@ -79,18 +80,23 @@ def test_send_reply_needs_discord_payload_and_token():
 
 
 def _busy_recorder(monkeypatch):
-    """Capture notify_busy's sends and run them inline — the real one hands the
-    send to a daemon thread, which a test can't join on."""
+    """Capture what the §6 busy notices send. notify_busy hands the payload to
+    the shared worker thread, so a test enqueues and then waits on the queue
+    (`_drain_busy` below) rather than joining a thread it doesn't own."""
     from autowright import listeners as li_mod
 
     sent = []
     monkeypatch.setattr(li_mod, "send_reply",
                         lambda payload, text, reply_to=None:
                             sent.append((payload, text, reply_to)))
-    monkeypatch.setattr(li_mod.threading, "Thread",
-                        lambda target, args, daemon, name: type(
-                            "T", (), {"start": lambda self: target(*args)})())
     return sent
+
+
+def _drain_busy():
+    """Block until the worker has delivered every queued notice."""
+    from autowright import listeners as li_mod
+
+    li_mod._busy_q.join()
 
 
 def test_notify_busy_replies_to_every_dropped_message(monkeypatch):
@@ -104,13 +110,34 @@ def test_notify_busy_replies_to_every_dropped_message(monkeypatch):
     # message by message, each threaded to the message it answers.
     notify_busy(payload)
     notify_busy({**payload, "messageId": "m2"})
+    _drain_busy()
     assert [(t, r) for _, t, r in sent] == [(li_mod.BUSY_TEXT, "m1"),
                                            (li_mod.BUSY_TEXT, "m2")]
+
+
+def test_notify_busy_burst_uses_one_worker_thread(monkeypatch):
+    """§6: N dropped messages produce N notices — delivered by ONE worker
+    draining the queue, never one HTTP thread per message (each send is a round
+    trip of up to 10 s, so thread-per-notice would keep hundreds alive)."""
+    sent = _busy_recorder(monkeypatch)
+    payload = {"kind": "discord", "channel": "42", "secret": "TOKEN",
+               "sender": "Dave"}
+
+    n = 40
+    for i in range(n):
+        notify_busy({**payload, "messageId": f"m{i}"})
+    _drain_busy()
+
+    # every message answered, in arrival order — queueing is not coalescing
+    assert [r for _, _, r in sent] == [f"m{i}" for i in range(n)]
+    workers = [t for t in threading.enumerate() if t.name == "ad-busy-reply"]
+    assert len(workers) == 1
 
 
 def test_notify_busy_skips_non_message_firings(monkeypatch):
     sent = _busy_recorder(monkeypatch)
     notify_busy({})  # a skipped cron firing carries no payload
+    _drain_busy()
     assert sent == []
 
 
@@ -124,6 +151,7 @@ def test_notify_busy_reply_failure_never_raises(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger="autowright.listeners"):
         notify_busy({"kind": "discord", "channel": "42", "secret": "TOKEN",
                      "sender": "Dave"})  # logged, not raised
+        _drain_busy()
     assert any("busy notice failed — couldn't reach Discord: boom" in r.getMessage()
                for r in caplog.records)
 

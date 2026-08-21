@@ -47,6 +47,7 @@ def auth(cred: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> None:
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
     hub.bind_loop(asyncio.get_running_loop())
+    _clear_import_spool()  # §5.2: spool files a crashed process left behind
     _repair_stale_executing()
     hub.publish("automation.changed")
     yield
@@ -850,21 +851,55 @@ async def import_auto(request: Request) -> dict:
     return _land_import(await _archive_body(request))
 
 
-# §5.2 preview tokens: validated archive bytes parked in memory between the
-# preview and confirm calls, so the user imports exactly the bytes reviewed.
+# §5.2 preview tokens: the validated archive is parked between the preview and
+# confirm calls, so the user imports exactly the bytes reviewed. The bytes are
+# spooled to a file under the §5 `import-spool/` dir — four 64 MB archives would
+# pin a quarter gigabyte of RAM for the whole 15-minute TTL otherwise. Only the
+# parked-at stamp and the spool path stay in memory.
 _IMPORT_TTL = 15 * 60
 _IMPORT_SLOTS = 4
-_import_parked: dict[str, tuple[float, bytes]] = {}
+_IMPORT_GONE = "the import preview expired — fetch it again"
+_import_parked: dict[str, tuple[float, Path]] = {}
+
+
+def _drop_parked(token: str) -> None:
+    """Forget one parked archive and delete its spool file."""
+    slot = _import_parked.pop(token, None)
+    if slot is not None:
+        slot[1].unlink(missing_ok=True)
+
+
+def _clear_import_spool() -> None:
+    """Startup sweep: a crashed process leaves spool files behind, and the
+    in-memory tokens that addressed them died with it — nothing in there can
+    ever be claimed again."""
+    d = paths.import_spool_dir()
+    if not d.exists():
+        return
+    for p in d.iterdir():
+        try:
+            p.unlink()
+        except OSError:
+            log.warning("couldn't remove stale import spool file %s", p)
 
 
 def _park_archive(data: bytes) -> str:
     now = time.time()
     for k in [k for k, (t, _) in _import_parked.items() if now - t > _IMPORT_TTL]:
-        del _import_parked[k]
+        _drop_parked(k)
     while len(_import_parked) >= _IMPORT_SLOTS:
-        del _import_parked[min(_import_parked, key=lambda k: _import_parked[k][0])]
+        _drop_parked(min(_import_parked, key=lambda k: _import_parked[k][0]))
     token = pysecrets.token_hex(16)
-    _import_parked[token] = (now, data)
+    d = paths.import_spool_dir()
+    p = d / f"{token}.autowright"
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(data)
+    except OSError as e:
+        p.unlink(missing_ok=True)  # a half-written spool file never survives
+        raise HTTPException(
+            507, f"couldn't hold the archive for review: {e.strerror or e}") from e
+    _import_parked[token] = (now, p)
     return token
 
 
@@ -896,9 +931,23 @@ def import_url(body: models.ImportUrl) -> dict:
 @app.post("/automations/import/confirm", dependencies=[Depends(auth)])
 def import_confirm(body: models.ImportConfirm) -> dict:
     slot = _import_parked.pop(body.token, None)
-    if slot is None or time.time() - slot[0] > _IMPORT_TTL:
-        raise HTTPException(404, "the import preview expired — fetch it again")
-    return _land_import(slot[1])
+    if slot is None:
+        raise HTTPException(404, _IMPORT_GONE)
+    parked_at, path = slot
+    try:
+        if time.time() - parked_at > _IMPORT_TTL:
+            raise HTTPException(404, _IMPORT_GONE)
+        try:
+            data = path.read_bytes()
+        except OSError as e:
+            # The spool file is gone (an outside cleanup, a failed write) — the
+            # token can never land anything now, so it answers like an expired
+            # one rather than 500ing on the read.
+            raise HTTPException(404, _IMPORT_GONE) from e
+    finally:
+        # One-time either way: spent, expired, or unreadable, the file goes.
+        path.unlink(missing_ok=True)
+    return _land_import(data)
 
 
 @app.post("/automations/{automation_id}/restore", dependencies=[Depends(auth)])
@@ -954,7 +1003,13 @@ def execute_auto(automation_id: str, body: models.ExecuteBody | None = None) -> 
     return {"executionId": h["id"], "queued": queued}
 
 
-_served_launches: set[str] = set()
+# §19: the app-start dedupe memory, bounded to the most recent _LAUNCH_MEMORY
+# ids (a plain dict, used as an insertion-ordered set — oldest dropped first).
+# A backend that outlives thousands of app launches must not grow this without
+# limit; retries arrive seconds apart, so an id only falls out long after any
+# retry carrying it could still be in flight.
+_LAUNCH_MEMORY = 256
+_served_launches: dict[str, None] = {}
 
 
 @app.post("/app-started", dependencies=[Depends(auth)])
@@ -967,7 +1022,9 @@ def app_started(body: models.AppStarted) -> dict:
     with store.lock:
         if body.launchId in _served_launches:
             return {"fired": 0}
-        _served_launches.add(body.launchId)
+        _served_launches[body.launchId] = None
+        while len(_served_launches) > _LAUNCH_MEMORY:
+            del _served_launches[next(iter(_served_launches))]
     with store.lock:
         autos = list(store.autos.values())
     fired = 0

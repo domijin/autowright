@@ -1,4 +1,5 @@
 import time
+import uuid
 
 import pytest
 
@@ -105,7 +106,6 @@ def test_export_import_endpoints(client):
     assert client.get("/automations/nope/export").status_code == 404
 
 
-
 def test_import_preview_confirm_flow(client):
     from autowright.storage import new_id, store
 
@@ -143,6 +143,59 @@ def test_import_preview_confirm_flow(client):
     # an invalid archive previews as the same §5.1 422
     assert client.post("/automations/import/preview", content=b"junk",
                        headers={"Content-Type": "application/octet-stream"}).status_code == 422
+
+
+def test_import_preview_spools_parked_bytes_to_disk(client, home):
+    """§5.2: parked archive bytes live in a file under import-spool/ — never
+    pinned in backend memory — and that file is deleted on confirm, on eviction
+    past the 4 slots, on expiry, and by the startup sweep."""
+    from autowright import api, paths
+    from autowright.storage import store
+
+    ver = {"description": "", "params": [],
+           "steps": [{"name": "Go", "description": "", "code": "print(1)\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": None}
+    a = store.create_automation(ver, name="Spooled", agent_id="mock", triggers=[])
+    data = client.get(f"/automations/{a['id']}/export").content
+
+    def park():
+        r = client.post("/automations/import/preview", content=data,
+                        headers={"Content-Type": "application/octet-stream"})
+        assert r.status_code == 200
+        return r.json()["token"]
+
+    first = park()
+    parked_at, path = api._import_parked[first]
+    assert path.parent == paths.import_spool_dir()
+    assert path.read_bytes() == data          # exactly the reviewed bytes
+    assert isinstance(parked_at, float)       # only metadata + path in RAM
+
+    # a 5th preview evicts the oldest slot and takes its spool file with it
+    rest = [park() for _ in range(api._IMPORT_SLOTS)]
+    assert first not in api._import_parked and not path.exists()
+    assert client.post("/automations/import/confirm",
+                       json={"token": first}).status_code == 404
+
+    # expiry: a stale slot 404s and its file goes too
+    stale_token = rest[0]
+    stale_path = api._import_parked[stale_token][1]
+    api._import_parked[stale_token] = (0.0, stale_path)
+    assert client.post("/automations/import/confirm",
+                       json={"token": stale_token}).status_code == 404
+    assert not stale_path.exists()
+
+    # confirm consumes the file
+    live_path = api._import_parked[rest[-1]][1]
+    assert client.post("/automations/import/confirm",
+                       json={"token": rest[-1]}).status_code == 200
+    assert not live_path.exists()
+
+    # startup sweep: whatever a crashed process left behind is unclaimable
+    leftover = paths.import_spool_dir() / "leftover.autowright"
+    leftover.write_bytes(b"orphan")
+    api._clear_import_spool()
+    assert not leftover.exists()
+    assert api._import_parked  # the sweep is startup-only; it touches no state
 
 
 def test_import_url_endpoint(client, monkeypatch):
@@ -845,7 +898,10 @@ def test_app_started_fires_enabled_app_start_triggers(client, monkeypatch):
     assert client.post("/app-started").status_code == 422
     assert client.post("/app-started", json={}).status_code == 422
     assert client.post("/app-started", json={"launchId": ""}).status_code == 422
-    assert client.post("/app-started", json={"launchId": "launch-A"}).json() == {"fired": 1}
+    # a fresh id per run: the served-launch memory is process-wide, so a fixed
+    # literal would make this test depend on which others ran before it
+    launch_id = f"launch-{uuid.uuid4()}"
+    assert client.post("/app-started", json={"launchId": launch_id}).json() == {"fired": 1}
     _until(events, "execution.finished")
     execs = client.get("/executions").json()
     assert [e["trigger"] for e in execs if e["automationId"] == a["id"]] == ["App start"]
@@ -3184,3 +3240,200 @@ def test_exec_logs_tail_param(client):
                           params={"tail": 500}).json()["lines"]) == 50
     assert client.get(f"/executions/{h['id']}/logs", params={"tail": 0}).status_code == 422
     assert client.get(f"/executions/{h['id']}/logs", params={"tail": -3}).status_code == 422
+
+
+# ---------- validation, containment, and damage tolerance across the surface ----------
+
+
+def test_time_trigger_rejects_utc_offset(client):
+    r = client.post("/automations", json={
+        "draft": make_version(triggers=[{"kind": "time", "at": "2030-01-01T10:00+02:00"}]),
+        "name": "Aware", "agentId": "mock",
+    })
+    assert r.status_code == 422  # used to 500 with a TypeError
+
+
+def test_settings_days_validation(client):
+    assert client.patch("/settings", json={"days": "ninety"}).status_code == 422
+    assert client.patch("/settings", json={"notifications": "sometimes"}).status_code == 422
+    assert client.patch("/settings", json={"days": "14"}).status_code == 422  # strict int
+    r = client.patch("/settings", json={"days": 14})
+    assert r.status_code == 200
+    from autowright.storage import store as live_store
+    assert live_store.settings["days"] == 14
+
+
+def test_draft_endpoints_reopen_once_the_draft_execution_ends(client):
+    """§7: the draft guard is scoped to the automation's live set — a saved
+    draft is unwritable while a draft execution runs and writable again the
+    moment that execution leaves the set."""
+    from autowright.storage import store as live_store
+
+    r = client.post("/automations", json={"draft": make_version(), "name": "Busy",
+                                          "agentId": "mock"})
+    automation_id = r.json()["id"]
+    a = live_store.autos[automation_id]
+    live_store.save_draft(a, make_version())
+    h = live_store.create_execution(a, "draft", None, "manual",
+                                    [{"name": "s", "file": "01-say.py", "agent": False,
+                                      "status": "executing", "duration_ms": None, "attempts": []}])
+    a["_live"] = {h["id"]}
+    try:
+        assert client.put(f"/draft/{automation_id}",
+                          json={"draft": make_version()}).status_code == 409
+        assert client.delete(f"/draft/{automation_id}").status_code == 409
+    finally:
+        a["_live"] = set()
+    assert client.put(f"/draft/{automation_id}",
+                      json={"draft": make_version()}).status_code == 200
+
+
+def test_cors_allows_only_the_renderer_origins(client):
+    """§19: a page on the open internet must not get a usable response, even
+    from the one unauthenticated route."""
+    allow = "access-control-allow-origin"
+    for origin in ("null", "http://localhost:5173", "http://127.0.0.1:5173"):
+        r = client.get("/health", headers={"Origin": origin})
+        assert r.headers.get(allow) == origin, origin
+    for origin in ("https://evil.example", "http://localhost.evil.example"):
+        r = client.get("/health", headers={"Origin": origin})
+        assert allow not in r.headers, origin
+
+
+def test_interactive_docs_are_not_served(client):
+    """§19: /health is the only unauthenticated route — no schema publishing."""
+    for path in ("/docs", "/redoc", "/openapi.json"):
+        assert client.get(path).status_code == 404, path
+
+
+def test_ollama_pull_rejects_option_shaped_model(client):
+    assert client.post("/ollama/pull", json={"model": "--rm"}).status_code == 422
+    assert client.post("/ollama/pull", json={"model": "a b"}).status_code == 422
+
+
+def test_app_started_is_idempotent_per_launch(client, monkeypatch):
+    """§19: the Electron caller retries until it gets a response — a reply lost
+    after the server already fired must not execute everything twice."""
+    from autowright import api
+    from autowright.storage import store as live_store
+
+    r = client.post("/automations", json={"draft": make_version(), "name": "On launch",
+                                          "agentId": "mock"})
+    a = live_store.autos[r.json()["id"]]
+    a["triggers"] = [{"id": "t1", "kind": "app_start", "enabled": True}]
+
+    # Count firings without starting real executions: a live engine thread would
+    # outlive this test and publish into the next one's event recorder.
+    fired = []
+    monkeypatch.setattr(api, "fire_trigger",
+                        lambda store, engine, auto, t: fired.append(auto["id"]) or True)
+
+    # a fresh id per run: the served-launch memory is process-wide, so a fixed
+    # literal would make this test depend on which others ran before it
+    launch_id = f"launch-{uuid.uuid4()}"
+    first = client.post("/app-started", json={"launchId": launch_id})
+    assert first.status_code == 200
+    assert first.json()["fired"] == 1
+    # the same launch retrying fires nothing more
+    again = client.post("/app-started", json={"launchId": launch_id})
+    assert again.json()["fired"] == 0
+    assert fired == [a["id"]]
+
+
+def test_retry_create_mode_test_answers_409(client):
+    """§19: retrying a create-mode test record (automationId null) answers the
+    test rule's 409 — it used to 404 on the null automation lookup."""
+    from autowright.storage import store as live_store
+
+    h = live_store.create_execution({"id": None, "name": "Draft"}, "test", None,
+                                    "test", steps=[])
+    r = client.post(f"/executions/{h['id']}/retry")
+    assert r.status_code == 409
+
+
+def test_fabricated_trigger_id_cannot_store_past_time(client):
+    """§4.3 spent-drop: an id-carrying past `time` the automation does not
+    store is dropped silently - a client-made id stores nothing, and an
+    elapsed staged one-shot never blocks the save."""
+    r = client.post("/automations", json={"draft": make_version(), "name": "Timey",
+                                          "agentId": "mock"})
+    aid = r.json()["id"]
+    r2 = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2020-01-01T10:00", "id": "fake-id"}]})
+    assert r2.status_code == 200
+    assert r2.json()["triggers"] == []
+    # a brand-new entry (no id) with a past time still answers 422
+    r2b = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2020-01-01T10:00"}]})
+    assert r2b.status_code == 422
+    # the real leniency still holds: an id the automation actually stores
+    r3 = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2030-01-01T10:00"}]})
+    assert r3.status_code == 200
+    stored = r3.json()["triggers"][0]
+    r4 = client.patch(f"/automations/{aid}", json={
+        "triggers": [{"kind": "time", "at": "2020-01-01T10:00", "id": stored["id"]}]})
+    assert r4.status_code == 200
+
+
+def test_elapsed_staged_one_shot_never_blocks_save(client):
+    """§4.3 spent-drop on the draft paths: a staged one-shot whose moment
+    passed before Create / version save lands is dropped, the save succeeds,
+    and the rest of the list stores normally."""
+    past = {"kind": "time", "at": "2020-01-01T10:00", "id": "staged-one-shot"}
+    cron = {"kind": "cron", "expression": "0 8 * * *"}
+    r = client.post("/automations", json={
+        "draft": {**make_version(), "triggers": [past, cron]},
+        "name": "Stale staged", "agentId": "mock"})
+    assert r.status_code == 200
+    kinds = [t["kind"] for t in r.json()["triggers"]]
+    assert kinds == ["cron"]
+    aid = r.json()["id"]
+    # version save: same rule - the scheduler consumed the one-shot mid-edit
+    d = {**make_version(), "triggers": [past, {"id": r.json()["triggers"][0]["id"],
+                                               **cron}]}
+    d["notes"] = "changed"
+    r2 = client.post(f"/automations/{aid}/versions", json={"draft": d})
+    assert r2.status_code == 200
+    assert [t["kind"] for t in r2.json()["automation"]["triggers"]] == ["cron"]
+
+
+def test_draft_out_of_sync_roundtrips(client):
+    """§4.4/§11: the dirty-gate state rides the draft container — a kept
+    out-of-sync draft must resume with saving still locked."""
+    d = {**make_version(), "outOfSync": True}
+    assert client.put("/draft/pending", json={"draft": d}).status_code == 200
+    got = client.get("/draft/pending").json()["draft"]
+    assert got["outOfSync"] is True
+    # and absent when the editor is in sync
+    assert client.put("/draft/pending", json={"draft": make_version()}).status_code == 200
+    assert "outOfSync" not in client.get("/draft/pending").json()["draft"]
+
+
+def test_damaged_metadata_never_500s_state(client):
+    """§5 lenient serialization: hand-edited numeric/timestamp values degrade
+    (empty label, 0) instead of 500ing every /state."""
+    from autowright.storage import store
+
+    r = client.post("/automations", json={"draft": make_version(), "name": "Damaged",
+                                          "agentId": "mock"})
+    aid = r.json()["id"]
+    a = store.autos[aid]
+    ver = a["versions"][a["current_version"]]
+    ver["when"] = "not-a-timestamp"
+    ver["steps"][0]["timeout"] = "3.2 KB"
+    assert client.get("/state").status_code == 200
+    got = client.get(f"/automations/{aid}")
+    assert got.status_code == 200
+
+
+def test_pending_summary_recovers_half_finished_swap(client):
+    """§5: loads repair a half-finished save_draft swap first - the /state
+    pendingDraft summary must see a draft whose save crashed between the two
+    renames, same as GET /draft/pending does."""
+    from autowright import paths
+
+    assert client.put("/draft/pending", json={"draft": make_version()}).status_code == 200
+    dd = paths.pending_draft_dir() / "automation"
+    dd.rename(paths.pending_draft_dir() / ".ad-old-automation")
+    assert client.get("/state").json()["pendingDraft"] is not None

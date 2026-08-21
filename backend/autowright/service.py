@@ -96,11 +96,33 @@ def _remove_shim() -> str | None:
     return " · ".join(notes) if notes else None
 
 
+LAUNCHCTL_TIMEOUT_S = 30
+_TIMED_OUT = "launchctl timed out"
+
+
+class _TimedOut:
+    """Stand-in for a `launchctl` call that never returned (§3): a wedged
+    launchctl must not hang the caller — the app's ensure-backend step waits on
+    it — so a timeout reads as a plain non-zero result with a plain-word
+    message, never a TimeoutExpired traceback."""
+
+    returncode = 1
+    stdout = ""
+    stderr = _TIMED_OUT
+
+
+def _launchctl(*args: str) -> subprocess.CompletedProcess | _TimedOut:
+    """Every `launchctl` call goes through here: captured, text, time-boxed."""
+    try:
+        return subprocess.run(["launchctl", *args], capture_output=True,
+                              text=True, timeout=LAUNCHCTL_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return _TimedOut()
+
+
 def _registered() -> bool:
     """Whether launchd currently knows the job (running or not)."""
-    r = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{LABEL}"],
-                       capture_output=True)
-    return r.returncode == 0
+    return _launchctl("print", f"gui/{os.getuid()}/{LABEL}").returncode == 0
 
 
 def _unload(p: Path) -> None:
@@ -109,10 +131,8 @@ def _unload(p: Path) -> None:
     job is asynchronous — wait for launchd to finish removing it, or the
     immediate re-bootstrap in install()/restart() races the teardown, fails,
     and leaves no registration at all (§3)."""
-    r = subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"],
-                       capture_output=True)
-    if r.returncode != 0:
-        subprocess.run(["launchctl", "unload", str(p)], capture_output=True)
+    if _launchctl("bootout", f"gui/{os.getuid()}/{LABEL}").returncode != 0:
+        _launchctl("unload", str(p))
     for _ in range(40):
         if not _registered():
             return
@@ -126,10 +146,9 @@ def _load(p: Path) -> str | None:
     can exit 0 without actually loading (legacy `load` swallows errors), so
     success is only ever the job existing in launchd afterwards (§3) — never
     report an unregistered service as installed."""
-    r = subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(p)],
-                       capture_output=True, text=True)
+    r = _launchctl("bootstrap", f"gui/{os.getuid()}", str(p))
     if r.returncode != 0:
-        r2 = subprocess.run(["launchctl", "load", str(p)], capture_output=True, text=True)
+        r2 = _launchctl("load", str(p))
         if r2.returncode != 0:
             return (r.stderr.strip() or r2.stderr.strip()
                     or f"launchctl exited {r.returncode}")
@@ -171,7 +190,7 @@ def uninstall() -> str:
 
 
 def status() -> str:
-    r = subprocess.run(["launchctl", "list"], capture_output=True, text=True)
+    r = _launchctl("list")
     for line in r.stdout.splitlines():
         if LABEL in line:
             pid = line.split()[0]

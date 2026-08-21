@@ -1,12 +1,12 @@
 {
-  "currentRelease": "0.3.5",
+  "currentRelease": "0.4.0",
   "releases": [
     {
-      "version": "0.3.5",
+      "version": "0.4.0",
       "updateTo": {
-        "version": "0.3.5",
-        "name": "v0.3.5",
-        "url": "https://github.com/hansololz/autowright/releases/download/v0.3.5/Autowright-0.3.5-darwin-arm64.zip"
+        "version": "0.4.0",
+        "name": "v0.4.0",
+        "url": "https://github.com/hansololz/autowright/releases/download/v0.4.0/Autowright-0.4.0-darwin-arm64.zip"
       }
     }
   ]

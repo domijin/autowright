@@ -106,7 +106,9 @@ module besides `cli.py` imports `autowright.cli`, and a Vitest guard reads
 trust surface — a §2 extraction must not move a call out of the guard's sight)** asserting
 backend registration runs `-m autowright.service`, that
 no child-process call executes the CLI (the string `autowright.cli` may appear only inside
-the shim file text), and that shim writes only ever target the §3 user-local location —
+the shim file text — the POSIX `exec "<python>" -m autowright.cli "$@"` line or the §3
+Windows `"<python>" -m autowright.cli %*` line, never an `execFile`/`spawn` call), and that
+shim writes only ever target the §3 user-local location —
 no osascript admin prompt exists (`with administrator privileges` must not appear), and
 nothing reads, writes, or deletes at `/usr/local/bin` (creation only through
 `cli-install`, deletion only through

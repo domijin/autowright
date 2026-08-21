@@ -1,9 +1,10 @@
-// §2 platform layer (shell half), degraded build for platforms we don't ship
-// yet. Not an implementation: explicit placeholders so a non-macOS dev launch
-// degrades in plain words (native window frame, no vibrancy, no update feed)
-// instead of crashing on mac-only Electron options. Replacing this with a
-// real per-OS module (win32.cjs / linux.cjs with the same surface as
-// darwin.cjs) is the entire shell-side port surface — main.cjs won't change.
+// §2 platform layer (shell half), degraded build for Linux (and any unknown
+// platform — win32 routes to win32.cjs). Not an implementation: explicit
+// placeholders so a non-macOS dev launch degrades in plain words (native
+// window frame, no vibrancy, no update feed) instead of crashing on mac-only
+// Electron options. Replacing this with a real linux.cjs with the same
+// surface as darwin.cjs is the entire shell-side port surface — main.cjs
+// won't change.
 const { execFile } = require('child_process')
 const os = require('os')
 const path = require('path')
@@ -16,7 +17,6 @@ const OS_NAME = process.platform === 'win32' ? 'Windows' : 'Linux' // §4.1 disp
 function dataRootDefault() { return roots.dataRootDefault(process.platform) }
 function logsRootDefault() { return roots.logsRootDefault(process.platform) }
 
-// Windows bundles will use python\python.exe; placeholder until that port.
 function bundledPythonPath(resourcesPath) {
   return path.join(resourcesPath, 'python', 'bin', 'python3')
 }
@@ -45,7 +45,7 @@ function trayIconSpec(alert) {
 
 function setDockIcon(_app, _iconPath) {}
 
-// POSIX shim — right for Linux; the Windows port replaces it with a .cmd shim.
+// POSIX shim — right for Linux (the Windows .cmd shim lives in win32.cjs).
 const SHIM_MARKER = '# autowright CLI shim'
 
 function defaultShimPath() {

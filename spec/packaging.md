@@ -61,7 +61,10 @@ the update bullets below).
   and the §9 boot splash shows the failure detail instead of waiting silently. The renderer keeps
   retrying regardless — a late backend still connects.
 - **Bundled Python (decided):** the app ships its own relocatable CPython (python-build-standalone
-  builds) inside the bundle (`Contents/Resources/python/`). The backend, the engine, and every
+  builds) inside the bundle (`Contents/Resources/python/`; on Windows the packaged layout is
+  `resources\python\` and the interpreter sits flat at `python\python.exe` — the
+  `*-pc-windows-msvc-install_only` builds have no `bin/` directory — resolved per-OS by the §2
+  platform layer's `bundledPythonPath`). The backend, the engine, and every
   step script execute on this one interpreter. The system/user Python is never used, never required,
   and never installed — users install nothing, and every Mac gets the identical interpreter
   version. The launchd plist points at the bundled interpreter by absolute path (`sys.executable`
@@ -91,8 +94,14 @@ the update bullets below).
   which the one-`VERSION` design excludes by construction). The command is a shim script named
   `autowright`: `#!/bin/sh` with an `# autowright CLI shim` marker line, then
   `exec "<python>" -m autowright.cli "$@"` (module form per the shebang rule above; `<python>`
-  is the backend's real interpreter). The command name is `autowright` (no short alias for now).
-  **One install location:** `~/.local/bin/autowright` — user-owned, so no privilege and no
+  is the backend's real interpreter). On Windows (§2 groundwork, defined by `win32.cjs`) the
+  shim is a batch file `autowright.cmd`: `@echo off`, a `rem autowright CLI shim` marker line,
+  then `"<python>" -m autowright.cli %*`, CRLF line endings, installed at
+  `%LOCALAPPDATA%\Autowright\bin\autowright.cmd` (user-owned, same no-privilege rule; the
+  backend `service install` healing half below stays macOS-shaped until the Windows
+  ServiceManager lands). The command name is `autowright` (no short alias for now).
+  **One install location per OS:** `~/.local/bin/autowright` (macOS/Linux) /
+  `%LOCALAPPDATA%\Autowright\bin\autowright.cmd` (Windows) — user-owned, so no privilege and no
   password, ever. There is no admin-prompt (osascript) flow anywhere anymore. Creation happens
   in exactly two ways, both silent and user-local: the §4.9 COMMAND LINE card (its `cliEnabled`
   toggle, or the missing-row Reinstall button) and a **one-shot first-run install**. The
@@ -113,8 +122,10 @@ the update bullets below).
   `$SHELL -l -c 'printf %s "$PATH"'` with a ~2 s timeout, caches the answer per app run, and
   counts any failure as not-on-PATH) and the card shows the one-line fix
   (`export PATH="$HOME/.local/bin:$PATH"`) after install rather than editing anyone's
-  dotfiles. `~/.local/bin/autowright` is the **only** shim location — nothing outside the
-  user's home is ever read, written, or deleted. Ownership of the two halves is split:
+  dotfiles. On Windows the PATH check reads the process environment's `PATH` instead (GUI
+  apps there inherit the full user PATH — no login shell exists to ask). The per-OS location
+  above is the **only** shim location — nothing outside the
+  user's profile is ever read, written, or deleted. Ownership of the two halves is split:
   - **Creation is the Electron shell's job — explicit and silent.** The shell exposes two
     IPCs on the preload bridge: `cli-status` (reads the shim; states `installed` — marker
     present and exec line points at the current backend interpreter from `backend.json`

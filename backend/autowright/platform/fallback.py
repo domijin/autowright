@@ -57,9 +57,8 @@ def build(os_token: str, os_display: str) -> Platform:
         service=UnsupportedService(os_display),
         notifier=NullNotifier(),
         power=NullPower(),
-        # POSIX process control is real on Linux; on Windows these calls
-        # raise on use (os.killpg does not exist) — acceptable until the
-        # Windows port lands a job-object implementation.
+        # POSIX process control is real on Linux — the only platform routed
+        # here by current() (Windows composes windows.py's tree-kill control).
         processes=posixproc.PosixProcessControl(),
         capabilities=Capabilities(imessage=False, notifications=False,
                                   keep_awake=False, service=False),

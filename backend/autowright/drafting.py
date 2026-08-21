@@ -1321,11 +1321,13 @@ class DraftJobs:
 
             def _hard_kill(p=proc):
                 # §8: a CLI that traps SIGTERM must still die - same
-                # term-then-kill escalation as the engine's step groups.
+                # term-then-kill escalation as the engine's step groups
+                # (sig=None is the §2 kill-hard form; SIGKILL by name does
+                # not exist on Windows).
                 try:
                     p.wait(timeout=5.0)
                 except Exception:  # noqa: BLE001 - timeout or a raced reap
-                    harness.kill_group(p, signal.SIGKILL)
+                    harness.kill_group(p)
 
             threading.Thread(target=_hard_kill, daemon=True,
                              name="ad-draft-kill").start()
@@ -1398,7 +1400,7 @@ class DraftJobs:
         for j in live:
             proc = j["_proc"].get("proc")
             if proc and proc.poll() is None:
-                harness.kill_group(proc, signal.SIGKILL)
+                harness.kill_group(proc)
 
     def _settle(self, job: dict, status: str, **fields) -> bool:
         """The only terminal transition — building → done/blocked/failed under

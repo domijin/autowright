@@ -89,14 +89,30 @@ a superclass. Electron: `app/electron/platform/` mirrors the shape — per-OS mo
 plain objects (window chrome, tray spec, panel placement, CLI shim, update feed, managed-install
 probe, reveal rules), selected once by `platform/index.cjs`. These modules never import
 `electron` (they take `app`/window objects as arguments), so the §15 source-scanning guards and
-test loaders keep working. **macOS is the only implemented platform.** On Linux/Windows,
+test loaders keep working. **macOS is the only fully implemented platform.** On Linux,
 `current()` composes explicit degraded implementations rather than crashing: service actions
 answer a plain "not supported on <OS> yet" failure line (exit 1, §3 result-code rule),
-notifications and keepAwake are silent no-ops, POSIX process control is shared with Linux, and
-every capability flag the OS can't honor is false. Clients gate features on the §19 `/health`
-`os` + `capabilities` fields — never by sniffing the platform at a call site. Behavior on macOS
-is identical to the pre-layer code; the layer exists so a future port fills in new modules
-instead of hunting call sites.
+notifications and keepAwake are silent no-ops, POSIX process control is real, and
+every capability flag the OS can't honor is false. Windows composes `windows.build()` — port
+groundwork, not a shipped port: the same degraded service/notifier/power placeholders and
+all-false capabilities, but **real process control** (`WindowsProcessControl`): the spawn
+policy is `creationflags = CREATE_NEW_PROCESS_GROUP`, and "group" operations act on the
+process tree rooted at the child's pid via `taskkill /T /F` — Windows has no signalable
+process groups, so the §4.5 persisted group id stays the child's pid (same pid == group
+invariant as POSIX own-session spawns), and the §3 pid-reuse guard answers False until a
+pid+creation-time identity check lands (orphan recovery never kills what it can't verify).
+Hard-kill contract, all platforms: callers pass `sig=None` to mean kill-hard —
+`signal.SIGKILL` must never appear at a call site (the name does not exist on Windows);
+`signal.SIGTERM` exists everywhere and Windows treats any signal as the tree kill. The shell
+half mirrors this: `win32.cjs` carries the Windows-correct values (flat `python\python.exe`
+bundled-interpreter layout, the §3 `.cmd` shim, PATH read from the process environment —
+Windows GUI apps inherit the full user PATH, no login-shell probe — native window frame, no
+update feed yet); Linux keeps the degraded `fallback.cjs`. Clients gate features on the §19
+`/health` `os` + `capabilities` fields — never by sniffing the platform at a call site.
+Behavior on macOS is identical to the pre-layer code; the layer exists so a port fills in
+per-OS modules instead of hunting call sites. The remaining Windows port surface (service
+manager, notifier, keep-awake, packaging pipeline, copy sweep) is tracked in the §17
+`WINDOWS.md` worksheet until it ships into this spec.
 
 **Naming policy:** identifiers spell out full words on every surface - stored fields, serialized
 API fields, routes and query params, code identifiers, CLI flags: `expression` not `expr`,
@@ -125,8 +141,10 @@ data on disk); both ends of a served surface change in the same commit.
   the §2 platform layer (`platform/` package: `base.py` — the capability Protocols,
   `Capabilities`, and the composed `Platform` dataclass; `darwin.py` — the macOS build:
   osascript notifier, caffeinate power assertion, launchd service delegation, POSIX process
-  control; `posixproc.py` — the shared POSIX process-group helpers; `fallback.py` — the
-  degraded non-macOS builds), launchd service
+  control; `posixproc.py` — the shared POSIX process-group helpers; `windows.py` — the §2
+  Windows groundwork build: real `taskkill`-tree process control, degraded
+  service/notifier/power; `fallback.py` — the
+  degraded Linux (and unknown-OS) builds), launchd service
   (`service.py`, runnable as `python -m autowright.service` — the §3 registration entry the
   app uses; the UI and backend never invoke the CLI), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
   Further modules: `main.py` (backend entry point, `python -m autowright.main` — bind localhost,
@@ -149,13 +167,16 @@ data on disk); both ends of a served surface change in the same commit.
   `pyproject.toml` defines the `autowright` / `autowright-backend` entry points, and
   `constraints.txt` beside it pins the full runtime dependency closure (direct **and**
   transitive) at exact versions, so two §3 distributables built from one commit ship the
-  same packages; `prod.sh` passes it as `pip install -c` (§18).
+  same packages; platform-conditional pins carry environment markers (`pywin32-ctypes`,
+  keyring's Windows Credential Locker backend, pinned under `sys_platform == "win32"`);
+  `prod.sh` passes it as `pip install -c` (§18).
 - `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
   bridge), `electron/platform/` (the §2 platform layer's shell half: `index.cjs` selects the
   per-OS module once; `darwin.cjs` holds the macOS values and helpers — window-chrome options,
   tray icon spec, panel placement, dock icon, data/log roots, CLI shim path+text, login-shell
   PATH probe, update feed URL, Homebrew managed-install probe, reveal bundle rule, the
-  settings deep-link scheme; the modules never import `electron`), Vite + React + TS renderer
+  settings deep-link scheme; `win32.cjs` holds the §2 Windows groundwork values; the modules
+  never import `electron`), Vite + React + TS renderer
   under `src/` (`store.ts` central model, `api.ts` client,
   `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen —
   except the two biggest screens, each a thin page over its own directory: the §11
@@ -334,6 +355,9 @@ data on disk); both ends of a served surface change in the same commit.
   development). Not part of the app build and not used by anything in the repo — the real backend
   package is `backend/`; never install `autowright` from PyPI. Uploaded by the developer via
   `scripts/pip-release.sh` (§18).
+- `WINDOWS.md` — temporary Windows-port worksheet: the audited port surface (what is done,
+  what remains, in what order) for building on Windows x86-64. Working notes, not spec — each
+  item moves into the §-sections as it ships, and the file is deleted when the port lands.
 - `VERSION` — single source of truth for the app version (one line, semver). Synced into
   `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
   `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to

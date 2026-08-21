@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from autowright import paths, platform, service
-from autowright.platform import fallback
+from autowright.platform import fallback, windows
 
 
 # ---------------------------------------------------------------- composition
@@ -27,6 +27,72 @@ def test_fallback_build_flags_everything_off():
     plat.notifier.post("t", "b")
     plat.power.reconcile(True)
     plat.power.reconcile(False)
+
+
+def test_windows_build_composes_real_process_control():
+    """§2 Windows groundwork: degraded service/notifier/power and all-false
+    capabilities, but real tree-kill process control."""
+    plat = windows.build("Windows")
+    assert plat.os_token == "windows"
+    assert plat.capabilities.as_dict() == {
+        "imessage": False, "notifications": False, "keepAwake": False, "service": False}
+    assert isinstance(plat.processes, windows.WindowsProcessControl)
+    assert plat.service.install() == "install failed: not supported on Windows yet"
+    plat.notifier.post("t", "b")
+    plat.power.reconcile(True)
+
+
+def test_current_routes_windows_token_to_groundwork_build(monkeypatch):
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    platform.current.cache_clear()
+    try:
+        assert isinstance(platform.current().processes, windows.WindowsProcessControl)
+    finally:
+        platform.current.cache_clear()
+
+
+def test_windows_session_kwargs_are_a_new_process_group():
+    kwargs = windows.WindowsProcessControl().session_kwargs()
+    # The Win32 CREATE_NEW_PROCESS_GROUP flag; no POSIX-only Popen kwargs.
+    assert kwargs == {"creationflags": 0x00000200}
+
+
+def test_windows_kill_group_is_a_taskkill_tree_kill(monkeypatch):
+    ran = []
+    monkeypatch.setattr(windows.subprocess, "run",
+                        lambda argv, **kw: ran.append(argv))
+    windows.WindowsProcessControl().kill_group(1234)
+    assert ran == [["taskkill", "/F", "/T", "/PID", "1234"]]
+
+
+def test_windows_signal_group_kills_tree_then_direct_child(monkeypatch):
+    """Both grades (sig set or None) collapse to the tree kill, and a child
+    the tree kill didn't reap is killed directly."""
+    ran = []
+    monkeypatch.setattr(windows.subprocess, "run",
+                        lambda argv, **kw: ran.append(argv))
+
+    class Proc:
+        pid = 77
+        killed = False
+
+        def poll(self):
+            return None
+
+        def kill(self):
+            self.killed = True
+
+    for sig in (None, 15):
+        proc = Proc()
+        windows.WindowsProcessControl().signal_group(proc, sig)
+        assert proc.killed
+    assert ran == [["taskkill", "/F", "/T", "/PID", "77"]] * 2
+
+
+def test_windows_pid_reuse_guard_answers_false():
+    """§3: no pid+creation-time identity check yet — orphan recovery must
+    no-op rather than kill an unverifiable tree."""
+    assert windows.WindowsProcessControl().group_has_command(99, "autowright.executor") is False
 
 
 # ---------------------------------------------------- §3 degraded service verbs

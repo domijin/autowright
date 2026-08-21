@@ -15,7 +15,9 @@ const APP_DIR = path.resolve(HERE, '..')
 const REPO = path.resolve(HERE, '..', '..')
 const ARTIFACTS = path.join(HERE, 'artifacts')
 
-const PYTHON = path.join(REPO, '.venv', 'bin', 'python')
+const PYTHON = process.platform === 'win32'
+  ? path.join(REPO, '.venv', 'Scripts', 'python.exe')
+  : path.join(REPO, '.venv', 'bin', 'python')
 const FAKE_BIN = path.join(REPO, 'tests', 'bin')
 
 // ---------- generic polling (no fixed sleeps) ----------

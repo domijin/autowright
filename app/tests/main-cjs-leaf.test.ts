@@ -32,13 +32,18 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
 
   it('never executes the CLI — autowright.cli appears only inside the shim file text', () => {
     // main.cjs itself never mentions the CLI; the platform modules mention it
-    // exactly once each, as the shim file's contents (an exec line in
-    // shimText) — never a child-process invocation by the app.
+    // exactly once each, as the shim file's contents (the shimText run line,
+    // §3: POSIX or Windows .cmd form) — never a child-process invocation by
+    // the app.
     expect(src).not.toContain('autowright.cli')
+    const shimForms = [
+      'exec "${python}" -m autowright.cli "$@"', // POSIX shim (darwin/fallback)
+      '"${python}" -m autowright.cli %*', // Windows .cmd shim (win32)
+    ]
     const lines = union.split('\n').filter((l) => l.includes('autowright.cli'))
     expect(lines.length).toBeGreaterThanOrEqual(1)
     for (const line of lines) {
-      expect(line).toContain('exec "${python}" -m autowright.cli')
+      expect(shimForms.some((form) => line.includes(form))).toBe(true)
       expect(line).not.toMatch(/execFile|spawn/)
     }
   })

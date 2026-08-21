@@ -126,11 +126,16 @@ data on disk); both ends of a served surface change in the same commit.
 - `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
   bridge), Vite + React + TS renderer under `src/` (`store.ts` central model, `api.ts` client,
   `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen —
-  except the §11 create/edit flow: `pages/CreateFlow.tsx` is a thin page over the
-  `pages/createflow/` directory (`model.ts` — the pure editor model and helpers,
-  `useDraftJob.ts` — §8 job polling, `ChatPanel.tsx`, `BuildTestPanel.tsx`,
-  `SectionCards.tsx`), and a shared step-list/param-editor module serves both the
-  create/edit flow and the automation detail page).
+  except the two biggest screens, each a thin page over its own directory: the §11
+  create/edit flow (`pages/CreateFlow.tsx` over `pages/createflow/`: `model.ts` — the pure
+  editor model and helpers, `useDraftJob.ts` — §8 job polling, `ChatPanel.tsx`,
+  `BuildTestPanel.tsx`, `SectionCards.tsx`) and the §9.2 automation detail page
+  (`pages/AutomationDetail.tsx` over `pages/detail/`: `model.ts` — the `runAction`
+  fire-and-forget mutation wrapper every detail card shares (body optionally returns the
+  success toast; defaults are error toast + automation reload), `TriggerEditor.tsx` — the
+  §9.2 add/edit trigger editor and its widgets, `TriggersCard.tsx`, `ConcurrencyCard.tsx`,
+  `ParamRow.tsx`, `MemoryCard.tsx`, `RecentExecutions.tsx`); a shared step-list/param-editor
+  module serves both the create/edit flow and the automation detail page).
   `brand-electron.cjs` (npm `postinstall`) renames the dev Electron.app bundle to "Autowright"
   (§14). `electron/icon/` holds the checked-in AW app-icon assets (§14: `icon.svg`
   source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon); `electron/` also holds

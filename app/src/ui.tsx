@@ -4,6 +4,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ParamDef, Status, Step } from './types'
+import { useStore } from './store'
 import awMark from '../electron/icon/icon.svg'
 
 export const P = {
@@ -262,6 +263,36 @@ export function ProgressBar({ percent }: { percent: number | null }) {
       ) : (
         <div style={{ height: '100%', width: '30%', background: 'var(--accent)', animation: 'adBarSlide 1.2s ease-in-out infinite' }} />
       )}
+    </div>
+  )
+}
+
+/**
+ * §14 the one copy-a-command surface (§4.9 CLI PATH row, §9.4 Homebrew update
+ * notice): mono inset box + Copy button that puts the exact command on the
+ * clipboard and toasts. The command wraps instead of truncating — it must stay
+ * fully readable at any width. Clipboard failures are silent.
+ */
+export function CommandBlock({ command }: { command: string }) {
+  const showToast = useStore((s) => s.showToast)
+  return (
+    <div style={{
+      marginTop: 10, background: 'var(--bg-inset)', border: '1px solid var(--hairline)',
+      borderRadius: 7, padding: '5px 6px 5px 11px', font: `400 11.5px var(--mono)`,
+      color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10,
+    }}>
+      <span style={{ flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{command}</span>
+      <button
+        className="ad-btn-soft"
+        style={{ flex: 'none' }}
+        onClick={() => {
+          void navigator.clipboard.writeText(command)
+            .then(() => showToast('Copied to clipboard.'))
+            .catch(() => {})
+        }}
+      >
+        Copy
+      </button>
     </div>
   )
 }

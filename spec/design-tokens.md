@@ -147,6 +147,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   `ProgressBar` (`percent: number | null` — null renders the indeterminate `adBarSlide` bar; the
   only progress bar, never hand-rolled; a percent label beside it renders only when `percent`
   is a number — an indeterminate bar never shows "0%"),
+  `CommandBlock` (`command: string` — the copyable shell-command row: mono inset box holding
+  the command text plus a right-side `ad-btn-soft` "Copy" button that writes the exact command
+  to the clipboard and shows the "Copied to clipboard." toast; clipboard failures are silent.
+  The one primitive for every copy-a-command surface: the §4.9 CLI PATH row and the §9.4
+  Homebrew update notice),
   `Tag` (the small mono info tag on step rows — radius 6, padding 2 px 8 px, 10 px mono
   500, `--bg-inset` background, hairline border; optional leading icon; one primitive for
   the create-flow review, detail-page STEPS, and import-preview step tags alike. Its

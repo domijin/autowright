@@ -31,6 +31,7 @@ let AboutPage: typeof import('../src/pages/AboutPage').default
 let cachedUpdate: string | null = null
 let pushUpdate: ((v: string | null) => void) | null = null
 const updateCheck = vi.fn()
+const updateBrewManaged = vi.fn(async () => false)
 
 beforeAll(async () => {
   ;(window as unknown as Record<string, unknown>).autowright = {
@@ -40,6 +41,7 @@ beforeAll(async () => {
     updateAvailable: () => Promise.resolve(cachedUpdate),
     onUpdateAvailable: (cb: (v: string | null) => void) => { pushUpdate = cb },
     updateCheck,
+    updateBrewManaged,
     onUpdateProgress: () => {},
   }
   // This happy-dom/node combo exposes no working localStorage global; the
@@ -63,6 +65,8 @@ beforeEach(() => {
   cachedUpdate = null
   pushUpdate = null
   updateCheck.mockReset()
+  updateBrewManaged.mockReset()
+  updateBrewManaged.mockResolvedValue(false)
   storeMod.useStore.setState({
     connected: true, surface: 'app', page: 'automations', automations: [],
     executions: [], agents: [], secrets: [], settings: SETTINGS, updateAvailable: null,
@@ -131,5 +135,43 @@ describe('About updates row ↔ shared state (§9.4)', () => {
     storeMod.useStore.setState({ updateAvailable: '9.9.9' })
     expect(await screen.findByText('Version 9.9.9 is available.')).toBeTruthy()
     expect(screen.getByText('Download update')).toBeTruthy()
+  })
+})
+
+// §9.4 Homebrew-managed fork: the `available` state swaps Download for the
+// copyable brew upgrade command; everything else is untouched.
+describe('About updates row, brew-managed copy (§9.4)', () => {
+  it('available shows the brew command instead of Download; checking stays allowed', async () => {
+    updateBrewManaged.mockResolvedValue(true)
+    storeMod.useStore.setState({ updateAvailable: '9.9.9' })
+    render(<AboutPage />)
+    expect(await screen.findByText(
+      'Version 9.9.9 is available. This copy is managed by Homebrew. Update it with:',
+    )).toBeTruthy()
+    expect(screen.getByText('brew upgrade --cask autowright')).toBeTruthy()
+    expect(screen.queryByText('Download update')).toBeNull()
+    const check = screen.getByText('Check for updates') as HTMLButtonElement
+    expect(check.disabled).toBe(false)
+  })
+
+  it('Copy puts the brew command on the clipboard and toasts', async () => {
+    updateBrewManaged.mockResolvedValue(true)
+    storeMod.useStore.setState({ updateAvailable: '9.9.9' })
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    render(<AboutPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy' }))
+    expect(writeText).toHaveBeenCalledWith('brew upgrade --cask autowright')
+    await waitFor(() => expect(storeMod.useStore.getState().toast).toContain('Copied'))
+  })
+
+  it('a manual check on a brew copy still arms the shared state, without Download', async () => {
+    updateBrewManaged.mockResolvedValue(true)
+    updateCheck.mockResolvedValueOnce({ state: 'available', version: '9.9.9' })
+    render(<AboutPage />)
+    fireEvent.click(screen.getByText('Check for updates'))
+    await waitFor(() => expect(storeMod.useStore.getState().updateAvailable).toBe('9.9.9'))
+    expect(await screen.findByText('brew upgrade --cask autowright')).toBeTruthy()
+    expect(screen.queryByText('Download update')).toBeNull()
   })
 })

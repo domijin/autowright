@@ -767,8 +767,20 @@ async function fetchUpdateState() {
   }
 }
 
+// §3 Homebrew-managed detection: the install is brew-managed while the cask's
+// Caskroom metadata dir exists. Probed fresh on every query — never cached —
+// so a brew install/uninstall while the app runs reflects without a restart.
+// AUTOWRIGHT_CASKROOM replaces the probe list (test escape hatch).
+function brewManaged() {
+  const dirs = process.env.AUTOWRIGHT_CASKROOM
+    ? [process.env.AUTOWRIGHT_CASKROOM]
+    : ['/opt/homebrew/Caskroom/autowright', '/usr/local/Caskroom/autowright']
+  return dirs.some((dir) => fs.existsSync(dir))
+}
+
 ipcMain.handle('update-check', () => fetchUpdateState())
 ipcMain.handle('update-available', () => availableVersion)
+ipcMain.handle('update-brew-managed', () => brewManaged())
 
 // Squirrel's autoUpdater emits no download-progress events, so the zip is
 // downloaded here first — streamed to a temp file, percent pushed to the
@@ -776,6 +788,7 @@ ipcMain.handle('update-available', () => availableVersion)
 // one-shot loopback feed (§3). No dev fork: an unsigned build takes the same
 // path and surfaces Squirrel's real signature error.
 ipcMain.handle('update-download', async () => {
+  if (brewManaged()) return { error: 'This copy is managed by Homebrew.' }
   const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
   const tmpZip = path.join(app.getPath('temp'), `autowright-update-${randomUUID()}.zip`)
   let server = null
@@ -884,6 +897,7 @@ ipcMain.handle('update-download', async () => {
 // stays valid); the old backend keeps running until the next launch's
 // version-compare flow restarts it.
 ipcMain.handle('update-install', async () => {
+  if (brewManaged()) return { error: 'This copy is managed by Homebrew.' }
   if (await executionsLive()) return { busy: true }
   appLog('update: quitting to install')
   autoUpdater.quitAndInstall()

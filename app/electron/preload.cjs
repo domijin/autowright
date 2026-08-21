@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('autowright', {
   updateCheck: () => ipcRenderer.invoke('update-check'),
   updateDownload: () => ipcRenderer.invoke('update-download'),
   updateInstall: () => ipcRenderer.invoke('update-install'),
+  // §3 Homebrew-managed detection: true while the Caskroom dir exists — the
+  // §9.4 row swaps Download for the brew upgrade notice.
+  updateBrewManaged: () => ipcRenderer.invoke('update-brew-managed'),
   // §4.9 QUIT card: stop the backend service, then quit the app (§3
   // explicit-quit exception)
   quitAll: () => ipcRenderer.invoke('quit-all'),

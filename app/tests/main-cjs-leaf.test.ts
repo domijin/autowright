@@ -206,3 +206,42 @@ describe('main.cjs IPC argument validation', () => {
     expect(() => m.invoke('resize-panel', 240)).not.toThrow()
   })
 })
+
+// ---- §3 Homebrew-managed detection ----------------------------------------
+// brewManaged() probes the Caskroom dir fresh on every call; the tests pin the
+// probe to a known path via the AUTOWRIGHT_CASKROOM escape hatch so they never
+// depend on what's brew-installed on the machine running them.
+
+describe('main.cjs Homebrew-managed updates (§3)', () => {
+  const savedCaskroom = process.env.AUTOWRIGHT_CASKROOM
+
+  afterEach(() => {
+    if (savedHome === undefined) delete process.env.AUTOWRIGHT_HOME
+    else process.env.AUTOWRIGHT_HOME = savedHome
+    if (savedCaskroom === undefined) delete process.env.AUTOWRIGHT_CASKROOM
+    else process.env.AUTOWRIGHT_CASKROOM = savedCaskroom
+  })
+
+  it('update-brew-managed answers whether the Caskroom dir exists — probed per call', async () => {
+    const m = loadMain()
+    process.env.AUTOWRIGHT_CASKROOM = m.home // any existing dir stands in for the Caskroom
+    expect(await m.invoke('update-brew-managed')).toBe(true)
+    // Fresh probe, not a cached launch-time answer: the same loaded main flips
+    // with the dir (a brew install/uninstall while the app runs).
+    process.env.AUTOWRIGHT_CASKROOM = join(m.home, 'not-there')
+    expect(await m.invoke('update-brew-managed')).toBe(false)
+  })
+
+  it('update-download and update-install refuse on a brew-managed copy', async () => {
+    const m = loadMain()
+    process.env.AUTOWRIGHT_CASKROOM = m.home
+    expect(await m.invoke('update-download')).toEqual({ error: 'This copy is managed by Homebrew.' })
+    expect(await m.invoke('update-install')).toEqual({ error: 'This copy is managed by Homebrew.' })
+  })
+
+  it('probes only the two Caskroom locations, inside brewManaged()', () => {
+    const hits = src.match(/Caskroom\/autowright/g) ?? []
+    expect(hits).toHaveLength(2)
+    expect(src).toMatch(/function brewManaged\(\)[\s\S]{0,300}\/opt\/homebrew\/Caskroom\/autowright[\s\S]{0,120}\/usr\/local\/Caskroom\/autowright/)
+  })
+})

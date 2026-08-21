@@ -26,7 +26,8 @@ declare global {
       // §9.4 in-app updates (§3)
       updateCheck(): Promise<{ state: 'uptodate' | 'error' } | { state: 'available'; version: string }>
       updateDownload(): Promise<{ ok: true } | { error: string }>
-      updateInstall(): Promise<{ ok: true } | { busy: true }>
+      updateInstall(): Promise<{ ok: true } | { busy: true } | { error: string }>
+      updateBrewManaged(): Promise<boolean>
       // §4.9 QUIT card (§3 explicit-quit exception)
       quitAll(): Promise<{ ok: true } | { busy: true } | { error: string }>
       onUpdateProgress(cb: (percent: number | null) => void): void

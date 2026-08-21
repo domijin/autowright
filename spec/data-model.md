@@ -935,11 +935,11 @@ of:
   ask). The row-1 Install button is gone — reinstall lives only here.
 - **PATH row** — toggle on and the shim installed (on+`installed`, regardless of `onPath`):
   title "Add it to your PATH", description "If your Terminal can't find autowright, add
-  ~/.local/bin to your PATH:", followed by the **PATH command block** — a `pathBox`-style
-  mono block holding the exact command
+  ~/.local/bin to your PATH:", followed by the **PATH command block** — the §14
+  `CommandBlock` primitive holding the exact command
   `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zprofile && source ~/.zprofile`
   (appends to `~/.zprofile` so the change persists — the login-shell init macOS Terminal
-  reads, matching the §3 login-PATH probe) with a "Copy" button that writes the command to
+  reads, matching the §3 login-PATH probe) with its "Copy" button that writes the command to
   the clipboard and toasts "Copied to clipboard." The command wraps instead of truncating —
   it must stay fully readable at any card width.
 Reinstall (and the uninstall behind the disable confirm) show the §9 busy-commit spinner

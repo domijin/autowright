@@ -248,6 +248,17 @@ the update bullets below).
     unreachable backend counts as idle. Otherwise it calls `autoUpdater.quitAndInstall()`.
     ShipIt swaps the bundle at the same path, so the LaunchAgent's absolute interpreter path
     stays valid.
+  - **Homebrew-managed detection:** the install counts as brew-managed when the Caskroom
+    metadata directory exists: the main process probes `/opt/homebrew/Caskroom/autowright`
+    and `/usr/local/Caskroom/autowright` with `fs.existsSync`, fresh on every query and
+    never cached, so switching channels (brew install or uninstall while the app runs)
+    needs no restart. The `AUTOWRIGHT_CASKROOM` environment variable replaces the probe
+    list with its single path (test/dev escape hatch, same pattern as `AUTOWRIGHT_HOME` /
+    `AUTOWRIGHT_SHIM`). An `update-brew-managed` invoke handler answers the boolean to the
+    renderer. Checks (manual and automatic) behave identically in both modes; when
+    brew-managed, `update-download` and `update-install` refuse immediately with
+    `{ error: 'This copy is managed by Homebrew.' }` (defense in depth; the §9.4 UI never
+    offers those actions in brew mode and instead shows the `brew upgrade` command).
   - **Backend handoff:** the swap leaves the old backend process running; the next app
     launch's version-compare flow (next bullet) restarts it onto the new bundle.
 - **Launch-time backend version compare (implemented, in ensure-backend):** when the probe
@@ -284,9 +295,13 @@ the update bullets below).
   prefix. The cask installs the same signed + notarized DMG from the GitHub release, so
   Gatekeeper needs no override and there is no second artifact to build or verify. Its shape
   follows from this section: `depends_on arch: :arm64` and `depends_on macos: :monterey` (the
-  bundle's `LSMinimumSystemVersion`); `auto_updates true`, because the in-app Squirrel updater
-  swaps the bundle in place and Homebrew's recorded version goes stale by design — `brew
-  upgrade` skips the cask unless `--greedy`; `uninstall launchctl:` before `quit:`, since
+  bundle's `LSMinimumSystemVersion`); no `auto_updates` stanza: Homebrew is the update manager
+  for this channel. The in-app updater never installs onto a brew-managed copy (the
+  Homebrew-managed detection bullet above), so Homebrew's recorded version stays accurate and
+  a plain `brew upgrade` upgrades the cask, no `--greedy` needed. One-time caveat: a copy that
+  brew-installed under the old `auto_updates true` cask and then updated in-app carries a
+  stale brew record; its first `brew upgrade` after this change reinstalls the latest DMG,
+  harmlessly. `uninstall launchctl:` before `quit:`, since
   launchd would otherwise keep restarting a backend whose bundled interpreter was just removed;
   and `zap trash:` covering the §5 data directory, the logs directory, the LaunchAgent plist
   and preferences/saved-state, and the `~/.local/bin/autowright` shim — never the

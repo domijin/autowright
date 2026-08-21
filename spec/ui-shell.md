@@ -686,6 +686,18 @@ with a bordered **Retry** button that re-attempts the import.
   launch's §3 version-compare flow). Idle sub-line follows the toggle below: off →
   "Updates are only checked when you ask — nothing runs in the background."; on →
   "Checks once a day — downloads still start only when you ask."
+  **Homebrew-managed fork:** the page asks §3 `update-brew-managed` at mount and again
+  on every "Check for updates" press (so a brew install or uninstall reflects without
+  an app restart). When it answers true, only the `available` state changes: sub-line
+  "Version `<x.y.z>` is available. This copy is managed by Homebrew. Update it with:"
+  followed by a copyable command block (§14 `CommandBlock`) holding
+  `brew upgrade --cask autowright` with a Copy button ("Copied to clipboard." toast,
+  same pattern as the §4.9 CLI PATH row). The action button stays **"Check for
+  updates"** (enabled; re-checking is always allowed), the accent-sel highlight does
+  not apply (there is no Download action to point at), and the `downloading` /
+  `downloaded` states are unreachable. Every other state, and the whole flow on a
+  non-brew copy, is unchanged. The §9 "Update available" nav row behaves identically
+  in both modes; in brew mode it is the notice that leads here.
 - **Check for updates automatically** — toggle row between Updates and What's new,
   bound to §4.9 `automaticUpdateCheck` (default on). Sub-line "Once a day, ask
   autowright.ai whether a newer version exists. Downloads still start only when you

@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import { BtnGhost, Eyebrow, Modal, PageTitle, ProgressBar, ScrollArea, Toggle } from '../ui'
+import { BtnGhost, CommandBlock, Eyebrow, Modal, PageTitle, ProgressBar, ScrollArea, Toggle } from '../ui'
 import { Markdown } from '../result'
 import { REPO_URL } from '../config'
 
@@ -63,6 +63,15 @@ export default function AboutPage() {
   const [doc, setDoc] = useState<DocKey | null>(null)
   const [docTexts, setDocTexts] = useState<Partial<Record<DocKey, string>>>({})
   const [docErrs, setDocErrs] = useState<Partial<Record<DocKey, boolean>>>({})
+  // §9.4 Homebrew-managed fork (§3): while the Caskroom dir exists, the
+  // `available` state shows the brew upgrade command instead of Download.
+  // Asked at mount and again on every manual check, so a brew install or
+  // uninstall reflects without an app restart.
+  const [brew, setBrew] = useState(false)
+
+  useEffect(() => {
+    void window.autowright?.updateBrewManaged?.().then((b) => setBrew(!!b))
+  }, [])
 
   // Checks run manually from the button here, or daily via the §3 automatic
   // check the toggle below controls (§9.4). Manual results feed the shared
@@ -70,6 +79,7 @@ export default function AboutPage() {
   // leaves it alone.
   const checkForUpdates = async () => {
     setUpd({ state: 'checking' })
+    void window.autowright?.updateBrewManaged?.().then((b) => setBrew(!!b))
     const r = await window.autowright?.updateCheck()
     if (!r || r.state === 'error') setUpd({ state: 'error' })
     else if (r.state === 'available') {
@@ -133,7 +143,11 @@ export default function AboutPage() {
       : 'Updates are only checked when you ask — nothing runs in the background.',
     checking: 'Checking…',
     current: "You're up to date.",
-    available: 'version' in upd ? `Version ${upd.version} is available.` : '',
+    available: 'version' in upd
+      ? (brew
+          ? `Version ${upd.version} is available. This copy is managed by Homebrew. Update it with:`
+          : `Version ${upd.version} is available.`)
+      : '',
     downloading: 'version' in upd ? `Version ${upd.version} is available.` : '',
     downloaded: upd.state === 'downloaded' && upd.busy
       ? 'An automation is executing — the update installs when you restart after it finishes.'
@@ -142,9 +156,11 @@ export default function AboutPage() {
     error: "Couldn't reach autowright.ai — try again later.",
   }[upd.state]
 
-  // One action button for the whole flow: check → download → restart.
+  // One action button for the whole flow: check → download → restart. On a
+  // brew-managed copy the `available` state keeps the check button — Homebrew
+  // installs the update (§9.4 Homebrew-managed fork).
   const updBtn =
-    upd.state === 'available' ? { label: 'Download update', run: () => downloadUpdate(upd.version), disabled: false }
+    upd.state === 'available' && !brew ? { label: 'Download update', run: () => downloadUpdate(upd.version), disabled: false }
     : upd.state === 'downloading' ? { label: 'Downloading…', run: () => {}, disabled: true }
     : upd.state === 'downloaded' ? { label: 'Restart to update', run: () => installUpdate(upd.version), disabled: false }
     : {
@@ -194,16 +210,20 @@ export default function AboutPage() {
                 <ProgressBar percent={upd.percent} />
               </div>
             )}
+            {upd.state === 'available' && brew && (
+              <CommandBlock command="brew upgrade --cask autowright" />
+            )}
           </div>
           <button
             className="ad-btn-soft"
             onClick={() => { void updBtn.run() }}
             disabled={updBtn.disabled}
             // §9.4 persistent available-state highlight, same accent border as
-            // the selected-card pattern.
+            // the selected-card pattern. Not on a brew-managed copy — there is
+            // no Download action to point at.
             style={{
               flex: 'none',
-              ...(upd.state === 'available'
+              ...(upd.state === 'available' && !brew
                 ? { borderColor: 'var(--accent-sel)', color: 'var(--text)' }
                 : null),
             }}

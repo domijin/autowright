@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import { ConfirmModal, Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
+import { CommandBlock, ConfirmModal, Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }
@@ -332,20 +332,7 @@ export default function SettingsPage() {
                     <div style={{ padding: '15px 20px' }}>
                       <div style={rowTitle}>Add it to your PATH</div>
                       <div style={rowSub}>If your Terminal can’t find autowright, add ~/.local/bin to your PATH:</div>
-                      <div style={{ ...pathBox, padding: '5px 6px 5px 11px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{PATH_CMD}</span>
-                        <button
-                          className="ad-btn-soft"
-                          style={{ flex: 'none' }}
-                          onClick={() => {
-                            void navigator.clipboard.writeText(PATH_CMD)
-                              .then(() => showToast('Copied to clipboard.'))
-                              .catch(() => {})
-                          }}
-                        >
-                          Copy
-                        </button>
-                      </div>
+                      <CommandBlock command={PATH_CMD} />
                     </div>
                   )}
                   {warnRow && (

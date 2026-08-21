@@ -12,3 +12,6 @@
   dev-only code paths. Both modes execute the same real code.
 - The `scripts/` directory is developer-only — never run anything under it (enforced by a PreToolUse
   hook). To verify changes, use the `verify` skill's direct launches instead.
+- Never create commits (or push) on your own — David commits himself. Leave finished work
+  uncommitted in the working tree, and only commit/push when he explicitly asks in that
+  conversation.

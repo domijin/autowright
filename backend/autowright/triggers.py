@@ -456,6 +456,24 @@ def next_at(triggers: list[dict], after: datetime | None = None) -> datetime | N
     return min(nxts) if nxts else None
 
 
+def is_overdue(triggers: list[dict], baseline: datetime, now: datetime | None = None) -> bool:
+    """§4.1 overdue: some enabled cron trigger has had two consecutive
+    occurrences pass since `baseline` (local naive, like every trigger_next
+    time) with no run — two, not one, so a single legitimately skipped
+    moment (§6 busy-skip, a restart at the wrong minute) never flags. Cron
+    only: one-shots are consumed by the §4.3 spent rule, and
+    app-start/message triggers have no schedule."""
+    now = now or datetime.now()
+    for t in triggers:
+        if t.get("kind") != "cron" or not t.get("enabled"):
+            continue
+        first = trigger_next(t, after=baseline)
+        second = trigger_next(t, after=first) if first else None
+        if second is not None and second < now:
+            return True
+    return False
+
+
 def trigger_chip(triggers: list[dict]) -> str:
     if not triggers:
         return "No triggers"

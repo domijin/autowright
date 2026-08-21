@@ -28,7 +28,8 @@ agents.yaml                    # agents list + default_agent (§4.7 single defau
 secrets.yaml                   # ids + names + metadata only; values live in the macOS Keychain.
                                # Every entry carries its §4.8 uuid; an entry missing one is
                                # skipped at load with a warning (§4.8 — never healed,
-                               # never fatal)
+                               # never fatal). A file that fails to load entirely is
+                               # read-only for the session (unreadable-file rule below)
 backend.json                   # port+token discovery handshake (§3), rewritten each backend start
 electron/                      # Electron's Chromium profile (Cache, Cookies, Local Storage, …) —
                                # main.cjs redirects userData here so the root stays app data only
@@ -385,7 +386,17 @@ The in-memory table is rebuilt from the DB at every launch. An automation folder
 `versions/` is empty cannot resolve a current version and is skipped at startup with a
 warning in the app log. Every top-level YAML file is hand-editable, so an unreadable one —
 invalid YAML or invalid text encoding alike — loads as its default with a warning in the app
-log; a damaged file never bricks startup into a launchd crash loop.
+log; a damaged file never bricks startup into a launchd crash loop. For the three top-level
+store files (`settings.yaml`, `agents.yaml`, `secrets.yaml`) the degradation is **read-only**:
+a file that failed to load (corrupt YAML, bad encoding, unreadable — a merely *absent* file is
+not a failure, it is a fresh install) is never saved back for the rest of the session. Any
+mutation that would rewrite it fails with an error naming the path ("`<path>` is unreadable
+on disk — fix or remove the file, then restart Autowright.", §19 409), so a damaged file is
+degraded, never destroyed — a corrupt `secrets.yaml` must never be overwritten by the empty
+default, which would orphan every Keychain value it referenced. The flags reset whenever the
+store reloads (startup, and the §4.9 data-location change). Per-automation files need no such
+guard: a corrupt `automation.yaml` skips the whole automation at load, so no save path can
+reach it.
 
 Rules:
 

@@ -966,3 +966,42 @@ def test_scheduler_warns_once_on_timezone_rewind(store, monkeypatch, caplog):
     utc.now += timedelta(days=1, hours=1)
     sched._tick()
     assert fires == ["t1"]
+
+
+def test_overdue_sweep_notifies_after_two_consecutive_sweeps(store, monkeypatch):
+    """§6 overdue sweep: hourly; one notification per overdue stretch, only
+    after two consecutive sweeps observe it — a boot into a stale morning
+    (one sweep's worth of overdue) never cries."""
+    from datetime import datetime
+
+    from autowright import notify
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 9, 0))
+    engine, sched = _mk_clocked(store, clock)
+    _record_fires(monkeypatch)  # keep ticks from actually executing anything
+    posted = []
+    monkeypatch.setattr(notify, "post", lambda title, body: posted.append((title, body)))
+    a = store.create_automation(make_version(), "Dead Job", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 8 * * *",
+         "source": "user"}])
+    a["created_at"] = "2026-07-01T08:00:00"  # never ran; many 8:00s already missed
+
+    sched._tick()  # within the first hour — no sweep yet
+    assert posted == []
+    clock.now = datetime(2026, 7, 10, 10, 1)
+    sched._tick()  # sweep 1: overdue observed — streak 1, still silent
+    assert posted == []
+    clock.now = datetime(2026, 7, 10, 11, 2)
+    sched._tick()  # sweep 2: two consecutive observations → one notification
+    assert posted == [("Dead Job", "Scheduled executions are being missed.")]
+    clock.now = datetime(2026, 7, 10, 12, 3)
+    sched._tick()  # still overdue — never a second notification this stretch
+    assert len(posted) == 1
+    # a real run clears the state and re-arms the notification
+    a["_last_exec_at"] = "2026-07-10T12:00:00"
+    clock.now = datetime(2026, 7, 10, 13, 4)
+    sched._tick()
+    assert len(posted) == 1
+    assert a["id"] not in sched._overdue_streak
+    assert a["id"] not in sched._overdue_notified

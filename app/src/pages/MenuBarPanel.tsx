@@ -10,7 +10,9 @@ export default function MenuBarPanel() {
   const { automations, version, showToast } = useStore()
   const ref = useRef<HTMLDivElement>(null)
 
-  const failed = automations.filter((a) => a.lastStatus === 'failed').length
+  // §13: the count matches the tray dot — failed or §4.1 overdue only.
+  const failed = automations.filter((a) => a.lastStatus === 'failed'
+    || (a.problems ?? []).some((p) => p.kind === 'overdue')).length
   const aggregate = failed > 0
     ? `${failed} need${failed === 1 ? 's' : ''} attention`
     : `All good · ${automations.length} automation${automations.length === 1 ? '' : 's'}`

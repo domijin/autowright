@@ -193,6 +193,19 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   notify only on changes (per the notifications setting). **Sender (decided):** the backend posts
   macOS notifications itself via `osascript -e 'display notification …'` — works headless with no
   UI process; the Electron app never posts.
+- **Overdue sweep** — once an hour on the scheduler tick (beside the retention sweep, same
+  cadence), the backend evaluates every automation's §4.1 `overdue` state. An automation
+  observed overdue at **two consecutive sweeps** gets one macOS notification — title the
+  automation's name, body "Scheduled executions are being missed." — and its
+  `automation.changed` event is published so open surfaces update live. Two sweeps, not
+  one, so a backend that boots into a stale morning (occurrences slept through overnight,
+  §6 missed-executions rule) doesn't cry at startup about an automation whose next
+  occurrence is about to clear it; a genuinely dead schedule still notifies within ~2
+  hours of the sweep first seeing it. Overdue counts as attention-worthy, so the
+  notification posts under both §4.9 `notifications` values, like a failed execution's.
+  Re-notification only after the automation leaves and re-enters overdue; the
+  observed/notified state is in-memory only (derived-not-stored, §4.1), so a backend
+  restart may re-notify once — acceptable, the condition is still true.
 - **Secrets & Keychain** — scripts reference secrets by id subscript (`secrets["<id>"]  # NAME`,
   §6.1); values injected at runtime — each
   step receives only the secrets it declares in the manifest (`secrets` entry ids) plus the

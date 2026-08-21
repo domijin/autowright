@@ -22,7 +22,7 @@ from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
 from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger, queue_manual
-from .storage import _kind_ok, is_test, iter_file_stats, new_id, size_label, store
+from .storage import StoreUnwritableError, _kind_ok, is_test, iter_file_stats, new_id, size_label, store
 from . import testexec
 
 log = logging.getLogger("autowright.api")
@@ -127,6 +127,16 @@ class _RequestLogMiddleware:
 
 
 app.add_middleware(_RequestLogMiddleware)
+
+
+# §5/§19 unreadable-store guard: any write that would rewrite a top-level file
+# which failed to load this session answers 409 — one handler for every route,
+# so a corrupt file is degraded, never overwritten by its default.
+@app.exception_handler(StoreUnwritableError)
+async def _unwritable_handler(request: Request, exc: StoreUnwritableError):
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
 def _auto_or_404(automation_id: str) -> dict:
@@ -834,6 +844,11 @@ async def _archive_body(request: Request) -> bytes:
 
 
 def _land_import(data: bytes) -> dict:
+    # §19 unreadable-store guard, checked before landing anything: an import
+    # writes agents.yaml and secrets.yaml, and a refusal mid-land would leave
+    # Keychain values and automation folders half-applied.
+    store.require_writable(paths.agents_file())
+    store.require_writable(paths.secrets_file())
     try:
         a, summary = transfer.import_automation(store, data)
     except transfer.TransferError as e:
@@ -1442,6 +1457,10 @@ def list_agents() -> list[dict]:
 
 @app.post("/agents", dependencies=[Depends(auth)])
 def add_agent(body: models.AgentAdd) -> dict:
+    # §19 unreadable-store guard, before any state changes (here and in every
+    # agents/secrets/settings write below): in-memory state must never hold
+    # what disk refused.
+    store.require_writable(paths.agents_file())
     harness_name = body.harness
     if harness_name not in HARNESSES:
         raise HTTPException(422, "unknown harness")
@@ -1474,6 +1493,7 @@ def add_agent(body: models.AgentAdd) -> dict:
 
 @app.patch("/agents/{agent_id}", dependencies=[Depends(auth)])
 def patch_agent(agent_id: str, patch: models.AgentPatch) -> dict:
+    store.require_writable(paths.agents_file())
     # Same validation as POST — a PATCH must not be able to create an agent
     # shape POST rejects (e.g. mode ollama with no model, §4.7).
     body = patch.model_dump(exclude_unset=True)
@@ -1514,6 +1534,7 @@ def patch_agent(agent_id: str, patch: models.AgentPatch) -> dict:
 
 @app.delete("/agents/{agent_id}", dependencies=[Depends(auth)])
 def delete_agent(agent_id: str) -> dict:
+    store.require_writable(paths.agents_file())
     with store.lock:
         ag = _agent_or_404(agent_id)
         store.agents = [g for g in store.agents if g["id"] != agent_id]
@@ -1754,6 +1775,7 @@ def _secret_entity(s: dict) -> dict:
 
 @app.post("/secrets", dependencies=[Depends(auth)])
 def create_secret(body: models.SecretCreate) -> dict:
+    store.require_writable(paths.secrets_file())  # before the Keychain write
     name = body.name
     if not SECRET_NAME_RE.match(name):
         raise HTTPException(422, "secret names must match [A-Z][A-Z0-9_]* — "
@@ -1790,6 +1812,7 @@ def create_secret(body: models.SecretCreate) -> dict:
 
 @app.put("/secrets/{secret_id}", dependencies=[Depends(auth)])
 def put_secret(secret_id: str, body: models.SecretPut) -> dict:
+    store.require_writable(paths.secrets_file())  # before the Keychain write
     with store.lock:
         if not any(s["id"] == secret_id for s in store.secrets):
             raise HTTPException(404, "no such secret")
@@ -1818,6 +1841,7 @@ def put_secret(secret_id: str, body: models.SecretPut) -> dict:
 
 @app.delete("/secrets/{secret_id}", dependencies=[Depends(auth)])
 def delete_secret(secret_id: str) -> dict:
+    store.require_writable(paths.secrets_file())  # before the Keychain delete
     with store.lock:
         if not any(s["id"] == secret_id for s in store.secrets):
             raise HTTPException(404, "no such secret")
@@ -1837,6 +1861,7 @@ def get_settings() -> dict:
 
 @app.patch("/settings", dependencies=[Depends(auth)])
 def patch_settings(body: models.SettingsPatch) -> dict:
+    store.require_writable(paths.settings_file())
     # §19: strictly typed by the request model — the §4.9 booleans must be
     # booleans and `days` a real int (bool/float/string are 422s), so a bad
     # value can never persist and silently break the retention sweep.
@@ -1856,6 +1881,7 @@ def patch_settings(body: models.SettingsPatch) -> dict:
 
 @app.post("/settings/data-path", dependencies=[Depends(auth)])
 def set_data_path(body: models.DataPath) -> dict:
+    store.require_writable(paths.settings_file())
     global _data_size_cache
     raw = body.path.strip()
     if not raw:

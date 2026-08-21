@@ -57,6 +57,30 @@ def test_secret_crud_and_usedby(client):
     assert client.put(f"/secrets/{token_id}", json={"value": "x"}).status_code == 404
 
 
+def test_unreadable_store_files_answer_409_and_survive(client):
+    """§19 unreadable-store guard: a corrupt top-level file makes its write
+    routes answer 409, and the corrupt bytes stay on disk untouched. Import
+    is refused up front — before the body is even parsed."""
+    from autowright import paths
+    from autowright.storage import store
+
+    corrupt = "{{{:::\nnot: [valid"
+    for p in (paths.settings_file(), paths.agents_file(), paths.secrets_file()):
+        p.write_text(corrupt, encoding="utf-8")
+    store.load_all()
+
+    r = client.post("/secrets", json={"name": "MY_TOKEN", "value": "abc"})
+    assert r.status_code == 409
+    assert "unreadable on disk" in r.json()["detail"]
+    assert client.patch("/settings", json={"days": 5}).status_code == 409
+    assert client.post("/agents", json={"harness": "Claude Code",
+                                        "mode": "default"}).status_code == 409
+    r = client.post("/automations/import", content=b"whatever")
+    assert r.status_code == 409
+    for p in (paths.settings_file(), paths.agents_file(), paths.secrets_file()):
+        assert p.read_text(encoding="utf-8") == corrupt
+
+
 def test_secret_placeholder_lifecycle(client):
     # §4.8: blank value at create → placeholder (set: false)
     r = client.post("/secrets", json={"name": "LATER", "value": "", "description": "fill me"})

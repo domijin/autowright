@@ -588,6 +588,13 @@ remain plain dicts (§2).
   an execution is in progress — it still writes into the old location — **or while a §6
   firing-queue entry is waiting**: the in-memory queue would not survive the reload, so the
   entry would neither execute nor finish `skipped`, and its sender would never be told)
+- **Unreadable-store guard (shared)** — any route whose write would rewrite a §5 top-level
+  store file that failed to load this session (`settings.yaml`, `agents.yaml`,
+  `secrets.yaml` — the §5 read-only degradation) answers 409
+  "`<path>` is unreadable on disk — fix or remove the file, then restart Autowright."
+  This covers the agents and secrets writes, `PATCH /settings`, `POST /settings/data-path`,
+  and the §5.1 import routes — import checks **before** landing anything, so a refused
+  import never half-applies (no Keychain writes, no automation folders).
 - `WS /ws?token=` — events, each `{ event, ... }`: `execution.started` (also re-published when a
   failed execution retries in place — same execution id, updated record), `execution.queued`
   (a §6 firing was admitted to the queue — carries the new `queued` record, so it reaches the

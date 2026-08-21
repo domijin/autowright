@@ -461,6 +461,52 @@ def test_corrupt_settings_and_agents_yaml_fall_back(home, caplog):
     assert sum("unreadable YAML" in rec.message for rec in caplog.records) >= 2
 
 
+def test_unreadable_toplevel_yaml_is_readonly_for_session(home):
+    """§5 read-only degradation: a top-level file that failed to load is never
+    saved back — the corrupt bytes survive every mutation attempt."""
+    import pytest
+
+    from autowright import paths
+    from autowright.storage import Store, StoreUnwritableError
+
+    corrupt = "{{{:::\nnot: [valid"
+    for p in (paths.settings_file(), paths.agents_file(), paths.secrets_file()):
+        p.write_text(corrupt, encoding="utf-8")
+    s = Store()
+    s.load_all()
+    s.secrets.append({"id": "11111111-2222-4333-8444-555555555555",
+                      "name": "NEW_ONE", "description": "", "set": True})
+    with pytest.raises(StoreUnwritableError):
+        s.save_secrets()
+    with pytest.raises(StoreUnwritableError):
+        s.save_agents()
+    with pytest.raises(StoreUnwritableError):
+        s.save_settings()
+    for p in (paths.settings_file(), paths.agents_file(), paths.secrets_file()):
+        assert p.read_text(encoding="utf-8") == corrupt
+
+
+def test_unreadable_yaml_guard_resets_on_reload(home):
+    """§5: the read-only flags belong to one load — fixing the file and
+    reloading makes it writable again; an absent file was never flagged."""
+    from autowright import paths
+    from autowright.storage import Store
+    from autowright.yamlio import load_yaml
+
+    paths.secrets_file().write_text("[unclosed", encoding="utf-8")
+    s = Store()
+    s.load_all()
+    # repaired on disk → the next load drops the flag and saves work again
+    paths.secrets_file().unlink()
+    s2 = Store()
+    s2.load_all()
+    s2.secrets.append({"id": "11111111-2222-4333-8444-555555555555",
+                      "name": "BACK_ONE", "description": "", "set": True})
+    s2.save_secrets()
+    raw = load_yaml(paths.secrets_file(), {})["secrets"]
+    assert [x["name"] for x in raw] == ["BACK_ONE"]
+
+
 def test_load_triggers_consumes_past_oneshot_and_dedupes_app_start(store, caplog):
     import logging
 
@@ -1213,3 +1259,33 @@ def test_pending_draft_swap_recovers_from_crash(store):
     d = store.load_pending_draft()
     assert d is not None and d["note"] == "pending v1" and d["name"] == "Pendy"
     assert not (slot / ".ad-old-automation").exists()
+
+
+def test_problems_overdue_first_and_labels(store):
+    """§4.1 overdue: two missed cron occurrences since the baseline put an
+    `overdue` entry first; a recent real run clears it."""
+    from autowright import timefmt
+
+    trig = {"id": "t1", "kind": "cron", "enabled": True,
+            "expression": "0 8 * * *", "source": "user"}
+    a = store.create_automation(make_version(), "Sleepy", None, triggers=[trig])
+    cur = a["versions"][a["current_version"]]
+    # freshly created — nothing missed yet, no entry
+    assert store.problems_json(a, cur) == []
+    # never ran, created long ago → overdue, never-run label
+    a["created_at"] = "2020-01-01T08:00:00"
+    probs = store.problems_json(a, cur)
+    assert probs[0] == {"kind": "overdue", "label":
+                        "Scheduled executions are being missed — it has never run."}
+    # ran long ago → overdue with the last-ran date label
+    a["_last_exec_at"] = "2020-01-05T09:00:00"
+    p0 = store.problems_json(a, cur)[0]
+    assert p0["kind"] == "overdue"
+    assert p0["label"].startswith("Scheduled executions are being missed — it last ran ")
+    # a recent real run clears it
+    a["_last_exec_at"] = timefmt.now_iso()
+    assert all(p["kind"] != "overdue" for p in store.problems_json(a, cur))
+    # disabled trigger → never overdue, however old the baseline
+    a["_last_exec_at"] = "2020-01-05T09:00:00"
+    a["triggers"][0]["enabled"] = False
+    assert all(p["kind"] != "overdue" for p in store.problems_json(a, cur))

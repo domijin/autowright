@@ -160,4 +160,17 @@ describe('§9.2 needs-fixing banner', () => {
     fireEvent.click(edits[edits.length - 1])
     expect(storeMod.useStore.getState().surface).toBe('create')
   })
+
+  it('overdue rows are informational — label shown, no action link', () => {
+    seed(auto({ problems: [
+      { kind: 'overdue', label: 'Scheduled executions are being missed - it has never run.' },
+    ] }))
+    render(<AutomationDetail />)
+    expect(screen.getByText('This automation needs fixing')).toBeTruthy()
+    expect(screen.getByText('Scheduled executions are being missed - it has never run.')).toBeTruthy()
+    // §9.2: overdue clears by the automation running again — no button; the
+    // page header's own Edit is the only one on screen.
+    expect(screen.getAllByText('Edit').length).toBe(1)
+    expect(screen.queryByText('Open Secrets')).toBeNull()
+  })
 })

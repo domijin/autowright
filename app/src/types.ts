@@ -179,10 +179,12 @@ export interface Automation {
   agentId: string | null
   stepAgents: string[]      // §4.1 agent-enablement grants — §4.7 agent uuids
   allowedSecrets: string[]  // §4.1 secret-allowance grants — §4.8 secret uuids
-  // §4.1 problems — the derived would-this-fire-successfully audit; non-empty
-  // drives the §9.1 Needs fixing chip and the §9.2 banner. `label` is the
-  // exact UI copy; `kind` picks the banner row's action link.
-  problems: { kind: 'secret-missing' | 'secret-ungranted' | 'secret-unset'
+  // §4.1 problems — the derived would-this-fire-successfully (and
+  // is-it-firing-at-all) audit; non-empty drives the §9.1 Needs fixing chip
+  // and the §9.2 banner. `label` is the exact UI copy; `kind` picks the
+  // banner row's action link — and `overdue` also feeds the §13 tray dot.
+  problems: { kind: 'overdue'
+                  | 'secret-missing' | 'secret-ungranted' | 'secret-unset'
                   | 'agent-missing' | 'agent-ungranted' | 'package-missing'
                   | 'os-mismatch'; label: string }[]
   snapshotSettings: SnapshotSettings // §6.3 automatic-snapshot toggles

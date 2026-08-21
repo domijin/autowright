@@ -158,15 +158,34 @@ originOs: macos | windows | linux | absent — the platform the automation was e
   elsewhere"; a version restore keeps it (restoring is not a rework) — and set by no other
   write path.
 problems: [{ kind, label }] — derived at serialization, never stored: the "would this fire
-  successfully" audit backing the §9.1 Needs fixing chip, the §9.2 banner, and §20 output.
-  Computed from stored facts plus one §6.2 installed-check — never a Keychain read or a
+  successfully — and is it firing at all" audit backing the §9.1 Needs fixing chip, the
+  §9.2 banner, and §20 output.
+  Computed from stored facts (the execution index and the clock included) plus one §6.2
+  installed-check — never a Keychain read or a
   harness probe (deliberate exclusions: §12 owns probe-based harness readiness, and a set
   secret whose Keychain entry vanished is caught by the §7 pre-step gate). The
   installed-check is served from a cached scan of the §6.2 environment, refreshed when that
   environment changes, so the audit never re-walks site-packages per automation. Each
   condition mirrors a real §7 pre-step gate or a §6.2/§5.1 fact (an unresolvable agent has
-  no pre-step gate - it fails its step at step time), so the chip never cries wolf. Kinds,
+  no pre-step gate - it fails its step at step time); `overdue` alone mirrors the §6
+  scheduling reality instead — its claim that scheduled moments passed with no run is
+  checked against the execution record, so the chip still never cries wolf. Kinds,
   in serialized order (each `label` is the exact UI copy):
+  - `overdue` — the schedule is being missed: some **enabled cron** trigger has had **two
+    consecutive occurrences** pass since the baseline with no real run. Baseline = the
+    latest real execution's start (the `lastStatus` population: `skipped`/`queued`/test
+    records excluded), falling back to the automation's `created_at` if it never ran;
+    overdue iff the second §4.3 next-occurrence after the baseline (the same DST-aware
+    math as `nextAt`) is already in the past. Two missed moments, not one, is the grace:
+    a single occurrence legitimately skipped (§6 busy-skip, a restart at the wrong
+    minute) never flags. Cron triggers only — one-shots are consumed by the §4.3 spent
+    rule, and app-start/message triggers have no schedule; disabled triggers never count.
+    This is the one failure class nothing else surfaces: a silently dead automation
+    (backend down at every scheduled moment, a wedged execution starving every firing)
+    produces no record, no failed status, and no notification — this kind, the §13 tray
+    dot, and the §6 overdue notification are its discovery path. "Scheduled executions
+    are being missed — it last ran <§4.1 date label>." / never ran: "Scheduled
+    executions are being missed — it has never run."
   - `secret-missing` — an effective step secret (manifest entries ∪ code subscripts) or a
     discord trigger's token secret references an id no stored record holds. "A step
     references a deleted secret." / "A trigger references a deleted secret."

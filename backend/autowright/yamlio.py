@@ -12,19 +12,27 @@ import yaml
 log = logging.getLogger("autowright.yamlio")
 
 
-def load_yaml(path: Path, default: Any = None) -> Any:
+def load_yaml_checked(path: Path, default: Any = None) -> tuple[Any, bool]:
+    """§5: returns (data, ok). ok is False only for a file that exists but
+    can't be read — an absent file is a fresh install, not a failure. The
+    store uses ok to make an unreadable top-level file read-only for the
+    session, so a corrupt file is degraded, never overwritten by its default."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        return default if data is None else data
+        return (default if data is None else data), True
     except FileNotFoundError:
-        return default
+        return default, True
     except (yaml.YAMLError, UnicodeDecodeError, OSError) as e:
         # Disk is hand-editable (§5) — a corrupt or unreadable file (bad YAML,
         # bad encoding, bad permissions) must never brick startup into a
         # launchd crash loop; skip it with a warning like malformed triggers.
         log.warning("unreadable YAML at %s (%s) — using the default", path, e)
-        return default
+        return default, False
+
+
+def load_yaml(path: Path, default: Any = None) -> Any:
+    return load_yaml_checked(path, default)[0]
 
 
 def atomic_write_text(path: Path, text: str, mode: int | None = None) -> None:

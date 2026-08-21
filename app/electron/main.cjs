@@ -379,7 +379,9 @@ async function refreshTrayAlert() {
     })
     if (!res.ok) return
     const autos = await res.json()
-    tray.setImage(trayIcon(autos.some((a) => a.lastStatus === 'failed')))
+    // §13: failed or §4.1 overdue only — same predicate as the renderer's.
+    tray.setImage(trayIcon(autos.some((a) => a.lastStatus === 'failed'
+      || (a.problems || []).some((p) => p.kind === 'overdue'))))
   } catch { /* backend down — keep the current icon */ }
 }
 

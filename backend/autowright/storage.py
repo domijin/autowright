@@ -24,7 +24,7 @@ from typing import Any
 from . import paths, timefmt, triggers as triggerlib
 from .execdb import ExecDB
 from .specmd import blocks_to_md, md_to_blocks
-from .yamlio import atomic_write_text, load_yaml, save_yaml
+from .yamlio import atomic_write_text, load_yaml, load_yaml_checked, save_yaml
 
 # §4.1/§6.1 code-reference scans: literal quoted uuid subscripts only — a
 # variable subscript is invisible here by design (§8 forbids it).
@@ -212,9 +212,22 @@ def resolve_param_value(d: dict, values: dict, warn: list[str] | None = None) ->
     return param_default(d)
 
 
+class StoreUnwritableError(RuntimeError):
+    """§5 read-only degradation: the target file failed to load this session,
+    so writing it back would overwrite the user's data with the default."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__(f"{path} is unreadable on disk — fix or remove the file, "
+                         "then restart Autowright.")
+        self.path = path
+
+
 class Store:
     def __init__(self) -> None:
         self.lock = threading.RLock()
+        # §5 read-only degradation: paths of top-level files that existed but
+        # failed to load this session — save_* refuses to rewrite them.
+        self._unreadable: set[str] = set()
         self.autos: dict[str, dict] = {}          # id → automation (internal shape)
         self.execs: dict[str, dict] = {}          # id → execution header
         self.execdb: ExecDB | None = None
@@ -251,6 +264,7 @@ class Store:
     def load_all(self) -> None:
         with self.lock:
             paths.ensure_dirs()
+            self._unreadable = set()
             self.settings = {**DEFAULT_SETTINGS, **self._load_toplevel_mapping(paths.settings_file())}
             # §4.7: an agent entry without its uuid can't be referenced (steps
             # and the default pointer bind by id): skipped with a warning
@@ -299,12 +313,16 @@ class Store:
             self._reconcile_exec_index()
             self._refresh_exec_derived()
 
-    @staticmethod
-    def _load_toplevel_mapping(path: Path) -> dict:
+    def _load_toplevel_mapping(self, path: Path) -> dict:
         """§5: every top-level YAML is hand-editable — a readable file whose
         root isn't a mapping loads as its default with a warning, and
-        null-valued keys fall back to their defaults."""
-        raw = load_yaml(path, {}) or {}
+        null-valued keys fall back to their defaults. A file that exists but
+        can't be read at all is remembered as unreadable, making it read-only
+        for the session (§5 — never overwrite a corrupt file with the default)."""
+        raw, ok = load_yaml_checked(path, {})
+        raw = raw or {}
+        if not ok:
+            self._unreadable.add(str(path))
         if not isinstance(raw, dict):
             log.warning("%s doesn't hold a mapping — using the defaults", path)
             return {}
@@ -1356,14 +1374,23 @@ class Store:
             return len(doomed)
 
     # ---------- agents / secrets / settings ----------
+    def require_writable(self, path: Path) -> None:
+        """§5 read-only degradation: refuse to rewrite a top-level file that
+        failed to load this session — its default must never replace it."""
+        if str(path) in self._unreadable:
+            raise StoreUnwritableError(path)
+
     def save_agents(self) -> None:
+        self.require_writable(paths.agents_file())
         save_yaml(paths.agents_file(), {"agents": self.agents,
                                         "default_agent": self.default_agent_id})
 
     def save_secrets(self) -> None:
+        self.require_writable(paths.secrets_file())
         save_yaml(paths.secrets_file(), {"secrets": self.secrets})
 
     def save_settings(self) -> None:
+        self.require_writable(paths.settings_file())
         save_yaml(paths.settings_file(), self.settings)
 
     def secret_used_by(self, secret_id: str) -> list[dict]:
@@ -1725,6 +1752,18 @@ class Store:
                         "when": f"from {timefmt.started_label(dt)}" if dt else ""}
         return None
 
+    def overdue(self, a: dict, now: datetime | None = None) -> bool:
+        """§4.1 overdue, shared by problems_json and the §6 scheduler sweep:
+        two consecutive enabled-cron occurrences passed since the last real
+        run (or since created_at if it never ran) with no execution. Derived
+        from the execution index and the clock — never stored."""
+        base = (lenient_local(a.get("_last_exec_at")) if a.get("_last_exec_at") else None) \
+            or lenient_local(a.get("created_at"))
+        if base is None:  # §5 lenient: a damaged created_at drops the audit, never 500s
+            return False
+        # trigger math runs on local naive datetimes (triggers.trigger_next)
+        return triggerlib.is_overdue(a["triggers"], base.astimezone().replace(tzinfo=None), now)
+
     def problems_json(self, a: dict, cur: dict) -> list[dict]:
         """§4.1 `problems` — the would-this-fire-successfully audit, derived at
         serialization from stored facts plus the §6.2 fast installed-check.
@@ -1732,6 +1771,14 @@ class Store:
         precedence missing > ungranted > unset (the order the gates fail in).
         Never a Keychain read or a harness probe (§4.1 exclusions)."""
         out: list[dict] = []
+        # §4.1 `overdue`, serialized first — the "is it firing at all" half of
+        # the audit: execution index + clock only, the two-missed-occurrences
+        # grace lives in triggers.is_overdue.
+        if self.overdue(a):
+            last_dt = lenient_local(a.get("_last_exec_at")) if a.get("_last_exec_at") else None
+            ran = f"it last ran {timefmt.date_label(last_dt)}" if last_dt else "it has never run"
+            out.append({"kind": "overdue",
+                        "label": f"Scheduled executions are being missed — {ran}."})
         secrets_by_id = {s["id"]: s for s in self.secrets}
         agents_by_id = {g["id"]: g for g in self.agents}
         # §4.1 effective references: manifest entries ∪ code subscripts.

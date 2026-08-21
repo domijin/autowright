@@ -548,8 +548,15 @@ function mergeAutoRows(cur: Automation[], rows: Automation[]): Automation[] {
   })
 }
 
+// §13: the dot is failed-or-overdue only — the other problems kinds are
+// config nits the in-app amber chip covers.
+export function trayAlertOn(automations: Automation[]) {
+  return automations.some((a) => a.lastStatus === 'failed'
+    || (a.problems ?? []).some((p) => p.kind === 'overdue'))
+}
+
 function updateTrayAlert(automations: Automation[]) {
-  void window.autowright?.trayAlert(automations.some((a) => a.lastStatus === 'failed'))
+  void window.autowright?.trayAlert(trayAlertOn(automations))
 }
 
 // ---------- history (§9: back works, never re-enters onboarding) ----------

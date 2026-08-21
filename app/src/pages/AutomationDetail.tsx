@@ -301,12 +301,14 @@ export default function AutomationDetail() {
               </span>
               {/* §9.2 per-kind action: unset values live on the Secrets page;
                   references and grants (and step rewrites) live in the editor;
-                  package-missing needs nothing — it installs on first run. */}
+                  package-missing needs nothing — it installs on first run —
+                  and overdue is informational: it clears by the automation
+                  running again, or by its triggers changing. */}
               {p.kind === 'secret-unset' ? (
                 <button className="ad-btn-text dim" onClick={() => go('secrets')} style={{ flex: 'none' }}>
                   Open Secrets
                 </button>
-              ) : p.kind !== 'package-missing' ? (
+              ) : p.kind !== 'package-missing' && p.kind !== 'overdue' ? (
                 <button className="ad-btn-text dim" onClick={() => setSurface('create', 'edit')} style={{ flex: 'none' }}>
                   Edit
                 </button>

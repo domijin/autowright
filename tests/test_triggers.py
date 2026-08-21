@@ -388,3 +388,36 @@ def test_cron_trailing_slash_rejected():
     with pytest.raises(CronError):
         parse_cron("5/ * * * *")
     parse_cron("*/5 * * * *")  # real steps still parse
+
+
+def test_is_overdue_two_missed_cron_occurrences():
+    """§4.1 overdue: two consecutive missed moments flag; one is the grace."""
+    from autowright.triggers import is_overdue
+
+    trig = [{"id": "t", "kind": "cron", "enabled": True,
+             "expression": "0 8 * * *", "source": "user"}]
+    base = datetime(2026, 7, 1, 8, 30)
+    # one missed moment (July 2 08:00) — grace, not overdue
+    assert not is_overdue(trig, base, datetime(2026, 7, 2, 9, 0))
+    # the second moment (July 3 08:00) hasn't passed yet
+    assert not is_overdue(trig, base, datetime(2026, 7, 3, 7, 59))
+    # two missed moments → overdue
+    assert is_overdue(trig, base, datetime(2026, 7, 3, 8, 1))
+    # a disabled trigger never counts
+    off = [{**trig[0], "enabled": False}]
+    assert not is_overdue(off, base, datetime(2026, 8, 1, 0, 0))
+
+
+def test_is_overdue_ignores_unscheduled_kinds():
+    """§4.1: one-shots are the §4.3 spent rule's job; message/app-start
+    triggers have no schedule — none of them can be overdue."""
+    from autowright.triggers import is_overdue
+
+    base = datetime(2026, 7, 1, 8, 30)
+    far = datetime(2026, 12, 1, 0, 0)
+    trigs = [{"id": "a", "kind": "time", "enabled": True, "at": "2026-07-02T08:00"},
+             {"id": "b", "kind": "app_start", "enabled": True},
+             {"id": "c", "kind": "discord", "enabled": True, "channel": "1",
+              "secret": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34"},
+             {"id": "d", "kind": "imessage", "enabled": True, "from": "x@y.z"}]
+    assert not is_overdue(trigs, base, far)

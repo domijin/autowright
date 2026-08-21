@@ -693,3 +693,30 @@ describe('draftjob.changed — the §19 background-continuation snapshot', () =>
       [{ owner: 'pending', jobId: 'jp', status: 'building', mode: 'sync' }])
   })
 })
+
+describe('trayAlertOn (§13 tray dot predicate)', () => {
+  const auto = (over: Record<string, unknown> = {}) =>
+    ({ id: 'a1', name: 'A', lastStatus: 'none', problems: [], ...over }) as never
+
+  it('lights for a failed automation', () => {
+    expect(store.trayAlertOn([auto({ lastStatus: 'failed' })])).toBe(true)
+  })
+
+  it('lights for an overdue automation', () => {
+    expect(store.trayAlertOn([auto({ problems: [
+      { kind: 'overdue', label: 'Scheduled executions are being missed - it has never run.' },
+    ] })])).toBe(true)
+  })
+
+  it('stays dark for every other problems kind and for clean automations', () => {
+    expect(store.trayAlertOn([auto()])).toBe(false)
+    // §13: the dot is failed-or-overdue only — config nits never light it
+    expect(store.trayAlertOn([auto({ problems: [
+      { kind: 'package-missing', label: 'x' }, { kind: 'secret-unset', label: 'y' },
+    ] })])).toBe(false)
+  })
+
+  it('tolerates event rows without a problems field', () => {
+    expect(store.trayAlertOn([{ id: 'a2', name: 'B', lastStatus: 'none' } as never])).toBe(false)
+  })
+})

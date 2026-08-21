@@ -43,6 +43,12 @@ class Scheduler:
         self._warned_rewind: set[tuple[str, str]] = set()
         self._stop = threading.Event()
         self._last_retention = clock()
+        # §6 overdue sweep: hourly observations, in-memory only (§4.1
+        # derived-not-stored). streak counts consecutive overdue sightings per
+        # automation; notified re-arms when the automation recovers.
+        self._last_overdue = self._last_retention
+        self._overdue_streak: dict[str, int] = {}
+        self._overdue_notified: set[str] = set()
         engine.drain_queue = lambda automation_id: drain_queue(self.store, self.engine, automation_id)  # type: ignore[attr-defined]
 
     def start(self) -> None:
@@ -89,6 +95,9 @@ class Scheduler:
             removed = self.store.retention_cleanup()
             if removed:
                 hub.publish("automation.changed")
+        if (now - self._last_overdue).total_seconds() > 3600:
+            self._last_overdue = now
+            self._overdue_sweep(autos, now)
 
     def _tick_automation(self, a: dict, now: datetime, now_utc: datetime) -> None:
         """One automation's share of a tick - its own unit of failure (§6): the
@@ -170,6 +179,30 @@ class Scheduler:
         # queued — only message firings queue (a due one-shot is still consumed by
         # the caller).
         fire_trigger(self.store, self.engine, a, t)
+
+    def _overdue_sweep(self, autos: list[dict], now: datetime) -> None:
+        """§6 overdue sweep: notify an automation observed §4.1 overdue at two
+        consecutive hourly sweeps — two, not one, so a backend booting into a
+        stale morning doesn't cry about an automation its next occurrence is
+        about to clear. Once per overdue stretch; recovery re-arms it."""
+        from . import notify
+
+        live_ids = {a["id"] for a in autos}
+        self._overdue_streak = {k: v for k, v in self._overdue_streak.items() if k in live_ids}
+        self._overdue_notified &= live_ids
+        for a in autos:
+            aid = a["id"]
+            if self.store.overdue(a, now):
+                self._overdue_streak[aid] = self._overdue_streak.get(aid, 0) + 1
+                if self._overdue_streak[aid] >= 2 and aid not in self._overdue_notified:
+                    self._overdue_notified.add(aid)
+                    # §6: attention-class — posts under both §4.9 notifications
+                    # values, exactly like a failed execution's end notification.
+                    notify.post(a["name"], "Scheduled executions are being missed.")
+                    self._publish_changed(a)
+            else:
+                self._overdue_streak.pop(aid, None)
+                self._overdue_notified.discard(aid)
 
     def _publish_changed(self, a: dict) -> None:
         # §19: single-automation change events carry the changed row so clients

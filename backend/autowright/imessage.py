@@ -7,12 +7,15 @@ The typedstream heuristic (segment marker 0x84 0x01 0x2b, BER-style length,
 UTF-16 LE / UTF-8) is ported from OpenClaw's MIT-licensed `imsg`."""
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+log = logging.getLogger("autowright.imessage")
 
 # §15 knobs — configuration only, the code path is identical.
 CHAT_DB = os.environ.get("AUTOWRIGHT_CHAT_DB",
@@ -257,13 +260,18 @@ def _remember_automation(state: str) -> None:
     """The §19 remembered Automation state: macOS offers no prompt-free read,
     so the backend keeps the result of its most recent Apple Events send,
     persisted in settings storage (§5)."""
-    from .storage import store  # function-level: storage must import freely
+    from .storage import StoreUnwritableError, store  # function-level: storage must import freely
 
     with store.lock:
         if store.settings.get("imessageAutomation") == state:
             return
         store.settings["imessageAutomation"] = state
-        store.save_settings()
+        try:
+            store.save_settings()
+        except StoreUnwritableError as e:
+            # §5 read-only degradation: a convenience write from the send path
+            # must never crash the listener — the state stays in memory only.
+            log.warning("not persisting imessageAutomation: %s", e)
 
 
 def automation_status() -> str:

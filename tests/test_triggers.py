@@ -85,12 +85,15 @@ def test_time_trigger_validation_and_next():
 
 
 def test_tz_validation():
-    assert validate_trigger({"kind": "cron", "expression": "0 8 * * *", "timezone": "Asia/Tokyo"}) is None
-    assert "unknown timezone" in validate_trigger({"kind": "cron", "expression": "0 8 * * *", "timezone": "Mars/Olympus"})
+    assert validate_trigger({"kind": "cron", "expression": "0 8 * * *", "timezone": "Asia/Tokyo",
+                             "source": "spec"}) is None
+    assert "unknown timezone" in validate_trigger({"kind": "cron", "expression": "0 8 * * *",
+                                                   "timezone": "Mars/Olympus", "source": "spec"})
     assert "unknown timezone" in validate_trigger({"kind": "time", "at": "2099-01-01T00:00", "timezone": 5})
-    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *", "timezone": "UTC"}])
+    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *", "timezone": "UTC",
+                                     "source": "spec"}])
     assert err is None and norm[0]["timezone"] == "UTC"
-    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *"}])
+    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *", "source": "spec"}])
     assert err is None and "timezone" not in norm[0]
     # §4.3: `timezone` belongs to cron/time only — a stray one on a message
     # trigger drops at normalize (kept, the loader would drop it on restart)
@@ -159,8 +162,13 @@ def test_reserved_and_unknown_kinds_rejected():
     assert "unknown" in validate_trigger({"kind": "webhook"})
     _, err = normalize_triggers([{"kind": "imessage"}])  # no `from` → invalid
     assert err
-    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *", "enabled": False}])
+    # §4.3: cron `source` is required — absent is a validation error, not "spec"
+    _, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *"}])
+    assert err and "source" in err
+    norm, err = normalize_triggers([{"kind": "cron", "expression": "0 8 * * *",
+                                     "enabled": False, "source": "user"}])
     assert err is None and norm[0]["enabled"] is False and norm[0]["id"]
+    assert norm[0]["source"] == "user"
 
 
 def test_imessage_trigger_validation_and_normalization():

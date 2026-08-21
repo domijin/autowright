@@ -372,7 +372,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   // math. Half-typed entries go to the endpoint as-is (an invalid one is a
   // `valid: false` result with a plain-word error, never a 422).
   const previewEntry: object[] = kind === 'cron'
-    ? (expression.trim() ? [{ kind, expression, ...(timezone ? { timezone } : {}) }] : [])
+    ? (expression.trim() ? [{ kind, expression, source: 'user', ...(timezone ? { timezone } : {}) }] : [])
     : kind === 'time'
     ? (at ? [{ kind, at, ...(timezone ? { timezone } : {}) }] : [])
     : []

@@ -71,7 +71,7 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
   it('cli-uninstall deletes only marker-carrying shims, via its IPC handler (§3)', () => {
     expect(src).toContain("ipcMain.handle('cli-uninstall', () => cliUninstall())")
     // The marker gate sits before the unlink — foreign files are never touched.
-    expect(src).toMatch(/if \(!text\.includes\(SHIM_MARKER\)\) continue[\s\S]{0,120}unlinkSync/)
+    expect(src).toMatch(/if \(!text\.includes\(SHIM_MARKER\)\) return \{ ok: true \}[\s\S]{0,160}unlinkSync/)
   })
 })
 

@@ -236,11 +236,13 @@ an execution. Triggers are user-owned operational state (§5): editing them on t
 never mints a version and never involves the AI. In the §11 editor the chat can edit the
 **editor's** trigger list through §8 `triggers` ops (add/edit/enable/remove) — staged like
 any editor trigger change, landing only when the draft saves. **Cron provenance
-(`source`)**: a cron trigger carries `source: "spec" | "user"` — `spec` for crons the §8
-sync derived from the spec, `user` for crons the user minted directly (the §9.2 detail-page
-editor, a §8 chat `triggers` op, §20 `trigger add`). A stored cron without the field (legacy
-data) reads as `spec`. Only cron triggers carry `source`; the field round-trips through the
-API and drafts like any stored field. The list additionally follows the spec via
+(`source`)**: a cron trigger carries `source: "spec" | "user"` — **required**: `spec` for
+crons the §8 sync derived from the spec (and §5.1 imports — the archive travels with its
+spec), `user` for crons the user minted directly (the §9.2 detail-page editor, a §8 chat
+`triggers` op, §20 `trigger add`). A cron without the field is invalid — the API answers
+422 (§19) and a stored one is dropped at load like any malformed trigger (§5 lenient
+load). Only cron triggers carry `source`; the field round-trips through the API and drafts
+like any stored field. The list additionally follows the spec via
 the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-derived triggers
 (§8 rule 9) into the stored list:
 
@@ -268,7 +270,7 @@ strings `label` and `short`. The backend assigns `id` to entries that arrive wit
 
 | kind | fields | fires | label / short |
 |---|---|---|---|
-| `cron` | `expression`: 5-field cron expression · optional `timezone` · optional `source`: `"spec"` \| `"user"` (provenance, above; absent reads as `spec`) | at every match | humanized when simple (below), else the raw expression in mono |
+| `cron` | `expression`: 5-field cron expression · optional `timezone` · `source`: `"spec"` \| `"user"` (provenance, above; required) | at every match | humanized when simple (below), else the raw expression in mono |
 | `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `timezone` | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
 | `app_start` | — | at every desktop-app launch (§6 firing path) | "On app start" / "App start" |
 | `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: id of the §4.8 secret holding the bot token (a secret uuid) · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a list of Discord user ids (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
@@ -496,9 +498,8 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list —
   each blocker `{ reason, fix, details?, kind? }`, `kind` only ever the literal
   `user-action` (§8 blocker response) —
-  (`source`: chat | sync — which call produced it; the legacy values `spec` and `steps`,
-  written by the removed create pipeline, still render — like chat and sync respectively,
-  §11 — and `error` entries may carry a legacy `source` the same way), `system` a
+  (`source`: chat | sync — which call produced it; `error` entries may carry a `source`
+  the same way), `system` a
   quiet status chip, `error` a red failure entry (a failed §8 job's message, §11) — persisted
   so a later chat's CONVERSATION context still names the failure. The §11 thread progress
   entry (live job progress) is editor state only, never persisted.
@@ -794,7 +795,9 @@ an unnamed agent), so padding can't dodge the check. The API
 rejects a create, and a rename that would change the effective grant name into a collision,
 with 422 ("an agent named X already exists - agent names must be unique"); the §12 form
 shows the same rule inline. Enforcement is write-time only - duplicates already on disk
-still load. Steps bind agents by id (§4.1), so a rename never repoints a step; uniqueness
+still load. A stored entry without an `id` cannot be referenced and is skipped at load
+with a warning, like any record that fails to resolve (§5 lenient load) — never healed,
+never fatal. Steps bind agents by id (§4.1), so a rename never repoints a step; uniqueness
 exists for the §8 grants yaml, the §20 case-insensitive name flags, and unambiguous display.
 All four harnesses are selectable. The app can install any of them (plus Ollama, for the
 local-model mode) and help the user sign in when the harness needs an account (§10 step 2,
@@ -803,8 +806,9 @@ local-model mode) and help the user sign in when the harness needs an account (�
 ### 4.8 Secret
 
 `{ id, name, description, set, usedBy }` — the value itself is never part of the entity (Keychain-only,
-below). `id` is a uuid minted when the secret is created; loading a stored entry without one
-mints and persists it (self-heal, like the §4.7 `default_agent` pointer). **The id is the
+below). `id` is a uuid minted when the secret is created; a stored entry without one cannot be
+referenced and is skipped at load with a warning, like any record that fails to resolve
+(§5 lenient load) — never healed, never fatal. **The id is the
 reference identity everywhere**: steps bind secrets by it (§4.1), discord triggers reference
 it (§4.3), the §19 routes address it (`PUT`/`DELETE /secrets/{id}`; only `POST /secrets`
 carries a name — creation), and the Keychain entry is keyed by it (the keyring account is
@@ -905,30 +909,27 @@ failed install patches the setting back to false — the toggle just returns, ne
 banner. Any successful card install (toggle-on or the Reinstall button) also sets the §3
 `ad-cli-installed` first-run marker, so a later hand-deletion is never undone by the
 launch-time one-shot. Turning it **off** deletes the command too: when an ours-marker shim is
-on disk (`installed`/`stale`) the flip first opens a danger ConfirmModal — title "Turn off
+on disk (`installed`) the flip first opens a danger ConfirmModal — title "Turn off
 the `autowright` command?", body "This also deletes the command file from this Mac. Your
 automations, settings, and executions aren't affected.", confirm label "Turn off and
-delete" — and only confirming patches false and fires the §3 `cli-uninstall` IPC (an
-undeletable legacy shim comes back as the toasted manual `sudo rm` command, same as ever;
+delete" — and only confirming patches false and fires the §3 `cli-uninstall` IPC (a
+failed delete comes back as a toasted error message;
 the setting still turns off). Cancel leaves the toggle on and touches nothing. With no shim
 on disk (`missing`) the flip just patches false — no modal, nothing to delete. Detail line +
 extra action by
 setting × disk state: on+`installed` → "Installed at `<path>`" (`onPath` no longer affects
 the card — the PATH help lives in the PATH row below, shown for every on+`installed`); on+`missing` (the user deleted the file by hand) → "Not
-installed — manage automations from the Terminal."; on+`stale` (legacy `/usr/local/bin`
-only, §3) → amber "An old `autowright` command at /usr/local/bin points at an old
-location."; off+`installed` → "Still installed at `<path>` — turn on to keep it up to
-date."; off+`stale` → amber "An old `autowright` command at /usr/local/bin points at an old
-location."; off+`missing` → "Not installed — manage automations from the Terminal. Turning
+installed — manage automations from the Terminal."; off+`installed` → "Still installed at `<path>` — turn on to keep it up to
+date."; off+`missing` → "Not installed — manage automations from the Terminal. Turning
 this on installs to ~/.local/bin — no password needed."; `foreign` (either setting) → "A
 different `autowright` is already at `<path>` — Autowright won't touch it.", no toggle, no
 buttons. There is no standalone Delete button — removal rides the disable confirm above
-(an off+`installed` / off+`stale` leftover, possible after a failed uninstall or from an
-older build, is removed by turning the toggle on and off again). The card can grow **one
+(an off+`installed` leftover, possible after a failed uninstall, is removed by turning the
+toggle on and off again). The card can grow **one
 second row** below the toggle row, separated by the standard hairline divider — exactly one
 of:
-- **Missing-warning row** — toggle on but no working user-local install (on+`missing` /
-  on+`stale`): amber title "The `autowright` CLI is missing", description "autowright wasn't found in
+- **Missing-warning row** — toggle on but no working user-local install (on+`missing`):
+  amber title "The `autowright` CLI is missing", description "autowright wasn't found in
   ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the
   Terminal.", with a "Reinstall" button firing §3 `cli-install` (silent, ~/.local/bin — once
   the §3 first-run marker is set the app never re-creates on its own; the row is the explicit

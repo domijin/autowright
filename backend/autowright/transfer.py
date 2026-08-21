@@ -326,11 +326,16 @@ def _validate(z: zipfile.ZipFile) -> dict:
                  else {"kind": "imessage", "from": t.get("from"),
                        "pattern": t.get("pattern")}
                  if t["kind"] == "imessage"
-                 else {"kind": t["kind"], "expression": t.get("expression"), "timezone": t.get("timezone")})
+                 else {"kind": t["kind"], "expression": t.get("expression"),
+                       "timezone": t.get("timezone"), "source": "spec"})
         if err := triggerlib.validate_trigger(probe):
             raise TransferError(f"invalid trigger in the archive: {err}")
+        # §5.1: archives carry no cron `source` — import stamps `spec` (the
+        # archive travels with its spec, §4.3), so the §4.3 merge treats the
+        # imported schedule as spec-derived.
         triggers.append({"kind": t["kind"],
-                         **({"expression": t["expression"]} if t["kind"] == "cron" else {}),
+                         **({"expression": t["expression"], "source": "spec"}
+                            if t["kind"] == "cron" else {}),
                          **({"timezone": t["timezone"]} if t.get("timezone") and t["kind"] == "cron" else {}),
                          **({"channel": t["channel"].strip(), "secret": t["secret"].strip(),
                              **({"pattern": t["pattern"].strip()} if t.get("pattern") else {}),

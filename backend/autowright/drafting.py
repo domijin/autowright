@@ -623,19 +623,20 @@ def validate_spec(files: dict[str, str]) -> tuple[dict, list[str]]:
 CHAT_FILES = ("spec.md", "instructions.md", "notes.md", "actions.yaml")
 
 
-def parse_dialect_entry(t, allow_time: bool = False,
-                        cron_source: str | None = None) -> tuple[dict | None, str | None]:
+def parse_dialect_entry(t, allow_time: bool = False, *,
+                        cron_source: str) -> tuple[dict | None, str | None]:
     """One §8 rule-9 dialect entry → (normalized §4.3 stored trigger, None) or
     (None, error). Shared by the manifest's `triggers` key (crons land
     `source: spec`) and the chat call's `triggers` ops (crons land
     `source: user`; `allow_time` admits the `{ time: at }` form the user may
-    ask for directly — never drafted by judgment, §8 rule 9)."""
+    ask for directly — never drafted by judgment, §8 rule 9). `cron_source`
+    is required — §4.3 provenance is stamped at every ingest."""
     if not isinstance(t, dict):
         return None, f"triggers entry {t!r} must be an object"
     keys = set(t)
     if keys == {"cron"} or keys == {"cron", "timezone"}:
         entry = {"kind": "cron", "expression": str(t["cron"]).strip(), "enabled": True,
-                 **({"source": cron_source} if cron_source else {})}
+                 "source": cron_source}
         if "timezone" in t:
             entry["timezone"] = str(t["timezone"])
             if err := triggerlib.timezone_error(entry["timezone"]):

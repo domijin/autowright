@@ -252,28 +252,35 @@ class Store:
         with self.lock:
             paths.ensure_dirs()
             self.settings = {**DEFAULT_SETTINGS, **self._load_toplevel_mapping(paths.settings_file())}
-            self.agents = self._load_toplevel_list(paths.agents_file(), "agents")
+            # §4.7: an agent entry without its uuid can't be referenced (steps
+            # and the default pointer bind by id): skipped with a warning
+            # (§5 lenient load), never healed, never fatal.
+            self.agents = []
+            for g in self._load_toplevel_list(paths.agents_file(), "agents"):
+                if not g.get("id"):
+                    log.warning("skipping agents.yaml entry %r — it has no id and "
+                                "can't be referenced", g.get("name"))
+                    continue
+                self.agents.append(g)
             # §4.7 default pointer — a dangling/absent value (hand-edited file)
             # falls back to the first agent so the invariant self-heals at load.
             default = self._load_toplevel_mapping(paths.agents_file()).get("default_agent")
             self.default_agent_id = (default if any(a.get("id") == default for a in self.agents)
                                      else (self.agents[0]["id"] if self.agents else None))
             # §4.8: every secret carries a uuid — the reference identity steps
-            # bind by. Entries missing one (pre-id files) self-heal at load,
-            # like the default_agent pointer above.
-            minted = False
+            # bind by. An entry missing its id (or name) can't be referenced:
+            # skipped with a warning (§5 lenient load), never healed, never fatal.
             self.secrets = []
             for s in self._load_toplevel_list(paths.secrets_file(), "secrets"):
-                if not s.get("name"):
+                if not s.get("name") or not s.get("id"):
+                    log.warning("skipping secrets.yaml entry %r — it has no %s and "
+                                "can't be referenced",
+                                s.get("name") or s.get("id"),
+                                "id" if s.get("name") else "name")
                     continue
-                if not s.get("id"):
-                    s["id"] = new_id()
-                    minted = True
                 self.secrets.append({"id": s["id"], "name": s["name"],
                                      "description": s.get("description") or "",
                                      "set": bool(s.get("set", True))})
-            if minted:
-                self.save_secrets()
             self.autos = {}
             for d in sorted(paths.automations_dir().iterdir()) if paths.automations_dir().exists() else []:
                 if not d.is_dir() or not (d / "automation.yaml").exists():
@@ -459,8 +466,7 @@ class Store:
             elif isinstance(t, dict) and _valid(t):
                 out.append({"id": t.get("id") or new_id(), "kind": t["kind"],
                             "enabled": bool(t.get("enabled", True)),
-                            **({"expression": t["expression"],
-                                **({"source": t["source"]} if t.get("source") in ("spec", "user") else {})}
+                            **({"expression": t["expression"], "source": t["source"]}
                                if t["kind"] == "cron" else
                                {"at": t["at"]} if t["kind"] == "time" else
                                {"channel": t["channel"], "secret": t["secret"],

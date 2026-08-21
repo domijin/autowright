@@ -244,10 +244,9 @@ export function ChatPanel({
     if (e.diagnosed) return 'The build failed — your AI suggests these fixes'
     return bl.length > 1 ? `Your AI hit ${bl.length} blockers` : 'Your AI hit a blocker'
   }
-  // §11: two live sources — chat (clarification) and sync; the legacy `spec`
-  // and `steps` values (the removed create pipeline) render like them.
+  // §11: two sources — chat (clarification) and sync.
   const blockersExplainer = (e: ChatEntry) =>
-    e.source === 'chat' || e.source === 'spec'
+    e.source === 'chat'
       ? 'Reply below — your answer is sent back and the spec is rewritten.'
       : 'It couldn’t sync the steps with the spec.'
 
@@ -414,7 +413,7 @@ export function ChatPanel({
                 </div>
               )
             }
-            const clarify = e.source === 'spec' || e.source === 'chat'
+            const clarify = e.source === 'chat'
             const allUserAction = blockers.length > 0 && blockers.every((b) => b.kind === 'user-action')
             // §11: a mixed entry keeps the source's primary button — it applies
             // only the ordinary blockers' resolutions; a pure user-action entry

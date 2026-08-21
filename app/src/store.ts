@@ -103,7 +103,7 @@ let eventSeq = 0
 
 // §3 one-shot first-run CLI install: with cliEnabled on (default true) and the
 // ad-cli-installed marker (§15) unset, a `missing` shim is installed silently
-// once. Every already-settled state (installed/stale/foreign) sets the marker
+// once. Every already-settled state (installed/foreign) sets the marker
 // without touching disk; a failed install leaves it unset so the next launch
 // retries — but never patches cliEnabled off (a transient failure must not
 // become a permanent opt-out). Once the marker is set the app never creates

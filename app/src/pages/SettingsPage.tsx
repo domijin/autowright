@@ -17,7 +17,7 @@ const pathBox: React.CSSProperties = {
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 
-type Cli = { state: 'installed' | 'stale' | 'missing' | 'foreign'; path: string; onPath: boolean }
+type Cli = { state: 'installed' | 'missing' | 'foreign'; path: string; onPath: boolean }
 
 // §4.9 PATH command block: the exact line the Copy button puts on the clipboard.
 // Appends to ~/.zprofile (the login-shell init macOS Terminal reads) so it persists.
@@ -68,7 +68,7 @@ export default function SettingsPage() {
   // with nothing installed it just patches false.
   const setCliEnabled = (on: boolean) => {
     if (!on) {
-      if (cli && (cli.state === 'installed' || cli.state === 'stale')) setCliOffConfirm(true)
+      if (cli && cli.state === 'installed') setCliOffConfirm(true)
       else patch({ cliEnabled: false })
       return
     }
@@ -77,8 +77,8 @@ export default function SettingsPage() {
   }
 
   // §4.9 disable confirm accepted: patch off, then §3 cli-uninstall removes
-  // ours-marker shims; an undeletable legacy one comes back as a
-  // manual-command hint, toasted — the setting still turns off.
+  // the ours-marker shim; a failed delete comes back as an error message,
+  // toasted — the setting still turns off.
   const cliDisable = () => {
     if (cliBusy) return
     patch({ cliEnabled: false })
@@ -298,8 +298,7 @@ export default function SettingsPage() {
               // no working user-local install) or the PATH row (toggle on,
               // installed). No standalone Delete row: removal rides the
               // disable confirm.
-              const warnRow = cli.state !== 'foreign' && settings.cliEnabled
-                && (cli.state === 'missing' || cli.state === 'stale')
+              const warnRow = cli.state === 'missing' && settings.cliEnabled
               // §4.9 PATH row: on + installed, regardless of onPath.
               const pathRow = cli.state === 'installed' && settings.cliEnabled
               return (
@@ -310,17 +309,13 @@ export default function SettingsPage() {
                   }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={rowTitle}>The <code>autowright</code> command</div>
-                      <div style={{
-                        ...rowSub,
-                        ...(cli.state === 'stale' ? { color: 'var(--amber)' } : {}),
-                      }}>
+                      <div style={rowSub}>
                         {cli.state === 'installed' && (settings.cliEnabled
                           ? `Installed at ${cli.path}`
                           : `Still installed at ${cli.path} — turn on to keep it up to date.`)}
                         {cli.state === 'missing' && (settings.cliEnabled
                           ? 'Not installed — manage automations from the Terminal.'
                           : 'Not installed — manage automations from the Terminal. Turning this on installs to ~/.local/bin — no password needed.')}
-                        {cli.state === 'stale' && 'An old autowright command at /usr/local/bin points at an old location.'}
                         {cli.state === 'foreign' && `A different autowright is already at ${cli.path} — Autowright won’t touch it.`}
                       </div>
                     </div>

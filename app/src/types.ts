@@ -114,7 +114,7 @@ export interface ChatEntry {
   boundary?: boolean
   blockers?: Blocker[]
   // blockers entries: which call produced them — decides headline + primary action
-  source?: 'chat' | 'spec' | 'steps' | 'sync'
+  source?: 'chat' | 'sync'
   diagnosed?: boolean   // §8 build-diagnosis blockers — build-failure wording
   dismissed?: boolean   // §11: collapsed to a one-line summary
   resolved?: string[]   // §11 "Previously resolved" list stamped at creation
@@ -125,7 +125,7 @@ export interface ChatEntry {
 // fields, so the compiler enforces the pairing the backend validates with 422.
 // pubsub is a reserved kind the API refuses to store ("coming soon").
 export type TriggerKindFields =
-  | { kind: 'cron'; expression: string; timezone?: string; source?: 'spec' | 'user' } // §4.3 provenance: absent reads as 'spec'
+  | { kind: 'cron'; expression: string; timezone?: string; source: 'spec' | 'user' } // §4.3 provenance: required
   | { kind: 'time'; at: string; timezone?: string }         // one-shot wall-clock ISO timestamp
   | { kind: 'app_start' }
   // §4.3: `secret` is the token secret's §4.8 id — displays resolve it to the live name

@@ -26,9 +26,9 @@ On-disk layout under `~/Library/Application Support/Autowright/`:
 settings.yaml
 agents.yaml                    # agents list + default_agent (§4.7 single default-id pointer)
 secrets.yaml                   # ids + names + metadata only; values live in the macOS Keychain.
-                               # Every entry carries its §4.8 uuid; load self-heals an entry
-                               # missing one (mints + persists it, like the default_agent
-                               # pointer heal)
+                               # Every entry carries its §4.8 uuid; an entry missing one is
+                               # skipped at load with a warning (§4.8 — never healed,
+                               # never fatal)
 backend.json                   # port+token discovery handshake (§3), rewritten each backend start
 electron/                      # Electron's Chromium profile (Cache, Cookies, Local Storage, …) —
                                # main.cjs redirects userData here so the root stays app data only
@@ -457,7 +457,9 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              #   entry's `secret` is the secret's NAME — export resolves
                              #   the trigger's §4.3 secret id to its name, import maps it
                              #   back to the local record's id); no ids,
-                             #   no enabled state; one-shot `time` triggers are moments
+                             #   no enabled state, no cron `source` (import stamps
+                             #   `source: spec` — the archive travels with its spec,
+                             #   §4.3); one-shot `time` triggers are moments
                              #   in time and are never exported,
                              # param_values: {name: value} — only when "Include parameter
                              #   values" was checked at export

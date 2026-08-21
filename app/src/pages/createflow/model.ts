@@ -378,7 +378,7 @@ export function holdsDraftEdits(r: Rev, a: Automation): boolean {
 export function stripTrigger(t: Trigger | DraftTrigger): DraftTrigger {
   const base = { ...(t.id ? { id: t.id } : {}), enabled: t.enabled }
   switch (t.kind) {
-    case 'cron': return { ...base, kind: 'cron', expression: t.expression, ...(t.timezone ? { timezone: t.timezone } : {}), ...(t.source ? { source: t.source } : {}) }
+    case 'cron': return { ...base, kind: 'cron', expression: t.expression, ...(t.timezone ? { timezone: t.timezone } : {}), source: t.source }
     case 'time': return { ...base, kind: 'time', at: t.at, ...(t.timezone ? { timezone: t.timezone } : {}) }
     case 'app_start': return { ...base, kind: 'app_start' }
     case 'discord': return {

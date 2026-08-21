@@ -128,7 +128,10 @@ def test_import_preview_confirm_flow(client):
     # §5.2: the §4.1 dedupe run dry — the name the confirm below lands under
     assert body["preview"]["landsAs"] == "Previewed 2"
     assert [s["name"] for s in body["preview"]["steps"]] == ["Go"]
-    assert body["preview"]["triggers"] == [{"kind": "cron", "expression": "0 9 * * *"}]
+    # §5.1: imported crons land spec-sourced — stamped at import, since the
+    # archive carries no `source`
+    assert body["preview"]["triggers"] == [{"kind": "cron", "expression": "0 9 * * *",
+                                            "source": "spec"}]
 
     r2 = client.post("/automations/import/confirm", json={"token": body["token"]})
     assert r2.status_code == 200
@@ -854,8 +857,13 @@ def test_patch_automation_triggers_and_grants(client):
     x_token = client.post("/secrets", json={"name": "X_TOKEN", "value": "v"}).json()["id"]
     assert client.patch(f"/automations/{a['id']}", json={
         "allowedSecrets": ["99999999-9999-4999-8999-999999999999"]}).status_code == 422
-    r = client.patch(f"/automations/{a['id']}", json={
+    # §4.3: a cron without `source` is invalid — nothing stored
+    assert client.patch(f"/automations/{a['id']}", json={
         "triggers": [{"kind": "cron", "expression": "15 6 * * 3", "enabled": False}],
+    }).status_code == 422
+    r = client.patch(f"/automations/{a['id']}", json={
+        "triggers": [{"kind": "cron", "expression": "15 6 * * 3", "enabled": False,
+                      "source": "user"}],
         "allowedSecrets": [x_token], "paramValues": {"greeting": "yo"},
     })
     j = r.json()
@@ -869,7 +877,8 @@ def test_patch_automation_triggers_and_grants(client):
     # whole-list replace: ids survive, additions get fresh ids
     tid = j["triggers"][0]["id"]
     r = client.patch(f"/automations/{a['id']}", json={
-        "triggers": [{**j["triggers"][0], "enabled": True}, {"kind": "cron", "expression": "0 2 * * *", "enabled": True}],
+        "triggers": [{**j["triggers"][0], "enabled": True},
+                     {"kind": "cron", "expression": "0 2 * * *", "enabled": True, "source": "user"}],
     })
     j = r.json()
     assert j["triggers"][0]["id"] == tid
@@ -1034,14 +1043,16 @@ def test_save_version_applies_draft_triggers(client):
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Scheduled", "mock",
-                                triggers=[{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False},
+                                triggers=[{"id": "t1", "kind": "cron", "expression": "0 8 * * *",
+                                           "enabled": False, "source": "spec"},
                                           {"id": "t2", "kind": "time", "at": "2999-01-01T00:00", "enabled": True}])
     # §4.3 cron-subset replace: sent list (the editor's merge) replaces whole;
     # sent ids survive, new entries get one assigned
     r = client.post(f"/automations/{a['id']}/versions", json={"draft": {
         **make_version(notes="second"),
-        "triggers": [{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False},
-                     {"kind": "cron", "expression": "30 9 * * 1", "enabled": True},
+        "triggers": [{"id": "t1", "kind": "cron", "expression": "0 8 * * *",
+                      "enabled": False, "source": "spec"},
+                     {"kind": "cron", "expression": "30 9 * * 1", "enabled": True, "source": "spec"},
                      {"id": "t2", "kind": "time", "at": "2999-01-01T00:00", "enabled": True}],
     }})
     assert r.status_code == 200
@@ -2938,9 +2949,9 @@ def test_triggers_preview_happy_and_invalid_entries(client):
 
     n_autos = len(store.autos)
     r = client.post("/triggers/preview", json={"triggers": [
-        {"kind": "cron", "expression": "0 9 * * *"},
+        {"kind": "cron", "expression": "0 9 * * *", "source": "user"},
         {"kind": "app_start"},
-        {"kind": "cron", "expression": "not cron"},
+        {"kind": "cron", "expression": "not cron", "source": "user"},
         {"kind": "time", "at": "2999-01-01T00:00"},
         {"kind": "discord", "channel": "123",
          "secret": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34", "pattern": "go"},
@@ -3381,7 +3392,7 @@ def test_elapsed_staged_one_shot_never_blocks_save(client):
     passed before Create / version save lands is dropped, the save succeeds,
     and the rest of the list stores normally."""
     past = {"kind": "time", "at": "2020-01-01T10:00", "id": "staged-one-shot"}
-    cron = {"kind": "cron", "expression": "0 8 * * *"}
+    cron = {"kind": "cron", "expression": "0 8 * * *", "source": "spec"}
     r = client.post("/automations", json={
         "draft": {**make_version(), "triggers": [past, cron]},
         "name": "Stale staged", "agentId": "mock"})

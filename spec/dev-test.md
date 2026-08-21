@@ -27,8 +27,8 @@ Backend env knobs (configuration only):
   `<home>/logs/` (§5), and Electron's Chromium profile follows to `<home>/electron/` — an
   isolated home isolates the renderer's localStorage/cookies too, never the real profile.
 - `AUTOWRIGHT_PORT` — fixed port instead of a random free one.
-- `AUTOWRIGHT_SHIM` — forces a **single** §3 CLI shim location, replacing both candidates
-  (`~/.local/bin/autowright` and the legacy `/usr/local/bin/autowright`) and skipping the
+- `AUTOWRIGHT_SHIM` — overrides the §3 CLI shim location
+  (default `~/.local/bin/autowright`) and skips the
   login-PATH probe (a forced location counts as on-PATH); honored by both `service.py` and
   the Electron shell's `cli-status`/`cli-install`, so tests never touch the real locations.
 - `AUTOWRIGHT_OLLAMA_URL` — Ollama HTTP endpoint override (default `http://localhost:11434`).
@@ -106,8 +106,8 @@ module besides `cli.py` imports `autowright.cli`, and a Vitest guard reads
 no child-process call executes the CLI (the string `autowright.cli` may appear only inside
 the shim file text), and that shim writes only ever target the §3 user-local location —
 no osascript admin prompt exists (`with administrator privileges` must not appear), and
-nothing writes to the legacy `/usr/local/bin` (heal of an already-ours file goes through
-the shared candidate list, creation only through `cli-install`, deletion only through
+nothing reads, writes, or deletes at `/usr/local/bin` (creation only through
+`cli-install`, deletion only through
 `cli-uninstall` and only of marker-carrying files).
 
 **Typecheck coverage.** `tsc --noEmit` runs twice, over two configs, because a single

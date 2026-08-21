@@ -329,7 +329,7 @@ describe('needsMessageTriggerSetup', () => {
   it('true when a step reads trigger_payload and no message trigger exists', () => {
     expect(needsMessageTriggerSetup([payloadStep], [])).toBe(true)
     expect(needsMessageTriggerSetup([payloadStep], [
-      { kind: 'cron', enabled: true, expression: '0 8 * * *' },
+      { kind: 'cron', enabled: true, expression: '0 8 * * *', source: 'spec' },
       { kind: 'app_start', enabled: true },
     ])).toBe(true)
   })
@@ -358,10 +358,10 @@ describe('mergeDraftTriggers — non-cron drafted entries', () => {
 
   it('drafted discord/imessage with no matching existing entry are appended with enabled:true', () => {
     const cur: DraftTrigger[] = [
-      { id: 'c1', kind: 'cron', enabled: true, expression: '0 8 * * *' },
+      { id: 'c1', kind: 'cron', enabled: true, expression: '0 8 * * *', source: 'spec' },
     ]
     const drafted: DraftTrigger[] = [
-      { id: 'c1', kind: 'cron', enabled: true, expression: '0 8 * * *' },
+      { id: 'c1', kind: 'cron', enabled: true, expression: '0 8 * * *', source: 'spec' },
       disc({ enabled: false }),          // enabled forced back to true on add
       imsg({ pattern: 'report' }),
     ]
@@ -433,9 +433,9 @@ describe('mergeDraftTriggers — non-cron drafted entries', () => {
 describe('stripTrigger (§4.4 draft-only trigger shape)', () => {
   it('keeps only the stored fields per kind — derived label/short/connection never leak', () => {
     expect(stripTrigger({
-      id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', timezone: 'UTC',
+      id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', timezone: 'UTC', source: 'spec',
       label: 'Every day at 8:00', short: 'daily 8:00', connection: { state: 'connected' },
-    } as Trigger)).toEqual({ id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', timezone: 'UTC' })
+    } as Trigger)).toEqual({ id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', timezone: 'UTC', source: 'spec' })
     expect(stripTrigger({
       id: 't2', enabled: true, kind: 'time', at: '2026-08-09T09:00:00', label: 'L', short: 'S',
     } as Trigger)).toEqual({ id: 't2', enabled: true, kind: 'time', at: '2026-08-09T09:00:00' })
@@ -444,8 +444,8 @@ describe('stripTrigger (§4.4 draft-only trigger shape)', () => {
   })
   it('optional keys are omitted entirely when absent — no undefined-valued fields', () => {
     // draft entries have no id yet; a cron without a timezone stays timezone-free
-    expect(stripTrigger({ enabled: true, kind: 'cron', expression: '0 8 * * *' }))
-      .toEqual({ enabled: true, kind: 'cron', expression: '0 8 * * *' })
+    expect(stripTrigger({ enabled: true, kind: 'cron', expression: '0 8 * * *', source: 'user' }))
+      .toEqual({ enabled: true, kind: 'cron', expression: '0 8 * * *', source: 'user' })
     // discord: pattern/mention/author serialize only when set; [] counts as absent
     expect(stripTrigger({ enabled: true, kind: 'discord', channel: '123', secret: 'BOT_TOKEN', author: [] }))
       .toEqual({ enabled: true, kind: 'discord', channel: '123', secret: 'BOT_TOKEN' })

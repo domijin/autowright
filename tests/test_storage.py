@@ -4,7 +4,8 @@ from conftest import make_version
 def test_create_and_reload_roundtrip(store, home):
     from autowright.storage import Store
 
-    trig = {"id": "t-1", "kind": "cron", "enabled": True, "expression": "30 7 * * *"}
+    trig = {"id": "t-1", "kind": "cron", "enabled": True, "expression": "30 7 * * *",
+            "source": "user"}
     a = store.create_automation(make_version(), "My Test Job", "agent-1", triggers=[trig])
     assert (home / "automations" / a["id"] / "versions" / "v1" / "01-say.py").exists()
     assert (home / "automations" / a["id"] / "versions" / "v1" / "spec.md").exists()
@@ -466,7 +467,8 @@ def test_load_triggers_consumes_past_oneshot_and_dedupes_app_start(store, caplog
     from autowright.storage import Store
     from autowright.yamlio import load_yaml, save_yaml
 
-    trig = {"id": "keep", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}
+    trig = {"id": "keep", "kind": "cron", "enabled": True, "expression": "0 8 * * *",
+            "source": "user"}
     a = store.create_automation(make_version(), "Triggered", None, triggers=[trig])
     top = store.auto_dir(a) / "automation.yaml"
     data = load_yaml(top)
@@ -475,6 +477,9 @@ def test_load_triggers_consumes_past_oneshot_and_dedupes_app_start(store, caplog
         {"id": "gone", "kind": "time", "enabled": True, "at": "2020-01-01T08:00"},
         {"id": "as1", "kind": "app_start", "enabled": True},
         {"id": "as2", "kind": "app_start", "enabled": True},
+        # §4.3: cron `source` is required — a source-less stored cron is
+        # malformed and dropped with a warning, never read as "spec"
+        {"id": "srcless", "kind": "cron", "enabled": True, "expression": "0 9 * * *"},
     ]
     save_yaml(top, data)
 
@@ -488,6 +493,10 @@ def test_load_triggers_consumes_past_oneshot_and_dedupes_app_start(store, caplog
     # §4.3: at most one app_start — the duplicate dropped with a warning
     assert [t["id"] for t in trigs if t["kind"] == "app_start"] == ["as1"]
     assert any("duplicate app-start" in rec.message for rec in caplog.records)
+    # the source-less cron dropped as malformed — the valid one survived
+    assert [t["id"] for t in trigs if t["kind"] == "cron"] == ["keep"]
+    assert any("malformed trigger" in rec.message and "srcless" in rec.message
+               for rec in caplog.records)
 
 
 def test_load_triggers_discord_roundtrip(store):
@@ -501,6 +510,56 @@ def test_load_triggers_discord_roundtrip(store):
     s2.load_all()
     loaded = s2.autos[a["id"]]["triggers"]
     assert loaded == [trig]
+
+
+def test_load_skips_unresolvable_secret_entries(store, caplog):
+    """§4.8/§5 lenient load: a secrets.yaml entry without an id (or name)
+    can't be referenced — skipped with a warning, never healed (no id minted,
+    no write-back), never fatal."""
+    import logging
+
+    from autowright import paths
+    from autowright.storage import Store
+    from autowright.yamlio import load_yaml, save_yaml
+
+    good = {"id": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34", "name": "GOOD_ONE",
+            "description": "", "set": True}
+    save_yaml(paths.secrets_file(), {"secrets": [
+        good,
+        {"name": "NO_ID_ONE", "description": "", "set": True},
+        {"id": "11111111-2222-4333-8444-555555555555", "description": "", "set": True},
+    ]})
+    with caplog.at_level(logging.WARNING, logger="autowright.storage"):
+        s2 = Store()
+        s2.load_all()
+    assert [s["name"] for s in s2.secrets] == ["GOOD_ONE"]
+    assert sum("can't be referenced" in rec.message for rec in caplog.records) == 2
+    # never healed: the file on disk is untouched — no minted ids, no rewrite
+    raw = load_yaml(paths.secrets_file(), {})["secrets"]
+    assert [s.get("id") for s in raw] == [good["id"], None,
+                                          "11111111-2222-4333-8444-555555555555"]
+
+
+def test_load_skips_unresolvable_agent_entries(store, caplog):
+    """§4.7/§5 lenient load: an agents.yaml entry without an id can't be
+    referenced — skipped with a warning, never fatal."""
+    import logging
+
+    from autowright import paths
+    from autowright.storage import Store
+    from autowright.yamlio import load_yaml, save_yaml
+
+    data = load_yaml(paths.agents_file(), {}) or {}
+    data["agents"] = [{"name": "No Id One", "harness": "Claude Code",
+                       "mode": "default", "model": None},
+                      *(data.get("agents") or [])]
+    save_yaml(paths.agents_file(), data)
+    with caplog.at_level(logging.WARNING, logger="autowright.storage"):
+        s2 = Store()
+        s2.load_all()
+    assert all(g.get("id") for g in s2.agents)
+    assert not any(g.get("name") == "No Id One" for g in s2.agents)
+    assert any("can't be referenced" in rec.message for rec in caplog.records)
 
 
 def test_read_log_bounds_and_bad_lines(store):

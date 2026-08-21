@@ -532,11 +532,10 @@ export function useDraftJob(d: DraftJobDeps) {
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // one edit at a time
       notesDraft: null, notesEdit: false,
       // §11 auto-dismiss on reply: a sent message answers any open
-      // clarification blockers (chat source — legacy `spec` entries render
-      // the same way); sync entries stay
+      // clarification blockers (chat source); sync entries stay
       // open — their Apply button remains useful until a sync lands
       chat: [...r.chat.map((e) => (e.kind === 'blockers' && !e.dismissed
-        && (e.source === 'chat' || e.source === 'spec') ? { ...e, dismissed: true } : e)), entry],
+        && e.source === 'chat' ? { ...e, dismissed: true } : e)), entry],
       // §4.4 thread lifetime: the thread no longer rides the draft, so sending
       // alone doesn't touch it — a pure Q&A keeps no draft. The response
       // handler marks touched when it actually changes the draft.

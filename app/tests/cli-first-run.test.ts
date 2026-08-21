@@ -1,7 +1,7 @@
 // §3 one-shot first-run CLI install, driven from store.boot(): with cliEnabled
 // on (default true) and the ad-cli-installed marker (§15) unset, a `missing`
 // shim is installed silently once. Every already-settled disk state
-// (installed/stale/foreign) sets the marker without touching disk; a failed
+// (installed/foreign) sets the marker without touching disk; a failed
 // install leaves the marker unset so the next launch retries — and never
 // patches cliEnabled off. Once the marker is set the app never creates the
 // shim on its own again (hand-deletion sticks).
@@ -33,7 +33,7 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 })
 
-type Cli = { state: 'installed' | 'stale' | 'missing' | 'foreign'; path: string; onPath: boolean }
+type Cli = { state: 'installed' | 'missing' | 'foreign'; path: string; onPath: boolean }
 const USER = '/Users/me/.local/bin/autowright'
 const cli = (state: Cli['state']): Cli => ({ state, path: USER, onPath: true })
 
@@ -95,7 +95,7 @@ describe('one-shot first-run CLI install (§3, via boot)', () => {
     expect(cliInstall).not.toHaveBeenCalled()
   })
 
-  it.each(['installed', 'stale', 'foreign'] as const)(
+  it.each(['installed', 'foreign'] as const)(
     'already-settled state %s: marker set, disk untouched', async (state) => {
       cliStatus.mockResolvedValue(cli(state))
       await launch(true)

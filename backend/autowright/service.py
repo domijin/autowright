@@ -27,13 +27,12 @@ def plist_path() -> Path:
 
 
 def shim_paths() -> list[Path]:
-    """§3 candidate shim locations, user-local first. AUTOWRIGHT_SHIM is the
-    §15 test knob (mirrored in electron/main.cjs): it forces a single one."""
+    """§3 shim location — user-local only. AUTOWRIGHT_SHIM is the §15 test
+    knob (mirrored in electron/main.cjs): it overrides the location."""
     forced = os.environ.get("AUTOWRIGHT_SHIM")
     if forced:
         return [Path(forced)]
-    return [Path.home() / ".local" / "bin" / "autowright",
-            Path("/usr/local/bin/autowright")]
+    return [Path.home() / ".local" / "bin" / "autowright"]
 
 
 def shim_text() -> str:
@@ -61,17 +60,16 @@ def _heal_one(p: Path) -> str | None:
         p.chmod(0o755)
         return f"CLI at {p}"
     except OSError as e:
-        return (f"CLI shim stale, not rewritable ({e}) — "
+        return (f"CLI shim at {p} not rewritable ({e}) — "
                 f"use `{sys.executable} -m autowright.cli`")
 
 
 def _heal_shim() -> str:
     """§3: healing only, never creation. Creating a shim belongs to the
-    Electron shell's cli-install flow (silent in ~/.local/bin, admin-prompted
-    + chown-to-user in /usr/local/bin). Here: every candidate location whose
-    shim is ours, user-writable, and points at another interpreter (moved
-    bundle, dev↔prod switch, update) is rewritten in place — sudo-free, since
-    a user-owned file rewrites without a directory write."""
+    Electron shell's cli-install flow (silent, ~/.local/bin). Here: a shim
+    that is ours and points at another interpreter (moved bundle, dev↔prod
+    switch, update) is rewritten in place — sudo-free, since a user-owned
+    file rewrites without a directory write."""
     notes = [n for n in (_heal_one(p) for p in shim_paths()) if n]
     if not notes:
         return f"CLI not installed — use `{sys.executable} -m autowright.cli`"
@@ -79,9 +77,8 @@ def _heal_shim() -> str:
 
 
 def _remove_shim() -> str | None:
-    """Delete shims only where the marker says they're ours (§3). Deleting
-    from a root-owned /usr/local/bin fails sudo-free — then report the
-    manual command instead."""
+    """Delete the shim only when the marker says it's ours (§3). A failed
+    delete goes on the result line instead of raising."""
     notes = []
     for p in shim_paths():
         try:
@@ -91,8 +88,8 @@ def _remove_shim() -> str | None:
             continue
         try:
             p.unlink()
-        except OSError:
-            notes.append(f"CLI shim left at {p} — remove with `sudo rm {p}`")
+        except OSError as e:
+            notes.append(f"CLI shim left at {p} — couldn't delete it ({e})")
     return " · ".join(notes) if notes else None
 
 

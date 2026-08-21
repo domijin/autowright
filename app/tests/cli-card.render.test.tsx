@@ -3,7 +3,7 @@
 // setting and installs (silent, ~/.local/bin); a failed install patches it
 // back. Turning off also deletes the command: with an ours shim on disk a
 // danger confirm asks first (confirming patches off + fires cli-uninstall;
-// an undeletable legacy shim comes back as a toasted manual command); with
+// a failed delete comes back as a toasted error message); with
 // nothing installed the flip just patches false. No standalone Delete row.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -36,10 +36,9 @@ Object.defineProperty(globalThis, 'localStorage', {
   },
 })
 
-type Cli = { state: 'installed' | 'stale' | 'missing' | 'foreign'; path: string; onPath: boolean }
+type Cli = { state: 'installed' | 'missing' | 'foreign'; path: string; onPath: boolean }
 
 const USER = '/Users/me/.local/bin/autowright'
-const LEGACY = '/usr/local/bin/autowright'
 
 const cliStatus = vi.fn<() => Promise<Cli>>()
 const cliInstall = vi.fn<() => Promise<{ ok: boolean }>>()
@@ -161,18 +160,18 @@ describe('COMMAND LINE card (§4.9)', () => {
     expect(cliUninstall).not.toHaveBeenCalled()
   })
 
-  it('undeletable legacy shim: confirmed disable toasts the manual command, setting still turns off', async () => {
+  it('failed delete: confirmed disable toasts the error, setting still turns off', async () => {
     setup(true)
-    cliStatus.mockResolvedValue({ state: 'stale', path: LEGACY, onPath: true })
-    cliUninstall.mockResolvedValue({ ok: false, hint: `Remove it with: sudo rm ${LEGACY}` })
+    cliStatus.mockResolvedValue({ state: 'installed', path: USER, onPath: true })
+    cliUninstall.mockResolvedValue({ ok: false, hint: `Couldn’t delete ${USER} — EPERM` })
     render(<SettingsPage />)
-    await screen.findByText(/An old autowright command at \/usr\/local\/bin points at an old location\./)
+    await screen.findByText(`Installed at ${USER}`)
     const card = (await screen.findByText('COMMAND LINE')).parentElement as HTMLElement
     fireEvent.click(card.querySelector('[role="switch"]') as Element)
     fireEvent.click(await screen.findByRole('button', { name: 'Turn off and delete' }))
     await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ cliEnabled: false }))
     await waitFor(() => expect(cliUninstall).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(useStore.getState().toast).toContain('sudo rm'))
+    await waitFor(() => expect(useStore.getState().toast).toContain('Couldn’t delete'))
   })
 
   it('off + still installed (failed uninstall leftover): no Delete row anywhere', async () => {
@@ -199,15 +198,6 @@ describe('COMMAND LINE card (§4.9)', () => {
     await waitFor(() => expect(localStorage.getItem('ad-cli-installed')).toBe('1'))
     await screen.findByText(`Installed at ${USER}`)
     expect(screen.queryByText(/CLI is missing/)).toBeNull()
-  })
-
-  it('on + stale legacy: amber row-1 copy plus the warning row with Reinstall', async () => {
-    setup(true)
-    cliStatus.mockResolvedValue({ state: 'stale', path: LEGACY, onPath: true })
-    render(<SettingsPage />)
-    await screen.findByText(/An old autowright command at \/usr\/local\/bin points at an old location\./)
-    await screen.findByText(/CLI is missing/)
-    await screen.findByRole('button', { name: 'Reinstall' })
   })
 
   it('foreign: never touched — no toggle, no buttons', async () => {

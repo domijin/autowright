@@ -19,10 +19,9 @@ def svc(home, monkeypatch):
 
     plist = home / "LaunchAgents" / f"{service.LABEL}.plist"
     monkeypatch.setattr(service, "plist_path", lambda: plist)
-    # Two candidate locations (§3): user-local first, then system.
+    # The single §3 shim location, redirected into the per-test home.
     shim = home / "bin" / "autowright"
-    shim2 = home / "sysbin" / "autowright"
-    monkeypatch.setattr(service, "shim_paths", lambda: [shim, shim2])
+    monkeypatch.setattr(service, "shim_paths", lambda: [shim])
 
     calls = []
     results = {}  # verb ("bootstrap"/"bootout"/"load"/"unload"/"list") → canned result
@@ -52,7 +51,7 @@ def svc(home, monkeypatch):
         return [c for c in calls if c[1] != "print"]
 
     return SimpleNamespace(mod=service, plist=plist,
-                           shim=shim, shim2=shim2,
+                           shim=shim,
                            calls=calls, results=results, actions=actions,
                            registered=registered)
 
@@ -135,9 +134,9 @@ def test_install_reports_current_shim(svc):
     assert f"CLI at {svc.shim}" in svc.mod.install()
 
 
-def test_install_reports_stale_unwritable_shim(svc):
-    # Ours, wrong interpreter, not writable (pre-chown legacy or root-owned):
-    # reported with the module-form fallback, never fatal (§3).
+def test_install_reports_unwritable_shim(svc):
+    # Ours, wrong interpreter, not writable: reported with the module-form
+    # fallback, never fatal (§3).
     svc.shim.parent.mkdir(parents=True)
     svc.shim.write_text(f"#!/bin/sh\n{svc.mod.SHIM_MARKER}\n"
                         f'exec "/old/gone/python3" -m autowright.cli "$@"\n')
@@ -149,7 +148,7 @@ def test_install_reports_stale_unwritable_shim(svc):
         svc.shim.parent.chmod(0o755)
         svc.shim.chmod(0o755)
     assert out.startswith("installed and started")
-    assert "CLI shim stale, not rewritable" in out
+    assert f"CLI shim at {svc.shim} not rewritable" in out
     assert f"{sys.executable} -m autowright.cli" in out
 
 
@@ -174,8 +173,8 @@ def test_install_leaves_undecodable_foreign_file_alone(svc):
 
 
 def test_shim_paths_env_knob(monkeypatch, home):
-    # AUTOWRIGHT_SHIM (§15) forces a single location — tests and dev never
-    # touch the real candidates. Uses the real shim_paths (the svc fixture
+    # AUTOWRIGHT_SHIM (§15) overrides the location — tests and dev never
+    # touch the real ~/.local/bin. Uses the real shim_paths (the svc fixture
     # replaces it, so no fixture here).
     from pathlib import Path
 
@@ -184,41 +183,17 @@ def test_shim_paths_env_knob(monkeypatch, home):
     monkeypatch.setenv("AUTOWRIGHT_SHIM", str(home / "elsewhere" / "aw"))
     assert service.shim_paths() == [home / "elsewhere" / "aw"]
     monkeypatch.delenv("AUTOWRIGHT_SHIM")
-    assert service.shim_paths() == [Path.home() / ".local" / "bin" / "autowright",
-                                    Path("/usr/local/bin/autowright")]
+    assert service.shim_paths() == [Path.home() / ".local" / "bin" / "autowright"]
 
 
-def test_install_heals_both_locations(svc):
-    # Ours in both candidates (user-local and system) → both rewritten (§3).
-    for p in (svc.shim, svc.shim2):
-        p.parent.mkdir(parents=True)
-        p.write_text(f"#!/bin/sh\n{svc.mod.SHIM_MARKER}\n"
-                     f'exec "/old/gone/python3" -m autowright.cli "$@"\n')
-    out = svc.mod.install()
-    assert f"CLI at {svc.shim}" in out and f"CLI at {svc.shim2}" in out
-    assert svc.shim.read_text() == svc.mod.shim_text()
-    assert svc.shim2.read_text() == svc.mod.shim_text()
-
-
-def test_install_heals_one_leaves_foreign_other(svc):
-    # Ours user-local, foreign system: heal one, never touch the other (§3).
+def test_install_heals_shim(svc):
+    # Ours, pointing at another interpreter → rewritten in place (§3).
     svc.shim.parent.mkdir(parents=True)
     svc.shim.write_text(f"#!/bin/sh\n{svc.mod.SHIM_MARKER}\n"
                         f'exec "/old/gone/python3" -m autowright.cli "$@"\n')
-    svc.shim2.parent.mkdir(parents=True)
-    svc.shim2.write_text("#!/bin/sh\necho someone else's autowright\n")
     out = svc.mod.install()
     assert f"CLI at {svc.shim}" in out
-    assert f"foreign {svc.shim2} left alone" in out
-    assert "someone else" in svc.shim2.read_text()
-
-
-def test_uninstall_removes_own_shims_from_both_locations(svc):
-    for p in (svc.shim, svc.shim2):
-        p.parent.mkdir(parents=True)
-        p.write_text(svc.mod.shim_text())
-    svc.mod.uninstall()
-    assert not svc.shim.exists() and not svc.shim2.exists()
+    assert svc.shim.read_text() == svc.mod.shim_text()
 
 
 def test_uninstall_removes_own_shim(svc):
@@ -236,7 +211,7 @@ def test_uninstall_reports_undeletable_shim(svc):
         out = svc.mod.uninstall()
     finally:
         svc.shim.parent.chmod(0o755)
-    assert f"sudo rm {svc.shim}" in out
+    assert f"CLI shim left at {svc.shim}" in out and "couldn't delete" in out
     assert svc.shim.exists()
 
 

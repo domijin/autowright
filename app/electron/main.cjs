@@ -483,19 +483,16 @@ function togglePanel() {
 }
 
 // §3 CLI on PATH: the shell owns shim *creation* — explicit (the §4.9 card's
-// Install button), silent, and always into the user-owned ~/.local/bin; no
-// admin prompt anywhere, and never automatic. /usr/local/bin is legacy-only:
-// shims created there by earlier builds are recognized and healed, never
-// created. `service install` heals user-owned shims wherever they are.
+// Install button), silent, and always into the user-owned ~/.local/bin — the
+// only shim location; no admin prompt anywhere, and never automatic.
 // Interpreter comes from backend.json's `python`, so dev and prod run the
 // same code. AUTOWRIGHT_SHIM is the §15 test knob (mirrored in service.py):
-// it forces a single location and skips the PATH probe.
+// it overrides the location and skips the PATH probe.
 const SHIM_MARKER = '# autowright CLI shim'
 const USER_SHIM = path.join(os.homedir(), '.local', 'bin', 'autowright')
-const SYSTEM_SHIM = '/usr/local/bin/autowright'
 
 function shimPaths() {
-  return process.env.AUTOWRIGHT_SHIM ? [process.env.AUTOWRIGHT_SHIM] : [USER_SHIM, SYSTEM_SHIM]
+  return process.env.AUTOWRIGHT_SHIM ? [process.env.AUTOWRIGHT_SHIM] : [USER_SHIM]
 }
 
 function shimText(python) {
@@ -521,27 +518,24 @@ function userBinOnLoginPath() {
 async function cliStatus() {
   const python = backendInfo()?.python
   const onPath = await userBinOnLoginPath()
-  // Effective shim: first existing file among the candidates, user-local
-  // first (it wins over the legacy /usr/local/bin when both exist, §3).
-  const effective = shimPaths().find((p) => fs.existsSync(p)) ?? null
-  if (effective === null) return { state: 'missing', path: shimPaths()[0], onPath }
+  const shim = shimPaths()[0]
   let current
   try {
-    current = fs.readFileSync(effective, 'utf-8')
+    current = fs.readFileSync(shim, 'utf-8')
   } catch {
-    return { state: 'missing', path: shimPaths()[0], onPath }
+    return { state: 'missing', path: shim, onPath }
   }
-  if (!current.includes(SHIM_MARKER)) return { state: 'foreign', path: effective, onPath }
-  if (!python || current === shimText(python)) return { state: 'installed', path: effective, onPath }
-  // Ours but pointing elsewhere: heal in place when user-owned (§3 — a file
-  // rewrite needs no directory write); only an unwritable legacy shim is
-  // 'stale' (the card's fix: fresh user-local install + manual sudo rm).
+  if (!current.includes(SHIM_MARKER)) return { state: 'foreign', path: shim, onPath }
+  if (!python || current === shimText(python)) return { state: 'installed', path: shim, onPath }
+  // Ours but pointing elsewhere: heal in place (§3 — a user-owned file
+  // rewrites without a directory write). A failed rewrite only logs: the
+  // next status read retries it.
   try {
-    fs.writeFileSync(effective, shimText(python), { mode: 0o755 })
-    return { state: 'installed', path: effective, onPath }
-  } catch {
-    return { state: 'stale', path: effective, onPath }
+    fs.writeFileSync(shim, shimText(python), { mode: 0o755 })
+  } catch (e) {
+    appLog(`cli-status: couldn't heal ${shim}: ${e?.message || e}`)
   }
+  return { state: 'installed', path: shim, onPath }
 }
 
 function cliInstall() {
@@ -559,27 +553,25 @@ function cliInstall() {
   }
 }
 
-// §3 cli-uninstall (§4.9 Delete): remove ours-marker shims from every
-// candidate; foreign files never touched. An undeletable one (root-owned
-// legacy dir) reports the manual command instead of an error.
+// §3 cli-uninstall (§4.9 disable confirm): remove the ours-marker shim;
+// foreign files never touched. A failed delete reports an error message the
+// §4.9 card toasts.
 function cliUninstall() {
-  const hints = []
-  for (const p of shimPaths()) {
-    let text
-    try {
-      text = fs.readFileSync(p, 'utf-8')
-    } catch {
-      continue
-    }
-    if (!text.includes(SHIM_MARKER)) continue
-    try {
-      fs.unlinkSync(p)
-      appLog(`cli-uninstall: removed ${p}`)
-    } catch {
-      hints.push(`sudo rm ${p}`)
-    }
+  const p = shimPaths()[0]
+  let text
+  try {
+    text = fs.readFileSync(p, 'utf-8')
+  } catch {
+    return { ok: true }
   }
-  return hints.length ? { ok: false, hint: `Remove it with: ${hints.join(' && ')}` } : { ok: true }
+  if (!text.includes(SHIM_MARKER)) return { ok: true }
+  try {
+    fs.unlinkSync(p)
+    appLog(`cli-uninstall: removed ${p}`)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, hint: `Couldn’t delete ${p} — ${e?.message || e}` }
+  }
 }
 
 ipcMain.handle('backend-info', () => backendInfo())

@@ -63,9 +63,9 @@ remain plain dicts (§2).
   past `time`, a `time` whose `at` carries a UTC offset (the zone belongs in `timezone`; naive
   local ISO only), a second `app_start`, or a discord/imessage entry failing the §4.3 field
   rules
-  answers 422 and nothing is stored; a cron entry's optional §4.3 `source` must be `"spec"`
-  or `"user"` (422 otherwise) and is stored as sent — absent stays absent (legacy reads as
-  `spec`, §4.3); serialized discord and imessage triggers carry the
+  answers 422 and nothing is stored; a cron entry's §4.3 `source` is required and must be `"spec"`
+  or `"user"` (422 otherwise — absent included) and is stored as sent;
+  serialized discord and imessage triggers carry the
   derived §4.3
   `connection` state), param
   values, agentId, stepAgents, allowedSecrets, snapshotSettings (the §6.3 automatic-snapshot

@@ -1441,7 +1441,7 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
   it('renders the marker with the history explainer; a marker-terminated thread offers no actions', async () => {
     getChatMock().mockResolvedValueOnce({ chat: [
       { id: 'h1', kind: 'user', text: 'old request' },
-      { id: 'h2', kind: 'blockers', source: 'steps', blockers: [{ reason: 'r', fix: 'f' }] },
+      { id: 'h2', kind: 'blockers', source: 'sync', blockers: [{ reason: 'r', fix: 'f' }] },
       { id: 'm1', kind: 'system', icon: 'fa-flag-checkered', boundary: true, text: 'Draft saved as v2.' },
     ] })
     render(<CreateFlow />)

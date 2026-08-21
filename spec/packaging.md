@@ -94,8 +94,8 @@ the update bullets below).
   exists: if `cliEnabled` (default true, §4.9) is on and the `ad-cli-installed` localStorage
   marker (§15) is unset, the renderer reads `cli-status` and fires `cli-install` when the
   state is `missing`. The marker records "first run settled": it is set on install success and
-  when the state is already `installed`, `stale`, or `foreign` (stale keeps its §4.9 amber
-  card; foreign files are never touched); a failed install leaves it unset so the next launch
+  when the state is already `installed` or `foreign` (foreign files are never
+  touched); a failed install leaves it unset so the next launch
   retries, and, unlike the toggle flow, never patches the setting to false (a transient
   failure must not become a permanent opt-out). Successful card installs set the marker too.
   Once the marker is set the app never creates a shim on its own again: a hand-deleted shim
@@ -107,40 +107,33 @@ the update bullets below).
   `$SHELL -l -c 'printf %s "$PATH"'` with a ~2 s timeout, caches the answer per app run, and
   counts any failure as not-on-PATH) and the card shows the one-line fix
   (`export PATH="$HOME/.local/bin:$PATH"`) after install rather than editing anyone's
-  dotfiles. `/usr/local/bin/autowright` is **legacy-only**: shims created there by earlier
-  builds are still recognized, healed, and uninstalled, but never created. Status, heal, and
-  uninstall consider **both** locations; the user-local file wins when both exist. Ownership
-  of the two halves is split:
+  dotfiles. `~/.local/bin/autowright` is the **only** shim location — nothing outside the
+  user's home is ever read, written, or deleted. Ownership of the two halves is split:
   - **Creation is the Electron shell's job — explicit and silent.** The shell exposes two
-    IPCs on the preload bridge: `cli-status` (reads both candidate shims; the effective one
-    is the first that exists, user-local first; states `installed` — marker present and exec
-    line points at the current backend interpreter from `backend.json` — `stale` — marker
-    present, different interpreter, and the file is not user-writable so the heal below
-    can't fix it; only possible at the legacy `/usr/local/bin`, since a user-local file is
-    always writable — `missing`, and `foreign` — the effective file exists without the
-    marker; never touched. The result also carries `path` — the effective shim path (the
-    install destination when missing) — and `onPath` — whether `~/.local/bin` is on the
+    IPCs on the preload bridge: `cli-status` (reads the shim; states `installed` — marker
+    present and exec line points at the current backend interpreter from `backend.json`
+    (an ours shim pointing at another interpreter is healed in place right here — a
+    user-owned file rewrites without a directory write) — `missing`, and `foreign` — the
+    file exists without the marker; never touched. The result also carries `path` — the
+    shim path — and `onPath` — whether `~/.local/bin` is on the
     login-shell PATH — so the §4.9 card can name the location and show the PATH hint) and
     `cli-install` (plain unprivileged writes to `~/.local/bin/autowright`: `mkdir -p`, write
-    the shim, `chmod 755`. No dialog, no password. A `stale` legacy shim is not rewritten by
-    it — the card's fix is a fresh user-local install plus the manual
-    `sudo rm /usr/local/bin/autowright`, and the card says so). A third IPC, `cli-uninstall`
-    (fired by the §4.9 disable confirm), removes ours-marker shims from every candidate location — same
-    rules as `service uninstall` below: marker required, foreign files never touched, and an
-    undeletable one (root-owned legacy dir) is reported back as the manual `sudo rm` command
-    instead of an error.
+    the shim, `chmod 755`. No dialog, no password). A third IPC, `cli-uninstall`
+    (fired by the §4.9 disable confirm), removes the ours-marker shim — same
+    rules as `service uninstall` below: marker required, foreign files never touched, and a
+    failed delete is reported back as an error message the §4.9 card toasts.
     The interpreter path comes from `backend.json`'s `python` field, so the same code works
     in dev (repo venv) and prod (bundled interpreter) — no dev-only path.
   - **Healing is `service install`'s job — silent and sudo-free** (§3 has no sudo anywhere in
-    the plumbing): for **every** candidate location whose shim exists, carries the marker, is
-    user-writable, and whose exec line names a different interpreter (moved bundle, dev↔prod
+    the plumbing): when the shim exists, carries the marker, and its exec line names a
+    different interpreter (moved bundle, dev↔prod
     switch, update), install rewrites it in place — rewriting a user-owned file needs no
     directory write. It never *creates* a shim (creation is the shell flow above) and never
     touches a foreign file (no marker). The install result line reports the shim state either
     way.
-  `service uninstall` removes our shim from every location where the marker identifies it as
-  ours and the file is deletable (deleting from a root-owned directory isn't — then the result
-  line prints the manual `sudo rm` command instead). Users who skip the shim always have the
+  `service uninstall` removes the shim when the marker identifies it as
+  ours (a failed delete puts the error on the result
+  line). Users who skip the shim always have the
   module form: `<python> -m autowright.cli`.
 - launchd keeps it alive: `RunAtLoad` + `KeepAlive` (restart on crash). launchd also guarantees a
   single backend instance — the UI and CLI are always clients, never owners.

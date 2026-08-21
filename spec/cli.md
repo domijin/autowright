@@ -207,7 +207,8 @@ value exits 1 naming the expected form.
 **Secret values never ride argv** — `secret set NAME` takes no value argument: it prompts
 (`getpass`, no echo), or reads the value from stdin with `--stdin` for scripted use. A value
 passed as an argument would land in shell history and in every local process's view of the
-process list, which is exactly what "passwords never leave your Keychain" (§1) rules out.
+process list - the kind of secret-value exposure Autowright otherwise keeps out of scripts,
+logs, and argv (§1 core promise, §4.8).
 Names are the CLI's secret surface; the CLI maps them to the §19 id routes: `secret set`
 with a name no stored secret holds creates via `POST /secrets`, with an existing name edits
 via `PUT /secrets/{id}` (the upsert feel is CLI-side; the API itself is split, §19).

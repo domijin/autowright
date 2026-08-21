@@ -245,8 +245,8 @@ Then the version chip dropdown (§4.4 read-only history + footer
 explainer), status badge, then the §9 header-action cluster: Edit (ghost), Execute now (accent
 primary), ellipsis menu at the far right edge (**Export…**, then Delete automation… in red). Export… opens a small modal — "Export "`<name>`"" with one toggle row,
 "Include parameter values" (on; help: "Your saved parameter values travel with the file — turn
-this off when sharing with someone else."), footer note "Secret values and memory never leave
-this Mac", accent Export / quiet Cancel — then a native save dialog (main-process IPC, default
+this off when sharing with someone else."), footer note "Secret values and memory are never
+included in the file", accent Export / quiet Cancel — then a native save dialog (main-process IPC, default
 name `<name>.autowright` in Downloads) writes the §19 export response; success toasts
 "Exported to `<file>`."
 

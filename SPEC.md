@@ -40,9 +40,13 @@ plain words ("Check the manga I follow for new chapters every morning at 8"); a 
 model) writes it as human-readable
 scripts; Autowright executes those scripts on a schedule, entirely on the user's Mac, and shows results.
 
-Core promises (exact UI copy, repeated in the onboarding footer):
+Core promises (exact UI copy, repeated in the onboarding footer). Each states only what the app
+enforces: execution is local, and secret values are stored in the Keychain and kept out of the
+authored scripts and the logs (via §6 runtime injection + redaction). Neither promise claims a
+step *cannot* transmit a value it was given at runtime - the engine is not a sandbox (§6.2), so
+the copy must never imply that secret values can never leave the machine.
 - "Your automations execute only on this Mac"
-- "Passwords never leave your Keychain"
+- "Secrets live in your Keychain, never in a script or log"
 
 ## 2. Architecture
 

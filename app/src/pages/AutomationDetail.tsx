@@ -484,7 +484,7 @@ export default function AutomationDetail() {
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 22 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-faint)', marginRight: 'auto' }}>
                     <i className="fa-solid fa-lock" style={{ fontSize: 10 }} />
-                    Secret values and memory never leave this Mac
+                    Secret values and memory are never included in the file
                   </span>
                   <BtnGhost onClick={close}>Cancel</BtnGhost>
                   <BtnPrimary onClick={() => { void doExport() }}>Export</BtnPrimary>

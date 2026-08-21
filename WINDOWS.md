@@ -66,15 +66,28 @@ Known test failures on a Windows host (fix as part of the port, they assert the 
    - `installer.py` agent-install surface is macOS-only end to end (curl|bash, osascript
      Terminal sign-in, /Applications, `SHELL` env at 207,229): needs per-OS install commands
      or an explicit "install by hand" degradation behind a capability flag.
-2. **Windows ServiceManager** (`platform/windows.py`): keep the backend alive headless.
-   Candidate: Task Scheduler (`schtasks /Create /SC ONLOGON` + restart-on-failure) or a
-   startup-registration + watchdog pair; must satisfy §3 semantics (install/uninstall/status/
-   stop/restart result lines, RunAtLoad + KeepAlive equivalent, log file routing that
-   `main.py:38` truncation can live with: the parent must not hold the log handle open).
-   Then flip `capabilities.service` true and add the `.cmd` shim-heal half to `service.py`
-   (§3 says healing is `service install`'s job).
-   Notifier: Windows toasts (e.g. PowerShell BurntToast-less XML or a small dependency);
-   flip `capabilities.notifications`.
+2. **Windows ServiceManager: Task Scheduler** (decided; implement in
+   `platform/windows.py`). Semantics to satisfy are §3's launchd contract, mapped as:
+   - Task name `ai.autowright.backend` (same reverse-DNS label as the LaunchAgent). Action:
+     the bundled `pythonw.exe -m autowright.main` (`pythonw` so no console window flashes;
+     python-build-standalone ships it beside `python.exe`).
+   - Register via the PowerShell ScheduledTasks cmdlets, not bare `schtasks.exe`:
+     restart-on-failure (`New-ScheduledTaskSettingsSet -RestartCount -RestartInterval`, the
+     KeepAlive equivalent) is not expressible from the schtasks CLI. Logon trigger
+     (RunAtLoad equivalent) + start it immediately on install (`Start-ScheduledTask`, the
+     `launchctl kickstart` equivalent).
+   - Verb mapping: `install` = register (or update in place) + start + §3 health-poll
+     verification; `uninstall` = stop + `Unregister-ScheduledTask`; `status` =
+     `Get-ScheduledTask` state line; `stop` = `Stop-ScheduledTask` only, task stays
+     registered and returns at next logon (mirrors §3 "bootout only"); `restart` = stop +
+     start. Each verb answers a §3-style result line so `service.result_code` keeps working.
+   - Log routing: Task Scheduler does not capture stdout/stderr (launchd does). `main.py`
+     must open/rotate its own `backend.log` on Windows, and the writer must not keep the
+     handle open across the `main.py:38` trim (sharing violation).
+   - Then flip `capabilities.service` true and add the `.cmd` shim-heal half to `service.py`
+     (§3 says healing is `service install`'s job).
+   Notifier (separate, small): Windows toasts via a PowerShell toast-XML invocation or a
+   small dependency; flip `capabilities.notifications` when it works.
 3. **Shell surface finishing** (`win32.cjs` + `main.cjs`)
    - `main.cjs:944` `window-all-closed` never quits (mac tray-app rule): decide Windows
      behavior with the tray present.
@@ -97,27 +110,67 @@ Known test failures on a Windows host (fix as part of the port, they assert the 
      (`SettingsPage.tsx:23-24`) needs a setx/PowerShell form, About page's Homebrew fork,
      `storage.py:1844-1849` os-mismatch label. Use `/health.os` display name, not platform
      sniffing.
-5. **Packaging pipeline** (`scripts/`, all new files; scripts/ stays developer-only)
-   - A `prod.ps1` (or cross-platform node script) mirroring `prod.sh`: download
-     python-build-standalone `x86_64-pc-windows-msvc-install_only` (flat layout), pip install
-     with constraints, `@electron/packager --platform=win32 --arch=x64 --icon=icon.ico`, copy
-     python into `resources\python`, Authenticode signing (signtool), installer artifact
-     (NSIS or Squirrel.Windows; pick one together with the updater story).
-   - Updater: `win32.cjs` `updateFeedUrl` returns null today. Electron's built-in autoUpdater
-     on Windows is Squirrel.Windows (different artifacts + feed format from the mac JSON
-     feed); decide Squirrel.Windows vs electron-updater+NSIS, then extend `release.sh` (or a
-     sibling) to publish `docs/updates/win32-x86_64` artifacts and teach `main.cjs`'s
-     download flow (it currently proxies a Squirrel.Mac JSON feed through a loopback server).
+5. **Packaging pipeline: NSIS + electron-updater** (decided; `scripts/` additions are all
+   new files and scripts/ stays developer-only)
+   - **Build tool:** use electron-builder for the *Windows target only* (`--win nsis`),
+     driven by a new `prod.ps1`; macOS keeps `@electron/packager` + `prod.sh` untouched.
+     Rationale: hand-rolling what electron-updater consumes (NSIS script, `latest.yml`,
+     blockmap, the in-app `app-update.yml`) re-implements electron-builder badly, and
+     electron-builder also gives the sign-later hook for free. `prod.ps1` order mirrors
+     `prod.sh`: sync `VERSION`, vite build, download python-build-standalone
+     `x86_64-pc-windows-msvc-install_only` (flat layout: `python\python.exe`), pip install
+     with `-c constraints.txt` before packaging, ship the interpreter via `extraResources`
+     into `resources\python`, then electron-builder produces the installer.
+   - **Installer shape:** per-user NSIS (`perMachine: false`, no admin prompt - same
+     no-privilege principle as §3), install dir under `%LOCALAPPDATA%\Programs`, appId
+     `ai.autowright.app`, and a **stable NSIS GUID** pinned in config from day one (an
+     upgrade must always find the previous install; this is also what lets a future signed
+     build upgrade an unsigned install in place). Needs `icon.ico` generated beside the
+     existing icns/png (§14 assets).
+   - **Updater:** `electron-updater` (NsisUpdater) as an app dependency, used only on win32.
+     main.cjs's update block becomes per-OS behind the platform layer: darwin keeps the
+     Squirrel.Mac JSON feed + loopback-proxy flow unchanged; win32 uses the generic provider
+     pointed at `https://autowright.ai/updates/win32-x86_64/` (`win32.cjs` `updateFeedUrl`
+     returns that base URL once live). Feed = `latest.yml` + installer + blockmap:
+     yml rewritten under `docs/updates/win32-x86_64/` by the release script, binaries on the
+     GitHub release, mirroring the mac hosting split. The renderer-facing IPC surface
+     (`update-check`/`update-download`/`update-install` states) must stay byte-identical so
+     no renderer code forks. Manual-install rule (§3: a check only ever reads the feed;
+     downloads are user-initiated) carries over: call `checkForUpdates` with autoDownload
+     off.
+   - **Signing (cert later, ready now):** the build signs when cert config is present
+     (electron-builder `CSC_LINK`/`CSC_KEY_PASSWORD` env, or a signtool thumbprint) and
+     otherwise builds unsigned while printing a loud UNSIGNED warning line in the build
+     output - never silently. Keep GUID, install path, and appId stable so the
+     unsigned-to-signed transition is a normal update. When the cert arrives: set
+     `publisherName` in the updater config (electron-updater then verifies the downloaded
+     installer's Authenticode identity), sign both the app exe and the installer, and flip
+     the spec to always-signed. Do not set `publisherName` before signing starts - it would
+     make updates fail against unsigned artifacts.
    - `docs/index.html` download CTA is mac-only (darwin feed + DMG naming); add a Windows
      download path once artifacts exist.
-   - `VERSION` sync + `release.sh` are bash with BSD `sed -i ''`; run releases from macOS for
-     now (they can build only the mac artifacts anyway).
+   - `VERSION` sync + `release.sh` are bash with BSD `sed -i ''`; run mac releases from
+     macOS as today. Windows artifacts get their own `release.ps1` (build, publish installer
+     + blockmap to the same GitHub release, rewrite `docs/updates/win32-x86_64/latest.yml`);
+     a release that ships both platforms is two script runs against one tag/version.
 6. **iMessage stays off** (`capabilities.imessage` false): `listeners.py:475` already gates
    the chat.db watcher; the trigger-kind UI hides via step 4.
 
-## Decisions to make with David before building far
+## Decisions (settled with David, 2026-08-21)
 
-- Installer + updater technology (NSIS + electron-updater vs Squirrel.Windows) - drives
-  packaging, feed format, and the §3 update spec section.
-- Windows service mechanism (Task Scheduler vs startup entry + supervisor).
-- Code-signing: is an Authenticode cert available? Unsigned builds trip SmartScreen.
+These are decided; do not re-litigate them on the Windows machine. They move into spec §3 as
+the implementations ship.
+
+1. **Installer + updater: NSIS + electron-updater.** Squirrel.Windows is out (dormant
+   project; the name-sharing Squirrel.Mac stays on macOS - it is part of Electron and the
+   shipped mac pipeline is untouched). Consequences worked into step 5 below: per-user NSIS
+   installer, `latest.yml` generic-provider feed on autowright.ai mirroring the mac feed
+   hosting, `electron-updater` becomes an app dependency used only on win32.
+2. **Service mechanism: Task Scheduler.** Closest match to launchd `RunAtLoad` + `KeepAlive`
+   (logon trigger + restart-on-failure) with no extra supervisor process. Consequences
+   worked into step 2 below.
+3. **Code signing: certificate later, pipeline ready now.** Windows builds are allowed to be
+   unsigned for the moment (unlike the mac "no ad-hoc fallback" rule); SmartScreen warnings
+   are accepted until a cert exists. The pipeline must be shaped so adding the cert is a
+   config change, not a redesign - see the signing notes in step 5. Once the cert is in use,
+   flip the Windows spec rule to match the mac one (always signed, no fallback).

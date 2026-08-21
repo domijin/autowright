@@ -79,6 +79,25 @@ Keychain; request bodies are validated by pydantic request models — `models.py
 while response bodies remain plain dicts). Transport is localhost HTTP (JSON) plus one WebSocket for live events —
 the full API surface is §19. Packaging is decided — see §3. Storage is decided — see §5.
 
+**Platform layer (decided):** every OS-coupled capability sits behind a small composed
+interface — composition, never a class hierarchy. Backend: the `autowright/platform/` package
+defines one narrow Protocol per capability (`ServiceManager`, `Notifier`, `PowerAssertion`,
+`ProcessControl`) plus a `Capabilities` flag set (`imessage`, `notifications`, `keepAwake`,
+`service`), composed into one frozen `Platform` object by `platform.current()` — per-OS
+`build()` functions; shared logic lives in plain functions the implementations import, never in
+a superclass. Electron: `app/electron/platform/` mirrors the shape — per-OS modules exporting
+plain objects (window chrome, tray spec, panel placement, CLI shim, update feed, managed-install
+probe, reveal rules), selected once by `platform/index.cjs`. These modules never import
+`electron` (they take `app`/window objects as arguments), so the §15 source-scanning guards and
+test loaders keep working. **macOS is the only implemented platform.** On Linux/Windows,
+`current()` composes explicit degraded implementations rather than crashing: service actions
+answer a plain "not supported on <OS> yet" failure line (exit 1, §3 result-code rule),
+notifications and keepAwake are silent no-ops, POSIX process control is shared with Linux, and
+every capability flag the OS can't honor is false. Clients gate features on the §19 `/health`
+`os` + `capabilities` fields — never by sniffing the platform at a call site. Behavior on macOS
+is identical to the pre-layer code; the layer exists so a future port fills in new modules
+instead of hunting call sites.
+
 **Naming policy:** identifiers spell out full words on every surface - stored fields, serialized
 API fields, routes and query params, code identifiers, CLI flags: `expression` not `expr`,
 `timezone` not `tz`, `automation` not `auto`, `versionLabel` not `ver`, `snapshot_id` /
@@ -103,7 +122,11 @@ data on disk); both ends of a served surface change in the same commit.
   `attributedBody` decoder, osascript Messages sender, §19 permission probes),
   drafting, harness adapters,
   transfer archives (`transfer.py`, §5.1 + §5.2 URL fetch/resolution), FastAPI API (`api.py`),
-  launchd service
+  the §2 platform layer (`platform/` package: `base.py` — the capability Protocols,
+  `Capabilities`, and the composed `Platform` dataclass; `darwin.py` — the macOS build:
+  osascript notifier, caffeinate power assertion, launchd service delegation, POSIX process
+  control; `posixproc.py` — the shared POSIX process-group helpers; `fallback.py` — the
+  degraded non-macOS builds), launchd service
   (`service.py`, runnable as `python -m autowright.service` — the §3 registration entry the
   app uses; the UI and backend never invoke the CLI), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
   Further modules: `main.py` (backend entry point, `python -m autowright.main` — bind localhost,
@@ -128,7 +151,12 @@ data on disk); both ends of a served surface change in the same commit.
   transitive) at exact versions, so two §3 distributables built from one commit ship the
   same packages; `prod.sh` passes it as `pip install -c` (§18).
 - `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
-  bridge), Vite + React + TS renderer under `src/` (`store.ts` central model, `api.ts` client,
+  bridge), `electron/platform/` (the §2 platform layer's shell half: `index.cjs` selects the
+  per-OS module once; `darwin.cjs` holds the macOS values and helpers — window-chrome options,
+  tray icon spec, panel placement, dock icon, data/log roots, CLI shim path+text, login-shell
+  PATH probe, update feed URL, Homebrew managed-install probe, reveal bundle rule, the
+  settings deep-link scheme; the modules never import `electron`), Vite + React + TS renderer
+  under `src/` (`store.ts` central model, `api.ts` client,
   `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen —
   except the two biggest screens, each a thin page over its own directory: the §11
   create/edit flow (`pages/CreateFlow.tsx` over `pages/createflow/`: `model.ts` — the pure
@@ -187,8 +215,10 @@ data on disk); both ends of a served surface change in the same commit.
   tiers at the top level (shared `tests/conftest.py`), the live integration tier under
   `tests/integration/` (§15 — its own `conftest.py` + `it_harness.py`), the test doubles
   `tests/bin/claude` (fake agent CLI) and `tests/bin/osascript` (fake Messages sender),
-  `tests/seed_data.py` (§16 fixture), and `tests/test_drift_guards.py` (§15: the
-  cross-file version and §6.2 curated-list guards). `pytest.ini` at the repo root configures
+  `tests/seed_data.py` (§16 fixture), `tests/test_drift_guards.py` (§15: the
+  cross-file version and §6.2 curated-list guards), and `tests/test_platform.py` (§2
+  platform layer: composition, capability flags, degraded fallbacks, and the backend half
+  of the §5 root-table drift guard — the shell half is `app/tests/platform-roots.test.ts`). `pytest.ini` at the repo root configures
   the suite. Renderer tests live under `app/` (above), not here.
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
   single self-contained page + `CNAME` with the custom domain + `robots.txt` and

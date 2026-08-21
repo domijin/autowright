@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from . import __version__, awake, harness, imessage, installer, keychain, models, paths
+from . import __version__, awake, harness, imessage, installer, keychain, models, paths, platform
 from . import drafting, packages as pkglib, reqlog, timefmt, transfer, triggers as triggerlib
 from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
@@ -391,7 +391,12 @@ def _secret_grant(secret_id: str) -> dict | None:
 # ---------- health / state ----------
 @app.get("/health")
 def health() -> dict:
-    return {"version": __version__, "app": "Autowright"}
+    # §2 platform layer: `os` is the §5.1 platform token; `capabilities` is
+    # what this OS can honor — clients gate features here, never by sniffing
+    # the platform at a call site.
+    plat = platform.current()
+    return {"version": __version__, "app": "Autowright",
+            "os": plat.os_token, "capabilities": plat.capabilities.as_dict()}
 
 
 @app.get("/instructions", dependencies=[Depends(auth)])

@@ -1,5 +1,10 @@
 """§4.9 keepAwake — the permanent idle-sleep power assertion (§3).
 
+This module is the macOS PowerAssertion implementation of the §2 platform
+layer (platform/darwin.py delegates here; it keeps the caffeinate state as
+module attributes, which the §15 suites pin). Unsupported platforms compose
+a no-op instead.
+
 While the setting is on, the backend holds a `caffeinate -i -w <backend pid>`
 subprocess. The `-w <pid>` ties the assertion to this backend process, so a
 crashed backend can never leave an orphan keeping the Mac awake. Display

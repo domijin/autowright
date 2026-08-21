@@ -8,6 +8,12 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 Primary use case: a Mac left running unattended for days must keep firing triggers with no UI
 open.
 
+Everything OS-coupled in this section sits behind the §2 platform layer. launchd is the one
+implemented `ServiceManager` (`service.py` is its implementation module); on Linux/Windows the
+`service` actions answer a plain "not supported on <OS> yet" failure line (exit 1 via the
+result-code rule below) instead of crashing on a missing `launchctl`. The future per-OS
+decisions are recorded in the port plan, not here, until they ship.
+
 **Implementation status:** the launchd/CLI/discovery half is implemented (`service.py`, `cli.py`,
 `backend.json`), and so is app-launch registration (the ensure-backend step below). The
 distributable build is implemented (`./scripts/prod.sh`, §18):

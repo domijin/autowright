@@ -1,10 +1,11 @@
-// §2 CLI-leaf invariant guard over electron/main.cjs (spec §15). The app
+// §2 CLI-leaf invariant guard over the Electron main layer — main.cjs plus
+// the §2 platform modules under electron/platform/ (spec §15). The app
 // registers the backend via `python -m autowright.service` and must never
 // execute the CLI; §3 shim writes only ever target the user-local location —
 // no admin prompt exists, and nothing ever writes to the legacy
 // /usr/local/bin (the pre-08-15 bug was a silent best-effort write there).
 // main.cjs has no importable module structure, so the guard reads the source.
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
@@ -12,6 +13,13 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const ELECTRON_DIR = join(__dirname, '..', 'electron')
 const src = readFileSync(join(ELECTRON_DIR, 'main.cjs'), 'utf-8')
+// The platform modules are part of the same trust surface: every guard that
+// scans main.cjs scans them too (union), so a §2 extraction can't smuggle a
+// forbidden call out of the guard's sight.
+const PLATFORM_DIR = join(ELECTRON_DIR, 'platform')
+const platFiles = readdirSync(PLATFORM_DIR).filter((n) => n.endsWith('.cjs'))
+const platSrc = platFiles.map((n) => readFileSync(join(PLATFORM_DIR, n), 'utf-8')).join('\n')
+const union = `${src}\n${platSrc}`
 
 describe('main.cjs CLI-leaf invariant (§2)', () => {
   it('registers the backend via -m autowright.service', () => {
@@ -23,26 +31,30 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
   })
 
   it('never executes the CLI — autowright.cli appears only inside the shim file text', () => {
-    const hits = src.match(/autowright\.cli/g) ?? []
-    expect(hits).toHaveLength(1)
-    // The one mention is the shim file's contents (an exec line in shimText),
-    // not a child-process invocation by the app.
-    const line = src.split('\n').find((l) => l.includes('autowright.cli'))
-    expect(line).toContain('exec "${python}" -m autowright.cli')
-    expect(line).not.toMatch(/execFile|spawn/)
+    // main.cjs itself never mentions the CLI; the platform modules mention it
+    // exactly once each, as the shim file's contents (an exec line in
+    // shimText) — never a child-process invocation by the app.
+    expect(src).not.toContain('autowright.cli')
+    const lines = union.split('\n').filter((l) => l.includes('autowright.cli'))
+    expect(lines.length).toBeGreaterThanOrEqual(1)
+    for (const line of lines) {
+      expect(line).toContain('exec "${python}" -m autowright.cli')
+      expect(line).not.toMatch(/execFile|spawn/)
+    }
   })
 
   it('spawns only launchctl, the login shell, and the backend python', () => {
-    // Every child-process call site: execFile('launchctl'|shell|py, …).
-    // `shell` is the §3 login-shell PATH probe (printf $PATH, nothing else).
-    // `spawn` is not used at all (the word may appear in comments only).
-    const calls = [...src.matchAll(/(?<![.\w])(?:execFile|spawn|exec)\(\s*([^,)]+)/g)].map((m) => m[1].trim())
+    // Every child-process call site across main.cjs + platform modules:
+    // execFile('launchctl'|shell|py, …). `shell` is the §3 login-shell PATH
+    // probe (printf $PATH, nothing else). `spawn` is not used at all (the
+    // word may appear in comments only).
+    const calls = [...union.matchAll(/(?<![.\w])(?:execFile|spawn|exec)\(\s*([^,)]+)/g)].map((m) => m[1].trim())
     for (const first of calls) {
       expect(["'launchctl'", 'shell', 'py']).toContain(first)
     }
     expect(calls.length).toBeGreaterThanOrEqual(3)
     // …and every python call site runs the service module, nothing else.
-    const pyCalls = [...src.matchAll(/execFile\(\s*py\s*,\s*\[([^\]]*)\]/g)].map((m) => m[1])
+    const pyCalls = [...union.matchAll(/execFile\(\s*py\s*,\s*\[([^\]]*)\]/g)].map((m) => m[1])
     expect(pyCalls.length).toBeGreaterThanOrEqual(1)
     for (const args of pyCalls) {
       expect(args).toContain("'-m', 'autowright.service'")
@@ -51,13 +63,13 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
 
   it('shim writes are user-local only — no admin prompt, no /usr/local/bin write (§3)', () => {
     // No osascript admin flow exists at all.
-    expect(src).not.toContain('with administrator privileges')
-    expect(src).not.toContain("'osascript'")
+    expect(union).not.toContain('with administrator privileges')
+    expect(union).not.toContain("'osascript'")
     // The silent-failure regression: no direct write targeting the legacy
     // shim location — cli-install writes shimPaths()[0] (user-local), and
     // the heal only rewrites an already-ours file.
-    expect(src).not.toMatch(/writeFileSync\(\s*'\/usr\/local\/bin/)
-    expect(src).not.toMatch(/writeFileSync\(\s*SYSTEM_SHIM/)
+    expect(union).not.toMatch(/writeFileSync\(\s*'\/usr\/local\/bin/)
+    expect(union).not.toMatch(/writeFileSync\(\s*SYSTEM_SHIM/)
     expect(src).toMatch(/writeFileSync\(shim, shimText\(python\)/)
   })
 
@@ -239,9 +251,10 @@ describe('main.cjs Homebrew-managed updates (§3)', () => {
     expect(await m.invoke('update-install')).toEqual({ error: 'This copy is managed by Homebrew.' })
   })
 
-  it('probes only the two Caskroom locations, inside brewManaged()', () => {
-    const hits = src.match(/Caskroom\/autowright/g) ?? []
+  it('probes only the two Caskroom locations, inside the platform managedInstall()', () => {
+    const hits = union.match(/Caskroom\/autowright/g) ?? []
     expect(hits).toHaveLength(2)
-    expect(src).toMatch(/function brewManaged\(\)[\s\S]{0,300}\/opt\/homebrew\/Caskroom\/autowright[\s\S]{0,120}\/usr\/local\/Caskroom\/autowright/)
+    const darwinSrc = readFileSync(join(PLATFORM_DIR, 'darwin.cjs'), 'utf-8')
+    expect(darwinSrc).toMatch(/function managedInstall\(\)[\s\S]{0,300}\/opt\/homebrew\/Caskroom\/autowright[\s\S]{0,120}\/usr\/local\/Caskroom\/autowright/)
   })
 })

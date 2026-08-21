@@ -20,7 +20,21 @@ microseconds make same-second starts (`maxParallel` > 1, queue promotions) order
 deterministically. Conversion to the Mac's local time happens only when display labels are
 serialized (§4.1 shared time labels).
 
-On-disk layout under `~/Library/Application Support/Autowright/`:
+**Per-OS roots (§2 platform layer, decided):** every location below hangs off two roots picked
+by `paths.py` from the platform token; `AUTOWRIGHT_HOME` overrides both everywhere (logs move
+to `<home>/logs`), dev and prod alike. macOS is the only shipped platform; the Linux and
+Windows rows are reserved decisions so a future port changes no call sites:
+
+| OS | data root | logs root |
+| --- | --- | --- |
+| macOS | `~/Library/Application Support/Autowright/` | `~/Library/Logs/Autowright/` |
+| Linux (reserved) | `$XDG_DATA_HOME/autowright/` (default `~/.local/share/autowright/`) | `$XDG_STATE_HOME/autowright/log/` (default `~/.local/state/autowright/log/`) |
+| Windows (reserved) | `%LOCALAPPDATA%\Autowright\` | `%LOCALAPPDATA%\Autowright\Logs\` |
+
+The Electron main process resolves the same two roots from its own platform module
+(`electron/platform/`); the two tables must never drift (guarded by test, §15).
+
+On-disk layout under the data root (shown as the macOS path):
 
 ```
 settings.yaml

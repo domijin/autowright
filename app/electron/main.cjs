@@ -7,6 +7,10 @@ const http = require('http')
 const os = require('os')
 const path = require('path')
 
+// §2 platform layer (shell half): every OS-coupled value/helper comes from
+// the composed per-OS module — macOS today, a degraded fallback elsewhere.
+const plat = require('./platform/index.cjs')
+
 // Keep Chromium's profile (Cache, Cookies, Local Storage, …) out of the backend's
 // data dir — both default to ~/Library/Application Support/Autowright (§5).
 // §15: AUTOWRIGHT_HOME relocates the whole app-support root, profile included —
@@ -36,7 +40,7 @@ app.on('second-instance', () => { if (app.isReady()) showApp() })
 function appSupportDir() {
   return process.env.AUTOWRIGHT_HOME
     ? process.env.AUTOWRIGHT_HOME
-    : path.join(os.homedir(), 'Library', 'Application Support', 'Autowright')
+    : plat.dataRootDefault()
 }
 
 function backendInfo() {
@@ -50,7 +54,7 @@ function backendInfo() {
 function logsDir() {
   return process.env.AUTOWRIGHT_HOME
     ? path.join(process.env.AUTOWRIGHT_HOME, 'logs')
-    : path.join(os.homedir(), 'Library', 'Logs', 'Autowright')
+    : plat.logsRootDefault()
 }
 
 function appLog(line) {
@@ -70,7 +74,7 @@ function appLog(line) {
 // (`electron .`) have no bundled Python — scripts/dev.sh installs the service
 // from the repo venv before Electron starts, through the same install code.
 function bundledPython() {
-  const py = path.join(process.resourcesPath, 'python', 'bin', 'python3')
+  const py = plat.bundledPythonPath(process.resourcesPath)
   return fs.existsSync(py) ? py : null
 }
 
@@ -157,10 +161,7 @@ async function verifyBackendUp() {
       + 'Gatekeeper may be blocking an unsigned build. Details in app.log.',
   }
   appLog('ensure-backend: backend did not come up within 30 s of install')
-  execFile('launchctl', ['print', `gui/${process.getuid()}/ai.autowright.backend`],
-    (err, stdout, stderr) => {
-      appLog(`ensure-backend: launchctl print:\n${String(stdout || stderr || err?.message || '').trim()}`)
-    })
+  plat.serviceDiagnostics(appLog)
 }
 
 // §3 launch-time version compare: a healthy but outdated backend (the app
@@ -247,7 +248,7 @@ async function notifyAppStarted() {
 // local app when the user clicks it. The one deep link is the §9 permission
 // checklist's Settings pane.
 const OPENABLE_SCHEMES = ['https:', 'http:', 'mailto:']
-const SETTINGS_DEEP_LINK = 'x-apple.systempreferences:'
+const SETTINGS_DEEP_LINK = plat.SETTINGS_DEEP_LINK // null where no deep link exists
 
 function docKey(url) {
   try { const u = new URL(url); return `${u.protocol}//${u.host}${u.pathname}` } catch { return null }
@@ -255,7 +256,7 @@ function docKey(url) {
 
 function openExternalSafely(url) {
   if (typeof url !== 'string') return
-  if (url.startsWith(SETTINGS_DEEP_LINK)) { shell.openExternal(url); return }
+  if (SETTINGS_DEEP_LINK && url.startsWith(SETTINGS_DEEP_LINK)) { shell.openExternal(url); return }
   let scheme
   try { scheme = new URL(url).protocol } catch { return }
   if (OPENABLE_SCHEMES.includes(scheme)) shell.openExternal(url)
@@ -318,10 +319,10 @@ function createWindow(hash) {
     height: 820,
     minWidth: 980,
     minHeight: 640,
-    titleBarStyle: 'hidden',
-    // §9: lights pinned at one fixed spot for every window state — never moved
-    // or re-derived from layout, so they can't jitter between states.
-    trafficLightPosition: { x: 14, y: 14 },
+    // §2 platform chrome: hidden title bar + pinned traffic lights on macOS
+    // (§9 — one fixed spot for every window state, never re-derived from
+    // layout), native frame elsewhere.
+    ...plat.mainWindowChrome(),
     backgroundColor: '#090d14',
     webPreferences: { preload: path.join(__dirname, 'preload.cjs') },
   })
@@ -349,12 +350,12 @@ function showApp(hash) {
 }
 
 function trayIcon(alert) {
-  // §13: red alert dot when any automation failed. The alert variant is a
-  // pre-rendered non-template PNG (neutral gray glyph + red dot) so the dot
-  // stays red on light and dark menu bars; the normal icon is a template.
-  const name = alert ? 'trayAlert.png' : 'trayTemplate.png'
-  const icon = nativeImage.createFromPath(path.join(__dirname, name))
-  icon.setTemplateImage(!alert)
+  // §13: red alert dot when any automation failed. Asset + template flag come
+  // from the platform module (on macOS the alert variant is a pre-rendered
+  // non-template PNG so the dot stays red on light and dark menu bars).
+  const spec = plat.trayIconSpec(alert)
+  const icon = nativeImage.createFromPath(path.join(__dirname, spec.file))
+  icon.setTemplateImage(spec.template)
   return icon
 }
 
@@ -463,14 +464,13 @@ function togglePanel() {
       fullscreenable: false,
       alwaysOnTop: true,
       skipTaskbar: true,
-      transparent: true,
-      vibrancy: 'menu',
-      visualEffectState: 'active',
+      // §2 platform chrome: transparency + vibrancy on macOS, plain elsewhere.
+      ...plat.panelWindowExtras(),
       webPreferences: { preload: path.join(__dirname, 'preload.cjs') },
     })
-    // §13: menu-bar panels follow the user across Spaces — without this,
-    // opening the panel over a fullscreen app switches Spaces.
-    panel.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    // §13 (macOS): menu-bar panels follow the user across Spaces — without
+    // this, opening the panel over a fullscreen app switches Spaces.
+    plat.panelAfterCreate(panel)
     load(panel, '/menubar')
     attachContextMenu(panel)
     hardenWindow(panel)
@@ -479,8 +479,8 @@ function togglePanel() {
   }
   const pt = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(pt)
-  const x = Math.min(pt.x - 167, display.bounds.x + display.bounds.width - 344)
-  panel.setPosition(Math.round(x), display.workArea.y + 6)
+  const pos = plat.panelPosition(pt, display)
+  panel.setPosition(pos.x, pos.y)
   panel.show()
 }
 
@@ -490,31 +490,24 @@ function togglePanel() {
 // Interpreter comes from backend.json's `python`, so dev and prod run the
 // same code. AUTOWRIGHT_SHIM is the §15 test knob (mirrored in service.py):
 // it overrides the location and skips the PATH probe.
-const SHIM_MARKER = '# autowright CLI shim'
-const USER_SHIM = path.join(os.homedir(), '.local', 'bin', 'autowright')
+const SHIM_MARKER = plat.SHIM_MARKER
+const shimText = plat.shimText
 
 function shimPaths() {
-  return process.env.AUTOWRIGHT_SHIM ? [process.env.AUTOWRIGHT_SHIM] : [USER_SHIM]
-}
-
-function shimText(python) {
-  return `#!/bin/sh\n${SHIM_MARKER}\nexec "${python}" -m autowright.cli "$@"\n`
+  return process.env.AUTOWRIGHT_SHIM ? [process.env.AUTOWRIGHT_SHIM] : [plat.defaultShimPath()]
 }
 
 // §3: GUI apps inherit a stripped PATH, so ask the login shell whether
 // ~/.local/bin is reachable. Cached per app run; any failure = not on PATH.
 // Only feeds the §4.9 card's PATH hint — install goes to ~/.local/bin anyway.
 let userBinOnPath = null
-function userBinOnLoginPath() {
-  if (process.env.AUTOWRIGHT_SHIM) return Promise.resolve(true)
-  if (userBinOnPath !== null) return Promise.resolve(userBinOnPath)
-  return new Promise((resolve) => {
-    const shell = process.env.SHELL || '/bin/zsh'
-    execFile(shell, ['-l', '-c', 'printf %s "$PATH"'], { timeout: 2000 }, (err, stdout) => {
-      userBinOnPath = !err && String(stdout).split(':').includes(path.dirname(USER_SHIM))
-      resolve(userBinOnPath)
-    })
-  })
+async function userBinOnLoginPath() {
+  if (process.env.AUTOWRIGHT_SHIM) return true
+  if (userBinOnPath !== null) return userBinOnPath
+  const loginPath = await plat.readLoginShellPath()
+  userBinOnPath = loginPath !== null
+    && loginPath.split(path.delimiter).includes(path.dirname(shimPaths()[0]))
+  return userBinOnPath
 }
 
 async function cliStatus() {
@@ -625,10 +618,10 @@ ipcMain.handle('reveal-path', async (_e, p) => {
   }
   let isDir = false
   try { isDir = fs.statSync(abs).isDirectory() } catch { /* fall through */ }
-  // A macOS bundle (.app, .pkg, …) is a directory, and openPath on one *launches*
-  // it — reveal is meant to show a location, never to start something. Bundles
-  // all carry an extension; plain data dirs (the ones this is for) do not.
-  if (isDir && !path.extname(abs)) void shell.openPath(abs)
+  // §2 platform rule: reveal shows a location, never starts something — on
+  // macOS an extension-carrying directory is a bundle and openPath on one
+  // *launches* it, so only extension-less plain dirs open in place.
+  if (plat.revealPrefersOpen(abs, isDir)) void shell.openPath(abs)
   else shell.showItemInFolder(abs)
 })
 ipcMain.handle('pick-folder', async (_e, defaultPath) => {
@@ -701,6 +694,7 @@ ipcMain.handle('read-request-log', (_e, name) => {
 // Darwin kernel release).
 ipcMain.handle('platform-info', () => ({
   platform: process.platform,
+  osName: plat.OS_NAME, // §4.1 display form — the §9.5 OS line never hardcodes it
   release: process.getSystemVersion(),
   arch: process.arch,
   // Bundle version — the §9.5 fallback while the store's /state version
@@ -715,8 +709,7 @@ ipcMain.handle('tray-alert', (_e, on) => {
 // §3 in-app updates (Squirrel.Mac): manual-only — nothing here runs until the
 // §9.4 "Check for updates" button calls update-check. One static JSON feed per
 // arch on the docs/ GitHub Pages site, rewritten by release.sh each release.
-const UPDATE_FEED = 'https://autowright.ai/updates/darwin-'
-  + `${process.arch === 'x64' ? 'x86_64' : 'arm64'}.json`
+const UPDATE_FEED = plat.updateFeedUrl(process.arch) // null where no channel exists yet
 
 // §9.4 compare: numeric on dot-split parts, ignoring a leading `v`; a
 // malformed version counts as not newer.
@@ -746,6 +739,7 @@ function recordAvailable(version) {
 }
 
 async function fetchUpdateState() {
+  if (!UPDATE_FEED) return { state: 'error' }
   try {
     const res = await fetch(UPDATE_FEED, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return { state: 'error' }
@@ -761,15 +755,12 @@ async function fetchUpdateState() {
   }
 }
 
-// §3 Homebrew-managed detection: the install is brew-managed while the cask's
-// Caskroom metadata dir exists. Probed fresh on every query — never cached —
-// so a brew install/uninstall while the app runs reflects without a restart.
-// AUTOWRIGHT_CASKROOM replaces the probe list (test escape hatch).
+// §3 managed-install detection (Homebrew on macOS): probed fresh on every
+// query — never cached — so a brew install/uninstall while the app runs
+// reflects without a restart. The probe lives in the platform module;
+// AUTOWRIGHT_CASKROOM replaces its list (test escape hatch).
 function brewManaged() {
-  const dirs = process.env.AUTOWRIGHT_CASKROOM
-    ? [process.env.AUTOWRIGHT_CASKROOM]
-    : ['/opt/homebrew/Caskroom/autowright', '/usr/local/Caskroom/autowright']
-  return dirs.some((dir) => fs.existsSync(dir))
+  return plat.managedInstall()
 }
 
 ipcMain.handle('update-check', () => fetchUpdateState())
@@ -782,7 +773,8 @@ ipcMain.handle('update-brew-managed', () => brewManaged())
 // one-shot loopback feed (§3). No dev fork: an unsigned build takes the same
 // path and surfaces Squirrel's real signature error.
 ipcMain.handle('update-download', async () => {
-  if (brewManaged()) return { error: 'This copy is managed by Homebrew.' }
+  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
+  if (!UPDATE_FEED) return { error: 'Updates are not supported on this platform yet.' }
   const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
   const tmpZip = path.join(app.getPath('temp'), `autowright-update-${randomUUID()}.zip`)
   let server = null
@@ -891,7 +883,7 @@ ipcMain.handle('update-download', async () => {
 // stays valid); the old backend keeps running until the next launch's
 // version-compare flow restarts it.
 ipcMain.handle('update-install', async () => {
-  if (brewManaged()) return { error: 'This copy is managed by Homebrew.' }
+  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
   if (await executionsLive()) return { busy: true }
   appLog('update: quitting to install')
   autoUpdater.quitAndInstall()
@@ -931,10 +923,9 @@ ipcMain.handle('quit-all', async () => {
 app.whenReady().then(() => {
   if (!gotLock) return
   // Dev launches via `electron .`, which ships the default Electron dock icon —
-  // replace it with the AW mark (§14 checked-in icon assets).
-  if (process.platform === 'darwin') {
-    app.dock.setIcon(path.join(__dirname, 'icon', 'icon.png'))
-  }
+  // replace it with the AW mark (§14 checked-in icon assets; a no-op on
+  // platforms without a dock).
+  plat.setDockIcon(app, path.join(__dirname, 'icon', 'icon.png'))
   void ensureBackend()
   createWindow()
   createTray()

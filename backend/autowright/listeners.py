@@ -16,7 +16,7 @@ import queue
 import threading
 import time
 
-from . import imessage, keychain
+from . import imessage, keychain, platform
 from .events import hub
 from .firing import fire_trigger
 from .storage import Store
@@ -471,7 +471,9 @@ class Listeners:
         # §6: one iMessage watcher total while any enabled imessage trigger
         # exists — nothing touches chat.db (or any permission) before that,
         # and the watcher closes when the last trigger goes.
-        if senders and self._imsg is None:
+        # §2 platform layer: the whole watcher is capability-gated — on an OS
+        # without iMessage nothing ever touches chat.db or osascript.
+        if senders and self._imsg is None and platform.current().capabilities.imessage:
             self._imsg = _ImsgWatcher(self)
         elif not senders and self._imsg is not None:
             self._imsg.close()

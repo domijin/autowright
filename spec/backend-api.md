@@ -30,7 +30,11 @@ store state the models
 never see). Pydantic shapes **requests only** — response bodies
 remain plain dicts (§2).
 
-- `GET /health` → `{ version, app }` (unauthenticated; used for discovery/liveness)
+- `GET /health` → `{ version, app, os, capabilities }` (unauthenticated; used for
+  discovery/liveness). `os` is the §5.1 platform token; `capabilities` is the §2 platform
+  layer's flag set — `{ imessage, notifications, keepAwake, service }`, all true on macOS —
+  and is the one surface clients gate platform features on (never by sniffing the platform
+  at a call site)
 - `GET /state` → boot snapshot: automations (full), execution headers, agents, secrets (the
   `GET /secrets` entries — id, name, description, set, usedBy; never values), settings, app
   version, `pendingDraft` (`{ name, updatedAt } | null` — the §4.4

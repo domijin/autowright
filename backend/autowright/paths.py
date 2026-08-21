@@ -1,5 +1,10 @@
-"""Filesystem locations (§5). Data under Application Support, logs under ~/Library/Logs.
-AUTOWRIGHT_HOME overrides both for dev/tests (logs go to <home>/logs)."""
+"""Filesystem locations (§5). Two per-OS roots (data + logs) picked from the
+platform token — the §5 root table; every other location hangs off them.
+AUTOWRIGHT_HOME overrides both for dev/tests (logs go to <home>/logs).
+macOS is the only shipped platform; the Linux/Windows rows are the §5 reserved
+decisions, implemented here so a future port changes no call sites. The
+Electron shell resolves the same two roots in electron/platform/ — the tables
+must never drift (§15 guard)."""
 from __future__ import annotations
 
 import os
@@ -30,11 +35,37 @@ def os_display_name(token: str | None) -> str:
     return OS_DISPLAY.get(token or "", token or "")
 
 
+def _default_data_root() -> Path:
+    """§5 per-OS data root (the platform-token row of the §5 table)."""
+    token = current_os()
+    if token == "macos":
+        return Path.home() / "Library" / "Application Support" / APP_NAME
+    if token == "windows":
+        local = os.environ.get("LOCALAPPDATA")
+        base = Path(local) if local else Path.home() / "AppData" / "Local"
+        return base / APP_NAME
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    return base / "autowright"
+
+
+def _default_logs_root() -> Path:
+    """§5 per-OS logs root (the platform-token row of the §5 table)."""
+    token = current_os()
+    if token == "macos":
+        return Path.home() / "Library" / "Logs" / APP_NAME
+    if token == "windows":
+        return _default_data_root() / "Logs"
+    xdg = os.environ.get("XDG_STATE_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".local" / "state"
+    return base / "autowright" / "log"
+
+
 def app_support() -> Path:
     env = os.environ.get("AUTOWRIGHT_HOME")
     if env:
         return Path(env).expanduser()
-    return Path.home() / "Library" / "Application Support" / APP_NAME
+    return _default_data_root()
 
 
 def automations_dir() -> Path:
@@ -85,7 +116,7 @@ def logs_dir() -> Path:
     env = os.environ.get("AUTOWRIGHT_HOME")
     if env:
         return Path(env).expanduser() / "logs"
-    return Path.home() / "Library" / "Logs" / APP_NAME
+    return _default_logs_root()
 
 
 def app_log() -> Path:

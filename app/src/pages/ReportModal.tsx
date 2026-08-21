@@ -20,7 +20,7 @@ export default function ReportModal() {
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [includeInfo, setIncludeInfo] = useState(true)
-  const [os, setOs] = useState<{ platform: string; release: string; arch: string; version: string } | null>(null)
+  const [os, setOs] = useState<{ platform: string; osName?: string; release: string; arch: string; version: string } | null>(null)
 
   useEffect(() => {
     void window.autowright?.platformInfo?.().then(setOs)
@@ -28,11 +28,15 @@ export default function ReportModal() {
 
   // §9.5 environment block — exactly two lines: app version + OS. Never the
   // backend token, secrets, or raw logs. Version falls back to the bundle
-  // version so the line never shows a bare "v".
+  // version so the line never shows a bare "v". The OS name comes from the
+  // §2 platform layer (`osName` on platform-info), never hardcoded.
+  const OS_NAMES: Record<string, string> = { darwin: 'macOS', win32: 'Windows', linux: 'Linux' }
   const appVersion = version || os?.version || ''
   const infoBlock = [
     appVersion ? `Autowright v${appVersion}` : 'Autowright (version unknown)',
-    os ? `macOS ${os.release} (${os.arch})` : 'macOS (version unknown)',
+    os
+      ? `${os.osName || OS_NAMES[os.platform] || os.platform} ${os.release} (${os.arch})`
+      : 'Unknown OS (version unknown)',
   ].join('\n')
 
   // §9.5: details label/placeholder and body heading follow the type toggle;

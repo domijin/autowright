@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 # Top-level import (not lazy): the executor subprocess replaces
 # sys.modules["autowright"] with the step SDK shim, which breaks late
 # `from . import paths` resolution inside _app_log.
-from . import paths, reqlog
+from . import paths, platform, reqlog
 from .yamlio import atomic_write_text
 
 log = logging.getLogger("autowright.harness")
@@ -76,17 +76,10 @@ def agent_hard_cap() -> int:
 
 
 def kill_group(proc: subprocess.Popen, sig: int | None = None) -> None:
-    """Signal a harness child's whole session group (see start_new_session in
-    `_invoke`); falls back to the direct child when the group is gone."""
-    import signal as _signal
-
-    if sig is None:
-        sig = _signal.SIGKILL
-    try:
-        os.killpg(proc.pid, sig)
-    except (ProcessLookupError, PermissionError):
-        if proc.poll() is None:
-            (proc.kill if sig == _signal.SIGKILL else proc.terminate)()
+    """Signal a harness child's whole session group (see the §2 platform
+    session policy in `_invoke`); falls back to the direct child when the
+    group is gone."""
+    platform.current().processes.signal_group(proc, sig)
 
 
 # A backend launched from the Finder/Dock gets a minimal PATH without
@@ -357,14 +350,14 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         env["ANTHROPIC_BASE_URL"] = OLLAMA_URL
         env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
         env.pop("ANTHROPIC_API_KEY", None)
-    # Own session, like engine steps: timeout/cancel must reach helper
-    # processes the CLI spawns — killing only the direct child can leave a
-    # helper holding the stdout pipe open (read loop never sees EOF, the §8
-    # idle window silently never fires).
+    # Own session, like engine steps (§2 platform session policy):
+    # timeout/cancel must reach helper processes the CLI spawns — killing
+    # only the direct child can leave a helper holding the stdout pipe open
+    # (read loop never sees EOF, the §8 idle window silently never fires).
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             stdin=subprocess.DEVNULL, text=True, errors="replace",
                             env=env, cwd=_neutral_cwd(HARNESS_ID[harness]),
-                            start_new_session=True)
+                            **platform.current().processes.session_kwargs())
     if proc_holder is not None:
         proc_holder["proc"] = proc
     # Cancel/spawn race: a cancel that landed after the caller's own check but
@@ -614,8 +607,9 @@ def ollama_status() -> dict:
         _serve_last_spawn = time.time()
         try:
             subprocess.Popen([binpath, "serve"], stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True,
-                             env=spawn_env(binpath), cwd=_neutral_cwd("ollama"))
+                             stderr=subprocess.DEVNULL,
+                             env=spawn_env(binpath), cwd=_neutral_cwd("ollama"),
+                             **platform.current().processes.session_kwargs())
         except Exception:  # noqa: BLE001
             pass
         else:

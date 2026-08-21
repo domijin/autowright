@@ -102,13 +102,19 @@ journeys stay e2e; all other component rendering is exercised by the playwright-
 Electron path, never by DOM unit tests.
 Both suites carry guards for the §2 CLI-leaf invariant: a pytest scan asserts no backend
 module besides `cli.py` imports `autowright.cli`, and a Vitest guard reads
-`app/electron/main.cjs` asserting backend registration runs `-m autowright.service`, that
+`app/electron/main.cjs` **plus every `app/electron/platform/*.cjs` module (the union is one
+trust surface — a §2 extraction must not move a call out of the guard's sight)** asserting
+backend registration runs `-m autowright.service`, that
 no child-process call executes the CLI (the string `autowright.cli` may appear only inside
 the shim file text), and that shim writes only ever target the §3 user-local location —
 no osascript admin prompt exists (`with administrator privileges` must not appear), and
 nothing reads, writes, or deletes at `/usr/local/bin` (creation only through
 `cli-install`, deletion only through
 `cli-uninstall` and only of marker-carrying files).
+The §5 per-OS root table is drift-guarded on both sides: `tests/test_platform.py` pins
+`paths.py`'s roots per platform token and `app/tests/platform-roots.test.ts` pins
+`electron/platform/roots.cjs` — both against the same §5 table, so the two implementations
+can never disagree silently.
 
 **Typecheck coverage.** `tsc --noEmit` runs twice, over two configs, because a single
 `include` cannot hold both: `app/tsconfig.json` covers `src` under the strict app settings,

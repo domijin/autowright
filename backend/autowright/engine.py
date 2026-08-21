@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import harness, keychain, listeners, notify, packages as pkglib, timefmt
+from . import harness, keychain, listeners, notify, packages as pkglib, platform, timefmt
 from .events import hub
 from .executor import CTRL
 from .firing import finish_queued
@@ -179,16 +179,15 @@ def _close_pipe(f) -> None:
         pass
 
 
+def _processes():
+    """§2 platform layer process-group control (POSIX today; platform/)."""
+    return platform.current().processes
+
+
 def kill_step_group(proc: subprocess.Popen, sig: int | None = None) -> None:
     """Signal a step's whole process group (it runs in its own session).
     `sig=None` means kill hard (SIGKILL, not importable on Windows)."""
-    if sig is None:
-        sig = signal.SIGKILL
-    try:
-        os.killpg(proc.pid, sig)
-    except (ProcessLookupError, PermissionError):
-        if proc.poll() is None:
-            (proc.kill if sig == signal.SIGKILL else proc.terminate)()
+    _processes().signal_group(proc, sig)
 
 
 def kill_orphan_group(pgid: int) -> None:
@@ -197,23 +196,10 @@ def kill_orphan_group(pgid: int) -> None:
     pgid remains). Pid-reuse guard: only signals when the group still contains
     an `autowright.executor` process — a recycled pgid must never take down an
     unrelated process."""
-    try:
-        out = subprocess.run(["ps", "-axo", "pgid=,command="],
-                             capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
+    procs = _processes()
+    if not procs.group_has_command(pgid, "autowright.executor"):
         return
-    ours = False
-    for line in out.splitlines():
-        parts = line.strip().split(None, 1)
-        if len(parts) == 2 and parts[0] == str(pgid) and "autowright.executor" in parts[1]:
-            ours = True
-            break
-    if not ours:
-        return
-    try:
-        os.killpg(pgid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
+    procs.kill_group(pgid)
 
 
 def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
@@ -233,12 +219,12 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
         # calls and shutil.which pre-flights resolve under a Dock launch's
         # minimal GUI PATH just like under a terminal launch.
         env=harness.step_env(),
-        # Own session: timeout/cancel/skip kill the whole group. Killing only
-        # the executor leaves its children (Playwright browsers, step
-        # subprocesses) alive — they hold the stdout write end open, the read
-        # loop below never sees EOF, and the engine thread hangs forever with
-        # the automation stuck "executing".
-        start_new_session=True,
+        # Own session (§2 platform session policy): timeout/cancel/skip kill
+        # the whole group. Killing only the executor leaves its children
+        # (Playwright browsers, step subprocesses) alive — they hold the
+        # stdout write end open, the read loop below never sees EOF, and the
+        # engine thread hangs forever with the automation stuck "executing".
+        **_processes().session_kwargs(),
     )
     state["proc"] = proc
     # §3 orphan recovery: hand the new group id (own session → pgid == pid) to

@@ -1,5 +1,11 @@
 """launchd LaunchAgent management (§3): install/uninstall/status/restart.
 
+This module is the macOS ServiceManager implementation of the §2 platform
+layer (platform/darwin.py delegates here); ACTIONS below routes through the
+composed platform, so on an OS with no service manager the same entry points
+answer a plain "not supported" failure line instead of crashing on a missing
+launchctl.
+
 Writes a per-user plist to ~/Library/LaunchAgents/ pointing at this interpreter.
 The one registration path: the app's ensure-backend step runs
 `python -m autowright.service install` at launch (the __main__ dispatch below —
@@ -16,7 +22,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import paths
+from . import paths, platform
 
 LABEL = "ai.autowright.backend"
 SHIM_MARKER = "# autowright CLI shim"
@@ -231,8 +237,15 @@ def restart() -> str:
     return "restarted" if err is None else f"restart failed: {err}"
 
 
-ACTIONS = {"install": install, "uninstall": uninstall,
-           "status": status, "restart": restart, "stop": stop}
+def _dispatch(action: str) -> str:
+    """§2 platform layer: route an action through the composed ServiceManager —
+    launchd (the functions above) on macOS, the fallback's plain "not
+    supported on <OS> yet" failure line elsewhere."""
+    return getattr(platform.current().service, action)()
+
+
+ACTIONS = {a: (lambda a=a: _dispatch(a))
+           for a in ("install", "uninstall", "status", "restart", "stop")}
 
 
 def result_code(out: str) -> int:

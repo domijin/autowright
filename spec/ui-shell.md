@@ -764,9 +764,12 @@ closing restores nothing because nothing changed. Contents, top to bottom:
   control), default on, with the rendered info block visible below it (mono, muted) so the
   user sees exactly what would be included. Block lines — exactly two: app version (store
   `version` from `GET /state`, falling back to the Electron bundle version riding on the
-  `platform-info` answer — the line never shows a bare "v") · macOS release + arch
-  (`platform-info` IPC: preload `platformInfo()` → main answers `{ platform, release, arch,
-  version: app.getVersion() }` — the renderer has no other OS-details source). Nothing else — no location, backend, or update state. **Never** in
+  `platform-info` answer — the line never shows a bare "v") · OS name + release + arch
+  (`platform-info` IPC: preload `platformInfo()` → main answers `{ platform, osName,
+  release, arch, version: app.getVersion() }` — the renderer has no other OS-details
+  source; `osName` is the §2 platform layer's display name — "macOS" / "Windows" /
+  "Linux" — with a renderer-side map on `platform` as the fallback, never a hardcoded
+  literal; with no platform-info at all the line reads "Unknown OS (version unknown)"). Nothing else — no location, backend, or update state. **Never** in
   the block or the issue body: the backend bearer token, secret names or values, raw log
   contents.
 - Footer: quiet **Cancel** (closes) · primary **"Open GitHub issue ↗"** — an anchor carrying

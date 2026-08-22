@@ -3,13 +3,20 @@ chat.db — a real backend's listener manager polls the db (`AUTOWRIGHT_CHAT_DB`
 1 s reconcile ticks), a fresh row fires a real execution, and the step's reply
 goes out through the fake `osascript` (argv captured to a log file)."""
 import sqlite3
+import sys
 import time
 
 import pytest
 
 from .it_harness import create_auto, run_cli, wait_for, wait_status
 
-pytestmark = pytest.mark.integration
+pytestmark = [
+    pytest.mark.integration,
+    # §2: iMessage is Apple-only — elsewhere capabilities compose
+    # `imessage: false` and the watcher can never reach `connected`.
+    pytest.mark.skipif(sys.platform != "darwin",
+                       reason="iMessage capability is macOS-only"),
+]
 
 # Apple epoch offset (2001-01-01) — chat.db stores ns since then.
 EPOCH = 978307200

@@ -402,7 +402,13 @@ def test_max_parallel_admits_several_and_then_queues(store):
     assert len(store.queued_execs(a["id"])) == 1
 
     t0 = time.time()
-    while store.queued_execs(a["id"]) or a["_live"]:
+    while True:
+        # under store.lock: a §6 promotion flips queued→executing and registers
+        # `_live` atomically only to lock-holding readers — a bare read can
+        # catch the record between the two and see nothing pending
+        with store.lock:
+            if not (store.queued_execs(a["id"]) or a["_live"]):
+                break
         assert time.time() - t0 < 60
         time.sleep(0.1)
     # the queued firing was drained into the slot the first finisher freed

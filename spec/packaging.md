@@ -378,9 +378,10 @@ the update bullets below).
   exists — the field exists for the CLI and shim, which need console output, and both
   binaries resolve the same interpreter home. This also keeps the shell's shim writes and
   `service install`'s heal agreeing on one exec line.
-  The backend binds its socket first and only then publishes `backend.json` (uvicorn serves on
-  the already-bound socket) — the file never points clients (token included) at a port the
-  backend doesn't own. A stale/truncated `backend.json` (SIGKILL leftovers) makes the CLI and
+  The backend binds *and listens on* its socket first and only then publishes `backend.json`
+  (uvicorn serves on the already-listening socket) — the file never points clients (token
+  included) at a port the backend doesn't own, and a connect attempted the moment the file
+  appears is accepted (queued in the listen backlog until uvicorn serves), never refused. A stale/truncated `backend.json` (SIGKILL leftovers) makes the CLI and
   `service status` report it as such — never crash. The same rule covers a well-formed
   `backend.json` whose backend is gone: a CLI request that can't connect (connection refused,
   timeout) exits with the same restart guidance, never a traceback.

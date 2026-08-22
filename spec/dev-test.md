@@ -154,11 +154,12 @@ fast gate via `test-fast.sh`, then integration, then e2e — failing fast at eve
 the default run (`pytest.ini` at the repo root; run them with `python -m pytest -m
 integration`). They boot the real backend (`python -m autowright.main`) as a subprocess and
 exercise it over real HTTP/WebSocket connections and via the real CLI as a second subprocess —
-the §3 bind-before-publish handshake, the execution lifecycle, crash recovery
+the §3 bind-and-listen-before-publish handshake, the execution lifecycle, crash recovery
 (SIGKILL → restart → stale-executing repair), live scheduler firing, the §6 iMessage
 message-trigger loop over a fixture chat.db (`AUTOWRIGHT_CHAT_DB` + the fake `osascript`
-capturing the reply), and the CLI authoring/execution surfaces (pull → edit → push
-round-trip; execution cancel). Isolation is
+capturing the reply; macOS-only — skipped on platforms whose §2 capabilities compose
+`imessage: false`, where the watcher can never connect), and the CLI authoring/execution
+surfaces (pull → edit → push round-trip; execution cancel). Isolation is
 per-test: a fresh `AUTOWRIGHT_HOME` tmp dir (the app's entire write surface), a random
 localhost port per backend (the harness also sets `AUTOWRIGHT_TICK_S=1`, §15), and
 localhost-only test doubles in the spirit of the fake `claude`

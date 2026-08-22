@@ -127,6 +127,11 @@ def main() -> None:
     sock = socket.socket()
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", int(os.environ.get("AUTOWRIGHT_PORT", 0))))
+    # §3: listen before publishing too — bind alone reserves the port but
+    # refuses connects until listen; a client reading backend.json the moment
+    # it appears must be queued in the backlog, not refused, while uvicorn
+    # (which serves on this very socket) finishes starting.
+    sock.listen()
     port = sock.getsockname()[1]
     # §3 discovery: port + auth token, 0600. `python` feeds the shell's
     # CLI-on-PATH shim (§3) so it execs the interpreter that runs the backend.

@@ -1265,6 +1265,10 @@ app.whenReady().then(() => {
   // replace it with the AW mark (§14 checked-in icon assets; a no-op on
   // platforms without a dock).
   if (caps.dockIcon) plat.setDockIcon(app, path.join(__dirname, 'icon', 'icon.png'))
+  // §9: a platform without an application menu (Linux — the native frame
+  // would draw Electron's stock File/Edit/View/Window bar) has it suppressed
+  // before any window exists; editing shortcuts are Chromium-native.
+  if (!caps.appMenu) Menu.setApplicationMenu(null)
   void ensureBackend()
   createWindow()
   if (caps.trayPanel) createTray()

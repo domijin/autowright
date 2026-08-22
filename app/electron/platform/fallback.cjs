@@ -99,7 +99,7 @@ const SERVICE_START_FAILED_DETAIL =
 
 function serviceDiagnostics(_log) {}
 
-const capabilities = { trayPanel: false, loginItem: false, dockIcon: false, updates: false }
+const capabilities = { trayPanel: false, loginItem: false, dockIcon: false, updates: false, appMenu: true }
 
 module.exports = {
   OS_TOKEN,

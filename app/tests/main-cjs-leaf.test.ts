@@ -442,7 +442,7 @@ describe('main.cjs §9 never-paint-blank window guard', () => {
 // rather than one platform's answer.
 
 const platMod = realRequire(join(PLATFORM_DIR, 'index.cjs')) as {
-  capabilities: { trayPanel: boolean, loginItem: boolean, dockIcon: boolean, updates: boolean }
+  capabilities: { trayPanel: boolean, loginItem: boolean, dockIcon: boolean, updates: boolean, appMenu: boolean }
   UPDATER: string | null
 }
 const caps = platMod.capabilities

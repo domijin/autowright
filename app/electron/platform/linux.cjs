@@ -180,7 +180,10 @@ function serviceDiagnostics(log) {
 // §13: the tray is best-effort on Linux (stock GNOME needs a user extension
 // for StatusNotifier items) — the flag stays true so the icon is attempted;
 // the §3 window-all-closed discriminator covers a host with no tray.
-const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: false }
+// §9: no application menu — the native frame would draw Electron's stock
+// File/Edit/View/Window bar, which nothing in the app uses, so the shell
+// suppresses it (editing shortcuts are Chromium-native and survive).
+const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: false, appMenu: false }
 
 module.exports = {
   OS_TOKEN,

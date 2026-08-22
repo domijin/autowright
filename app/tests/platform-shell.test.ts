@@ -144,13 +144,14 @@ describe('§9 ensure-backend failure copy is per-OS', () => {
 describe('§9 capability flags', () => {
   it('macOS declares every shell surface; Windows has everything but a dock', () => {
     expect(darwin.capabilities)
-      .toEqual({ trayPanel: true, loginItem: true, dockIcon: true, updates: true })
+      .toEqual({ trayPanel: true, loginItem: true, dockIcon: true, updates: true, appMenu: true })
     expect(win32.capabilities)
-      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: true })
+      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true })
     // §13: the Linux tray is best-effort (stock GNOME needs an extension) —
-    // the flag stays true so the icon is attempted; no update feed yet.
+    // the flag stays true so the icon is attempted; no update feed yet. §9:
+    // no application menu — the stock File/Edit/View/Window bar is suppressed.
     expect(linux.capabilities)
-      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: false })
+      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: false, appMenu: false })
   })
 
   it('every module\'s updates flag and updateFeedUrl agree', () => {

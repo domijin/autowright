@@ -147,7 +147,7 @@ const SERVICE_START_FAILED_DETAIL =
 // No extra diagnostics to capture: the §3 service result lines already land in app.log.
 function serviceDiagnostics(_log) {}
 
-const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true }
+const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true }
 
 module.exports = {
   OS_TOKEN,

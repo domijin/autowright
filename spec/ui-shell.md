@@ -21,7 +21,15 @@ read as one uniform surface (there are no lights at the left to justify a darker
 Linux uses the native window frame for v1 (`mainWindowChrome()` returns `{}` — no custom
 title bar, no overlay; the OS draws its own bar above the 100 vh dark client area) and
 keeps the macOS `--bg-window` shell root: the two-tone rail gutter is plain app styling
-there, needing no chrome to justify it.
+there, needing no chrome to justify it. Linux also suppresses Electron's stock application
+menu (the File/Edit/View/Window bar the default frame would draw under the title bar —
+nothing in the app uses it): the shell calls `Menu.setApplicationMenu(null)` at ready,
+gated on the `appMenu` shell capability (false on Linux only — macOS keeps its system menu
+bar, which carries the Cmd shortcuts; Windows keeps the hidden default menu, whose bar the
+`titleBarStyle: 'hidden'` chrome never draws anyway). The default menu's accelerators
+(reload, DevTools, zoom, fullscreen, quit) go with it on Linux; text-editing shortcuts
+(Ctrl+C/V/X/A) are Chromium-native and unaffected, and the §9 right-click context menu is
+independent of the application menu.
 The boot splash is not the app shell and keeps `--bg-window` on every OS; onboarding paints
 the flat `--bg-content` page background on every OS — one background color, no accent glow —
 so it matches the content pane (and the Windows `titleBarOverlay`).
@@ -59,7 +67,7 @@ dock stays resident unconditionally; without one, residency requires a **live** 
 reference (the stored setting is never consulted — a tray that failed to create must not
 strand an invisible app). The
 shell consults its own `plat.capabilities` (§2 shell half — `trayPanel`, `loginItem`,
-`dockIcon`, `updates`) before wiring each of those surfaces, so a platform module that
+`dockIcon`, `updates`, `appMenu`) before wiring each of those surfaces, so a platform module that
 declares a capability false is simply never asked for its assets or handlers. The §3
 ensure-backend failure detail is per-OS too: the diagnostic line naming Gatekeeper is
 macOS copy from the darwin module; Windows shows a plain "the backend service failed to

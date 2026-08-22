@@ -153,7 +153,7 @@ function serviceDiagnostics(log) {
     })
 }
 
-const capabilities = { trayPanel: true, loginItem: true, dockIcon: true, updates: true }
+const capabilities = { trayPanel: true, loginItem: true, dockIcon: true, updates: true, appMenu: true }
 
 module.exports = {
   OS_TOKEN,

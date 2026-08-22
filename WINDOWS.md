@@ -25,9 +25,11 @@ before editing, they will drift.
 - Guards updated for a second platform: `app/tests/main-cjs-leaf.test.ts` accepts the `.cmd`
   shim form; `app/e2e/harness.ts` resolves `.venv\Scripts\python.exe` on win32.
 
-## Dev setup on Windows (no scripts/ equivalents exist yet)
+## Dev setup on Windows
 
-`scripts/*.sh` are bash and developer-only. Manual equivalents:
+`scripts/*.sh` are bash and developer-only. The dev loop now has a native port:
+`.\windows-scripts\dev.ps1` (§17/§18 — deps + Task Scheduler service + Vite/HMR +
+Electron, dev.sh mapped per-OS). Manual equivalents for the rest:
 
 ```
 py -3.14 -m venv .venv

@@ -420,6 +420,47 @@ Dev workflow:
   launchd PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), same log filenames under the chosen home.
   `--fresh` wipes the data dir first and is refused unless `AUTOWRIGHT_HOME` is set (never wipes
   the real app data).
+- **`.\windows-scripts\dev.ps1`** — dev.sh on Windows (PowerShell; §17 `windows-scripts/`).
+  Same contract — deps only, stale-process sweep, real service, Vite + Electron with HMR,
+  release semantics on normal quit, full teardown on Ctrl+C, the same isolated mode and
+  wipe rule (`-Fresh`, the PowerShell flag form) — mapped per-OS:
+  - Deps are inlined (build.sh is bash): venv via `py -3.14` when `.venv\Scripts\python.exe`
+    is missing, then the same two change-gated steps — `.venv/.backend-stamp`-gated
+    `pip install -e backend[dev]` (plus the setuptools-debris cleanup) and lockfile-gated
+    `npm ci`. Two deliberate omissions: no version sync (`release.sh --sync` is macOS-only
+    bash; `prod.ps1`'s version gate protects distributables) and no acknowledgements regen
+    (`gen_licenses.py`'s list-form `subprocess` call cannot resolve `npm.cmd` on Windows —
+    the checked-in file is refreshed by mac builds, the stance `prod.ps1` also takes).
+  - Stale sweep: the same four command-line patterns (backend `python* -m autowright`, the
+    repo venv's entry points, this repo's Electron, this repo's Vite), matched via CIM
+    `Win32_Process` and killed with `taskkill /T /F` — no TERM-then-KILL grace: Windows has
+    no deliverable SIGTERM, and the §2 process contract treats every kill as the hard tree
+    kill, which also clears backends stuck in graceful shutdown.
+  - Backend: `service uninstall` + `service install` (re)registers the §3 Task Scheduler
+    task `ai.autowright.backend` on the venv interpreter (§3 picks the `pythonw.exe` beside
+    `Scripts\python.exe`). Data `%LOCALAPPDATA%\Autowright`, logs
+    `%LOCALAPPDATA%\Autowright\Logs` (§5 root table); log filenames are unchanged because
+    on Windows the backend routes its own stdout/stderr to `backend.out.log` /
+    `backend.err.log` (§3 route_logs).
+  - Isolated mode (any `AUTOWRIGHT_*` knob set — `AUTOWRIGHT_RENDERER_URL` excluded, the
+    script sets that one itself for Electron) spawns the backend directly: detached hidden
+    window, cwd `%SystemRoot%\System32` (Task Scheduler's default), the **full** user
+    environment — no launchd-PATH mimicry, per §2 Windows tasks are not env-stripped —
+    with stdout/stderr redirected to the same two log files (catches failures earlier than
+    route_logs, e.g. import errors).
+  - Vite runs on a random free port picked via a loopback `TcpListener`, launched as
+    `node node_modules\vite\bin\vite.js` under `cmd /d /c` (the redirect merges both
+    streams into `vite.log`; `/d` skips cmd AutoRun hooks, and invoking node directly —
+    not `npx` — keeps a machine's AutoRun output out of the picture entirely). Electron
+    likewise runs as `node node_modules\electron\cli.js .` in the foreground with
+    `AUTOWRIGHT_RENDERER_URL` set (removed again on exit — the variable must not leak into
+    the caller's session, where it would flip the next run to isolated mode; `.ps1` scripts
+    share the calling PowerShell process).
+  - Teardown: a `finally` block replaces the bash traps — every exit sweeps Vite; Ctrl+C
+    (which reaches the console-attached Electron on its own) additionally uninstalls the
+    service and sweeps the backend, while a normal Electron quit and the startup-failure
+    exits leave the backend running, exactly as dev.sh does. No `exit 130` (PowerShell
+    cannot set an exit code from a Ctrl+C-interrupted `finally`).
 - **`./scripts/build-clean.sh`** — resets the repo to a pre-build state so the next
   `build.sh`/`dev.sh` rebuilds from scratch. First stops anything running **from this repo**
   (deleting `.venv` under the live launchd KeepAlive service would otherwise break):
@@ -500,4 +541,16 @@ Dev workflow:
   code-fence lines (```/```lang) the model wraps the message in, prints it, and commits. Exits 0 with no commit if
   the tree is clean; fails if the message is empty after stripping. Does not push. Developer-only:
   agents never run this script (`.claude/CLAUDE.md` forbids it).
+- **`.\windows-scripts\commit.ps1`** — commit.sh on Windows (PowerShell; §17
+  `windows-scripts/`). Same contract — clean-tree exit 0 with no commit, `git add -A`,
+  Claude-generated message (Opus 5) from the staged diff with the same prompt, the same
+  fence-stripping, fails on an empty message, does not push, developer-only — mapped per-OS:
+  - The prompt goes to `claude -p` on **stdin** instead of as an argument — Windows caps a
+    process command line at ~32K characters, which a real diff overflows.
+  - Windows PowerShell 5.1 defaults would mangle non-ASCII diff content in both directions
+    (ASCII `$OutputEncoding` on the stdin pipe, the OEM codepage when reading native
+    output), so the script sets both to UTF-8 for the duration and restores the console
+    encoding on exit (`.ps1` scripts share the calling PowerShell process).
+  - `Push-Location`/`Pop-Location` to the repo top-level replaces `cd` (same
+    shared-process reason).
 

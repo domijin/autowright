@@ -121,16 +121,18 @@ def test_curated_list_matches_the_spec():
 
 
 def test_powershell_scripts_start_with_a_utf8_bom():
-    """§17/§18 `scripts/*.ps1`: Windows PowerShell 5.1 reads a BOM-less file as
-    ANSI, and both scripts carry non-ASCII characters in their result lines
-    (`·`, `—`). Without the BOM those bytes decode into stray quote characters
-    and the script fails to parse — a hard failure at build time, from an
-    invisible property of the file. Guarded because any editor (or tooling)
-    that rewrites the file as plain UTF-8 removes it silently."""
+    """§17/§18 `scripts/*.ps1` + `windows-scripts/*.ps1`: Windows PowerShell
+    5.1 reads a BOM-less file as ANSI, and the scripts carry non-ASCII
+    characters in their result lines (`·`, `—`). Without the BOM those bytes
+    decode into stray quote characters and the script fails to parse — a hard
+    failure at build time, from an invisible property of the file. Guarded
+    because any editor (or tooling) that rewrites the file as plain UTF-8
+    removes it silently."""
     scripts = sorted((REPO / "scripts").glob("*.ps1"))
-    assert scripts, "no scripts/*.ps1 found — did the §3 Windows pair move?"
+    scripts += sorted((REPO / "windows-scripts").glob("*.ps1"))
+    assert scripts, "no *.ps1 found — did the §17 PowerShell scripts move?"
     for path in scripts:
         head = path.read_bytes()[:3]
         assert head == b"\xef\xbb\xbf", (
-            f"scripts/{path.name} lost its UTF-8 BOM — Windows PowerShell 5.1 "
-            "would misread its non-ASCII output lines and fail to parse it")
+            f"{path.relative_to(REPO)} lost its UTF-8 BOM — Windows PowerShell "
+            "5.1 would misread its non-ASCII output lines and fail to parse it")

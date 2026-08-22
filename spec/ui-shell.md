@@ -33,6 +33,18 @@ works); they must never hold children. Interactive controls inside drag regions 
 a window drag; synthetic/Playwright clicks bypass drag regions entirely and won't catch that
 mistake.
 
+**Never paint an unloaded window:** the main window is created hidden (`show: false`) and
+shows itself (`show` + `focus`) on the renderer's first successful load. A failed main-frame
+load — a dead §15 `AUTOWRIGHT_RENDERER_URL`; a packaged `dist` file load doesn't fail — keeps
+the window hidden and retries the load every second until it succeeds, logged to `app.log`
+once per failure streak plus a recovery line. Chromium fires `did-finish-load` even for a
+failed navigation, so a per-attempt failure flag set by `did-fail-load` (main frame only) is
+what separates success from failure. Every other show path — the deep-link/second-instance
+`showApp`, the dock/tray `activate` reopen — defers to that first load: a still-loading or
+failed window is never shown blank. The §3 reset relaunch leans on this in dev: the
+relaunched app stays invisible while the §18 harness brings the dev server back, instead of
+painting a dead-URL window.
+
 **Closing the window (per-OS):** on macOS, `window-all-closed` never quits — the app is a
 tray-and-dock app and stays resident. On Windows there is no dock: closing the window keeps
 the app resident **only while the §4.9 `menuBarIcon` tray icon is showing**; with the tray

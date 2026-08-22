@@ -258,8 +258,8 @@ the update bullets below).
      layout with defaults, and §10 onboarding runs as on a fresh install. In a dev launch
      the §18 harness supervises past this relaunch — the relaunched process inherits
      `AUTOWRIGHT_RENDERER_URL` and has no bundled Python, so dev.sh/dev.ps1 keep Vite alive
-     and re-ensure the stopped backend (otherwise the relaunched window sits blank on a
-     dead dev-server URL).
+     and re-ensure the stopped backend; the §9 never-paint rule keeps the relaunched window
+     hidden (never blank) until the dev server answers.
 
   Each destructive step announces itself to the main window as it starts — a
   `reset-progress` renderer push carrying a stage token: `secrets` (step 3), `service`

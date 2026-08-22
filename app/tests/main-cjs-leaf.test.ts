@@ -145,6 +145,15 @@ interface NsisRecord {
   listeners: Map<string, (arg: unknown) => void>
 }
 
+// Per-window record: show/focus/load counts plus a way to fire webContents
+// events at the real handlers main.cjs registered (§9 never-paint guard).
+interface WinRecord {
+  shows: number
+  focuses: number
+  loads: number
+  fire: (event: string, ...args: unknown[]) => void
+}
+
 interface MainStub {
   invoke: (channel: string, ...args: unknown[]) => unknown
   // Fire an app-level event main.cjs subscribed to (window-all-closed, …).
@@ -152,6 +161,7 @@ interface MainStub {
   opened: string[]
   revealed: string[]
   windows: unknown[]
+  wins: WinRecord[]
   trays: unknown[]
   loginItem: boolean[]
   aumids: string[]
@@ -212,15 +222,26 @@ function loadMain(): MainStub {
     quitAndInstall() { nsis.installs += 1 }
   }
 
+  const wins: WinRecord[] = []
+
   class FakeWindow {
+    wcListeners = new Map<string, (...a: unknown[]) => void>()
+    record: WinRecord = {
+      shows: 0, focuses: 0, loads: 0,
+      fire: (event, ...args) => { this.wcListeners.get(event)?.({}, ...args) },
+    }
+
     webContents = {
-      on() {}, once() {}, send(channel: string, payload: unknown) { sent.push([channel, payload]) },
+      on: (event: string, fn: (...a: unknown[]) => void) => { this.wcListeners.set(event, fn) },
+      once: (event: string, fn: (...a: unknown[]) => void) => { this.wcListeners.set(event, fn) },
+      send: (channel: string, payload: unknown) => { sent.push([channel, payload]) },
       setWindowOpenHandler() {},
       isLoading: () => false, getURL: () => '',
     }
 
-    constructor(opts: unknown) { windows.push(opts) }
-    loadFile() {} loadURL() {} on() {} show() {} focus() {} hide() {}
+    constructor(opts: unknown) { windows.push(opts); wins.push(this.record) }
+    loadFile() { this.record.loads += 1 } loadURL() { this.record.loads += 1 }
+    on() {} show() { this.record.shows += 1 } focus() { this.record.focuses += 1 } hide() {}
     setSize() {} setPosition() {} isVisible() { return false }
     setVisibleOnAllWorkspaces() {} destroy() {}
   }
@@ -280,7 +301,7 @@ function loadMain(): MainStub {
       if (!fn) throw new Error(`no app listener for ${event}`)
       fn()
     },
-    opened, revealed, windows, trays, loginItem, aumids, sent, nsis, home,
+    opened, revealed, windows, wins, trays, loginItem, aumids, sent, nsis, home,
     get quits() { return quits },
   }
 }
@@ -333,6 +354,69 @@ describe('main.cjs IPC argument validation', () => {
     expect(() => m.invoke('resize-panel', 'tall')).not.toThrow()
     expect(() => m.invoke('resize-panel', undefined)).not.toThrow()
     expect(() => m.invoke('resize-panel', 240)).not.toThrow()
+  })
+})
+
+// ---- §9 never paint an unloaded window -------------------------------------
+// The main window is created hidden and shows itself only on the renderer's
+// first successful load; a failed main-frame load (dead dev-server URL) stays
+// hidden and retries every second. Chromium fires did-finish-load even after
+// a failed navigation, so the tests replay that exact sequence.
+
+describe('main.cjs §9 never-paint-blank window guard', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    if (savedHome === undefined) delete process.env.AUTOWRIGHT_HOME
+    else process.env.AUTOWRIGHT_HOME = savedHome
+  })
+
+  it('created hidden; a failed load never shows and retries after 1 s', () => {
+    vi.useFakeTimers()
+    const m = loadMain()
+    m.invoke('open-app', '/app')
+    expect(m.windows).toHaveLength(1)
+    expect((m.windows[0] as { show?: boolean }).show).toBe(false)
+    const w = m.wins[0]
+    expect(w.loads).toBe(1) // createWindow's initial load
+    // Dead dev server: did-fail-load, then Chromium's did-finish-load for the
+    // same failed navigation — still hidden, and a retry is scheduled.
+    w.fire('did-start-loading')
+    w.fire('did-fail-load', -102, 'ERR_CONNECTION_REFUSED', 'http://127.0.0.1:5173/', true)
+    w.fire('did-finish-load')
+    expect(w.shows).toBe(0)
+    vi.advanceTimersByTime(1000)
+    expect(w.loads).toBe(2)
+  })
+
+  it('shows exactly once on the first successful load — subframe failures don\'t count', () => {
+    const m = loadMain()
+    m.invoke('open-app', '/app')
+    const w = m.wins[0]
+    w.fire('did-start-loading')
+    w.fire('did-fail-load', -6, 'ERR_FILE_NOT_FOUND', 'http://x/img.png', false) // subframe
+    w.fire('did-finish-load')
+    expect(w.shows).toBe(1)
+    expect(w.focuses).toBe(1)
+    // A later reload (HMR, navigation) never re-fires the show.
+    w.fire('did-start-loading')
+    w.fire('did-finish-load')
+    expect(w.shows).toBe(1)
+  })
+
+  it('showApp on an unloaded window stays hidden; after the load it shows again', () => {
+    const m = loadMain()
+    m.invoke('open-app', '/app')
+    const w = m.wins[0]
+    // Deep link while still loading: no blank show.
+    m.invoke('open-app', '/app?automation=abc')
+    expect(w.shows).toBe(0)
+    // First successful load shows it…
+    w.fire('did-start-loading')
+    w.fire('did-finish-load')
+    expect(w.shows).toBe(1)
+    // …and from then on showApp shows as before.
+    m.invoke('open-app', '/app?automation=abc')
+    expect(w.shows).toBe(2)
   })
 })
 

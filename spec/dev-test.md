@@ -430,8 +430,8 @@ Dev workflow:
   script waits for the relaunched process to exit — repeating for every further relaunch —
   before falling through to the usual teardown. The Ctrl+C path also sweeps this repo's
   Electron: a relaunched instance is not console-attached, so the terminal's SIGINT never
-  reaches it. Without this supervision the relaunched window would sit blank on a dead Vite
-  URL with no backend.
+  reaches it. Without this supervision the relaunched app would sit hidden forever (§9 never
+  paints an unloaded window), retrying a dead Vite URL with no backend.
   Isolated mode: setting any `AUTOWRIGHT_*` knob (§15) switches dev.sh to spawning the backend
   directly with that env instead of via launchd (the plist carries no env) — detached, cwd `/`,
   launchd PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), same log filenames under the chosen home.

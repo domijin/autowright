@@ -38,6 +38,9 @@ if (plat.APP_USER_MODEL_ID) app.setAppUserModelId(plat.APP_USER_MODEL_ID)
 app.commandLine.appendSwitch('enable-features', 'OverlayScrollbar')
 
 let win = null
+// §9 never-paint-blank guard: true once the current main window's renderer has
+// loaded successfully — until then every show path stays hidden.
+let winLoaded = false
 let panel = null
 let tray = null
 
@@ -356,7 +359,37 @@ function createWindow(hash) {
     // layout), native frame elsewhere.
     ...plat.mainWindowChrome(),
     backgroundColor: '#090d14',
+    // §9 never paint an unloaded window: shown on the first successful
+    // renderer load below, never as an empty frame.
+    show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs') },
+  })
+  // §9: a failed main-frame load (a dead §15 AUTOWRIGHT_RENDERER_URL — a
+  // packaged dist file load doesn't fail) keeps the window hidden and retries
+  // every second until the renderer is really there. Chromium fires
+  // did-finish-load even after a failed navigation, so the per-attempt flag
+  // is what separates the two. Logged once per failure streak, not per retry.
+  winLoaded = false
+  let failed = false
+  let failStreak = 0
+  win.webContents.on('did-start-loading', () => { failed = false })
+  win.webContents.on('did-fail-load', (_e, code, desc, _url, isMainFrame) => {
+    if (!isMainFrame) return
+    failed = true
+    failStreak += 1
+    if (failStreak === 1) appLog(`window: renderer load failed (${code} ${desc}) — retrying every 1 s`)
+    setTimeout(() => { if (win) load(win, hash || '/app') }, 1000)
+  })
+  win.webContents.on('did-finish-load', () => {
+    if (failed) return
+    if (failStreak) {
+      appLog(`window: renderer loaded after ${failStreak} failed attempt(s)`)
+      failStreak = 0
+    }
+    if (!winLoaded) {
+      winLoaded = true
+      if (win) { win.show(); win.focus() }
+    }
   })
   load(win, hash || '/app')
   attachContextMenu(win)
@@ -377,8 +410,9 @@ function showApp(hash) {
       win.webContents.send('open-target', hash)
     }
   }
-  win.show()
-  win.focus()
+  // §9: an unloaded window stays hidden — it shows itself on the first
+  // successful load (createWindow's guard), never as an empty frame.
+  if (winLoaded) { win.show(); win.focus() }
 }
 
 function trayIcon(alert) {
@@ -1207,7 +1241,9 @@ app.whenReady().then(() => {
   setInterval(() => { void refreshTrayAlert(); void syncShellSettings() }, 60_000)
   // The hidden tray panel is also a BrowserWindow, so count only the main
   // window — `getAllWindows().length` would block reopening from the Dock.
-  app.on('activate', () => { if (win === null) createWindow(); else { win.show(); win.focus() } })
+  // §9: a not-yet-loaded window stays hidden even on an explicit reopen — it
+  // shows itself on the first successful load.
+  app.on('activate', () => { if (win === null) createWindow(); else if (winLoaded) { win.show(); win.focus() } })
 })
 
 // §9 close rule, per-OS. §3 holds either way: quitting the app never stops the

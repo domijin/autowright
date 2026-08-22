@@ -271,7 +271,7 @@ data on disk); both ends of a served surface change in the same commit.
   `commit.sh` stages all uncommitted changes, generates a commit message via
   `claude --model claude-opus-5 -p` from the staged diff, and commits;
   `release.sh` sets the app version from the repo-root `VERSION` file, invokes
-  `prod.sh` to build the release distributable, publishes the DMG + update zip as a
+  `prod.sh` to build the release distributable, publishes the DMG as a
   GitHub release via `gh`, rewrites the §3 update feed under `docs/updates/`, and
   last publishes the §3 Homebrew cask to the separate `homebrew-tap` repository, §18;
   `test-fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;

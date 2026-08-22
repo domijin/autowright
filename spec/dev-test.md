@@ -341,10 +341,11 @@ Dev workflow:
   (AI-generated message; skipped when the version is unchanged) and pushes; invokes
   `prod.sh` to produce the versioned `.app` + DMG (which re-checks the DMG itself: the
   in-bundle import smoke test and the Gatekeeper assessment);
-  then runs `gh release create v<version> <DMG> <zip> --title "v<version>"
-  --generate-notes` to tag the pushed commit and upload the DMG plus the §3 update zip;
+  then runs `gh release create v<version> <DMG> --title "v<version>"
+  --generate-notes` to tag the pushed commit and upload the DMG (the §3 install + update
+  artifact, the release's only asset);
   then rewrites the built arch's Squirrel feed (`docs/updates/darwin-<arch>.json`, §3 —
-  `currentRelease` + one entry pointing at the release zip's download URL) and commits +
+  `currentRelease` + one entry pointing at the release DMG's download URL) and commits +
   pushes it with a plain git commit; finally updates the §3 Homebrew cask in the separate
   `homebrew-tap` repository and pushes it to that repo's `main`. Requires the `gh` CLI,
   authenticated (`gh auth login`); fails with a hint otherwise. Files are rewritten only
@@ -390,9 +391,9 @@ Dev workflow:
   the interpreter to `Contents/Resources/python/`, smoke-checks that the bundled interpreter
   imports `autowright` + every curated package from inside the bundle, codesigns and
   notarizes per §3 (Developer ID + hardened runtime on every Mach-O, inside-out, stapled —
-  no ad-hoc fallback), and produces `build/Autowright-<version>-darwin-<arch>.dmg` (hdiutil UDZO)
-  plus the §3 update zip `build/Autowright-<version>-darwin-<arch>.zip` (`ditto` of the stapled
-  app, the Squirrel.Mac artifact `release.sh` uploads).
+  no ad-hoc fallback), and produces `build/Autowright-<version>-darwin-<arch>.dmg` (hdiutil UDZO),
+  the §3 install + update artifact `release.sh` uploads (no separate update zip: the app
+  unpacks the DMG itself at update time, §3).
 - **`./scripts/dev.sh`** — fastest dev loop, with hot reloading: invokes `build.sh --deps` only
   (no renderer bundle); shuts down lingering processes from previous sessions — backend by
   command-line pattern (`[Pp]ython -m autowright` — ps shows the venv python's resolved binary,

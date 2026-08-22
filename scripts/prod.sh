@@ -179,14 +179,8 @@ xcrun notarytool submit "$APPZIP" --keychain-profile "$NOTARY_PROFILE" --wait \
 rm -f "$APPZIP"
 xcrun stapler staple "$APP"
 
-# ---- update zip (SPEC §3: the Squirrel.Mac artifact release.sh uploads) ----
-# Zipped from the stapled app, so the downloaded update passes Gatekeeper offline.
+# ---- DMG (SPEC §3: the only release artifact — install and update alike) ----
 VERSION="$(node -p "require('$ROOT/app/package.json').version")"
-ZIP="$BUILD/Autowright-$VERSION-darwin-$ARCH.zip"
-rm -f "$ZIP"
-ditto -c -k --keepParent "$APP" "$ZIP"
-
-# ---- DMG ----
 DMG="$BUILD/Autowright-$VERSION-darwin-$ARCH.dmg"
 rm -f "$DMG"
 hdiutil create -volname "Autowright" -srcfolder "$APP" -ov -quiet -format UDZO "$DMG"
@@ -208,4 +202,3 @@ echo "· Gatekeeper assessment OK (app + DMG)"
 echo "· dist done:"
 echo "    $APP"
 echo "    $DMG"
-echo "    $ZIP"

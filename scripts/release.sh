@@ -8,7 +8,7 @@
 #                                    integration → E2E), commit + push the bump,
 #                                    build the distributable via prod.sh, then
 #                                    publish a GitHub release (tag v<version>)
-#                                    with the DMG + update zip attached, rewrite
+#                                    with the DMG attached, rewrite
 #                                    the §3 Squirrel feed in docs/updates/, and
 #                                    last publish the §3 Homebrew cask to the
 #                                    homebrew-tap repo. Needs a clean working tree
@@ -253,13 +253,11 @@ else
   echo "· version: $VERSION — building release"
   "$ROOT/scripts/prod.sh"
 
-  # ---- publish the GitHub release (tags the pushed commit, uploads DMG + zip) ----
+  # ---- publish the GitHub release (tags the pushed commit, uploads the DMG) ----
   DMG="$ROOT/build/Autowright-$VERSION-darwin-$ARCH.dmg"
-  ZIP="$ROOT/build/Autowright-$VERSION-darwin-$ARCH.zip"
   [ -f "$DMG" ] || { echo "DMG missing after build: $DMG"; exit 1; }
-  [ -f "$ZIP" ] || { echo "update zip missing after build: $ZIP"; exit 1; }
   echo "· creating GitHub release v$VERSION"
-  gh release create "v$VERSION" "$DMG" "$ZIP" \
+  gh release create "v$VERSION" "$DMG" \
     --title "v$VERSION" --generate-notes
 
   # ---- update feed (SPEC §3): Squirrel.Mac JSON for this arch, via GitHub Pages ----
@@ -277,7 +275,7 @@ else
       "updateTo": {
         "version": "$VERSION",
         "name": "v$VERSION",
-        "url": "https://github.com/$OWNER_REPO/releases/download/v$VERSION/$(basename "$ZIP")"
+        "url": "https://github.com/$OWNER_REPO/releases/download/v$VERSION/$(basename "$DMG")"
       }
     }
   ]

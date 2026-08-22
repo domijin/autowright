@@ -354,7 +354,7 @@ the update bullets below).
   checks; everything starts from the About page's "Check for updates" button). Downloads and
   installs are always manual, both modes — a check only ever reads the feed. Machinery
   is Squirrel.Mac via Electron's built-in `autoUpdater` (its `ShipIt` helper
-  already ships in the bundle). The repo and its releases must stay public — the update zip is
+  already ships in the bundle). The repo and its releases must stay public — the update DMG is
   downloaded unauthenticated.
   - **Automatic check:** `applyShellSettings` reconciles §4.9 `automaticUpdateCheck`
     exactly like `login`/`menuBarIcon` (startup, 60 s poll, renderer push). On the off→on
@@ -373,33 +373,36 @@ the update bullets below).
     A later check answering up-to-date clears the remembered version and pushes `null` (the
     feed rolled back, or the user updated by hand); an `error` check leaves it alone.
     Otherwise it clears only with the app restart that installs the update.
-  - **Artifacts:** `prod.sh` emits, next to the DMG, a zip of the signed + stapled app
-    (`ditto -c -k --keepParent` → `Autowright-<version>-darwin-<arch>.zip`; the DMG is named
-    `Autowright-<version>-darwin-<arch>.dmg`) — Squirrel.Mac consumes
-    zips, not DMGs. `release.sh` uploads both to the GitHub release.
+  - **Artifacts:** the DMG (`Autowright-<version>-darwin-<arch>.dmg`) is the only release
+    artifact, serving install and update alike; `release.sh` uploads just it to the GitHub
+    release. Squirrel.Mac consumes zips, not DMGs, so the app builds the zip itself at
+    update time from the downloaded DMG (see Flow). `prod.sh` emits no separate update zip.
   - **Feed:** one static Squirrel.Mac JSON feed per arch at
     `https://autowright.ai/updates/darwin-<arch>.json` (`arm64` | `x86_64`; the files live in
     §17 `docs/updates/`, served by GitHub Pages). After publishing the release, `release.sh`
     rewrites the built arch's feed — `currentRelease` plus a single `releases[]` entry whose
-    `updateTo.url` is the release zip's `github.com/<owner>/<repo>/releases/download/…` URL —
+    `updateTo.url` is the release DMG's `github.com/<owner>/<repo>/releases/download/…` URL —
     and commits + pushes it (plain git commit, not `commit.sh`).
   - **Flow** (Electron main; the renderer drives it over IPC, §9.4 renders it):
     `update-check` fetches the feed (10 s timeout, no cache) and compares `currentRelease`
     against `app.getVersion()` with the §9.4 rule (numeric on dot-split parts, leading `v`
     ignored, malformed = not newer) → `{ state: 'uptodate' | 'available' | 'error', … }`.
-    `update-download` downloads the zip itself so the UI can show determinate progress —
+    `update-download` downloads the DMG itself so the UI can show determinate progress —
     Squirrel's `autoUpdater` emits no progress events. It re-fetches the feed, streams the
-    `updateTo.url` zip to a temp file, and pushes progress to the main window as
+    `updateTo.url` DMG to a temp file, and pushes progress to the main window as
     `update-progress` IPC events (percent from `Content-Length`; `null` when the header is
-    missing — the §9.4 bar goes indeterminate). It then hands the staged zip to Squirrel
-    through a one-shot loopback HTTP server (`127.0.0.1`, ephemeral port) serving the feed
-    JSON — rewritten so `updateTo.url` points at the server's own zip route — and the zip
-    file; `autoUpdater.setFeedURL` targets that local feed (`serverType: 'json'`),
+    missing — the §9.4 bar goes indeterminate). It then builds the zip Squirrel needs from
+    that DMG: `hdiutil attach` (read-only, `-nobrowse`, an explicit temp mountpoint), the
+    single `*.app` on the volume zipped via `ditto -c -k --keepParent` to a temp file (a
+    volume holding no `.app` is an error), then `hdiutil detach`. That zip is handed to
+    Squirrel through a one-shot loopback HTTP server (`127.0.0.1`, ephemeral port) serving
+    the feed JSON — rewritten so `updateTo.url` points at the server's own zip route — and
+    the zip file; `autoUpdater.setFeedURL` targets that local feed (`serverType: 'json'`),
     `checkForUpdates()` runs, and the handler resolves `{ ok: true }` on `update-downloaded`
     or `{ error }` on the first `error` event; if Squirrel emits neither within 10 minutes
     the handler settles with a plain-word error instead of hanging the §9.4 flow forever.
-    Server and temp zip are cleaned up on every
-    outcome. There is no dev fork: an unsigned dev build takes
+    Server, temp DMG, temp zip, and any still-attached mount are cleaned up on every
+    outcome (detach retries with `-force`). There is no dev fork: an unsigned dev build takes
     the same path and surfaces Squirrel's real signature error in the UI.
     `update-install` asks the backend for live executions
     (`GET /executions?status=executing`) and answers `{ busy: true }` while any is running —

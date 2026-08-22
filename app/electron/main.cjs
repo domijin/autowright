@@ -938,17 +938,36 @@ ipcMain.handle('update-check', () => fetchUpdateState())
 ipcMain.handle('update-available', () => availableVersion)
 ipcMain.handle('update-brew-managed', () => brewManaged())
 
-// Squirrel's autoUpdater emits no download-progress events, so the zip is
+// Squirrel's autoUpdater emits no download-progress events, so the DMG is
 // downloaded here first — streamed to a temp file, percent pushed to the
-// renderer as update-progress events — then handed to Squirrel through a
-// one-shot loopback feed (§3). No dev fork: an unsigned build takes the same
-// path and surfaces Squirrel's real signature error.
+// renderer as update-progress events — then unpacked into the zip Squirrel
+// consumes and handed over through a one-shot loopback feed (§3). No dev
+// fork: an unsigned build takes the same path and surfaces Squirrel's real
+// signature error.
 ipcMain.handle('update-download', async () => {
   if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
   if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
   if (USE_NSIS) return downloadUpdateNsis()
   const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
-  const tmpZip = path.join(app.getPath('temp'), `autowright-update-${randomUUID()}.zip`)
+  const stamp = randomUUID()
+  const tmpDmg = path.join(app.getPath('temp'), `autowright-update-${stamp}.dmg`)
+  const tmpZip = path.join(app.getPath('temp'), `autowright-update-${stamp}.zip`)
+  const mount = path.join(app.getPath('temp'), `autowright-update-${stamp}.mount`)
+  const run = (cmd, args) => new Promise((res, rej) => {
+    execFile(cmd, args, (err, stdout, stderr) => {
+      if (err) rej(new Error(String(stderr || err?.message || err).trim()))
+      else res(stdout)
+    })
+  })
+  let attached = false
+  const detach = async () => {
+    if (!attached) return
+    // -force second: a Finder or Spotlight peek at the volume must not strand
+    // the mount (and its temp dir) for the rest of the app's life.
+    await run('hdiutil', ['detach', mount]).catch(() => run('hdiutil', ['detach', mount, '-force']))
+      .catch(() => {})
+    attached = false
+  }
   let server = null
   const cleanup = () => {
     // closeAllConnections first: close() alone only stops new connections, so
@@ -956,6 +975,8 @@ ipcMain.handle('update-download', async () => {
     // rest of the app's life.
     server?.closeAllConnections?.()
     server?.close()
+    detach().then(() => fs.rm(mount, { recursive: true, force: true }, () => {}))
+    fs.rm(tmpDmg, { force: true }, () => {})
     fs.rm(tmpZip, { force: true }, () => {})
   }
   try {
@@ -967,13 +988,13 @@ ipcMain.handle('update-download', async () => {
     if (!entry?.updateTo?.url) throw new Error('update feed has no download URL')
 
     // Percent from Content-Length; null (indeterminate bar) when absent.
-    const zipRes = await fetch(entry.updateTo.url, { signal: AbortSignal.timeout(30 * 60_000) })
-    if (!zipRes.ok || !zipRes.body) throw new Error(`update download: HTTP ${zipRes.status}`)
-    const total = Number(zipRes.headers.get('content-length')) || 0
-    const out = fs.createWriteStream(tmpZip)
+    const dmgRes = await fetch(entry.updateTo.url, { signal: AbortSignal.timeout(30 * 60_000) })
+    if (!dmgRes.ok || !dmgRes.body) throw new Error(`update download: HTTP ${dmgRes.status}`)
+    const total = Number(dmgRes.headers.get('content-length')) || 0
+    const out = fs.createWriteStream(tmpDmg)
     let got = 0
     let lastPercent = -1
-    for await (const chunk of zipRes.body) {
+    for await (const chunk of dmgRes.body) {
       got += chunk.length
       const percent = total ? Math.min(100, Math.round((got / total) * 100)) : null
       if (percent !== lastPercent) { lastPercent = percent; sendPercent(percent) }
@@ -981,6 +1002,16 @@ ipcMain.handle('update-download', async () => {
     }
     await new Promise((res, rej) => { out.on('error', rej); out.end(res) })
     sendPercent(100)
+
+    // §3: Squirrel consumes zips, not DMGs — build the zip it needs from the
+    // downloaded DMG: attach read-only, zip the single .app, detach.
+    fs.mkdirSync(mount, { recursive: true })
+    await run('hdiutil', ['attach', tmpDmg, '-nobrowse', '-readonly', '-mountpoint', mount])
+    attached = true
+    const appName = fs.readdirSync(mount).find((name) => name.endsWith('.app'))
+    if (!appName) throw new Error('the downloaded update holds no app')
+    await run('ditto', ['-c', '-k', '--keepParent', path.join(mount, appName), tmpZip])
+    await detach()
 
     // Loopback hand-off: serve the feed (updateTo.url rewritten to this
     // server's own zip route) and the staged zip; Squirrel re-downloads

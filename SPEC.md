@@ -159,7 +159,8 @@ osascript/launchctl may keep the platform default, which is UTF-8 there). The sh
 half mirrors this: `win32.cjs` carries the Windows-correct values (flat `python\python.exe`
 bundled-interpreter layout, the §3 `.cmd` shim, PATH read from the process environment —
 Windows GUI apps inherit the full user PATH, no login-shell probe — native window frame, no
-update feed yet); Linux keeps the degraded `fallback.cjs`. Clients gate features on the §19
+update feed yet); Linux keeps the degraded `fallback.cjs` (its port surface is audited in
+the `LINUX.md` worksheet until it ships into this spec). Clients gate features on the §19
 `/health` `os` + `capabilities` fields — never by sniffing the platform at a call site.
 Behavior on macOS is identical to the pre-layer code; the layer exists so a port fills in
 per-OS modules instead of hunting call sites.
@@ -423,6 +424,9 @@ data on disk); both ends of a served surface change in the same commit.
   development). Not part of the app build and not used by anything in the repo — the real backend
   package is `backend/`; never install `autowright` from PyPI. Uploaded by the developer via
   `scripts/pip-release.sh` (§18).
+- `LINUX.md` - temporary Linux-port worksheet: the audited port surface (what is done, what
+  remains, in what order) for building on Linux x86-64. Working notes, not spec - each item
+  moves into the §-sections as it ships, and the file is deleted when the port lands.
 - `VERSION` — single source of truth for the app version (one line, semver). Synced into
   `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
   `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to

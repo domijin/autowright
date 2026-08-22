@@ -36,6 +36,9 @@ declare global {
       // then the app relaunches itself into onboarding — the service
       // registration, the CLI shim, and the app itself survive.
       resetAll(): Promise<{ ok: true } | { busy: true } | { error: string }>
+      // §3 reset-progress stage tokens ('secrets' | 'service' | 'data' |
+      // 'relaunch') for the §4.9 reset progress overlay's stage line.
+      onResetProgress(cb: (stage: string) => void): void
       onUpdateProgress(cb: (percent: number | null) => void): void
       updateAvailable(): Promise<string | null>
       onUpdateAvailable(cb: (version: string | null) => void): void

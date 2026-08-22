@@ -239,7 +239,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   - Modals (shared `Modal` shell in `ui.tsx`: backdrop + card, used by the secret add/edit
     modal and `ConfirmModal`) animate both ways, and every dismissal path (backdrop click,
     Escape, Cancel, save/confirm) plays the exit before unmount; confirm actions fire after
-    the exit finishes.
+    the exit finishes. The one blocking exception is `BlockingOverlay` (the §4.9 reset
+    progress overlay): the same backdrop + card and both-ways motion, but no user dismissal
+    path at all — no Escape, no backdrop click, no buttons; it closes only programmatically
+    (its `open` prop, which plays the exit before unmount).
 - Layout: sidebar rail 58 px, expanding to 212 px on hover (§9); page gutter 30–32 px, max width 1200 px (Review page 1800 px,
   forms 620–720 px, settings 640 px); card padding 15–22 px; control padding 9–10 px vertical /
   14–18 px horizontal. Grid cards (Automations §4, Agents §4.7) share one format: grid

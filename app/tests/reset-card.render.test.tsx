@@ -2,7 +2,7 @@
 // renders only with the preload bridge. Busy and error leave everything in
 // place and toast; success is the shell's business (the app relaunches).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settings } from '../src/types'
 import { useStore } from '../src/store'
 import SettingsPage from '../src/pages/SettingsPage'
@@ -17,10 +17,11 @@ type Result = { ok: true } | { busy: true } | { error: string }
 
 const cliStatus = vi.fn<() => Promise<{ state: 'missing' }>>()
 const resetAll = vi.fn<() => Promise<Result>>()
+const onResetProgress = vi.fn<(cb: (stage: string) => void) => void>()
 const showToast = vi.fn<(msg: string) => void>()
 
 const bridge = () => {
-  ;(window as unknown as Record<string, unknown>).autowright = { cliStatus, resetAll }
+  ;(window as unknown as Record<string, unknown>).autowright = { cliStatus, resetAll, onResetProgress }
 }
 
 beforeEach(() => {
@@ -28,6 +29,7 @@ beforeEach(() => {
   cliStatus.mockResolvedValue({ state: 'missing' })
   useStore.setState({ platformOs: '', settings: SETTINGS, showToast })
   resetAll.mockReset()
+  onResetProgress.mockReset()
   showToast.mockReset()
 })
 
@@ -87,6 +89,42 @@ describe('RESET card (§4.9)', () => {
     expect(screen.getByRole('button', { name: /Resetting…/ })).toHaveProperty('disabled', true)
   })
 
+  it('confirm raises the non-dismissable progress overlay', async () => {
+    resetAll.mockReturnValue(new Promise(() => {})) // in flight — the app relaunches
+    await openConfirm()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete everything' }))
+    finishModalAnim('Delete all data and start over?')
+    const overlay = await screen.findByRole('alertdialog', { name: 'Deleting all data' })
+    await screen.findByText('Deleting all data…')
+    await screen.findByText('Preparing…')
+    // Non-dismissable: neither Escape nor a backdrop click closes it.
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.mouseDown(overlay.parentElement!)
+    expect(screen.getByRole('alertdialog', { name: 'Deleting all data' })).toBeTruthy()
+  })
+
+  it('reset-progress pushes drive the overlay stage line', async () => {
+    resetAll.mockReturnValue(new Promise(() => {}))
+    await openConfirm()
+    // The page subscribed on mount; drive the captured callback by hand.
+    const push = onResetProgress.mock.calls[0][0]
+    fireEvent.click(screen.getByRole('button', { name: 'Delete everything' }))
+    finishModalAnim('Delete all data and start over?')
+    await screen.findByText('Preparing…')
+    act(() => push('service'))
+    await screen.findByText('Stopping the background service…')
+    act(() => push('data'))
+    await screen.findByText('Deleting data…')
+  })
+
+  it('a stray reset-progress push never raises the overlay', async () => {
+    render(<SettingsPage />)
+    await screen.findByRole('button', { name: 'Reset…' })
+    const push = onResetProgress.mock.calls[0][0]
+    act(() => push('data'))
+    expect(screen.queryByRole('alertdialog', { name: 'Deleting all data' })).toBeNull()
+  })
+
   it('busy (live execution): toast, row resets, nothing deleted', async () => {
     resetAll.mockResolvedValue({ busy: true })
     await openConfirm()
@@ -96,6 +134,9 @@ describe('RESET card (§4.9)', () => {
       'An automation is executing — reset when it finishes.'))
     const btn = await screen.findByRole('button', { name: 'Reset…' })
     expect(btn).toHaveProperty('disabled', false)
+    // The progress overlay closes too (its exit-timeout fallback unmounts it).
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog', { name: 'Deleting all data' })).toBeNull())
   })
 
   it('error: toast with the error text, row resets', async () => {
@@ -106,6 +147,8 @@ describe('RESET card (§4.9)', () => {
     await waitFor(() => expect(showToast).toHaveBeenCalledWith(
       'stop failed: launchd still reports the job'))
     await screen.findByRole('button', { name: 'Reset…' })
+    await waitFor(() =>
+      expect(screen.queryByRole('alertdialog', { name: 'Deleting all data' })).toBeNull())
   })
 
   it('no preload bridge (plain browser): card hidden', async () => {

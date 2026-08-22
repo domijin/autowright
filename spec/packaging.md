@@ -257,6 +257,12 @@ the update bullets below).
      empty data root: ensure-backend re-registers the service, the backend recreates the §5
      layout with defaults, and §10 onboarding runs as on a fresh install.
 
+  Each destructive step announces itself to the main window as it starts — a
+  `reset-progress` renderer push carrying a stage token: `secrets` (step 3), `service`
+  (step 4), `data` (step 5), `relaunch` (step 6). Fire-and-forget, no renderer ack —
+  these drive the §4.9 reset progress overlay's stage line; the busy gate and the
+  `dataPath` capture push nothing (the overlay shows "Preparing…" until the first token).
+
   **The service registration, the CLI shim, and the app itself deliberately survive a
   reset** — only data is erased. The wiped first-run marker just lets the §3 one-shot settle
   again (shim already `installed` → marker re-set, no write). Headless parity is composition,

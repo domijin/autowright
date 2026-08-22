@@ -790,6 +790,46 @@ export function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onC
   )
 }
 
+// §4.9 reset progress overlay (§14): the Modal backdrop + card with no user
+// dismissal path — no Escape, no backdrop click, no buttons. It closes only
+// programmatically: flipping `open` false plays the §14 exit before unmount.
+// Sits above every other surface (Modal caps at z-index 90).
+export function BlockingOverlay({ open, width = 400, ariaLabel, children }: {
+  open: boolean; width?: number; ariaLabel: string; children: React.ReactNode
+}) {
+  const [mounted, setMounted] = useState(open)
+  useEffect(() => { if (open) setMounted(true) }, [open])
+  const closing = mounted && !open
+  useEffect(() => {
+    if (!closing) return
+    // Unmount even if animationend never fires (e.g. reduced-motion setups).
+    const t = setTimeout(() => setMounted(false), 200)
+    return () => clearTimeout(t)
+  }, [closing])
+  if (!mounted) return null
+  return createPortal(
+    <div
+      onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) setMounted(false) }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(5,7,10,.6)', zIndex: 120,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        animation: closing
+          ? 'adFadeOut var(--t-exit) var(--ease-exit) both'
+          : 'adFadeIn var(--t-enter) var(--ease-enter) both',
+      }}
+    >
+      <div role="alertdialog" aria-modal="true" aria-label={ariaLabel} style={{
+        background: 'var(--bg-menu)', border: '1px solid var(--border-input)', borderRadius: 12,
+        boxShadow: '0 24px 60px rgba(0,0,0,.5)', width, padding: '26px 24px',
+        animation: closing ? EXIT_DOWN : ENTER_UP,
+      }}>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ---------- Python syntax highlighting ----------
 // Step scripts are always Python (SPEC §15 — single bundled CPython). Tiny
 // zero-dependency tokenizer keeps the bundle lean and Vite-friendly.

@@ -1168,7 +1168,12 @@ ipcMain.handle('reset-all', async () => {
   // unreachable backend counts as idle.
   if (await executionsLive()) return { busy: true }
   const dataPath = await captureDataPath()
+  // §3: each destructive step announces itself as it starts — fire-and-forget
+  // stage tokens for the §4.9 reset progress overlay.
+  const stage = (s) => win?.webContents.send('reset-progress', s)
+  stage('secrets')
   await deleteSecrets('reset')
+  stage('service')
   const err = await runServiceVerb('stop', 'reset')
   if (err) {
     // §3 step 4: a stop failure aborts the reset — the app stays up and
@@ -1176,10 +1181,12 @@ ipcMain.handle('reset-all', async () => {
     quittingAll = false
     return { error: err }
   }
+  stage('data')
   await deleteAllData(dataPath, 'reset')
   appLog('reset: data erased, relaunching')
   // §3 step 6: the relaunched app finds no backend.json and an empty data root
   // — ensure-backend re-registers and §10 onboarding runs as on a fresh install.
+  stage('relaunch')
   app.relaunch()
   app.exit(0)
   return { ok: true }

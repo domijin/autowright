@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
-import { CommandBlock, ConfirmModal, Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
+import { BlockingOverlay, CommandBlock, ConfirmModal, Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }
@@ -19,6 +19,17 @@ const pathBox: React.CSSProperties = {
 }
 
 type Cli = { state: 'installed' | 'missing' | 'foreign'; path: string; onPath: boolean }
+
+// §4.9 reset progress overlay: stage line per §3 reset-progress token.
+// 'preparing' is renderer-local (before the first push); unknown tokens keep
+// the fallback rather than showing a raw token.
+const RESET_STAGE_LABEL: Record<string, string> = {
+  preparing: 'Preparing…',
+  secrets: 'Removing secrets…',
+  service: 'Stopping the background service…',
+  data: 'Deleting data…',
+  relaunch: 'Restarting…',
+}
 
 export default function SettingsPage() {
   const { settings, showToast } = useStore()
@@ -39,9 +50,11 @@ export default function SettingsPage() {
   // §4.9 QUIT card (§3 explicit-quit exception)
   const [quitConfirm, setQuitConfirm] = useState(false)
   const [quitBusy, setQuitBusy] = useState(false)
-  // §4.9 RESET card (§3 reset flow)
+  // §4.9 RESET card (§3 reset flow). resetStage doubles as the progress
+  // overlay's visibility: null = hidden, otherwise the current §3 stage token.
   const [resetConfirm, setResetConfirm] = useState(false)
   const [resetBusy, setResetBusy] = useState(false)
+  const [resetStage, setResetStage] = useState<string | null>(null)
 
   useEffect(() => {
     if (settings) setDays(String(settings.days))
@@ -49,6 +62,12 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void window.autowright?.cliStatus().then((s) => setCli(s)).catch(() => {})
+  }, [])
+
+  // §3 reset-progress pushes drive the overlay's stage line. Ignored while the
+  // overlay is down — no stray push may raise it (only confirming does).
+  useEffect(() => {
+    window.autowright?.onResetProgress?.((s) => setResetStage((cur) => (cur ? s : cur)))
   }, [])
 
   // §4.9: fires §3 cli-install — a silent write into ~/.local/bin, no dialog;
@@ -114,16 +133,20 @@ export default function SettingsPage() {
   }
 
   // §4.9 RESET: the §3 reset-all IPC erases every §5 root and every secret,
-  // then relaunches the app into onboarding. Busy or error changes nothing —
-  // toast and reset the row.
+  // then relaunches the app into onboarding. The blocking progress overlay is
+  // up for the whole flow. Busy or error changes nothing — close the overlay,
+  // toast, and reset the row.
   const resetAll = () => {
     if (resetBusy) return
     setResetBusy(true)
+    setResetStage('preparing')
     void (async () => {
       const r = await window.autowright?.resetAll?.().catch((e: Error) => ({ error: e.message }))
       if (r && 'busy' in r) showToast('An automation is executing — reset when it finishes.')
       else if (r && 'error' in r) showToast(r.error)
-      // on { ok } the app is relaunching — nothing to do
+      // on { ok } the app is relaunching — keep the overlay up until it does
+      if (r && 'ok' in r) return
+      setResetStage(null)
       setResetBusy(false)
     })()
   }
@@ -491,6 +514,18 @@ export default function SettingsPage() {
           onCancel={() => setResetConfirm(false)}
         />
       )}
+
+      {/* §4.9 reset progress overlay: non-dismissable while §3 reset-all runs —
+          on success it stays up until the app relaunches itself. */}
+      <BlockingOverlay open={resetStage !== null} ariaLabel="Deleting all data">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
+          <Spinner size={22} />
+          <div style={{ fontSize: 15, fontWeight: 600, marginTop: 4 }}>Deleting all data…</div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            {RESET_STAGE_LABEL[resetStage ?? 'preparing'] ?? 'Preparing…'}
+          </div>
+        </div>
+      </BlockingOverlay>
     </div>
   )
 }

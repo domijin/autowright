@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld('autowright', {
   // §4.9 RESET card: erase every §5 file and every secret, then relaunch into
   // onboarding (§3 reset flow)
   resetAll: () => ipcRenderer.invoke('reset-all'),
+  // §3 reset-progress stage tokens for the §4.9 reset progress overlay.
+  // Re-registering replaces the previous listener, like onUpdateProgress.
+  onResetProgress: (cb) => {
+    ipcRenderer.removeAllListeners('reset-progress')
+    ipcRenderer.on('reset-progress', (_e, stage) => cb(stage))
+  },
   // Download percent (null = size unknown). Re-registering replaces the
   // previous listener — the About page re-subscribes on every mount.
   onUpdateProgress: (cb) => {

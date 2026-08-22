@@ -106,10 +106,12 @@ def test_current_routes_windows_token_to_groundwork_build(monkeypatch):
         platform.current.cache_clear()
 
 
-def test_windows_session_kwargs_are_a_new_process_group():
+def test_windows_session_kwargs_are_a_new_process_group_with_no_window():
     kwargs = windows.WindowsProcessControl().session_kwargs()
-    # The Win32 CREATE_NEW_PROCESS_GROUP flag; no POSIX-only Popen kwargs.
-    assert kwargs == {"creationflags": 0x00000200}
+    # The Win32 CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW flags (§2 spawn
+    # policy: a console child of the pythonw backend must not open a terminal
+    # window); no POSIX-only Popen kwargs.
+    assert kwargs == {"creationflags": 0x00000200 | 0x08000000}
 
 
 def test_windows_kill_group_is_a_taskkill_tree_kill(monkeypatch):
@@ -427,6 +429,7 @@ def test_windows_powershell_calls_are_time_boxed_and_utf8(monkeypatch):
     assert kw["timeout"] == windows.POWERSHELL_TIMEOUT_S == 30
     assert kw["capture_output"] is True
     assert kw["encoding"] == "utf-8" and kw["errors"] == "replace"
+    assert kw["creationflags"] == windows._NO_WINDOW  # §2 spawn policy
 
 
 def test_windows_missing_powershell_is_a_plain_failure_line(monkeypatch):

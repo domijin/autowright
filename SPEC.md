@@ -111,7 +111,15 @@ PowerShell ScheduledTasks cmdlets; `service` true), **real keep-awake power**
 (`WindowsPower`, §3: one thread-owned
 `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` behind counted holds;
 `keepAwake` true) and **real process control** (`WindowsProcessControl`): the spawn
-policy is `creationflags = CREATE_NEW_PROCESS_GROUP`, and "group" operations act on the
+policy is `creationflags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW` — the backend
+runs under `pythonw.exe` (§3), so without `CREATE_NO_WINDOW` every console-subsystem
+child (harness CLIs, version/sign-in probes, `ollama`) opens its own visible terminal
+window on the user's desktop; the flag gives each child a hidden console instead (its
+own children inherit it). Every subprocess the backend spawns on Windows suppresses the
+console: cross-OS spawn sites (harness invocations and probes, engine steps, pip,
+`ollama` pulls/serve) take the whole policy from the platform layer's `session_kwargs()`,
+and the Windows platform module's own helpers (`taskkill`, its PowerShell runs) pass
+`CREATE_NO_WINDOW` directly. "Group" operations act on the
 process tree rooted at the child's pid via `taskkill /T /F` — Windows has no signalable
 process groups, so the §4.5 persisted group id stays the child's pid (same pid == group
 invariant as POSIX own-session spawns), and the §3 pid-reuse guard answers False until a

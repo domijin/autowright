@@ -27,6 +27,10 @@ from .base import Capabilities, Platform
 # the Win32 ABI. The getattr keeps this module importable (and its §15 tests
 # runnable) on POSIX hosts.
 _NEW_PROCESS_GROUP = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+# §2 spawn policy: the backend runs under pythonw.exe (§3), so a
+# console-subsystem child spawned without this opens its own visible terminal
+# window on the user's desktop.
+_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 # SetThreadExecutionState flags (Win32 ABI). ES_DISPLAY_REQUIRED is
 # deliberately absent — §3 keeps display sleep allowed.
@@ -169,8 +173,10 @@ class WindowsProcessControl:
 
     def session_kwargs(self) -> dict:
         """Own process group per child, so the persisted group id (== pid)
-        stays meaningful and Ctrl events can't propagate from a console."""
-        return {"creationflags": _NEW_PROCESS_GROUP}
+        stays meaningful and Ctrl events can't propagate from a console —
+        plus a hidden console (§2 spawn policy), so a console-subsystem child
+        of the windowless backend never opens a terminal window."""
+        return {"creationflags": _NEW_PROCESS_GROUP | _NO_WINDOW}
 
     def signal_group(self, proc, sig: int | None = None) -> None:
         self.kill_group(proc.pid)
@@ -182,7 +188,8 @@ class WindowsProcessControl:
     def kill_group(self, pgid: int) -> None:
         try:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(pgid)],
-                           capture_output=True, timeout=10)
+                           capture_output=True, timeout=10,
+                           creationflags=_NO_WINDOW)  # §2 spawn policy
         except (OSError, subprocess.SubprocessError):
             pass
 
@@ -231,7 +238,8 @@ def _powershell(script: str, timeout: float = POWERSHELL_TIMEOUT_S) -> tuple[int
             "-OutputFormat", "Text", "-Command", script]
     try:
         r = subprocess.run(argv, capture_output=True, encoding="utf-8",
-                           errors="replace", timeout=timeout)
+                           errors="replace", timeout=timeout,
+                           creationflags=_NO_WINDOW)  # §2 spawn policy
     except subprocess.TimeoutExpired:
         return 1, "", _TIMED_OUT
     except OSError as e:  # no powershell.exe on this box

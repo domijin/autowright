@@ -774,9 +774,12 @@ HARNESS_ID = {name: pid for pid, name in PROVIDERS if pid != "ollama"}
 
 def _status_ok(cmd: list[str], provider_id: str) -> bool:
     try:
+        # §2 spawn policy via session_kwargs: on Windows the windowless
+        # backend's console children each open a terminal window without it.
         r = subprocess.run(cmd, capture_output=True, timeout=10,
                            encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
-                           env=spawn_env(cmd[0]), cwd=_neutral_cwd(provider_id))
+                           env=spawn_env(cmd[0]), cwd=_neutral_cwd(provider_id),
+                           **platform.current().processes.session_kwargs())
         return r.returncode == 0
     except Exception:  # noqa: BLE001
         return False
@@ -884,9 +887,11 @@ def detect() -> list[dict]:
     §10 Free local AI card reads its state from `/ollama/status`."""
     def version_of(binpath: str, pid: str) -> str | None:
         try:
+            # §2 spawn policy via session_kwargs (hidden console on Windows).
             r = subprocess.run([binpath, "--version"], capture_output=True,
                                encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
-                               timeout=5, env=spawn_env(binpath), cwd=_neutral_cwd(pid))
+                               timeout=5, env=spawn_env(binpath), cwd=_neutral_cwd(pid),
+                               **platform.current().processes.session_kwargs())
             return (r.stdout or r.stderr).strip().splitlines()[0][:40] if r.returncode == 0 else None
         except Exception:  # noqa: BLE001
             return None

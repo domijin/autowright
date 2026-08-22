@@ -1742,7 +1742,9 @@ def _ollama_pull_cli(model: str) -> None:
                                 stderr=subprocess.STDOUT,
                                 # §2 pipe-encoding contract
                                 encoding="utf-8", errors="replace",
-                                env=harness.spawn_env(binpath))
+                                env=harness.spawn_env(binpath),
+                                # §2 spawn policy (hidden console on Windows)
+                                **platform.current().processes.session_kwargs())
         prog = _PullProgress()
         for line in proc.stdout:  # type: ignore[union-attr]
             stripped = line.strip()

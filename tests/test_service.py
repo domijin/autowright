@@ -12,12 +12,14 @@ from types import SimpleNamespace
 import pytest
 
 # §3: service.py IS the launchd implementation — these pin its internals
-# (plist bytes, launchctl verbs, gui/<uid> domain). The Windows
-# ServiceManager is its own module (platform/windows.py, Task Scheduler);
-# its tests live in tests/test_platform.py and run on every host.
+# (plist bytes, launchctl verbs, gui/<uid> domain). The Windows and Linux
+# ServiceManagers are their own modules (platform/windows.py Task Scheduler,
+# platform/linux.py systemd); their tests live in tests/test_platform.py and
+# run on every host.
 launchd_only = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="launchd implementation; the Windows ServiceManager is platform/windows.py")
+    sys.platform != "darwin",
+    reason="launchd implementation; the per-OS managers are platform/windows.py "
+           "and platform/linux.py, tested host-independently in test_platform.py")
 
 
 def _degraded_platform_service():
@@ -42,8 +44,18 @@ def _windows_platform_service():
     return isinstance(platmod.current().service, windows.WindowsService)
 
 
+def _linux_platform_service():
+    """§3: whether this host composes the systemd manager — the dispatch
+    tests then fake systemctl instead of launchctl."""
+    from autowright import platform as platmod
+    from autowright.platform import linux
+
+    return isinstance(platmod.current().service, linux.SystemdService)
+
+
 _degraded_service, _degraded_why = _degraded_platform_service()
 _windows_service = _windows_platform_service()
+_linux_service = _linux_platform_service()
 
 
 @pytest.fixture()
@@ -93,19 +105,27 @@ def svc(home, monkeypatch):
 @pytest.fixture()
 def dispatch(svc, request):
     """The host's real ServiceManager with its OS layer faked: launchctl
-    through `svc` on macOS, PowerShell through `task_scheduler` on Windows.
-    `mark_installed()` puts that manager in its registered state, whichever it
-    is — so the §3 dispatch assertions read the same on every host."""
+    through `svc` on macOS, PowerShell through `task_scheduler` on Windows,
+    systemctl through `systemd` on Linux. `mark_installed()` puts that
+    manager in its registered state, whichever it is — so the §3 dispatch
+    assertions read the same on every host."""
     tasks = request.getfixturevalue("task_scheduler") if _windows_service else None
+    systemd = request.getfixturevalue("systemd") if _linux_service else None
 
     def mark_installed():
         if tasks is not None:
             tasks.task["state"] = "Ready"  # registered, not running
             return
+        if systemd is not None:
+            unit = systemd.mod.unit_path()
+            unit.parent.mkdir(parents=True, exist_ok=True)
+            unit.write_text(systemd.mod.unit_text())  # enabled, not running
+            return
         svc.plist.parent.mkdir(parents=True, exist_ok=True)
         svc.plist.write_bytes(b"<plist/>")
 
     svc.tasks = tasks
+    svc.systemd = systemd
     svc.mark_installed = mark_installed
     return svc
 

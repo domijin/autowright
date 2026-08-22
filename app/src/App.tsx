@@ -237,7 +237,8 @@ export default function App() {
 
   // §9 per-OS shell background: on Windows the rail's gutter corners must
   // match the content pane and the titleBarOverlay — no traffic lights at
-  // the left to justify a darker corner.
+  // the left to justify a darker corner. Linux (native frame) keeps the
+  // macOS `--bg-window` two-tone: plain app styling, nothing to clear.
   return (
     <div style={{ height: '100vh', display: 'flex', background: platformOs === 'windows' ? 'var(--bg-content)' : 'var(--bg-window)' }}>
       <div className="ad-drag" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 18, zIndex: 100, pointerEvents: 'none' }} />

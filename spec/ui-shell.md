@@ -18,6 +18,10 @@ floating rail is per-OS too: macOS paints `--bg-window`, so the rail's gutter co
 around the traffic lights; Windows paints `--bg-content` — gated on the §9 store `platformOs`
 token, never a sniff — so the gutter corners, the content pane, and the `titleBarOverlay`
 read as one uniform surface (there are no lights at the left to justify a darker corner).
+Linux uses the native window frame for v1 (`mainWindowChrome()` returns `{}` — no custom
+title bar, no overlay; the OS draws its own bar above the 100 vh dark client area) and
+keeps the macOS `--bg-window` shell root: the two-tone rail gutter is plain app styling
+there, needing no chrome to justify it.
 The boot splash is not the app shell and keeps `--bg-window` on every OS; onboarding paints
 the flat `--bg-content` page background on every OS — one background color, no accent glow —
 so it matches the content pane (and the Windows `titleBarOverlay`).
@@ -84,30 +88,47 @@ the §9.4 external-URL policy. Defaults before the first `/health` answer are ma
 gates only the actions that would run a §19 `/agents/install` or the Terminal sign-in —
 the §10 Free local AI card keeps its button while the only missing piece is the model
 (an `/ollama/pull`, which this capability does not gate), and shows the line naming the
-first missing installable piece otherwise.
+first missing installable piece otherwise. One Linux nuance on top of the flag (§2):
+`agentInstall` is true there, but the Terminal-window sign-in method is macOS-only —
+so on `os === 'linux'` the Sign in button renders only for the provider whose §19 method
+is `browser` (codex); the TUI providers (claude, gemini, opencode) show the manual
+sign-in line (the `ManualInstallLine` signin variant) instead, exactly as an
+`agentInstall: false` platform would. Install buttons stay live for all providers.
 
 **Per-OS copy rule:** user-facing copy that names the platform derives from the §9 store's
 `os` token (renderer) or `paths.os_display_name` (backend-served strings) — never a second
-platform sniff. Wherever quoted copy in this spec uses the macOS form, the Windows render
-substitutes per this table, with no other wording change:
+platform sniff. Wherever quoted copy in this spec uses the macOS form, the Windows and
+Linux renders substitute per this table (each entry lists the Windows form, then the Linux
+form where it differs), with no other wording change:
 `Mac` → `PC` as the machine noun in every inflection (`this Mac`, `your Mac`, `any Mac`) —
-including model-facing §8 prompt text that names the user's machine (the SYSTEM TOOLS
-header, the chat call's diagnosis rule) · `Keychain` → `Credential Manager` (the §1
-promise line becomes "Secrets live in your Credential Manager");
+Windows and Linux alike — including model-facing §8 prompt text that names the user's
+machine (the SYSTEM TOOLS
+header, the chat call's diagnosis rule) · `Keychain` → `Credential Manager`, on Linux
+`system keyring` (the §1
+promise line becomes "Secrets live in your Credential Manager" / "Secrets live in your
+system keyring");
 the macOS-only remedy clause "— unlock the login Keychain and try again" in the §19
-secret-write 503s has no Windows analogue and becomes plain "— try again" ·
-`Show in Finder` → `Show in Explorer` (reveal semantics unchanged) · `menu bar` → `tray`
-(the §13 surface's Windows name — "starts quietly in the tray", "Show in the tray",
+secret-write 503s has no Windows analogue and becomes plain "— try again"; on Linux it
+becomes "— unlock your keyring and try again" (the Secret Service store does lock) ·
+`Show in Finder` → `Show in Explorer`, on Linux `Show in file manager` (reveal semantics
+unchanged; the file-manager noun inside longer phrases is `file manager`) ·
+`menu bar` → `tray`
+(the §13 surface's name on both — "starts quietly in the tray", "Show in the tray",
 "Execute now and the tray still work") · model-facing instruction text naming the OS
 itself (`macOS`) → the §4.1 os display name via a `{{OS}}` placeholder beside `{{MACHINE}}`
-("a macOS app" reads "a Windows app" there) · the §4.9 COMMAND LINE
+("a macOS app" reads "a Windows app" / "a Linux app" there) · the §4.9 COMMAND LINE
 card's install location `~/.local/bin` → `%LOCALAPPDATA%\Autowright\bin` (the §3 per-OS
-shim location) and "the Terminal" (the macOS app) → "a terminal" · the §4.9 PATH command
+shim location; Linux keeps `~/.local/bin`) and "the Terminal" (the macOS app) → "a
+terminal" on both · the §4.9 PATH command
 block's zsh one-liner → a PowerShell one-liner adding `%LOCALAPPDATA%\Autowright\bin` to
 the **user** PATH via `[Environment]::SetEnvironmentVariable('Path', …, 'User')` (never
 `setx`, which truncates at 1024 chars and bakes the expanded system PATH into the user
-value), with "open a new terminal" in the surrounding copy · the §9.4 About page's Homebrew fork
-never renders (no brew channel) · `storage.py`'s §5.1 os-mismatch label already uses
+value), with "open a new terminal" in the surrounding copy; on Linux a POSIX one-liner
+appending the export to `~/.profile` (sourced by desktop sessions and login shells alike —
+the same profile rule as the §19 installer's PATH guarantee), with "open a new terminal"
+in the surrounding copy · the §9.4 About page's Homebrew fork
+never renders on either (no brew channel) · `storage.py`'s §5.1 os-mismatch label already
+uses
 `os_display_name`. The table is exhaustive by intent: copy with no per-OS form listed here
 stays identical everywhere, and a new platform-naming string must extend this table.
 One standing exception: iMessage/Messages surfaces (the §9.2 iMessage editor guide,
@@ -681,8 +702,11 @@ panel.
 
 The overlay is a fixed panel covering the entire window (full width and height,
 z-index above the shell, `--bg-code` well, mono text at 11.5 px,
-`pre-wrap`). A slim header row, padded down 38 px so it clears the macOS traffic
-lights (pinned at 14,14), holds a `requests` tab first, then one tab per log file —
+`pre-wrap`). A slim header row — padded down 38 px so it clears the macOS traffic
+lights (pinned at 14,14) and, on Windows, the 40 px native `titleBarOverlay` its close ×
+would otherwise sit under; on Linux (native frame, nothing to clear) the padding drops to
+10 px, gated on the §9 store `platformOs` token — holds a `requests` tab first, then one
+tab per log file —
 `app.log`, `backend.out.log`, `backend.err.log`, `vite.log` — file tabs showing only files
 that exist, plus a close ×. Active tab persists only for the overlay's open lifetime;
 default is the `requests` tab (always present).
@@ -1237,10 +1261,22 @@ Panel placement is per-OS (§2 `panelPosition`): macOS anchors under the menu-ba
 Windows anchors the panel's bottom edge just above the taskbar's work area and re-anchors
 on **every** `resize-panel` (the §13 height growth), so the panel hugs the taskbar at its
 real height instead of assuming the 640 px cap — a taskbar docked to another edge still
-gets a fully on-screen panel. The Windows tray icon uses real colored assets
+gets a fully on-screen panel. Linux generalizes the same height-aware logic to any edge —
+panels sit anywhere there: a tray click in the top half of the work area drops the panel
+just below the top edge (the macOS shape), one in the bottom half anchors its bottom edge
+just above the bottom (the Windows shape), clamped inside the work area horizontally, and
+it re-anchors on every `resize-panel` the same way. The Windows tray icon uses real
+colored assets
 (`trayWin.png`/`@2x` and the alert variant — light glyph legible on the dark taskbar,
 rendered by `scripts/gen_tray_icon.py` beside the mac template PNGs), never the mac
-black template images, which disappear on a dark taskbar.
+black template images, which disappear on a dark taskbar. Linux gets its own colored pair
+the same way (`trayLinux.png`/`@2x` + `trayLinuxAlert`, 22/44 px — the StatusNotifierItem
+panel convention; StatusNotifier hosts don't recolor template images). The Linux tray is
+**best-effort**: Electron rides libappindicator/StatusNotifier, and stock GNOME needs a
+user extension to show those items at all — `capabilities.trayPanel` stays true (the icon
+is attempted), and the §3 `window-all-closed` discriminator (no dock + no live tray →
+quit) plus the §4.9 `menuBarIcon` setting remain the safety net where no tray host
+exists.
 
 **Deep-link mechanism:** a row click sends the target `'/app?automation=<id>'` to the main process.
 With no main window, the window is created loading that hash and the renderer's boot reads

@@ -85,6 +85,16 @@ function readLoginShellPath() {
   })
 }
 
+// ---- §4.9 login item --------------------------------------------------------
+
+// §4.9 login reconcile: the OS login item via Electron — idempotent, only
+// written when the OS view differs.
+function applyLoginItem(app, enabled) {
+  if (app.getLoginItemSettings().openAtLogin !== enabled) {
+    app.setLoginItemSettings({ openAtLogin: enabled })
+  }
+}
+
 // ---- §3 updates -------------------------------------------------------------
 
 // §3: which update machinery main.cjs drives here — Squirrel.Mac via Electron's
@@ -161,6 +171,7 @@ module.exports = {
   defaultShimPath,
   shimText,
   readLoginShellPath,
+  applyLoginItem,
   UPDATER,
   APP_USER_MODEL_ID,
   updateFeedUrl,

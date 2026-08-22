@@ -18,13 +18,13 @@ import pytest
 
 from autowright import harness, installer, platform as platmod
 
-# §19: the agent-install surface (curl|bash vendor scripts, /Applications
-# bundles, Terminal.app sign-in, zsh login profiles) is macOS end to end, and
-# gated off elsewhere by the `agentInstall` capability. The generic machinery
-# around it — _stream_shell, _download, the job lifecycle — runs everywhere.
+# §19: the macOS-shaped install surface (/Applications bundles, Terminal.app
+# sign-in, zsh login profiles) — its per-OS twins below pin the Linux arms by
+# patching `paths.current_os`, so they run everywhere. The generic machinery
+# — _stream_shell, _download, the job lifecycle — runs everywhere too.
 macos_install_surface = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="macOS install surface; gated off by the agentInstall capability elsewhere")
+    sys.platform != "darwin",
+    reason="macOS install surface; the Linux arms are pinned host-independently below")
 
 
 @pytest.fixture(autouse=True)
@@ -573,6 +573,54 @@ def test_login_requires_installed_binary(monkeypatch):
         installer.login("claude")
 
 
+@pytest.mark.parametrize("pid,expected", [
+    ("claude", "/fake/claude /login"),
+    ("gemini", "/fake/gemini"),
+    ("opencode", "/fake/opencode auth login"),
+])
+def test_login_linux_degrades_tui_providers_to_the_manual_command(monkeypatch, pid,
+                                                                  expected):
+    # §2/§9: the Terminal-window method is macOS-only — on Linux the TUI
+    # providers answer the manual command instead (defense in depth behind
+    # the renderer's own gate); nothing is spawned.
+    monkeypatch.setattr(installer.paths, "current_os", lambda: "linux")
+    monkeypatch.setattr(harness, "resolve_bin", lambda b: f"/fake/{b}")
+    runs = []
+    monkeypatch.setattr(installer.subprocess, "run",
+                        lambda cmd, **kw: runs.append(cmd))
+    with pytest.raises(RuntimeError, match="only on macOS") as e:
+        installer.login(pid)
+    assert f"run `{expected}` in your own terminal" in str(e.value)
+    assert runs == []
+
+
+def test_ensure_login_path_linux_appends_to_profile_never_creates_bash_profile(
+        monkeypatch, fake_home):
+    # §9 Linux profile rule: ~/.profile (desktop sessions and login shells
+    # both source it) — creating a fresh ~/.bash_profile would stop bash
+    # login shells from reading ~/.profile, so one is only appended to when
+    # it already exists.
+    monkeypatch.setattr(installer.paths, "current_os", lambda: "linux")
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setattr(installer, "_login_shell_path", lambda: ["/usr/bin"])
+    rec = Recorder()
+    installer._ensure_login_path(rec)
+    assert not (fake_home / ".bash_profile").exists()
+    text = (fake_home / ".profile").read_text()
+    assert installer.PATH_MARKER in text
+    assert 'export PATH="$HOME/.local/bin:$PATH"' in text
+    assert any(".profile" in line and "new terminal" in line for line in rec.lines)
+
+    # An existing ~/.bash_profile shadows ~/.profile for bash login shells —
+    # then it is the file that must carry the export.
+    (fake_home / ".profile").unlink()
+    bash_profile = fake_home / ".bash_profile"
+    bash_profile.write_text("# mine\n")
+    installer._ensure_login_path(Recorder())
+    assert installer.PATH_MARKER in bash_profile.read_text()
+    assert not (fake_home / ".profile").exists()
+
+
 # ---------- remaining per-provider recipes ----------
 
 def test_opencode_recipe_pipes_installer_with_vendor_defaults(monkeypatch):
@@ -613,6 +661,8 @@ def test_codex_recipe_pipes_official_installer_non_interactive(monkeypatch):
 
 
 def test_ollama_recipe_opens_app_and_waits_for_server_ready(monkeypatch):
+    # The darwin recipe, pinned host-independently.
+    monkeypatch.setattr(installer.paths, "current_os", lambda: "macos")
     monkeypatch.setattr(installer, "_install_ollama_app",
                         lambda emit: "/apps/Ollama.app")
     monkeypatch.setattr(installer, "_require", lambda b: None)
@@ -629,6 +679,7 @@ def test_ollama_recipe_opens_app_and_waits_for_server_ready(monkeypatch):
 
 
 def test_ollama_recipe_fails_when_server_never_starts(monkeypatch):
+    monkeypatch.setattr(installer.paths, "current_os", lambda: "macos")
     monkeypatch.setattr(installer, "_install_ollama_app", lambda emit: "/apps/Ollama.app")
     monkeypatch.setattr(installer, "_require", lambda b: None)
     monkeypatch.setattr(installer.time, "sleep", lambda s: None)
@@ -636,3 +687,56 @@ def test_ollama_recipe_fails_when_server_never_starts(monkeypatch):
     monkeypatch.setattr(harness, "ollama_status", lambda: {"ready": False})
     with pytest.raises(RuntimeError, match="server didn't start"):
         installer._install_ollama(lambda **k: None)
+
+
+def test_ollama_recipe_linux_installs_tarball_and_launches_nothing(monkeypatch):
+    # §19 Linux recipe: the standalone bundle, then wait for readiness — no
+    # app agent exists, so the recipe itself launches nothing (the server is
+    # harness.ollama_status's own `ollama serve` self-heal).
+    monkeypatch.setattr(installer.paths, "current_os", lambda: "linux")
+    installed = []
+    monkeypatch.setattr(installer, "_install_ollama_tarball",
+                        lambda emit: installed.append(True))
+    monkeypatch.setattr(installer, "_require", lambda b: None)
+    monkeypatch.setattr(installer.time, "sleep", lambda s: None)
+    runs = []
+    monkeypatch.setattr(installer.subprocess, "run",
+                        lambda cmd, **kw: runs.append(list(cmd)))
+    answers = [{"ready": False}, {"ready": True}]
+    monkeypatch.setattr(harness, "ollama_status", lambda: answers.pop(0))
+    installer._install_ollama(lambda **k: None)
+    assert installed == [True] and answers == []
+    assert runs == []  # no `open`, no direct serve — the self-heal owns it
+
+
+def test_install_ollama_tarball_extracts_into_user_local(monkeypatch, fake_home):
+    # §19 install-location principle, Linux form: the vendor's standalone
+    # bundle lands user-owned under ~/.local (bin/ollama + lib/ollama), a
+    # previous install's lib tree is replaced, and the terminal-access
+    # guarantee runs. zstd rides tarfile's transparent read (CPython 3.14).
+    import io
+    import tarfile
+
+    archive = fake_home / "ollama-linux-amd64.tar.zst"
+    with tarfile.open(archive, "w:zst") as tf:
+        for name, data, mode in (("bin/ollama", b"#!/bin/sh\n", 0o755),
+                                 ("lib/ollama/libggml.so", b"\x7fELF", 0o644)):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = mode
+            tf.addfile(info, io.BytesIO(data))
+    stale = fake_home / ".local" / "lib" / "ollama" / "old.so"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"stale")
+    monkeypatch.setattr(installer, "_download",
+                        lambda url, dest, emit, label: shutil.copyfile(archive, dest))
+    ensured = []
+    monkeypatch.setattr(installer, "_ensure_login_path",
+                        lambda emit: ensured.append(True))
+    installer._install_ollama_tarball(Recorder())
+    binpath = fake_home / ".local" / "bin" / "ollama"
+    assert binpath.read_bytes() == b"#!/bin/sh\n"
+    assert os.access(binpath, os.X_OK)
+    assert (fake_home / ".local" / "lib" / "ollama" / "libggml.so").exists()
+    assert not stale.exists()  # the old lib tree is replaced, not merged
+    assert ensured == [True]

@@ -92,6 +92,11 @@ _POSIX_FALLBACK_BIN_DIRS = (
     os.path.expanduser("~/.opencode/bin"),
     "/opt/homebrew/bin",
     "/usr/local/bin",
+    # Linux: distro and channel bin dirs a desktop-launched backend's PATH
+    # can miss (harmless probes elsewhere).
+    "/usr/bin",
+    "/snap/bin",
+    os.path.expanduser("~/.nix-profile/bin"),
 )
 _WINDOWS_FALLBACK_BIN_DIRS = (
     # Claude Code's native installer uses the same ~/.local/bin layout here.

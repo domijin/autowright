@@ -92,6 +92,7 @@ export const devlogOverlayOpen = () => overlayOpen
 
 export default function DevLogOverlay() {
   const developerMode = useStore((s) => s.settings?.developerMode) ?? false
+  const platformOs = useStore((s) => s.platformOs)
   const [open, setOpen] = useState(false)
   useEffect(() => {
     overlayOpen = open
@@ -150,8 +151,10 @@ export default function DevLogOverlay() {
       position: 'fixed', inset: 0, zIndex: 200,
       display: 'flex', flexDirection: 'column', background: 'var(--bg-code)',
     }}>
-      {/* 38px top padding clears the macOS traffic lights (pinned at 14,14). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '38px 10px 6px', flex: 'none' }}>
+      {/* §9.3 per-OS: 38px top padding clears the macOS traffic lights (pinned
+          at 14,14) and, on Windows, the 40px titleBarOverlay the close × would
+          sit under; Linux's native frame has nothing to clear. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: platformOs === 'linux' ? '10px 10px 6px' : '38px 10px 6px', flex: 'none' }}>
         {[REQUESTS, ...(tails ?? []).map((t) => t.name)].map((name) => (
           <button
             key={name}

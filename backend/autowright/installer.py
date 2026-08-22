@@ -4,7 +4,8 @@ Each vendor's own suggested install method — never sudo, never Homebrew.
 §19 install-location principle: everything lands where a manual install
 would put it (CLIs in standard user bin dirs; Ollama is the official Mac
 app plus the vendor's /usr/local/bin symlink when writable, else
-~/.local/bin), never in an app-private directory, and stays reachable
+~/.local/bin — on Linux the official standalone bundle extracted into
+~/.local), never in an app-private directory, and stays reachable
 from the user's terminal. One background install per provider at a time;
 progress streams through a publish callback (the API layer forwards it as
 `harness.install` WS events) and the latest snapshot is kept for
@@ -16,6 +17,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import threading
 import time
@@ -40,6 +42,12 @@ OPENCODE_INSTALLER = "https://opencode.ai/install"
 CODEX_INSTALLER = "https://chatgpt.com/codex/install.sh"
 # The official Mac app archive — the same payload ollama.com's install.sh ships.
 OLLAMA_APP_ZIP = "https://ollama.com/download/Ollama-darwin.zip"
+# The official Linux standalone bundle (bin/ollama + lib/ollama). The vendor's
+# install.sh extracts this same archive — but under sudo into /usr; §3 has no
+# sudo anywhere, so the Linux arm extracts it into ~/.local instead (the same
+# user-owned layout, §19 install-location principle). zstd-compressed —
+# tarfile reads it transparently on the pinned CPython 3.14 (PEP 784).
+OLLAMA_LINUX_TAR = "https://ollama.com/download/ollama-linux-amd64.tar.zst"
 APPLICATIONS = "/Applications"
 
 _lock = threading.Lock()
@@ -108,6 +116,13 @@ def login(provider_id: str) -> str:
                          **platform.current().processes.session_kwargs())
         return "browser"
     args = {"claude": ["/login"], "gemini": [], "opencode": ["auth", "login"]}[provider_id]
+    if paths.current_os() == "linux":
+        # §2: the Terminal-window method is macOS-only (osascript). On Linux
+        # the §12 UI shows the manual command instead of the sign-in button;
+        # this line is defense in depth for an un-gated client.
+        manual = " ".join(shlex.quote(p) for p in [binpath, *args])
+        raise RuntimeError("Sign-in help opens a terminal window only on macOS — "
+                           f"run `{manual}` in your own terminal to sign in.")
     # §6/§19: Terminal shells start in ~ — cd into the provider's empty
     # workspace first so the CLI's startup scan never walks the home folder.
     cmd = (f"cd {shlex.quote(harness._neutral_cwd(provider_id))} && "
@@ -206,7 +221,8 @@ def _download(url: str, dest: str, emit, label: str) -> None:
 def _login_shell_path() -> list[str]:
     """The user's login-shell PATH entries — the backend's own env doesn't see
     shell profiles, so ask the shell itself. Empty list on any failure."""
-    shell = os.environ.get("SHELL") or "/bin/zsh"
+    shell = os.environ.get("SHELL") or (
+        "/bin/zsh" if paths.current_os() == "macos" else "/bin/sh")
     try:
         out = subprocess.run([shell, "-l", "-c", 'printf %s "$PATH"'],
                              capture_output=True, text=True, timeout=15)
@@ -229,7 +245,16 @@ def _ensure_login_path(emit) -> None:
     if LOCAL_BIN in _login_shell_path():
         return
     shell = os.path.basename(os.environ.get("SHELL") or "/bin/zsh")
-    profile = {"zsh": "~/.zprofile", "bash": "~/.bash_profile"}.get(shell, "~/.profile")
+    if paths.current_os() == "linux":
+        # ~/.profile: sourced by desktop sessions and login shells alike.
+        # Never *create* ~/.bash_profile here — a fresh one would stop bash
+        # login shells from sourcing the user's ~/.profile; append to an
+        # existing one only.
+        profile = ("~/.bash_profile" if shell == "bash"
+                   and os.path.exists(os.path.expanduser("~/.bash_profile"))
+                   else "~/.profile")
+    else:
+        profile = {"zsh": "~/.zprofile", "bash": "~/.bash_profile"}.get(shell, "~/.profile")
     prof = os.path.expanduser(profile)
     try:
         existing = ""
@@ -338,13 +363,39 @@ def _install_ollama_app(emit) -> str:
     return dest
 
 
+def _install_ollama_tarball(emit) -> None:
+    """Install the official Linux standalone bundle into `~/.local` — the
+    vendor's own archive (bin/ollama + lib/ollama), extracted user-owned
+    instead of install.sh's sudo'd /usr (§3: no sudo anywhere). The backend
+    owns starting `ollama serve` on Linux (harness.ollama_status self-heals);
+    there is no app agent."""
+    local = os.path.expanduser("~/.local")
+    with tempfile.TemporaryDirectory() as td:
+        tar = os.path.join(td, "ollama-linux-amd64.tar.zst")
+        _download(OLLAMA_LINUX_TAR, tar, emit, "Downloading Ollama")
+        emit(line="Installing Ollama…")
+        os.makedirs(local, exist_ok=True)
+        # A previous install's lib tree may hold files a new archive dropped.
+        shutil.rmtree(os.path.join(local, "lib", "ollama"), ignore_errors=True)
+        with tarfile.open(tar) as tf:  # transparent zstd (PEP 784)
+            tf.extractall(local, filter="data")
+    _ensure_login_path(emit)
+
+
 def _install_ollama(emit) -> None:
-    app = _install_ollama_app(emit)
-    _require("ollama")
-    emit(line="Starting the Ollama server…")
-    # The app's menu-bar agent owns the server (and auto-updates) — launch it
-    # hidden like the vendor script does.
-    subprocess.run(["open", app, "--args", "hidden"], capture_output=True, check=False)
+    if paths.current_os() == "linux":
+        _install_ollama_tarball(emit)
+        _require("ollama")
+        emit(line="Starting the Ollama server…")
+        # No app agent on Linux: harness.ollama_status() below self-heals by
+        # spawning `ollama serve` when the CLI exists and the server is down.
+    else:
+        app = _install_ollama_app(emit)
+        _require("ollama")
+        emit(line="Starting the Ollama server…")
+        # The app's menu-bar agent owns the server (and auto-updates) — launch
+        # it hidden like the vendor script does.
+        subprocess.run(["open", app, "--args", "hidden"], capture_output=True, check=False)
     for _ in range(30):
         if harness.ollama_status()["ready"]:
             return

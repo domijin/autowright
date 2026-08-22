@@ -68,9 +68,9 @@ beforeEach(() => { useStore.setState({ platformOs: '' }); ls.clear() })
 afterEach(cleanup)
 
 describe('§9 per-OS copy — the substitution table', () => {
-  it('the pure helper answers the macOS forms for every token but windows', () => {
+  it('the pure helper answers the per-OS forms — macOS for unknown tokens', () => {
     // '' is the boot default (before the first /health read) — macOS copy.
-    for (const os of ['', 'macos', 'linux', 'plan9']) {
+    for (const os of ['', 'macos', 'plan9']) {
       expect(platformCopy(os)).toMatchObject({
         machine: 'Mac', secretStore: 'Keychain', reveal: 'Show in Finder', fileManager: 'Finder',
       })
@@ -79,11 +79,19 @@ describe('§9 per-OS copy — the substitution table', () => {
       machine: 'PC', secretStore: 'Credential Manager',
       reveal: 'Show in Explorer', fileManager: 'Explorer',
     })
+    expect(platformCopy('linux')).toMatchObject({
+      machine: 'PC', secretStore: 'system keyring',
+      reveal: 'Show in file manager', fileManager: 'file manager',
+    })
     expect(platformCopy('windows').pathCommand).toBe(WIN_PATH_CMD)
     // §9: never `setx`.
     expect(platformCopy('windows').pathCommand).not.toContain('setx')
+    // §9 Linux PATH command: appends to ~/.profile (desktop sessions and
+    // login shells both source it), same install dir as macOS.
+    expect(platformCopy('linux').pathCommand)
+      .toBe('echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.profile')
     // §4.9 COMMAND LINE card: the §3 shim location and the terminal noun.
-    for (const os of ['', 'macos', 'linux', 'plan9']) {
+    for (const os of ['', 'macos', 'plan9']) {
       expect(platformCopy(os)).toMatchObject({
         cliBinDir: '~/.local/bin', terminalNoun: 'the Terminal',
       })
@@ -91,11 +99,16 @@ describe('§9 per-OS copy — the substitution table', () => {
     expect(platformCopy('windows')).toMatchObject({
       cliBinDir: '%LOCALAPPDATA%\\Autowright\\bin', terminalNoun: 'a terminal',
     })
-    // §9/§13 surface noun: "menu bar" everywhere but Windows, which says "tray".
-    for (const os of ['', 'macos', 'linux', 'plan9']) {
+    expect(platformCopy('linux')).toMatchObject({
+      cliBinDir: '~/.local/bin', terminalNoun: 'a terminal',
+    })
+    // §9/§13 surface noun: "menu bar" on macOS and unknown tokens; Windows
+    // and Linux both say "tray".
+    for (const os of ['', 'macos', 'plan9']) {
       expect(platformCopy(os).menuBar).toBe('menu bar')
     }
     expect(platformCopy('windows').menuBar).toBe('tray')
+    expect(platformCopy('linux').menuBar).toBe('tray')
   })
 })
 

@@ -874,7 +874,11 @@ menuBarIcon: bool       — "Show in the menu bar" ("The quickest way to execute
   Both are OS-side effects owned by the Electron shell, reconciled from these stored values —
   at startup and on the shell's periodic backend poll (so a tray-only app follows §20 CLI
   changes), plus a renderer push on every settings change: `login` registers/unregisters the
-  macOS login item (the default true registers on first launch), `menuBarIcon` creates or
+  OS login item through the §2 shell module's `applyLoginItem` seam — the macOS/Windows
+  login item via Electron, on Linux a marker-carrying `.desktop` file reconciled in
+  `~/.config/autostart/` (written on enable — rewritten when its Exec line drifts, e.g. a
+  moved AppImage — deleted on disable; same never-touch-foreign-files ownership rules as
+  the §3 CLI shim) — the default true registers on first launch; `menuBarIcon` creates or
   destroys the tray icon live (no restart; hiding it also hides an open §13 panel).
 keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac from sleeping so
   schedules and message triggers keep firing. The display can still sleep.") — while on, the

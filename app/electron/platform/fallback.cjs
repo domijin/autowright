@@ -65,6 +65,10 @@ function readLoginShellPath() {
   })
 }
 
+// Login item: no mechanism here — the capability flag is false, so main.cjs
+// never asks; the no-op keeps the module surfaces identical.
+function applyLoginItem(_app, _enabled) {}
+
 // No update machinery at all here — the capability flag is false, so main.cjs
 // never asks; the marker exists only to keep the module surfaces identical.
 const UPDATER = null
@@ -113,6 +117,7 @@ module.exports = {
   defaultShimPath,
   shimText,
   readLoginShellPath,
+  applyLoginItem,
   UPDATER,
   APP_USER_MODEL_ID,
   updateFeedUrl,

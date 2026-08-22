@@ -394,6 +394,16 @@ Dev workflow:
   no ad-hoc fallback), and produces `build/Autowright-<version>-darwin-<arch>.dmg` (hdiutil UDZO),
   the §3 install + update artifact `release.sh` uploads (no separate update zip: the app
   unpacks the DMG itself at update time, §3).
+- **`./scripts/prod-linux.sh`** — the Linux production distribution (§3 Linux packaging
+  block), under `build/linux/` (gitignored). Order mirrors `prod.sh`: the same three-site
+  version gate (reimplemented — `release.sh` is macOS-only), `npm ci` + typechecked vite
+  build, the pinned relocatable CPython in its `x86_64-unknown-linux-gnu-install_only`
+  flavor staged to `build/python` (same tag/version/cache/`AUTOWRIGHT_PBS_URL` knob as
+  `prod.sh`), pip install pinned by `constraints.txt`, the
+  `PYTHONDONTWRITEBYTECODE=1` smoke check (imports include `secretstorage`, the §17 Linux
+  keyring backend), then electron-builder `--linux appimage --x64` with the output
+  overridden to `build/linux/` — producing
+  `build/linux/Autowright-<version>-linux-x86_64.AppImage`, unsigned by design (§3).
 - **`./scripts/dev.sh`** — fastest dev loop, with hot reloading: invokes `build.sh --deps` only
   (no renderer bundle); shuts down lingering processes from previous sessions — backend by
   command-line pattern (`[Pp]ython -m autowright` — ps shows the venv python's resolved binary,

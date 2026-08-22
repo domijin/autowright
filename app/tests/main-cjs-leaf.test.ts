@@ -5,7 +5,7 @@
 // no admin prompt exists, and nothing ever writes to the legacy
 // /usr/local/bin (the pre-08-15 bug was a silent best-effort write there).
 // main.cjs has no importable module structure, so the guard reads the source.
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
@@ -65,16 +65,22 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     }
   })
 
-  it('spawns only launchctl, the login shell, and the backend python', () => {
+  it('spawns only the service managers, the login shell, the backend python, and the mac update helpers', () => {
     // Every child-process call site across main.cjs + platform modules:
-    // execFile('launchctl'|shell|py, …). `shell` is the §3 login-shell PATH
-    // probe (printf $PATH, nothing else). `spawn` is not used at all (the
-    // word may appear in comments only).
+    // execFile('launchctl'|'systemctl'|shell|py|cmd, …). `shell` is the §3
+    // login-shell PATH probe (printf $PATH, nothing else); 'launchctl' /
+    // 'systemctl' are the §2 serviceDiagnostics captures; `cmd` is the mac
+    // update flow's run() wrapper, pinned to hdiutil/ditto below. `spawn` is
+    // not used at all (the word may appear in comments only).
     const calls = [...union.matchAll(/(?<![.\w])(?:execFile|spawn|exec)\(\s*([^,)]+)/g)].map((m) => m[1].trim())
     for (const first of calls) {
-      expect(["'launchctl'", 'shell', 'py']).toContain(first)
+      expect(["'launchctl'", "'systemctl'", 'shell', 'py', 'cmd']).toContain(first)
     }
     expect(calls.length).toBeGreaterThanOrEqual(3)
+    // The run() wrapper (the one `cmd` caller) drives only the §3 DMG-unpack
+    // helpers — nothing else may ride it.
+    const runCalls = [...src.matchAll(/(?<![.\w])run\(\s*'([^']+)'/g)].map((m) => m[1])
+    expect(new Set(runCalls)).toEqual(new Set(['hdiutil', 'ditto']))
     // …and every python call site runs the service module, nothing else.
     const pyCalls = [...union.matchAll(/execFile\(\s*py\s*,\s*\[([^\]]*)\]/g)].map((m) => m[1])
     expect(pyCalls.length).toBeGreaterThanOrEqual(1)
@@ -465,6 +471,28 @@ describe('main.cjs platform capability wiring (§2/§9)', () => {
   })
 
   it('login-item reconcile follows loginItem', () => {
+    if (process.platform === 'linux') {
+      // §4.9 on Linux: the §2 applyLoginItem seam reconciles the XDG
+      // autostart .desktop file — Electron's login-item API (a no-op there)
+      // is never asked.
+      const dir = mkdtempSync(join(tmpdir(), 'autowright-login-'))
+      const prevXdg = process.env.XDG_CONFIG_HOME
+      process.env.XDG_CONFIG_HOME = dir
+      try {
+        const m = loadMain()
+        m.invoke('apply-settings', { login: true })
+        const entry = join(dir, 'autostart', 'ai.autowright.app.desktop')
+        expect(existsSync(entry)).toBe(true)
+        expect(m.loginItem).toEqual([])
+        m.invoke('apply-settings', { login: false })
+        expect(existsSync(entry)).toBe(false)
+      } finally {
+        if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME
+        else process.env.XDG_CONFIG_HOME = prevXdg
+        rmSync(dir, { recursive: true, force: true })
+      }
+      return
+    }
     const m = loadMain()
     m.invoke('apply-settings', { login: true })
     expect(m.loginItem).toEqual(caps.loginItem ? [true] : [])

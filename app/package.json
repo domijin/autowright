@@ -69,6 +69,21 @@
       ],
       "icon": "electron/icon/icon.ico"
     },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Autowright-${version}-linux-x86_64.${ext}",
+      "icon": "electron/icon/icon.png",
+      "category": "Utility",
+      "synopsis": "Recurring personal automations",
+      "publish": null
+    },
     "nsis": {
       "oneClick": true,
       "perMachine": false,

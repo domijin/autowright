@@ -1,10 +1,10 @@
-"""§2 platform layer — degraded builds for the platforms we don't ship yet.
+"""§2 platform layer — degraded builds for the platforms we don't ship.
 
-Not implementations: explicit placeholders so an unsupported OS degrades in
-plain words instead of crashing on a missing `launchctl` or `caffeinate`.
-Replacing one of these with a real module (systemd/Task Scheduler service
-manager, notify-send/toast notifier, …) is the entire per-OS port surface —
-no call sites change.
+Not implementations: explicit placeholders so an unsupported OS (a BSD, an
+unknown POSIX) degrades in plain words instead of crashing on a missing
+`launchctl` or `systemctl`. The shipped platforms all have real modules now
+(darwin.py, windows.py, linux.py); linux.py still composes these pieces for
+the seams a host can't honor (no systemctl / notify-send / systemd-inhibit).
 """
 from __future__ import annotations
 
@@ -63,8 +63,8 @@ def build(os_token: str, os_display: str) -> Platform:
         service=UnsupportedService(os_display),
         notifier=NullNotifier(),
         power=NullPower(),
-        # POSIX process control is real on Linux — the only platform routed
-        # here by current() (Windows composes windows.py's tree-kill control).
+        # POSIX process control is real on any POSIX host routed here
+        # (Windows composes windows.py's tree-kill control instead).
         processes=posixproc.PosixProcessControl(),
         capabilities=Capabilities(imessage=False, notifications=False,
                                   keep_awake=False, service=False,

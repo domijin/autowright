@@ -3,8 +3,9 @@
 // (§13), tray assets (§13) and the ensure-backend failure copy (§9). The
 // modules never import `electron`, so every one of them loads on any OS and
 // each platform's shape is pinned here regardless of where the suite runs.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -12,6 +13,7 @@ const require = createRequire(__filename)
 const ELECTRON_DIR = join(__dirname, '..', 'electron')
 const darwin = require('../electron/platform/darwin.cjs')
 const win32 = require('../electron/platform/win32.cjs')
+const linux = require('../electron/platform/linux.cjs')
 
 // A 1920×1080 display with a 48 px taskbar docked at the bottom.
 const DISPLAY = {
@@ -39,6 +41,11 @@ describe('§9 window chrome is per-OS', () => {
       trafficLightPosition: { x: 14, y: 14 },
     })
   })
+
+  it('Linux uses the native frame — no custom chrome at all', () => {
+    expect(linux.mainWindowChrome()).toEqual({})
+    expect(linux.panelWindowExtras()).toEqual({})
+  })
 })
 
 describe('§13 panel placement is per-OS', () => {
@@ -63,6 +70,27 @@ describe('§13 panel placement is per-OS', () => {
     expect(darwin.panelPosition({ x: 900, y: 10 }, DISPLAY, 420)).toEqual(top)
     expect(darwin.panelPosition({ x: 900, y: 10 }, DISPLAY, 640)).toEqual(top)
   })
+
+  it('Linux anchors to the click point on any edge', () => {
+    // Top-panel click (top half of the work area): the macOS shape.
+    expect(linux.panelPosition({ x: 900, y: 10 }, DISPLAY, 420))
+      .toEqual({ x: 733, y: 6 })
+    // Bottom-taskbar click: the Windows height-aware shape, re-anchoring as
+    // the panel grows.
+    expect(linux.panelPosition({ x: 900, y: 1050 }, DISPLAY, 420))
+      .toEqual({ x: 733, y: 1032 - 420 - 6 })
+    expect(linux.panelPosition({ x: 900, y: 1050 }, DISPLAY, 560))
+      .toEqual({ x: 733, y: 1032 - 560 - 6 })
+    // No measurement yet: the 640 px window cap stands in.
+    expect(linux.panelPosition({ x: 900, y: 1050 }, DISPLAY))
+      .toEqual(linux.panelPosition({ x: 900, y: 1050 }, DISPLAY, 640))
+    // Clamped inside the work area horizontally on a left/right-edge panel.
+    expect(linux.panelPosition({ x: 2, y: 500 }, DISPLAY, 420).x).toBe(6)
+    expect(linux.panelPosition({ x: 1918, y: 500 }, DISPLAY, 420).x)
+      .toBe(1920 - 344 - 6)
+    // A panel taller than the work area is clamped on screen, not pushed off.
+    expect(linux.panelPosition({ x: 900, y: 1050 }, DISPLAY, 5000).y).toBe(6)
+  })
 })
 
 describe('§13 tray assets are per-OS', () => {
@@ -79,6 +107,15 @@ describe('§13 tray assets are per-OS', () => {
     expect(darwin.trayIconSpec(false)).toEqual({ file: 'trayTemplate.png', template: true })
     expect(darwin.trayIconSpec(true)).toEqual({ file: 'trayAlert.png', template: false })
   })
+
+  it('Linux uses its own checked-in colored PNGs (StatusNotifier hosts do not recolor)', () => {
+    expect(linux.trayIconSpec(false)).toEqual({ file: 'trayLinux.png', template: false })
+    expect(linux.trayIconSpec(true)).toEqual({ file: 'trayLinuxAlert.png', template: false })
+    for (const name of ['trayLinux', 'trayLinuxAlert']) {
+      expect(existsSync(join(ELECTRON_DIR, `${name}.png`))).toBe(true)
+      expect(existsSync(join(ELECTRON_DIR, `${name}@2x.png`))).toBe(true)
+    }
+  })
 })
 
 describe('§9 ensure-backend failure copy is per-OS', () => {
@@ -89,6 +126,8 @@ describe('§9 ensure-backend failure copy is per-OS', () => {
     expect(win32.SERVICE_START_FAILED_DETAIL)
       .toBe('The backend service failed to start. Details in app.log.')
     expect(win32.SERVICE_START_FAILED_DETAIL).not.toContain('Gatekeeper')
+    expect(linux.SERVICE_START_FAILED_DETAIL)
+      .toBe('The backend service failed to start. Details in app.log.')
   })
 
   it('every platform module answers the whole shell surface', () => {
@@ -97,6 +136,7 @@ describe('§9 ensure-backend failure copy is per-OS', () => {
     const fallback = require('../electron/platform/fallback.cjs')
     const keys = Object.keys(darwin).sort()
     expect(Object.keys(win32).sort()).toEqual(keys)
+    expect(Object.keys(linux).sort()).toEqual(keys)
     expect(Object.keys(fallback).sort()).toEqual(keys)
   })
 })
@@ -107,13 +147,17 @@ describe('§9 capability flags', () => {
       .toEqual({ trayPanel: true, loginItem: true, dockIcon: true, updates: true })
     expect(win32.capabilities)
       .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: true })
+    // §13: the Linux tray is best-effort (stock GNOME needs an extension) —
+    // the flag stays true so the icon is attempted; no update feed yet.
+    expect(linux.capabilities)
+      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: false })
   })
 
   it('every module\'s updates flag and updateFeedUrl agree', () => {
     // The two must not drift apart: a feed URL nobody is allowed to fetch, or
     // a declared capability with no feed behind it, are both dead ends.
     const fallback = require('../electron/platform/fallback.cjs')
-    for (const mod of [darwin, win32, fallback]) {
+    for (const mod of [darwin, win32, linux, fallback]) {
       expect(mod.capabilities.updates).toBe(mod.updateFeedUrl('x64') !== null)
     }
   })
@@ -140,6 +184,8 @@ describe('§3 update machinery is per-OS', () => {
   it('a platform with no feed names no machinery either', () => {
     const fallback = require('../electron/platform/fallback.cjs')
     expect(fallback.UPDATER).toBeNull()
+    expect(linux.UPDATER).toBeNull()
+    expect(linux.updateFeedUrl('x64')).toBeNull()
   })
 
   it('the §3 publisherName footgun is set nowhere', () => {
@@ -165,15 +211,33 @@ describe('§3 Windows packaging config (electron-builder)', () => {
     files: string[]
     extraResources: { from: string, to: string }[]
     win: { target: { target: string, arch: string[] }[], icon: string }
+    linux: {
+      target: { target: string, arch: string[] }[], artifactName: string,
+      icon: string, publish: null,
+    }
     nsis: Record<string, unknown>
   }
 
-  it('is Windows-target-only, so the mac pipeline never sees it', () => {
-    // prod.sh keeps @electron/packager; nothing here may declare a mac or
-    // linux target that a stray `electron-builder` run could act on.
+  it('targets Windows NSIS and Linux AppImage — never mac', () => {
+    // prod.sh keeps @electron/packager; nothing here may declare a mac
+    // target that a stray `electron-builder` run could act on.
     expect(build.win.target).toEqual([{ target: 'nsis', arch: ['x64'] }])
+    expect(build.linux.target).toEqual([{ target: 'AppImage', arch: ['x64'] }])
     expect(Object.keys(build)).not.toContain('mac')
-    expect(Object.keys(build)).not.toContain('linux')
+  })
+
+  it('pins the §3 Linux artifact name, icon, and the no-feed publish', () => {
+    expect(build.linux.artifactName).toBe('Autowright-${version}-linux-x86_64.${ext}')
+    // §3: no Linux update feed exists yet — publish must stay null so no
+    // app-update.yml lands in the AppImage pointing at the win32 feed (the
+    // top-level publish entry). The port plan's release step replaces it.
+    expect(build.linux.publish).toBeNull()
+    expect(build.linux.icon).toBe('electron/icon/icon.png')
+    expect(existsSync(join(ELECTRON_DIR, 'icon', 'icon.png'))).toBe(true)
+    // §3 bundled Python: the shared extraResources staging lands at
+    // resources/python, where the §2 linux module's bundledPythonPath looks.
+    expect(linux.bundledPythonPath('/opt/app/resources'))
+      .toBe('/opt/app/resources/python/bin/python3')
   })
 
   it('carries the §3 identifiers, artifact name and generic feed', () => {
@@ -221,11 +285,59 @@ describe('§3 Windows packaging config (electron-builder)', () => {
   })
 })
 
-describe('§13/§17 the Windows tray assets and their generator agree', () => {
-  it('scripts/gen_tray_icon.py renders the four checked-in Windows PNGs', () => {
+describe('§13/§17 the per-OS tray assets and their generator agree', () => {
+  it('scripts/gen_tray_icon.py renders the checked-in Windows and Linux PNGs', () => {
     const gen = readFileSync(join(__dirname, '..', '..', 'scripts', 'gen_tray_icon.py'), 'utf-8')
-    for (const name of ['trayWin.png', 'trayWin@2x.png', 'trayWinAlert.png', 'trayWinAlert@2x.png']) {
+    for (const name of ['trayWin.png', 'trayWin@2x.png', 'trayWinAlert.png', 'trayWinAlert@2x.png',
+      'trayLinux.png', 'trayLinux@2x.png', 'trayLinuxAlert.png', 'trayLinuxAlert@2x.png']) {
       expect(gen).toContain(`"${name}"`)
+    }
+  })
+})
+
+describe('§4.9 login item is per-OS (applyLoginItem)', () => {
+  it('macOS/Windows write the Electron login item only when the OS view differs', () => {
+    for (const mod of [darwin, win32]) {
+      const calls: unknown[] = []
+      const app = {
+        getLoginItemSettings: () => ({ openAtLogin: true }),
+        setLoginItemSettings: (v: unknown) => calls.push(v),
+      }
+      mod.applyLoginItem(app, true) // already registered — no write
+      expect(calls).toEqual([])
+      mod.applyLoginItem(app, false)
+      expect(calls).toEqual([{ openAtLogin: false }])
+    }
+  })
+
+  it('Linux reconciles a marker-carrying XDG autostart .desktop file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'autowright-autostart-'))
+    const prevXdg = process.env.XDG_CONFIG_HOME
+    process.env.XDG_CONFIG_HOME = dir
+    const entry = join(dir, 'autostart', 'ai.autowright.app.desktop')
+    try {
+      // Enable writes the entry: marker-owned, Exec quoted at this binary.
+      linux.applyLoginItem(null, true)
+      const text = readFileSync(entry, 'utf-8')
+      expect(text).toContain('[Desktop Entry]')
+      expect(text).toContain('X-Autowright-Login-Item=true')
+      expect(text).toContain(`Exec="${process.execPath}"`)
+      // Idempotent: a second enable leaves the same bytes.
+      linux.applyLoginItem(null, true)
+      expect(readFileSync(entry, 'utf-8')).toBe(text)
+      // Disable deletes the ours-marker entry…
+      linux.applyLoginItem(null, false)
+      expect(existsSync(entry)).toBe(false)
+      // …but a foreign file (no marker) is never touched, either direction.
+      writeFileSync(entry, '[Desktop Entry]\nName=SomethingElse\n')
+      linux.applyLoginItem(null, true)
+      expect(readFileSync(entry, 'utf-8')).toBe('[Desktop Entry]\nName=SomethingElse\n')
+      linux.applyLoginItem(null, false)
+      expect(existsSync(entry)).toBe(true)
+    } finally {
+      if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME
+      else process.env.XDG_CONFIG_HOME = prevXdg
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 })

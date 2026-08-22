@@ -128,6 +128,12 @@ export default function Onboarding() {
   // endpoints answer 409, so the cards hide those actions and show the
   // manual-install line instead. Detection and sign-in state are untouched.
   const agentInstallOn = useStore((s) => s.platformCapabilities.agentInstall)
+  const platformOs = useStore((s) => s.platformOs)
+  // §9 Linux nuance on §2 `agentInstall`: installs work there, but the
+  // Terminal-window sign-in method is macOS-only — only codex's browser
+  // method works, so the TUI providers keep the manual sign-in line.
+  const signinHelpOn = (id: string) =>
+    agentInstallOn && (platformOs !== 'linux' || id === 'codex')
   // §9 per-OS copy rule: the machine noun and the §1 secret-store promise.
   const copy = usePlatformCopy()
   const SUG = suggestions(copy.machine)
@@ -318,7 +324,9 @@ export default function Onboarding() {
     if (!p || card(id).phase !== 'installing') return
     setCard(id, { phase: 'checking' })
     void api.signinStatus(id)
-      .then((s) => { if (s.signedIn === false) startSignin(p); else startCheck(p) })
+      // No sign-in help for this provider here (§9 Linux nuance): the check
+      // reports the signed-out state and the card offers the manual line.
+      .then((s) => { if (s.signedIn === false && signinHelpOn(id)) startSignin(p); else startCheck(p) })
       .catch(() => startCheck(p))
   }
 
@@ -755,8 +763,9 @@ export default function Onboarding() {
         </div>
         {c.phase === 'idle' && (f.signedIn === false ? (
           // §2 `agentInstall`: the sign-in help opens Terminal, so where the
-          // flag is false the action is replaced by the plain line (§9).
-          agentInstallOn ? (
+          // flag is false — or the §9 Linux nuance rules this provider out —
+          // the action is replaced by the plain line (§9).
+          signinHelpOn(f.id) ? (
             <button className="ad-btn-amber" onClick={() => startSignin(f)} style={{ flex: 'none' }}>
               Sign in
             </button>

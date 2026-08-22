@@ -37,16 +37,18 @@ def os_display_name(token: str | None) -> str:
 
 def machine_noun(token: str | None = None) -> str:
     """§9 per-OS copy rule: the noun backend-served copy calls the machine —
-    "Mac" everywhere but Windows, which says "PC". Defaults to the running
+    "Mac" on macOS, "PC" on Windows and Linux alike. Defaults to the running
     platform; the backend half of the renderer's `platformCopy` helper."""
-    return "PC" if (token or current_os()) == "windows" else "Mac"
+    return "Mac" if (token or current_os()) == "macos" else "PC"
 
 
 def secret_store_name(token: str | None = None) -> str:
     """§9 per-OS copy rule: the §4.8 secret store's user-facing name —
-    "Keychain" on macOS, "Credential Manager" on Windows (both reached through
-    the same `keyring` code). Defaults to the running platform."""
-    return "Credential Manager" if (token or current_os()) == "windows" else "Keychain"
+    "Keychain" on macOS, "Credential Manager" on Windows, "system keyring" on
+    Linux (all reached through the same `keyring` code). Defaults to the
+    running platform."""
+    names = {"windows": "Credential Manager", "linux": "system keyring"}
+    return names.get(token or current_os(), "Keychain")
 
 
 def console_python() -> str:

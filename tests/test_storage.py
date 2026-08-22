@@ -1022,7 +1022,10 @@ def test_problems_audit_kinds_order_and_precedence(store):
                    "channel": "42", "secret": trig_unset}],
         enabled_agents=[aid_ok],
         allowed_secrets=[sid_ok, sid_unset])
-    a["origin_os"] = "linux"
+    # An origin OS that differs from the host, whichever the host is — the
+    # §4.1 mismatch must fire on macOS, Windows, and Linux runs alike.
+    origin = "windows" if paths.current_os() != "windows" else "macos"
+    a["origin_os"] = origin
     probs = store.auto_json(a)["problems"]
     assert [(p["kind"], p["label"]) for p in probs] == [
         ("secret-missing", "A step references a deleted secret."),
@@ -1040,8 +1043,8 @@ def test_problems_audit_kinds_order_and_precedence(store):
                             "it installs on the first execution."),
         ("package-missing", "Package zzz-nonexistent-dist isn't installed yet — "
                             "it installs on the first execution."),
-        ("os-mismatch", "Built on Linux — its steps may need rewriting "
-                        f"before they run on this {paths.machine_noun()}."),
+        ("os-mismatch", f"Built on {paths.os_display_name(origin)} — its steps may need "
+                        f"rewriting before they run on this {paths.machine_noun()}."),
     ]
 
 

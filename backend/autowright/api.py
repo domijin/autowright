@@ -1819,11 +1819,13 @@ def _secret_entity(s: dict) -> dict:
 
 def _secret_store_rejected(e: Exception) -> str:
     """§19 secret-write 503 detail, in the §9 per-OS copy rule's wording: the
-    store's own name ("Keychain" / "Credential Manager"), and the remedy clause
-    macOS alone can offer — unlocking the login Keychain has no Windows
-    analogue, so the Windows line ends plain "— try again"."""
-    remedy = ("try again" if paths.current_os() == "windows"
-              else "unlock the login Keychain and try again")
+    store's own name ("Keychain" / "Credential Manager" / "system keyring"),
+    and the per-OS remedy clause — unlocking has no Windows analogue ("— try
+    again" there), while macOS names the login Keychain and Linux the keyring
+    (the Secret Service store does lock)."""
+    remedy = {"windows": "try again",
+              "linux": "unlock your keyring and try again"}.get(
+        paths.current_os(), "unlock the login Keychain and try again")
     return f"your {paths.secret_store_name()} didn't accept the value ({e}) — {remedy}"
 
 

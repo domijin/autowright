@@ -1,9 +1,9 @@
 // §9 per-OS copy rule — the one place the renderer's platform-naming wording
 // lives. Every substitution the §9 table lists is read from here, keyed by the
 // §9 store's `platformOs` token (the §19 GET /health `os` value): 'windows'
-// takes the Windows forms, every other token — including the '' boot default —
-// keeps the macOS copy, so a mac render is byte-identical to a pre-rule one.
-// No component ever sniffs the platform itself (§2/§9).
+// and 'linux' take their own forms, every other token — including the '' boot
+// default — keeps the macOS copy, so a mac render is byte-identical to a
+// pre-rule one. No component ever sniffs the platform itself (§2/§9).
 import { useStore } from './store'
 
 export interface PlatformCopy {
@@ -64,10 +64,26 @@ const WINDOWS: PlatformCopy = {
   menuBar: 'tray',
 }
 
+const LINUX: PlatformCopy = {
+  machine: 'PC',
+  // §9 table: the freedesktop Secret Service store's plain name — the §1
+  // promise reads "Secrets live in your system keyring".
+  secretStore: 'system keyring',
+  fileManager: 'file manager',
+  reveal: 'Show in file manager',
+  // §9: appends to ~/.profile — sourced by desktop sessions and login shells
+  // alike (the same profile rule as the §19 installer's PATH guarantee).
+  pathHint: 'If your terminal can’t find autowright, add ~/.local/bin to your PATH, then open a new terminal:',
+  pathCommand: 'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.profile',
+  cliBinDir: '~/.local/bin',
+  terminalNoun: 'a terminal',
+  menuBar: 'tray',
+}
+
 /** §9 per-OS copy for a §5.1 platform token — the pure form, for module-level
  *  callers that read `platformOs` off the store themselves. */
 export function platformCopy(os: string): PlatformCopy {
-  return os === 'windows' ? WINDOWS : MACOS
+  return os === 'windows' ? WINDOWS : os === 'linux' ? LINUX : MACOS
 }
 
 /** §9 per-OS copy for the connected backend's OS — the form components use. */

@@ -218,6 +218,65 @@ def task_scheduler(monkeypatch, tmp_path):
 
 
 @pytest.fixture()
+def systemd(monkeypatch, tmp_path, home):
+    """§3 Linux ServiceManager double: `linux._systemctl` replaced by a
+    recorder that models the systemd user manager's state (the same shape as
+    the Task Scheduler double above), the unit directory pointed into the
+    test's tmp dir via XDG_CONFIG_HOME, and the §15 `AUTOWRIGHT_SHIM` knob.
+    The real systemctl never runs, so every test using this is
+    host-independent. `home` isolates the §5 roots — install creates the logs
+    directory, status reads backend.json."""
+    from types import SimpleNamespace
+
+    from autowright.platform import linux
+
+    calls: list[tuple[str, ...]] = []
+    unit = {"active": False, "enabled": False}  # the user manager's view
+    canned: dict[str, object] = {}  # verb → forced (code, stdout, stderr) or _TimedOut
+
+    def fake_systemctl(*args):
+        calls.append(args)
+        verb = args[0]
+        if verb in canned:
+            forced = canned[verb]
+            if isinstance(forced, linux._TimedOut):
+                return forced
+            code, out, err = forced
+            return SimpleNamespace(returncode=code, stdout=out, stderr=err)
+        ok = SimpleNamespace(returncode=0, stdout="", stderr="")
+        if verb == "daemon-reload":
+            return ok
+        if verb == "enable":
+            unit["enabled"] = True
+            return ok
+        if verb == "restart":
+            unit["active"] = True
+            return ok
+        if verb == "stop":
+            unit["active"] = False
+            return ok
+        if verb == "disable":  # always `disable --now` in the manager
+            unit["enabled"] = False
+            unit["active"] = False
+            return ok
+        if verb == "is-active":
+            state = "active" if unit["active"] else "inactive"
+            return SimpleNamespace(returncode=0 if unit["active"] else 3,
+                                   stdout=f"{state}\n", stderr="")
+        if verb == "show":  # MainPID query on the active unit
+            return SimpleNamespace(returncode=0, stdout="4242\n", stderr="")
+        raise AssertionError(f"unmodeled systemctl verb: {args}")
+
+    monkeypatch.setattr(linux, "_systemctl", fake_systemctl)
+    monkeypatch.setattr(linux, "_POLL_INTERVAL_S", 0)  # no real poll waits
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
+    shim = tmp_path / "shimbin" / "autowright"
+    monkeypatch.setenv("AUTOWRIGHT_SHIM", str(shim))
+    return SimpleNamespace(mod=linux, service=linux.SystemdService(),
+                           calls=calls, unit=unit, canned=canned, shim=shim)
+
+
+@pytest.fixture()
 def client(home):
     """Authenticated TestClient over the live app — the shared API-suite entry
     point (a mock Claude Code agent is the sole configured agent)."""

@@ -466,10 +466,9 @@ let dataRoot = null
 
 function applyShellSettings(s) {
   if (typeof s?.dataPath === 'string' && s.dataPath) dataRoot = s.dataPath
-  if (caps.loginItem && typeof s?.login === 'boolean'
-      && app.getLoginItemSettings().openAtLogin !== s.login) {
-    app.setLoginItemSettings({ openAtLogin: s.login })
-  }
+  // §4.9 login reconcile is per-OS (§2 applyLoginItem): the Electron login
+  // item on macOS/Windows, the XDG-autostart .desktop file on Linux.
+  if (caps.loginItem && typeof s?.login === 'boolean') plat.applyLoginItem(app, s.login)
   if (caps.trayPanel && typeof s?.menuBarIcon === 'boolean') {
     if (s.menuBarIcon && !tray) {
       createTray()

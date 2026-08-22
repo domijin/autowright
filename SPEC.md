@@ -34,8 +34,8 @@ words from other languages except established technical terms.
 
 ## 1. Product overview
 
-Autowright is a desktop app for recurring personal automations — macOS and Windows (the §2
-platform layer holds every OS-coupled seam; macOS is the original platform). The user
+Autowright is a desktop app for recurring personal automations — macOS, Windows, and Linux
+(the §2 platform layer holds every OS-coupled seam; macOS is the original platform). The user
 describes a job in
 plain words ("Check the manga I follow for new chapters every morning at 8"); a connected AI agent
 (Claude Code, Gemini CLI, Codex, or OpenCode — the latter optionally driving a local Ollama
@@ -94,14 +94,27 @@ hold — `ProcessControl`) plus a `Capabilities` flag set (`imessage`, `notifica
 endpoints work on this OS), composed into one frozen `Platform` object by `platform.current()` — per-OS
 `build()` functions; shared logic lives in plain functions the implementations import, never in
 a superclass. Electron: `app/electron/platform/` mirrors the shape — per-OS modules exporting
-plain objects (window chrome, tray spec, panel placement, CLI shim, update feed, managed-install
-probe, reveal rules), selected once by `platform/index.cjs`. These modules never import
+plain objects (window chrome, tray spec, panel placement, CLI shim, login-item reconcile,
+update feed, managed-install probe, reveal rules), selected once by `platform/index.cjs`. These modules never import
 `electron` (they take `app`/window objects as arguments), so the §15 source-scanning guards and
-test loaders keep working. **macOS is the only fully implemented platform.** On Linux,
-`current()` composes explicit degraded implementations rather than crashing: service actions
-answer a plain "not supported on <OS> yet" failure line (exit 1, §3 result-code rule),
-notifications and keepAwake are silent no-ops, POSIX process control is real, and
-every capability flag the OS can't honor is false. Windows composes `windows.build()`:
+test loaders keep working. **macOS is the original, fully implemented platform.** On an
+unknown OS, `current()` composes explicit degraded implementations rather than crashing
+(`fallback.py`): service actions answer a plain "not supported on <OS> yet" failure line
+(exit 1, §3 result-code rule), notifications and keepAwake are silent no-ops, POSIX process
+control is real, and every capability flag the OS can't honor is false. Linux composes
+`linux.build()`: **real service management** (`SystemdService`, §3's Linux service block:
+the `ai.autowright.backend.service` systemd user unit via `systemctl --user`), the
+**`notify-send` notifier** and **`systemd-inhibit` keep-awake power**
+(`SystemdInhibitPower`, §3: one inhibitor subprocess per assertion, tied to the backend's
+lifetime), and the shared **real POSIX process control**. Linux capabilities are probed at
+composition, never assumed: `service` is the presence of `systemctl` on PATH,
+`notifications` of `notify-send`, `keepAwake` of `systemd-inhibit` (each false on a host
+without the tool, degrading to the fallback implementation for that seam); `imessage`
+stays false; `agentInstall` is true — the §19 curl-pipe installers work on Linux (the
+Ollama arm installs the vendor's official standalone tarball into `~/.local`, §19), and
+sign-in help degrades per-OS: the codex `browser` method works unchanged, while the
+Terminal-window method is macOS-only — on Linux the §12 UI shows the manual copy-paste
+command instead (renderer gates on `/health` `os`). Windows composes `windows.build()`:
 `imessage` and `agentInstall` stay false, the **real toast notifier** (`WindowsNotifier`,
 §3: PowerShell WinRT toast under the `ai.autowright.app` AUMID; `notifications` is probed —
 true only where the §3 installer's Start-menu shortcut or AUMID registration exists, false
@@ -159,8 +172,13 @@ osascript/launchctl may keep the platform default, which is UTF-8 there). The sh
 half mirrors this: `win32.cjs` carries the Windows-correct values (flat `python\python.exe`
 bundled-interpreter layout, the §3 `.cmd` shim, PATH read from the process environment —
 Windows GUI apps inherit the full user PATH, no login-shell probe — native window frame, no
-update feed yet); Linux keeps the degraded `fallback.cjs` (its port surface is audited in
-the `LINUX.md` worksheet until it ships into this spec). Clients gate features on the §19
+update feed yet); `linux.cjs` carries the Linux values (XDG roots, `python/bin/python3`
+bundled-interpreter layout, the POSIX shim and login-shell PATH probe shared with macOS,
+native window frame — no custom title bar or vibrancy for v1 — colored tray assets with
+work-area-anchored panel placement on any screen edge, the §4.9 login setting honored via
+an XDG-autostart `.desktop` file, no update feed yet); `fallback.cjs` keeps the degraded build for any other platform.
+The Linux update channel and the remaining release surface are audited in the `LINUX.md`
+worksheet until they ship into this spec. Clients gate features on the §19
 `/health` `os` + `capabilities` fields — never by sniffing the platform at a call site.
 Behavior on macOS is identical to the pre-layer code; the layer exists so a port fills in
 per-OS modules instead of hunting call sites.
@@ -195,8 +213,10 @@ data on disk); both ends of a served surface change in the same commit.
   control; `posixproc.py` — the shared POSIX process-group helpers; `windows.py` — the §2
   Windows build: real `taskkill`-tree process control, the §3 Task Scheduler
   service manager, the SetThreadExecutionState power assertion, the §3 WinRT
-  toast notifier (capability probed); `fallback.py` — the
-  degraded Linux (and unknown-OS) builds), launchd service
+  toast notifier (capability probed); `linux.py` — the §2 Linux build: the §3 systemd
+  user-unit service manager, the `notify-send` notifier, the `systemd-inhibit` power
+  assertion, shared POSIX process control, capabilities probed at composition;
+  `fallback.py` — the degraded unknown-OS build), launchd service
   (`service.py`, runnable as `python -m autowright.service` — the §3 registration entry the
   app uses; the UI and backend never invoke the CLI), CLI (`cli.py`), `awake.py` (the macOS caffeinate `PowerAssertion` implementation — the §3/§4.9 permanent
   keepAwake assertion plus the per-execution hold; `platform/darwin.py` delegates here).
@@ -225,15 +245,19 @@ data on disk); both ends of a served surface change in the same commit.
   `sys_platform == "win32"`: `pywin32-ctypes` (keyring's Windows Credential Locker backend)
   and `tzdata` (the IANA timezone database — Windows has no system copy and
   python-build-standalone ships none, so without it `zoneinfo` resolves no timezone at all
-  and every §4.3 timezone-bearing trigger fails validation);
+  and every §4.3 timezone-bearing trigger fails validation); under
+  `sys_platform == "linux"`: `secretstorage` and `jeepney` (keyring's freedesktop Secret
+  Service backend — without them keyring silently resolves the null backend and every
+  secret read answers nothing);
   `prod.sh` passes it as `pip install -c` (§18).
 - `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
   bridge), `electron/platform/` (the §2 platform layer's shell half: `index.cjs` selects the
   per-OS module once; `darwin.cjs` holds the macOS values and helpers — window-chrome options,
   tray icon spec, panel placement, dock icon, data/log roots, CLI shim path+text, login-shell
   PATH probe, update feed URL, Homebrew managed-install probe, reveal bundle rule, the
-  settings deep-link scheme; `win32.cjs` holds the §2 Windows groundwork values; the modules
-  never import `electron`), Vite + React + TS renderer
+  settings deep-link scheme; `win32.cjs` holds the §2 Windows groundwork values;
+  `linux.cjs` holds the §2 Linux values; `fallback.cjs` the degraded unknown-platform
+  build; the modules never import `electron`), Vite + React + TS renderer
   under `src/` (`store.ts` central model, `api.ts` client,
   `ui.tsx` shared primitives, `tokens.css` design tokens, `pages/` one file per screen —
   except the two biggest screens, each a thin page over its own directory: the §11

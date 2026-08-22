@@ -629,8 +629,12 @@ def test_probe_tools_resolves_against_step_path(monkeypatch, tmp_path):
         exe.chmod(0o755)
     monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", (str(fb),))
     monkeypatch.setattr(harness, "_PROBE_TOOLS", ("gh", "definitely-missing-tool"))
-    # the Dock launch's stripped PATH
-    monkeypatch.setenv("PATH", os.pathsep.join(("/usr/bin", "/bin")))
+    # the Dock launch's stripped PATH — modeled with an empty dir rather than
+    # /usr/bin, so a real `gh` installed on the host can never shadow the
+    # fallback-dir resolution this test pins.
+    stripped = tmp_path / "stripped-path"
+    stripped.mkdir()
+    monkeypatch.setenv("PATH", str(stripped))
     probed = harness.probe_tools()
     assert [t["name"] for t in probed] == ["gh"]  # the missing one is omitted
     assert Path(probed[0]["path"]).samefile(exe)

@@ -5,14 +5,16 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 ## 3. Packaging & process lifecycle (decided)
 
 **The Python backend runs as a per-user OS service, independent of the Electron app** — a
-launchd LaunchAgent on macOS, a Task Scheduler task on Windows (its block below). Primary use
-case: a machine left running unattended for days must keep firing triggers with no UI open.
+launchd LaunchAgent on macOS, a Task Scheduler task on Windows, a systemd user unit on
+Linux (their blocks below). Primary use case: a machine left running unattended for days
+must keep firing triggers with no UI open.
 
 Everything OS-coupled in this section sits behind the §2 platform layer. launchd is the
 macOS `ServiceManager` (`service.py` is its implementation module); Task Scheduler is the
-Windows one (the **Windows service** block below); on Linux the `service` actions answer a
-plain "not supported on <OS> yet" failure line (exit 1 via the result-code rule below)
-instead of crashing on a missing `launchctl`. Future per-OS decisions are recorded in the
+Windows one (the **Windows service** block below); systemd is the Linux one (the **Linux
+service** block below — on a non-systemd host the `service` actions degrade to the plain
+"not supported on <OS> yet" failure line, exit 1 via the result-code rule below, instead
+of crashing on a missing `systemctl`). Future per-OS decisions are recorded in the
 port plan, not here, until they ship.
 
 **Implementation status:** the launchd/CLI/discovery half is implemented (`service.py`, `cli.py`,
@@ -212,6 +214,51 @@ the update bullets below).
     collapsing to it as everywhere on Windows. The sweep is the compensation for the
     graceful pass never running here: it clears the own-process-group children the tree
     kill orphans (pip, executors, stray CLI invocations).
+- **Linux service (decided): systemd user unit**, implemented in `platform/linux.py` —
+  the closest match to `RunAtLoad` + `KeepAlive` (enabled unit + `Restart=always`) with no
+  extra supervisor process. The launchd contract maps as:
+  - Unit file `ai.autowright.backend.service` in `~/.config/systemd/user/` (the same
+    reverse-DNS label as the LaunchAgent). `ExecStart` = the backend interpreter's
+    `python3 -m autowright.main` (absolute path, systemd-quoted); `Restart=always` with
+    `RestartSec=2` and `StartLimitIntervalSec=0` — KeepAlive's never-give-up restart,
+    throttled the way launchd throttles; `[Install] WantedBy=default.target`, enabled
+    (the RunAtLoad equivalent — starts at the user session's login).
+  - Registration goes through `systemctl --user`: install writes the unit file,
+    `daemon-reload`s, `enable`s (idempotent), then `restart`s — a restart, not a start,
+    so a rewritten unit (moved install, dev↔prod switch, update) is always adopted, the
+    unload-then-load rule in systemd clothes. Success is only ever the unit polling
+    `active` afterwards (the same never-trust-the-accept rule as launchctl/Task
+    Scheduler), and the app's ensure-backend step runs the same §3 health-poll
+    verification as macOS on top. Every `systemctl --user` invocation carries the same
+    30 s timeout with a plain-word failure on expiry ("systemctl timed out") as
+    `launchctl`'s cap — never a hang, never a traceback.
+  - Verb mapping: `install` = write unit + reload + enable + restart + active poll (+ the
+    shim-heal half, the POSIX shim shared with macOS); `uninstall` = `disable --now` +
+    delete unit + reload; `status` = unit-file presence + `is-active` (+ `MainPID` and the
+    discovery-port note) mapped to the same three states as macOS: `active (pid N)`,
+    `stopped (unit present) — returns at next login or app launch` (exit 0 — stopped on
+    purpose is not a failure), `not installed` (exit 1); `stop` = `systemctl --user stop`
+    only — the unit stays enabled and returns at next login (the "bootout only" rule) —
+    plus the §3 stray-process sweep; `restart` = `systemctl --user restart` + active poll.
+  - Log routing: `StandardOutput=append:` / `StandardError=append:` to the §5 logs root's
+    `backend.out.log` / `backend.err.log` — the same file capture as launchd, so the §9.3
+    log overlay and `main.py`'s startup trim work unchanged (journal-only routing would
+    orphan them). `append:` needs systemd ≥ 240 (everywhere current); install creates the
+    logs directory first — systemd creates the files but not their directory (same rule
+    as launchd).
+  - **Semantics that differ from launchd, accepted:** `systemctl stop` TERMs every process
+    in the unit's cgroup (`KillMode=control-group`, the default), so own-session children
+    (executors, pip) receive the TERM directly instead of surviving to the sweep — the
+    backend's graceful shutdown still runs, and the sweep still covers whatever escapes
+    the cgroup (directly-spawned dev backends, stray CLI invocations).
+  - Non-systemd hosts (no `systemctl` on PATH) compose the degraded fallback service
+    manager and `service: false` — plain "not supported" failure lines, never a crash.
+    Not supported for v1, documented. Linger is not needed: the unit is per-login-session,
+    same as the LaunchAgent, and the §3 stay-logged-in guidance carries over.
+  - **Linux notifier (decided):** `notify-send` (libnotify), with the darwin contract —
+    best-effort, never raises, never blocks past a 10 s timeout. The binary is probed once
+    at platform composition and `capabilities.notifications` answers its presence (absent
+    on minimal installs — probed, never assumed).
 - Step processes die with their backend: graceful shutdown hard-kills every live step group,
   and startup recovery SIGKILLs any group a crashed backend orphaned (via the record's
   persisted `pgid`, §4.5, with a pid-reuse guard) before marking its record interrupted —
@@ -466,6 +513,12 @@ the update bullets below).
   `ES_DISPLAY_REQUIRED` — display sleep stays allowed. Windows clears a thread's execution
   state when its process dies, so a crashed backend can never leave an orphan — the same
   guarantee `-w` gives on macOS.
+  **Linux** (`SystemdInhibitPower` in `platform/linux.py`): each assertion is its own
+  `systemd-inhibit --what=idle --who=Autowright` subprocess wrapping
+  `tail --pid=<backend pid> -f /dev/null`, so the inhibitor lock is released the moment
+  the backend dies — the same no-orphan guarantee `caffeinate -w` gives on macOS.
+  `--what=idle` only: display sleep stays allowed. `capabilities.keepAwake` answers the
+  probed presence of `systemd-inhibit` (true on systemd hosts, false elsewhere).
 
 - **Homebrew cask (decided):** a second install channel beside the DMG download, distributed
   from the project's own tap `hansololz/homebrew-tap` (repository `homebrew-tap`, cask file
@@ -553,6 +606,40 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   The `docs/index.html` download CTA is mac-only until Windows artifacts exist; then it
   gains a Windows download path.
 
+**Linux packaging (decided — AppImage + electron-builder).** The Linux distributable is a
+single AppImage built by **electron-builder for the Linux target only** (`--linux appimage
+--x64`; x86-64 is the only Linux arch that ships), driven by `scripts/prod-linux.sh`;
+macOS keeps `@electron/packager` + `prod.sh` and Windows keeps
+`windows-scripts/prod.ps1`, both untouched. AppImage needs no distro packaging review,
+runs on any current distro, and pairs with electron-updater's AppImage support when the
+Linux update feed ships (port plan; until then `linux.cjs` serves no feed and every §3
+update path answers the not-supported line). deb/rpm/flatpak are deferred; if one is
+added later it is a distro-managed channel like the Homebrew cask (the in-app updater
+refuses, the package manager owns updates).
+
+- **`prod-linux.sh` order mirrors `prod.sh`:** version gate (the same three-site check
+  `release.sh --check` performs, reimplemented in the script the way `prod.ps1` does —
+  `release.sh` itself stays bash/BSD-sed and runs on macOS), `npm ci` + typechecked vite
+  build, download python-build-standalone `x86_64-unknown-linux-gnu-install_only` (the
+  same pinned release tag and CPython version as `prod.sh`; the layout matches macOS —
+  `python/bin/python3`, resolved by the §2 `bundledPythonPath`), stage to `build/python`,
+  pip install the backend with `-c constraints.txt`, bundled-interpreter smoke test with
+  `PYTHONDONTWRITEBYTECODE=1` **before** packaging (same principle as the macOS seal rule:
+  the artifact ships exactly what pip staged), then electron-builder
+  `--linux appimage --x64` with the shared `extraResources` staging (`build/python` →
+  `resources/python`) and the output directory overridden to `build/linux/` on the command
+  line (`-c.directories.output` — the checked-in config's output points at `build/win`).
+- **Artifact:** `Autowright-<version>-linux-x86_64.AppImage` via the `linux.artifactName`
+  override (the top-level `artifactName` is the Windows form). The `build.linux` config
+  pins the AppImage/x64 target, the checked-in `electron/icon/icon.png`, category
+  `Utility`, and `publish: null` — no Linux update feed exists yet, so no
+  `app-update.yml` may land in the package pointing anywhere (the win32 generic entry is
+  the top-level `publish` config); the port plan's release step replaces the null with
+  the Linux generic-provider entry.
+- **Unsigned, by design:** Linux has no Gatekeeper or SmartScreen equivalent — the
+  AppImage ships unsigned and no signing/notarization leg exists (the Windows sign-later
+  principle, without the later).
+
 **Headless mode (decided).** The backend and CLI must work with no GUI ever launched — the §20
 CLI is enabled, so the full surface below is live:
 
@@ -587,8 +674,10 @@ CLI is enabled, so the full surface below is live:
   the caller (the app's ensure-backend step waits on it), so every `launchctl` invocation carries
   a 30-second timeout and a timed-out call reports the same plain-word failure as a non-zero
   exit ("launchctl timed out"), never a traceback.
-- **Keychain constraint** — secrets live in the login Keychain, which is locked until the user
-  session unlocks. Headless operation requires a logged-in (auto-login acceptable) session on the
-  Mac; pure SSH-only operation without a login session cannot read secrets. Documented, not worked
-  around.
+- **Secret-store constraint** — secrets live in the OS user secret store, which is locked
+  until the user session unlocks: the login Keychain on macOS, the freedesktop Secret
+  Service keyring (GNOME Keyring / KWallet, reached through the same `keyring` code) on
+  Linux. Headless operation requires a logged-in (auto-login acceptable) session with the
+  store unlocked; pure SSH-only operation without one cannot read secrets. Documented, not
+  worked around.
 

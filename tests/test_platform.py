@@ -3,6 +3,7 @@ the §5 per-OS root table (backend half of the drift guard — the Electron half
 is app/tests/platform-roots.test.ts; both pin the same spec table)."""
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -12,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from autowright import paths, platform, service
-from autowright.platform import darwin, fallback, posixproc, windows
+from autowright.platform import darwin, fallback, linux, posixproc, windows
 
 # The §15 `no_kill_matching` autouse fixture (conftest.py) swaps both sweep
 # bodies for a recorded no-op, so no test ever sweeps the developer's own
@@ -65,8 +66,14 @@ EXPECTED_CAPABILITIES = {
               "service": True, "agentInstall": True},
     "windows": {"imessage": False, "notifications": windows._aumid_registered(),
                 "keepAwake": True, "service": True, "agentInstall": False},
-    "linux": {"imessage": False, "notifications": False, "keepAwake": False,
-              "service": False, "agentInstall": False},
+    # Linux probes three of its flags at composition (§2): each is the
+    # presence of the OS tool on this host's PATH, so the table states the
+    # rule; the dedicated linux.build() tests below pin both probe outcomes.
+    "linux": {"imessage": False,
+              "notifications": shutil.which("notify-send") is not None,
+              "keepAwake": shutil.which("systemd-inhibit") is not None,
+              "service": shutil.which("systemctl") is not None,
+              "agentInstall": True},
 }
 
 
@@ -794,6 +801,253 @@ def test_windows_uninstall_reports_an_undeletable_shim(win_service, monkeypatch)
     out = win_service.service.uninstall()
     assert f"CLI shim left at {shim}" in out and "couldn't delete" in out
     assert service.result_code(out) == 0  # informational, after the "·"
+
+
+# ---------------------------------------------- §3 Linux service: systemd unit
+#
+# systemctl never runs here: the `systemd` fixture (conftest.py) swaps
+# `linux._systemctl` for a recorder that models the user manager's state, so
+# every test below runs on any host.
+
+UNIT = "ai.autowright.backend.service"
+
+
+def _systemd_verbs(calls):
+    return [c[0] for c in calls]
+
+
+def test_linux_install_writes_unit_enables_starts_and_verifies(systemd):
+    out = systemd.service.install()
+    assert out == f"installed and started ({linux.unit_path()}) · {_no_shim_note()}"
+    assert service.result_code(out) == 0
+    assert linux.unit_path().exists()
+    assert systemd.unit == {"active": True, "enabled": True}
+    # Write + reload + enable, then a *restart* (never a bare start — a
+    # rewritten unit must always be adopted), then the state read that
+    # verifies it actually started.
+    assert _systemd_verbs(systemd.calls) == [
+        "daemon-reload", "enable", "restart", "is-active"]
+
+
+def test_linux_unit_pins_the_launchd_equivalents(systemd):
+    systemd.service.install()
+    text = linux.unit_path().read_text()
+    # RunAtLoad → enabled WantedBy=default.target; KeepAlive → Restart=always
+    # with launchd-style throttle and no start-limit give-up.
+    assert f'ExecStart="{sys.executable}" -m autowright.main\n' in text
+    assert "Restart=always\n" in text
+    assert "RestartSec=2\n" in text
+    assert "StartLimitIntervalSec=0\n" in text
+    assert "WantedBy=default.target\n" in text
+    # §3 log routing: launchd's file capture, systemd clothes — the §9.3
+    # overlay and main.py's startup trim depend on these exact files.
+    assert f"StandardOutput=append:{paths.logs_dir() / 'backend.out.log'}\n" in text
+    assert f"StandardError=append:{paths.logs_dir() / 'backend.err.log'}\n" in text
+    assert paths.logs_dir().is_dir()  # systemd creates the files, not the dir
+
+
+def test_linux_install_never_claims_success_for_a_unit_that_never_started(systemd):
+    """§3 launchd reality (b), mapped: systemctl can accept every verb and
+    leave the unit dead — success is the state systemd reports afterwards."""
+    systemd.canned["is-active"] = (3, "activating\n", "")
+    out = systemd.service.install()
+    assert out == "install failed: the unit is enabled but did not start (state activating)"
+    assert service.result_code(out) == 1
+
+
+def test_linux_install_reports_a_failed_enable(systemd):
+    systemd.canned["enable"] = (1, "", "Failed to enable unit: Access denied\n")
+    out = systemd.service.install()
+    assert out == "install failed: Failed to enable unit: Access denied"
+    assert service.result_code(out) == 1
+
+
+def test_linux_install_reports_a_wedged_systemctl(systemd):
+    """§3: a wedged systemctl must never hang the caller — the timeout reads
+    as a plain-word failure, never a traceback."""
+    systemd.canned["daemon-reload"] = linux._TimedOut()
+    out = systemd.service.install()
+    assert out == "install failed: systemctl timed out"
+    assert service.result_code(out) == 1
+
+
+def test_linux_status_three_states(systemd):
+    out = systemd.service.status()
+    assert out == "not installed" and service.result_code(out) == 1
+
+    systemd.service.install()
+    systemd.unit["active"] = False
+    out = systemd.service.status()
+    assert out == "stopped (unit present) — returns at next login or app launch"
+    assert service.result_code(out) == 0  # stopped on purpose is not a failure
+
+    systemd.unit["active"] = True
+    assert systemd.service.status() == "active (pid 4242)"
+    paths.backend_json().write_text(json.dumps({"port": 5151, "token": "t"}))
+    assert systemd.service.status() == "active (pid 4242) · port 5151"
+    paths.backend_json().write_text('{"port": 51')  # SIGKILL-style truncation
+    assert systemd.service.status() == "active (pid 4242) · stale backend.json"
+
+
+def test_linux_stop_keeps_the_unit_enabled(systemd, monkeypatch):
+    """§3 quit-entirely backend half: the unit stays enabled and returns at
+    the next login — the systemd form of launchd's bootout-only rule."""
+    systemd.service.install()
+    monkeypatch.setattr(linux, "_sweep_strays", lambda: 0)
+    out = systemd.service.stop()
+    assert out == "stopped — returns at next login or app launch"
+    assert service.result_code(out) == 0
+    assert systemd.unit == {"active": False, "enabled": True}
+    assert "disable" not in _systemd_verbs(systemd.calls)
+
+
+def test_linux_stop_reports_the_strays_it_ended(systemd, monkeypatch):
+    systemd.service.install()
+    monkeypatch.setattr(linux, "_sweep_strays", lambda: 2)
+    out = systemd.service.stop()
+    assert out == ("stopped — returns at next login or app launch · "
+                   "ended 2 lingering process(es)")
+    assert service.result_code(out) == 0
+
+
+def test_linux_stop_when_not_installed(systemd, monkeypatch):
+    """§3: with no unit a sweep that ended strays is a successful stop (how
+    quit-all succeeds against a directly-spawned dev backend); an empty sweep
+    keeps the not-installed failure."""
+    monkeypatch.setattr(linux, "_sweep_strays", lambda: 0)
+    out = systemd.service.stop()
+    assert out == "not installed — nothing to stop"
+    assert service.result_code(out) == 1
+    assert "stop" not in _systemd_verbs(systemd.calls)
+
+    monkeypatch.setattr(linux, "_sweep_strays", lambda: 3)
+    out = systemd.service.stop()
+    assert out == "stopped — service was not installed; ended 3 lingering process(es)"
+    assert service.result_code(out) == 0
+
+
+def test_linux_uninstall_disables_and_removes_the_unit(systemd):
+    systemd.service.install()
+    out = systemd.service.uninstall()
+    assert out == "service stopped and unregistered"
+    assert service.result_code(out) == 0
+    assert not linux.unit_path().exists()
+    assert "disable" in _systemd_verbs(systemd.calls)
+    assert systemd.unit == {"active": False, "enabled": False}
+
+    out = systemd.service.uninstall()
+    assert out == "service was not installed"
+
+
+def test_linux_restart_requires_an_install(systemd):
+    out = systemd.service.restart()
+    assert out == "not installed — use `autowright service install` first"
+    assert service.result_code(out) == 1
+
+
+def test_linux_unit_path_honors_xdg_config_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    assert linux.unit_path() == tmp_path / "cfg" / "systemd" / "user" / UNIT
+    monkeypatch.delenv("XDG_CONFIG_HOME")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    assert linux.unit_path() == tmp_path / ".config" / "systemd" / "user" / UNIT
+
+
+def test_linux_unit_text_escapes_systemd_specials(systemd, monkeypatch):
+    """`%` is a specifier introducer and ExecStart words are quoted — an
+    interpreter path carrying either must survive verbatim."""
+    from types import SimpleNamespace as NS
+
+    monkeypatch.setattr(linux, "sys", NS(executable='/odd path/100%/py"3'))
+    text = linux.unit_text()
+    assert 'ExecStart="/odd path/100%%/py\\"3" -m autowright.main\n' in text
+
+
+def test_linux_notifier_posts_best_effort(monkeypatch):
+    ran: list[list[str]] = []
+    monkeypatch.setattr(linux.subprocess, "run",
+                        lambda cmd, **kw: ran.append(cmd))
+    linux.NotifySendNotifier().post("Title", "Body")
+    assert ran == [["notify-send", "--app-name=Autowright", "--", "Title", "Body"]]
+
+    def boom(cmd, **kw):
+        raise OSError("no notify-send")
+
+    monkeypatch.setattr(linux.subprocess, "run", boom)
+    linux.NotifySendNotifier().post("t", "b")  # never raises
+
+
+class _FakeInhibit:
+    def __init__(self, cmd):
+        self.cmd = cmd
+        self.terminated = False
+
+    def poll(self):
+        return 0 if self.terminated else None
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def test_linux_power_assertions_spawn_and_release_inhibitors(monkeypatch):
+    """§3: one `systemd-inhibit --what=idle` per assertion, wrapping a watch
+    on the backend pid so the lock dies with the backend (`caffeinate -w`'s
+    no-orphan guarantee)."""
+    spawned: list[_FakeInhibit] = []
+
+    def fake_popen(cmd, **kw):
+        proc = _FakeInhibit(cmd)
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(linux.subprocess, "Popen", fake_popen)
+    power = linux.SystemdInhibitPower()
+    power.reconcile(True)
+    power.reconcile(True)  # idempotent — still one inhibitor
+    assert len(spawned) == 1
+    cmd = spawned[0].cmd
+    assert cmd[:2] == ["systemd-inhibit", "--what=idle"]
+    assert "--who=Autowright" in cmd
+    assert f"--pid={os.getpid()}" in " ".join(cmd)
+
+    release = power.hold_execution()
+    assert len(spawned) == 2
+    release()
+    release()  # double release is harmless
+    assert spawned[1].terminated and not spawned[0].terminated
+
+    power.reconcile(False)
+    assert spawned[0].terminated
+
+
+def test_linux_build_probes_the_host_tools(monkeypatch):
+    """§2: capabilities are probed at composition — a host with the tools
+    composes the real pieces, a host without them the fallback pieces, and
+    neither ever crashes."""
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    plat = linux.build()
+    assert plat.os_token == "linux"
+    assert isinstance(plat.service, linux.SystemdService)
+    assert isinstance(plat.notifier, linux.NotifySendNotifier)
+    assert isinstance(plat.power, linux.SystemdInhibitPower)
+    assert isinstance(plat.processes, posixproc.PosixProcessControl)
+    assert _composes_process_control(plat)
+    assert plat.capabilities.as_dict() == {
+        "imessage": False, "notifications": True, "keepAwake": True,
+        "service": True, "agentInstall": True}
+
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    plat = linux.build()
+    assert isinstance(plat.service, fallback.UnsupportedService)
+    assert isinstance(plat.notifier, fallback.NullNotifier)
+    assert isinstance(plat.power, fallback.NullPower)
+    assert plat.capabilities.as_dict() == {
+        "imessage": False, "notifications": False, "keepAwake": False,
+        "service": False, "agentInstall": True}
+    assert plat.service.install() == "install failed: not supported on Linux yet"
 
 
 # ---------------------------------------------------- §3 degraded service verbs

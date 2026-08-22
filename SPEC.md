@@ -95,7 +95,7 @@ endpoints work on this OS), composed into one frozen `Platform` object by `platf
 `build()` functions; shared logic lives in plain functions the implementations import, never in
 a superclass. Electron: `app/electron/platform/` mirrors the shape — per-OS modules exporting
 plain objects (window chrome, tray spec, panel placement, CLI shim, update feed, managed-install
-probe, reveal rules, the §3 uninstall finish), selected once by `platform/index.cjs`. These modules never import
+probe, reveal rules), selected once by `platform/index.cjs`. These modules never import
 `electron` (they take `app`/window objects as arguments), so the §15 source-scanning guards and
 test loaders keep working. **macOS is the only fully implemented platform.** On Linux,
 `current()` composes explicit degraded implementations rather than crashing: service actions

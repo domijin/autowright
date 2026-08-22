@@ -352,7 +352,10 @@ Dev workflow:
   `homebrew-tap` repository and pushes it to that repo's `main`. Requires the `gh` CLI,
   authenticated (`gh auth login`); fails with a hint otherwise. Files are rewritten only
   when their version actually differs, so an unchanged `pyproject.toml` mtime never
-  churns the `.backend-stamp` dependency re-install. Modes (version-only — no build, no
+  churns the `.backend-stamp` dependency re-install. The version-site rewrites probe the
+  sed dialect once (GNU `-i` vs BSD `-i ''`), so `--sync`/`--check` — and therefore
+  `build.sh` — run on Linux as well as macOS; the release flow itself stays macOS-only.
+  Modes (version-only — no build, no
   git/GitHub actions): **`--sync`** rewrites the three sites from `VERSION` without
   taking a new version (what `build.sh` runs); **`--check`** verifies all three match
   `VERSION` and exits non-zero listing every mismatch (what `prod.sh` runs).
@@ -497,6 +500,29 @@ Dev workflow:
     exit count, so the exited session's lingering helpers can never read as a relaunch —
     the down-check reuses the startup health-probe form, the re-ensure is `service install`
     (or the isolated direct spawn), and `Wait-Process` stands in for the pgrep wait.
+- **`./linux-scripts/dev.sh`** — dev.sh on Linux (bash; §17 `linux-scripts/`). Same
+  contract — deps only, stale-process sweep, real service, Vite + Electron with HMR,
+  release semantics on normal quit, full teardown on Ctrl+C (exit 130), the same relaunch
+  supervision, isolated mode, and `--fresh` wipe rule — mapped per-OS:
+  - Deps stay `scripts/build.sh --deps` verbatim: build.sh is plain bash and runs
+    natively on Linux, version sync and acknowledgements regen included (the release.sh
+    version rewrites are sed-dialect-portable, above).
+  - Backend: `service uninstall` + `service install` (re)registers the §3 systemd user
+    unit `ai.autowright.backend` on the venv interpreter. Data
+    `${XDG_DATA_HOME:-~/.local/share}/autowright`, logs
+    `${XDG_STATE_HOME:-~/.local/state}/autowright/log` (§5 root table); log filenames
+    are unchanged (the unit's `append:` routing writes the same
+    `backend.out.log`/`backend.err.log`).
+  - Stale sweep: the same four command-line patterns and the same SIGTERM → 5 s grace →
+    SIGKILL escalation, with the backend pattern widened to
+    `[Pp]ython[0-9.]* -m autowright` — Linux `/proc` cmdlines show the argv the process
+    was exec'd with (the venv's `python`, `python3`, or `python3.14`), never a resolved
+    framework binary name the way macOS `ps` does.
+  - Isolated mode (any `AUTOWRIGHT_*` knob set) spawns the backend directly, mimicking
+    the systemd user-manager environment the unit would get (§3 — the unit sets no
+    `WorkingDirectory` or `Environment`): cwd `$HOME`, the default user-manager PATH
+    (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`), detached, with
+    stdout/stderr redirected to the same two log files under the chosen home.
 - **`./scripts/build-clean.sh`** — resets the repo to a pre-build state so the next
   `build.sh`/`dev.sh` rebuilds from scratch. First stops anything running **from this repo**
   (deleting `.venv` under the live launchd KeepAlive service would otherwise break):

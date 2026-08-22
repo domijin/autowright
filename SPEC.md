@@ -316,6 +316,7 @@ data on disk); both ends of a served surface change in the same commit.
   that genuinely differ from their `scripts/` originals (most `scripts/` bash runs on Linux
   as-is). Developer-only exactly like `scripts/` — the same never-run rule and guard hook
   cover all three script directories. Currently:
+  `dev.sh` — the §18 Linux dev loop, `scripts/dev.sh` mapped per-OS;
   `commit.sh` — the §18 Linux commit helper, `scripts/commit.sh` mapped per-OS.
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
   and compatible harnesses) to drive Autowright end-to-end through the §20 CLI — create/edit

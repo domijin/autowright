@@ -40,6 +40,10 @@ CASK_REL="Casks/autowright.rb"
 
 ARCH="$(uname -m)"
 
+# GNU sed and BSD sed disagree on in-place editing (GNU: -i, BSD: -i '') — probe
+# the dialect once so the version rewrites run on Linux too (build.sh --sync path).
+if sed --version > /dev/null 2>&1; then SED_I=(sed -i -E); else SED_I=(sed -i '' -E); fi
+
 usage() {
   echo "usage: $(basename "$0") <version> | --sync | --check | --cask"
   exit 2
@@ -90,8 +94,8 @@ publish_cask() {
   fi
   sha="$(shasum -a 256 "$dmg" | awk '{print $1}')"
   echo "· updating homebrew cask ($version, sha256 ${sha:0:12}…)"
-  sed -i '' -E "s/^(  version \")[^\"]+(\")$/\1$version\2/" "$cask"
-  sed -i '' -E "s/^(  sha256 \")[^\"]+(\")$/\1$sha\2/" "$cask"
+  "${SED_I[@]}" "s/^(  version \")[^\"]+(\")$/\1$version\2/" "$cask"
+  "${SED_I[@]}" "s/^(  sha256 \")[^\"]+(\")$/\1$sha\2/" "$cask"
   grep -q "^  version \"$version\"$" "$cask" \
     || { echo "cask version line not rewritten — check $cask"; exit 1; }
   grep -q "^  sha256 \"$sha\"$" "$cask" \
@@ -200,9 +204,9 @@ read_version() {
 # write_version <file> — rewrite a site's version line to $VERSION
 write_version() {
   case "$1" in
-    "$PKG_JSON")  sed -i '' -E "s/^(  \"version\": \")[^\"]+(\",)$/\1$VERSION\2/" "$1" ;;
-    "$PYPROJECT") sed -i '' -E "s/^(version = \")[^\"]+(\")$/\1$VERSION\2/" "$1" ;;
-    "$INIT_PY")   sed -i '' -E "s/^(__version__ = \")[^\"]+(\")$/\1$VERSION\2/" "$1" ;;
+    "$PKG_JSON")  "${SED_I[@]}" "s/^(  \"version\": \")[^\"]+(\",)$/\1$VERSION\2/" "$1" ;;
+    "$PYPROJECT") "${SED_I[@]}" "s/^(version = \")[^\"]+(\")$/\1$VERSION\2/" "$1" ;;
+    "$INIT_PY")   "${SED_I[@]}" "s/^(__version__ = \")[^\"]+(\")$/\1$VERSION\2/" "$1" ;;
   esac
 }
 

@@ -49,6 +49,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   (`start_new_session`), and timeout/cancel/skip signal the whole group — a step's children
   (Playwright browsers, subprocesses) die with it, are never orphaned, and can never hold the
   engine's log pipe open past the kill (which would strand the automation "executing").
+  On Windows the executor spawns via the console interpreter with a hidden console (§2 spawn
+  policy: `paths.console_python()` + `CREATE_NO_WINDOW`), so a step's console-subsystem
+  children inherit the invisible console instead of each opening a terminal window under the
+  §3 `pythonw.exe` service.
 - **Skip step:** while a step is executing, the user can skip it (§19
   `POST /executions/{id}/skip-step` with the step index — 409 unless that exact step is the
   one currently executing, closing the finished-while-clicking race). The engine kills the

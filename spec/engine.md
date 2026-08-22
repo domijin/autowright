@@ -418,7 +418,10 @@ silently depend on a package another automation happened to install.
 
 **Install model — the user never runs pip.** Declared packages install into one shared,
 user-writable directory, `<app-support>/site-packages` (§5), via the bundled interpreter's
-`python -m pip install --target`, wheels only (`--only-binary :all:` — a source-only
+`python -m pip install --target` (on Windows the console interpreter with a hidden
+console — §2 spawn policy `paths.console_python()` + `CREATE_NO_WINDOW` — so pip and its
+helper children never show a terminal window under the §3 `pythonw.exe` service), wheels
+only (`--only-binary :all:` — a source-only
 distribution fails fast with pip's "no matching distribution" rather than hitting a compiler
 users don't have). The bundle inside the .app is never written to (read-only,
 replaced whole on update). The executor prepends this directory to `sys.path` for every step,

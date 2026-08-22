@@ -12,7 +12,6 @@ import sys
 import threading
 
 import uvicorn
-from pathlib import Path
 
 from . import __version__, api, paths, platform
 from .listeners import Listeners
@@ -76,20 +75,6 @@ def route_logs() -> None:
         setattr(sys, stream, f)
 
 
-def _console_python() -> str:
-    """§3 discovery `python` field: on Windows the service runs the backend
-    under pythonw.exe (no console window), but the field feeds the CLI and the
-    shell's shim — which need console output — so publish the python.exe
-    sitting beside it when one exists. Both resolve the same interpreter home,
-    and shim writes stay in agreement with `service install`'s heal."""
-    exe = Path(sys.executable)
-    if paths.current_os() == "windows" and exe.name.lower() == "pythonw.exe":
-        console = exe.with_name("python.exe")
-        if console.exists():
-            return str(console)
-    return sys.executable
-
-
 class _DevModeFilter(logging.Filter):
     """§4.9 developerMode: INFO request logs pass only while the setting is on.
     Also scrubs the auth token from logged request lines — the WS handshake
@@ -140,7 +125,7 @@ def main() -> None:
     # CLI-on-PATH shim (§3) so it execs the interpreter that runs the backend.
     discovery = json.dumps({
         "port": port, "token": api.AUTH_TOKEN, "version": __version__, "pid": os.getpid(),
-        "python": _console_python(),
+        "python": paths.console_python(),
     })
     atomic_write_text(paths.backend_json(), discovery, mode=0o600)
     # §3 discovery guard: backend.json is written once at boot — if something

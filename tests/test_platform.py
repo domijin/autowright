@@ -114,6 +114,29 @@ def test_windows_session_kwargs_are_a_new_process_group_with_no_window():
     assert kwargs == {"creationflags": 0x00000200 | 0x08000000}
 
 
+def test_console_python_swaps_pythonw_for_its_console_sibling(monkeypatch, tmp_path):
+    """§2 console-interpreter rule: under the §3 pythonw.exe service, Python
+    children (executor, pip) spawn via the python.exe sibling so their own
+    console children inherit the hidden console instead of opening terminal
+    windows. No sibling, or any other interpreter name/OS: sys.executable
+    unchanged."""
+    pythonw = tmp_path / "pythonw.exe"
+    pythonw.touch()
+    monkeypatch.setattr(paths.sys, "executable", str(pythonw))
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    assert paths.console_python() == str(pythonw)  # no sibling yet
+    console = tmp_path / "python.exe"
+    console.touch()
+    assert paths.console_python() == str(console)
+
+    monkeypatch.setattr(paths, "current_os", lambda: "macos")
+    assert paths.console_python() == str(pythonw)  # rule is Windows-only
+
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    monkeypatch.setattr(paths.sys, "executable", str(console))
+    assert paths.console_python() == str(console)  # already the console one
+
+
 def test_windows_kill_group_is_a_taskkill_tree_kill(monkeypatch):
     ran = []
     monkeypatch.setattr(windows.subprocess, "run",

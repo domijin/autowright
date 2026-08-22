@@ -10,7 +10,6 @@ import re
 import shutil
 import signal
 import subprocess
-import sys
 import threading
 import time
 from datetime import datetime
@@ -212,7 +211,11 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
     `state['proc']` holds the live Popen so a caller can cancel. `timeout_s`
     is the resolved §6 step limit (`step_timeout_for`); None = no watchdog."""
     proc = subprocess.Popen(
-        [sys.executable, "-m", "autowright.executor", str(script)],
+        # §2 console-interpreter rule: never pythonw — with the hidden-console
+        # spawn policy below, a step's own console children (tool calls)
+        # inherit an invisible console instead of each opening a terminal
+        # window under the §3 pythonw service.
+        [paths.console_python(), "-m", "autowright.executor", str(script)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         # §2 pipe-encoding contract: explicit UTF-8, never the locale codec;
         # errors="replace" so binary garbage on stdout can't kill the read loop.

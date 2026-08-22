@@ -154,7 +154,8 @@ let serviceInstallDone = Promise.resolve()
 function runServiceInstall(py, cb) {
   if (quittingAll) return
   serviceInstallDone = serviceInstallDone.then(() => new Promise((resolve) => {
-    execFile(py, ['-m', 'autowright.service', 'install'], (err, stdout, stderr) => {
+    // §2 spawn policy: never show a console window for a shell child.
+    execFile(py, ['-m', 'autowright.service', 'install'], { windowsHide: true }, (err, stdout, stderr) => {
       try { cb(err, stdout, stderr) } finally { resolve() }
     })
   }))
@@ -1031,7 +1032,8 @@ ipcMain.handle('quit-all', async () => {
   quittingAll = true
   await serviceInstallDone
   const err = await new Promise((resolve) => {
-    execFile(py, ['-m', 'autowright.service', 'stop'], (e, stdout, stderr) => {
+    // §2 spawn policy: never show a console window for a shell child.
+    execFile(py, ['-m', 'autowright.service', 'stop'], { windowsHide: true }, (e, stdout, stderr) => {
       appLog(`quit-all: ${String(stdout || stderr || '').trim()}`)
       resolve(e ? String(stdout || stderr || e.message).trim() : null)
     })

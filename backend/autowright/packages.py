@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -211,7 +210,9 @@ def _pip_install(name: str, pin_installed: bool = False,
     back as the error."""
     target = site_packages_dir()
     target.mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "pip", "install", "--upgrade",
+    # §2 console-interpreter rule: never pythonw — pip's helper children must
+    # inherit the hidden console instead of opening terminal windows.
+    cmd = [paths.console_python(), "-m", "pip", "install", "--upgrade",
            "--no-input", "--disable-pip-version-check",
            # §6.2: wheels only — a source-only package would need a
            # compiler users don't have; fail fast with pip's clear

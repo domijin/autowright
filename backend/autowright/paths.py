@@ -49,6 +49,27 @@ def secret_store_name(token: str | None = None) -> str:
     return "Credential Manager" if (token or current_os()) == "windows" else "Keychain"
 
 
+def console_python() -> str:
+    """§2 console-interpreter rule: the interpreter for Python children the
+    backend spawns (the §6.1 executor, §6.2 pip) and for the §3 discovery
+    `python` field. On Windows the service runs the backend under
+    `pythonw.exe` (§3 — no console window); a Python child spawned as
+    `pythonw.exe` would have no console at all, so its own console-subsystem
+    children (a step's tool calls, pip's helpers) would each open a visible
+    terminal window instead of inheriting the §2 hidden console — publish the
+    `python.exe` sitting beside it when one exists. Everywhere else (and when
+    no sibling exists) this is just `sys.executable`."""
+    exe = Path(sys.executable)
+    if current_os() == "windows" and exe.name.lower() == "pythonw.exe":
+        console = exe.with_name("python.exe")
+        try:
+            if console.is_file():
+                return str(console)
+        except OSError:
+            pass
+    return sys.executable
+
+
 def _default_data_root() -> Path:
     """§5 per-OS data root (the platform-token row of the §5 table)."""
     token = current_os()

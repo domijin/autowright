@@ -119,7 +119,18 @@ own children inherit it). Every subprocess the backend spawns on Windows suppres
 console: cross-OS spawn sites (harness invocations and probes, engine steps, pip,
 `ollama` pulls/serve) take the whole policy from the platform layer's `session_kwargs()`,
 and the Windows platform module's own helpers (`taskkill`, its PowerShell runs) pass
-`CREATE_NO_WINDOW` directly. "Group" operations act on the
+`CREATE_NO_WINDOW` directly. Python children the backend spawns (the §6.1 executor, §6.2
+pip) use the **console interpreter** — `paths.console_python()`, the `python.exe` beside a
+`pythonw.exe` `sys.executable` — never `pythonw.exe`: with `CREATE_NO_WINDOW` a console
+child owns a *hidden* console that its own console-subsystem children (a step's tool
+calls, pip's build helpers) inherit, while a GUI-subsystem child has no console at all and
+each console grandchild would open its own visible terminal window. The shell half
+matches: the Electron main process passes `windowsHide: true` explicitly on every
+`execFile` (the §3 ensure-backend `service install` / quit-all `service stop` children).
+The invariant across both halves: **no Autowright-spawned process ever shows a console
+window on Windows** — a visible terminal is only ever a deliberate, user-facing UI action
+(the §19 sign-in-help Terminal flow, macOS-only while `agentInstall` is false on
+Windows). "Group" operations act on the
 process tree rooted at the child's pid via `taskkill /T /F` — Windows has no signalable
 process groups, so the §4.5 persisted group id stays the child's pid (same pid == group
 invariant as POSIX own-session spawns), and the §3 pid-reuse guard answers False until a
@@ -190,7 +201,8 @@ data on disk); both ends of a served surface change in the same commit.
   WebSocket), and the small utilities `keychain.py` (§4.8 Keychain values via keyring),
   `notify.py` (osascript notifications), `paths.py` (§5 filesystem locations,
   `AUTOWRIGHT_HOME` override, the §5.1 `current_os` platform token and its §4.1
-  `os_display_name` form, shared by every surface that names a platform), `timefmt.py` (§4.1 display labels + §5 canonical UTC
+  `os_display_name` form, shared by every surface that names a platform, and
+  `console_python` — the §2 console-interpreter rule for Python children), `timefmt.py` (§4.1 display labels + §5 canonical UTC
   timestamps), `yamlio.py` (§5 atomic temp-write + rename IO).
   `autowright/instructions/` holds the §8 prompt texts as markdown (packaged via
   `[tool.setuptools.package-data]`): `framework-instructions.md` (contract preamble) and

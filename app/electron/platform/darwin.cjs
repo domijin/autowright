@@ -87,6 +87,14 @@ function readLoginShellPath() {
 
 // ---- §3 updates -------------------------------------------------------------
 
+// §3: which update machinery main.cjs drives here — Squirrel.Mac via Electron's
+// built-in autoUpdater (its ShipIt helper already ships in the bundle). The
+// module names it rather than constructing it: platform modules never import
+// `electron`.
+const UPDATER = 'squirrel'
+// AppUserModelID is a Windows concept — no-op here (§3).
+const APP_USER_MODEL_ID = null
+
 // One static Squirrel.Mac JSON feed per arch on the docs/ GitHub Pages site,
 // rewritten by release.sh each release.
 function updateFeedUrl(arch) {
@@ -120,6 +128,13 @@ function revealPrefersOpen(abs, isDir) {
 
 // ---- §3 ensure-backend diagnostics -------------------------------------------
 
+// §9 failure copy: launchctl can report success while the job never spawns —
+// Gatekeeper silently refuses to exec an unsigned, quarantined bundled Python
+// as a LaunchAgent — so the mac line names it.
+const SERVICE_START_FAILED_DETAIL =
+  'The backend service was registered but never started — macOS '
+  + 'Gatekeeper may be blocking an unsigned build. Details in app.log.'
+
 // After a failed install verification, capture launchd's view of the job.
 function serviceDiagnostics(log) {
   execFile('launchctl', ['print', `gui/${process.getuid()}/ai.autowright.backend`],
@@ -146,11 +161,14 @@ module.exports = {
   defaultShimPath,
   shimText,
   readLoginShellPath,
+  UPDATER,
+  APP_USER_MODEL_ID,
   updateFeedUrl,
   managedInstall,
   MANAGED_COPY_ERROR,
   SETTINGS_DEEP_LINK,
   revealPrefersOpen,
+  SERVICE_START_FAILED_DETAIL,
   serviceDiagnostics,
   capabilities,
 }

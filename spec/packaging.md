@@ -4,15 +4,16 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 
 ## 3. Packaging & process lifecycle (decided)
 
-**The Python backend runs as a per-user launchd LaunchAgent, independent of the Electron app.**
-Primary use case: a Mac left running unattended for days must keep firing triggers with no UI
-open.
+**The Python backend runs as a per-user OS service, independent of the Electron app** — a
+launchd LaunchAgent on macOS, a Task Scheduler task on Windows (its block below). Primary use
+case: a machine left running unattended for days must keep firing triggers with no UI open.
 
-Everything OS-coupled in this section sits behind the §2 platform layer. launchd is the one
-implemented `ServiceManager` (`service.py` is its implementation module); on Linux/Windows the
-`service` actions answer a plain "not supported on <OS> yet" failure line (exit 1 via the
-result-code rule below) instead of crashing on a missing `launchctl`. The future per-OS
-decisions are recorded in the port plan, not here, until they ship.
+Everything OS-coupled in this section sits behind the §2 platform layer. launchd is the
+macOS `ServiceManager` (`service.py` is its implementation module); Task Scheduler is the
+Windows one (the **Windows service** block below); on Linux the `service` actions answer a
+plain "not supported on <OS> yet" failure line (exit 1 via the result-code rule below)
+instead of crashing on a missing `launchctl`. Future per-OS decisions are recorded in the
+port plan, not here, until they ship.
 
 **Implementation status:** the launchd/CLI/discovery half is implemented (`service.py`, `cli.py`,
 `backend.json`), and so is app-launch registration (the ensure-backend step below). The
@@ -31,9 +32,12 @@ The launch-time version-compare/re-register flow and the in-app updater are impl
 the update bullets below).
 
 - **Identifiers (decided):** reverse-DNS of the product domain `autowright.ai` — app bundle id
-  `ai.autowright.app` (set by `prod.sh` at packaging time), backend LaunchAgent label
-  `ai.autowright.backend`. The Keychain service name is the plain string `Autowright` (§4.8),
-  not reverse-DNS.
+  `ai.autowright.app` (set by `prod.sh` at packaging time; the same string is the Windows
+  appId and AppUserModelID — the Electron main process calls
+  `app.setAppUserModelId('ai.autowright.app')` on Windows so taskbar grouping/pinning and
+  the §3 toast identity all agree with the installer's Start-menu shortcut), backend
+  LaunchAgent label / Task Scheduler task name `ai.autowright.backend`. The Keychain
+  service name is the plain string `Autowright` (§4.8), not reverse-DNS.
 - The backend ships inside the Electron `.app` bundle
   (`Contents/Resources/python/`). **Ensure-backend:** at every app launch, the Electron main
   process probes the backend (`backend.json` + unauthenticated `GET /health`, short timeout); if
@@ -154,6 +158,50 @@ the update bullets below).
   module form: `<python> -m autowright.cli`.
 - launchd keeps it alive: `RunAtLoad` + `KeepAlive` (restart on crash). launchd also guarantees a
   single backend instance — the UI and CLI are always clients, never owners.
+- **Windows service (decided): Task Scheduler**, implemented in `platform/windows.py` —
+  the closest match to `RunAtLoad` + `KeepAlive` (logon trigger + restart-on-failure) with no
+  extra supervisor process. The launchd contract above maps as:
+  - Task name `ai.autowright.backend` (the same reverse-DNS label as the LaunchAgent).
+    Action: the backend interpreter's `pythonw.exe -m autowright.main` — `pythonw.exe` sits
+    beside `python.exe` in both the venv and the python-build-standalone layouts, and it
+    keeps a console window from flashing at every logon.
+  - Registration goes through the PowerShell ScheduledTasks cmdlets, never bare
+    `schtasks.exe`: restart-on-failure (`New-ScheduledTaskSettingsSet -RestartCount
+    -RestartInterval`, the KeepAlive equivalent) is not expressible from the schtasks CLI.
+    Logon trigger (`New-ScheduledTaskTrigger -AtLogOn`, the RunAtLoad equivalent); install
+    starts the task immediately (`Start-ScheduledTask`, the `launchctl kickstart`
+    equivalent).
+  - Verb mapping: `install` = register (or update in place) + start + the same health-poll
+    verification as macOS; `uninstall` = stop + `Unregister-ScheduledTask`; `status` =
+    `Get-ScheduledTask` state line; `stop` = `Stop-ScheduledTask` only — the task stays
+    registered and returns at next logon (mirrors the macOS "bootout only" rule); `restart`
+    = stop + start. Every verb answers a §3-style result line so `service.result_code`
+    keeps working, and every PowerShell invocation carries a timeout with a plain-word
+    failure on expiry (the same never-hang rule as `launchctl`'s 30 s cap).
+  - Log routing: Task Scheduler does not capture stdout/stderr the way launchd does — on
+    Windows the backend opens and rotates its own log file under the §5 logs root
+    (`main.py`), and the writer must never keep the handle open across the startup trim
+    (a held handle turns the trim into a sharing violation).
+  - With this shipped, `capabilities.service` is true on Windows and the §3 shim-heal half
+    of `service install` covers the `.cmd` shim.
+  - **Windows notifier (decided, ships with the packaging step):** toasts via a PowerShell
+    WinRT invocation (`ToastNotificationManager` + toast XML, no extra dependency), posted
+    under the AppUserModelID `ai.autowright.app`. An unpackaged app cannot own an AUMID —
+    Windows requires a Start-menu shortcut carrying it, which the §3 NSIS installer
+    creates — so the notifier ships with the packaging step, degrades silently when the
+    AUMID isn't registered (dev runs), and `capabilities.notifications` flips true only in
+    the packaged build's environment (probed, not assumed).
+  - **Semantics that differ from launchd, accepted:** `Stop-ScheduledTask` terminates the
+    task's process tree outright — Windows has no SIGTERM-to-the-job analogue — so the
+    graceful-shutdown pass (hard-killing live step groups, cancelling drafting jobs,
+    unlinking `backend.json`) never runs on a Windows stop/restart/uninstall. A stale
+    `backend.json` therefore survives a stop until the next boot rewrites it — covered by
+    the stale-file readers above, and never a crash. Stop verification is the manager's
+    view (task state left `Running`), which flips ~1.5 s before the process tree is fully
+    gone; install's stop→register→start sequence outlasts that gap. `status` has no pid to
+    print (`Get-ScheduledTask` exposes none): the Windows lines are `active (task
+    running)`, `stopped (task present) — returns at next logon or app launch` (exit 0), and
+    `not installed` (exit 1) — same three states as macOS, pid replaced by the task view.
 - Step processes die with their backend: graceful shutdown hard-kills every live step group,
   and startup recovery SIGKILLs any group a crashed backend orphaned (via the record's
   persisted `pgid`, §4.5, with a pid-reuse guard) before marking its record interrupted —
@@ -178,10 +226,20 @@ the update bullets below).
   login (`RunAtLoad`) or next app launch (ensure-backend re-heals) — stopped, never
   uninstalled.
 - Discovery: the backend listens on localhost and writes its port + auth token to
-  `~/Library/Application Support/Autowright/backend.json` (0600); UI and CLI read it to connect.
+  `backend.json` in the §5 data root — `~/Library/Application Support/Autowright/` on macOS,
+  written 0600; `%LOCALAPPDATA%\Autowright\` on Windows, where POSIX mode bits restrict
+  nothing and the protection is the profile's inherited ACL (`%LOCALAPPDATA%` grants access
+  only to the user's account, SYSTEM, and Administrators — the same trust boundary 0600
+  draws on macOS, where root reads anything; documented, no explicit icacls write). UI and
+  CLI read it to connect.
   Fields: `port`, `token`, `version`, `pid`, and `python` — the backend's `sys.executable`,
   read by the shell's CLI-on-PATH machinery (above) so the shim always execs the interpreter
-  that actually runs the backend, dev and prod alike.
+  that actually runs the backend, dev and prod alike. One per-OS mapping: on Windows the
+  service runs the backend under `pythonw.exe` (§3 Windows service block — no console
+  window), but the published `python` field is the console `python.exe` beside it when one
+  exists — the field exists for the CLI and shim, which need console output, and both
+  binaries resolve the same interpreter home. This also keeps the shell's shim writes and
+  `service install`'s heal agreeing on one exec line.
   The backend binds its socket first and only then publishes `backend.json` (uvicorn serves on
   the already-bound socket) — the file never points clients (token included) at a port the
   backend doesn't own. A stale/truncated `backend.json` (SIGKILL leftovers) makes the CLI and
@@ -257,7 +315,14 @@ the update bullets below).
     swapping the bundle mid-execution risks a step lazily importing mixed versions; an
     unreachable backend counts as idle. Otherwise it calls `autoUpdater.quitAndInstall()`.
     ShipIt swaps the bundle at the same path, so the LaunchAgent's absolute interpreter path
-    stays valid.
+    stays valid. On a platform whose §2 module serves no update feed URL, **every** update
+    path answers the same plain "Updates are not supported on this platform yet." line up
+    front: `update-check` answers `state: 'error'` carrying that line as its error detail —
+    the §9.4 page renders the carried detail, never the generic "Couldn't reach
+    autowright.ai" network copy, so the user is never told to retry something that cannot
+    succeed — and `update-download` / `update-install` refuse with the same line (defense
+    in depth — the §9.4 UI never offers them without a feed, and `quitAndInstall` with
+    nothing staged must never quit the app for no swap).
   - **Homebrew-managed detection:** the install counts as brew-managed when the Caskroom
     metadata directory exists: the main process probes `/opt/homebrew/Caskroom/autowright`
     and `/usr/local/Caskroom/autowright` with `fs.existsSync`, fresh on every query and
@@ -278,21 +343,35 @@ the update bullets below).
   (`GET /executions?status=executing`, polled every 30 s — the service is never restarted
   mid-execution), then runs the same `service install` path, which rewrites the plist and
   restarts the service on the current bundle's interpreter. Outcome lines append to `app.log`.
-- Sleep: launchd does not prevent sleep. The backend holds a power assertion for the duration of
-  an active execution, implemented as a `caffeinate -i -w <backend pid>` subprocess (prevents
-  idle sleep mid-execution; the `-w` ties the assertion to the backend process — like the
-  permanent `keepAwake` one below — so a crashed backend can never leave a per-execution
-  orphan keeping the Mac awake;
-  forced sleep — lid close, low battery — can still suspend an execution); outside executions, normal macOS energy settings
-  apply and missed occurrences follow the §6 missed-execution policy. For the always-on use case
-  (a Mac left running to catch schedules and §6 message triggers), the §4.9 `keepAwake` setting
-  makes the backend hold a **permanent** idle-sleep assertion: a `caffeinate -i -w <backend pid>`
-  subprocess (`awake.py`), started at backend boot when the setting is on and started/stopped
-  live from `PATCH /settings` — no restart. The `-w <pid>` ties the assertion to the backend
-  process, so a crashed backend can never leave an orphan keeping the Mac awake. Display sleep
-  stays allowed; user-forced sleep still wins. On by default. This covers sleep only — logging
-  out of the macOS session still stops the LaunchAgent and locks the Keychain (headless bullets
-  below); for an unattended Mac, stay logged in (screen lock is fine) or enable auto-login.
+- Sleep: the service manager does not prevent sleep. Two idle-sleep assertions exist, both
+  owned by the §2 platform layer's `PowerAssertion` (engine and settings code call the layer —
+  `hold_execution()` / `reconcile(enabled)` — never an OS mechanism directly; a platform with
+  no implementation composes a no-op and `keepAwake: false`):
+  - **Per-execution:** held for the duration of an active execution (prevents idle sleep
+    mid-execution; forced sleep — lid close, low battery — can still suspend an execution).
+    `hold_execution()` returns a release callable the engine calls when the execution
+    finishes; acquiring and releasing never raise. Outside executions, normal OS energy
+    settings apply and missed occurrences follow the §6 missed-execution policy.
+  - **Permanent (§4.9 `keepAwake`, on by default):** for the always-on use case (a machine
+    left running to catch schedules and §6 message triggers), the setting makes the backend
+    hold a permanent idle-sleep assertion — started at backend boot when the setting is on
+    and started/stopped live from `PATCH /settings` (`reconcile`, idempotent) — no restart.
+    Display sleep stays allowed; user-forced sleep still wins. This covers sleep only —
+    logging out of the OS session still stops the service (and on macOS locks the Keychain,
+    headless bullets below); for an unattended machine, stay logged in (screen lock is fine)
+    or enable auto-login.
+
+  Per-OS mechanisms. **macOS** (`awake.py`, delegated to by `platform/darwin.py`): each
+  assertion is its own `caffeinate -i -w <backend pid>` subprocess — the `-w` ties it to the
+  backend process, so a crashed backend can never leave an orphan keeping the Mac awake.
+  **Windows** (`WindowsPower` in `platform/windows.py`): one thread-owned
+  `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` behind a counted set of
+  holds — the permanent keepAwake hold plus one per active execution; the state is set while
+  the count is positive and cleared (`ES_CONTINUOUS` alone) when it reaches zero, always from
+  the single dedicated thread that owns it (execution state is per-thread). Never
+  `ES_DISPLAY_REQUIRED` — display sleep stays allowed. Windows clears a thread's execution
+  state when its process dies, so a crashed backend can never leave an orphan — the same
+  guarantee `-w` gives on macOS.
 
 - **Homebrew cask (decided):** a second install channel beside the DMG download, distributed
   from the project's own tap `hansololz/homebrew-tap` (repository `homebrew-tap`, cask file
@@ -319,6 +398,62 @@ the update bullets below).
   A `livecheck` block reads `currentRelease` from the same arch feed the updater uses, so the
   cask stays checkable by `brew livecheck` and would be autobump-eligible if it ever moved to
   core. Version bumps are `release.sh`'s job (§18), never a manual edit.
+
+**Windows packaging & updates (decided — NSIS + electron-updater).** The Windows
+distributable is built by **electron-builder for the Windows target only** (`--win nsis`),
+driven by a new `scripts/prod.ps1`; macOS keeps `@electron/packager` + `prod.sh` untouched.
+Rationale: hand-rolling what electron-updater consumes (the NSIS script, `latest.yml`, the
+blockmap, the in-app `app-update.yml`) would re-implement electron-builder badly, and
+electron-builder also provides the sign-later hook for free. Squirrel.Windows was considered
+and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS unchanged).
+
+- **`prod.ps1` order mirrors `prod.sh`:** sync `VERSION`, vite build, download
+  python-build-standalone `x86_64-pc-windows-msvc-install_only` (flat layout:
+  `python\python.exe`), pip install the backend into it with `-c constraints.txt` before
+  packaging, ship the interpreter via `extraResources` into `resources\python`, then
+  electron-builder produces the installer. The bundled-interpreter smoke test runs before
+  packaging with `PYTHONDONTWRITEBYTECODE=1` (same principle as the macOS seal rule).
+- **Installer shape:** per-user NSIS (`perMachine: false` — no admin prompt, the same
+  no-privilege principle as the rest of §3), install dir under `%LOCALAPPDATA%\Programs`,
+  appId `ai.autowright.app`, and a **stable NSIS GUID pinned in config from day one** — an
+  upgrade must always find the previous install, and the stable GUID + path + appId are
+  what let a future signed build upgrade an unsigned install in place. Needs `icon.ico`
+  generated beside the existing icns/png (§14 assets, `scripts/gen_icon.cjs`).
+- **Updater:** `electron-updater` (NsisUpdater) as an app dependency, used only on win32.
+  main.cjs's update block is per-OS behind the §2 platform layer: darwin keeps the
+  Squirrel.Mac JSON feed + loopback-proxy flow byte-identical; win32 uses the generic
+  provider pointed at `https://autowright.ai/updates/win32-x86_64/` (`win32.cjs`
+  `updateFeedUrl` returns that base once the feed is live). Feed = `latest.yml` + installer
+  + blockmap: the yml is rewritten under `docs/updates/win32-x86_64/` by the release
+  script; binaries ride the GitHub release — the same hosting split as the mac feed. The
+  renderer-facing IPC surface (`update-check`/`update-download`/`update-install` states and
+  progress events) stays byte-identical so no renderer code forks. The §3 manual-install
+  rule carries over: a check only ever reads the feed — `checkForUpdates` runs with
+  autoDownload off and `autoInstallOnAppQuit` off (installs happen only through the
+  explicit `update-install` flow with its live-execution gate, never as a quit side
+  effect); downloads and installs stay user-initiated.
+- **Signing (cert later, pipeline ready now — decided):** Windows builds may ship unsigned
+  for the moment (unlike the mac no-ad-hoc rule); SmartScreen warnings are accepted until a
+  certificate exists. The build signs whenever cert config is present (electron-builder
+  `CSC_LINK`/`CSC_KEY_PASSWORD`, or a signtool thumbprint) and otherwise builds unsigned
+  while printing a loud UNSIGNED warning line — never silently. GUID, install path, and
+  appId stay stable so the unsigned→signed transition is a normal update. When the cert
+  arrives: sign the app exe and the installer, set `publisherName` in the updater config
+  (electron-updater then verifies the downloaded installer's Authenticode identity), and
+  flip this rule to always-signed. **Never set `publisherName` before signing starts** — it
+  would make updates fail against unsigned artifacts.
+- **Updater cache residue (known, accepted):** the NSIS install caches a byte copy of the
+  installer at `%LOCALAPPDATA%\autowright-updater\` (electron-updater's
+  `updaterCacheDirName` — the baseline its differential downloads diff against), and the
+  uninstaller does not remove it (~150 MB). Accepted as electron-updater's standard
+  behavior; a user who wants it gone deletes the directory by hand. No Autowright code may
+  depend on it existing.
+- **Release:** Windows artifacts get their own `scripts/release.ps1` (build via `prod.ps1`,
+  publish installer + blockmap to the same GitHub release as the mac artifacts, rewrite
+  `docs/updates/win32-x86_64/latest.yml`); `release.sh` stays bash/BSD-sed and runs on
+  macOS. A release that ships both platforms is two script runs against one tag/version.
+  The `docs/index.html` download CTA is mac-only until Windows artifacts exist; then it
+  gains a Windows download path.
 
 **Headless mode (decided).** The backend and CLI must work with no GUI ever launched — the §20
 CLI is enabled, so the full surface below is live:

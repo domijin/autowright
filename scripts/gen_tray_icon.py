@@ -4,11 +4,15 @@ The glyph is app/electron/icon/icon.svg inverted: the solid rounded square with
 the AW ligature (zigzag + crossbar) knocked out — monochrome, so the normal
 state still works as a macOS template image.
 
-Two variants (§13):
+Four variants (§13) — the mac pair at 18/36 px, the Windows pair at 16/32 px
+(the notification area's 100 %/200 % DPI sizes):
 - trayTemplate.png / @2x — black glyph, alpha only; used as a macOS template image.
 - trayAlert.png / @2x — non-template: neutral mid-gray glyph (reads on light and
   dark menu bars) with a red alert dot over the top-right, knocked out of the
   glyph so the dot stays crisp.
+- trayWin.png / @2x — non-template: light glyph, same geometry, legible on the
+  dark Windows taskbar (the mac black template image disappears there).
+- trayWinAlert.png / @2x — the light glyph plus the same red alert dot.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ import zlib
 from pathlib import Path
 
 GRAY = (128, 128, 128)
+LIGHT = (232, 234, 238)  # Windows taskbar glyph: near-white, reads on dark
 RED = (255, 69, 58)  # systemRed-ish
 
 # icon.svg geometry in its 1024-canvas coordinates (SPEC §14).
@@ -105,4 +110,9 @@ if __name__ == "__main__":
     (out / "trayTemplate@2x.png").write_bytes(make(36))
     (out / "trayAlert.png").write_bytes(make(18, glyph_rgb=GRAY, dot=True))
     (out / "trayAlert@2x.png").write_bytes(make(36, glyph_rgb=GRAY, dot=True))
-    print(f"wrote {out}/trayTemplate.png, trayAlert.png and @2x variants")
+    (out / "trayWin.png").write_bytes(make(16, glyph_rgb=LIGHT))
+    (out / "trayWin@2x.png").write_bytes(make(32, glyph_rgb=LIGHT))
+    (out / "trayWinAlert.png").write_bytes(make(16, glyph_rgb=LIGHT, dot=True))
+    (out / "trayWinAlert@2x.png").write_bytes(make(32, glyph_rgb=LIGHT, dot=True))
+    print(f"wrote {out}/trayTemplate.png, trayAlert.png, trayWin.png, "
+          "trayWinAlert.png and @2x variants")

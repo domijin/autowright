@@ -116,8 +116,10 @@ export function stageDoingBullet(titleOrStage: string): string {
 // sender handle; it omits the trigger instead).
 // §11 canned analyze chat message — sent as an ordinary §8 chat job by the
 // panel's Analyze-the-failure button and the thread's turn-action pill alike.
-export const analyzeTestMessage = (stepName?: string | null) =>
-  `The test failed${stepName ? ` at step ${stepName}` : ''} — figure out why. If the automation is at fault, fix it; if it’s something I need to do on this Mac, tell me what to do and how instead.`
+// `machine` is the §9 per-OS copy rule's machine noun, passed in by the caller
+// (this module stays free of React and of the store).
+export const analyzeTestMessage = (machine: string, stepName?: string | null) =>
+  `The test failed${stepName ? ` at step ${stepName}` : ''} — figure out why. If the automation is at fault, fix it; if it’s something I need to do on this ${machine}, tell me what to do and how instead.`
 
 export const TRIGGER_SETUP_TEXT = 'The steps read the trigger message, but no message trigger is set up — tell your AI the channel or sender details, or add one on the automation page after saving.'
 export function needsMessageTriggerSetup(steps: Step[], triggers: DraftTrigger[]): boolean {

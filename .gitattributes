@@ -1,0 +1,4 @@
+# §17: batch files must reach a Windows checkout CRLF regardless of the
+# clone's autocrlf setting (cmd.exe mis-executes LF batch files in edge cases;
+# the §15 test doubles tests/bin/*.cmd are batch).
+*.cmd text eol=crlf

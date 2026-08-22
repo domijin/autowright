@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import re
-import signal
 import subprocess
 import sys
 import tempfile
@@ -18,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import paths
+from . import paths, platform
 
 # §6.2/§8: bare PEP 503 distribution name — no version specifier, no extras.
 PIP_NAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
@@ -229,20 +228,22 @@ def _pip_install(name: str, pin_installed: bool = False,
                     f.write("".join(f"{n}=={v}\n" for n, v in pins.items()))
                 cmd += ["-c", constraints]
         try:
-            # Own session so a stop/timeout kill reaches pip's own children
-            # (build helpers, vendored subprocesses).
+            # Own session/group so a stop/timeout kill reaches pip's own
+            # children (build helpers, vendored subprocesses) — the §2
+            # platform layer owns the spawn policy.
             proc = subprocess.Popen(cmd + [name], stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True,
-                                    stdin=subprocess.DEVNULL, start_new_session=True)
+                                    stderr=subprocess.PIPE,
+                                    # §2 pipe-encoding contract
+                                    encoding="utf-8", errors="replace",
+                                    stdin=subprocess.DEVNULL,
+                                    **platform.current().processes.session_kwargs())
         except OSError as e:
             return str(e)
 
         def _kill() -> None:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                if proc.poll() is None:
-                    proc.kill()
+            # `sig=None` means kill hard (§2: SIGKILL is not importable on
+            # Windows); the layer falls back to the direct child itself.
+            platform.current().processes.signal_group(proc, None)
 
         deadline = time.monotonic() + INSTALL_TIMEOUT
         while True:

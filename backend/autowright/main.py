@@ -12,8 +12,9 @@ import sys
 import threading
 
 import uvicorn
+from pathlib import Path
 
-from . import __version__, api, awake, paths
+from . import __version__, api, paths, platform
 from .listeners import Listeners
 from .scheduler import Scheduler
 from .storage import store
@@ -45,6 +46,48 @@ def trim_logs() -> None:
                 f.truncate()
         except OSError:
             continue
+
+
+def route_logs() -> None:
+    """§3 Windows log routing: Task Scheduler captures no stdout/stderr the way
+    launchd does, so the backend opens the very same two files the launchd
+    plist names — backend.out.log / backend.err.log under the §5 logs root — and
+    points sys.stdout/sys.stderr at them. The §9.3 log overlay and the §5 docs
+    then hold unchanged on both platforms.
+
+    Called from main() only (never at import), and only after trim_logs(): a
+    writer holding these handles across the startup trim turns it into a
+    sharing violation on Windows. Append mode, line-buffered, explicit UTF-8
+    (§2 pipe-encoding contract — the locale codec is cp1252 here), so a crash
+    loses at most a partial line. No-op on every other OS, where the service
+    manager captures the streams itself."""
+    if paths.current_os() != "windows":
+        return
+    logs = paths.logs_dir()
+    try:
+        logs.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    for name, stream in (("backend.out.log", "stdout"), ("backend.err.log", "stderr")):
+        try:
+            f = open(logs / name, "a", encoding="utf-8", errors="replace", buffering=1)
+        except OSError:
+            continue  # an unwritable log must never stop the backend booting
+        setattr(sys, stream, f)
+
+
+def _console_python() -> str:
+    """§3 discovery `python` field: on Windows the service runs the backend
+    under pythonw.exe (no console window), but the field feeds the CLI and the
+    shell's shim — which need console output — so publish the python.exe
+    sitting beside it when one exists. Both resolve the same interpreter home,
+    and shim writes stay in agreement with `service install`'s heal."""
+    exe = Path(sys.executable)
+    if paths.current_os() == "windows" and exe.name.lower() == "pythonw.exe":
+        console = exe.with_name("python.exe")
+        if console.exists():
+            return str(console)
+    return sys.executable
 
 
 class _DevModeFilter(logging.Filter):
@@ -81,7 +124,8 @@ def republish_if_lost(payload: str) -> bool:
 
 def main() -> None:
     paths.ensure_dirs()
-    trim_logs()
+    trim_logs()  # before route_logs: the trim must find no handle held open
+    route_logs()
     store.load_all()
     # Bind before publishing: uvicorn serves on this very socket, so the port
     # is ours the moment backend.json exists. Probing a free port, closing it,
@@ -96,7 +140,7 @@ def main() -> None:
     # CLI-on-PATH shim (§3) so it execs the interpreter that runs the backend.
     discovery = json.dumps({
         "port": port, "token": api.AUTH_TOKEN, "version": __version__, "pid": os.getpid(),
-        "python": sys.executable,
+        "python": _console_python(),
     })
     atomic_write_text(paths.backend_json(), discovery, mode=0o600)
     # §3 discovery guard: backend.json is written once at boot — if something
@@ -112,7 +156,8 @@ def main() -> None:
     scheduler.start()
     listeners = Listeners(store, api.engine)  # §6 message-trigger listener manager
     listeners.start()
-    awake.reconcile(bool(store.settings.get("keepAwake")))  # §3/§4.9 permanent assertion
+    # §3/§4.9 permanent assertion, through the §2 platform layer.
+    platform.current().power.reconcile(bool(store.settings.get("keepAwake")))
     # §4.9 developerMode: request logging (every HTTP request via the uvicorn access
     # log, every agent request via autowright.harness) prints only while the
     # Settings toggle is on. The filter reads the live setting, so flipping the

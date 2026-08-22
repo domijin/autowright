@@ -1,5 +1,7 @@
 from conftest import make_version
 
+from autowright import paths
+
 
 def test_create_and_reload_roundtrip(store, home):
     from autowright.storage import Store
@@ -1039,7 +1041,7 @@ def test_problems_audit_kinds_order_and_precedence(store):
         ("package-missing", "Package zzz-nonexistent-dist isn't installed yet — "
                             "it installs on the first execution."),
         ("os-mismatch", "Built on Linux — its steps may need rewriting "
-                        "before they run on this Mac."),
+                        f"before they run on this {paths.machine_noun()}."),
     ]
 
 

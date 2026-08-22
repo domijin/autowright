@@ -332,6 +332,34 @@ def test_reply_outside_message_trigger_fails_step(store):
 
 # ---------- §6 reconcile lifecycle (fake conn/watcher, real store) ----------
 
+def _pin_imessage_capability(monkeypatch, enabled: bool):
+    """§2: pin `capabilities.imessage` so the reconcile tests read the same on
+    every host (macOS composes it true, Windows/Linux false)."""
+    import dataclasses
+
+    from autowright import platform as platmod
+
+    plat = platmod.current()
+    fake = dataclasses.replace(
+        plat, capabilities=dataclasses.replace(plat.capabilities, imessage=enabled))
+    monkeypatch.setattr(platmod, "current", lambda: fake)
+
+
+def test_imessage_watcher_is_capability_gated(store, monkeypatch):
+    """§2/§6: where the OS has no iMessage the watcher is never constructed —
+    nothing touches chat.db or osascript, however many triggers ask for it."""
+    from autowright import listeners as li_mod
+
+    built = []
+    monkeypatch.setattr(li_mod, "_ImsgWatcher", lambda mgr: built.append(mgr))
+    _pin_imessage_capability(monkeypatch, False)
+    a = store.create_automation(make_version(), "Chat", None)
+    a["triggers"] = [{"id": "t9", "kind": "imessage", "enabled": True,
+                      "from": "dave@example.com"}]
+    Listeners(store, None)._reconcile()
+    assert built == []
+
+
 def test_reconcile_starts_and_stops_listeners(store, monkeypatch):
     from autowright import listeners as li_mod
 
@@ -363,6 +391,10 @@ def test_reconcile_starts_and_stops_listeners(store, monkeypatch):
 
     monkeypatch.setattr(li_mod, "_Conn", FakeConn)
     monkeypatch.setattr(li_mod, "_ImsgWatcher", FakeWatcher)
+    # §2: the watcher half is capability-gated. This test is about reconcile's
+    # start/stop logic, not the gate (test_imessage_watcher_is_capability_gated
+    # covers that), so pin the capability on wherever the suite runs.
+    _pin_imessage_capability(monkeypatch, True)
     a = store.create_automation(make_version(), "Chat", None)
     li = Listeners(store, None)
 

@@ -32,7 +32,8 @@ remain plain dicts (§2).
 
 - `GET /health` → `{ version, app, os, capabilities }` (unauthenticated; used for
   discovery/liveness). `os` is the §5.1 platform token; `capabilities` is the §2 platform
-  layer's flag set — `{ imessage, notifications, keepAwake, service }`, all true on macOS —
+  layer's flag set — `{ imessage, notifications, keepAwake, service, agentInstall }`, all
+  true on macOS —
   and is the one surface clients gate platform features on (never by sniffing the platform
   at a call site)
 - `GET /state` → boot snapshot: automations (full), execution headers, agents, secrets (the
@@ -459,7 +460,15 @@ remain plain dicts (§2).
   (never a fabricated "signed in" claim). Ollama state is not part of detection — the §10
   Free local AI card reads it from `GET /ollama/status`.
 - **Install** — `POST /agents/install` `{ id }` starts a background install of that provider
-  (409 while one is already running for the same id) and streams `harness.install` WS events
+  (409 while one is already running for the same id) and streams `harness.install` WS events.
+  Install and sign-in help (`POST /agents/login`, below) are both gated on the §2
+  `agentInstall` capability: the channels below and the Terminal sign-in flow are
+  macOS-shaped, so where the flag is false (every other OS today) each endpoint answers 409
+  with a plain line naming the OS — "Installing agents from Autowright isn't supported on
+  Windows yet — install <name> by hand." — and clients hide the actions via `/health`
+  capabilities (detection, sign-in *state*, and every other agent endpoint keep working; only
+  the two endpoints that would run a macOS install or open Terminal.app degrade).
+  Event shape:
   `{ id, line, percent?, done, ok?, error? }` (determinate UI bar only when `percent` is present).
   One install renders as **one** continuous bar: `percent` never decreases across the install's
   phases, and download events carry the bare step label in `line` ("Downloading Codex") with the
@@ -550,11 +559,22 @@ remain plain dicts (§2).
   `verifying sha256 digest`/`writing manifest`) — those per-layer resets must never reach
   the UI as a bar reset, so clients render `percent` and never parse percents out of `line`.
   All CLI lookups (detection and harness invocation alike)
-  resolve the binary via PATH plus the usual macOS install locations (`~/.local/bin`,
-  `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; Ollama additionally `Ollama.app`
-  under both `/Applications` and `~/Applications`),
-  because a GUI-launched backend gets a minimal PATH — e.g. `claude` installs to `~/.local/bin`
-  by default. Invocation uses the resolved absolute path, and every provider child the backend
+  resolve the binary via PATH plus the usual per-OS install locations —
+  macOS: `~/.local/bin`, `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, Ollama
+  additionally `Ollama.app` under both `/Applications` and `~/Applications`;
+  Windows: `%USERPROFILE%\.local\bin` (Claude Code's native installer uses the same
+  `~/.local/bin` layout there), `%USERPROFILE%\.opencode\bin`, `%APPDATA%\npm` (npm's global
+  bin — the Gemini CLI/Codex channel on Windows), Ollama additionally
+  `%LOCALAPPDATA%\Programs\Ollama` (its per-user installer's location). The
+  fallback-dir *executable* check is per-OS too: `os.access(X_OK)` on POSIX, existence with a
+  `PATHEXT` extension (`.exe`, `.cmd`, `.bat`, …) on Windows, where the execute bit does not
+  exist (`shutil.which` already honors `PATHEXT` for the PATH half). The provider config and
+  credential paths need no per-OS fork: OpenCode keeps `~/.config/opencode/opencode.json` +
+  `~/.local/share/opencode/auth.json` and Gemini keeps `~/.gemini/oauth_creds.json` on native
+  Windows as well — `expanduser` resolves them under the user profile. The fallback dirs exist
+  because a GUI-launched backend gets a minimal PATH on macOS — e.g. `claude` installs to
+  `~/.local/bin` by default (on Windows a GUI app inherits the full user PATH, §2, so the
+  fallbacks are belt-and-braces there). Invocation uses the resolved absolute path, and every provider child the backend
   spawns (harness invocations, installs, version/status probes, login helpers, `ollama` pulls)
   runs with PATH prepended with those same install locations plus the resolved binary's own
   directory — otherwise `#!/usr/bin/env node` launchers (`npm`, `gemini`) fail with

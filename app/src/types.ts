@@ -475,6 +475,27 @@ export interface DraftJob {
   sentTriggers?: DraftTrigger[]
 }
 
+// §2 platform layer / §19 GET /health: what this OS can honor. The renderer
+// gates every OS-coupled surface on these flags and never sniffs the platform
+// itself (§9). All true on macOS.
+export interface PlatformCapabilities {
+  imessage: boolean
+  notifications: boolean
+  keepAwake: boolean
+  service: boolean
+  agentInstall: boolean
+}
+
+// §19 GET /health (unauthenticated). `os` is the §5.1 platform token
+// (macos | windows | linux) — kept as a plain string so an unknown token from
+// a newer backend can never break the read.
+export interface Health {
+  version: string
+  app: string
+  os: string
+  capabilities: PlatformCapabilities
+}
+
 export interface StateSnapshot {
   version: string
   automations: Automation[]

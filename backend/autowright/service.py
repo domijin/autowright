@@ -261,6 +261,14 @@ def main(argv: list[str]) -> int:
     """`python -m autowright.service <action>` — the §3 registration entry the
     app's ensure-backend step execs (the UI never invokes the CLI). The §20
     `autowright service` group wraps the same ACTIONS."""
+    # §2 pipe-encoding contract: result lines carry ·/— and the Electron
+    # ensure-backend step captures them as UTF-8; the Windows locale codec
+    # (cp1252) would mojibake, so pin the stream at the entry.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
     if len(argv) != 1 or argv[0] not in ACTIONS:
         print(f"usage: python -m autowright.service {{{'|'.join(ACTIONS)}}}",
               file=sys.stderr)

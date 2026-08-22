@@ -11,6 +11,9 @@ dependencies = [
     "PyYAML>=6.0",
     "keyring>=25.0",
     "packaging>=24.0",  # §6.2 outdated check: version ordering + wheel-tag compatibility
+    # §17: Windows has no system IANA tz database (and python-build-standalone ships none) —
+    # without this, zoneinfo resolves nothing and every timezone-bearing trigger fails.
+    'tzdata; sys_platform == "win32"',
     # Curated step packages (§6.2) — ship inside the bundled interpreter.
     "requests>=2.32",
     "httpx>=0.27",

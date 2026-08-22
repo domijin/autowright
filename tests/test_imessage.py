@@ -5,6 +5,7 @@ import sqlite3
 import time
 
 import pytest
+from conftest import use_fake_osascript
 
 from autowright import imessage
 from autowright.imessage import (
@@ -223,7 +224,20 @@ def osascript_log(tmp_path, monkeypatch, home):
     log = tmp_path / "osa.log"
     monkeypatch.setenv("AUTOWRIGHT_TEST_OSASCRIPT_LOG", str(log))
     monkeypatch.delenv("AUTOWRIGHT_TEST_OSASCRIPT_FAIL", raising=False)
-    return log
+    use_fake_osascript(monkeypatch, imessage)
+    return _Recorded(log)
+
+
+class _Recorded:
+    """The fake's log file. Read as UTF-8 — that is what the recorder writes on
+    every OS (the locale codec would be cp1252 on Windows and couldn't even
+    hold the reply text these tests send)."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def read_text(self):
+        return self.path.read_text(encoding="utf-8")
 
 
 def test_send_message_via_osascript(osascript_log):

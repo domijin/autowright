@@ -25,6 +25,14 @@ from .imports_check import disallowed_imports
 CTRL = "@@AD@@"
 USER_AGENT = "Autowright/1.0"
 
+# §2 pipe-encoding contract: the engine decodes these pipes as UTF-8; the
+# locale codec (cp1252 on Windows) can't encode this module's own log text.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError):
+        pass
+
 _real_stdout = sys.stdout
 
 

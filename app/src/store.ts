@@ -1,7 +1,7 @@
 // One central model drives everything (§4 top-level, §9 navigation).
 import { create } from 'zustand'
 import { api, connectInfo, openWs } from './api'
-import type { Agent, Automation, DraftJobRow, Execution, LogLine, SecretMeta, Settings, StateSnapshot, WsEvent } from './types'
+import type { Agent, Automation, DraftJobRow, Execution, LogLine, PlatformCapabilities, SecretMeta, Settings, StateSnapshot, WsEvent } from './types'
 
 type Surface = 'onboard' | 'app' | 'create' | 'menubar'
 export type Page =
@@ -22,6 +22,14 @@ interface NavSnap {
   // §12: which agent the agentNew page edits (null = blank add form) — in the
   // snapshot so back/forward re-enters the same edit form, never a blank one.
   agentEditId: string | null
+}
+
+// §2/§9 gating: the flags the renderer starts with before the first §19
+// /health read lands. macOS-identical (all true), so a mac render never
+// flickers a row it is about to keep; boot reads /health before `connected`
+// flips true, so no gated surface ever mounts on these.
+const MAC_CAPABILITIES: PlatformCapabilities = {
+  imessage: true, notifications: true, keepAwake: true, service: true, agentInstall: true,
 }
 
 interface Model {
@@ -45,6 +53,12 @@ interface Model {
   draftJobs: DraftJobRow[]
   // §9.5 report issue modal — opened by the §9 "Report an issue" nav row; not a page.
   reportOpen: boolean
+  // §2/§9 platform gating, read from §19 GET /health at every backend
+  // connection: the §5.1 os token ('' until the first read) and the platform
+  // layer's flag set. Every OS-coupled surface gates on these — the renderer
+  // never sniffs the platform itself.
+  platformOs: string
+  platformCapabilities: PlatformCapabilities
 
   surface: Surface
   page: Page
@@ -74,6 +88,7 @@ interface Model {
   agentChecks: Record<string, AgentCheck>
 
   boot(): Promise<void>
+  readHealth(): Promise<void>
   runAgentCheck(id: string, pending?: AgentCheck): Promise<'ready' | 'needs'>
   disconnect(): void
   refresh(): Promise<void>
@@ -179,6 +194,8 @@ export const useStore = create<Model>((set, get) => ({
   pendingDraft: null,
   draftJobs: [],
   reportOpen: false,
+  platformOs: '',
+  platformCapabilities: MAC_CAPABILITIES,
   surface: 'app',
   page: 'automations',
   automationId: null,
@@ -207,12 +224,29 @@ export const useStore = create<Model>((set, get) => ({
     return st
   },
 
+  // §2/§9: the os token + capability flags, from the unauthenticated §19
+  // /health. Read on every backend connection — boot below (before the shell
+  // mounts) and each ws.open, which follows the reconnect's backend.json
+  // re-read, so a restarted (or replaced) backend refreshes them. A failed
+  // read keeps the flags as they are: the connection is down, and the retry
+  // that fixes it re-reads them.
+  async readHealth() {
+    try {
+      const h = await api.health()
+      set({ platformOs: h.os, platformCapabilities: { ...MAC_CAPABILITIES, ...h.capabilities } })
+    } catch { /* backend not answering yet — the connect retry re-reads */ }
+  },
+
   async boot() {
     // One retry chain only: a re-entrant boot (StrictMode re-mount) must not
     // leave a second timer chain hammering discovery in parallel.
     clearTimeout(bootTimer)
     const ok = await connectInfo()
     if (!ok) { set({ connected: false }); bootTimer = setTimeout(() => get().boot(), 1200); return }
+    // §9 gating: the flags must be known before the app shell mounts, so this
+    // read is awaited on the same cycle that just re-read backend.json —
+    // `connected` only flips true below.
+    await get().readHealth()
     try {
       // Boot's snapshot rides the same ordering guard as refresh() — a WS
       // reconnect during boot must not let the older of the two /state
@@ -292,6 +326,10 @@ export const useStore = create<Model>((set, get) => ({
     const m = get()
     if (ev === 'ws.open') {
       void m.refresh()
+      // §2/§9: this open follows the reconnect's backend.json re-read — the
+      // backend behind it can be a restarted (or upgraded) one, so refresh the
+      // platform flags on the same cycle.
+      void m.readHealth()
       // A reconnect means events were missed (backend restart, dropped
       // socket): a cached full record can be stuck "executing" for an
       // execution the backend already repaired to interrupted, and open log

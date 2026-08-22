@@ -34,14 +34,20 @@ words from other languages except established technical terms.
 
 ## 1. Product overview
 
-Autowright is a macOS desktop app for recurring personal automations. The user describes a job in
+Autowright is a desktop app for recurring personal automations — macOS and Windows (the §2
+platform layer holds every OS-coupled seam; macOS is the original platform). The user
+describes a job in
 plain words ("Check the manga I follow for new chapters every morning at 8"); a connected AI agent
 (Claude Code, Gemini CLI, Codex, or OpenCode — the latter optionally driving a local Ollama
 model) writes it as human-readable
-scripts; Autowright executes those scripts on a schedule, entirely on the user's Mac, and shows results.
+scripts; Autowright executes those scripts on a schedule, entirely on the user's machine,
+and shows results.
 
-Core promises (exact UI copy, repeated in the onboarding footer). Each states only what the app
-enforces: execution is local, and secret values are stored in the Keychain and kept out of the
+Core promises (exact UI copy, repeated in the onboarding footer; the macOS forms — Windows
+renders them through the §9 per-OS copy table: "this PC", "Credential Manager"). Each
+states only what the app
+enforces: execution is local, and secret values are stored in the OS secret store (Keychain
+/ Credential Manager) and kept out of the
 authored scripts and the logs (via §6 runtime injection + redaction). Neither promise claims a
 step *cannot* transmit a value it was given at runtime - the engine is not a sandbox (§6.2), so
 the copy must never imply that secret values can never leave the machine.
@@ -81,9 +87,11 @@ the full API surface is §19. Packaging is decided — see §3. Storage is decid
 
 **Platform layer (decided):** every OS-coupled capability sits behind a small composed
 interface — composition, never a class hierarchy. Backend: the `autowright/platform/` package
-defines one narrow Protocol per capability (`ServiceManager`, `Notifier`, `PowerAssertion`,
-`ProcessControl`) plus a `Capabilities` flag set (`imessage`, `notifications`, `keepAwake`,
-`service`), composed into one frozen `Platform` object by `platform.current()` — per-OS
+defines one narrow Protocol per capability (`ServiceManager`, `Notifier`, `PowerAssertion` —
+both the permanent §4.9 keepAwake `reconcile` and the §3 per-execution `hold_execution`
+hold — `ProcessControl`) plus a `Capabilities` flag set (`imessage`, `notifications`,
+`keepAwake`, `service`, `agentInstall` — whether the §19 agent install/sign-in-help
+endpoints work on this OS), composed into one frozen `Platform` object by `platform.current()` — per-OS
 `build()` functions; shared logic lives in plain functions the implementations import, never in
 a superclass. Electron: `app/electron/platform/` mirrors the shape — per-OS modules exporting
 plain objects (window chrome, tray spec, panel placement, CLI shim, update feed, managed-install
@@ -93,9 +101,16 @@ test loaders keep working. **macOS is the only fully implemented platform.** On 
 `current()` composes explicit degraded implementations rather than crashing: service actions
 answer a plain "not supported on <OS> yet" failure line (exit 1, §3 result-code rule),
 notifications and keepAwake are silent no-ops, POSIX process control is real, and
-every capability flag the OS can't honor is false. Windows composes `windows.build()` — port
-groundwork, not a shipped port: the same degraded service/notifier/power placeholders and
-all-false capabilities, but **real process control** (`WindowsProcessControl`): the spawn
+every capability flag the OS can't honor is false. Windows composes `windows.build()`:
+`imessage` and `agentInstall` stay false, the **real toast notifier** (`WindowsNotifier`,
+§3: PowerShell WinRT toast under the `ai.autowright.app` AUMID; `notifications` is probed —
+true only where the §3 installer's Start-menu shortcut or AUMID registration exists, false
+on a dev checkout), **real service management** (`WindowsService`,
+§3's Windows service block: the `ai.autowright.backend` Task Scheduler task via the
+PowerShell ScheduledTasks cmdlets; `service` true), **real keep-awake power**
+(`WindowsPower`, §3: one thread-owned
+`SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` behind counted holds;
+`keepAwake` true) and **real process control** (`WindowsProcessControl`): the spawn
 policy is `creationflags = CREATE_NEW_PROCESS_GROUP`, and "group" operations act on the
 process tree rooted at the child's pid via `taskkill /T /F` — Windows has no signalable
 process groups, so the §4.5 persisted group id stays the child's pid (same pid == group
@@ -103,15 +118,23 @@ invariant as POSIX own-session spawns), and the §3 pid-reuse guard answers Fals
 pid+creation-time identity check lands (orphan recovery never kills what it can't verify).
 Hard-kill contract, all platforms: callers pass `sig=None` to mean kill-hard —
 `signal.SIGKILL` must never appear at a call site (the name does not exist on Windows);
-`signal.SIGTERM` exists everywhere and Windows treats any signal as the tree kill. The shell
+`signal.SIGTERM` exists everywhere and Windows treats any signal as the tree kill.
+Pipe-encoding contract, all platforms: every text-mode subprocess pipe on a cross-OS code
+path (executor, harness invocation and probes, pip, installer streaming) is opened with
+explicit `encoding="utf-8", errors="replace"` — never the locale default, which is cp1252 on
+Windows and cannot even encode the §6.1 executor's own log text; the executor and the
+`python -m autowright.service` entry (whose result lines carry `·`/`—` and are captured by
+the Electron ensure-backend step) likewise reconfigure their real stdout/stderr to UTF-8 at
+boot, so both ends agree regardless of the OS locale (macOS-only helpers like
+osascript/launchctl may keep the platform default, which is UTF-8 there). The shell
 half mirrors this: `win32.cjs` carries the Windows-correct values (flat `python\python.exe`
 bundled-interpreter layout, the §3 `.cmd` shim, PATH read from the process environment —
 Windows GUI apps inherit the full user PATH, no login-shell probe — native window frame, no
 update feed yet); Linux keeps the degraded `fallback.cjs`. Clients gate features on the §19
 `/health` `os` + `capabilities` fields — never by sniffing the platform at a call site.
 Behavior on macOS is identical to the pre-layer code; the layer exists so a port fills in
-per-OS modules instead of hunting call sites. The remaining Windows port surface (service
-manager, notifier, keep-awake, packaging pipeline, copy sweep) is tracked in the §17
+per-OS modules instead of hunting call sites. The remaining Windows port surface (notifier,
+shell-surface finishing, packaging pipeline, copy sweep) is tracked in the §17
 `WINDOWS.md` worksheet until it ships into this spec.
 
 **Naming policy:** identifiers spell out full words on every surface - stored fields, serialized
@@ -142,11 +165,13 @@ data on disk); both ends of a served surface change in the same commit.
   `Capabilities`, and the composed `Platform` dataclass; `darwin.py` — the macOS build:
   osascript notifier, caffeinate power assertion, launchd service delegation, POSIX process
   control; `posixproc.py` — the shared POSIX process-group helpers; `windows.py` — the §2
-  Windows groundwork build: real `taskkill`-tree process control, degraded
-  service/notifier/power; `fallback.py` — the
+  Windows build: real `taskkill`-tree process control, the §3 Task Scheduler
+  service manager, the SetThreadExecutionState power assertion, the §3 WinRT
+  toast notifier (capability probed); `fallback.py` — the
   degraded Linux (and unknown-OS) builds), launchd service
   (`service.py`, runnable as `python -m autowright.service` — the §3 registration entry the
-  app uses; the UI and backend never invoke the CLI), CLI (`cli.py`), `awake.py` (§3/§4.9 `keepAwake` permanent power assertion).
+  app uses; the UI and backend never invoke the CLI), CLI (`cli.py`), `awake.py` (the macOS caffeinate `PowerAssertion` implementation — the §3/§4.9 permanent
+  keepAwake assertion plus the per-execution hold; `platform/darwin.py` delegates here).
   Further modules: `main.py` (backend entry point, `python -m autowright.main` — bind localhost,
   write `backend.json` per the §3 bind-before-publish handshake, start the scheduler, serve the
   API), `installer.py` (§19 real harness installers + sign-in help), `packages.py` (§6.2
@@ -167,8 +192,11 @@ data on disk); both ends of a served surface change in the same commit.
   `pyproject.toml` defines the `autowright` / `autowright-backend` entry points, and
   `constraints.txt` beside it pins the full runtime dependency closure (direct **and**
   transitive) at exact versions, so two §3 distributables built from one commit ship the
-  same packages; platform-conditional pins carry environment markers (`pywin32-ctypes`,
-  keyring's Windows Credential Locker backend, pinned under `sys_platform == "win32"`);
+  same packages; platform-conditional pins carry environment markers, under
+  `sys_platform == "win32"`: `pywin32-ctypes` (keyring's Windows Credential Locker backend)
+  and `tzdata` (the IANA timezone database — Windows has no system copy and
+  python-build-standalone ships none, so without it `zoneinfo` resolves no timezone at all
+  and every §4.3 timezone-bearing trigger fails validation);
   `prod.sh` passes it as `pip install -c` (§18).
 - `app/` — Electron app: `electron/main.cjs` + `preload.cjs` (window, tray panel, backend.json
   bridge), `electron/platform/` (the §2 platform layer's shell half: `index.cjs` selects the
@@ -191,8 +219,12 @@ data on disk); both ends of a served surface change in the same commit.
   module serves both the create/edit flow and the automation detail page).
   `brand-electron.cjs` (npm `postinstall`) renames the dev Electron.app bundle to "Autowright"
   (§14). `electron/icon/` holds the checked-in AW app-icon assets (§14: `icon.svg`
-  source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon); `electron/` also holds
-  the checked-in tray template PNGs (`trayTemplate.png`/`@2x`, `trayAlert.png`/`@2x`),
+  source, `icon.png` 1024 px dock/raster, `icon.icns` bundle icon, `icon.ico` — the §3
+  Windows app/installer icon, PNG-compressed entries at 256/128/64/48/32/16 px rendered
+  from the same source); `electron/` also holds
+  the checked-in tray PNGs (`trayTemplate.png`/`@2x`, `trayAlert.png`/`@2x` — the mac
+  template images — and the §13 Windows colored variants `trayWin.png`/`@2x`,
+  `trayWinAlert.png`/`@2x`),
   rendered by `scripts/gen_tray_icon.py`.
   Renderer tests live here too: `app/tests/` (vitest unit/render suites) and `app/e2e/`
   (end-to-end specs driving the real Electron app, shared `harness.ts`); both Vitest configs
@@ -204,6 +236,8 @@ data on disk); both ends of a served surface change in the same commit.
   previews (below).
   `UI-GUIDE.md` records the renderer conventions.
 - `scripts/` — project scripts (`dev.sh`, `build.sh`, `prod.sh`, `build-clean.sh` — §18;
+  `prod.ps1` + `release.ps1` — the §3 Windows packaging/release pair, PowerShell,
+  runnable only on Windows;
   `uninstall/` — developer-only uninstall scripts for the harness CLIs and Ollama, §18;
   `gen_tray_icon.py` renders the tray template PNGs;
   `gen_icon.cjs` regenerates `app/electron/icon/icon.png` + `icon.icns` from `icon.svg`
@@ -235,7 +269,9 @@ data on disk); both ends of a served surface change in the same commit.
 - `tests/` — pytest suite for the backend (storage, drafting, engine, triggers, API): the fast
   tiers at the top level (shared `tests/conftest.py`), the live integration tier under
   `tests/integration/` (§15 — its own `conftest.py` + `it_harness.py`), the test doubles
-  `tests/bin/claude` (fake agent CLI) and `tests/bin/osascript` (fake Messages sender),
+  `tests/bin/claude` (fake agent CLI) and `tests/bin/osascript` (fake Messages sender) with
+  their §15 Windows twins (`claude.cmd`/`osascript.cmd` batch shims over `claude.py`/
+  `osascript.py` Python ports of the same contract),
   `tests/seed_data.py` (§16 fixture), `tests/test_drift_guards.py` (§15: the
   cross-file version and §6.2 curated-list guards), and `tests/test_platform.py` (§2
   platform layer: composition, capability flags, degraded fallbacks, and the backend half
@@ -372,6 +408,8 @@ data on disk); both ends of a served surface change in the same commit.
   verify skill).
 - `.gitignore` — untracked-file rules (the generated `knowledge.md` / `knowledge-audit.md`
   among them).
+- `.gitattributes` — `*.cmd text eol=crlf`: batch files (the §15 `tests/bin/*.cmd` doubles)
+  must reach a Windows checkout CRLF regardless of the clone's autocrlf setting.
 - `LICENSE` — MIT, copyright David Zhang (also `"license": "MIT"` in `app/package.json`).
 - `PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
   page (raw import into the renderer bundle) and read by GitHub visitors in place.

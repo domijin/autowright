@@ -2,6 +2,7 @@
 // Thin page shell — the section cards live in ./detail/ (§17).
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import type { Automation } from '../types'
 import {
@@ -22,6 +23,8 @@ import { TriggersCard } from './detail/TriggersCard'
 export default function AutomationDetail() {
   // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this page on
   // every store write anywhere — every toast, every log line of every execution.
+  // §9 per-OS copy rule: the machine noun the export modal names.
+  const copy = usePlatformCopy()
   const automationId = useStore((s) => s.automationId)
   const automations = useStore((s) => s.automations)
   const agents = useStore((s) => s.agents)
@@ -92,12 +95,14 @@ export default function AutomationDetail() {
     : appStartOnly ? `${auto.triggerChip} · on app start`
     : noNext ? auto.triggerChip
     : `${auto.triggerChip} · next in ${countdown}`
+  // §9 per-OS copy rule: the §13 surface is the "menu bar" on macOS, the
+  // "tray" on Windows.
   const trigStatusText = executing ? 'Executing now… the triggers are unchanged.'
-    : noTrigs ? 'No triggers set — executes only when you press Execute now or use the menu bar.'
-    : allOff ? 'All triggers are off — won’t execute on its own. Execute now and the menu bar still work.'
-    : msgListening ? `Listening for ${listenWhat} — executes when a matching message arrives. Execute now and the menu bar still work.`
-    : appStartOnly ? 'Executes when this app next starts — Execute now and the menu bar still work.'
-    : noNext ? 'No upcoming occurrence — Execute now and the menu bar still work.'
+    : noTrigs ? `No triggers set — executes only when you press Execute now or use the ${copy.menuBar}.`
+    : allOff ? `All triggers are off — won’t execute on its own. Execute now and the ${copy.menuBar} still work.`
+    : msgListening ? `Listening for ${listenWhat} — executes when a matching message arrives. Execute now and the ${copy.menuBar} still work.`
+    : appStartOnly ? `Executes when this app next starts — Execute now and the ${copy.menuBar} still work.`
+    : noNext ? `No upcoming occurrence — Execute now and the ${copy.menuBar} still work.`
     : `Next execution in ${countdown}${nextShort ? ` (${nextShort})` : ''} · executes even when the app is closed.`
   const trigChipOn = executing || (!allOff && !noTrigs)
   const execLabel = executing ? 'Executing…' : 'Execute now'
@@ -472,7 +477,7 @@ export default function AutomationDetail() {
                   Export “{auto.name}”
                 </h2>
                 <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 18px' }}>
-                  One shareable file with the spec, steps and settings — import it on any Mac running Autowright.
+                  One shareable file with the spec, steps and settings — import it on any {copy.machine} running Autowright.
                 </p>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>

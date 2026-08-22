@@ -65,6 +65,11 @@ function readLoginShellPath() {
   })
 }
 
+// No update machinery at all here — the capability flag is false, so main.cjs
+// never asks; the marker exists only to keep the module surfaces identical.
+const UPDATER = null
+const APP_USER_MODEL_ID = null
+
 // No update channel yet: update-check reports a plain error state.
 function updateFeedUrl(_arch) {
   return null
@@ -82,6 +87,11 @@ const SETTINGS_DEEP_LINK = null
 function revealPrefersOpen(_abs, isDir) {
   return isDir
 }
+
+// §9 failure copy: the Gatekeeper line is macOS copy (darwin.cjs) — off macOS
+// the plain line is all we can honestly say.
+const SERVICE_START_FAILED_DETAIL =
+  'The backend service failed to start. Details in app.log.'
 
 function serviceDiagnostics(_log) {}
 
@@ -103,11 +113,14 @@ module.exports = {
   defaultShimPath,
   shimText,
   readLoginShellPath,
+  UPDATER,
+  APP_USER_MODEL_ID,
   updateFeedUrl,
   managedInstall,
   MANAGED_COPY_ERROR,
   SETTINGS_DEEP_LINK,
   revealPrefersOpen,
+  SERVICE_START_FAILED_DETAIL,
   serviceDiagnostics,
   capabilities,
 }

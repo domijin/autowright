@@ -31,43 +31,51 @@ before editing, they will drift.
 
 ```
 py -3.14 -m venv .venv
-.venv\Scripts\pip install -c backend\constraints.txt -e backend
-.venv\Scripts\python -m pytest -q          # expect the known failures listed below
-cd app && npm ci && npx tsc --noEmit -p tsconfig.test.json && npx vitest run
+.venv\Scripts\pip install -c backend\constraints.txt -e backend[dev]
+.venv\Scripts\python -m pytest -q          # green on Windows: 0 failed, 34 intended skips
+cd app && npm ci && npx tsc --noEmit -p tsconfig.test.json && npx vitest run   # fully green
 ```
 
-Known test failures on a Windows host (fix as part of the port, they assert the mac host):
-- `tests/test_platform.py::test_darwin_build_composes_full_capabilities` and
-  `test_health_serves_os_and_capabilities` assert `os == "macos"` / all-true capabilities.
-  Make them assert against `platform.current()` per-OS expectations.
-- `tests/conftest.py` prepends `tests/bin/` (shebang shell doubles: fake `claude`, fake
-  `osascript`). Windows needs `.cmd` doubles beside them (PATHEXT resolves them).
-- Anything spawning the engine relies on the groundwork process control; if a suite hangs,
-  suspect `taskkill` semantics first.
+The 34 pytest skips are intended per-OS gates: 26 launchd-internals tests (Task Scheduler
+tests replace them in step 2), 7 macOS install-surface tests (gated off by `agentInstall`),
+1 POSIX-only `tzset` test.
 
 ## Port order (each step is buildable/verifiable on the Windows machine)
 
-1. **Backend runtime blockers outside the layer**
-   - `packages.py:236,242` and `installer.py:106,136,142`: inline `start_new_session=True` +
-     `os.killpg` (kept inline because their suites pin `<module>.os.killpg`, see
-     `platform/posixproc.py` header). Route through `platform.current().processes` and
-     repoint the tests; `start_new_session=True` raises ValueError on Windows Popen.
-   - `engine.py:754-758,1027-1030` per-execution `caffeinate` is inline (degrades silently);
-     `main.py:115` and `api.py:1882` call `awake.reconcile` directly instead of
-     `platform.current().power.reconcile`. Close the layering hole, then implement
-     `PowerAssertion` via `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)`.
-   - `yamlio.py:47` `chmod 0o600` does not restrict access on Windows and `backend.json`
-     holds the bearer token: restrict via an ACL (icacls or pywin32) or keep the file inside
-     the per-user `%LOCALAPPDATA%` root and document the boundary.
-   - `harness.py`: `_FALLBACK_BIN_DIRS` (88-93) are POSIX paths (add `%LOCALAPPDATA%\Programs`,
-     `%APPDATA%\npm`); OpenCode config at `~/.config` (474,479) is `%APPDATA%` on Windows;
-     Ollama discovery via `/Applications` (533-536); `os.access(X_OK)` (543) can't detect
-     executables on Windows (use PATHEXT); Gemini/OpenCode cred paths (688,702).
-   - `installer.py` agent-install surface is macOS-only end to end (curl|bash, osascript
-     Terminal sign-in, /Applications, `SHELL` env at 207,229): needs per-OS install commands
-     or an explicit "install by hand" degradation behind a capability flag.
-2. **Windows ServiceManager: Task Scheduler** (decided; implement in
-   `platform/windows.py`). Semantics to satisfy are §3's launchd contract, mapped as:
+1. **Backend runtime blockers — SHIPPED into the spec (2026-08-21, on the Windows machine).**
+   Everything the audit listed landed, spec first: power behind the layer
+   (`hold_execution` + `WindowsPower` SetThreadExecutionState, `keepAwake` true — §2/§3);
+   packages/installer routed through `ProcessControl`; `backend.json` protected by the
+   `%LOCALAPPDATA%` ACL, documented, no icacls (§3); agent install/sign-in degraded behind
+   the new `agentInstall` capability with 409 lines (§19) and renderer manual-install lines
+   (§9); harness per-OS fallback bin dirs + PATHEXT-aware executable checks (§19) — cred
+   paths verified to need no fork; per-OS §8 prompt delivery (Windows pipes the prompt to
+   the CLI's stdin — the 32,767-char argv cap is smaller than any drafting prompt; verified
+   live against real `claude.exe` at ~40 K chars). Plus blockers the audit missed, found by
+   the on-machine baseline: `tzdata` pinned under `sys_platform == "win32"` (§17 — Windows
+   has no system IANA db; ~90 tests and every timezone trigger broke), the §2 UTF-8
+   pipe-encoding contract (locale cp1252 pipes crashed the executor on its own `→`), the
+   `update-install` no-feed guard in main.cjs (§3), `.cmd`/`.py` test-double twins +
+   `AUTOWRIGHT_TEST_PYTHON` (§15), `.gitattributes` CRLF rule for `*.cmd` (§17).
+   Still open from this step:
+   - cmd.exe **AutoRun pollution**: this machine has an
+     `HKLM\...\Command Processor\AutoRun` hook whose output lands on every `.cmd` child's
+     stdout. Tests neutralize it (`COMSPEC /d` in conftest), but product probes of
+     `.cmd`-shimmed CLIs (npm-installed `gemini`/`opencode`) would see the same garbage —
+     when those CLIs land here, spawn resolved `.cmd` binaries as
+     `[%COMSPEC%, '/d', '/c', path, …]` in `spawn_env`-carrying call sites.
+   - Gemini/Codex/OpenCode Windows stdin forms follow vendor docs only — re-verify each
+     live when installed (§8 note).
+   - `app/e2e/` literal selectors pin mac copy (`FOUND ON THIS MAC` in app.e2e.ts,
+     `Save to Keychain` in agents-secrets.e2e.ts) — make them per-OS via the §9 copy
+     helper's values when e2e first runs on Windows.
+   - Cosmetic, seen in the live Windows verify draft: the §8 "Syncing the workflow…"
+     activity feed showed the manifest and step bullets twice from a single agent call
+     (app log confirms one invocation, zero retries). Possibly CRLF-related in the
+     streamed-marker scan, possibly a pre-existing mac bug — investigate; harmless.
+2. **Windows ServiceManager: Task Scheduler** (decided; spec written into §3's
+   "Windows service" block 2026-08-21 — implement in `platform/windows.py` next).
+   Semantics to satisfy are §3's launchd contract, mapped as:
    - Task name `ai.autowright.backend` (same reverse-DNS label as the LaunchAgent). Action:
      the bundled `pythonw.exe -m autowright.main` (`pythonw` so no console window flashes;
      python-build-standalone ships it beside `python.exe`).
@@ -88,71 +96,53 @@ Known test failures on a Windows host (fix as part of the port, they assert the 
      (§3 says healing is `service install`'s job).
    Notifier (separate, small): Windows toasts via a PowerShell toast-XML invocation or a
    small dependency; flip `capabilities.notifications` when it works.
-3. **Shell surface finishing** (`win32.cjs` + `main.cjs`)
-   - `main.cjs:944` `window-all-closed` never quits (mac tray-app rule): decide Windows
-     behavior with the tray present.
-   - `main.cjs` never consults `plat.capabilities` (declared but unread): gate tray/login-item/
-     dock/update wiring on it.
-   - Tray needs real `.ico`/colored assets (`scripts/gen_tray_icon.py` renders the mac PNGs);
-     app icon needs `icon.ico` beside `icon.icns` (§14 assets in `app/electron/icon/`).
-   - `main.cjs:160-161` failure copy names Gatekeeper; make it per-OS.
-   - Custom window chrome (`mainWindowChrome`) if the native frame clashes with the §14 look.
-   - Panel placement: `win32.cjs` anchors assuming max panel height 640; ideally re-anchor on
-     `resize-panel` so the panel hugs the taskbar.
-4. **Renderer capability gating + copy sweep**
-   - `/health` `os` + `capabilities` are served (§19) but the renderer never reads them: hide
-     iMessage trigger UI, keep-awake card, notification promises when false. This is also
-     mac-verifiable work.
-   - Copy sweep (~60 strings): "this Mac"/"your Mac" (Onboarding, AutomationsList,
-     AgentNewPage, AboutPage, types.ts), "Keychain" (SecretModal, SecretsPage, steps.tsx,
-     SectionCards, TriggerEditor, cli.py, api.py) should say Credential Manager on Windows,
-     "Show in Finder" (result.tsx, SettingsPage), `PATH_CMD` zsh one-liner
-     (`SettingsPage.tsx:23-24`) needs a setx/PowerShell form, About page's Homebrew fork,
-     `storage.py:1844-1849` os-mismatch label. Use `/health.os` display name, not platform
-     sniffing.
-5. **Packaging pipeline: NSIS + electron-updater** (decided; `scripts/` additions are all
-   new files and scripts/ stays developer-only)
-   - **Build tool:** use electron-builder for the *Windows target only* (`--win nsis`),
-     driven by a new `prod.ps1`; macOS keeps `@electron/packager` + `prod.sh` untouched.
-     Rationale: hand-rolling what electron-updater consumes (NSIS script, `latest.yml`,
-     blockmap, the in-app `app-update.yml`) re-implements electron-builder badly, and
-     electron-builder also gives the sign-later hook for free. `prod.ps1` order mirrors
-     `prod.sh`: sync `VERSION`, vite build, download python-build-standalone
-     `x86_64-pc-windows-msvc-install_only` (flat layout: `python\python.exe`), pip install
-     with `-c constraints.txt` before packaging, ship the interpreter via `extraResources`
-     into `resources\python`, then electron-builder produces the installer.
-   - **Installer shape:** per-user NSIS (`perMachine: false`, no admin prompt - same
-     no-privilege principle as §3), install dir under `%LOCALAPPDATA%\Programs`, appId
-     `ai.autowright.app`, and a **stable NSIS GUID** pinned in config from day one (an
-     upgrade must always find the previous install; this is also what lets a future signed
-     build upgrade an unsigned install in place). Needs `icon.ico` generated beside the
-     existing icns/png (§14 assets).
-   - **Updater:** `electron-updater` (NsisUpdater) as an app dependency, used only on win32.
-     main.cjs's update block becomes per-OS behind the platform layer: darwin keeps the
-     Squirrel.Mac JSON feed + loopback-proxy flow unchanged; win32 uses the generic provider
-     pointed at `https://autowright.ai/updates/win32-x86_64/` (`win32.cjs` `updateFeedUrl`
-     returns that base URL once live). Feed = `latest.yml` + installer + blockmap:
-     yml rewritten under `docs/updates/win32-x86_64/` by the release script, binaries on the
-     GitHub release, mirroring the mac hosting split. The renderer-facing IPC surface
-     (`update-check`/`update-download`/`update-install` states) must stay byte-identical so
-     no renderer code forks. Manual-install rule (§3: a check only ever reads the feed;
-     downloads are user-initiated) carries over: call `checkForUpdates` with autoDownload
-     off.
-   - **Signing (cert later, ready now):** the build signs when cert config is present
-     (electron-builder `CSC_LINK`/`CSC_KEY_PASSWORD` env, or a signtool thumbprint) and
-     otherwise builds unsigned while printing a loud UNSIGNED warning line in the build
-     output - never silently. Keep GUID, install path, and appId stable so the
-     unsigned-to-signed transition is a normal update. When the cert arrives: set
-     `publisherName` in the updater config (electron-updater then verifies the downloaded
-     installer's Authenticode identity), sign both the app exe and the installer, and flip
-     the spec to always-signed. Do not set `publisherName` before signing starts - it would
-     make updates fail against unsigned artifacts.
-   - `docs/index.html` download CTA is mac-only (darwin feed + DMG naming); add a Windows
-     download path once artifacts exist.
-   - `VERSION` sync + `release.sh` are bash with BSD `sed -i ''`; run mac releases from
-     macOS as today. Windows artifacts get their own `release.ps1` (build, publish installer
-     + blockmap to the same GitHub release, rewrite `docs/updates/win32-x86_64/latest.yml`);
-     a release that ships both platforms is two script runs against one tag/version.
+3. **Shell surface finishing — SHIPPED (2026-08-21, spec'd in §9/§13/§17).** Windows
+   chrome via `titleBarStyle: 'hidden'` + `titleBarOverlay` (#090d14 / #c8ccd4 / 40);
+   per-OS `window-all-closed` (discriminated on the `dockIcon` capability, live tray
+   reference required for residency without a dock); `main.cjs` gates tray/login-item/
+   dock/update wiring on `plat.capabilities`; ensure-backend failure copy moved per-OS
+   into the platform modules (Gatekeeper line is darwin's); `panelPosition(pt, display,
+   height)` re-anchors on every `resize-panel`; Windows tray PNGs (`trayWin*` colored
+   variants) checked in, `gen_tray_icon.py` renders them (mac assets verified
+   byte-identical after the generator edit). `icon.ico` also shipped (§14/§17:
+   PNG-compressed 256→16, rendered by the extended `gen_icon.cjs`, which now skips the
+   sips/iconutil icns leg off-macOS; validated via WIC + Win32 + Electron). Windows also
+   sets `app.setAppUserModelId('ai.autowright.app')` (§3 identifiers) and the Electron
+   profile now nests under the §5 `%LOCALAPPDATA%` data root, not Roaming (§5 note).
+4. **Renderer capability gating — SHIPPED; copy sweep — OPEN.**
+   - Gating shipped (2026-08-21, §9 platform-gating paragraph): store carries `/health`
+     `os`+`capabilities`; iMessage trigger chip, keep-awake row, notifications row hide on
+     false; agent Install/Sign-in actions degrade to the §9 manual lines (vendor-linked;
+     sign-in wording for installed-but-signed-out).
+   - Copy sweep — SHIPPED (2026-08-21): the §9 per-OS copy rule table implemented across
+     the renderer (`platformCopy.ts` helper + `usePlatformCopy`), the backend
+     (`paths.machine_noun`/`secret_store_name`), and the model-facing §8 prompt text
+     (SYSTEM TOOLS header, chat diagnosis rule, and the instruction markdown via the
+     `{{MACHINE}}` placeholder resolved at read time — prompts, GET /instructions, and the
+     new-automation seed all say "PC" on Windows). iMessage surfaces keep mac wording by
+     spec exception. Windows PATH command is the `[Environment]::SetEnvironmentVariable`
+     PowerShell form (never setx).
+5. **Packaging pipeline — SHIPPED (2026-08-21, spec'd in §3 "Windows packaging & updates"
+   + notifier block).** electron-builder NSIS config in `app/package.json` (appId
+   `ai.autowright.app`, GUID `3E71053D-7CAA-4BF9-A643-93ABDA35B1F3` — NEVER change it —
+   per-user oneClick into `%LOCALAPPDATA%\Programs\autowright` (lowercase, don't hard-code
+   the case), generic publish URL); `electron-updater` wired per-OS behind the platform
+   layer (`UPDATER` marker; renderer IPC byte-identical, autoDownload+autoInstallOnAppQuit
+   off); `scripts/prod.ps1` + `scripts/release.ps1` authored (BOM-guarded — Windows
+   PowerShell 5.1 needs it; note the Edit tool strips BOMs); WinRT toast notifier with
+   probed `notifications` capability; python-build-standalone `3.14.7+20260807` bundled.
+   A real artifact was built (`build\win\Autowright-0.4.1-win32-x86_64.exe`, 141.5 MB,
+   loud UNSIGNED warnings) and a full silent install → real service registration on the
+   bundled interpreter → healthy backend → service uninstall → NSIS uninstall cycle passed
+   on this machine with zero §3 contradictions.
+   Still open:
+   - `docs/index.html` Windows download CTA + the first `release.ps1` run against a real
+     tag (feed goes live under `docs/updates/win32-x86_64/` then). Until the feed is live,
+     a packaged app's manual update check answers the plain no-feed error.
+   - Signing cert (decision 3): pipeline ready, `publisherName` deliberately unset.
+   - Cosmetic: uninstall registry key has empty Publisher/InstallLocation until signing;
+     exe `CompanyName` resource reads "GitHub, Inc." (needs `author` in app/package.json —
+     touches the shared mac pipeline, David's call).
 6. **iMessage stays off** (`capabilities.imessage` false): `listeners.py:475` already gates
    the chat.db watcher; the trigger-kind UI hides via step 4.
 

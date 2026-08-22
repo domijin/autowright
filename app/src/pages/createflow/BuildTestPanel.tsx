@@ -6,6 +6,7 @@
 // thread entries. Quiet when fine, loud only when blocking.
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
+import { usePlatformCopy } from '../../platformCopy'
 import { useStore } from '../../store'
 import { useTriggerPreview } from '../../triggers'
 import { ParamValueEditor } from '../../steps'
@@ -109,6 +110,8 @@ export function BuildTestPanel({
   const showToast = useStore((s) => s.showToast)
   const test = useStore((s) => s.test)
   const beginTest = useStore((s) => s.beginTest)
+  // §9 per-OS copy rule: the machine noun the side-effects line names.
+  const copy = usePlatformCopy()
 
   // §11 test-setup section: the Test draft disclosure toggle —
   // expanding shows the Run test row first, then every test option at once
@@ -259,7 +262,7 @@ export function BuildTestPanel({
   // an ordinary §8 chat job reading the failing run's RECENT EXECUTIONS context.
   const runAnalyze = () => {
     if (!rev || !test || anyJobBusy || testLive || viewingOld) return
-    void sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId)
+    void sendChat(analyzeTestMessage(copy.machine, testExec?.error?.step), test.executionId)
   }
 
   // §11 turn action row: the chat's Test-the-draft pill — start the test
@@ -505,7 +508,7 @@ export function BuildTestPanel({
                 {syncGhostBtn}
                 {testToggleBtn('Test draft')}
                 <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
-                  In sync with the spec. A test executes the real steps on this Mac — emails send, files move; memory is a scratch copy.
+                  In sync with the spec. A test executes the real steps on this {copy.machine} — emails send, files move; memory is a scratch copy.
                 </span>
               </div>
             )}

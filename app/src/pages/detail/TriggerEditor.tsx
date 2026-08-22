@@ -3,6 +3,7 @@
 // timezone and bot-token-secret pickers.
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../../api'
+import { usePlatformCopy } from '../../platformCopy'
 import { SecretModal } from '../../SecretModal'
 import { useStore } from '../../store'
 import type { SecretMeta, Trigger, TriggerKindFields } from '../../types'
@@ -341,6 +342,12 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   onCancel: () => void
 }) {
   const secrets = useStore((s) => s.secrets)
+  // §9.2/§2 gating: the iMessage chip renders only while the platform can
+  // honor the kind — absent, never disabled, everywhere else. Stored imessage
+  // triggers keep displaying: only offering the kind is gated.
+  const imessageOn = useStore((s) => s.platformCapabilities.imessage)
+  // §9 per-OS copy rule: the secret-store name in the Discord setup guide.
+  const copy = usePlatformCopy()
   const init: TriggerFieldBag = initial ?? {}
   const [kind, setKind] = useState<AddableKind>(init.kind ?? 'cron')
   const [expression, setExpr] = useState(init.expression ?? '')
@@ -412,7 +419,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
   return (
     <div style={{ border: '1px dashed var(--border-dashed)', borderRadius: 8, padding: '11px 12px' }}>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-        {KIND_META.map((m) => {
+        {KIND_META.filter((m) => m.kind !== 'imessage' || imessageOn).map((m) => {
           const taken = m.kind === 'app_start' && hasAppStart
           return (
             <button
@@ -456,7 +463,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             </li>
             <li>On its <b>Bot</b> tab press <b>Reset Token</b> and copy the token — it shows only once.</li>
             <li>Still on the Bot tab, under <b>Privileged Gateway Intents</b> turn on <b>Message Content Intent</b> — without it the bot can’t read messages.</li>
-            <li>Press the <b>New secret</b> button below, paste the token as the value and <b>Save to Keychain</b> — the secret is selected automatically.</li>
+            <li>Press the <b>New secret</b> button below, paste the token as the value and <b>Save to {copy.secretStore}</b> — the secret is selected automatically.</li>
             <li>In the portal’s left sidebar click <b>OAuth2</b> and scroll to the <b>OAuth2 URL Generator</b> section.</li>
             <li>Tick the <b>bot</b> scope — a <b>Bot Permissions</b> grid appears below it. Tick <b>View Channels</b> there. If an Integration Type selector shows, leave it on <b>Guild Install</b>.</li>
             <li>Copy the <b>Generated URL</b> at the bottom and open it in your browser. Pick your server, press Continue, then <b>Authorize</b>. You need Manage Server on that server — and the bot showing offline afterwards is fine.</li>

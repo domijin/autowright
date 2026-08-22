@@ -1,5 +1,5 @@
 // Backend client (§19). Discovers port+token via preload (backend.json).
-import type { DraftJob, StateSnapshot, WsEvent } from './types'
+import type { DraftJob, Health, StateSnapshot, WsEvent } from './types'
 
 declare global {
   interface Window {
@@ -23,8 +23,10 @@ declare global {
       listRequestLogs(): Promise<string[]>
       readRequestLog(name: string): Promise<string | null>
       trayAlert(on: boolean): Promise<void>
-      // §9.4 in-app updates (§3)
-      updateCheck(): Promise<{ state: 'uptodate' | 'error' } | { state: 'available'; version: string }>
+      // §9.4 in-app updates (§3). The error state may carry a detail line —
+      // a platform with no update feed answers the plain no-updates sentence,
+      // which the §9.4 page renders instead of the generic network copy.
+      updateCheck(): Promise<{ state: 'uptodate' } | { state: 'error'; error?: string } | { state: 'available'; version: string }>
       updateDownload(): Promise<{ ok: true } | { error: string }>
       updateInstall(): Promise<{ ok: true } | { busy: true } | { error: string }>
       updateBrewManaged(): Promise<boolean>
@@ -82,6 +84,14 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
+  // §19 GET /health — the one unauthenticated route: version/app plus the §5.1
+  // `os` token and the §2 capability flags every OS-coupled surface gates on
+  // (§9). Sent without the bearer header, exactly as the route is defined.
+  health: async (): Promise<Health> => {
+    const r = await fetch(base + '/health')
+    if (!r.ok) throw new Error(r.statusText)
+    return r.json() as Promise<Health>
+  },
   state: () => req<StateSnapshot>('GET', '/state'),
   instructions: () => req<{ framework: string; defaultBuild: string }>('GET', '/instructions'),
   // §4.5/§19: the machine kind — the API serializes the display label

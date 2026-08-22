@@ -9,6 +9,7 @@ internals the §15 suites pin), and shared POSIX process control.
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 
 from . import posixproc
 from .base import Capabilities, Platform
@@ -33,14 +34,19 @@ class OsascriptNotifier:
 
 
 class CaffeinatePower:
-    """§3/§4.9 keepAwake — delegates to awake.py, which owns the caffeinate
-    subprocess state (module attribute lookup at call time, so the §15
+    """§3/§4.9 idle-sleep assertions — delegates to awake.py, which owns the
+    caffeinate subprocesses (module attribute lookup at call time, so the §15
     monkeypatches on that module keep working)."""
 
     def reconcile(self, enabled: bool) -> None:
         from .. import awake
 
         awake.reconcile(enabled)
+
+    def hold_execution(self) -> Callable[[], None]:
+        from .. import awake
+
+        return awake.hold_execution()
 
 
 class LaunchdService:
@@ -82,5 +88,6 @@ def build() -> Platform:
         power=CaffeinatePower(),
         processes=posixproc.PosixProcessControl(),
         capabilities=Capabilities(imessage=True, notifications=True,
-                                  keep_awake=True, service=True),
+                                  keep_awake=True, service=True,
+                                  agent_install=True),
     )

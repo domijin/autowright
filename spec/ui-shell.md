@@ -4,7 +4,14 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 
 ## 9. Navigation & app shell
 
-One 100 vh dark window with macOS traffic lights. The window drags from its top edge, Apple
+One 100 vh dark window. Window chrome is per-OS (§2 shell platform layer,
+`mainWindowChrome()`): macOS uses hidden-title-bar traffic lights (positions below);
+Windows uses `titleBarStyle: 'hidden'` with a native `titleBarOverlay` — the OS draws
+minimize/maximize/close at the top-right over the app's own background (`color` =
+`--bg-window` `#090d14`, `symbolColor` = the §14 `--text-2` hex, `height` 40 so the overlay
+spans exactly the content drag strip; no macOS-style frameless custom buttons, and the
+overlay region needs no `no-drag` handling — the OS owns it). The window drags from its top
+edge, Apple
 Music-style: a fixed 18 px full-width drag strip spans the whole window top (above sidebar and
 content, z-index 100), and the content pane always carries its own 40 px sticky drag strip —
 every surface — so page content sits at a constant vertical offset. Both shell strips are pure
@@ -14,6 +21,76 @@ works); they must never hold children. Interactive controls inside drag regions 
 (`no-drag` on buttons/links/inputs). Real OS clicks on a button swallowed by a drag region start
 a window drag; synthetic/Playwright clicks bypass drag regions entirely and won't catch that
 mistake.
+
+**Closing the window (per-OS):** on macOS, `window-all-closed` never quits — the app is a
+tray-and-dock app and stays resident. On Windows there is no dock: closing the window keeps
+the app resident **only while the §4.9 `menuBarIcon` tray icon is showing**; with the tray
+hidden, closing the last window quits the UI (the §3 backend service is unaffected either
+way — quitting the UI never stops it; §4.9 `login` still controls the next start). The
+discriminator is the shell capability `dockIcon`, never a platform sniff: a platform with a
+dock stays resident unconditionally; without one, residency requires a **live** tray
+reference (the stored setting is never consulted — a tray that failed to create must not
+strand an invisible app). The
+shell consults its own `plat.capabilities` (§2 shell half — `trayPanel`, `loginItem`,
+`dockIcon`, `updates`) before wiring each of those surfaces, so a platform module that
+declares a capability false is simply never asked for its assets or handlers. The §3
+ensure-backend failure detail is per-OS too: the diagnostic line naming Gatekeeper is
+macOS copy from the darwin module; Windows shows a plain "the backend service failed to
+start" line plus the §2 `serviceDiagnostics` capture.
+
+**Platform gating (§2, renderer half):** the store keeps the backend's `os` token and
+`capabilities` flag set from §19 `GET /health`, read at every backend connection (the same
+cycle that re-reads `backend.json`, §3 — a reconnect refreshes them). Every surface that
+offers an OS-coupled feature gates on these store fields and never sniffs the platform
+itself (no user-agent or preload-side `process.platform` checks — the §2 rule). The boot
+sequence connects before the app shell mounts, so gated surfaces never render with the flags
+unknown. Gated surfaces hide (never disable-with-a-tooltip): the §9.2/§11 iMessage trigger
+kind (`imessage`), the §4.9 "Keep this Mac awake" row (`keepAwake`), the §4.9 notifications
+setting and every piece of copy promising OS notifications (`notifications`), and the
+§10/§12 agent Install/Sign-in actions (`agentInstall` — §19: in their place the card shows
+one plain line — for a hidden Install action, "Install <name> by hand, then come back —
+Autowright detects it automatically."; for a hidden Sign-in action (the provider is already
+installed), "Sign in to <name> from a terminal, then come back — Autowright detects it
+automatically." — each linking the provider's name to its vendor install page; detection and
+sign-in state keep working unchanged). The vendor install pages, one per provider:
+Claude Code → `https://claude.com/product/claude-code`, Gemini CLI →
+`https://github.com/google-gemini/gemini-cli`, Codex → `https://developers.openai.com/codex/cli`,
+OpenCode → `https://opencode.ai`, Ollama → `https://ollama.com/download`; each opens through
+the §9.4 external-URL policy. Defaults before the first `/health` answer are macOS-identical
+(every flag true), so a mac render never flickers a row it is about to keep. `agentInstall`
+gates only the actions that would run a §19 `/agents/install` or the Terminal sign-in —
+the §10 Free local AI card keeps its button while the only missing piece is the model
+(an `/ollama/pull`, which this capability does not gate), and shows the line naming the
+first missing installable piece otherwise.
+
+**Per-OS copy rule:** user-facing copy that names the platform derives from the §9 store's
+`os` token (renderer) or `paths.os_display_name` (backend-served strings) — never a second
+platform sniff. Wherever quoted copy in this spec uses the macOS form, the Windows render
+substitutes per this table, with no other wording change:
+`Mac` → `PC` as the machine noun in every inflection (`this Mac`, `your Mac`, `any Mac`) —
+including model-facing §8 prompt text that names the user's machine (the SYSTEM TOOLS
+header, the chat call's diagnosis rule) · `Keychain` → `Credential Manager` (the §1
+promise line becomes "Secrets live in your Credential Manager, never in a script or log");
+the macOS-only remedy clause "— unlock the login Keychain and try again" in the §19
+secret-write 503s has no Windows analogue and becomes plain "— try again" ·
+`Show in Finder` → `Show in Explorer` (reveal semantics unchanged) · `menu bar` → `tray`
+(the §13 surface's Windows name — "starts quietly in the tray", "Show in the tray",
+"Execute now and the tray still work") · model-facing instruction text naming the OS
+itself (`macOS`) → the §4.1 os display name via a `{{OS}}` placeholder beside `{{MACHINE}}`
+("a macOS app" reads "a Windows app" there) · the §4.9 COMMAND LINE
+card's install location `~/.local/bin` → `%LOCALAPPDATA%\Autowright\bin` (the §3 per-OS
+shim location) and "the Terminal" (the macOS app) → "a terminal" · the §4.9 PATH command
+block's zsh one-liner → a PowerShell one-liner adding `%LOCALAPPDATA%\Autowright\bin` to
+the **user** PATH via `[Environment]::SetEnvironmentVariable('Path', …, 'User')` (never
+`setx`, which truncates at 1024 chars and bakes the expanded system PATH into the user
+value), with "open a new terminal" in the surrounding copy · the §9.4 About page's Homebrew fork
+never renders (no brew channel) · `storage.py`'s §5.1 os-mismatch label already uses
+`os_display_name`. The table is exhaustive by intent: copy with no per-OS form listed here
+stays identical everywhere, and a new platform-naming string must extend this table.
+One standing exception: iMessage/Messages surfaces (the §9.2 iMessage editor guide,
+`imessage.py` copy) keep the mac noun on every platform — they describe an Apple-only
+subsystem and are gated off by `capabilities.imessage` anyway; "this PC" there would be
+incoherent.
 
 The sidebar is a **hover-expanding floating rail** anchored to the left window edge: a panel
 (`position: fixed`, `left: 0, top: 46, bottom: 12`, z 50 — above all page content but below
@@ -335,7 +412,9 @@ Sections top to bottom:
   syncs). The
   editor:
   kind picker (Cron / One time / App start / Discord / iMessage — each chip leads with the
-  same kind icon its trigger row uses) then either a
+  same kind icon its trigger row uses; the iMessage chip renders only while the §9 store's
+  `capabilities.imessage` is true — absent, not disabled, on every other platform) then
+  either a
   cron-expression input
   with a live preview line (the humanized label
   when simple, plus "next: `<time>`"; an invalid expression gets the red input border and
@@ -1128,6 +1207,14 @@ minimized panel would otherwise strand the tray toggle on a dead reference). Bel
 braces: a `closed` handler clears the reference anyway. The panel is visible on all
 Spaces including over fullscreen apps (`setVisibleOnAllWorkspaces` with
 `visibleOnFullScreen`) — opening it never switches the user out of a fullscreen Space.
+Panel placement is per-OS (§2 `panelPosition`): macOS anchors under the menu-bar icon;
+Windows anchors the panel's bottom edge just above the taskbar's work area and re-anchors
+on **every** `resize-panel` (the §13 height growth), so the panel hugs the taskbar at its
+real height instead of assuming the 640 px cap — a taskbar docked to another edge still
+gets a fully on-screen panel. The Windows tray icon uses real colored assets
+(`trayWin.png`/`@2x` and the alert variant — light glyph legible on the dark taskbar,
+rendered by `scripts/gen_tray_icon.py` beside the mac template PNGs), never the mac
+black template images, which disappear on a dark taskbar.
 
 **Deep-link mechanism:** a row click sends the target `'/app?automation=<id>'` to the main process.
 With no main window, the window is created loading that hash and the renderer's boot reads

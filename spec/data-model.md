@@ -880,6 +880,9 @@ keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac fro
   schedules and message triggers keep firing. The display can still sleep.") — while on, the
   backend holds a permanent idle-sleep power assertion (§3 sleep bullet); applied live on
   settings change, no restart. Row sits in the GENERAL card below "Show in the menu bar".
+  The row renders only while the §9 store's `capabilities.keepAwake` is true (§2 gating):
+  the setting itself stays stored and CLI-visible everywhere, but the card never promises an
+  assertion the OS can't hold.
 automaticUpdateCheck: bool (default true) — "Check for updates automatically" ("Once a day,
   ask autowright.ai whether a newer version exists. Downloads still start only when you ask.")
   — on by default (PRIVACY.md names the daily check and its off switch; existing installs
@@ -888,6 +891,8 @@ automaticUpdateCheck: bool (default true) — "Check for updates automatically" 
   automatic-check machinery through the same reconcile path as `login`/`menuBarIcon`. Its
   toggle row lives on the About page's UPDATES card (§9.4), not Settings.
 notifications: attention | all — "Only when something needs attention" / "After every execution"
+  — the row renders only while the §9 store's `capabilities.notifications` is true (§2
+  gating); the stored value keeps §20 CLI parity everywhere.
 days: int ≥ 1 (default 90) — history retention; keepForever: bool disables cleanup
 developerMode: bool (default false) — "Developer mode" ("Logs every backend request and every AI
   request — including the full prompt — to the backend log. Press `` ` `` to show the logs

@@ -1,10 +1,67 @@
 """Harness adapters (§6/§8): query-only invocation flags + CLI detection."""
 import io
 import json
+import os
+import threading
 import time
 from pathlib import Path
 
 import pytest
+from conftest import fake_cli
+
+
+# §8 prompt delivery is per-OS: the prompt is the command's last argv element
+# on POSIX, and is absent from argv — piped to the child's stdin — on Windows,
+# where the 32,767-char command-line cap can't hold a drafting prompt.
+PIPES_PROMPT = os.name == "nt"
+
+PROMPT = "question: hi?"
+
+
+class _FakeStdin(io.StringIO):
+    """The child's stdin pipe. Records what the §8 writer thread sent and
+    signals the fake stdout, which — like a real CLI — answers only once it
+    has the prompt."""
+
+    def __init__(self, proc):
+        super().__init__()
+        self._proc = proc
+
+    def write(self, text):
+        n = super().write(text)
+        self._proc.stdin_text += text
+        self._proc.prompt_written.set()
+        return n
+
+    def close(self):
+        # The writer closes at EOF and invoke()'s finally closes again; neither
+        # may lose what was written (the assertions run after both).
+        self._proc.stdin_closed = True
+        super().close()
+
+
+class _FakeStdout:
+    """Reply stream that yields nothing until the prompt has been delivered,
+    so the §8 writer thread can never lose its race with the read loop."""
+
+    def __init__(self, proc, text="ok"):
+        self._proc = proc
+        self._text = text
+        self._sent = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._sent:
+            raise StopIteration
+        assert self._proc.prompt_written.wait(10), \
+            "the §8 Windows prompt-writer thread never wrote to stdin"
+        self._sent = True
+        return self._text
+
+    def close(self):
+        pass
 
 
 class _FakeProc:
@@ -13,8 +70,15 @@ class _FakeProc:
     returncode = 0
 
     def __init__(self):
-        self.stdout = io.StringIO("ok")
+        self.stdin_text = ""
+        self.stdin_closed = False
+        # POSIX delivers the prompt in argv, so nothing ever waits on it.
+        self.prompt_written = threading.Event()
+        if not PIPES_PROMPT:
+            self.prompt_written.set()
+        self.stdout = _FakeStdout(self)
         self.stderr = io.StringIO("")
+        self.stdin = _FakeStdin(self)
 
     def wait(self, timeout=None):
         return 0
@@ -26,24 +90,25 @@ class _FakeProc:
         pass
 
 
+def _assert_prompt_delivered(cmd, proc, prompt=PROMPT):
+    """The §8 per-OS delivery rule, asserted against one captured spawn."""
+    if PIPES_PROMPT:
+        assert prompt not in cmd, "Windows: the prompt must never reach argv (§8)"
+        assert "--" not in cmd, "the `--` separator goes with the positional prompt"
+        assert proc.stdin_text == prompt
+        assert proc.stdin_closed, "stdin must be closed so the child sees EOF"
+    else:
+        assert cmd[-1] == prompt
+        assert proc.stdin_text == ""
+
+
 def _captured_invoke(monkeypatch, agent, web=False):
-    from autowright import harness
-
-    monkeypatch.setattr(harness, "resolve_bin", lambda name: f"/usr/local/bin/{name}")
-    captured = {}
-
-    def fake_popen(cmd, **kw):
-        captured["cmd"] = cmd
-        return _FakeProc()
-
-    monkeypatch.setattr(harness.subprocess, "Popen", fake_popen)
-    out = harness.invoke(agent, "question: hi?", web=web)
-    assert out == "ok"
-    return captured["cmd"]
+    return _captured_invoke_full(monkeypatch, agent, web=web)["cmd"]
 
 
 def test_claude_invoked_with_no_tools_flags(monkeypatch):
-    cmd = _captured_invoke(monkeypatch, {"harness": "Claude Code"})
+    cap = _captured_invoke_full(monkeypatch, {"harness": "Claude Code"})
+    cmd = cap["cmd"]
     assert cmd[0] == "/usr/local/bin/claude" and "-p" in cmd
     i = cmd.index("--tools")
     assert cmd[i + 1] == ""  # all built-in tools disabled
@@ -54,7 +119,7 @@ def test_claude_invoked_with_no_tools_flags(monkeypatch):
     assert cmd[j + 1] == "stream-json"
     assert "--include-partial-messages" in cmd
     assert "--verbose" in cmd  # stream-json in print mode requires it
-    assert cmd[-1] == "question: hi?"
+    _assert_prompt_delivered(cmd, cap["proc"])
 
 
 def test_fake_cli_streams_chunks_and_result():
@@ -76,12 +141,13 @@ def test_opencode_local_model_invoked_with_ollama_model_flag(monkeypatch):
 
     synced = []
     monkeypatch.setattr(harness, "sync_opencode_ollama", synced.append)
-    cmd = _captured_invoke(monkeypatch, {"harness": "OpenCode", "mode": "ollama",
-                                         "model": "qwen3:8b"})
+    cap = _captured_invoke_full(monkeypatch, {"harness": "OpenCode", "mode": "ollama",
+                                              "model": "qwen3:8b"})
+    cmd = cap["cmd"]
     assert cmd[:2] == ["/usr/local/bin/opencode", "run"]
     i = cmd.index("--model")
     assert cmd[i + 1] == "ollama/qwen3:8b"
-    assert cmd[-1] == "question: hi?"
+    _assert_prompt_delivered(cmd, cap["proc"])
     assert synced == ["qwen3:8b"]
 
     cmd = _captured_invoke(monkeypatch, {"harness": "OpenCode"})
@@ -90,7 +156,8 @@ def test_opencode_local_model_invoked_with_ollama_model_flag(monkeypatch):
 
 
 def _captured_invoke_full(monkeypatch, agent, web=False):
-    """Like _captured_invoke but also captures the spawn kwargs (env)."""
+    """Like _captured_invoke but also captures the spawn kwargs (env, stdin)
+    and the fake child itself (for the §8 stdin-delivery assertions)."""
     from autowright import harness
 
     monkeypatch.setattr(harness, "resolve_bin", lambda name: f"/usr/local/bin/{name}")
@@ -99,10 +166,13 @@ def _captured_invoke_full(monkeypatch, agent, web=False):
     def fake_popen(cmd, **kw):
         captured["cmd"] = cmd
         captured["env"] = kw.get("env")
-        return _FakeProc()
+        captured["stdin"] = kw.get("stdin")
+        proc = _FakeProc()
+        captured["proc"] = proc
+        return proc
 
     monkeypatch.setattr(harness.subprocess, "Popen", fake_popen)
-    out = harness.invoke(agent, "question: hi?", web=web)
+    out = harness.invoke(agent, PROMPT, web=web)
     assert out == "ok"
     return captured
 
@@ -175,11 +245,12 @@ def test_custom_model_invoked_with_verbatim_model_flag(monkeypatch):
                         ("Gemini CLI", "gemini-2.5-pro"),
                         ("Codex", "gpt-5-codex"),
                         ("OpenCode", "anthropic/claude-opus-4-8")):
-        cmd = _captured_invoke(monkeypatch, {"harness": name, "mode": "custom",
-                                             "model": model})
+        cap = _captured_invoke_full(monkeypatch, {"harness": name, "mode": "custom",
+                                                  "model": model})
+        cmd = cap["cmd"]
         i = cmd.index("--model")
         assert cmd[i + 1] == model
-        assert cmd[-1] == "question: hi?"
+        _assert_prompt_delivered(cmd, cap["proc"])
     assert synced == []
 
 
@@ -206,23 +277,25 @@ def test_sync_opencode_ollama_merges_config(monkeypatch, tmp_path):
 
 
 def test_codex_invoked_with_read_only_sandbox(monkeypatch):
-    cmd = _captured_invoke(monkeypatch, {"harness": "Codex"})
+    cap = _captured_invoke_full(monkeypatch, {"harness": "Codex"})
+    cmd = cap["cmd"]
     assert cmd[:2] == ["/usr/local/bin/codex", "exec"]
     i = cmd.index("--sandbox")
     assert cmd[i + 1] == "read-only"
     assert "--skip-git-repo-check" in cmd
-    assert cmd[-1] == "question: hi?"
+    _assert_prompt_delivered(cmd, cap["proc"])
 
 
 def test_web_enabled_claude_allows_only_web_read_tools(monkeypatch):
     # §6 drafting calls: web=True swaps the empty --tools list for exactly
     # WebFetch,WebSearch — every other lockdown flag stays.
-    cmd = _captured_invoke(monkeypatch, {"harness": "Claude Code"}, web=True)
+    cap = _captured_invoke_full(monkeypatch, {"harness": "Claude Code"}, web=True)
+    cmd = cap["cmd"]
     i = cmd.index("--tools")
     assert cmd[i + 1] == "WebFetch,WebSearch"
     assert "--strict-mcp-config" in cmd
     assert "--no-session-persistence" in cmd
-    assert cmd[-1] == "question: hi?"
+    _assert_prompt_delivered(cmd, cap["proc"])
 
 
 def test_web_enabled_codex_adds_top_level_search_flag(monkeypatch):
@@ -233,6 +306,46 @@ def test_web_enabled_codex_adds_top_level_search_flag(monkeypatch):
     i = cmd.index("--sandbox")
     assert cmd[i + 1] == "read-only"
     assert "--skip-git-repo-check" in cmd
+
+
+def test_prompt_delivery_follows_the_per_os_rule(monkeypatch):
+    # §8: on POSIX the prompt is the command's last argv element and stdin is
+    # /dev/null; on Windows — where the command line caps at 32,767 chars and
+    # a drafting prompt is ~38 K — argv carries no prompt at all and the whole
+    # of it goes down a stdin pipe instead.
+    import subprocess
+
+    from autowright import harness
+
+    long_prompt = "question: " + ("x" * 40_000)
+    for name, head in (("Claude Code", "claude"), ("Gemini CLI", "gemini"),
+                       ("Codex", "codex"), ("OpenCode", "opencode")):
+        monkeypatch.setattr(harness, "resolve_bin", lambda n: f"/usr/local/bin/{n}")
+        monkeypatch.setattr(harness, "sync_opencode_ollama", lambda m: None)
+        cap = {}
+
+        def fake_popen(cmd, **kw):
+            cap["cmd"], cap["stdin"] = cmd, kw.get("stdin")
+            cap["proc"] = proc = _FakeProc()
+            return proc
+
+        monkeypatch.setattr(harness.subprocess, "Popen", fake_popen)
+        assert harness.invoke({"harness": name}, long_prompt) == "ok"
+        cmd, proc = cap["cmd"], cap["proc"]
+        assert cmd[0].endswith(head)
+        if PIPES_PROMPT:
+            assert long_prompt not in cmd
+            assert max(len(a) for a in cmd) < 100  # nothing prompt-sized in argv
+            assert sum(len(a) + 1 for a in cmd) < 32_767  # under the OS cap
+            assert cap["stdin"] is subprocess.PIPE
+            assert proc.stdin_text == long_prompt
+            assert proc.stdin_closed
+            if name == "Gemini CLI":
+                assert "-p" not in cmd  # -p <prompt> drops entirely
+        else:
+            assert cmd[-1] == long_prompt
+            assert cap["stdin"] is subprocess.DEVNULL
+            assert proc.stdin_text == ""
 
 
 def test_web_flag_leaves_gemini_and_opencode_unchanged(monkeypatch):
@@ -268,6 +381,13 @@ def test_detect_reports_all_four_with_sign_in_state(monkeypatch):
     assert not by_id["claude"]["installed"] and by_id["claude"]["detail"] == ""
 
 
+def _set_home(monkeypatch, path):
+    """Point `expanduser` at `path` on every OS: POSIX reads HOME, Windows
+    (ntpath) reads USERPROFILE — setting both is harmless either way."""
+    monkeypatch.setenv("HOME", str(path))
+    monkeypatch.setenv("USERPROFILE", str(path))
+
+
 def _isolate_host(monkeypatch, tmp_path):
     """Pin detection/sign-in to the fake CLI alone: the host's real ~/.gemini,
     ~/.local/share/opencode, GEMINI_API_KEY, and CLIs on the fallback bin dirs
@@ -276,12 +396,16 @@ def _isolate_host(monkeypatch, tmp_path):
 
     fake_home = tmp_path / "home"
     fake_home.mkdir(exist_ok=True)
-    monkeypatch.setenv("HOME", str(fake_home))  # expanduser reads it per call
+    _set_home(monkeypatch, fake_home)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("AUTOWRIGHT_TEST_CLAUDE_SIGNED_OUT", raising=False)
     monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", ())
     tests_bin = Path(__file__).resolve().parent / "bin"
-    monkeypatch.setenv("PATH", f"{tests_bin}:/usr/bin:/bin")
+    # The OS's own bin dir stays on PATH (nothing agent-shaped lives there);
+    # everything else is stripped so only the fake CLI can be detected.
+    system = ((os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32"),)
+              if os.name == "nt" else ("/usr/bin", "/bin"))
+    monkeypatch.setenv("PATH", os.pathsep.join((str(tests_bin), *system)))
     return fake_home
 
 
@@ -461,25 +585,29 @@ def test_spawn_env_path_prepend_dedupe_order(monkeypatch):
     # surviving original entries keep their relative order.
     from autowright import harness
 
+    sep = os.pathsep
     monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", ("/fb1", "/b"))
-    monkeypatch.setenv("PATH", "/a:/b:/c")
+    monkeypatch.setenv("PATH", sep.join(("/a", "/b", "/c")))
     env = harness.spawn_env()
-    assert env["PATH"] == "/fb1:/b:/a:/c"  # /b deduped; /a before /c preserved
-    assert env["PATH"].split(":")[-2:] == ["/a", "/c"]
+    # /b deduped; /a before /c preserved
+    assert env["PATH"] == sep.join(("/fb1", "/b", "/a", "/c"))
+    assert env["PATH"].split(sep)[-2:] == ["/a", "/c"]
 
 
 def test_spawn_env_idempotent_and_binpath_dir_first(monkeypatch):
     from autowright import harness
 
+    sep = os.pathsep
     monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", ("/fb1", "/b"))
-    monkeypatch.setenv("PATH", "/a:/b:/c")
+    monkeypatch.setenv("PATH", sep.join(("/a", "/b", "/c")))
     once = harness.spawn_env()["PATH"]
     monkeypatch.setenv("PATH", once)
     assert harness.spawn_env()["PATH"] == once  # already-present dirs: no change
 
     monkeypatch.setenv("PATH", "/a")
     env = harness.spawn_env("/opt/x/claude")
-    assert env["PATH"] == "/opt/x:/fb1:/b:/a"  # binary's own dir leads
+    # binary's own dir leads
+    assert env["PATH"] == sep.join(("/opt/x", "/fb1", "/b", "/a"))
 
 
 def test_probe_tools_resolves_against_step_path(monkeypatch, tmp_path):
@@ -490,13 +618,22 @@ def test_probe_tools_resolves_against_step_path(monkeypatch, tmp_path):
 
     fb = tmp_path / "fallback"
     fb.mkdir()
-    exe = fb / "gh"
-    exe.write_text("#!/bin/sh\n")
-    exe.chmod(0o755)
+    # §19: what makes a file executable is per-OS — the execute bit on POSIX,
+    # a PATHEXT extension on Windows.
+    if os.name == "nt":
+        exe = fb / "gh.cmd"
+        exe.write_text("@echo off\n")
+    else:
+        exe = fb / "gh"
+        exe.write_text("#!/bin/sh\n")
+        exe.chmod(0o755)
     monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", (str(fb),))
     monkeypatch.setattr(harness, "_PROBE_TOOLS", ("gh", "definitely-missing-tool"))
-    monkeypatch.setenv("PATH", "/usr/bin:/bin")  # the Dock launch's stripped PATH
-    assert harness.probe_tools() == [{"name": "gh", "path": str(exe)}]
+    # the Dock launch's stripped PATH
+    monkeypatch.setenv("PATH", os.pathsep.join(("/usr/bin", "/bin")))
+    probed = harness.probe_tools()
+    assert [t["name"] for t in probed] == ["gh"]  # the missing one is omitted
+    assert Path(probed[0]["path"]).samefile(exe)
 
 
 # ---------- Ollama runtime (§19 /ollama/status, §10 Free local AI card) ----------
@@ -621,9 +758,15 @@ def test_ollama_bin_falls_back_to_app_bundle(monkeypatch, tmp_path):
     from autowright import harness
 
     monkeypatch.setattr(harness, "resolve_bin", lambda b: None)
-    fake = tmp_path / "ollama"
-    fake.write_text("#!/bin/sh\n")
-    fake.chmod(0o755)
+    # §19: the bundle probe applies the per-OS executable check, so the fake
+    # has to look executable the way this OS decides that.
+    if os.name == "nt":
+        fake = tmp_path / "ollama.exe"
+        fake.write_bytes(b"MZ")
+    else:
+        fake = tmp_path / "ollama"
+        fake.write_text("#!/bin/sh\n")
+        fake.chmod(0o755)
     monkeypatch.setattr(harness, "_OLLAMA_APP_BINS", (str(tmp_path / "missing"), str(fake)))
     assert harness.ollama_bin() == str(fake)
     monkeypatch.setattr(harness, "_OLLAMA_APP_BINS", (str(tmp_path / "missing"),))
@@ -668,9 +811,7 @@ def test_invoke_timeout_kills_group_and_is_retryable(monkeypatch, tmp_path, home
     # promptly with a retryable timeout error, never after the child's sleep.
     from autowright import harness
 
-    script = tmp_path / "claude"
-    script.write_text("#!/bin/sh\nsleep 60\n")
-    script.chmod(0o755)
+    script = fake_cli(tmp_path, "import time\ntime.sleep(60)\n")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
     t0 = time.monotonic()
     with pytest.raises(harness.HarnessError) as ei:
@@ -686,12 +827,12 @@ def test_invoke_output_resets_idle_window(monkeypatch, tmp_path, home):
     # timer would have killed this run at 1 s.
     from autowright import harness
 
-    script = tmp_path / "claude"
-    script.write_text("#!/bin/sh\n"
-                      "i=0\n"
-                      "while [ $i -lt 5 ]; do echo tick; sleep 0.4; i=$((i+1)); done\n"
-                      "echo done\n")
-    script.chmod(0o755)
+    script = fake_cli(tmp_path,
+                       "import sys, time\n"
+                       "for _ in range(5):\n"
+                       "    print('tick', flush=True)\n"
+                       "    time.sleep(0.4)\n"
+                       "print('done', flush=True)\n")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
     out = harness.invoke({"harness": "Claude Code"}, "question: hi?", timeout=1)
     assert "done" in out
@@ -702,9 +843,11 @@ def test_invoke_hard_cap_ends_endless_streamer(monkeypatch, tmp_path, home):
     # never trips the idle window but dies at the cap, with a retryable error.
     from autowright import harness
 
-    script = tmp_path / "claude"
-    script.write_text("#!/bin/sh\nwhile true; do echo tick; sleep 0.3; done\n")
-    script.chmod(0o755)
+    script = fake_cli(tmp_path,
+                       "import time\n"
+                       "while True:\n"
+                       "    print('tick', flush=True)\n"
+                       "    time.sleep(0.3)\n")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
     monkeypatch.setenv("AUTOWRIGHT_AGENT_HARD_CAP_S", "2")
     t0 = time.monotonic()
@@ -720,14 +863,12 @@ def test_invoke_failure_carries_stderr_tail(monkeypatch, tmp_path, home):
     # banners die first, the decisive last line always survives.
     from autowright import harness
 
-    script = tmp_path / "claude"
-    script.write_text("#!/bin/sh\n"
-                      "echo 'banner line one' >&2\n"
-                      "echo 'banner line two' >&2\n"
-                      "echo 'banner line three' >&2\n"
-                      "echo 'ERROR: the decisive line' >&2\n"
-                      "exit 2\n")
-    script.chmod(0o755)
+    script = fake_cli(tmp_path,
+                       "import sys\n"
+                       "for ln in ('banner line one', 'banner line two',\n"
+                       "           'banner line three', 'ERROR: the decisive line'):\n"
+                       "    print(ln, file=sys.stderr)\n"
+                       "sys.exit(2)\n")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
     with pytest.raises(harness.HarnessError) as ei:
         harness.invoke({"harness": "Claude Code"}, "question: hi?")
@@ -751,9 +892,9 @@ def test_invoke_auth_failure_is_not_retryable(monkeypatch, tmp_path, home):
                         "Authentication failed",
                         "ERROR: model not found: gemini-9.9-ultra",
                         "unknown model gpt-99"):
-        script = tmp_path / "claude"
-        script.write_text(f"#!/bin/sh\necho '{stderr_line}' >&2\nexit 1\n")
-        script.chmod(0o755)
+        script = fake_cli(tmp_path,
+                           f"import sys\nprint({stderr_line!r}, file=sys.stderr)\n"
+                           "sys.exit(1)\n")
         monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
         with pytest.raises(harness.HarnessError) as ei:
             harness.invoke({"harness": "Claude Code"}, "question: hi?")
@@ -816,7 +957,7 @@ def test_signed_in_gemini_rules(monkeypatch, tmp_path):
     # fake a working sign-in. GEMINI_API_KEY alone still counts.
     from autowright import harness
 
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _set_home(monkeypatch, tmp_path)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
 
     assert harness.signed_in("gemini") is False  # nothing on disk, no API key
@@ -848,7 +989,7 @@ def test_signed_in_opencode_rules(monkeypatch, tmp_path):
     # or non-dict file reads signed out.
     from autowright import harness
 
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _set_home(monkeypatch, tmp_path)
 
     assert harness.signed_in("opencode") is False  # nothing on disk
 
@@ -900,9 +1041,8 @@ def test_invoke_non_claude_streams_raw_lines(monkeypatch, tmp_path, home):
     # and returns the raw output verbatim.
     from autowright import harness
 
-    script = tmp_path / "gemini"
-    script.write_text("#!/bin/sh\necho 'line one'\necho 'line two'\n")
-    script.chmod(0o755)
+    script = fake_cli(tmp_path, "print('line one')\nprint('line two')\n",
+                       name="gemini")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
     chunks = []
     out = harness.invoke({"harness": "Gemini CLI"}, "question: hi?",
@@ -916,9 +1056,9 @@ def test_invoke_on_chunk_error_reaps_the_child(monkeypatch, tmp_path, home):
     # the group dies and the original error surfaces promptly.
     from autowright import harness
 
-    script = tmp_path / "gemini"
-    script.write_text("#!/bin/sh\necho 'first'\nsleep 60\n")
-    script.chmod(0o755)
+    script = fake_cli(tmp_path,
+                       "import time\nprint('first', flush=True)\ntime.sleep(60)\n",
+                       name="gemini")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
 
     def bad_chunk(text):
@@ -969,19 +1109,18 @@ def test_sync_opencode_ollama_replaces_non_dict_shapes(monkeypatch, tmp_path):
 
 
 def test_sync_opencode_ollama_write_failure_raises_harness_error(monkeypatch, tmp_path):
-    # §19: an unwritable config dir surfaces as a HarnessError (check_ready
-    # turns it into needs-setup) — never a bare OSError up the stack.
+    # §19: a config dir the write can't use surfaces as a HarnessError
+    # (check_ready turns it into needs-setup) — never a bare OSError up the
+    # stack. The failure is a real filesystem one on every OS: a regular FILE
+    # sits where the config's parent directory has to be, so the write's
+    # mkdir/open raises (chmod 0500 wouldn't stop a write on Windows).
     from autowright import harness
 
-    ro = tmp_path / "ro"
-    ro.mkdir()
-    ro.chmod(0o500)
-    monkeypatch.setattr(harness, "_OPENCODE_CONFIG", str(ro / "opencode.json"))
-    try:
-        with pytest.raises(harness.HarnessError, match="couldn't update opencode.json"):
-            harness.sync_opencode_ollama("qwen3:8b")
-    finally:
-        ro.chmod(0o700)
+    blocked = tmp_path / "blocked"
+    blocked.write_text("not a directory\n")
+    monkeypatch.setattr(harness, "_OPENCODE_CONFIG", str(blocked / "opencode.json"))
+    with pytest.raises(harness.HarnessError, match="couldn't update opencode.json"):
+        harness.sync_opencode_ollama("qwen3:8b")
 
 
 def test_ollama_bin_prefers_path_resolution(monkeypatch, tmp_path):

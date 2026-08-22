@@ -10,6 +10,7 @@
 // param editors are shared with the detail page via ../steps.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import type { Agent, ChatEntry } from '../types'
 import { BtnPrimary, ConfirmModal, HeaderActions, P, PULSE, PopMenu, ScrollArea, Spinner, usePopover } from '../ui'
@@ -41,6 +42,8 @@ export {
 export default function CreateFlow() {
   // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this editor on
   // every store write anywhere — every toast, every log line of every execution.
+  // §9 per-OS copy rule: the machine noun the §7 Fix-with-AI seed names.
+  const copy = usePlatformCopy()
   const agents = useStore((s) => s.agents)
   const secrets = useStore((s) => s.secrets)
   const automations = useStore((s) => s.automations)
@@ -425,7 +428,7 @@ export default function CreateFlow() {
   const analyzeFailure = test && testExec?.status === 'failed'
     ? () => {
         if (anyJobBusy || testLive || viewingOld) return
-        guardManualEdit(() => void jobs.sendChat(analyzeTestMessage(testExec?.error?.step), test.executionId))
+        guardManualEdit(() => void jobs.sendChat(analyzeTestMessage(copy.machine, testExec?.error?.step), test.executionId))
       }
     : null
 
@@ -731,7 +734,7 @@ export default function CreateFlow() {
     // the user asks when it settles.
     if (anyJobBusy || testLive) return
     // The seed entry above already names the failing step — don't repeat it here.
-    void jobs.sendChat('This execution failed — figure out why. If the automation is at fault, change it so it won’t happen again; if the fix is something I need to do on this Mac (install or start an app, sign in), tell me what to do and how instead.', fixSend)
+    void jobs.sendChat(`This execution failed — figure out why. If the automation is at fault, change it so it won’t happen again; if the fix is something I need to do on this ${copy.machine} (install or start an app, sign in), tell me what to do and how instead.`, fixSend)
   }, [rev != null, chatReady, fixSend]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11: settled runs seed the thread — entering the editor after the newest

@@ -277,8 +277,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 ### 6.1 The `autowright` step SDK (decided)
 
 Each step executes in its own subprocess (the bundled interpreter, cwd = the execution `workspace/`).
-The step's environment is the backend's with the §19 install locations (`~/.local/bin`,
-`~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`) **appended** to `PATH` — so a step
+The step's environment is the backend's with the §19 per-OS install locations (macOS:
+`~/.local/bin`, `~/.opencode/bin`, `/opt/homebrew/bin`, `/usr/local/bin`; Windows: the §19
+Windows fallback list) **appended** to `PATH` — so a step
 that shells out to a system CLI (or pre-flights one with `shutil.which`, §6.2 native tools)
 finds a normally-installed tool under a Dock-launched app's minimal GUI PATH exactly as it
 would under a terminal launch. Appended, unlike the §19 provider-child prepend: the dirs are
@@ -372,7 +373,10 @@ SDK name it uses** — `from autowright import params, log, result` (or `import 
   retries, robots.txt, UA).
 
 Executor↔engine protocol: stdout/stderr are captured line-by-line as `out`/`err`; structured calls
-(log/result/notify/reply) emit `@@AD@@{json}` control lines on stdout. Context (param values, secret
+(log/result/notify/reply) emit `@@AD@@{json}` control lines on stdout. Both ends are
+explicit UTF-8 (§2 pipe-encoding contract): the engine opens the pipes with
+`encoding="utf-8", errors="replace"`, and the executor reconfigures its real stdout/stderr
+to UTF-8 (errors="replace") at boot — the protocol never depends on the OS locale codec. Context (param values, secret
 values, paths, agent config, execution metadata) arrives as JSON on stdin — never argv, never the
 environment. The executor does export the non-secret pieces back out as env vars so child
 processes a step spawns can self-identify: `AUTOWRIGHT_AUTOMATION_ID`, `AUTOWRIGHT_AUTOMATION_NAME`,

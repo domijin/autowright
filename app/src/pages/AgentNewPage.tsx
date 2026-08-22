@@ -3,9 +3,10 @@
 // One form for both — title and submit switch to "Edit agent" / "Save changes" when editing.
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import type { Agent } from '../types'
-import { BackLink, BtnPrimary, ConfirmModal, Eyebrow, GreenCheck, LoadingRow, MenuRow, MiniBadge, P, PopMenu, ProgressBar, RadioRing, usePopover } from '../ui'
+import { BackLink, BtnPrimary, ConfirmModal, Eyebrow, GreenCheck, LoadingRow, ManualInstallLine, MenuRow, MiniBadge, P, PopMenu, ProgressBar, RadioRing, usePopover } from '../ui'
 
 type HarnessId = 'claude' | 'gemini' | 'codex' | 'opencode'
 
@@ -77,6 +78,8 @@ const HARNESS_ID: Record<string, HarnessId> = {
 
 export default function AgentNewPage() {
   const { go, showToast, ollamaPull, runAgentCheck, agents, agentEditId, agentChecks } = useStore()
+  // §9 per-OS copy rule: the machine noun this page's install copy names.
+  const copy = usePlatformCopy()
   // Edit mode is addressed by nav state (§12): agentEditId names the agent, so
   // back/forward re-enters the same edit form. Form fields initialize once on
   // mount — the page remounts on every navigation, so that's a fresh snapshot.
@@ -116,6 +119,10 @@ export default function AgentNewPage() {
   const [hErr, setHErr] = useState<string | null>(null)
   const [hMethod, setHMethod] = useState<'browser' | 'terminal'>('terminal')
   const harnessInstall = useStore((s) => s.harnessInstall)
+  // §2/§9 gating: where the OS can't run an install (or the Terminal sign-in),
+  // the actions are hidden and the card carries the manual-install line
+  // instead. Detection and sign-in state keep working unchanged.
+  const agentInstallOn = useStore((s) => s.platformCapabilities.agentInstall)
   const pullingRef = useRef<string | null>(null)
   pullingRef.current = pulling
 
@@ -397,7 +404,7 @@ export default function AgentNewPage() {
     }
   }
 
-  const olMissingMsg = 'Local models need Ollama, which isn’t installed on this Mac yet.'
+  const olMissingMsg = `Local models need Ollama, which isn’t installed on this ${copy.machine} yet.`
 
   const sugRows = SUGGESTED.filter((sg) => !models.includes(sg.id))
 
@@ -537,9 +544,17 @@ export default function AgentNewPage() {
       </div>
 
       {/* §12 install gating: an uninstalled picked harness hides the model
-          section and offers the real download-and-set-up flow instead. */}
+          section and offers the real download-and-set-up flow instead — or,
+          where §2 `agentInstall` is false, the manual-install line in place of
+          every action (the harness card keeps its NOT INSTALLED badge). */}
       {harness && !hInstalled && (
-        hInst === 'installing' ? (
+        !agentInstallOn ? (
+          <ManualInstallLine
+            id={harness}
+            name={HARNESS_NAME[harness]}
+            style={{ marginBottom: 16 }}
+          />
+        ) : hInst === 'installing' ? (
           <div className="ad-anim-item" style={{
             background: 'var(--notice-amber-bg)', border: '1px solid var(--notice-amber-border)',
             borderRadius: 10, padding: '11px 14px', marginBottom: 16,
@@ -568,7 +583,7 @@ export default function AgentNewPage() {
           <AmberNotice
             body={hInst === 'failed'
               ? `Install failed — ${hErr ?? 'something went wrong'}`
-              : `${HARNESS_NAME[harness]} isn’t installed on this Mac yet — Autowright can download and set it up for you.`}
+              : `${HARNESS_NAME[harness]} isn’t installed on this ${copy.machine} yet — Autowright can download and set it up for you.`}
             btn={hInst === 'failed' ? 'Try again' : 'Download & set up'}
             onBtn={installPicked}
             style={{ marginBottom: 16 }}
@@ -592,7 +607,7 @@ export default function AgentNewPage() {
               // so its row renders disabled with the reason.
               harness === 'gemini'
                 ? { id: 'ollama' as const, name: 'A local model', note: 'Gemini CLI can’t drive local models.', disabled: true }
-                : { id: 'ollama' as const, name: 'A local model', note: 'Pick a model served on this Mac through Ollama — best for simple steps', disabled: false },
+                : { id: 'ollama' as const, name: 'A local model', note: `Pick a model served on this ${copy.machine} through Ollama — best for simple steps`, disabled: false },
             ]).map((md, i, arr) => {
               const on = mode === md.id
               return (
@@ -637,7 +652,11 @@ export default function AgentNewPage() {
           )}
 
           {needsOllama && st && !ready && (
-            inst === 'installing' ? (
+            // §2 `agentInstall` false: no install action anywhere — the plain
+            // line stands in for the Install Ollama button.
+            !agentInstallOn ? (
+              <ManualInstallLine id="ollama" style={{ marginBottom: 16 }} />
+            ) : inst === 'installing' ? (
               <div className="ad-anim-item" style={{
                 background: 'var(--notice-amber-bg)', border: '1px solid var(--notice-amber-border)',
                 borderRadius: 10, padding: '11px 14px', marginBottom: 16,

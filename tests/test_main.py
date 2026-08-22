@@ -44,16 +44,29 @@ def test_devmode_filter_gates_info_lines(home):
 
 def test_boot_reconciles_keep_awake_from_settings(home, monkeypatch):
     # §3/§4.9: main() reconciles the permanent keepAwake assertion at boot with
-    # the persisted setting's value. Server/scheduler/listeners are stubbed —
-    # only the boot sequence up to (and past) the reconcile call runs.
+    # the persisted setting's value, through the §2 platform layer.
+    # Server/scheduler/listeners are stubbed — only the boot sequence up to
+    # (and past) the reconcile call runs.
+    import dataclasses
+
     from autowright import main as main_mod
     from autowright import paths
+    from autowright import platform as platmod
     from autowright.yamlio import save_yaml
 
     save_yaml(paths.settings_file(), {"keepAwake": False})  # non-default value
 
     calls = []
-    monkeypatch.setattr(main_mod.awake, "reconcile", lambda v: calls.append(v))
+
+    class RecordingPower:
+        def reconcile(self, enabled: bool) -> None:
+            calls.append(enabled)
+
+        def hold_execution(self):
+            return lambda: None
+
+    fake = dataclasses.replace(platmod.current(), power=RecordingPower())
+    monkeypatch.setattr(platmod, "current", lambda: fake)
 
     class _Stub:
         def __init__(self, *a, **kw):

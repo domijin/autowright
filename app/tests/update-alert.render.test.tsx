@@ -129,6 +129,29 @@ describe('About updates row ↔ shared state (§9.4)', () => {
     expect(screen.getByText('Version 9.9.9 is available.')).toBeTruthy()
   })
 
+  it('a bare error result shows the generic network line', async () => {
+    updateCheck.mockResolvedValueOnce({ state: 'error' })
+    render(<AboutPage />)
+    fireEvent.click(screen.getByText('Check for updates'))
+    await waitFor(() => expect(
+      screen.getByText("Couldn't reach autowright.ai — try again later."),
+    ).toBeTruthy())
+  })
+
+  it('§3: a carried error detail is rendered instead of the network line', async () => {
+    // A platform whose §2 module serves no update feed answers the plain
+    // no-updates line — the user is never told to retry what cannot succeed.
+    updateCheck.mockResolvedValueOnce({
+      state: 'error', error: 'Updates are not supported on this platform yet.',
+    })
+    render(<AboutPage />)
+    fireEvent.click(screen.getByText('Check for updates'))
+    await waitFor(() => expect(
+      screen.getByText('Updates are not supported on this platform yet.'),
+    ).toBeTruthy())
+    expect(screen.queryByText("Couldn't reach autowright.ai — try again later.")).toBeNull()
+  })
+
   it('a background check landing while the row sits idle flips it live', async () => {
     render(<AboutPage />)
     expect(screen.getByText('Check for updates')).toBeTruthy()

@@ -3,6 +3,7 @@
 // about-ish content lands here, never on Settings.
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import { BtnGhost, CommandBlock, Eyebrow, Modal, PageTitle, ProgressBar, ScrollArea, Toggle } from '../ui'
 import { Markdown } from '../result'
@@ -32,7 +33,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // handlers (check → download → restart-install); the renderer never talks to
 // GitHub or the feed itself.
 type UpdateCheck =
-  | { state: 'idle' | 'checking' | 'current' | 'error' }
+  | { state: 'idle' | 'checking' | 'current' }
+  // §3: a check can carry an error detail (a platform with no update feed
+  // answers the plain no-updates line); without one the generic network copy
+  // stands.
+  | { state: 'error'; error?: string }
   | { state: 'available'; version: string }
   | { state: 'downloading'; version: string; percent: number | null }
   | { state: 'downloaded'; version: string; busy?: boolean }
@@ -55,6 +60,8 @@ type DocKey = keyof typeof DOCS
 
 export default function AboutPage() {
   const { version, settings, showToast, updateAvailable } = useStore()
+  // §9 per-OS copy rule: the machine noun the APP and LEGAL lines name.
+  const copy = usePlatformCopy()
   // §9.4 pre-armed: a known update (§3 update-available — an automatic check,
   // or an earlier manual one) renders the `available` state without a press.
   const [upd, setUpd] = useState<UpdateCheck>(() => (
@@ -81,7 +88,8 @@ export default function AboutPage() {
     setUpd({ state: 'checking' })
     void window.autowright?.updateBrewManaged?.().then((b) => setBrew(!!b))
     const r = await window.autowright?.updateCheck()
-    if (!r || r.state === 'error') setUpd({ state: 'error' })
+    if (!r) setUpd({ state: 'error' })
+    else if (r.state === 'error') setUpd({ state: 'error', error: r.error })
     else if (r.state === 'available') {
       useStore.setState({ updateAvailable: r.version })
       setUpd({ state: 'available', version: r.version })
@@ -153,7 +161,11 @@ export default function AboutPage() {
       ? 'An automation is executing — the update installs when you restart after it finishes.'
       : 'Update downloaded — restarts the app, not your automations.',
     failed: upd.state === 'failed' ? `Update failed: ${upd.error}` : '',
-    error: "Couldn't reach autowright.ai — try again later.",
+    // §3: a carried detail wins — the no-feed line must never read as a
+    // network hiccup the user could retry away.
+    error: upd.state === 'error' && upd.error
+      ? upd.error
+      : "Couldn't reach autowright.ai — try again later.",
   }[upd.state]
 
   // One action button for the whole flow: check → download → restart. On a
@@ -183,7 +195,7 @@ export default function AboutPage() {
               Autowright
               <span style={{ font: `500 11px var(--mono)`, color: 'var(--text-faint)', marginLeft: 6 }}>v{version}</span>
             </div>
-            <div style={rowSub}>Open source, MIT licensed — the whole app runs on this Mac.</div>
+            <div style={rowSub}>Open source, MIT licensed — the whole app runs on this {copy.machine}.</div>
           </div>
           <a className="ad-btn-soft" href={REPO_URL} target="_blank" rel="noopener noreferrer" style={linkBtn}>
             View on GitHub ↗
@@ -280,7 +292,7 @@ export default function AboutPage() {
         <div style={{ padding: '13px 20px', fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-faint)' }}>
           Autowright is provided as is, without warranty of any kind (MIT License). Automations
           execute scripts written by an AI agent — those scripts can do anything your user account
-          can do on this Mac. Review every change before you accept and execute it. You are
+          can do on this {copy.machine}. Review every change before you accept and execute it. You are
           responsible for what your automations do; the author accepts no liability for any damage
           or loss they cause.
         </div>

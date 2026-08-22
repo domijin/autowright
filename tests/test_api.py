@@ -18,12 +18,24 @@ def test_state_shape(client):
 
 
 def test_instructions_endpoint(client):
-    from autowright.drafting import CONTRACT_PREAMBLE, DEFAULT_INSTRUCTIONS
+    from autowright import drafting
 
-    # §11/§19: both instruction files travel to the page verbatim
+    # §11/§19: both instruction files travel to the page with the §8
+    # {{MACHINE}} and {{OS}} placeholders resolved to the per-OS forms —
+    # never raw.
     r = client.get("/instructions").json()
-    assert r["framework"] == CONTRACT_PREAMBLE
-    assert r["defaultBuild"] == DEFAULT_INSTRUCTIONS
+    assert r["framework"] == drafting.contract_preamble()
+    assert r["defaultBuild"] == drafting.default_instructions()
+    for key in ("framework", "defaultBuild"):
+        assert "{{MACHINE}}" not in r[key]
+        assert "{{OS}}" not in r[key]
+    from autowright import paths
+
+    assert f"the user's {paths.machine_noun()}." in r["framework"]
+    # §9 per-OS copy rule: the OS the app runs on is named by its §4.1 display
+    # name ("a macOS app" / "a Windows app").
+    os_name = paths.os_display_name(paths.current_os())
+    assert f"Autowright, a {os_name} app that executes recurring" in r["framework"]
 
 
 def test_secret_crud_and_usedby(client):
@@ -123,7 +135,9 @@ def test_export_import_endpoints(client):
                                     "renamedFrom", "os", "osMismatch"}
     assert body["summary"]["renamedFrom"] == "Port me"
     # §5.1: a same-machine round trip records the platform and never mismatches
-    assert body["summary"]["os"] == "macos"
+    from autowright import paths
+
+    assert body["summary"]["os"] == paths.current_os()
     assert body["summary"]["osMismatch"] is False
     assert client.post("/automations/import", content=b"junk",
                        headers={"Content-Type": "application/octet-stream"}).status_code == 422
@@ -1591,43 +1605,36 @@ def test_settings_cli_enabled_defaults_on_and_patches(client):
     assert client.patch("/settings", json={"cliEnabled": "yes"}).status_code == 422
 
 
-def test_settings_keep_awake_holds_assertion(client, monkeypatch):
-    import os
+def test_settings_keep_awake_routes_through_the_platform_layer(client, monkeypatch):
+    """§3/§4.9: every PATCH /settings reconciles the permanent assertion
+    through the §2 platform layer's PowerAssertion — never an OS mechanism
+    directly. (The caffeinate mechanics themselves live in test_awake.)"""
+    import dataclasses
 
-    from autowright import awake
+    from autowright import platform as platmod
 
-    calls: list[list[str]] = []
+    calls: list[bool] = []
 
-    class FakeProc:
-        def __init__(self, argv, **_kw):
-            calls.append(argv)
-            self.terminated = False
+    class RecordingPower:
+        def reconcile(self, enabled: bool) -> None:
+            calls.append(enabled)
 
-        def poll(self):
-            return 1 if self.terminated else None
+        def hold_execution(self):
+            return lambda: None
 
-        def terminate(self):
-            self.terminated = True
-
-        def wait(self, timeout=None):
-            return 0
-
-    monkeypatch.setattr(awake, "_proc", None)
-    monkeypatch.setattr(awake.subprocess, "Popen", FakeProc)
+    fake = dataclasses.replace(platmod.current(), power=RecordingPower())
+    monkeypatch.setattr(platmod, "current", lambda: fake)
     # §4.9: default on; PATCH persists it and starts/stops the §3 assertion live
     assert client.get("/settings").json()["keepAwake"] is True
     assert client.patch("/settings", json={"keepAwake": False}).json()["keepAwake"] is False
-    assert calls == []  # nothing running yet in tests — nothing to stop
+    assert calls == [False]
     assert client.patch("/settings", json={"keepAwake": True}).json()["keepAwake"] is True
-    assert calls == [["caffeinate", "-i", "-w", str(os.getpid())]]
-    # unrelated PATCH while on: idempotent — no second caffeinate
+    assert calls == [False, True]
+    # an unrelated PATCH while on still reconciles — with the live value
     client.patch("/settings", json={"developerMode": True})
-    assert len(calls) == 1
-    proc = awake._proc
-    # off → the subprocess is terminated and reaped
+    assert calls == [False, True, True]
     assert client.patch("/settings", json={"keepAwake": False}).json()["keepAwake"] is False
-    assert proc.terminated
-    assert awake._proc is None
+    assert calls == [False, True, True, False]
 
 
 def test_packages_outdated_and_update(client, monkeypatch):
@@ -1716,7 +1723,9 @@ def test_memory_read_endpoints(client):
     assert client.get(f"{base}/files").json() == {"files": []}
 
     mem = store.auto_dir(a) / "memory"
-    (mem / "seen.yaml").write_text("v: old\n")
+    # newline="" so the file is the 7 bytes asserted below on every OS —
+    # text mode would write CRLF on Windows.
+    (mem / "seen.yaml").write_text("v: old\n", newline="")
     (mem / "sub").mkdir()
     (mem / "sub" / "cache.bin").write_bytes(b"\xff\xfe\x00")
 
@@ -1791,10 +1800,25 @@ def test_check_harness_endpoint(client, monkeypatch):
     assert client.post("/agents/check-harness", json={"harness": "GPT-5"}).status_code == 422
 
 
+def _agent_install_capability(monkeypatch, enabled: bool):
+    """§19: the install/sign-in endpoints are gated on the §2 `agentInstall`
+    capability — pin it so these suites read the same on every host."""
+    import dataclasses
+
+    from autowright import platform as platmod
+
+    plat = platmod.current()
+    fake = dataclasses.replace(
+        plat, capabilities=dataclasses.replace(plat.capabilities, agent_install=enabled))
+    monkeypatch.setattr(platmod, "current", lambda: fake)
+    return fake
+
+
 def test_signin_and_login_endpoints(client, monkeypatch):
     # §19 sign-in help: only for an installed, signed-out, account-backed provider.
     from autowright import harness, installer
 
+    _agent_install_capability(monkeypatch, True)
     monkeypatch.setattr(harness, "signin_state",
                         lambda pid: {"installed": pid != "gemini", "signedIn": pid == "claude"})
     assert client.get("/agents/signin/codex").json() == {"installed": True, "signedIn": False}
@@ -1807,10 +1831,64 @@ def test_signin_and_login_endpoints(client, monkeypatch):
     assert client.post("/agents/login", json={"id": "codex"}).json() == {"ok": True, "method": "browser"}
 
 
+def test_login_not_installed_line_takes_the_per_os_machine_noun(client, monkeypatch):
+    """§9 per-OS copy rule: the sign-in 409's "isn't installed on this …" line
+    reads its machine noun from `paths` — "Mac" on macOS, "PC" on Windows —
+    never a literal. Same line, same wording, one substituted noun."""
+    from autowright import harness, paths
+
+    _agent_install_capability(monkeypatch, True)
+    monkeypatch.setattr(harness, "signin_state",
+                        lambda pid: {"installed": False, "signedIn": False})
+
+    monkeypatch.setattr(paths, "current_os", lambda: "macos")
+    r = client.post("/agents/login", json={"id": "gemini"})
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Gemini CLI isn't installed on this Mac"
+
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    r = client.post("/agents/login", json={"id": "gemini"})
+    assert r.status_code == 409
+    assert r.json()["detail"] == "Gemini CLI isn't installed on this PC"
+
+
+def test_secret_write_503_takes_the_per_os_store_name_and_remedy(client, monkeypatch):
+    """§9 per-OS copy rule: the §19 secret-write 503s (POST and PUT) name the
+    store the platform really has — "Keychain" / "Credential Manager" — and the
+    remedy clause is macOS-only: unlocking the login Keychain has no Windows
+    analogue, so the Windows line ends plain "— try again"."""
+    from autowright import keychain, paths
+
+    created = client.post("/secrets", json={"name": "TOK", "value": "v"})
+    assert created.status_code == 200
+    secret_id = created.json()["id"]
+
+    def rejected(*_a, **_kw):
+        raise RuntimeError("locked")
+
+    monkeypatch.setattr(keychain, "set_secret", rejected)
+
+    monkeypatch.setattr(paths, "current_os", lambda: "macos")
+    mac = ("your Keychain didn't accept the value (locked) — "
+           "unlock the login Keychain and try again")
+    r = client.post("/secrets", json={"name": "OTHER", "value": "v"})
+    assert r.status_code == 503 and r.json()["detail"] == mac
+    r = client.put(f"/secrets/{secret_id}", json={"value": "v2"})
+    assert r.status_code == 503 and r.json()["detail"] == mac
+
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    win = "your Credential Manager didn't accept the value (locked) — try again"
+    r = client.post("/secrets", json={"name": "OTHER", "value": "v"})
+    assert r.status_code == 503 and r.json()["detail"] == win
+    r = client.put(f"/secrets/{secret_id}", json={"value": "v2"})
+    assert r.status_code == 503 and r.json()["detail"] == win
+
+
 def test_install_endpoints(client, monkeypatch):
     # §19: install runs in the backend; the status snapshot reattaches a remounted UI.
     from autowright import installer
 
+    _agent_install_capability(monkeypatch, True)
     assert client.post("/agents/install", json={"id": "nope"}).status_code == 422
     assert client.get("/agents/install/claude").json() == {"state": "idle"}
 
@@ -1819,6 +1897,36 @@ def test_install_endpoints(client, monkeypatch):
     assert client.post("/agents/install", json={"id": "codex"}).json() == {"ok": True}
     monkeypatch.setattr(installer, "start", lambda pid, publish: False)  # already running
     assert client.post("/agents/install", json={"id": "codex"}).status_code == 409
+
+
+def test_install_and_login_degrade_where_agent_install_is_unsupported(client, monkeypatch):
+    """§19: where the §2 `agentInstall` capability is false, both endpoints
+    answer 409 with a plain line naming the OS — the macOS-shaped install
+    channels and Terminal sign-in flow never run. Every other agent endpoint
+    keeps working."""
+    from autowright import harness, installer, paths
+
+    _agent_install_capability(monkeypatch, False)
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    # The gate comes first: neither installer function is ever reached.
+    monkeypatch.setattr(installer, "start", lambda pid, publish: pytest.fail("no install"))
+    monkeypatch.setattr(installer, "login", lambda pid: pytest.fail("no login"))
+    monkeypatch.setattr(harness, "signin_state",
+                        lambda pid: {"installed": True, "signedIn": False})
+
+    r = client.post("/agents/install", json={"id": "codex"})
+    assert r.status_code == 409
+    assert r.json()["detail"] == ("Installing agents from Autowright isn't supported on "
+                                  "Windows yet — install Codex by hand.")
+    r = client.post("/agents/login", json={"id": "claude"})
+    assert r.status_code == 409
+    assert r.json()["detail"] == ("Sign-in help isn't supported on Windows yet — "
+                                  "run Claude Code's sign-in from a terminal.")
+    # Provider semantics still win over the OS gate for Ollama (no account).
+    r = client.post("/agents/login", json={"id": "ollama"})
+    assert r.status_code == 409 and r.json()["detail"] == "Ollama needs no sign-in"
+    # Detection and sign-in *state* are unaffected.
+    assert client.get("/agents/signin/codex").json() == {"installed": True, "signedIn": False}
 
 
 # ---------- appended coverage: guards, repair, WS auth, export names, delete ----------
@@ -2019,17 +2127,24 @@ def test_kill_orphan_group_pid_reuse_guard():
     """kill_orphan_group must never signal a group that no longer contains an
     autowright.executor process — a recycled pgid is somebody else's now."""
     import subprocess as sp
+    import sys
 
+    from autowright import platform as platmod
     from autowright.engine import kill_orphan_group
 
-    proc = sp.Popen(["sleep", "30"], start_new_session=True)
+    procs = platmod.current().processes
+    proc = sp.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                    **procs.session_kwargs())
     try:
+        # §2/§3: the guard answers False wherever group membership can't be
+        # verified (Windows has no pid+creation-time identity yet), and False
+        # means orphan recovery no-ops — the same "never kill what isn't
+        # provably ours" outcome this asserts on POSIX.
+        assert procs.group_has_command(proc.pid, "autowright.executor") is False
         kill_orphan_group(proc.pid)          # group exists, but it's not ours
         assert proc.poll() is None           # untouched
     finally:
-        import os
-        import signal as sig
-        os.killpg(proc.pid, sig.SIGKILL)
+        procs.kill_group(proc.pid)
         proc.wait(timeout=10)
 
 

@@ -11,12 +11,26 @@ const path = require('path')
 // the composed per-OS module — macOS today, a degraded fallback elsewhere.
 const plat = require('./platform/index.cjs')
 
+// §9: the shell asks its own platform module which surfaces exist before
+// wiring any of them — a module that declares a capability false is never
+// asked for its assets or handlers. `dockIcon` doubles as the §9 close rule's
+// discriminator: a platform with a dock keeps the app resident behind it, a
+// platform without one has only the tray to stay resident in.
+const caps = plat.capabilities
+
 // Keep Chromium's profile (Cache, Cookies, Local Storage, …) out of the backend's
 // data dir — both default to ~/Library/Application Support/Autowright (§5).
 // §15: AUTOWRIGHT_HOME relocates the whole app-support root, profile included —
 // an isolated dev/test home must never touch the real profile.
+// §5: the base is the platform module's data root — identical to Electron's
+// userData default on macOS, but on Windows getPath('userData') is Roaming
+// %APPDATA% while the §5 root is %LOCALAPPDATA%; one root holds all app state.
 app.setPath('userData', path.join(
-  process.env.AUTOWRIGHT_HOME || app.getPath('userData'), 'electron'))
+  process.env.AUTOWRIGHT_HOME || plat.dataRootDefault(), 'electron'))
+
+// §3 identifiers: on Windows the window's AppUserModelID must match the
+// installer shortcut's (taskbar grouping/pinning + toast identity agree).
+if (plat.APP_USER_MODEL_ID) app.setAppUserModelId(plat.APP_USER_MODEL_ID)
 
 // Overlay scrollbars: draw on top of content, zero layout space, so content
 // never shifts when a scrollbar appears. Without this, macOS "Automatic"/
@@ -155,11 +169,10 @@ async function verifyBackendUp() {
       return
     }
   }
-  ensureStatus = {
-    state: 'failed',
-    detail: 'The backend service was registered but never started — macOS '
-      + 'Gatekeeper may be blocking an unsigned build. Details in app.log.',
-  }
+  // §9: the failure line is per-OS copy from the platform module (the mac one
+  // names Gatekeeper; Windows says plainly that the service failed to start),
+  // composed with the §2 serviceDiagnostics capture below.
+  ensureStatus = { state: 'failed', detail: plat.SERVICE_START_FAILED_DETAIL }
   appLog('ensure-backend: backend did not come up within 30 s of install')
   plat.serviceDiagnostics(appLog)
 }
@@ -400,11 +413,11 @@ let dataRoot = null
 
 function applyShellSettings(s) {
   if (typeof s?.dataPath === 'string' && s.dataPath) dataRoot = s.dataPath
-  if (typeof s?.login === 'boolean'
+  if (caps.loginItem && typeof s?.login === 'boolean'
       && app.getLoginItemSettings().openAtLogin !== s.login) {
     app.setLoginItemSettings({ openAtLogin: s.login })
   }
-  if (typeof s?.menuBarIcon === 'boolean') {
+  if (caps.trayPanel && typeof s?.menuBarIcon === 'boolean') {
     if (s.menuBarIcon && !tray) {
       createTray()
       void refreshTrayAlert()
@@ -418,7 +431,7 @@ function applyShellSettings(s) {
   // launch with the setting on — checks immediately, then every 24 h; on→off
   // clears the timer. Nothing about past checks is persisted. Failures are
   // silent, and an automatic check never starts a download.
-  if (typeof s?.automaticUpdateCheck === 'boolean') {
+  if (caps.updates && typeof s?.automaticUpdateCheck === 'boolean') {
     if (s.automaticUpdateCheck && !automaticUpdateTimer) {
       void fetchUpdateState()
       automaticUpdateTimer = setInterval(() => { void fetchUpdateState() }, 24 * 60 * 60_000)
@@ -445,6 +458,19 @@ async function syncShellSettings() {
 // before the tray click arrives, so a bare isVisible() check would always
 // re-show. A click landing right after a blur-hide means "close" — swallow it.
 let panelHiddenAt = 0
+// §13 re-anchor: the point the panel was opened from (cursor + display) and
+// its current height. `resize-panel` re-runs the platform placement with the
+// real new height, so a bottom-anchored panel (Windows) keeps hugging the
+// taskbar as it grows; a top-anchored one (macOS) lands on the same pixels.
+let panelAnchor = null
+let panelHeight = 420
+
+function repositionPanel() {
+  if (!panel || !panelAnchor) return
+  const pos = plat.panelPosition(panelAnchor.pt, panelAnchor.display, panelHeight)
+  panel.setPosition(pos.x, pos.y)
+}
+
 function togglePanel() {
   if (panel && panel.isVisible()) { panel.hide(); return }
   if (Date.now() - panelHiddenAt < 250) return
@@ -478,9 +504,8 @@ function togglePanel() {
     panel.on('closed', () => { panel = null })
   }
   const pt = screen.getCursorScreenPoint()
-  const display = screen.getDisplayNearestPoint(pt)
-  const pos = plat.panelPosition(pt, display)
-  panel.setPosition(pos.x, pos.y)
+  panelAnchor = { pt, display: screen.getDisplayNearestPoint(pt) }
+  repositionPanel()
   panel.show()
 }
 
@@ -584,7 +609,12 @@ ipcMain.handle('open-app', (_e, hash) => {
 })
 ipcMain.handle('resize-panel', (_e, h) => {
   if (!Number.isFinite(h)) return
-  if (panel) panel.setSize(334, Math.min(Math.max(Math.round(h), 120), 640))
+  if (!panel) return
+  panelHeight = Math.min(Math.max(Math.round(h), 120), 640)
+  panel.setSize(334, panelHeight)
+  // §13: re-anchor at the real new height — a bottom-anchored panel would
+  // otherwise drift off the taskbar as its content grows.
+  repositionPanel()
 })
 
 // §5 reveal roots: the only trees a reveal may point into — the app-support
@@ -709,7 +739,15 @@ ipcMain.handle('tray-alert', (_e, on) => {
 // §3 in-app updates (Squirrel.Mac): manual-only — nothing here runs until the
 // §9.4 "Check for updates" button calls update-check. One static JSON feed per
 // arch on the docs/ GitHub Pages site, rewritten by release.sh each release.
-const UPDATE_FEED = plat.updateFeedUrl(process.arch) // null where no channel exists yet
+// Null where the platform declares no update capability, or has one but no
+// channel yet: every §3 update path checks it and answers the degraded line,
+// so the IPC surface stays byte-identical for the renderer either way.
+const UPDATE_FEED = caps.updates ? plat.updateFeedUrl(process.arch) : null
+
+// §3: the one line every update path answers when this platform serves no feed
+// — check carries it as its error detail (the §9.4 page renders it instead of
+// the generic network copy), download and install refuse with it.
+const NO_UPDATES_ERROR = 'Updates are not supported on this platform yet.'
 
 // §9.4 compare: numeric on dot-split parts, ignoring a leading `v`; a
 // malformed version counts as not newer.
@@ -738,8 +776,88 @@ function recordAvailable(version) {
   win?.webContents.send('update-available', version)
 }
 
+// §3 per-OS update machinery, chosen by the §2 module's marker — never by
+// sniffing process.platform here. `squirrel` is Electron's built-in
+// autoUpdater (macOS, the flow below); `nsis` is electron-updater's
+// NsisUpdater against the generic provider (Windows). The renderer-facing IPC
+// surface is identical either way, so no renderer code forks.
+const USE_NSIS = Boolean(UPDATE_FEED) && plat.UPDATER === 'nsis'
+
+// Built on first use and never at module load: requiring main.cjs must not
+// turn into a feed fetch, and electron-updater checks nothing until asked.
+let nsis = null
+
+function nsisUpdater() {
+  if (nsis) return nsis
+  const { NsisUpdater } = require('electron-updater')
+  // No publisherName until a certificate exists (§3 footgun): with one set,
+  // electron-updater verifies the downloaded installer's Authenticode
+  // identity, and every update against an unsigned artifact fails.
+  const u = new NsisUpdater({ provider: 'generic', url: UPDATE_FEED })
+  // §3 manual-only rule: a check just reads latest.yml, downloads and installs
+  // are user-initiated, and nothing may install itself on quit — the
+  // update-install handler's live-execution gate is the only way in.
+  u.autoDownload = false
+  u.autoInstallOnAppQuit = false
+  const log = (m) => appLog(`update: ${String(m?.stack || m?.message || m)}`)
+  u.logger = { info: log, warn: log, error: log, debug: () => {} }
+  // §3 determinate progress on the same update-progress IPC the mac flow
+  // pushes: percent, or null (indeterminate bar) when the server sent no
+  // total to divide by.
+  u.on('download-progress', (p) => {
+    const percent = p?.total && Number.isFinite(p?.percent)
+      ? Math.min(100, Math.round(p.percent))
+      : null
+    win?.webContents.send('update-progress', percent)
+  })
+  nsis = u
+  return nsis
+}
+
+// §3 win32 check: the feed read, mapped onto the same `{ state }` shape and
+// the same §9.4 version-compare rule as the mac path — electron-updater's own
+// "is this newer" answer is never consulted, so both platforms agree on what
+// counts as an update.
+async function fetchUpdateStateNsis() {
+  try {
+    const result = await nsisUpdater().checkForUpdates()
+    const version = String(result?.updateInfo?.version ?? '')
+    if (!isNewerVersion(version, app.getVersion())) {
+      recordAvailable(null)
+      return { state: 'uptodate' }
+    }
+    recordAvailable(version)
+    return { state: 'available', version }
+  } catch {
+    return { state: 'error' }
+  }
+}
+
+// §3 win32 download: electron-updater streams the installer and emits real
+// progress events, so there is no temp file, no loopback server and no
+// re-implemented percent math here. The check runs first — with autoDownload
+// off it only reads latest.yml — which is both the mac flow's "re-fetch the
+// feed" step and what arms downloadUpdate.
+async function downloadUpdateNsis() {
+  try {
+    const updater = nsisUpdater()
+    const result = await updater.checkForUpdates()
+    const version = String(result?.updateInfo?.version ?? '')
+    if (!isNewerVersion(version, app.getVersion())) return { error: 'no update available' }
+    await updater.downloadUpdate(result?.cancellationToken)
+    win?.webContents.send('update-progress', 100)
+    return { ok: true }
+  } catch (err) {
+    return { error: String(err?.message || err) }
+  }
+}
+
 async function fetchUpdateState() {
-  if (!UPDATE_FEED) return { state: 'error' }
+  // §3: no feed on this platform — answer the error state carrying the plain
+  // no-updates line, so the §9.4 page never tells the user to retry something
+  // that cannot succeed. A real feed failure carries no detail (generic copy).
+  if (!UPDATE_FEED) return { state: 'error', error: NO_UPDATES_ERROR }
+  if (USE_NSIS) return fetchUpdateStateNsis()
   try {
     const res = await fetch(UPDATE_FEED, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return { state: 'error' }
@@ -774,7 +892,8 @@ ipcMain.handle('update-brew-managed', () => brewManaged())
 // path and surfaces Squirrel's real signature error.
 ipcMain.handle('update-download', async () => {
   if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
-  if (!UPDATE_FEED) return { error: 'Updates are not supported on this platform yet.' }
+  if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
+  if (USE_NSIS) return downloadUpdateNsis()
   const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
   const tmpZip = path.join(app.getPath('temp'), `autowright-update-${randomUUID()}.zip`)
   let server = null
@@ -884,9 +1003,16 @@ ipcMain.handle('update-download', async () => {
 // version-compare flow restarts it.
 ipcMain.handle('update-install', async () => {
   if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
+  // §3: no feed → nothing can be staged; quitAndInstall with nothing staged
+  // must never quit the app for no swap (unreachable on macOS, real on win32).
+  if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
   if (await executionsLive()) return { busy: true }
   appLog('update: quitting to install')
-  autoUpdater.quitAndInstall()
+  // §3: the same busy-gated, user-initiated install on both platforms — only
+  // the machinery that performs the swap differs (ShipIt vs. the NSIS
+  // installer electron-updater staged).
+  if (USE_NSIS) nsisUpdater().quitAndInstall()
+  else autoUpdater.quitAndInstall()
   return { ok: true }
 })
 
@@ -925,10 +1051,10 @@ app.whenReady().then(() => {
   // Dev launches via `electron .`, which ships the default Electron dock icon —
   // replace it with the AW mark (§14 checked-in icon assets; a no-op on
   // platforms without a dock).
-  plat.setDockIcon(app, path.join(__dirname, 'icon', 'icon.png'))
+  if (caps.dockIcon) plat.setDockIcon(app, path.join(__dirname, 'icon', 'icon.png'))
   void ensureBackend()
   createWindow()
-  createTray()
+  if (caps.trayPanel) createTray()
   void notifyAppStarted()
   void refreshTrayAlert()
   void syncShellSettings()
@@ -938,7 +1064,17 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (win === null) createWindow(); else { win.show(); win.focus() } })
 })
 
-// §3: quitting the app never stops the backend — we are always a client.
-// (The one exception is the explicit quit-all IPC above, which stops the
-// backend first and then quits.)
-app.on('window-all-closed', () => { /* stay alive in the tray */ })
+// §9 close rule, per-OS. §3 holds either way: quitting the app never stops the
+// backend — we are always a client (the one exception is the explicit quit-all
+// IPC above, which stops the backend first and then quits).
+//   • With a dock (macOS): never quit. The app is a tray-and-dock app and stays
+//     resident; `activate` reopens the window from the dock.
+//   • Without one (Windows): the tray icon is the only way back, so the app
+//     stays resident exactly while one is showing and otherwise quits the UI.
+//     The check reads the live `tray` reference — never the stored §4.9
+//     `menuBarIcon` setting — so a tray that failed to appear can't strand an
+//     invisible app with no way to reach it.
+app.on('window-all-closed', () => {
+  if (caps.dockIcon) return
+  if (!tray) app.quit()
+})

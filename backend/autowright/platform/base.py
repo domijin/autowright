@@ -7,6 +7,7 @@ implementations import (posixproc.py), never in a superclass.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -29,13 +30,15 @@ class Notifier(Protocol):
 
 
 class PowerAssertion(Protocol):
-    """§3/§4.9 idle-sleep assertions. `reconcile` is the permanent keepAwake
-    assertion (idempotent, called at boot and from PATCH /settings). The
-    per-execution assertion currently lives inline in engine.py (the §15
-    suites pin its exact caffeinate argv through `engine.subprocess`); it
-    joins this Protocol when a second OS implements it."""
+    """§3/§4.9 idle-sleep assertions — both of them. `reconcile` is the
+    permanent keepAwake assertion (idempotent, called at boot and from
+    PATCH /settings). `hold_execution` is the §3 per-execution hold: the
+    engine acquires one for the duration of an execution and calls the
+    returned release when it finishes. Neither acquiring nor releasing may
+    ever raise — a platform with no mechanism composes no-ops."""
 
     def reconcile(self, enabled: bool) -> None: ...
+    def hold_execution(self) -> Callable[[], None]: ...
 
 
 class ProcessControl(Protocol):
@@ -61,10 +64,12 @@ class Capabilities:
     notifications: bool
     keep_awake: bool
     service: bool
+    agent_install: bool
 
     def as_dict(self) -> dict:
         return {"imessage": self.imessage, "notifications": self.notifications,
-                "keepAwake": self.keep_awake, "service": self.service}
+                "keepAwake": self.keep_awake, "service": self.service,
+                "agentInstall": self.agent_install}
 
 
 @dataclass(frozen=True)

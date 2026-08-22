@@ -43,6 +43,10 @@ beforeEach(() => {
   storeMod.useStore.setState({
     surface: 'app', page: 'agentNew', agents: [], secrets: [],
     harnessInstall: {}, ollamaPull: null, toast: null,
+    // §2 gating: macOS-identical unless a test says otherwise.
+    platformCapabilities: {
+      imessage: true, notifications: true, keepAwake: true, service: true, agentInstall: true,
+    },
   })
 })
 afterEach(() => cleanup())
@@ -328,6 +332,53 @@ describe('AgentNewPage (§12)', () => {
     expect(await screen.findByText('Default model')).toBeTruthy()
     fireEvent.click(screen.getByText('Add agent'))
     await waitFor(() => expect(mockedApi.addAgent).toHaveBeenCalledTimes(1))
+  })
+
+  // §2/§9 gating: with `agentInstall` false the §19 install endpoint answers
+  // 409, so the card hides the action and shows the manual-install line whose
+  // provider name links to the vendor's install page.
+  const noAgentInstall = () => storeMod.useStore.setState({
+    platformCapabilities: {
+      imessage: false, notifications: false, keepAwake: false, service: true, agentInstall: false,
+    },
+  })
+
+  it('agentInstall false: an uninstalled harness shows the manual line, no install action (§9)', async () => {
+    noAgentInstall()
+    detect({ claude: false })
+    render(<AgentNewPage />)
+    expect(await screen.findByText('NOT INSTALLED')).toBeTruthy()
+    fireEvent.click(screen.getByText('Claude Code'))
+    const line = await screen.findByTestId('manual-install-line')
+    expect(line.textContent).toBe(
+      'Install Claude Code by hand, then come back — Autowright detects it automatically.')
+    const link = line.querySelector('a') as HTMLAnchorElement
+    expect(link.textContent).toBe('Claude Code')
+    expect(link.getAttribute('href')).toBe('https://claude.com/product/claude-code')
+    // §9.4 external-URL policy: the window-open handler routes it to the browser.
+    expect(link.getAttribute('target')).toBe('_blank')
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    // The gated actions are gone — hidden, never disabled.
+    expect(screen.queryByText('Download & set up')).toBeNull()
+    expect(screen.queryByText(/isn’t installed on this Mac yet/)).toBeNull()
+    expect(mockedApi.installHarness).not.toHaveBeenCalled()
+    // Detection keeps working: the model section stays gated behind the install.
+    expect(screen.queryByText('Default model')).toBeNull()
+  })
+
+  it('agentInstall false: missing Ollama shows the manual line instead of Install Ollama', async () => {
+    noAgentInstall()
+    status({ ready: false, installed: false })
+    render(<AgentNewPage />)
+    fireEvent.click(screen.getByText('OpenCode'))
+    fireEvent.click(screen.getByText('A local model'))
+    const line = await screen.findByTestId('manual-install-line')
+    expect(line.textContent).toBe(
+      'Install Ollama by hand, then come back — Autowright detects it automatically.')
+    expect((line.querySelector('a') as HTMLAnchorElement).getAttribute('href'))
+      .toBe('https://ollama.com/download')
+    expect(screen.queryByText('Install Ollama')).toBeNull()
+    expect(mockedApi.installHarness).not.toHaveBeenCalled()
   })
 
   it('a finished install that is signed out starts the sign-in help (§12)', async () => {

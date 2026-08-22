@@ -32,7 +32,7 @@ from pathlib import Path
 
 import yaml
 
-from . import harness, packages as pkglib, reqlog, triggers as triggerlib
+from . import harness, packages as pkglib, paths, reqlog, triggers as triggerlib
 from .events import hub
 from .imports_check import ALLOWED_IMPORTS, disallowed_imports
 from .specmd import blocks_to_md, md_to_blocks
@@ -70,9 +70,29 @@ _INSTRUCTIONS_DIR = Path(__file__).parent / "instructions"
 CONTRACT_PREAMBLE = (_INSTRUCTIONS_DIR / "framework-instructions.md").read_text(encoding="utf-8")
 DEFAULT_INSTRUCTIONS = (_INSTRUCTIONS_DIR / "default-build-instructions.md").read_text(encoding="utf-8")
 
+
+def _per_os(text: str) -> str:
+    """§8/§9: the checked-in instruction markdown names the user's machine via
+    the literal {{MACHINE}} placeholder and the OS itself via {{OS}}; every
+    consumer resolves both with the per-OS forms at read time — neither ever
+    reaches a prompt, the UI, or stored instructions."""
+    return (text
+            .replace("{{MACHINE}}", paths.machine_noun())
+            .replace("{{OS}}", paths.os_display_name(paths.current_os())))
+
+
+def contract_preamble() -> str:
+    return _per_os(CONTRACT_PREAMBLE)
+
+
+def default_instructions() -> str:
+    return _per_os(DEFAULT_INSTRUCTIONS)
+
+
 # §8: every prompt section opens with a `=== NAME ===` header — one dialect
 # throughout, visually distinct from the envelope's ===FILE:/===END=== markers.
-_FRAMEWORK_SECTION = "=== FRAMEWORK INSTRUCTIONS ===\n" + CONTRACT_PREAMBLE
+def _framework_section() -> str:
+    return "=== FRAMEWORK INSTRUCTIONS ===\n" + contract_preamble()
 
 # ---------- prompts ----------
 
@@ -134,6 +154,11 @@ STEPS_REMINDER = ("=== RESPONSE REMINDER ===\n"
                   "Respond with manifest.yaml plus one file block per step "
                   "(no spec.md), ending with ===END=== exactly.")
 
+# §9 per-OS copy rule: the diagnosis rule names the user's machine, but this
+# literal can't be an f-string (it is full of yaml braces), so it carries the
+# {{MACHINE}} placeholder that `_chat_task()` swaps for `paths.machine_noun()`
+# — the same noun the SYSTEM TOOLS header uses. Never append CHAT_TASK to a
+# prompt directly; always go through `_chat_task()`.
 CHAT_TASK = """=== TASK ===
 Decide what the USER REQUEST above needs:
 
@@ -181,9 +206,15 @@ undo: true                  # restore the draft to before the last request — e
 
 Only the keys shown are valid in actions.yaml; include only what the request calls for, and omit the block when no action is needed. When the user asks you to fix, change and verify, or "make it work" and the automation itself is at fault, prefer returning the rewrite together with `sync: true` (and `test: true` when a test would prove it) so the user doesn't have to press the buttons. Use `param_values` only for a value the user explicitly stated — never guessed, and never a password or token (those belong in secrets — say so in prose). Use `triggers` ops only on an explicit trigger request; before an `add`, check CURRENT triggers — if a matching trigger already exists, answer in prose with no op (if it exists but is off, return the `enable` op instead). A pure schedule change is a `triggers` op alone — no spec rewrite, no sync; message-trigger details (channel id, which secret holds the token, sender handle) may come from the spec or from what the user typed in this conversation, never invented — a discord op's `secret` is that secret's id, copied exactly from the grants yaml (never its name). Use `concurrency` only when the user explicitly asks for parallel runs or queueing ("let two run at once", "queue messages when it's busy") — never speculatively; the defaults (max_parallel 1, max_queued 0) stay unless the user names different numbers or words you can map to them ("a couple at once" → 2). Staged values, trigger edits, and concurrency changes land when the user saves — say so ("staged — takes effect when you save"); for immediate effect point at the automation page. When the user asks to undo or revert your last change ("undo that", "put it back"), return `undo: true` ALONE — no other action keys and no rewrite blocks (an accompanying prose message is fine); the editor restores the draft exactly, and tells the user when there is nothing left to undo — never hand-rewrite the documents back from memory instead. You cannot enable agents or secrets, and you cannot save or create the automation — suggest those in prose; the user does them.
 
-- A failure the user can't fix by changing the automation → when the RECENT EXECUTIONS show the failure comes from the user's Mac, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
+- A failure the user can't fix by changing the automation → when the RECENT EXECUTIONS show the failure comes from the user's {{MACHINE}}, not the steps — a missing desktop app, a daemon that isn't running (a pre-flight error, ConnectionRefusedError to a local service, "command not found") — do NOT rewrite the automation. Return a `kind: user-action` blocker: what to install or start, why the automation needs it, a markdown download link, and an offer of step-by-step install instructions.
 
 Use the blocker envelope when a requested change is genuinely impossible, or when the real fix is user action outside this app (`kind: user-action`)."""
+
+
+def _chat_task() -> str:
+    """CHAT_TASK with the §9 per-OS machine noun substituted in — the single
+    door onto the chat TASK section, so no caller can ship the placeholder."""
+    return CHAT_TASK.replace("{{MACHINE}}", paths.machine_noun())
 
 
 def spec_as_md(current: dict | None) -> str:
@@ -232,10 +263,11 @@ def _common_context(current: dict | None, grants: dict) -> list[str]:
                  "rewritten only when the user asks to change them and the TASK "
                  "allows an instructions.md block) ===\n" + (instructions or "none"))
     # §8 SYSTEM TOOLS: the §6 installed-tools probe, so the agent designs
-    # against CLIs that really exist on this Mac instead of hedging.
+    # against CLIs that really exist on this machine instead of hedging.
     tools = harness.probe_tools()
     parts.append(
-        "=== SYSTEM TOOLS (CLIs installed on this Mac — probed just now against "
+        f"=== SYSTEM TOOLS (CLIs installed on this {paths.machine_noun()} — "
+        "probed just now against "
         "the PATH steps run with) ===\n"
         "A listed tool is installed right now: steps may call it via subprocess "
         "(argv list), and the spec needn't hedge about installing it — but keep "
@@ -320,7 +352,7 @@ def build_chat_prompt(user_text: str | None, current: dict | None,
     editable only via actions.yaml), the in-editor spec, the CURRENT parameters
     (the names test_values keys must use), and every current step, closed by
     the USER REQUEST and the shape-deciding TASK."""
-    parts = [_FRAMEWORK_SECTION, *_common_context(current, grants)]
+    parts = [_framework_section(), *_common_context(current, grants)]
     if notes := _notes_section(current, " — you may return an updated notes.md"):
         parts.append(notes)
     convo = _conversation_lines(chat)
@@ -376,7 +408,7 @@ def build_chat_prompt(user_text: str | None, current: dict | None,
     for s in (current or {}).get("steps", []):
         parts.append(f"=== CURRENT step {_step_head(s)} ===\n{s.get('code', '')}")
     parts.append("=== USER REQUEST ===\n" + (user_text or "").strip())
-    parts.append(CHAT_TASK)
+    parts.append(_chat_task())
     return "\n\n".join(parts)
 
 
@@ -409,7 +441,7 @@ def build_steps_prompt(spec_md: str, current: dict | None,
     """§8 sync call — framework + build instructions + spec → manifest + step
     files. The draft's current implementation travels as reference when it
     holds any (a fresh draft's first build has none and simply omits it)."""
-    parts = [_FRAMEWORK_SECTION, STEPS_TASK, *_common_context(current, grants)]
+    parts = [_framework_section(), STEPS_TASK, *_common_context(current, grants)]
     if notes := _notes_section(
             current, " — context; you may return an updated notes.md beside the manifest"):
         parts.append(notes)

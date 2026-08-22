@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from . import __version__, awake, harness, imessage, installer, keychain, models, paths, platform
+from . import __version__, harness, imessage, installer, keychain, models, paths, platform
 from . import drafting, packages as pkglib, reqlog, timefmt, transfer, triggers as triggerlib
 from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
@@ -401,10 +401,11 @@ def health() -> dict:
 
 @app.get("/instructions", dependencies=[Depends(auth)])
 def instructions() -> dict:
-    """§8 instruction files for the create/edit page, verbatim:
-    framework-instructions.md + default-build-instructions.md."""
-    return {"framework": drafting.CONTRACT_PREAMBLE,
-            "defaultBuild": drafting.DEFAULT_INSTRUCTIONS}
+    """§8 instruction files for the create/edit page:
+    framework-instructions.md + default-build-instructions.md, with the
+    §8 {{MACHINE}} placeholder resolved to the per-OS noun."""
+    return {"framework": drafting.contract_preamble(),
+            "defaultBuild": drafting.default_instructions()}
 
 
 @app.get("/state", dependencies=[Depends(auth)])
@@ -1302,7 +1303,7 @@ def post_draft(body: models.DraftJobStart) -> dict:
         # best-practice build instructions — belt-and-braces; the editor
         # normally seeds and sends them with the fresh draft.
         current = dict(current or {})
-        current["instructions"] = drafting.DEFAULT_INSTRUCTIONS
+        current["instructions"] = drafting.default_instructions()
     # §8/§19: in-editor grant arrays in the body win over the stored automation's —
     # the editor's live toggles are the truth while a draft is being worked on.
     enabled_ids = body.enabledAgents
@@ -1598,6 +1599,12 @@ def agents_signin(provider_id: str) -> dict:
 @app.post("/agents/install", dependencies=[Depends(auth)])
 def agents_install(body: models.ProviderId) -> dict:
     pid = _provider_or_422(body.id)
+    # §19: the install channels are macOS-shaped — where the §2 agentInstall
+    # capability is false the endpoint degrades to a plain "by hand" line.
+    if not platform.current().capabilities.agent_install:
+        raise HTTPException(409, f"Installing agents from Autowright isn't supported on "
+                                 f"{paths.os_display_name(paths.current_os())} yet — "
+                                 f"install {harness.PROVIDER_NAME[pid]} by hand.")
 
     def publish(**kw) -> None:
         hub.publish("harness.install", id=pid,
@@ -1619,9 +1626,18 @@ def agents_login(body: models.ProviderId) -> dict:
     pid = _provider_or_422(body.id)
     if pid == "ollama":
         raise HTTPException(409, "Ollama needs no sign-in")
+    # §19: the Terminal sign-in flow is macOS-shaped — where the §2
+    # agentInstall capability is false the endpoint degrades to a plain line.
+    # It precedes the installed/signed-in checks, whose copy names the §9
+    # machine noun.
+    if not platform.current().capabilities.agent_install:
+        raise HTTPException(409, f"Sign-in help isn't supported on "
+                                 f"{paths.os_display_name(paths.current_os())} yet — "
+                                 f"run {harness.PROVIDER_NAME[pid]}'s sign-in from a terminal.")
     st = harness.signin_state(pid)
     if not st["installed"]:
-        raise HTTPException(409, f"{harness.PROVIDER_NAME[pid]} isn't installed on this Mac")
+        raise HTTPException(409, f"{harness.PROVIDER_NAME[pid]} isn't installed "
+                                 f"on this {paths.machine_noun()}")
     if st["signedIn"] is True:
         raise HTTPException(409, "already signed in")
     try:
@@ -1723,7 +1739,9 @@ def _ollama_pull_cli(model: str) -> None:
         if not binpath:
             raise FileNotFoundError(binpath)
         proc = subprocess.Popen([binpath, "pull", model], stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, text=True,
+                                stderr=subprocess.STDOUT,
+                                # §2 pipe-encoding contract
+                                encoding="utf-8", errors="replace",
                                 env=harness.spawn_env(binpath))
         prog = _PullProgress()
         for line in proc.stdout:  # type: ignore[union-attr]
@@ -1778,6 +1796,16 @@ def _secret_entity(s: dict) -> dict:
                 "usedBy": store.secret_used_by(s["id"])}
 
 
+def _secret_store_rejected(e: Exception) -> str:
+    """§19 secret-write 503 detail, in the §9 per-OS copy rule's wording: the
+    store's own name ("Keychain" / "Credential Manager"), and the remedy clause
+    macOS alone can offer — unlocking the login Keychain has no Windows
+    analogue, so the Windows line ends plain "— try again"."""
+    remedy = ("try again" if paths.current_os() == "windows"
+              else "unlock the login Keychain and try again")
+    return f"your {paths.secret_store_name()} didn't accept the value ({e}) — {remedy}"
+
+
 @app.post("/secrets", dependencies=[Depends(auth)])
 def create_secret(body: models.SecretCreate) -> dict:
     store.require_writable(paths.secrets_file())  # before the Keychain write
@@ -1798,8 +1826,7 @@ def create_secret(body: models.SecretCreate) -> dict:
         except Exception as e:  # noqa: BLE001 — keyring's error zoo is open-ended
             # A locked keychain or a denied consent prompt is a routine macOS
             # condition, not a server bug: clean 503, nothing stored.
-            raise HTTPException(503, f"your Keychain didn't accept the value ({e}) — "
-                                     "unlock the login Keychain and try again") from e
+            raise HTTPException(503, _secret_store_rejected(e)) from e
     with store.lock:
         if any(s["name"] == name for s in store.secrets):
             # A racing create landed the name while the Keychain IPC ran —
@@ -1827,8 +1854,7 @@ def put_secret(secret_id: str, body: models.SecretPut) -> dict:
         try:
             keychain.set_secret(secret_id, body.value)
         except Exception as e:  # noqa: BLE001 — keyring's error zoo is open-ended
-            raise HTTPException(503, f"your Keychain didn't accept the value ({e}) — "
-                                     "unlock the login Keychain and try again") from e
+            raise HTTPException(503, _secret_store_rejected(e)) from e
     with store.lock:
         # Re-find: the entry may have been deleted while the Keychain IPC ran.
         existing = next((s for s in store.secrets if s["id"] == secret_id), None)
@@ -1879,7 +1905,8 @@ def patch_settings(body: models.SettingsPatch) -> dict:
             if k in patch:
                 store.settings[k] = patch[k]
         store.save_settings()
-    awake.reconcile(bool(store.settings.get("keepAwake")))  # §3: applies live, no restart
+    # §3: applies live, no restart — through the §2 platform layer.
+    platform.current().power.reconcile(bool(store.settings.get("keepAwake")))
     hub.publish("settings.changed")
     return _settings_json()
 

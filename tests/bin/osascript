@@ -1,4 +1,5 @@
 #!/bin/sh
+# Contract pair (§15): tests/bin/osascript.py is this file's Windows twin.
 # Fake osascript (§15 test double): the §6 iMessage sender resolves osascript
 # through PATH, so tests exercise the real subprocess send path against this
 # recorder. Argv is appended to AUTOWRIGHT_TEST_OSASCRIPT_LOG (one line per

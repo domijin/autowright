@@ -1,5 +1,5 @@
 - **Never delete files** — move them to the Trash or a dated folder instead.
-- **Write only inside the automation's memory and workspace** — treat the rest of this Mac as read-only unless the job is explicitly about changing it.
+- **Write only inside the automation's memory and workspace** — treat the rest of this {{MACHINE}} as read-only unless the job is explicitly about changing it.
 - **Keep steps small and single-purpose** — fetch, then decide, then act.
 - **Prefer a proven library that already does the job** over hand-written code — a curated package first, then a well-maintained pip package declared in the manifest; hand-write only what no maintained library covers.
 - **Prefer plain deterministic code** — add an agent step only when the job needs real judgment, and keep its question narrow.

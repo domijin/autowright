@@ -13,6 +13,7 @@ vi.mock('../src/api', () => ({
   connectInfo: vi.fn(async () => false),
   openWs: vi.fn(() => () => {}),
   api: {
+    health: vi.fn(() => Promise.reject(new Error('offline'))),
     state: vi.fn(() => Promise.reject(new Error('offline'))),
     getExecution: vi.fn(() => Promise.reject(new Error('offline'))),
     getExecutionLogs: vi.fn(() => Promise.reject(new Error('offline'))),
@@ -520,6 +521,72 @@ describe('applyEvent — changed nudges and ws.open recovery (§19)', () => {
     await store.useStore.getState().refresh()
     expect(state).toHaveBeenCalledTimes(2)
     expect(store.useStore.getState().executions.map((e) => e.id)).toEqual(['mid'])
+  })
+})
+
+describe('readHealth — §19 /health platform gating (§2/§9)', () => {
+  const health = () => vi.mocked(apiMod.api.health as unknown as () => Promise<unknown>)
+
+  it('starts macOS-identical: every capability true until the first read', () => {
+    const m = store.useStore.getState()
+    expect(m.platformOs).toBe('')
+    expect(m.platformCapabilities).toEqual({
+      imessage: true, notifications: true, keepAwake: true, service: true, agentInstall: true,
+    })
+  })
+
+  it('keeps the os token and the capability flags from the response', async () => {
+    health().mockResolvedValueOnce({
+      version: '0.4.1', app: 'Autowright', os: 'windows',
+      capabilities: {
+        imessage: false, notifications: false, keepAwake: false, service: true, agentInstall: false,
+      },
+    })
+    await store.useStore.getState().readHealth()
+    const m = store.useStore.getState()
+    expect(m.platformOs).toBe('windows')
+    expect(m.platformCapabilities).toEqual({
+      imessage: false, notifications: false, keepAwake: false, service: true, agentInstall: false,
+    })
+  })
+
+  it('a flag the backend omits keeps its macOS-identical default', async () => {
+    health().mockResolvedValueOnce({
+      version: '0.4.1', app: 'Autowright', os: 'linux',
+      capabilities: { imessage: false } as never,
+    })
+    await store.useStore.getState().readHealth()
+    expect(store.useStore.getState().platformCapabilities).toEqual({
+      imessage: false, notifications: true, keepAwake: true, service: true, agentInstall: true,
+    })
+  })
+
+  it('a failed read leaves the flags alone — the connect retry re-reads them', async () => {
+    health().mockResolvedValueOnce({
+      version: '0.4.1', app: 'Autowright', os: 'windows',
+      capabilities: {
+        imessage: false, notifications: false, keepAwake: false, service: true, agentInstall: false,
+      },
+    })
+    await store.useStore.getState().readHealth()
+    health().mockRejectedValueOnce(new Error('offline'))
+    await store.useStore.getState().readHealth()
+    expect(store.useStore.getState().platformOs).toBe('windows')
+    expect(store.useStore.getState().platformCapabilities.imessage).toBe(false)
+  })
+
+  it('ws.open re-reads them — a reconnect can land on a restarted backend', async () => {
+    const h = health()
+    h.mockClear()
+    h.mockResolvedValueOnce({
+      version: '0.4.1', app: 'Autowright', os: 'windows',
+      capabilities: {
+        imessage: false, notifications: false, keepAwake: false, service: true, agentInstall: false,
+      },
+    })
+    store.useStore.getState().applyEvent({ event: 'ws.open' } as never)
+    expect(h).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(store.useStore.getState().platformOs).toBe('windows'))
   })
 })
 

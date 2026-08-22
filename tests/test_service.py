@@ -11,6 +11,40 @@ from types import SimpleNamespace
 
 import pytest
 
+# §3: service.py IS the launchd implementation — these pin its internals
+# (plist bytes, launchctl verbs, gui/<uid> domain). The Windows
+# ServiceManager is its own module (platform/windows.py, Task Scheduler);
+# its tests live in tests/test_platform.py and run on every host.
+launchd_only = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="launchd implementation; the Windows ServiceManager is platform/windows.py")
+
+
+def _degraded_platform_service():
+    """§3: whether this host composes the placeholder service manager (every
+    verb answers "<verb> failed: not supported on <OS> yet", exit 1) — read
+    off the §2 platform layer, never sniffed. The `main()` dispatch tests
+    below assert that real behavior instead of skipping."""
+    from autowright import paths, platform as platmod
+    from autowright.platform import fallback
+
+    degraded = isinstance(platmod.current().service, fallback.UnsupportedService)
+    why = f"not supported on {paths.os_display_name(paths.current_os())} yet"
+    return degraded, why
+
+
+def _windows_platform_service():
+    """§3: whether this host composes the Task Scheduler manager — the
+    dispatch tests then fake PowerShell instead of launchctl."""
+    from autowright import platform as platmod
+    from autowright.platform import windows
+
+    return isinstance(platmod.current().service, windows.WindowsService)
+
+
+_degraded_service, _degraded_why = _degraded_platform_service()
+_windows_service = _windows_platform_service()
+
 
 @pytest.fixture()
 def svc(home, monkeypatch):
@@ -56,12 +90,33 @@ def svc(home, monkeypatch):
                            registered=registered)
 
 
+@pytest.fixture()
+def dispatch(svc, request):
+    """The host's real ServiceManager with its OS layer faked: launchctl
+    through `svc` on macOS, PowerShell through `task_scheduler` on Windows.
+    `mark_installed()` puts that manager in its registered state, whichever it
+    is — so the §3 dispatch assertions read the same on every host."""
+    tasks = request.getfixturevalue("task_scheduler") if _windows_service else None
+
+    def mark_installed():
+        if tasks is not None:
+            tasks.task["state"] = "Ready"  # registered, not running
+            return
+        svc.plist.parent.mkdir(parents=True, exist_ok=True)
+        svc.plist.write_bytes(b"<plist/>")
+
+    svc.tasks = tasks
+    svc.mark_installed = mark_installed
+    return svc
+
+
 def _gui_domain():
     return f"gui/{os.getuid()}"
 
 
 # ---------------------------------------------------------------- install
 
+@launchd_only
 def test_install_writes_plist_and_reloads(svc):
     out = svc.mod.install()
     assert str(svc.plist) in out and out.startswith("installed and started")
@@ -82,6 +137,7 @@ def test_install_writes_plist_and_reloads(svc):
     ]
 
 
+@launchd_only
 def test_wedged_launchctl_times_out_into_a_plain_failure(svc, monkeypatch):
     """§3: every launchctl call is time-boxed — the app's ensure-backend step
     waits on this, so a wedged launchctl must report an ordinary failure line
@@ -103,6 +159,7 @@ def test_wedged_launchctl_times_out_into_a_plain_failure(svc, monkeypatch):
 
 # ---------------------------------------------------------------- CLI shim
 
+@launchd_only
 def test_install_never_creates_shim(svc):
     # §3: creation is the Electron shell's explicit privileged flow —
     # `service install` only heals. No shim → a manual-invocation note, and
@@ -114,6 +171,7 @@ def test_install_never_creates_shim(svc):
     assert not svc.shim.exists()
 
 
+@launchd_only
 def test_install_heals_existing_shim(svc):
     # A moved bundle or dev↔prod switch heals through re-install (§3): our
     # marker + user-writable → rewritten in place onto this interpreter.
@@ -128,12 +186,14 @@ def test_install_heals_existing_shim(svc):
     assert svc.shim.stat().st_mode & 0o111  # executable
 
 
+@launchd_only
 def test_install_reports_current_shim(svc):
     svc.shim.parent.mkdir(parents=True)
     svc.shim.write_text(svc.mod.shim_text())
     assert f"CLI at {svc.shim}" in svc.mod.install()
 
 
+@launchd_only
 def test_install_reports_unwritable_shim(svc):
     # Ours, wrong interpreter, not writable: reported with the module-form
     # fallback, never fatal (§3).
@@ -152,6 +212,7 @@ def test_install_reports_unwritable_shim(svc):
     assert f"{sys.executable} -m autowright.cli" in out
 
 
+@launchd_only
 def test_install_leaves_foreign_shim_alone(svc):
     svc.shim.parent.mkdir(parents=True)
     svc.shim.write_text("#!/bin/sh\necho someone else's autowright\n")
@@ -160,6 +221,7 @@ def test_install_leaves_foreign_shim_alone(svc):
     assert "someone else" in svc.shim.read_text()
 
 
+@launchd_only
 def test_install_leaves_undecodable_foreign_file_alone(svc):
     # §3: a non-UTF-8 file named autowright (some other tool's compiled
     # binary) can't carry the marker; install leaves it alone and still
@@ -186,6 +248,7 @@ def test_shim_paths_env_knob(monkeypatch, home):
     assert service.shim_paths() == [Path.home() / ".local" / "bin" / "autowright"]
 
 
+@launchd_only
 def test_install_heals_shim(svc):
     # Ours, pointing at another interpreter → rewritten in place (§3).
     svc.shim.parent.mkdir(parents=True)
@@ -196,6 +259,7 @@ def test_install_heals_shim(svc):
     assert svc.shim.read_text() == svc.mod.shim_text()
 
 
+@launchd_only
 def test_uninstall_removes_own_shim(svc):
     svc.shim.parent.mkdir(parents=True)
     svc.shim.write_text(svc.mod.shim_text())
@@ -203,6 +267,7 @@ def test_uninstall_removes_own_shim(svc):
     assert not svc.shim.exists()
 
 
+@launchd_only
 def test_uninstall_reports_undeletable_shim(svc):
     svc.shim.parent.mkdir(parents=True)
     svc.shim.write_text(svc.mod.shim_text())
@@ -215,6 +280,7 @@ def test_uninstall_reports_undeletable_shim(svc):
     assert svc.shim.exists()
 
 
+@launchd_only
 def test_uninstall_leaves_foreign_shim_alone(svc):
     # No marker → not ours → never touched (§3).
     svc.shim.parent.mkdir(parents=True)
@@ -225,8 +291,16 @@ def test_uninstall_leaves_foreign_shim_alone(svc):
 
 # ------------------------------------------- `python -m autowright.service`
 
-def test_main_dispatches_and_prints(svc, capsys):
-    assert svc.mod.main(["install"]) == 0
+def test_main_dispatches_and_prints(dispatch, capsys):
+    # §3: main() dispatches through platform.current().service, so what it
+    # prints is the platform's own result line — launchd's on macOS, Task
+    # Scheduler's on Windows (same head grammar), the degraded "not supported"
+    # line (exit 1) where no service manager exists.
+    if _degraded_service:
+        assert dispatch.mod.main(["install"]) == 1
+        assert f"install failed: {_degraded_why}" in capsys.readouterr().out
+        return
+    assert dispatch.mod.main(["install"]) == 0
     assert "installed and started" in capsys.readouterr().out
 
 
@@ -236,6 +310,7 @@ def test_main_rejects_bad_usage(svc, capsys):
     assert "usage:" in capsys.readouterr().err
 
 
+@launchd_only
 def test_main_exit_code_on_failure(svc, capsys):
     svc.results["bootstrap"] = SimpleNamespace(returncode=5, stdout="",
                                                stderr="Bootstrap failed: 5\n")
@@ -244,6 +319,7 @@ def test_main_exit_code_on_failure(svc, capsys):
     assert svc.mod.main(["install"]) == 1
 
 
+@launchd_only
 def test_result_code_from_real_action_output(svc, capsys):
     # §3/§20: result_code is the one exit-code rule, shared by main() and the
     # CLI `service` wrapper; probe it against real action output.
@@ -252,6 +328,7 @@ def test_result_code_from_real_action_output(svc, capsys):
     assert svc.mod.result_code(svc.mod.status()) == 0     # plist present: stopped, not a failure
 
 
+@launchd_only
 def test_install_falls_back_to_legacy_load(svc):
     # A box where the modern verbs fail (or an old macOS): legacy unload/load
     # still bootstraps the service.
@@ -264,6 +341,7 @@ def test_install_falls_back_to_legacy_load(svc):
     assert ["launchctl", "load", str(svc.plist)] in svc.calls
 
 
+@launchd_only
 def test_install_reports_failed_load(svc):
     svc.results["bootstrap"] = SimpleNamespace(returncode=5, stdout="",
                                                stderr="Bootstrap failed: 5\n")
@@ -280,6 +358,7 @@ def _list_result(stdout):
     return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
 
 
+@launchd_only
 def test_status_parses_active_pid_and_port(svc, home):
     svc.results["list"] = _list_result(
         "PID\tStatus\tLabel\n"
@@ -291,33 +370,43 @@ def test_status_parses_active_pid_and_port(svc, home):
     assert svc.mod.status() == "active (pid 1234) · port 5151"
 
 
+@launchd_only
 def test_status_loaded_not_active(svc):
     svc.results["list"] = _list_result("-\t0\tai.autowright.backend\n")
     assert svc.mod.status() == "loaded, not active (pid -)"
 
 
+@launchd_only
 def test_status_not_installed(svc):
     svc.results["list"] = _list_result("1\t0\tcom.apple.other\n")
     assert svc.mod.status() == "not installed"
 
 
-def test_status_stopped_with_plist_present(svc, capsys):
-    # §3: unloaded job + plist on disk = stopped on purpose (`service stop`),
-    # not "not installed" — and not a failure (exit 0).
-    svc.results["list"] = _list_result("1\t0\tcom.apple.other\n")
-    svc.plist.parent.mkdir(parents=True, exist_ok=True)
-    svc.plist.write_bytes(b"<plist/>")
-    assert svc.mod.status().startswith("stopped (plist present)")
-    assert svc.mod.main(["status"]) == 0
-    capsys.readouterr()
+def test_status_stopped_with_plist_present(dispatch, capsys):
+    # §3: a registered service that isn't running = stopped on purpose
+    # (`service stop`), not "not installed" — and not a failure (exit 0).
+    # Registered means plist-on-disk under launchd, a registered task under
+    # Task Scheduler; both answer "stopped (…)".
+    dispatch.results["list"] = _list_result("1\t0\tcom.apple.other\n")
+    dispatch.mark_installed()
+    if _degraded_service:
+        # No service manager to be stopped: main() reports the platform's
+        # degraded status line and exits 1 (§3 result-code rule, unchanged).
+        assert dispatch.mod.main(["status"]) == 1
+        assert f"status failed: {_degraded_why}" in capsys.readouterr().out
+        return
+    assert dispatch.mod.main(["status"]) == 0
+    assert capsys.readouterr().out.startswith("stopped (")
 
 
+@launchd_only
 def test_status_not_installed_exits_nonzero(svc, capsys):
     svc.results["list"] = _list_result("1\t0\tcom.apple.other\n")
     assert svc.mod.main(["status"]) == 1
     capsys.readouterr()
 
 
+@launchd_only
 def test_status_tolerates_stale_or_garbage_backend_json(svc):
     svc.results["list"] = _list_result("42\t0\tai.autowright.backend\n")
     from autowright import paths
@@ -331,6 +420,7 @@ def test_status_tolerates_stale_or_garbage_backend_json(svc):
 
 # ---------------------------------------------------------------- uninstall
 
+@launchd_only
 def test_uninstall_removes_plist_and_unloads(svc):
     svc.plist.parent.mkdir(parents=True, exist_ok=True)
     svc.plist.write_bytes(b"<plist/>")
@@ -339,6 +429,7 @@ def test_uninstall_removes_plist_and_unloads(svc):
     assert svc.actions() == [["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"]]
 
 
+@launchd_only
 def test_uninstall_when_not_installed(svc):
     assert svc.mod.uninstall() == "service was not installed"
     # the stop is still attempted (harmless), plist untouched
@@ -347,6 +438,7 @@ def test_uninstall_when_not_installed(svc):
 
 # ---------------------------------------------------------------- stop
 
+@launchd_only
 def test_stop_unloads_but_keeps_plist_and_shim(svc):
     # §3 quit-entirely backend half: bootout only — plist and shim survive,
     # the service returns at next login or app launch.
@@ -361,6 +453,7 @@ def test_stop_unloads_but_keeps_plist_and_shim(svc):
     assert svc.actions() == [["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"]]
 
 
+@launchd_only
 def test_stop_when_not_installed(svc, capsys):
     assert svc.mod.stop().startswith("not installed")
     assert svc.actions() == []  # nothing to unload
@@ -368,13 +461,17 @@ def test_stop_when_not_installed(svc, capsys):
     capsys.readouterr()
 
 
-def test_main_dispatches_stop(svc, capsys):
-    svc.plist.parent.mkdir(parents=True, exist_ok=True)
-    svc.plist.write_bytes(b"<plist/>")
-    assert svc.mod.main(["stop"]) == 0
+def test_main_dispatches_stop(dispatch, capsys):
+    dispatch.mark_installed()
+    if _degraded_service:
+        assert dispatch.mod.main(["stop"]) == 1
+        assert f"stop failed: {_degraded_why}" in capsys.readouterr().out
+        return
+    assert dispatch.mod.main(["stop"]) == 0
     assert "stopped" in capsys.readouterr().out
 
 
+@launchd_only
 def test_stop_failed_when_still_registered(svc, monkeypatch, capsys):
     # launchd refuses both bootout and legacy unload and keeps the job:
     # stop must report failure (exit 1) — the app then must not quit (§3).
@@ -398,7 +495,11 @@ def test_republish_rewrites_missing_file(home):
     paths.backend_json().unlink(missing_ok=True)
     assert backend_main.republish_if_lost(payload) is True
     assert json.loads(paths.backend_json().read_text())["pid"] == 42
-    assert (paths.backend_json().stat().st_mode & 0o777) == 0o600
+    if os.name == "posix":
+        # §3: 0600 is the POSIX protection for the bearer token. On Windows
+        # mode bits restrict nothing — the file's protection is the
+        # %LOCALAPPDATA% profile ACL it is written under.
+        assert (paths.backend_json().stat().st_mode & 0o777) == 0o600
 
 
 def test_republish_recreates_wiped_home(home):
@@ -458,6 +559,76 @@ def test_trim_logs_leaves_small_and_missing_files_alone(home, monkeypatch):
     assert log.read_bytes() == b"small\n" * 10
 
 
+# --------------------------------------- §3 Windows log routing (main.py)
+
+def test_route_logs_points_the_backend_streams_at_the_launchd_filenames(home, monkeypatch):
+    """§3: Task Scheduler captures no stdout/stderr, so on Windows the backend
+    writes the very files the launchd plist names — the §9.3 overlay and the §5
+    docs hold unchanged. Line-buffered, so a crash loses at most a line."""
+    from autowright import main as backend_main, paths
+
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    monkeypatch.setattr(sys, "stdout", sys.stdout)  # restored at teardown
+    monkeypatch.setattr(sys, "stderr", sys.stderr)
+    backend_main.route_logs()
+    try:
+        assert sys.stdout.name == str(paths.logs_dir() / "backend.out.log")
+        assert sys.stderr.name == str(paths.logs_dir() / "backend.err.log")
+        print("out line")  # noqa: T201 — the point of the test
+        print("err line", file=sys.stderr)  # noqa: T201
+        # line-buffered: readable before anything is closed
+        assert (paths.logs_dir() / "backend.out.log").read_text(encoding="utf-8") \
+            == "out line\n"
+    finally:
+        sys.stdout.close()
+        sys.stderr.close()
+    assert (paths.logs_dir() / "backend.err.log").read_text(encoding="utf-8") \
+        == "err line\n"
+
+
+def test_route_logs_appends_and_is_a_noop_off_windows(home, monkeypatch):
+    from autowright import main as backend_main, paths
+
+    out = paths.logs_dir() / "backend.out.log"
+    out.write_text("earlier run\n", encoding="utf-8")
+    monkeypatch.setattr(paths, "current_os", lambda: "macos")
+    monkeypatch.setattr(sys, "stdout", sys.stdout)
+    monkeypatch.setattr(sys, "stderr", sys.stderr)
+    before = sys.stdout
+    backend_main.route_logs()
+    assert sys.stdout is before  # launchd captures the streams itself
+
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    backend_main.route_logs()
+    try:
+        print("later run")  # noqa: T201
+    finally:
+        sys.stdout.close()
+        sys.stderr.close()
+    assert out.read_text(encoding="utf-8") == "earlier run\nlater run\n"
+
+
+def test_main_trims_logs_before_routing_them(home, monkeypatch):
+    """Order matters (§3): a writer holding backend.out/err.log open across the
+    startup trim turns that trim into a Windows sharing violation."""
+    from autowright import main as backend_main
+
+    class Stop(Exception):
+        pass
+
+    order = []
+    monkeypatch.setattr(backend_main, "trim_logs", lambda: order.append("trim"))
+
+    def route():
+        order.append("route")
+        raise Stop  # abort main() before it binds a socket
+
+    monkeypatch.setattr(backend_main, "route_logs", route)
+    with pytest.raises(Stop):
+        backend_main.main()
+    assert order == ["trim", "route"]
+
+
 # ------------------------------------------------- §2 CLI leaf invariant
 
 def test_no_backend_module_imports_the_cli():
@@ -476,7 +647,7 @@ def test_no_backend_module_imports_the_cli():
     for py in pkg.rglob("*.py"):
         if py.name == "cli.py":
             continue
-        tree = ast.parse(py.read_text(), filename=str(py))
+        tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 if any(a.name == "autowright.cli" or a.name.startswith("autowright.cli.")

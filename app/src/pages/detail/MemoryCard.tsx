@@ -2,6 +2,7 @@
 // their inline confirm swaps, and the §6.3 automatic-snapshot toggles.
 import React, { useEffect, useState } from 'react'
 import { api } from '../../api'
+import { usePlatformCopy } from '../../platformCopy'
 import { useStore } from '../../store'
 import type { Automation, SnapshotSettings } from '../../types'
 import { Eyebrow, Toggle } from '../../ui'
@@ -25,6 +26,8 @@ const SNAP_SETTINGS: Array<{ key: keyof SnapshotSettings; label: string; help: s
 
 export function MemoryCard({ auto, executing }: { auto: Automation; executing: boolean }) {
   const showToast = useStore((s) => s.showToast)
+  // §9 per-OS copy rule: the reveal action's label and file-manager name.
+  const copy = usePlatformCopy()
   const [confirmClear, setConfirmClear] = useState(false)
   const [snapAsk, setSnapAsk] = useState(false)
   const [snapName, setSnapName] = useState('')
@@ -38,7 +41,7 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
     const p = auto.memory?.path
     if (!p) return
     void window.autowright?.revealPath(p)
-    showToast(`Shown in Finder — Autowright › Memory › ${auto.name}`)
+    showToast(`Shown in ${copy.fileManager} — Autowright › Memory › ${auto.name}`)
   }
 
   const doClearMemory = () => {
@@ -142,7 +145,7 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
           ) : (
             <>
               <button className="ad-btn-soft" onClick={revealMemory}>
-                Show in Finder
+                {copy.reveal}
               </button>
               {auto.memory.size === 'empty' ? (
                 <button className="ad-btn-soft" disabled title="Memory is empty">

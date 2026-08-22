@@ -6,6 +6,7 @@
 // (toggle/list/kv/number/text) for both the editor's test-value card and the
 // detail page's debounced ParamRow.
 import React, { useEffect, useState } from 'react'
+import { usePlatformCopy } from './platformCopy'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step } from './types'
 import { Caret, Collapse, MiniBadge, PyCode, Tag, Toggle, agName, dispModel, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
 
@@ -73,6 +74,8 @@ type StepRowProps = {
 
 function StepRow(props: StepRowProps) {
   const { step, i, open, onToggle, last } = props
+  // §9 per-OS copy rule: the secret-store name in the secret tag tooltips.
+  const copy = usePlatformCopy()
   const stepSecrets = stepSecretTags(step, props.secrets)
   if (props.variant === 'editor') {
     const { availAgents, allAgents, packages } = props
@@ -127,7 +130,7 @@ function StepRow(props: StepRowProps) {
                   key={t.id}
                   title={t.missing
                     ? 'This step uses a secret that no longer exists — this step would fail'
-                    : `This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
+                    : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`}
                   icon="fa-key" c={t.missing ? 'var(--red-text)' : 'var(--text-muted)'}
                   style={t.missing
                     ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
@@ -219,7 +222,7 @@ function StepRow(props: StepRowProps) {
                 c={t.missing ? 'var(--red-text)' : undefined}
                 title={t.missing
                   ? 'This step uses a secret that no longer exists — this step would fail'
-                  : `This step uses the ${t.name} secret from your Keychain${t.why ? ` — ${t.why}` : ''}`}
+                  : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`}
                 style={t.missing
                   ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
                   : { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}

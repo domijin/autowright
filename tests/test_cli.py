@@ -9,6 +9,8 @@ import json
 
 import pytest
 
+from autowright import paths
+
 
 # ---------------------------------------------------------------- Client boot
 
@@ -1618,7 +1620,8 @@ def test_cmd_secret_commands(monkeypatch, capsys):
     c = _RouteClient({"/secrets": secrets})
     _run(c, "secret", "set", "API_TOKEN", "--stdin")
     assert c.calls == [("PUT", "/secrets/s-1", {"value": "piped-in"})]
-    assert "saved to your Keychain" in capsys.readouterr().out
+    # §9 per-OS copy rule: "Keychain" on macOS, "Credential Manager" on Windows.
+    assert f"saved to your {paths.secret_store_name()}" in capsys.readouterr().out
 
     # otherwise prompted, never echoed — a new name creates via POST (§19)
     monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "typed-in")
@@ -1634,7 +1637,22 @@ def test_cmd_secret_commands(monkeypatch, capsys):
     with pytest.raises(SystemExit, match="no stored secret named"):
         _run(c, "secret", "delete", "NOPE")
     assert c.calls == []
-    assert "removed from your Keychain" in capsys.readouterr().out
+    assert f"removed from your {paths.secret_store_name()}" in capsys.readouterr().out
+
+
+def test_secret_lines_take_the_per_os_secret_store_name(monkeypatch, capsys):
+    """§9 per-OS copy rule: the §20 secret lines name the Keychain on macOS and
+    the Credential Manager on Windows — one substituted noun, same wording."""
+    from autowright import cli
+
+    secrets = [{"id": "s-1", "name": "API_TOKEN", "set": True, "usedBy": []}]
+    for token, store_name in (("macos", "Keychain"), ("windows", "Credential Manager")):
+        monkeypatch.setattr(paths, "current_os", lambda t=token: t)
+        monkeypatch.setattr(cli.sys, "stdin", io.StringIO("piped-in\n"))
+        _run(_RouteClient({"/secrets": secrets}), "secret", "set", "API_TOKEN", "--stdin")
+        assert capsys.readouterr().out.strip() == f"saved to your {store_name}"
+        _run(_RouteClient({"/secrets": secrets}), "secret", "delete", "API_TOKEN")
+        assert capsys.readouterr().out.strip() == f"removed from your {store_name}"
 
 
 def test_cmd_secret_set_empty_value_exits_on_stderr(monkeypatch, capsys):

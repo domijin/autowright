@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from './api'
+import { usePlatformCopy } from './platformCopy'
 import { Caret, Collapse, EmptyNotice, Eyebrow, resultChipColors, Spinner } from './ui'
 import type { ResultFile, ExecutionResult, SpecBlock } from './types'
 
@@ -162,6 +163,8 @@ function HtmlView({ html }: { html: string }) {
 }
 
 function TextView({ text }: { text: string }) {
+  // §9 per-OS copy rule: the reveal action this note points at.
+  const copy = usePlatformCopy()
   const lines = text.split('\n')
   const cut = text.length > TEXT_MAX_BYTES || lines.length > TEXT_MAX_LINES
   const shown = cut
@@ -177,7 +180,7 @@ function TextView({ text }: { text: string }) {
       </pre>
       {cut && (
         <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--text-faint)' }}>
-          Truncated — use Show in Finder for the full file.
+          Truncated — use {copy.reveal} for the full file.
         </div>
       )}
     </div>
@@ -289,6 +292,8 @@ function FileRow({ executionId, file, stamp, last }: {
 function FilesFooter({ files, path, executionId, stamp, defaultOpen = true }: {
   files: ResultFile[]; path?: string; executionId: string; stamp?: string; defaultOpen?: boolean
 }) {
+  // §9 per-OS copy rule: the reveal button's label.
+  const copy = usePlatformCopy()
   return (
     <ViewCard title={`FILES · ${files.length}`} mono defaultOpen={defaultOpen}>
       <div style={{ padding: '0 18px 12px' }}>
@@ -308,7 +313,7 @@ function FilesFooter({ files, path, executionId, stamp, defaultOpen = true }: {
               onClick={() => { void window.autowright?.revealPath(path) }}
               style={{ flex: 'none' }}
             >
-              <i className="fa-solid fa-folder-open" style={{ fontSize: 10 }} /> Show in Finder
+              <i className="fa-solid fa-folder-open" style={{ fontSize: 10 }} /> {copy.reveal}
             </button>
           )}
         </div>

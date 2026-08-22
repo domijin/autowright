@@ -1047,7 +1047,7 @@ def cmd_secret_set(c: Client, args) -> None:
         c.req("PUT", f"/secrets/{existing['id']}", {"value": value})
     else:
         c.req("POST", "/secrets", {"name": args.name, "value": value})
-    print("saved to your Keychain")
+    print(f"saved to your {paths.secret_store_name()}")
 
 
 def cmd_secret_delete(c: Client, args) -> None:
@@ -1057,7 +1057,7 @@ def cmd_secret_delete(c: Client, args) -> None:
         sys.exit(f"no stored secret named {args.name!r} — have: "
                  f"{', '.join(names) or '(none)'}")
     c.req("DELETE", f"/secrets/{existing['id']}")
-    print("removed from your Keychain")
+    print(f"removed from your {paths.secret_store_name()}")
 
 
 def cmd_agent_list(c: Client, args) -> None:
@@ -1339,7 +1339,7 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     # ---- secret / agent / settings / service
     scg = _sub(top, "secret", None, "manage secrets").add_subparsers(dest="verb", required=True)
     _sub(scg, "list", cmd_secret_list, "list secrets", json_flag=True)
-    p = _sub(scg, "set", cmd_secret_set, "store a secret in your Keychain")
+    p = _sub(scg, "set", cmd_secret_set, f"store a secret in your {paths.secret_store_name()}")
     p.add_argument("name")
     p.add_argument("--stdin", action="store_true",
                    help="read the value from stdin instead of prompting")

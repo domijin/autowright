@@ -6,7 +6,7 @@ import pytest
 import yaml
 from conftest import make_version
 
-from autowright import __version__, transfer
+from autowright import __version__, paths, transfer
 from autowright.storage import Store, new_id
 
 
@@ -857,16 +857,17 @@ def _rezip_manifest(data, edit):
 def test_export_records_os_and_same_platform_round_trip(store, monkeypatch, tmp_path_factory):
     """§5.1: every export records the exporting machine's platform token; a
     same-platform import stamps §4.1 originOs and flags nothing."""
+    here = paths.current_os()
     a = _build(store)
     data = transfer.export_automation(store, a)
     manifest = yaml.safe_load(zipfile.ZipFile(io.BytesIO(data)).read("manifest.yaml"))
-    assert manifest["os"] == "macos"
+    assert manifest["os"] == here
     s2 = _fresh_home(monkeypatch, tmp_path_factory)
     pv = transfer.preview_archive(s2, data)
-    assert (pv["os"], pv["osMismatch"]) == ("macos", False)
+    assert (pv["os"], pv["osMismatch"]) == (here, False)
     b, summary = transfer.import_automation(s2, data)
-    assert (summary["os"], summary["osMismatch"]) == ("macos", False)
-    assert b["origin_os"] == "macos"
+    assert (summary["os"], summary["osMismatch"]) == (here, False)
+    assert b["origin_os"] == here
     assert not any(p["kind"] == "os-mismatch" for p in s2.auto_json(b)["problems"])
 
 
@@ -875,23 +876,26 @@ def test_import_from_another_os_flags_needs_fixing(store, monkeypatch, tmp_path_
     rides preview/summary as osMismatch, and surfaces as the os-mismatch
     problem until an edit save clears it (a §5 reload keeps it)."""
     a = _build(store)
+    # A token that is foreign wherever this suite runs (§5.1 vocabulary).
+    other = "linux" if paths.current_os() == "windows" else "windows"
+    display = paths.os_display_name(other)
     win = _rezip_manifest(transfer.export_automation(store, a),
-                          lambda m: {**m, "os": "windows"})
+                          lambda m: {**m, "os": other})
     s2 = _fresh_home(monkeypatch, tmp_path_factory)
     pv = transfer.preview_archive(s2, win)
-    assert (pv["os"], pv["osMismatch"]) == ("windows", True)
+    assert (pv["os"], pv["osMismatch"]) == (other, True)
     b, summary = transfer.import_automation(s2, win)
-    assert (summary["os"], summary["osMismatch"]) == ("windows", True)
-    assert b["origin_os"] == "windows"
+    assert (summary["os"], summary["osMismatch"]) == (other, True)
+    assert b["origin_os"] == other
     os_rows = [p for p in s2.auto_json(b)["problems"] if p["kind"] == "os-mismatch"]
     assert os_rows == [{"kind": "os-mismatch",
-                        "label": "Built on Windows — its steps may need rewriting "
-                                 "before they run on this Mac."}]
+                        "label": f"Built on {display} — its steps may need rewriting "
+                                 f"before they run on this {paths.machine_noun()}."}]
     # §5 disk-first: originOs survives a reload …
     s3 = Store()
     s3.load_all()
     b2 = s3.autos[b["id"]]
-    assert b2["origin_os"] == "windows"
+    assert b2["origin_os"] == other
     # … and an edit save clears it (§4.1: a local rework supersedes
     # "built elsewhere")
     s3.save_new_version(b2, dict(b2["versions"][1]))

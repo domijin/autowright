@@ -85,12 +85,47 @@ def kill_group(proc: subprocess.Popen, sig: int | None = None) -> None:
 # A backend launched from the Finder/Dock gets a minimal PATH without
 # /opt/homebrew/bin or ~/.local/bin, so `shutil.which` alone misses
 # normally-installed CLIs (claude installs to ~/.local/bin by default).
-_FALLBACK_BIN_DIRS = (
+# §19: per-OS install locations. On Windows a GUI app inherits the full user
+# PATH, so the fallbacks are belt-and-braces there.
+_POSIX_FALLBACK_BIN_DIRS = (
     os.path.expanduser("~/.local/bin"),
     os.path.expanduser("~/.opencode/bin"),
     "/opt/homebrew/bin",
     "/usr/local/bin",
 )
+_WINDOWS_FALLBACK_BIN_DIRS = (
+    # Claude Code's native installer uses the same ~/.local/bin layout here.
+    os.path.join(os.path.expanduser("~"), ".local", "bin"),
+    os.path.join(os.path.expanduser("~"), ".opencode", "bin"),
+    # npm's global bin — the Gemini CLI / Codex channel on Windows.
+    os.path.join(os.environ.get("APPDATA")
+                 or os.path.join(os.path.expanduser("~"), "AppData", "Roaming"), "npm"),
+)
+_FALLBACK_BIN_DIRS = (
+    _WINDOWS_FALLBACK_BIN_DIRS if paths.current_os() == "windows"
+    else _POSIX_FALLBACK_BIN_DIRS
+)
+
+
+# §19: `os.access(X_OK)` can't detect executables on Windows — the execute bit
+# does not exist there; an extension listed in PATHEXT is what makes a file
+# runnable.
+_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
+
+
+def _pathext() -> tuple[str, ...]:
+    raw = os.environ.get("PATHEXT") or _DEFAULT_PATHEXT
+    return tuple(e.lower() for e in raw.split(os.pathsep) if e.strip())
+
+
+def _is_executable(path: str) -> bool:
+    """§19: per-OS executable check — the execute bit on POSIX, existence with
+    a PATHEXT extension on Windows."""
+    if paths.current_os() != "windows":
+        return os.access(path, os.X_OK)
+    if not os.path.isfile(path):
+        return False
+    return os.path.splitext(path)[1].lower() in _pathext()
 
 
 def _neutral_cwd(provider_id: str) -> str:
@@ -107,8 +142,15 @@ def resolve_bin(binname: str) -> str | None:
     if found:
         return found
     for d in _FALLBACK_BIN_DIRS:
+        if paths.current_os() == "windows":
+            # `which` against a single dir honors PATHEXT, so a bare name
+            # resolves to `claude.cmd` / `ollama.exe` there (§19).
+            hit = shutil.which(binname, path=d)
+            if hit:
+                return hit
+            continue
         path = os.path.join(d, binname)
-        if os.access(path, os.X_OK):
+        if _is_executable(path):
             return path
     return None
 
@@ -294,6 +336,18 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         model_args = ["--model",
                       f"ollama/{model}" if local and harness == "OpenCode" else model]
     codex_local_args = ["--oss", "--local-provider", "ollama"] if local else []
+    # §8 prompt delivery is per-OS. POSIX: the prompt rides as the command's
+    # last argv element. Windows: the whole command line is capped at 32,767
+    # characters — smaller than any real drafting prompt (a minimal build
+    # prompt already measures ~38 K), so every spawn would die with
+    # `[WinError 206] The filename or extension is too long`. There the
+    # adapter omits the argv prompt and pipes it to the child's stdin instead
+    # (every §8 CLI has a non-interactive piped-stdin mode).
+    pipe_prompt = paths.current_os() == "windows"
+    # The `--` separator only exists to protect the positional prompt, so it
+    # goes with it. Gemini's prompt rides `-p`, no positional.
+    prompt_argv = [] if pipe_prompt else ["--", prompt]
+    gemini_prompt_argv = [] if pipe_prompt else ["-p", prompt]
     # §6: runtime calls are query-only — invoke each harness with the
     # strongest flags it offers to disable tools/shell/file access beyond the
     # model API. §6 drafting calls pass web=True: the harness's web-read
@@ -309,16 +363,20 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         # `--` before the positional prompt: a runtime agent.ask prompt can
         # legitimately start with "-" (an LLM-written bullet list) and must
         # not parse as a flag. Gemini's prompt rides -p, no positional.
+        # Windows form (§8): the same flags with no positional prompt — the
+        # CLI reads it from the piped stdin (verified live at ~40 K chars).
         "Claude Code": ["claude", "-p", *model_args,
                         "--tools", "WebFetch,WebSearch" if web else "",
                         "--strict-mcp-config",
                         "--no-session-persistence", "--output-format", "stream-json",
-                        "--include-partial-messages", "--verbose", "--", prompt],
+                        "--include-partial-messages", "--verbose", *prompt_argv],
         # Gemini CLI has no documented flag that disables its built-in tools
         # for a one-shot -p call (only sandbox/approval modes) — left bare;
         # its web tools are therefore available in every mode (§6 documented
         # limitation for runtime, the intended behavior for drafting).
-        "Gemini CLI": ["gemini", *model_args, "-p", prompt],
+        # Windows form (§8): drop `-p <prompt>` entirely — piped stdin runs
+        # the CLI non-interactively.
+        "Gemini CLI": ["gemini", *model_args, *gemini_prompt_argv],
         # Codex: read-only sandbox blocks writes/shell side effects;
         # --skip-git-repo-check lets exec work outside a git repo (workspace).
         # web=True adds --search — the native web_search tool. Top-level
@@ -328,18 +386,20 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         "Codex": ["codex", *(["--search"] if web else []), *codex_local_args,
                   "exec", *model_args,
                   "--sandbox", "read-only", "--skip-git-repo-check",
-                  "--", prompt],
+                  *prompt_argv],
         # OpenCode has no documented flag that disables tool use for
         # `opencode run` — left bare; same runtime limitation / drafting
         # intent as Gemini.
-        "OpenCode": ["opencode", "run", *model_args, "--", prompt],
+        # Windows forms (§8): `codex exec` / `opencode run` with no prompt
+        # argument read it from stdin.
+        "OpenCode": ["opencode", "run", *model_args, *prompt_argv],
     }
     cmd = cmd_map.get(harness)
     if not cmd:
         raise HarnessError(f"unknown harness: {harness}")
     binpath = resolve_bin(cmd[0])
     if binpath is None:
-        raise HarnessError(f"{cmd[0]} is not installed on this Mac")
+        raise HarnessError(f"{cmd[0]} is not installed on this {paths.machine_noun()}")
     cmd[0] = binpath
     env = spawn_env(binpath)
     if harness == "Claude Code" and local:
@@ -355,11 +415,47 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     # only the direct child can leave a helper holding the stdout pipe open
     # (read loop never sees EOF, the §8 idle window silently never fires).
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            stdin=subprocess.DEVNULL, text=True, errors="replace",
+                            # §8 per-OS prompt delivery: a pipe on Windows (the
+                            # prompt goes down it), /dev/null everywhere else
+                            # (the prompt is already in argv).
+                            stdin=subprocess.PIPE if pipe_prompt else subprocess.DEVNULL,
+                            # §2 pipe-encoding contract: never the locale codec.
+                            # The stdin text write below inherits it too.
+                            encoding="utf-8", errors="replace",
                             env=env, cwd=_neutral_cwd(HARNESS_ID[harness]),
                             **platform.current().processes.session_kwargs())
     if proc_holder is not None:
         proc_holder["proc"] = proc
+
+    def _close_stdin() -> None:
+        """Idempotent; safe from any thread (a close racing the writer's own
+        close, or the kill path, must never raise)."""
+        try:
+            if proc.stdin is not None:
+                proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+
+    if pipe_prompt:
+        # §8: a DEDICATED writer thread, started right after the spawn — never
+        # the stdout read loop's thread. A ~40 K prompt overflows the stdin
+        # pipe buffer, so the write blocks until the child drains it; a child
+        # that fills its own stdout pipe first would then deadlock against a
+        # reader that is busy writing.
+        def _write_prompt() -> None:
+            try:
+                proc.stdin.write(prompt)  # type: ignore[union-attr]
+                proc.stdin.flush()  # type: ignore[union-attr]
+            except (OSError, ValueError):
+                # BrokenPipeError (the child exited or was killed before it
+                # read the prompt) and ValueError (the kill path closed the
+                # pipe underneath us) are both normal ends, not failures —
+                # the exit code and stderr carry the real story.
+                pass
+            finally:
+                _close_stdin()  # EOF: every §8 CLI waits for it
+
+        threading.Thread(target=_write_prompt, daemon=True).start()
     # Cancel/spawn race: a cancel that landed after the caller's own check but
     # before this Popen existed killed nothing — re-check now that the proc is
     # visible, so no harness call can outlive a cancel by its full timeout.
@@ -380,6 +476,10 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
             proc.stdout.close()  # type: ignore[union-attr]
         except OSError:
             pass
+        # §8 Windows delivery: a writer thread blocked on a prompt the dead
+        # child will never drain unblocks on the closed pipe (and swallows
+        # the resulting error), so the kill leaks no thread and no handle.
+        _close_stdin()
 
     # §8: `timeout` is an idle window — every stdout line pushes the deadline
     # out, so a call still streaming keeps running (a harness that buffers its
@@ -447,6 +547,10 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         raise
     finally:
         done.set()
+        # Closed on EVERY path (the writer normally got here first, and the
+        # call is idempotent), so no handle is left open on a long-lived
+        # backend — mirrors the engine's step-process pipe hygiene.
+        _close_stdin()
     drain.join(timeout=5)
     if timed_out.is_set() and proc.returncode != 0:
         # returncode guard: a watchdog firing in the instant after a successful
@@ -529,10 +633,20 @@ def _sync_opencode_ollama_locked(model: str) -> None:
         raise HarnessError(f"couldn't update opencode.json: {e}") from e
 
 
-# §19: the app may sit in the system or the per-user Applications folder.
-_OLLAMA_APP_BINS = tuple(
+# §19: on macOS the app may sit in the system or the per-user Applications
+# folder; on Windows its per-user installer lands in %LOCALAPPDATA%\Programs.
+_POSIX_OLLAMA_APP_BINS = tuple(
     os.path.join(apps, "Ollama.app/Contents/Resources/ollama")
     for apps in ("/Applications", os.path.expanduser("~/Applications")))
+_WINDOWS_OLLAMA_APP_BINS = (
+    os.path.join(
+        os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/AppData/Local"),
+        "Programs", "Ollama", "ollama.exe"),
+)
+_OLLAMA_APP_BINS = (
+    _WINDOWS_OLLAMA_APP_BINS if paths.current_os() == "windows"
+    else _POSIX_OLLAMA_APP_BINS
+)
 
 
 def ollama_bin() -> str | None:
@@ -540,7 +654,7 @@ def ollama_bin() -> str | None:
     if found:
         return found
     for path in _OLLAMA_APP_BINS:
-        if os.access(path, os.X_OK):
+        if _is_executable(path):
             return path
     return None
 
@@ -660,7 +774,8 @@ HARNESS_ID = {name: pid for pid, name in PROVIDERS if pid != "ollama"}
 
 def _status_ok(cmd: list[str], provider_id: str) -> bool:
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+        r = subprocess.run(cmd, capture_output=True, timeout=10,
+                           encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
                            env=spawn_env(cmd[0]), cwd=_neutral_cwd(provider_id))
         return r.returncode == 0
     except Exception:  # noqa: BLE001
@@ -769,7 +884,8 @@ def detect() -> list[dict]:
     §10 Free local AI card reads its state from `/ollama/status`."""
     def version_of(binpath: str, pid: str) -> str | None:
         try:
-            r = subprocess.run([binpath, "--version"], capture_output=True, text=True,
+            r = subprocess.run([binpath, "--version"], capture_output=True,
+                               encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
                                timeout=5, env=spawn_env(binpath), cwd=_neutral_cwd(pid))
             return (r.stdout or r.stderr).strip().splitlines()[0][:40] if r.returncode == 0 else None
         except Exception:  # noqa: BLE001

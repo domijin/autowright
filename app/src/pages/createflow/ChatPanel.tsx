@@ -5,6 +5,7 @@
 // surface), the create empty state, and the pinned composer with the
 // drafting-agent picker and Clear chat.
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { usePlatformCopy } from '../../platformCopy'
 import type { Agent, ChatEntry } from '../../types'
 import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, usePopover } from '../../ui'
 import { devlogOverlayOpen } from '../../devlog'
@@ -161,6 +162,8 @@ export function ChatPanel({
   undoDraft, runSync, runDraftTest, analyzeFailure, patchEntry,
   applyBlockersEntry, clearChat, cancelChat, cancelSync, setAgentId, up, showToast,
 }: ChatPanelProps) {
+  // §9 per-OS copy rule: the machine noun the create empty state names.
+  const copy = usePlatformCopy()
   // §11 thread auto-scroll: newest at the bottom, scrolled on new content and
   // when the transient progress entry appears (a job starts).
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
@@ -310,7 +313,7 @@ export function ChatPanel({
               ))}
             </div>
             <div style={{ font: "400 11.5px/1.6 var(--sans)", color: 'var(--text-muted)', marginTop: 14 }}>
-              Your AI writes the steps — Autowright still executes everything on this Mac.
+              Your AI writes the steps — Autowright still executes everything on this {copy.machine}.
             </div>
           </div>
         ) : (

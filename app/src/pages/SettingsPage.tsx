@@ -2,6 +2,7 @@
 // history retention, the on-this-Mac data section, and the §3 CLI card.
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import { CommandBlock, ConfirmModal, Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
 
@@ -19,12 +20,15 @@ const pathBox: React.CSSProperties = {
 
 type Cli = { state: 'installed' | 'missing' | 'foreign'; path: string; onPath: boolean }
 
-// §4.9 PATH command block: the exact line the Copy button puts on the clipboard.
-// Appends to ~/.zprofile (the login-shell init macOS Terminal reads) so it persists.
-const PATH_CMD = 'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.zprofile && source ~/.zprofile'
-
 export default function SettingsPage() {
   const { settings, showToast } = useStore()
+  // §9 per-OS copy rule: machine noun, reveal label, and the §4.9 PATH block.
+  const copy = usePlatformCopy()
+  // §4.9/§2 gating: both rows render only while this OS can honor them — the
+  // stored settings stay untouched and CLI-visible either way (§9: hidden,
+  // never disabled-with-a-tooltip).
+  const keepAwakeOn = useStore((s) => s.platformCapabilities.keepAwake)
+  const notificationsOn = useStore((s) => s.platformCapabilities.notifications)
   const [days, setDays] = useState('')
   // §4.9 COMMAND LINE card: the shim files on disk are the source of truth —
   // re-read on every Settings visit (this mount).
@@ -154,7 +158,7 @@ export default function SettingsPage() {
           <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20, borderBottom: '1px solid var(--hairline-dim)' }}>
             <div style={{ flex: 1 }}>
               <div style={rowTitle}>Launch at login</div>
-              <div style={rowSub}>Autowright starts quietly in the menu bar.</div>
+              <div style={rowSub}>Autowright starts quietly in the {copy.menuBar}.</div>
             </div>
             <Toggle
               // §4.9: the OS login item follows the stored setting — App.tsx
@@ -163,47 +167,59 @@ export default function SettingsPage() {
               onChange={(v) => patch({ login: v })}
             />
           </div>
-          <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20, borderBottom: '1px solid var(--hairline-dim)' }}>
+          <div style={{
+            padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
+            // The card's last visible row never carries a separator — either
+            // gated row below can be the one that's gone.
+            ...(keepAwakeOn || notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
+          }}>
             <div style={{ flex: 1 }}>
-              <div style={rowTitle}>Show in the menu bar</div>
+              <div style={rowTitle}>Show in the {copy.menuBar}</div>
               <div style={rowSub}>The quickest way to execute an automation.</div>
             </div>
             <Toggle on={settings.menuBarIcon} onChange={(v) => patch({ menuBarIcon: v })} />
           </div>
-          <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20, borderBottom: '1px solid var(--hairline-dim)' }}>
-            <div style={{ flex: 1 }}>
-              <div style={rowTitle}>Keep this Mac awake</div>
-              <div style={rowSub}>Prevents this Mac from sleeping so schedules and message triggers keep firing. The display can still sleep.</div>
+          {keepAwakeOn && (
+            <div style={{
+              padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
+              ...(notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={rowTitle}>Keep this {copy.machine} awake</div>
+                <div style={rowSub}>Prevents this {copy.machine} from sleeping so schedules and message triggers keep firing. The display can still sleep.</div>
+              </div>
+              <Toggle on={settings.keepAwake} onChange={(v) => patch({ keepAwake: v })} />
             </div>
-            <Toggle on={settings.keepAwake} onChange={(v) => patch({ keepAwake: v })} />
-          </div>
-          <div style={{ padding: '15px 20px' }}>
-            <div style={rowTitle}>Notify me</div>
-            <div role="radiogroup" aria-label="Notify me" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 11 }}>
-              {([
-                { value: 'attention' as const, label: 'Only when something needs attention' },
-                { value: 'all' as const, label: 'After every execution' },
-              ]).map((o) => {
-                const on = settings.notifications === o.value
-                return (
-                  <button
-                    key={o.value}
-                    className="ad-btn-bare"
-                    role="radio"
-                    aria-checked={on}
-                    onClick={() => patch({ notifications: o.value })}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-                      transition: 'background var(--t-hover) var(--ease-enter)',
-                    }}
-                  >
-                    <RadioRing selected={on} size={15} />
-                    <span style={{ fontSize: 13, color: on ? 'var(--text)' : 'var(--text-muted)' }}>{o.label}</span>
-                  </button>
-                )
-              })}
+          )}
+          {notificationsOn && (
+            <div style={{ padding: '15px 20px' }}>
+              <div style={rowTitle}>Notify me</div>
+              <div role="radiogroup" aria-label="Notify me" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 11 }}>
+                {([
+                  { value: 'attention' as const, label: 'Only when something needs attention' },
+                  { value: 'all' as const, label: 'After every execution' },
+                ]).map((o) => {
+                  const on = settings.notifications === o.value
+                  return (
+                    <button
+                      key={o.value}
+                      className="ad-btn-bare"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => patch({ notifications: o.value })}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                        transition: 'background var(--t-hover) var(--ease-enter)',
+                      }}
+                    >
+                      <RadioRing selected={on} size={15} />
+                      <span style={{ fontSize: 13, color: on ? 'var(--text)' : 'var(--text-muted)' }}>{o.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -247,20 +263,20 @@ export default function SettingsPage() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <Eyebrow style={{ paddingLeft: 2 }}>ON THIS MAC</Eyebrow>
+        <Eyebrow style={{ paddingLeft: 2 }}>ON THIS {copy.machine.toUpperCase()}</Eyebrow>
         <div className="ad-card" style={card}>
           <div style={{ padding: '15px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={rowTitle}>Automations &amp; settings</div>
-                <div style={rowSub}>Your automations and preferences — small, and always on this Mac.</div>
+                <div style={rowSub}>Your automations and preferences — small, and always on this {copy.machine}.</div>
               </div>
               <button
                 className="ad-btn-soft"
                 onClick={() => { void window.autowright?.revealPath(settings.appPath ?? '~/Library/Application Support/Autowright') }}
                 style={{ flex: 'none' }}
               >
-                Show in Finder
+                {copy.reveal}
               </button>
             </div>
             <div style={pathBox}>{settings.appPath ?? '~/Library/Application Support/Autowright'}</div>
@@ -280,7 +296,7 @@ export default function SettingsPage() {
                   className="ad-btn-soft"
                   onClick={() => { void window.autowright?.revealPath(settings.dataPath) }}
                 >
-                  Show in Finder
+                  {copy.reveal}
                 </button>
               </div>
             </div>
@@ -314,8 +330,8 @@ export default function SettingsPage() {
                           ? `Installed at ${cli.path}`
                           : `Still installed at ${cli.path} — turn on to keep it up to date.`)}
                         {cli.state === 'missing' && (settings.cliEnabled
-                          ? 'Not installed — manage automations from the Terminal.'
-                          : 'Not installed — manage automations from the Terminal. Turning this on installs to ~/.local/bin — no password needed.')}
+                          ? `Not installed — manage automations from ${copy.terminalNoun}.`
+                          : `Not installed — manage automations from ${copy.terminalNoun}. Turning this on installs to ${copy.cliBinDir} — no password needed.`)}
                         {cli.state === 'foreign' && `A different autowright is already at ${cli.path} — Autowright won’t touch it.`}
                       </div>
                     </div>
@@ -326,8 +342,8 @@ export default function SettingsPage() {
                   {pathRow && (
                     <div style={{ padding: '15px 20px' }}>
                       <div style={rowTitle}>Add it to your PATH</div>
-                      <div style={rowSub}>If your Terminal can’t find autowright, add ~/.local/bin to your PATH:</div>
-                      <CommandBlock command={PATH_CMD} />
+                      <div style={rowSub}>{copy.pathHint}</div>
+                      <CommandBlock command={copy.pathCommand} />
                     </div>
                   )}
                   {warnRow && (
@@ -335,7 +351,7 @@ export default function SettingsPage() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ ...rowTitle, color: 'var(--amber)' }}>The <code>autowright</code> CLI is missing</div>
                         <div style={rowSub}>
-                          autowright wasn’t found in ~/.local/bin — it may have been deleted or moved. Reinstall it to keep using it from the Terminal.
+                          {`autowright wasn’t found in ${copy.cliBinDir} — it may have been deleted or moved. Reinstall it to keep using it from ${copy.terminalNoun}.`}
                         </div>
                       </div>
                       <button className="ad-btn-soft" onClick={() => { void cliInstall() }} disabled={cliBusy} style={{ flex: 'none' }}>
@@ -400,7 +416,7 @@ export default function SettingsPage() {
       {cliOffConfirm && (
         <ConfirmModal
           title="Turn off the autowright command?"
-          body="This also deletes the command file from this Mac. Your automations, settings, and executions aren’t affected."
+          body={`This also deletes the command file from this ${copy.machine}. Your automations, settings, and executions aren’t affected.`}
           confirmLabel="Turn off and delete"
           danger
           onConfirm={() => { setCliOffConfirm(false); cliDisable() }}

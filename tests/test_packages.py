@@ -5,12 +5,44 @@ import json
 import pytest
 
 
+def _fake_process_control(monkeypatch, fall_back_to_child=False):
+    """§2: `_pip_install` spawns and kills through the platform layer's
+    ProcessControl. Swap it for a recorder (host-independent — never the real
+    killpg/taskkill) and hand back the list of killed pids. With
+    `fall_back_to_child`, the fake behaves like a group kill that finds no
+    group: the direct child is killed instead (posixproc's own fallback)."""
+    import dataclasses
+
+    from autowright import platform as platmod
+
+    killed: list[int] = []
+
+    class RecordingProcesses:
+        def session_kwargs(self) -> dict:
+            return {}
+
+        def signal_group(self, proc, sig=None) -> None:
+            killed.append(proc.pid)
+            if fall_back_to_child and proc.poll() is None:
+                proc.kill()
+
+    fake = dataclasses.replace(platmod.current(), processes=RecordingProcesses())
+    monkeypatch.setattr(platmod, "current", lambda: fake)
+    return killed
+
+
 def _fake_dist(home, name="requests", version="2.31.0"):
     """Minimal installed distribution in the §6.2 site-packages dir."""
     d = home / "site-packages" / f"{name}-{version}.dist-info"
     d.mkdir(parents=True)
     (d / "METADATA").write_text(
         f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n", encoding="utf-8")
+    # importlib.metadata's FastPath caches directory listings keyed on a
+    # coarse mtime — under -n auto load, a dist created within the same tick
+    # reads back as absent (version None). Drop the caches every time.
+    import importlib
+
+    importlib.invalidate_caches()
 
 
 def test_norm_pep503():
@@ -178,8 +210,7 @@ def test_pip_install_timeout_cancel_and_stderr_tail(home, monkeypatch):
 
     from autowright import packages
 
-    killed = []
-    monkeypatch.setattr(packages.os, "killpg", lambda pid, sig: killed.append(pid))
+    killed = _fake_process_control(monkeypatch)
 
     class HungProc:
         def __init__(self, cmd, **kw):
@@ -200,8 +231,8 @@ def test_pip_install_timeout_cancel_and_stderr_tail(home, monkeypatch):
             self._killed = True
 
     monkeypatch.setattr(packages.subprocess, "Popen", HungProc)
-    # os.killpg is stubbed to a no-op recorder, so communicate() keeps hanging
-    # until the deadline path fires — make the deadline immediate.
+    # signal_group is a no-op recorder, so communicate() keeps hanging until
+    # the deadline path fires — make the deadline immediate.
     monkeypatch.setattr(packages, "INSTALL_TIMEOUT", 0)
     assert packages._pip_install("leftpad") == "pip timed out after 0 s"
     assert killed == [4242]
@@ -282,8 +313,8 @@ def test_ensure_fast_path_never_spawns_pip(home, monkeypatch):
 
 def test_pip_install_spawn_failure_and_kill_fallback(home, monkeypatch):
     """§6.2 _pip_install edges: a pip that can't even spawn returns the OS
-    error as the failure; a kill whose killpg finds no group falls back to
-    proc.kill(); a constraints file already gone is swallowed."""
+    error as the failure; a kill whose group is already gone falls back to
+    the direct child; a constraints file already gone is swallowed."""
     import subprocess as sp
     from pathlib import Path
 
@@ -297,11 +328,8 @@ def test_pip_install_spawn_failure_and_kill_fallback(home, monkeypatch):
     monkeypatch.setattr(packages.subprocess, "Popen", no_spawn)
     assert packages._pip_install("leftpad", pin_installed=True) == "posix_spawn failed"
 
-    # killpg raising ProcessLookupError → the direct proc.kill() fallback
-    def killpg_gone(pid, sig):
-        raise ProcessLookupError
-
-    monkeypatch.setattr(packages.os, "killpg", killpg_gone)
+    # the layer's group kill finds no group → the direct proc.kill() fallback
+    _fake_process_control(monkeypatch, fall_back_to_child=True)
 
     class HungProc:
         def __init__(self, cmd, **kw):

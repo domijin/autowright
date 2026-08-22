@@ -4,6 +4,7 @@ import { api } from '../api'
 import { useStore } from '../store'
 import type { Automation, ImportPreview, ImportSummary } from '../types'
 import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, P, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
+import { usePlatformCopy } from '../platformCopy'
 import { useTriggerPreview } from '../triggers'
 
 // §4.1 display-name rule for §5.1 platform tokens: known tokens display
@@ -19,6 +20,8 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
   onClose: () => void
 }) {
   const go = useStore((s) => s.go)
+  // §9 per-OS copy rule: the machine noun this modal names.
+  const copy = usePlatformCopy()
   const section = (title: string, body: React.ReactNode) => (
     <div style={{ marginTop: 16 }}>
       <Eyebrow style={{ margin: '0 0 8px' }}>{title}</Eyebrow>
@@ -43,14 +46,14 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
           </p>
           {summary.renamedFrom && (
             <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '2px 0 0' }}>
-              Renamed from “{summary.renamedFrom}”, which already exists on this Mac.
+              Renamed from “{summary.renamedFrom}”, which already exists on this {copy.machine}.
             </p>
           )}
           {summary.osMismatch && (
             // §5.1: the same warning persists on the automation as the §4.1
             // os-mismatch problem.
             <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--amber)', margin: '2px 0 0' }}>
-              Built on {osName(summary.os)} — its steps may need rewriting before they run on this Mac.
+              Built on {osName(summary.os)} — its steps may need rewriting before they run on this {copy.machine}.
             </p>
           )}
           {summary.secretsCreated.length > 0 && section('SECRETS THAT NEED VALUES', (
@@ -63,7 +66,7 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
               </p>
             </>
           ))}
-          {(summary.secretsExisting.length > 0 || summary.agentsReused.length > 0) && section('ALREADY ON THIS MAC — NOT GRANTED', (
+          {(summary.secretsExisting.length > 0 || summary.agentsReused.length > 0) && section(`ALREADY ON THIS ${copy.machine.toUpperCase()} — NOT GRANTED`, (
             <>
               {[...summary.secretsExisting, ...summary.agentsReused].map((n) => nameRow(n))}
               <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: '6px 0 0' }}>
@@ -101,6 +104,8 @@ function ImportModal({ onDone, onClose }: {
   onDone: (r: { name: string; automationId: string; summary: ImportSummary }) => void
   onClose: () => void
 }) {
+  // §9 per-OS copy rule: the machine noun this modal names.
+  const copy = usePlatformCopy()
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState<false | 'url' | 'file' | 'confirm'>(false)
   const [error, setError] = useState<{ msg: string; src: 'url' | 'file' } | null>(null)
@@ -169,7 +174,7 @@ function ImportModal({ onDone, onClose }: {
               Import automation
             </h2>
             <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '6px 0 0' }}>
-              Add an automation someone shared — from a link, or a file on this Mac.
+              Add an automation someone shared — from a link, or a file on this {copy.machine}.
             </p>
             <Eyebrow style={{ margin: '18px 0 6px' }}>FROM A LINK</Eyebrow>
             <input
@@ -209,7 +214,7 @@ function ImportModal({ onDone, onClose }: {
               }}
             >
               <i className="fa-solid fa-file-import" style={{ fontSize: 12, color: 'var(--text-faint)' }} />
-              {busy === 'file' ? 'Reading…' : 'Choose an .autowright file on this Mac…'}
+              {busy === 'file' ? 'Reading…' : `Choose an .autowright file on this ${copy.machine}…`}
             </button>
             {error?.src === 'file' && errLine(error.msg)}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
@@ -278,7 +283,7 @@ function ImportModal({ onDone, onClose }: {
             )))}
             {pv.preview.secrets.length > 0 && section('SECRETS', (
               pv.preview.secrets.map((s) => nameRow(s.name, s.exists
-                ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">ON THIS MAC</MiniBadge>
+                ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">ON THIS {copy.machine.toUpperCase()}</MiniBadge>
                 : <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>))
             ))}
             {pv.preview.agents.length > 0 && section('AGENTS', (
@@ -289,7 +294,7 @@ function ImportModal({ onDone, onClose }: {
               {pv.preview.osMismatch && (
                 // §5.1/§9.1: the archive was exported on another platform.
                 <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--amber)', margin: '0 0 4px' }}>
-                  Built on {osName(pv.preview.os)} — its steps may need rewriting before they run on this Mac.
+                  Built on {osName(pv.preview.os)} — its steps may need rewriting before they run on this {copy.machine}.
                 </p>
               )}
               {pv.preview.packages.length > 0 && (

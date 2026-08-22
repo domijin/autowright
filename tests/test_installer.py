@@ -1,12 +1,14 @@
 """installer.py internals (§19): downloads, the Ollama app install, shell
 streaming, job lifecycle. Nothing real is touched — HTTP servers bind
 127.0.0.1, LOCAL_BIN / APPLICATIONS and the harness bin search are redirected
-into tmp, and every spawned subprocess is a harmless `sh` builtin or recorded
+into tmp, and every spawned subprocess is a short-lived interpreter or recorded
 argv on mocked subprocess entry points.
 """
 import contextlib
 import os
 import shutil
+import subprocess
+import sys
 import threading
 import time
 import zipfile
@@ -14,7 +16,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from autowright import harness, installer
+from autowright import harness, installer, platform as platmod
+
+# §19: the agent-install surface (curl|bash vendor scripts, /Applications
+# bundles, Terminal.app sign-in, zsh login profiles) is macOS end to end, and
+# gated off elsewhere by the `agentInstall` capability. The generic machinery
+# around it — _stream_shell, _download, the job lifecycle — runs everywhere.
+macos_install_surface = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="macOS install surface; gated off by the agentInstall capability elsewhere")
 
 
 @pytest.fixture(autouse=True)
@@ -162,6 +172,7 @@ def _passthrough_ditto(monkeypatch):
     return runs
 
 
+@macos_install_surface
 def test_install_ollama_app_places_bundle_and_user_symlink(tmp_path, local_bin,
                                                            monkeypatch,
                                                            _passthrough_ditto):
@@ -202,6 +213,7 @@ def test_install_ollama_app_places_bundle_and_user_symlink(tmp_path, local_bin,
     assert ensured == [True]
 
 
+@macos_install_surface
 def test_install_ollama_app_symlinks_vendor_dir_when_writable(tmp_path, local_bin,
                                                               monkeypatch,
                                                               _passthrough_ditto):
@@ -230,6 +242,7 @@ def test_install_ollama_app_symlinks_vendor_dir_when_writable(tmp_path, local_bi
     assert ensured == []  # /usr/local/bin is on every PATH already
 
 
+@macos_install_surface
 def test_install_ollama_app_without_bundle_errors(tmp_path, local_bin,
                                                   monkeypatch, _passthrough_ditto):
     zip_src = tmp_path / "empty.zip"
@@ -248,9 +261,16 @@ def test_install_ollama_app_without_bundle_errors(tmp_path, local_bin,
 
 # ---------------------------------------------------------------- _stream_shell
 
+def _child(source):
+    """An installer child that runs `source` — this interpreter rather than a
+    shell, so the streaming/failure/timeout machinery is exercised on every OS
+    (the real callers' `curl … | bash` recipes are macOS-only, above)."""
+    return [sys.executable, "-c", source]
+
+
 def test_stream_shell_streams_each_line_and_succeeds(home):
     rec = Recorder()
-    installer._stream_shell(["/bin/sh", "-c", "echo one; echo two"], rec, "claude")
+    installer._stream_shell(_child("print('one'); print('two')"), rec, "claude")
     assert rec.lines == ["one", "two"]
 
 
@@ -258,41 +278,57 @@ def test_stream_shell_failure_raises_with_last_output_line(home):
     # Note: a 5-line tail is kept while streaming, but only tail[-1] — the
     # final non-empty line — becomes the error message (current behavior).
     rec = Recorder()
-    script = "; ".join(f"echo l{i}" for i in range(1, 7)) + "; exit 7"
+    source = ("import sys\n"
+              "for i in range(1, 7): print(f'l{i}')\n"
+              "sys.exit(7)\n")
     with pytest.raises(RuntimeError) as ei:
-        installer._stream_shell(["/bin/sh", "-c", script], rec, "claude")
+        installer._stream_shell(_child(source), rec, "claude")
     assert str(ei.value) == "l6"
     assert rec.lines == [f"l{i}" for i in range(1, 7)]
 
 
 def test_stream_shell_silent_failure_reports_exit_code(home):
     with pytest.raises(RuntimeError, match="exited with code 9"):
-        installer._stream_shell(["/bin/sh", "-c", "exit 9"], Recorder(), "claude")
+        installer._stream_shell(_child("import sys; sys.exit(9)"), Recorder(), "claude")
 
 
-def test_stream_shell_timeout_sigkills_whole_process_group(home, tmp_path,
-                                                           monkeypatch):
+def _pid_alive(pid: int) -> bool:
+    """Is `pid` still running? Per-OS, because probing a pid is: POSIX has
+    signal 0, Windows has no such probe (`os.kill` there would *terminate* the
+    process)."""
+    if os.name == "nt":
+        out = subprocess.run(["tasklist", "/NH", "/FI", f"PID eq {pid}"],
+                             capture_output=True, text=True, timeout=20).stdout
+        return f" {pid} " in f" {out} ".replace("\n", " ")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def test_stream_shell_timeout_kills_the_whole_group(home, tmp_path, monkeypatch):
     monkeypatch.setattr(installer, "INSTALL_TIMEOUT_S", 1)
     pidfile = tmp_path / "sleeper.pid"
-    cmd = ["/bin/sh", "-c",
-           f"sleep 30 & echo $! > {pidfile}; echo started; wait"]
+    # A grandchild that outlives its parent's own exit path: the §2 group kill
+    # (SIGKILL to the session on POSIX, `taskkill /T` on Windows) must reach it.
+    source = ("import pathlib, subprocess, sys\n"
+              "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+              f"pathlib.Path({str(pidfile)!r}).write_text(str(p.pid))\n"
+              "print('started', flush=True)\n"
+              "p.wait()\n")
     t0 = time.monotonic()
     with pytest.raises(RuntimeError, match="timed out"):
-        installer._stream_shell(cmd, Recorder(), "claude")
+        installer._stream_shell(_child(source), Recorder(), "claude")
     assert time.monotonic() - t0 < 10  # timer fired, not a natural exit
 
-    # the backgrounded sleep shares the session's process group → killed too
     pid = int(pidfile.read_text().strip())
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            break
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and _pid_alive(pid):
         time.sleep(0.05)
-    else:
-        os.kill(pid, 9)  # cleanup before failing
-        pytest.fail(f"sleep {pid} leaked past the group SIGKILL")
+    if _pid_alive(pid):
+        platmod.current().processes.kill_group(pid)  # cleanup before failing
+        pytest.fail(f"the grandchild {pid} leaked past the group kill")
 
 
 # ---------------------------------------------------------------- status/start
@@ -415,7 +451,10 @@ def fake_home(tmp_path, monkeypatch):
     """Point HOME at tmp so profile writes never touch the real one."""
     h = tmp_path / "home"
     h.mkdir()
+    # Both names: POSIX expanduser reads HOME, Windows (ntpath) USERPROFILE —
+    # the real profile must never be written to on either.
     monkeypatch.setenv("HOME", str(h))
+    monkeypatch.setenv("USERPROFILE", str(h))
     return h
 
 
@@ -427,6 +466,7 @@ def test_ensure_login_path_noop_when_already_on_login_path(monkeypatch, fake_hom
     assert not (fake_home / ".zprofile").exists()
 
 
+@macos_install_surface
 def test_ensure_login_path_appends_marked_export_to_zprofile(monkeypatch, fake_home):
     monkeypatch.setenv("SHELL", "/bin/zsh")
     monkeypatch.setattr(installer, "_login_shell_path", lambda: ["/usr/bin"])
@@ -461,9 +501,14 @@ def test_require_passes_when_binary_present_in_redirected_dir(tmp_path,
                                                               monkeypatch):
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    exe = bindir / "codex"
-    exe.write_text("#!/bin/sh\n")
-    exe.chmod(0o755)
+    # §19: the fallback-dir executable check is per-OS, so the fake is too.
+    if os.name == "nt":
+        exe = bindir / "codex.cmd"
+        exe.write_text("@echo off\n")
+    else:
+        exe = bindir / "codex"
+        exe.write_text("#!/bin/sh\n")
+        exe.chmod(0o755)
     empty = tmp_path / "emptypath"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
@@ -491,10 +536,14 @@ def test_login_codex_runs_detached_and_reports_browser(monkeypatch):
                         lambda *a, **k: runs.append(a))
     assert installer.login("codex") == "browser"
     assert popen["cmd"] == ["/fake/codex", "login"]
-    assert popen["kw"]["start_new_session"] is True
+    # §2: the spawn policy comes from the platform layer (own session on
+    # POSIX, own process group on Windows) — never a hardcoded POSIX kwarg.
+    session = installer.platform.current().processes.session_kwargs()
+    assert session and all(popen["kw"][k] == v for k, v in session.items())
     assert runs == []  # no osascript for the browser flow
 
 
+@macos_install_surface
 @pytest.mark.parametrize("pid,binname,args", [
     ("claude", "claude", "/login"),
     ("gemini", "gemini", None),

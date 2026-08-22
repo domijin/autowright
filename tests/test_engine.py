@@ -3,6 +3,11 @@ import uuid
 
 from conftest import make_version, read_all_logs
 
+from autowright import paths
+
+# §9 per-OS copy rule: "Keychain" on macOS, "Credential Manager" on Windows.
+SECRET_STORE = paths.secret_store_name()
+
 
 def add_secret(store, name, *, set_=True) -> str:
     """§4.8 test helper: store a secret record and return its id — steps
@@ -86,7 +91,7 @@ def test_missing_secret_stops_before_step_one(store):
     wait_done(engine, h["id"])
     assert h["status"] == "failed"
     logs = read_all_logs(store, h["id"])
-    assert any("secret NOT_THERE isn't in your Keychain" in l["text"] for l in logs)
+    assert any(f"secret NOT_THERE isn't in your {SECRET_STORE}" in l["text"] for l in logs)
     # no step ever started
     assert not any(l["text"].startswith("▸ Step") for l in logs)
 
@@ -153,7 +158,7 @@ def test_placeholder_secret_without_value_stops_before_step_one(store):
     logs = read_all_logs(store, h["id"])
     assert any("secret PENDING has no value yet — add it on the Secrets page" in l["text"]
                for l in logs)
-    assert not any("isn't in your Keychain" in l["text"] for l in logs)
+    assert not any(f"isn't in your {SECRET_STORE}" in l["text"] for l in logs)
     assert h["error"]["step"] is None
     assert h["error"]["reason"] == \
         "A step references a secret whose value hasn't been added yet."
@@ -1096,8 +1101,8 @@ def test_failure_reason_missing_secret_before_step_one(store):
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["error"]["step"] is None
-    assert "isn't in your Keychain" in h["error"]["message"]
-    assert "Keychain" in h["error"]["reason"]
+    assert f"isn't in your {SECRET_STORE}" in h["error"]["message"]
+    assert SECRET_STORE in h["error"]["reason"]
 
 
 def test_pre_version_snapshot_on_first_execution(store):
@@ -1719,31 +1724,60 @@ def test_cancel_between_steps_still_finishes_cancelled(store, monkeypatch):
     assert [s["status"] for s in h["steps"]] == ["succeeded", "cancelled"]
 
 
-def test_execution_caffeinate_ties_to_backend_pid(store, monkeypatch):
-    """§3: the per-execution power assertion is `caffeinate -i -w <backend
-    pid>` — tied to this process, so a crashed backend can never leave an
-    orphan keeping the Mac awake."""
-    import os
-    import subprocess
+def _fake_power_platform(monkeypatch, events):
+    """Swap the §2 platform layer's PowerAssertion for a recorder, keeping
+    every other capability real (the engine also spawns steps through it)."""
+    import dataclasses
 
-    from autowright import engine as engmod
+    from autowright import platform as platmod
+
+    class RecordingPower:
+        def reconcile(self, enabled: bool) -> None:
+            events.append(("reconcile", enabled))
+
+        def hold_execution(self):
+            events.append("hold")
+
+            def release() -> None:
+                events.append("release")
+
+            return release
+
+    fake = dataclasses.replace(platmod.current(), power=RecordingPower())
+    monkeypatch.setattr(platmod, "current", lambda: fake)
+    return fake
+
+
+def test_execution_holds_one_power_assertion_and_releases_it(store, monkeypatch):
+    """§3: the engine takes exactly one per-execution idle-sleep hold through
+    the §2 platform layer and releases it when the execution finishes."""
     from autowright.engine import Engine
 
-    calls: list[list[str]] = []
-    real = subprocess.Popen
-
-    def recorder(argv, *a, **kw):
-        calls.append(list(argv))
-        return real(argv, *a, **kw)
-
-    monkeypatch.setattr(engmod.subprocess, "Popen", recorder)
+    events: list = []
+    _fake_power_platform(monkeypatch, events)
     engine = Engine(store)
-    a = store.create_automation(make_version(), "Caffeine", None)
+    a = store.create_automation(make_version(), "Power", None)
     h = engine.start(a, "manual")
     wait_done(engine, h["id"])
     assert h["status"] == "succeeded"
-    caf = [c for c in calls if c and c[0] == "caffeinate"]
-    assert caf == [["caffeinate", "-i", "-w", str(os.getpid())]]
+    assert events == ["hold", "release"]
+
+
+def test_execution_power_hold_is_released_on_a_failing_execution(store, monkeypatch):
+    """The release lives in the finally — a failed execution frees the hold
+    just the same."""
+    from autowright.engine import Engine
+
+    events: list = []
+    _fake_power_platform(monkeypatch, events)
+    engine = Engine(store)
+    ver = make_version(steps=[{"file": "01-boom.py", "name": "Boom",
+                               "description": "fails", "code": "raise SystemExit(3)\n"}])
+    a = store.create_automation(ver, "Power Fail", None)
+    h = engine.start(a, "manual")
+    wait_done(engine, h["id"])
+    assert h["status"] == "failed"
+    assert events == ["hold", "release"]
 
 
 def test_watchdog_covers_a_child_that_never_reads_stdin(monkeypatch, tmp_path):
@@ -1822,13 +1856,16 @@ def test_step_subprocess_path_carries_the_fallback_bin_dirs(monkeypatch, tmp_pat
     """§6.1: steps spawn with the fallback bin dirs APPENDED to PATH, so a
     step's system-CLI calls and shutil.which pre-flights resolve under a Dock
     launch's minimal GUI PATH — appended, so the inherited order still wins."""
+    import os
     import subprocess
     import sys
 
     from autowright import engine as engmod, harness
 
+    sep = os.pathsep
     monkeypatch.setattr(harness, "_FALLBACK_BIN_DIRS", ("/fb-steps",))
-    monkeypatch.setenv("PATH", "/usr/bin:/bin")  # the Dock launch's stripped PATH
+    # the Dock launch's stripped PATH
+    monkeypatch.setenv("PATH", sep.join(("/usr/bin", "/bin")))
     real = subprocess.Popen
     seen = {}
 
@@ -1845,7 +1882,7 @@ def test_step_subprocess_path_carries_the_fallback_bin_dirs(monkeypatch, tmp_pat
                                  {"status": "ok", "chip": None}, {}, 10.0)
     assert rc == 0
     assert seen["env"] is not None, "the step must not inherit the raw GUI env"
-    assert seen["env"]["PATH"] == "/usr/bin:/bin:/fb-steps"
+    assert seen["env"]["PATH"] == sep.join(("/usr/bin", "/bin", "/fb-steps"))
 
 
 def test_kill_all_live_kills_a_running_step(store):

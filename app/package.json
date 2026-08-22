@@ -17,11 +17,68 @@
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fortawesome/fontawesome-free": "^7.3.1",
+    "electron-updater": "^6.8.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "zustand": "^5.0.14"
+  },
+  "build": {
+    "appId": "ai.autowright.app",
+    "productName": "Autowright",
+    "copyright": "Copyright © David Zhang",
+    "directories": {
+      "output": "../build/win"
+    },
+    "artifactName": "Autowright-${version}-win32-x86_64.${ext}",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://autowright.ai/updates/win32-x86_64/"
+      }
+    ],
+    "files": [
+      "package.json",
+      "electron/**/*",
+      "dist/**/*",
+      "!node_modules/@fontsource/**",
+      "!node_modules/@fortawesome/**",
+      "!node_modules/@types/**",
+      "!node_modules/react/**",
+      "!node_modules/react-dom/**",
+      "!node_modules/react-markdown/**",
+      "!node_modules/remark-gfm/**",
+      "!node_modules/scheduler/**",
+      "!node_modules/zustand/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../build/python",
+        "to": "python"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "electron/icon/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "guid": "3E71053D-7CAA-4BF9-A643-93ABDA35B1F3",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Autowright",
+      "menuCategory": false,
+      "installerIcon": "electron/icon/icon.ico",
+      "uninstallerIcon": "electron/icon/icon.ico"
+    }
   },
   "devDependencies": {
     "@electron/packager": "^20.2.0",
@@ -31,6 +88,7 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "electron": "43.3.0",
+    "electron-builder": "^26.15.3",
     "happy-dom": "^20.11.2",
     "playwright-core": "1.62.1",
     "typescript": "^7.0.2",

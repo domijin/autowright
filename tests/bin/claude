@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
+# Contract pair (§15): tests/bin/claude.py is this file's Windows twin.
 """Fake `claude` CLI for tests (tests/bin is prepended to PATH by conftest).
 
 The backend invokes agents only by shelling out to the real CLI, so tests get a
 deterministic stand-in binary instead of a mock code path inside the app. It
 answers `--version` and one-shot `claude -p ... <prompt>` calls with canned
 envelopes matching the §8 drafting contract.
+
+Prompt delivery mirrors the real CLI (§15): the positional argv prompt when
+one is given (the §8 POSIX form, after the `--` separator), otherwise the
+whole of stdin (the §8 Windows form, where the prompt is too long for a
+command line and rides the pipe instead).
 """
 import json
 import os
@@ -148,7 +154,18 @@ def main() -> None:
     if "--version" in args:
         print("0.0.0 (autowright test fake)")
         return
-    prompt = args[-1] if args else ""
+    # §15 prompt delivery, mirroring the real CLI: the positional prompt after
+    # the `--` separator when one is given (§8 POSIX form), else the whole of
+    # stdin (§8 Windows form — the prompt is piped, never in argv). The plain
+    # last-argv fallback keeps every non-`-p` invocation (`auth status`, …)
+    # behaving exactly as before, and never touches stdin.
+    positional = args[args.index("--") + 1:] if "--" in args else []
+    if positional:
+        prompt = positional[-1]
+    elif "-p" in args:
+        prompt = sys.stdin.read()
+    else:
+        prompt = args[-1] if args else ""
     text = respond(prompt)
     if "stream-json" in args:
         # §8 live progress: the backend reads stream-json — emit the reply as

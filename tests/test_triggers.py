@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timedelta
 
 import pytest
@@ -356,6 +357,7 @@ def test_trigger_exec_labels():
     assert trigger_label("test") == "Test"
 
 
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="POSIX-only tzset")
 def test_dst_spring_forward_gap_local_no_timezone():
     """§4.3: the gap rule also applies when the trigger has no `timezone` and
     runs on the system zone - 2:30 AM erased by spring-forward fires at 3:30,

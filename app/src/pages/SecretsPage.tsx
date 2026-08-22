@@ -2,6 +2,7 @@
 // never fetched back; rows only ever show a mask.
 import { useState } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { SecretModal, type SecretModalState } from '../SecretModal'
 import { useStore } from '../store'
 import type { SecretMeta } from '../types'
@@ -13,6 +14,8 @@ type ModalState = SecretModalState | null
 
 export default function SecretsPage() {
   const { secrets, showToast } = useStore()
+  // §9 per-OS copy rule: the secret-store name and machine noun.
+  const copy = usePlatformCopy()
   const [modal, setModal] = useState<ModalState>(null)
   const [del, setDel] = useState<SecretMeta | null>(null)
 
@@ -22,7 +25,7 @@ export default function SecretsPage() {
     setDel(null)
     try {
       await api.deleteSecret(s.id)
-      showToast('Removed from your Keychain.')
+      showToast(`Removed from your ${copy.secretStore}.`)
     } catch (e) { showToast((e as Error).message) }
   }
 
@@ -35,7 +38,7 @@ export default function SecretsPage() {
         Secrets
       </PageTitle>
       <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 20px' }}>
-        Stored in your Mac’s Keychain. Scripts read them at execution time — the values never appear in logs.
+        Stored in your {copy.machine}’s {copy.secretStore}. Scripts read them at execution time — the values never appear in logs.
       </p>
       {secrets.length === 0 ? (
         <EmptyState
@@ -116,7 +119,7 @@ export default function SecretsPage() {
           body={(
             <>
               <span style={{ font: `500 12px var(--mono)`, color: 'var(--text)' }}>{del.name}</span>
-              {' '}will be removed from your Keychain. This can’t be undone.
+              {' '}will be removed from your {copy.secretStore}. This can’t be undone.
               {del.usedBy.length > 0 && (
                 <p style={{ color: 'var(--red-text)', margin: '8px 0 0' }}>
                   “{del.usedBy.map((u) => u.name).join(', ')}” uses it and will stop working.

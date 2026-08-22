@@ -4,6 +4,7 @@
 // the display-only steps / triggers / parameters / packages cards under the
 // Build & test panel. The page shell wires state and derived gating in.
 import React, { useState } from 'react'
+import { usePlatformCopy } from '../../platformCopy'
 import { SecretModal } from '../../SecretModal'
 import { useTriggerPreview } from '../../triggers'
 import { StepList } from '../../steps'
@@ -171,6 +172,8 @@ export function LeftColumn({
   specOpenEff, agSecOpenEff, secSecOpenEff, instrOpenEff, notesOpenEff,
   showToast, setConfirmSpecCancel,
 }: LeftColumnProps) {
+  // §9 per-OS copy rule: the secret-store name the SECRETS card names.
+  const copy = usePlatformCopy()
   // §11 Secrets card New secret modal — a secret saved here is auto-allowed.
   const [secretModal, setSecretModal] = useState(false)
   // §14 overlay-scrollbar thumb for the spec editor textarea (a textarea can't
@@ -426,7 +429,7 @@ export function LeftColumn({
         eyebrow="SECRETS · ALLOWED FOR STEPS"
         open={secSecOpenEff}
         onToggle={(o) => up({ secSecOpen: o })}
-        hint="Only checked secrets are handed to this automation at execution time. Values come from your Keychain."
+        hint={`Only checked secrets are handed to this automation at execution time. Values come from your ${copy.secretStore}.`}
         preview={rev.allowedSecrets.length
           ? rev.allowedSecrets.map((id) => secrets.find((z) => z.id === id)?.name ?? shortId(id)).join(' · ')
           : null}
@@ -494,7 +497,7 @@ export function LeftColumn({
             ))}
             {secrets.length === 0 && secRefs.length === 0 && (
               <div style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "400 12px var(--sans)", color: 'var(--text-muted)' }}>
-                No secrets in your Keychain yet — press New secret.
+                No secrets in your {copy.secretStore} yet — press New secret.
               </div>
             )}
             {/* §11: a secret added from this card is an explicit grant — auto-allowed on save */}
@@ -505,7 +508,7 @@ export function LeftColumn({
               </button>
             </div>
             <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
-              Only checked secrets are handed to this automation at execution time — a step that asks for anything else fails. Values come from your Keychain and never appear in scripts or logs.
+              Only checked secrets are handed to this automation at execution time — a step that asks for anything else fails. Values come from your {copy.secretStore} and never appear in scripts or logs.
             </div>
           </div>
       </SectionCard>
@@ -656,6 +659,8 @@ export function RightCards({
   // §19: the §11 draft-trigger chips label through POST /triggers/preview —
   // the renderer keeps no local trigger-math mirror (§4.3)
   const trigPreviews = useTriggerPreview(rev.triggers)
+  // §9 per-OS copy rule: the §13 surface's name in the no-triggers line.
+  const copy = usePlatformCopy()
   return (
     <>
       {/* STEPS */}
@@ -699,7 +704,7 @@ export function RightCards({
             <span style={{ font: "400 11.5px var(--sans)", color: 'var(--text-faint)' }}>
               {rev.triggers.length > 0
                 ? 'Executes even when the app is closed. Ask the AI in chat to change these, or use the automation page — chat changes apply when you save.'
-                : 'No triggers — executes only via Execute now and the menu bar.'}
+                : `No triggers — executes only via Execute now and the ${copy.menuBar}.`}
             </span>
           </div>
         )}

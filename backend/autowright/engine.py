@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import harness, keychain, listeners, notify, packages as pkglib, platform, timefmt
+from . import harness, keychain, listeners, notify, packages as pkglib, paths, platform, timefmt
 from .events import hub
 from .executor import CTRL
 from .firing import finish_queued
@@ -214,7 +214,9 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
     proc = subprocess.Popen(
         [sys.executable, "-m", "autowright.executor", str(script)],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, errors="replace",  # binary garbage on stdout must not kill the read loop
+        # §2 pipe-encoding contract: explicit UTF-8, never the locale codec;
+        # errors="replace" so binary garbage on stdout can't kill the read loop.
+        encoding="utf-8", errors="replace",
         # §6.1: fallback bin dirs appended to PATH, so a step's system-CLI
         # calls and shutil.which pre-flights resolve under a Dock launch's
         # minimal GUI PATH just like under a terminal launch.
@@ -751,14 +753,10 @@ class Engine:
         result: dict[str, Any] = {"status": "ok", "chip": None}
         result_touched = False
         notify_text: str | None = None
-        caffeinate = None
-        try:
-            # §3: `-w <backend pid>` ties the assertion to this process — a
-            # crashed backend can never leave an orphan keeping the Mac awake.
-            caffeinate = subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())],
-                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:  # noqa: BLE001
-            pass
+        # §3 per-execution idle-sleep hold, through the §2 platform layer —
+        # the release is called in the finally below. Never raises; a platform
+        # with no mechanism holds nothing.
+        release_power = platform.current().power.hold_execution()
         redactions: dict[str, str] = {}
         failed = False
         try:
@@ -804,8 +802,10 @@ class Engine:
                             msg = f"secret {sec['name']} has no value yet — add it on the Secrets page"
                             reason = "A step references a secret whose value hasn't been added yet."
                         else:
-                            msg = f"secret {sec['name']} isn't in your Keychain — the execution can't start"
-                            reason = "A step references a secret that isn't in your Keychain."
+                            store_name = paths.secret_store_name()  # §9 per-OS copy rule
+                            msg = (f"secret {sec['name']} isn't in your {store_name} — "
+                                   "the execution can't start")
+                            reason = f"A step references a secret that isn't in your {store_name}."
                         self._log(h, "err", msg, {})
                         if not h.get("error"):
                             h["error"] = {"step": None, "message": msg, "reason": reason}
@@ -1024,12 +1024,7 @@ class Engine:
             except Exception:  # noqa: BLE001
                 pass
         finally:
-            if caffeinate:
-                caffeinate.terminate()
-                try:
-                    caffeinate.wait(timeout=5)  # reap — no zombie until interpreter GC
-                except Exception:  # noqa: BLE001
-                    pass
+            release_power()
             with self._lock:
                 self._live.pop(h["id"], None)
             with self.store.lock:

@@ -11,6 +11,88 @@ sys.path.insert(0, str(REPO / "backend"))
 # path (backend → executor → Popen) without a real agent installed. Prepended at
 # import time so engine subprocesses inherit it.
 os.environ["PATH"] = f"{REPO / 'tests' / 'bin'}{os.pathsep}{os.environ['PATH']}"
+# §15: on Windows the shebang fakes aren't executable, so PATHEXT resolves the
+# `.cmd` twins beside them; those shims run the Python ports on this
+# interpreter. Published unconditionally — POSIX keeps resolving the sh files.
+os.environ["AUTOWRIGHT_TEST_PYTHON"] = sys.executable
+if os.name == "nt":
+    # Windows runs a `.cmd` child through %COMSPEC%, and cmd.exe prints the
+    # machine's `Command Processor\AutoRun` hook (doskey macros and the like)
+    # onto that child's stdout before the batch file starts — which would
+    # corrupt every fake-CLI reply the backend parses. `/d` skips the hook, so
+    # the twins answer with exactly the bytes the POSIX fakes answer with.
+    os.environ["COMSPEC"] = f"{os.environ.get('COMSPEC', 'cmd.exe')} /d"
+
+
+class _SubprocessProxy:
+    """`subprocess` with one call swapped; everything else is the real module."""
+
+    def __init__(self, **over):
+        self._over = over
+
+    def __getattr__(self, name):
+        import subprocess
+
+        if name in self._over:
+            return self._over[name]
+        return getattr(subprocess, name)
+
+
+# Every ad-hoc fake CLI writes UTF-8 with LF endings — what real CLIs emit,
+# and what the backend's readers decode (§2 pipe-encoding contract:
+# explicit encoding="utf-8", never the locale codec).
+_FAKE_CLI_PREAMBLE = """\
+import sys as _sys
+for _st in (_sys.stdout, _sys.stderr):
+    try:
+        _st.reconfigure(encoding="utf-8", errors="replace", newline="\\n")
+    except Exception:
+        pass
+"""
+
+
+def fake_cli(tmp_path, body, name="claude"):
+    """A real, spawnable fake CLI whose body is `body` (Python source).
+
+    §19: what makes a file executable is per-OS, so the shape is too — a
+    shebang script on POSIX, a `.cmd` shim over a `.py` on Windows, where the
+    execute bit doesn't exist. Either way the caller's code spawns a real
+    child through the real Popen path."""
+    source = _FAKE_CLI_PREAMBLE + body
+    if os.name == "nt":
+        src = tmp_path / f"{name}.py"
+        src.write_text(source, encoding="utf-8")
+        shim = tmp_path / f"{name}.cmd"
+        shim.write_bytes(f'@echo off\r\n"{sys.executable}" "{src}" %*\r\n'.encode())
+        return shim
+    script = tmp_path / name
+    script.write_text(f"#!{sys.executable}\n{source}", encoding="utf-8")
+    script.chmod(0o755)
+    return script
+
+
+def use_fake_osascript(monkeypatch, module):
+    """§15: point `module`'s bare `osascript` spawns at the fake.
+
+    No-op on POSIX — `PATH` already resolves `tests/bin/osascript`. On Windows
+    `CreateProcess` appends only `.exe` to a bare command name (unlike
+    `shutil.which`, which honors `PATHEXT`), so `["osascript", …]` can never
+    reach the `.cmd` twin. Only the *name resolution* is substituted here: the
+    real Python port still runs as a real child process, so argv, stdout,
+    stderr and exit code are the fake's own."""
+    if os.name != "nt":
+        return
+    import subprocess
+
+    real_run = subprocess.run
+    fake = str(REPO / "tests" / "bin" / "osascript.py")
+
+    def run(args, *a, **kw):
+        if isinstance(args, (list, tuple)) and args and args[0] == "osascript":
+            args = [sys.executable, fake, *args[1:]]
+        return real_run(args, *a, **kw)
+
+    monkeypatch.setattr(module, "subprocess", _SubprocessProxy(run=run))
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +144,55 @@ def home(tmp_path, monkeypatch):
 
     paths.ensure_dirs()
     return tmp_path
+
+
+@pytest.fixture()
+def task_scheduler(monkeypatch, tmp_path):
+    """§3 Windows ServiceManager double: `windows._powershell` replaced by a
+    recorder that models Task Scheduler's state (the same shape as the launchd
+    fake in tests/test_service.py), plus the §15 `AUTOWRIGHT_SHIM` knob pointed
+    into the test's tmp dir. The real powershell.exe never runs, so every test
+    using this is host-independent."""
+    from types import SimpleNamespace
+
+    from autowright.platform import windows
+
+    scripts: list[str] = []
+    task = {"state": "absent"}  # Task Scheduler's view, driven by the cmdlets
+    canned: dict[str, tuple[int, str, str]] = {}  # cmdlet name → forced result
+
+    def fake_ps(script, **kw):
+        scripts.append(script)
+        for needle, result in canned.items():
+            if needle in script:
+                return result
+        ok = (0, f"{windows._OK}\n", "")
+        # Unregister first: "Register-ScheduledTask" is a substring of it.
+        if "Unregister-ScheduledTask" in script:
+            task["state"] = "absent"
+            return ok
+        if "Register-ScheduledTask" in script:
+            task["state"] = "Ready"  # registered, not started
+            return ok
+        if "Start-ScheduledTask" in script:
+            if task["state"] == "absent":
+                return 1, "", "No MSFT_ScheduledTask objects found"
+            task["state"] = "Running"
+            return ok
+        if "Stop-ScheduledTask" in script:
+            if task["state"] == "Running":
+                task["state"] = "Ready"
+            return ok
+        if "Get-ScheduledTask" in script:
+            return 0, f"{windows._STATE_PREFIX}{task['state']}\n", ""
+        raise AssertionError(f"unmodeled PowerShell script: {script}")
+
+    monkeypatch.setattr(windows, "_powershell", fake_ps)
+    monkeypatch.setattr(windows, "_POLL_INTERVAL_S", 0)  # no real poll waits
+    shim = tmp_path / "shimbin" / "autowright.cmd"
+    monkeypatch.setenv("AUTOWRIGHT_SHIM", str(shim))
+    return SimpleNamespace(mod=windows, service=windows.WindowsService(),
+                           scripts=scripts, task=task, canned=canned, shim=shim)
 
 
 @pytest.fixture()

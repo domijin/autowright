@@ -3,6 +3,7 @@
 // Discord trigger editor's New secret button.
 import React, { useState } from 'react'
 import { api } from './api'
+import { usePlatformCopy } from './platformCopy'
 import { useStore } from './store'
 import type { SecretMeta } from './types'
 import { BtnGhost, BtnPrimary, Eyebrow, Modal } from './ui'
@@ -25,6 +26,8 @@ export function SecretModal({ modal, onClose, onSaved }: {
   onSaved?: (saved: SecretMeta) => void
 }) {
   const { showToast, secrets } = useStore()
+  // §9 per-OS copy rule: the secret-store name and machine noun.
+  const copy = usePlatformCopy()
   const isAdd = modal.mode === 'add'
   const [name, setName] = useState(isAdd ? '' : modal.name)
   const [description, setDesc] = useState(isAdd ? '' : modal.description)
@@ -53,7 +56,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
               : await api.createSecret(name, value, description)
             close()
             showToast(isAdd
-              ? (value ? 'Saved to your Keychain.' : 'Saved — add the value before an automation needs it.')
+              ? (value ? `Saved to your ${copy.secretStore}.` : 'Saved — add the value before an automation needs it.')
               : 'Secret updated.')
             onSaved?.(saved)
           } catch (e) { showToast((e as Error).message) }
@@ -147,11 +150,11 @@ export function SecretModal({ modal, onClose, onSaved }: {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 22 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-faint)', marginRight: 'auto' }}>
                 <i className="fa-solid fa-lock" style={{ fontSize: 10 }} />
-                Stored in your Mac’s Keychain
+                Stored in your {copy.machine}’s {copy.secretStore}
               </span>
               <BtnGhost onClick={close}>Cancel</BtnGhost>
               <BtnPrimary onClick={() => { void save() }}>
-                {isAdd ? 'Save to Keychain' : 'Save changes'}
+                {isAdd ? `Save to ${copy.secretStore}` : 'Save changes'}
               </BtnPrimary>
             </div>
           </>

@@ -73,6 +73,9 @@ Electron env knob (configuration only):
 
 Test doubles live in `tests/` only: a fake `claude` CLI at `tests/bin/claude` (conftest prepends
 `tests/bin` to `PATH`, so the real detect/invoke/subprocess path is exercised against it;
+like the real CLI, it takes the prompt from its last argv element and falls back to reading
+stdin when no positional prompt is given — the §8 per-OS delivery rule exercises the argv
+form on POSIX and the stdin form on Windows;
 `AUTOWRIGHT_TEST_CLAUDE_SIGNED_OUT=1` makes its `auth`-status invocation exit non-zero, so the
 signed-out detection path is testable; `AUTOWRIGHT_TEST_STREAM_DELAY_MS` — milliseconds pacing
 its stream-json output, for manual UI checks of live §8 progress; unset → instant, so the
@@ -81,7 +84,13 @@ pytest suite stays fast), a fake
 `AUTOWRIGHT_TEST_OSASCRIPT_LOG` and exits 0 — the §6 iMessage sender resolves `osascript`
 through PATH, so tests exercise the real send path; exit/stderr overridable via
 `AUTOWRIGHT_TEST_OSASCRIPT_FAIL` to simulate the −1743 denial), and conftest
-fixtures that monkeypatch `keychain` (in-memory dict) and `notify.post` (no-op). Removed knobs —
+fixtures that monkeypatch `keychain` (in-memory dict) and `notify.post` (no-op).
+On Windows the shebang scripts aren't executable, so each fake has a twin beside it that
+PATHEXT resolves: `claude.cmd` / `osascript.cmd`, thin batch shims running a Python port of
+the same contract (`claude.py` / `osascript.py` — same env knobs, same output, byte-for-byte
+observable behavior) on the interpreter conftest publishes as `AUTOWRIGHT_TEST_PYTHON`
+(`sys.executable`). The sh fake stays the POSIX implementation, untouched; the pairs must
+not drift — each carries a header comment naming its twin as the contract. Removed knobs —
 do not reintroduce: `AUTOWRIGHT_MOCK_AGENT`, `AUTOWRIGHT_KEYRING`, `AUTOWRIGHT_NO_NOTIFY`,
 `ad-sudo-denied`, `?port=&token=` (the renderer dev server returned as `AUTOWRIGHT_RENDERER_URL`,
 above — `VITE_DEV`/`npm run dev:app` themselves stay gone).

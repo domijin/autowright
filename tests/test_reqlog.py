@@ -41,7 +41,7 @@ def test_http_request_writes_one_file(client, home, devmode):
     client.get("/state")
     files = [p for p in _files(home) if "_GET_state" in p.name]
     assert len(files) == 1
-    text = files[0].read_text()
+    text = files[0].read_text(encoding="utf-8")
     assert "GET /state → 200" in text
     assert "request headers:" in text and "response body" in text
     # bearer token never lands in the file
@@ -54,7 +54,7 @@ def test_secrets_bodies_redacted(client, home, devmode):
     client.put("/secrets/MY_TOKEN", json={"value": "super-secret-value"})
     files = [p for p in _files(home) if "_PUT_secrets" in p.name]
     assert len(files) == 1
-    text = files[0].read_text()
+    text = files[0].read_text(encoding="utf-8")
     assert "super-secret-value" not in text
     assert "[redacted — secret material]" in text
 
@@ -67,6 +67,8 @@ def test_agent_request_writes_file(home, devmode, monkeypatch):
         returncode = 0
         stdout = io.StringIO("ok")
         stderr = io.StringIO("")
+        # §8: on Windows the prompt is piped here instead of riding argv.
+        stdin = io.StringIO()
         def wait(self, timeout=None): return 0
         def poll(self): return 0
         def kill(self): pass
@@ -76,7 +78,7 @@ def test_agent_request_writes_file(home, devmode, monkeypatch):
     harness.invoke({"harness": "Claude Code"}, "question: hi?")
     files = [p for p in _files(home) if "_AGENT_Claude-Code" in p.name]
     assert len(files) == 1
-    text = files[0].read_text()
+    text = files[0].read_text(encoding="utf-8")
     assert "prompt (13 chars):\nquestion: hi?" in text
     assert "response (2 chars):\nok" in text
 
@@ -107,7 +109,7 @@ def test_build_failure_record_written(home, devmode):
     files = sorted(d.iterdir())
     assert len(files) == 1
     assert "_create-steps_diagnosed" in files[0].name
-    text = files[0].read_text()
+    text = files[0].read_text(encoding="utf-8")
     assert "mode=create · call=steps · harness=Claude Code" in text
     assert "round 1 validation errors (1):\n- manifest.yaml is missing" in text
     assert "round 2 validation errors (2):" in text

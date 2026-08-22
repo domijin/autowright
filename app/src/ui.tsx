@@ -358,6 +358,47 @@ export function GreenCheck({ label }: { label: string }) {
   )
 }
 
+/** §9/§19 `agentInstall` gating: each provider's own install page — where an
+ * OS can't run the install (or the Terminal sign-in), the card's action is
+ * replaced by a line linking the provider's name here. */
+export const VENDOR_INSTALL: Record<string, { name: string; url: string }> = {
+  claude: { name: 'Claude Code', url: 'https://claude.com/product/claude-code' },
+  gemini: { name: 'Gemini CLI', url: 'https://github.com/google-gemini/gemini-cli' },
+  codex: { name: 'Codex', url: 'https://developers.openai.com/codex/cli' },
+  opencode: { name: 'OpenCode', url: 'https://opencode.ai' },
+  ollama: { name: 'Ollama', url: 'https://ollama.com/download' },
+}
+
+/** §9/§10/§12: the one plain line that stands in for a hidden Install /
+ * Sign in action while `capabilities.agentInstall` is false. Detection and
+ * sign-in state keep working — only the action is gone. `signin` picks the
+ * sign-in wording for a provider that is installed but signed out. The link
+ * opens in the browser through the §9.4 external-URL policy (window-open
+ * handler). */
+export function ManualInstallLine({ id, name, signin, style }: {
+  id: string; name?: string; signin?: boolean; style?: React.CSSProperties
+}) {
+  const vendor = VENDOR_INSTALL[id]
+  const label = name ?? vendor?.name ?? id
+  const linked = vendor
+    ? (
+      <a href={vendor.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+        {label}
+      </a>
+    )
+    : label
+  return (
+    <div
+      data-testid="manual-install-line"
+      style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)', ...style }}
+    >
+      {signin
+        ? <>Sign in to {linked} from a terminal, then come back — Autowright detects it automatically.</>
+        : <>Install {linked} by hand, then come back — Autowright detects it automatically.</>}
+    </div>
+  )
+}
+
 export function Toggle({ on, onChange, disabled, title }: {
   on: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string
 }) {

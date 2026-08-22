@@ -15,14 +15,13 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
-import signal
 import subprocess
 import tempfile
 import threading
 import time
 import urllib.request
 
-from . import harness
+from . import harness, paths, platform
 
 LOCAL_BIN = os.path.expanduser("~/.local/bin")
 # §19 install-location principle: the vendor script's own symlink target —
@@ -99,12 +98,14 @@ def login(provider_id: str) -> str:
         raise RuntimeError("Ollama needs no sign-in")
     binpath = harness.resolve_bin(harness.PROVIDER_BIN[provider_id])
     if binpath is None:
-        raise RuntimeError(f"{harness.PROVIDER_NAME[provider_id]} isn't installed on this Mac")
+        raise RuntimeError(f"{harness.PROVIDER_NAME[provider_id]} isn't installed "
+                           f"on this {paths.machine_noun()}")
     if provider_id == "codex":
         subprocess.Popen([binpath, "login"], stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
-                         start_new_session=True, env=harness.spawn_env(binpath),
-                         cwd=harness._neutral_cwd("codex"))
+                         env=harness.spawn_env(binpath),
+                         cwd=harness._neutral_cwd("codex"),
+                         **platform.current().processes.session_kwargs())
         return "browser"
     args = {"claude": ["/login"], "gemini": [], "opencode": ["auth", "login"]}[provider_id]
     # §6/§19: Terminal shells start in ~ — cd into the provider's empty
@@ -129,20 +130,21 @@ def _stream_shell(cmd: list[str], emit, provider_id: str,
     if env_extra:
         env.update(env_extra)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            stdin=subprocess.DEVNULL, text=True, errors="replace",
+                            stdin=subprocess.DEVNULL,
+                            # §2 pipe-encoding contract
+                            encoding="utf-8", errors="replace",
                             env=env, cwd=harness._neutral_cwd(provider_id),
-                            # own session: the timeout kill reaches the whole
+                            # own session/group (the §2 platform layer's spawn
+                            # policy): the timeout kill reaches the whole
                             # pipeline (curl | bash spawns children)
-                            start_new_session=True)
+                            **platform.current().processes.session_kwargs())
     timed_out = threading.Event()
 
     def _kill() -> None:
         timed_out.set()
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            if proc.poll() is None:
-                proc.kill()
+        # `sig=None` means kill hard (§2: SIGKILL is not importable on
+        # Windows); the layer falls back to the direct child itself.
+        platform.current().processes.signal_group(proc, None)
         # An escaped child (a daemonizing grandchild that re-setsid'd) could
         # still hold the merged pipe open — close our read end so the loop
         # unblocks regardless, like harness._invoke's timeout kill.
@@ -246,7 +248,8 @@ def _ensure_login_path(emit) -> None:
 
 def _require(binname: str) -> None:
     if harness.resolve_bin(binname) is None:
-        raise RuntimeError(f"the installer finished but `{binname}` didn't appear on this Mac")
+        raise RuntimeError(f"the installer finished but `{binname}` didn't appear "
+                           f"on this {paths.machine_noun()}")
 
 
 def _install_claude(emit) -> None:

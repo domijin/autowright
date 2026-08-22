@@ -5,6 +5,7 @@
 // record renders the waiting state instead of that body.
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { LOG_TAIL, logKey, useStore } from '../store'
 import { BackLink, Badge, badgeOf, Chip, EmptyNotice, Eyebrow, FailureNotice, HeaderActions, logColor, paramSummary, PULSE, ScrollArea, Spinner, waitedLabel } from '../ui'
 import { ResultSection } from '../result'
@@ -179,6 +180,8 @@ export default function ExecutionPage() {
   // Per-field selectors (UI-GUIDE): a bare useStore() would re-render this page
   // on every store write anywhere — including each execution.log event of every
   // other execution.
+  // §9 per-OS copy rule: the workspace reveal button's file-manager name.
+  const copy = usePlatformCopy()
   const executionId = useStore((s) => s.executionId)
   const executions = useStore((s) => s.executions)
   const executionFull = useStore((s) => s.executionFull)
@@ -535,7 +538,7 @@ export default function ExecutionPage() {
                     title="Opens the scratch directory the steps ran in"
                   >
                     <i className="fa-solid fa-folder-open" style={{ fontSize: 10, marginRight: 6 }} />
-                    Show workspace in Finder
+                    Show workspace in {copy.fileManager}
                   </button>
                 </div>
               )}

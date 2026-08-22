@@ -9,8 +9,9 @@
 // driving Qwen3 8B through Ollama (§4.7).
 import { useEffect, useReducer, useRef } from 'react'
 import { api } from '../api'
+import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
-import { Caret, Eyebrow, LoadingRow, Logo, MiniBadge, ProgressBar, PULSE, ScrollArea, Spinner } from '../ui'
+import { Caret, Eyebrow, LoadingRow, Logo, ManualInstallLine, MiniBadge, ProgressBar, PULSE, ScrollArea, Spinner } from '../ui'
 
 interface Det { id: string; name: string; installed: boolean; signedIn: boolean | null; detail: string }
 
@@ -34,7 +35,9 @@ const LOCAL_MODEL = 'qwen3:8b'
 const LOCAL_FIT = 'Best for simple steps — for authoring automations, a cloud option gives stronger results.'
 const LOCAL_ID = 'local'
 const SUG_ORDER = ['claude', 'codex', 'gemini', 'opencode']
-const SUG: Record<string, { title: string; body: string; btn: string; primary: boolean }> = {
+// §9 per-OS copy rule: the two bodies that name the machine take the noun from
+// the store's platform token, so the map is built per render, not at import.
+const suggestions = (machine: string): Record<string, { title: string; body: string; btn: string; primary: boolean }> => ({
   claude: {
     title: 'Claude', primary: true, btn: 'Set up Claude Code',
     body: 'You’ll need a Claude account on Pro or higher. The most capable option — nothing extra to pay.',
@@ -45,7 +48,7 @@ const SUG: Record<string, { title: string; body: string; btn: string; primary: b
   },
   gemini: {
     title: 'Gemini', primary: false, btn: 'Set up Gemini CLI',
-    body: 'Signs in with your Google account. Generous free tier. Needs Node.js on this Mac.',
+    body: `Signs in with your Google account. Generous free tier. Needs Node.js on this ${machine}.`,
   },
   opencode: {
     title: 'OpenCode', primary: false, btn: 'Set up OpenCode',
@@ -53,9 +56,9 @@ const SUG: Record<string, { title: string; body: string; btn: string; primary: b
   },
   [LOCAL_ID]: {
     title: 'Free local AI', primary: false, btn: 'Download and install · 5.2 GB',
-    body: `Sets up OpenCode with Ollama and Qwen3 8B. Local to this Mac, works offline. ${LOCAL_FIT}`,
+    body: `Sets up OpenCode with Ollama and Qwen3 8B. Local to this ${machine}, works offline. ${LOCAL_FIT}`,
   },
-}
+})
 // §10: one uniform pick label on every step-2 card — the card names the provider.
 const CONTINUE_LABEL = 'Use as default →'
 
@@ -121,6 +124,13 @@ export default function Onboarding() {
   const setSurface = useStore((s) => s.setSurface)
   const harnessInstall = useStore((s) => s.harnessInstall)
   const ollamaPull = useStore((s) => s.ollamaPull)
+  // §2/§9 gating: with `agentInstall` false the §19 install and sign-in-help
+  // endpoints answer 409, so the cards hide those actions and show the
+  // manual-install line instead. Detection and sign-in state are untouched.
+  const agentInstallOn = useStore((s) => s.platformCapabilities.agentInstall)
+  // §9 per-OS copy rule: the machine noun and the §1 secret-store promise.
+  const copy = usePlatformCopy()
+  const SUG = suggestions(copy.machine)
 
   const [, bump] = useReducer((n: number) => n + 1, 0)
   const obRef = useRef<Ob | null>(null)
@@ -508,7 +518,7 @@ export default function Onboarding() {
       </ScrollArea>
 
       <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '13px 28px', display: 'flex', justifyContent: 'center', gap: 26, flexWrap: 'wrap' }}>
-        {['Your automations execute only on this Mac', 'Secrets live in your Keychain, never in a script or log'].map((p) => (
+        {[`Your automations execute only on this ${copy.machine}`, `Secrets live in your ${copy.secretStore}, never in a script or log`].map((p) => (
           <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)' }} />
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p}</span>
@@ -624,7 +634,7 @@ export default function Onboarding() {
         {ob.det === 'searching' && (
           <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, padding: 22, display: 'flex', alignItems: 'center', gap: 12 }}>
             <Spinner size={13} style={{ flex: 'none' }} />
-            <span style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>Looking for an AI already on this Mac…</span>
+            <span style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>Looking for an AI already on this {copy.machine}…</span>
           </div>
         )}
 
@@ -632,7 +642,7 @@ export default function Onboarding() {
           <>
             {foundList.length > 0 && (
               <div className="ad-anim-item" style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 26 }}>
-                <Eyebrow style={{ color: 'var(--accent)' }}>FOUND ON THIS MAC</Eyebrow>
+                <Eyebrow style={{ color: 'var(--accent)' }}>FOUND ON THIS {copy.machine.toUpperCase()}</Eyebrow>
                 {foundList.map((f) => renderFoundCard(f))}
                 {ob.localFound && renderSuggestionCard(localDet)}
                 {foundPhases.every((ph) => ph !== 'checking') && (
@@ -655,7 +665,7 @@ export default function Onboarding() {
                 marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10,
               }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-faint)', flex: 'none' }} />
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No AI app was found on this Mac — here are some suggestions for moving forward.</span>
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No AI app was found on this {copy.machine} — here are some suggestions for moving forward.</span>
               </div>
             )}
 
@@ -744,9 +754,15 @@ export default function Onboarding() {
           )}
         </div>
         {c.phase === 'idle' && (f.signedIn === false ? (
-          <button className="ad-btn-amber" onClick={() => startSignin(f)} style={{ flex: 'none' }}>
-            Sign in
-          </button>
+          // §2 `agentInstall`: the sign-in help opens Terminal, so where the
+          // flag is false the action is replaced by the plain line (§9).
+          agentInstallOn ? (
+            <button className="ad-btn-amber" onClick={() => startSignin(f)} style={{ flex: 'none' }}>
+              Sign in
+            </button>
+          ) : (
+            <ManualInstallLine id={f.id} name={f.name} signin style={{ flex: 'none', maxWidth: 340 }} />
+          )
         ) : (
           <button className="ad-btn-ghost" onClick={() => startCheck(f)} style={{ flex: 'none' }}>
             Check again
@@ -785,12 +801,19 @@ export default function Onboarding() {
     // present) the body drops the setup framing entirely.
     const found = isLocal ? ob.localModel : null
     const body = isLocal && ob.localFound
-      ? `OpenCode with Ollama and ${found ?? LOCAL_MODEL} — local to this Mac, works offline. ${LOCAL_FIT}`
-      : found ? `Sets up OpenCode with Ollama and ${found}, already on this Mac. Works offline. ${LOCAL_FIT}` : s.body
+      ? `OpenCode with Ollama and ${found ?? LOCAL_MODEL} — local to this ${copy.machine}, works offline. ${LOCAL_FIT}`
+      : found ? `Sets up OpenCode with Ollama and ${found}, already on this ${copy.machine}. Works offline. ${LOCAL_FIT}` : s.body
     const btn = found ? 'Set up local AI' : s.btn
     const connection = c.phase === 'connected'
     const busy = c.phase === 'installing' || c.phase === 'pulling' || c.phase === 'signin' || c.phase === 'failed'
     const start = () => { if (isLocal) startLocalSetup(); else startInstall(p) }
+    // §2 `agentInstall`: the card's setup button runs §19 /agents/install (and
+    // the sign-in help behind it), so it is hidden where the flag is false —
+    // the manual-install line names the provider it would have installed. The
+    // local card only needs it while a piece is a real install: a missing
+    // model alone is an /ollama/pull, which this capability doesn't gate.
+    const manualId = isLocal ? localMissing().find((piece) => piece !== 'model') ?? null : p.id
+    const manual = !agentInstallOn && manualId !== null
     return (
       <div
         key={p.id}
@@ -821,6 +844,8 @@ export default function Onboarding() {
                 </button>
               )}
             </div>
+          ) : manual ? (
+            <ManualInstallLine id={manualId as string} style={{ flex: 'none', maxWidth: 340 }} />
           ) : (
             <button
               className={s.primary ? 'ad-btn-primary' : 'ad-btn-ghost'}
@@ -883,7 +908,7 @@ export default function Onboarding() {
                   </div>
                 )}
                 <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 8 }}>
-                  Ollama is installed. You can keep using your Mac — this finishes in the background.
+                  Ollama is installed. You can keep using your {copy.machine} — this finishes in the background.
                 </div>
               </div>
             )}

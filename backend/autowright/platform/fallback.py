@@ -8,6 +8,8 @@ no call sites change.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from . import posixproc
 from .base import Capabilities, Platform
 
@@ -45,10 +47,14 @@ class NullNotifier:
 
 
 class NullPower:
-    """keepAwake is a no-op where no assertion mechanism is wired up."""
+    """Both §3 assertions are no-ops where no mechanism is wired up — the
+    permanent keepAwake one and the per-execution hold alike."""
 
     def reconcile(self, enabled: bool) -> None:
         return None
+
+    def hold_execution(self) -> Callable[[], None]:
+        return lambda: None
 
 
 def build(os_token: str, os_display: str) -> Platform:
@@ -61,5 +67,6 @@ def build(os_token: str, os_display: str) -> Platform:
         # here by current() (Windows composes windows.py's tree-kill control).
         processes=posixproc.PosixProcessControl(),
         capabilities=Capabilities(imessage=False, notifications=False,
-                                  keep_awake=False, service=False),
+                                  keep_awake=False, service=False,
+                                  agent_install=False),
     )

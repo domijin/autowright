@@ -3,9 +3,7 @@
 The bodies here are the engine/harness group-kill semantics, moved to one
 place; the spawn sites stay in their owning modules (engine, harness,
 packages — the §15 suites patch `<module>.subprocess`) and take their session
-policy from `session_kwargs()`. packages.py and installer.py keep their own
-inline killpg copies for now: their §15 suites pin `<module>.os.killpg`
-directly, so relocating those bodies would silently defeat the tests.
+policy from `session_kwargs()`.
 """
 from __future__ import annotations
 

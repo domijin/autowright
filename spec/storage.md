@@ -46,7 +46,11 @@ secrets.yaml                   # ids + names + metadata only; values live in the
                                # read-only for the session (unreadable-file rule below)
 backend.json                   # port+token discovery handshake (§3), rewritten each backend start
 electron/                      # Electron's Chromium profile (Cache, Cookies, Local Storage, …) —
-                               # main.cjs redirects userData here so the root stays app data only
+                               # main.cjs redirects userData here so the root stays app data only.
+                               # The base is the §2 platform module's data root (identical to
+                               # Electron's own userData default on macOS, but NOT on Windows,
+                               # where getPath('userData') is Roaming %APPDATA% while this §5
+                               # root is %LOCALAPPDATA% — one root holds ALL app state per OS)
 site-packages/                 # §6.2 declared packages, installed by the app via
                                # `pip install --target` — user-writable, survives app updates,
                                # safe to delete (re-ensured before the next execution)

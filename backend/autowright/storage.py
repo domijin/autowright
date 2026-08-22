@@ -1845,7 +1845,7 @@ class Store:
             display = paths.os_display_name(origin)  # §4.1 display rule, shared with §20
             out.append({"kind": "os-mismatch",
                         "label": f"Built on {display} — its steps may need rewriting "
-                                 "before they run on this Mac."})
+                                 f"before they run on this {paths.machine_noun()}."})
         return out
 
     def auto_json(self, a: dict, full: bool = True) -> dict:

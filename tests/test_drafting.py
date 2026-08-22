@@ -1,4 +1,5 @@
 import pytest
+from conftest import fake_cli
 
 from autowright.drafting import (build_chat_prompt, build_steps_prompt,
                                parse_blockers, parse_envelope, spec_as_md, validate_actions,
@@ -428,6 +429,56 @@ def test_prompts_carry_system_tools_section(monkeypatch):
         assert "=== SYSTEM TOOLS" in p
         assert "- name: gh\n  path: /opt/homebrew/bin/gh" in p
         assert "curated, not exhaustive" in p and "pre-flight" in p
+
+
+def test_chat_prompt_machine_noun_is_per_os(monkeypatch):
+    # §8/§9 per-OS copy rule: the model-facing text that names the user's
+    # machine — the SYSTEM TOOLS header and the chat call's diagnosis rule —
+    # reads one noun from `paths`, "Mac" on macOS and "PC" on Windows. The
+    # {{MACHINE}} placeholder never reaches the prompt.
+    from autowright import paths
+
+    monkeypatch.setattr(paths, "current_os", lambda: "macos")
+    p = build_chat_prompt("x", None, GRANTS)
+    assert "=== SYSTEM TOOLS (CLIs installed on this Mac —" in p
+    assert "the failure comes from the user's Mac, not the steps" in p
+
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    p = build_chat_prompt("x", None, GRANTS)
+    assert "=== SYSTEM TOOLS (CLIs installed on this PC —" in p
+    assert "the failure comes from the user's PC, not the steps" in p
+    assert "{{MACHINE}}" not in p
+    assert "the failure comes from the user's Mac" not in p
+
+
+def test_framework_instructions_name_the_os_per_os(monkeypatch):
+    # §9 per-OS copy rule: the framework instructions that travel with every
+    # call name the OS itself ({{OS}} → the §4.1 display name) and the user's
+    # machine ({{MACHINE}}) — neither placeholder ever reaches the prompt.
+    from autowright import drafting, paths
+
+    monkeypatch.setattr(paths, "current_os", lambda: "macos")
+    p = build_chat_prompt("x", None, GRANTS)
+    assert "Autowright, a macOS app that executes recurring" in p
+    assert "# their Mac; omit for a true impossibility" in p
+    assert "the automation is fine but the Mac isn't" in p
+    assert "nothing global on the Mac." in p
+    assert "times read as the Mac's local time." in p
+    assert "{{OS}}" not in p and "{{MACHINE}}" not in p
+
+    monkeypatch.setattr(paths, "current_os", lambda: "windows")
+    p = build_chat_prompt("x", None, GRANTS)
+    assert "Autowright, a Windows app that executes recurring" in p
+    assert "a macOS app" not in p
+    assert "# their PC; omit for a true impossibility" in p
+    assert "the automation is fine but the PC isn't" in p
+    assert "nothing global on the PC." in p
+    assert "times read as the PC's local time." in p
+    assert "{{OS}}" not in p and "{{MACHINE}}" not in p
+    # Same for the instruction texts the §19 endpoint serves verbatim.
+    served = drafting.contract_preamble() + drafting.default_instructions()
+    assert "a Windows app that executes recurring" in served
+    assert "{{OS}}" not in served and "{{MACHINE}}" not in served
 
 
 def test_system_tools_section_renders_none_when_probe_is_empty(monkeypatch):
@@ -1508,12 +1559,15 @@ def test_draft_jobs_kill_all_building_kills_harness_group():
     # §3 shutdown: building jobs cancel and their harness session groups die
     # outright (SIGKILL, no grace window); terminal jobs stay untouched.
     import subprocess
+    import sys
     import time as _t
 
+    from autowright import platform as platmod
     from autowright.drafting import DraftJobs
 
     jobs = DraftJobs()
-    proc = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                            **platmod.current().processes.session_kwargs())
     jobs.jobs["b"] = {"id": "b", "status": "building", "_cancel": False,
                       "_proc": {"proc": proc}}
     jobs.jobs["d"] = {"id": "d", "status": "done", "_cancel": False, "_proc": {}}
@@ -1621,9 +1675,7 @@ def test_cancel_mid_call_kills_harness_and_never_retries(monkeypatch, tmp_path, 
     from autowright import harness
     from autowright.drafting import DraftJobs
 
-    script = tmp_path / "claude"
-    script.write_text("#!/bin/sh\nsleep 60\n")
-    script.chmod(0o755)
+    script = fake_cli(tmp_path, "import time\ntime.sleep(60)\n")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
     monkeypatch.setattr(_t, "sleep", lambda s: None)  # a (wrong) retry would fire instantly
     real_invoke = harness.invoke

@@ -10,9 +10,9 @@
   `SPEC.md` section map current.
 - Developer mode and production mode must behave the same: no mocked data in developer mode, and no separate
   dev-only code paths. Both modes execute the same real code.
-- The `scripts/` and `windows-scripts/` directories are developer-only — never run anything under
-  them (enforced by a PreToolUse hook). To verify changes, use the `verify` skill's direct launches
-  instead.
+- The `scripts/`, `windows-scripts/`, and `linux-scripts/` directories are developer-only — never
+  run anything under them (enforced by a PreToolUse hook). To verify changes, use the `verify`
+  skill's direct launches instead.
 - Never create commits (or push) on your own — David commits himself. Leave finished work
   uncommitted in the working tree, and only commit/push when he explicitly asks in that
   conversation.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """PreToolUse guard for Bash and PowerShell: block commands touching the
-repo's scripts/ or windows-scripts/ directories (developer-only) or the
+repo's scripts/, windows-scripts/, or linux-scripts/ directories (developer-only) or the
 repo-root knowledge.md (generated dev-only doc). Scoped to exactly those
 repo-root paths — same-named files or directories anywhere else pass through.
 Both path separators are recognized (PowerShell commands use backslashes)."""
@@ -20,7 +20,7 @@ ENDCHARS = r'[\s"\';&|)<>`]'
 END = "(" + ENDCHARS + "|$)"
 
 MSG_SCRIPTS = (
-    "Blocked: the scripts/ and windows-scripts/ directories are developer-only "
+    "Blocked: the scripts/, windows-scripts/, and linux-scripts/ directories are developer-only "
     "— agents must never run these scripts. The developer runs them by hand in "
     "a terminal."
 )
@@ -29,7 +29,7 @@ MSG_KNOWLEDGE = (
     "not read, edit, or use it. SPEC.md is the source of truth."
 )
 
-DIRS = r"(?:scripts|windows-scripts)"
+DIRS = r"(?:scripts|windows-scripts|linux-scripts)"
 
 # The repo root as a regex where either path separator matches — commands may
 # spell the same path with / or \ regardless of OS.

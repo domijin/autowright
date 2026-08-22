@@ -296,11 +296,13 @@ failing step carries two attempts.
 
 ## 18. Commands
 
-Everything under `scripts/` is developer-only: run by hand in a terminal, never by an agent.
+Everything under `scripts/`, `windows-scripts/`, and `linux-scripts/` is developer-only: run
+by hand in a terminal, never by an agent.
 `.claude/settings.json` enforces this with PreToolUse hooks (commands in
 `.claude/hooks/guard_bash.py` + `guard_paths.py`): the Bash hook blocks any command referencing
-the repo's `scripts/` directory (bare `scripts/`, `./scripts/`, `cd scripts`, or the
-`$CLAUDE_PROJECT_DIR` absolute path) or the repo-root `knowledge.md`; the path hook
+any of those three repo directories (bare `scripts/`, `./scripts/`, `cd scripts`, or the
+`$CLAUDE_PROJECT_DIR` absolute path — same forms for the other two) or the repo-root
+`knowledge.md`; the path hook
 (`Read|Edit|Write|Grep|Glob`) blocks tool calls targeting the repo-root `knowledge.md`.
 Both are scoped to exactly those repo-root paths — same-named files or `scripts/` directories
 anywhere else (other repos, `node_modules`, subdirectories) are unaffected. Deterministic
@@ -587,4 +589,10 @@ Dev workflow:
     encoding on exit (`.ps1` scripts share the calling PowerShell process).
   - `Push-Location`/`Pop-Location` to the repo top-level replaces `cd` (same
     shared-process reason).
+- **`./linux-scripts/commit.sh`** — commit.sh on Linux (bash; §17 `linux-scripts/`). Same
+  contract — clean-tree exit 0 with no commit, `git add -A`, Claude-generated message
+  (Opus 5) from the staged diff with the same prompt, the same fence-stripping, fails on an
+  empty message, does not push, developer-only — mapped per-OS: the prompt goes to
+  `claude -p` on **stdin** instead of as an argument — Linux caps a single argv string at
+  `MAX_ARG_STRLEN` (128 KiB), which a real diff overflows.
 

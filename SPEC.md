@@ -307,11 +307,16 @@ data on disk); both ends of a served surface change in the same commit.
   `gen_licenses.py` regenerates `app/src/acknowledgements.md` — the §4.9
   open-source-libraries list, checked in, refreshed by `build.sh` on every build).
 - `windows-scripts/` — Windows developer scripts (PowerShell, runnable only on Windows).
-  Developer-only exactly like `scripts/` — the same never-run rule and guard hook cover both
-  directories, and the §15 BOM drift guard covers `*.ps1` here too. Currently:
+  Developer-only exactly like `scripts/` — the same never-run rule and guard hook cover all
+  three script directories, and the §15 BOM drift guard covers `*.ps1` here too. Currently:
   `dev.ps1` — the §18 Windows dev loop, `scripts/dev.sh` mapped per-OS;
   `commit.ps1` — the §18 Windows commit helper, `scripts/commit.sh` mapped per-OS;
   `prod.ps1` + `release.ps1` — the §3 Windows packaging/release pair.
+- `linux-scripts/` — Linux developer scripts (bash, runnable only on Linux), for the ports
+  that genuinely differ from their `scripts/` originals (most `scripts/` bash runs on Linux
+  as-is). Developer-only exactly like `scripts/` — the same never-run rule and guard hook
+  cover all three script directories. Currently:
+  `commit.sh` — the §18 Linux commit helper, `scripts/commit.sh` mapped per-OS.
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
   and compatible harnesses) to drive Autowright end-to-end through the §20 CLI — create/edit
   automations via pull/push workdirs, execute and follow, inspect results, manage params,

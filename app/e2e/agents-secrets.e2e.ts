@@ -2,7 +2,7 @@
 // answers the real readiness check) and a §4.8 placeholder secret's full
 // lifecycle (blank value → NO Keychain write; add → edit description → delete).
 import { afterEach, describe, expect, it } from 'vitest'
-import { Backend, clickNav, closeApp, launchApp, shot, type AppHandle } from './harness'
+import { Backend, COPY, clickNav, closeApp, launchApp, shot, type AppHandle } from './harness'
 
 describe('agents and secrets e2e', () => {
   let backend: Backend | null = null
@@ -53,12 +53,12 @@ describe('agents and secrets e2e', () => {
     await page.getByRole('button', { name: 'Add your first secret' }).click()
 
     // §4.8 placeholder: name + description, VALUE stays blank — set:false,
-    // nothing is written to the macOS Keychain.
+    // nothing is written to the OS secret store.
     await page.getByRole('heading', { name: 'New secret' }).waitFor({ timeout: 10_000 })
     await page.getByPlaceholder('A short name, like MAIL_PASSWORD or CRM_API_KEY').fill('E2E_TOKEN')
     await page.getByPlaceholder('What this secret is for — helps the drafting agent pick the right secret')
       .fill('Placeholder for e2e')
-    await page.getByRole('button', { name: 'Save to Keychain' }).click()
+    await page.getByRole('button', { name: `Save to ${COPY.secretStore}` }).click()
 
     // Listed as a placeholder: NOT SET badge, no mask (an em-dash value cell).
     await page.getByText('E2E_TOKEN').waitFor({ timeout: 10_000 })
@@ -75,7 +75,7 @@ describe('agents and secrets e2e', () => {
     await page.getByRole('button', { name: 'Save changes' }).click()
     await page.getByText('Updated e2e description').waitFor({ timeout: 10_000 })
 
-    // Delete it again — placeholder rows delete without any Keychain value.
+    // Delete it again — placeholder rows delete without any stored value.
     await page.getByTitle('Delete').click()
     await page.getByText('Delete this secret?').waitFor({ timeout: 10_000 })
     // Scoped to the alertdialog: the row's icon button shares the accessible

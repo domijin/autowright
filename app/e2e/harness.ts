@@ -9,6 +9,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron, type ElectronApplication, type Page } from 'playwright-core'
+import { platformCopy } from '../src/platformCopy'
+
+// §9 per-OS copy for the HOST platform — e2e drives the real app, whose
+// backend reports this machine's os token, so assertions read the same table
+// the renderer does instead of hardcoding one OS's strings.
+export const COPY = platformCopy(
+  process.platform === 'win32' ? 'windows' : process.platform === 'linux' ? 'linux' : 'macos')
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const APP_DIR = path.resolve(HERE, '..')

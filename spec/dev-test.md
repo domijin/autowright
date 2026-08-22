@@ -175,7 +175,10 @@ real macOS notification — accepted, per the no-dev-only-branches rule.
 first, then runs a second Vitest config, `vitest.e2e.config.ts`, sequentially with long
 timeouts and one automatic retry per test: launching a real Electron per test occasionally
 dies to a transient helper-process crash outside our code — "Target page, context or browser
-has been closed" — and a genuine failure still fails both attempts). Each test launches the real pieces exactly as release does: the backend subprocess
+has been closed" — and a genuine failure still fails both attempts). The suite runs on
+whatever OS hosts it, so assertions on §9 per-OS copy read the renderer's own table
+(`platformCopy`, exported through the harness as `COPY` keyed by the host platform) rather
+than hardcoding one OS's strings. Each test launches the real pieces exactly as release does: the backend subprocess
 over a tmp `AUTOWRIGHT_HOME` (fake `claude` from `tests/bin` on PATH), then the real Electron
 binary via playwright-core `_electron.launch` loading `app/dist` — real preload bridge, real
 `backend.json` discovery, real windows on screen. Teardown stops the backend **gracefully**

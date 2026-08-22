@@ -662,7 +662,13 @@ already neutralize. The provider config and
   makes a client holding that automation's **full** record re-`GET /automations/{id}`: the
   full-only fields (`latest`/`memory`/`snapshots`/`versions`) never ride events, and this
   refetch is what moves the §9.2 LATEST RESULT card (and the memory/snapshot lists) to the
-  finished run. `automation.changed` carries `automationId` plus
+  finished run. Execution refetches are **monotonic**: a `GET /executions/{id}` response
+  resolving out of order must never regress the stored full record — when the stored status is
+  terminal and the fetched body says `queued`/`executing`, the response is stale and the client
+  drops it (the `execution.finished` handler's own refetch delivers the terminal body; without
+  this rule the stale body re-runs every status-transition observer, e.g. doubling the §11
+  test-settled chip). A §7 in-place retry legitimately returns a finished record to
+  `executing`, but it announces that through `execution.started`, which this rule leaves alone. `automation.changed` carries `automationId` plus
   `automation` — the changed automation in list shape, or `null` when it was deleted —
   whenever exactly one automation changed; clients patch that one row in place by **merging**
   it over the stored record, never replacing it. The list shape lacks the full-record fields

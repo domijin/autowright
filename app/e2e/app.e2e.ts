@@ -2,7 +2,7 @@
 // preload bridge, backend.json discovery, HTTP + WS, real execution engine.
 // The fake `claude` CLI (tests/bin, real detection code path) stands in for AI.
 import { afterEach, describe, expect, it } from 'vitest'
-import { Backend, closeApp, launchApp, shot, type AppHandle } from './harness'
+import { Backend, COPY, closeApp, launchApp, shot, type AppHandle } from './harness'
 
 describe('autowright e2e', () => {
   let backend: Backend | null = null
@@ -34,7 +34,7 @@ describe('autowright e2e', () => {
     await page.getByText('Step 2 of 2').waitFor({ timeout: 10_000 })
     await page.getByRole('heading', { name: 'Connect your AI' }).waitFor()
     // Detection spinner holds ≥1.9 s, then cards land.
-    await page.getByText('FOUND ON THIS MAC').waitFor({ timeout: 20_000 })
+    await page.getByText(`FOUND ON THIS ${COPY.machine.toUpperCase()}`).waitFor({ timeout: 20_000 })
     await page.getByText('Claude Code', { exact: true }).waitFor()
     // The fake CLI surfaced through the real detect path (`claude --version`).
     await page.getByText(/autowright test fake/).waitFor()

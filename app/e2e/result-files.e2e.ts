@@ -2,7 +2,7 @@
 // ((result / "result.md").write_text(...)) — the execution page renders it
 // inline (fileKind md → Markdown view).
 import { afterEach, describe, expect, it } from 'vitest'
-import { Backend, closeApp, launchApp, shot, type AppHandle } from './harness'
+import { Backend, COPY, closeApp, launchApp, shot, type AppHandle } from './harness'
 
 const REPORT_STEP = {
   file: '01-report.py', name: 'Write report', description: 'writes result.md',
@@ -51,8 +51,8 @@ describe('result files e2e', () => {
     // The file also lists in the FILES footer (name appears in view title too).
     await page.getByText('result.md').first().waitFor()
     // §7 workspace link sits at the steps rail's bottom — presence only,
-    // never clicked (it would open a real Finder window).
-    await page.getByRole('button', { name: 'Show workspace in Finder' }).waitFor()
+    // never clicked (it would open a real file-manager window).
+    await page.getByRole('button', { name: `Show workspace in ${COPY.fileManager}` }).waitFor()
     await shot(page, 'result-files.png')
   }, 120_000)
 })

@@ -515,6 +515,14 @@ export const useStore = create<Model>((set, get) => ({
   async loadExecution(executionId) {
     try {
       const e = await api.getExecution(executionId)
+      // §19 monotonic refetch: a slow GET resolving after the finished event's
+      // merge must not regress a terminal record to queued/executing — drop
+      // the stale body; the finished handler's own refetch carries the real
+      // one. (§7 in-place retry re-enters 'executing' via execution.started,
+      // never through here.)
+      const nonTerminal = (s: string) => s === 'queued' || s === 'executing'
+      const cur = get().executionFull[executionId]
+      if (cur && !nonTerminal(cur.status) && nonTerminal(e.status)) return
       set({ executionFull: { ...get().executionFull, [executionId]: e } })
     } catch { /* deleted */ }
   },

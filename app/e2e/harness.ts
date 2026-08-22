@@ -9,7 +9,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron, type ElectronApplication, type Page } from 'playwright-core'
-import { platformCopy } from '../src/platformCopy'
+import { platformCopy } from '../src/platformCopyTable'
 
 // §9 per-OS copy for the HOST platform — e2e drives the real app, whose
 // backend reports this machine's os token, so assertions read the same table

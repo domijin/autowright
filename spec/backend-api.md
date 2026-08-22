@@ -605,7 +605,17 @@ already neutralize. The provider config and
   (even blank) sets it. A blank value keeps the stored state (§4.8) and edits only the
   description — the presence rule is what makes that read. Returns the serialized entity;
   both writes answer 503
-  when the Keychain refuses the write · `DELETE /secrets/{id}` (unknown id 404) —
+  when the Keychain refuses the write · `DELETE /secrets/{id}` (unknown id 404) ·
+  `DELETE /secrets` — delete **all** stored secrets in one call (backs the §3
+  reset/uninstall flows and §20 `secret delete --all`): per entry a best-effort Keychain
+  delete (§4.8 rule) then the metadata row goes; the sweep removes exactly the ids
+  snapshotted at entry — `secrets.yaml` ends empty in the normal case, but a secret created
+  while the Keychain deletes run keeps its row rather than becoming an orphaned value with
+  no metadata — one `secrets.changed` event covers the sweep, and the answer is
+  `{ deleted: <count> }` (0 with no secrets — never an error). Automations' `allowed_secrets` grants and step references
+  are left as written, exactly like the per-id delete (dangling ids surface as §4.1
+  `secret-missing` blockers). The unreadable-store guard below still answers 409 — its §3
+  callers treat that as non-fatal and proceed —
   values go straight to the Keychain (account = the secret's id, §4.8), never
   into responses or files. Routes are id-keyed (§4.8: the id is the reference identity;
   names exist for display and the create call)

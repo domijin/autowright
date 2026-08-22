@@ -760,9 +760,15 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog',
   )
 }
 
-export function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onCancel }: {
+/**
+ * §14 confirm dialog. `children`, when given, render between the body and the
+ * button row — the one place a confirm grows an extra control (the §4.9
+ * UNINSTALL card's "Also delete my data and secrets" checkbox). Call sites
+ * without children render exactly as before.
+ */
+export function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onCancel, children }: {
   title: string; body: React.ReactNode; confirmLabel: string; danger?: boolean
-  onConfirm: () => void; onCancel: () => void
+  onConfirm: () => void; onCancel: () => void; children?: React.ReactNode
 }) {
   const confirmed = useRef(false)
   return (
@@ -774,7 +780,11 @@ export function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onC
       {(close) => (
         <>
           <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{title}</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', marginBottom: 18 }}>{body}</div>
+          <div style={{
+            fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)',
+            marginBottom: children ? 14 : 18,
+          }}>{body}</div>
+          {children && <div style={{ marginBottom: 18 }}>{children}</div>}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
             <BtnGhost onClick={close}>Cancel</BtnGhost>
             <button

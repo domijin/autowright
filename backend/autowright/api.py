@@ -1886,6 +1886,26 @@ def delete_secret(secret_id: str) -> dict:
     return {"ok": True}
 
 
+@app.delete("/secrets", dependencies=[Depends(auth)])
+def delete_all_secrets() -> dict:
+    """§19: the whole-store sweep behind the §3 reset/uninstall flows and §20
+    `secret delete --all`. Nothing stored is success, not a 404 — the §3 callers
+    run it blind. Automations' `allowed_secrets` grants and step references are
+    left as written, exactly like the per-id delete (§4.1 `secret-missing`)."""
+    store.require_writable(paths.secrets_file())  # before the Keychain deletes
+    with store.lock:
+        swept = [s["id"] for s in store.secrets]
+    for secret_id in swept:  # Keychain IPC — outside the lock (see create_secret)
+        keychain.delete_secret(secret_id)
+    with store.lock:
+        # Filter rather than clear: a create that landed while the Keychain IPC
+        # ran keeps its row — its value was never deleted.
+        store.secrets = [s for s in store.secrets if s["id"] not in set(swept)]
+        store.save_secrets()
+    hub.publish("secrets.changed")  # one event covers the whole sweep
+    return {"deleted": len(swept)}
+
+
 # ---------- settings ----------
 @app.get("/settings", dependencies=[Depends(auth)])
 def get_settings() -> dict:

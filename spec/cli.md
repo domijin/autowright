@@ -213,11 +213,15 @@ Names are the CLI's secret surface; the CLI maps them to the §19 id routes: `se
 with a name no stored secret holds creates via `POST /secrets`, with an existing name edits
 via `PUT /secrets/{id}` (the upsert feel is CLI-side; the API itself is split, §19).
 `secret delete NAME` resolves the name to its id (unknown name exits 1 with the candidates)
-and calls `DELETE /secrets/{id}`.
+and calls `DELETE /secrets/{id}`. `secret delete --all` (mutually exclusive with a name;
+requires `--yes`, the destructive-guard rule below) calls `DELETE /secrets` (§19) and prints
+the deleted count — with `service stop` and deleting the §5 roots by hand, it is the
+headless half of the §3 reset flow.
 
-**Destructive guard** — `automation delete` requires `--yes` (it removes every version and its
-history); everything else is either reversible (versions, snapshots) or already the §19
-single-call semantics the UI uses.
+**Destructive guard** — `automation delete` and `secret delete --all` require `--yes` (the
+first removes every version and its history; the second removes every stored secret and its
+Keychain value); everything else is either reversible (versions, snapshots) or already the
+§19 single-call semantics the UI uses.
 
 **Review semantics in CLI terms:** a CLI save or
 execute is user-reviewed by definition — the user (or the agent the user is driving) authored

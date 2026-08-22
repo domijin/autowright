@@ -115,6 +115,13 @@ function managedInstall() {
 
 const MANAGED_COPY_ERROR = 'This copy is managed by a package manager.'
 
+// ---- §3 uninstall -----------------------------------------------------------
+
+// §3: which uninstall finish main.cjs performs here — the per-user NSIS
+// uninstaller the installer wrote beside the exe. The module names the
+// machinery rather than constructing it, exactly as with UPDATER above.
+const UNINSTALL = 'nsis'
+
 // ---- §9.4 external links + §5 reveal ----------------------------------------
 
 // No Windows equivalent of the §9 permission-checklist Settings pane is
@@ -160,6 +167,7 @@ module.exports = {
   updateFeedUrl,
   managedInstall,
   MANAGED_COPY_ERROR,
+  UNINSTALL,
   SETTINGS_DEEP_LINK,
   revealPrefersOpen,
   SERVICE_START_FAILED_DETAIL,

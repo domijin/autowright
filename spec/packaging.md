@@ -225,6 +225,87 @@ the update bullets below).
   UI while the backend it promised to stop keeps running. A stopped backend returns at next
   login (`RunAtLoad`) or next app launch (ensure-backend re-heals) — stopped, never
   uninstalled.
+- **Reset — delete all data and start over (§4.9 RESET card, decided).** The renderer confirm
+  fires a `reset-all` IPC; the Electron main process orchestrates, in order:
+  1. The same live-execution gate as quit-all/update-install (busy → `{ busy: true }`,
+     nothing touched; an unreachable backend counts as idle).
+  2. Capture `GET /settings`' `dataPath` while the backend is still up — the executions dir
+     is user-movable (§4.9) and may live outside the data root.
+  3. `DELETE /secrets` on the live backend (§19) — only the backend's keyring can reach the
+     Keychain / Credential Manager. A failure here (the §19 unreadable-store 409 included) is
+     logged to `app.log` and the reset **proceeds**: value deletion is already best-effort per
+     entry (§4.8), and an unreadable `secrets.yaml` means those ids were unreachable this
+     session anyway.
+  4. `service stop` through the same interpreter resolution and install-interlock as
+     quit-all. A stop failure aborts the reset with `{ error }` — the app stays up, and at
+     that point nothing has been deleted beyond step 3's secrets.
+  5. Delete the executions dir (the captured `dataPath`), the logs root, and every entry of
+     the data root **except** the live Chromium profile `electron/` — Chromium holds open
+     handles on it, so deleting it would fail (on Windows, a sharing violation outright). A
+     `dataPath` that itself contains the live profile (a user pointed it at the data root) is
+     not deleted wholesale — the per-entry sweep still covers everything else, preserving the
+     except-the-live-profile invariant. The
+     profile is cleared with `session.defaultSession.clearStorageData()` plus `clearCache()`
+     instead — every §15 localStorage marker (`ad-cli-installed` among them) goes, which is
+     what matters — and the directory's residual Chromium internals are accepted residue
+     (same acceptance as the updater-cache bullet below). On Windows every deletion retries
+     briefly (up to ~10 s total): the stop-verification gap above means the backend's file
+     handles (`executions.db`, its own log file) can outlive a reported stop by a moment.
+     Deletion failures that survive the retries are logged and the flow continues — a
+     leftover file must not strand the app mid-reset.
+  6. `app.relaunch()` + `app.exit(0)`. The relaunched app finds no `backend.json` and an
+     empty data root: ensure-backend re-registers the service, the backend recreates the §5
+     layout with defaults, and §10 onboarding runs as on a fresh install.
+
+  **The service registration, the CLI shim, and the app itself deliberately survive a
+  reset** — only data is erased. The wiped first-run marker just lets the §3 one-shot settle
+  again (shim already `installed` → marker re-set, no write). Headless parity is composition,
+  not a new verb: `autowright secret delete --all` (§20), `autowright service stop`, then
+  deleting the §5 roots by hand.
+- **Uninstall (§4.9 UNINSTALL card, decided).** An `uninstall-app` IPC
+  (`{ deleteData: bool }`), per-OS behind the §2 platform layer: each shell platform module
+  names its uninstall finish the way `UPDATER` names the update machinery (`UNINSTALL:
+  'trash'` on darwin, `'nsis'` on win32, `null` in the fallback — modules name machinery,
+  never construct it), and a small `uninstall-supported` invoke answers whether a finish is
+  named, so the §4.9 card can hide on platforms with none; with `null` the IPC itself also
+  refuses with the plain "not supported on this platform yet." line (defense in depth). On a
+  brew-managed copy it refuses with `MANAGED_COPY_ERROR` — the §4.9 card never offers the
+  button in brew mode and shows the `brew uninstall --cask --zap hansololz/tap/autowright`
+  command instead; the cask's `zap` owns the data trash on that channel (cask bullet above).
+  Otherwise, in order:
+  1. The live-execution gate, as in reset.
+  2. With `deleteData`: capture `dataPath` and run `DELETE /secrets`, exactly as reset steps
+     2–3 (same non-fatal rule).
+  3. `python -m autowright.service uninstall` (same interpreter resolution and interlock as
+     quit-all): stops the backend, removes the LaunchAgent plist / Task Scheduler task, and
+     removes the ours-marker CLI shim (the §3 service-uninstall shim rule). A failure aborts
+     with `{ error }`; the app stays up.
+  4. With `deleteData`: the same deletions as reset step 5 (executions dir, logs root, data
+     root minus the live profile + `clearStorageData`), plus, on Windows only, the
+     `%LOCALAPPDATA%\autowright-updater` cache — uninstall is the one flow that removes the
+     residue the bullet below otherwise accepts.
+  5. The per-OS finish — packaged builds only (`app.isPackaged`): a dev checkout has no
+     installed artifact to remove, so it logs "uninstall: dev checkout, nothing to remove"
+     and just quits.
+     - **darwin (`'trash'`):** move the app bundle (resolved from `process.execPath`, three
+       levels up) to the Trash via Electron's `shell.trashItem`, then quit. If trashing
+       fails the app does **not** quit: the handler reveals the bundle in Finder and answers
+       `{ error: "Autowright couldn't move itself to the Trash — drag it to the Trash to
+       finish." }` (darwin-only copy — never renders elsewhere, so no §9 per-OS table
+       entry). A user who relaunches a trashed-but-not-emptied copy simply re-heals the
+       service via ensure-backend — uninstall is not a lockout.
+     - **win32 (`'nsis'`):** spawn the per-user NSIS uninstaller (`Uninstall Autowright.exe`
+       beside `process.execPath` in the install dir) detached and quit immediately. The
+       uninstaller is a deliberate, user-facing GUI — the one window the §2
+       no-console-window invariant does not cover, because it is not a console window; it
+       removes the program files, Start-menu shortcut, and registry entry (and may briefly
+       wait for the exiting app). The scheduled task and shim are already gone from step 3 —
+       the NSIS uninstaller never knew about them. A missing uninstaller exe answers
+       `{ error }` naming the path; the app stays up.
+
+  Without `deleteData`, every §5 file and every secret stays on disk for a reinstall —
+  uninstall removes the app, the service, and the shim, never data the user didn't opt into
+  deleting.
 - Discovery: the backend listens on localhost and writes its port + auth token to
   `backend.json` in the §5 data root — `~/Library/Application Support/Autowright/` on macOS,
   written 0600; `%LOCALAPPDATA%\Autowright\` on Windows, where POSIX mode bits restrict

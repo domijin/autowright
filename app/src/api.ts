@@ -32,6 +32,17 @@ declare global {
       updateBrewManaged(): Promise<boolean>
       // §4.9 QUIT card (§3 explicit-quit exception)
       quitAll(): Promise<{ ok: true } | { busy: true } | { error: string }>
+      // §4.9 RESET card (§3 reset flow): erases every §5 root and every secret,
+      // then the app relaunches itself into onboarding — the service
+      // registration, the CLI shim, and the app itself survive.
+      resetAll(): Promise<{ ok: true } | { busy: true } | { error: string }>
+      // §4.9 UNINSTALL card (§3 uninstall flow, per-OS): stops and removes the
+      // background service, optionally runs the reset deletions, then the app
+      // removes itself and exits.
+      uninstallApp(opts: { deleteData: boolean }): Promise<{ ok: true } | { busy: true } | { error: string }>
+      // §3: whether the §2 platform module names an uninstall finish — false
+      // hides the §4.9 UNINSTALL card entirely.
+      uninstallSupported(): Promise<boolean>
       onUpdateProgress(cb: (percent: number | null) => void): void
       updateAvailable(): Promise<string | null>
       onUpdateAvailable(cb: (version: string | null) => void): void

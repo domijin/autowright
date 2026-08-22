@@ -1640,6 +1640,37 @@ def test_cmd_secret_commands(monkeypatch, capsys):
     assert f"removed from your {paths.secret_store_name()}" in capsys.readouterr().out
 
 
+def test_cmd_secret_delete_all(capsys):
+    """§20: `secret delete --all` is the collection route, behind the
+    destructive guard — and it never mixes with a name."""
+    secrets = [{"id": "s-1", "name": "API_TOKEN", "set": True, "usedBy": []}]
+
+    # the destructive guard: --yes or nothing happens
+    c = _RouteClient({"/secrets": secrets})
+    with pytest.raises(SystemExit, match="add --yes to confirm"):
+        _run(c, "secret", "delete", "--all")
+    assert c.calls == []
+
+    # mutually exclusive with a name — neither is guessed
+    c = _RouteClient({"/secrets": secrets})
+    with pytest.raises(SystemExit, match="drop the name"):
+        _run(c, "secret", "delete", "API_TOKEN", "--all", "--yes")
+    assert c.calls == []
+
+    # neither a name nor --all
+    c = _RouteClient({"/secrets": secrets})
+    with pytest.raises(SystemExit, match="needs a secret name"):
+        _run(c, "secret", "delete")
+    assert c.calls == []
+
+    # confirmed: the collection route (§19), and the count is printed
+    c = _RouteClient({"/secrets": secrets}, reply={"deleted": 3})
+    _run(c, "secret", "delete", "--all", "--yes")
+    assert c.calls == [("DELETE", "/secrets", None)]
+    assert f"removed 3 secret(s) from your {paths.secret_store_name()}" \
+        in capsys.readouterr().out
+
+
 def test_secret_lines_take_the_per_os_secret_store_name(monkeypatch, capsys):
     """§9 per-OS copy rule: the §20 secret lines name the Keychain on macOS and
     the Credential Manager on Windows — one substituted noun, same wording."""

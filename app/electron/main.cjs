@@ -1,6 +1,6 @@
 // Electron main: one app window + a tray (menu-bar) panel window (§9, §13).
-const { app, autoUpdater, BrowserWindow, Menu, Tray, dialog, nativeImage, ipcMain, shell, screen } = require('electron')
-const { execFile } = require('child_process')
+const { app, autoUpdater, BrowserWindow, Menu, Tray, dialog, nativeImage, ipcMain, session, shell, screen } = require('electron')
+const { execFile, spawn } = require('child_process')
 const { randomUUID } = require('crypto')
 const fs = require('fs')
 const http = require('http')
@@ -134,6 +134,24 @@ async function executionsLiveProbe() {
 // be executing on it.
 async function executionsLive() {
   return (await executionsLiveProbe()) === true
+}
+
+// One authenticated call against the live backend — the same shape the probes
+// above use (port + bearer token from backend.json, a timeout, never a throw).
+// Resolves to the Response, or null when the backend is unreachable; callers
+// decide what unreachable means for them.
+async function backendFetch(route, init = {}, timeoutMs = 10_000) {
+  const info = backendInfo()
+  if (!info) return null
+  try {
+    return await fetch(`http://127.0.0.1:${info.port}${route}`, {
+      ...init,
+      headers: { Authorization: `Bearer ${info.token}`, ...(init.headers || {}) },
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch {
+    return null
+  }
 }
 
 // §3 install verification: launchctl can report success while the job never
@@ -1017,33 +1035,235 @@ ipcMain.handle('update-install', async () => {
   return { ok: true }
 })
 
+// §3: the explicit service commands the shell runs — `stop` for the §4.9 QUIT
+// and RESET flows, `uninstall` for the §4.9 UNINSTALL card. One shared path:
+// the same interpreter resolution as ensure-backend and the same install
+// interlock (block new `service install` spawns and wait out any in-flight
+// one, so the stop can't be undone by a racing install child). Resolves to
+// null on success or the failure text; a caller that keeps the app up resets
+// `quittingAll` itself, since future ensure/version-sync installs may run.
+async function runServiceVerb(verb, label) {
+  // Dev launches have no bundled Python — backend.json publishes the
+  // interpreter that runs the backend (§3 discovery fields), same code path.
+  const py = bundledPython() || backendInfo()?.python
+  if (!py) return 'No backend interpreter found'
+  quittingAll = true
+  await serviceInstallDone
+  return new Promise((resolve) => {
+    // §2 spawn policy: never show a console window for a shell child.
+    execFile(py, ['-m', 'autowright.service', verb], { windowsHide: true }, (e, stdout, stderr) => {
+      appLog(`${label}: ${String(stdout || stderr || '').trim()}`)
+      resolve(e ? String(stdout || stderr || e.message).trim() : null)
+    })
+  })
+}
+
 // §3 explicit-quit exception (§4.9 QUIT card): stop the backend LaunchAgent
 // (bootout only — plist and shim stay; it returns at next login or app
 // launch), then quit the app. On any stop failure the app stays up — never
 // quit the UI while the backend it promised to stop keeps running.
 ipcMain.handle('quit-all', async () => {
   if (await executionsLive()) return { busy: true }
-  // Dev launches have no bundled Python — backend.json publishes the
-  // interpreter that runs the backend (§3 discovery fields), same code path.
-  const py = bundledPython() || backendInfo()?.python
-  if (!py) return { error: 'No backend interpreter found' }
-  // §3: block new `service install` spawns and wait out any in-flight one
-  // before stopping, so the stop can't be undone by a racing install child.
-  quittingAll = true
-  await serviceInstallDone
-  const err = await new Promise((resolve) => {
-    // §2 spawn policy: never show a console window for a shell child.
-    execFile(py, ['-m', 'autowright.service', 'stop'], { windowsHide: true }, (e, stdout, stderr) => {
-      appLog(`quit-all: ${String(stdout || stderr || '').trim()}`)
-      resolve(e ? String(stdout || stderr || e.message).trim() : null)
-    })
-  })
+  const err = await runServiceVerb('stop', 'quit-all')
   if (err) {
     // The app stays up (§3), so future ensure/version-sync installs may run.
     quittingAll = false
     return { error: err }
   }
   appLog('quit-all: backend stopped, quitting app')
+  app.quit()
+  return { ok: true }
+})
+
+// §3 reset/uninstall shared steps -------------------------------------------
+
+// §3 reset step 2 / uninstall step 2: the executions dir is user-movable
+// (§4.9) and may live outside the data root, so its location is captured from
+// the live backend before anything stops it. null when unreachable or
+// unanswered — the deletions below then only cover the §5 roots.
+async function captureDataPath() {
+  const res = await backendFetch('/settings')
+  if (!res?.ok) return null
+  try {
+    const s = await res.json()
+    return typeof s?.dataPath === 'string' && s.dataPath ? s.dataPath : null
+  } catch {
+    return null
+  }
+}
+
+// §3 reset step 3 / uninstall step 2: only the backend's keyring reaches the
+// Keychain / Credential Manager, so the sweep has to run while it is still up.
+// A failure (the §19 unreadable-store 409 included) is logged and the flow
+// proceeds: value deletion is best-effort per entry (§4.8), and an unreadable
+// secrets.yaml means those ids were unreachable this session anyway.
+async function deleteSecrets(label) {
+  const res = await backendFetch('/secrets', { method: 'DELETE' }, 30_000)
+  if (res?.ok) return
+  appLog(`${label}: DELETE /secrets failed `
+    + `(${res ? `HTTP ${res.status}` : 'backend unreachable'}) — continuing`)
+}
+
+// §3 reset step 5: on Windows a reported service stop precedes the backend's
+// file handles actually closing (the §3 stop-verification gap — executions.db
+// and the backend's own log file), so a failed delete is retried briefly, up
+// to ~10 s. A failure that survives the retries is logged and the flow
+// continues — a leftover file must not strand the app mid-reset. The platform
+// module names the OS (§2: main.cjs never sniffs process.platform).
+async function deletePath(target, label) {
+  const deadline = Date.now() + (plat.OS_TOKEN === 'windows' ? 10_000 : 0)
+  for (;;) {
+    try {
+      await fs.promises.rm(target, { recursive: true, force: true })
+      return
+    } catch (e) {
+      if (Date.now() >= deadline) {
+        appLog(`${label}: couldn't delete ${target}: ${e?.message || e}`)
+        return
+      }
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  }
+}
+
+function containsPath(parent, child) {
+  const p = path.resolve(parent)
+  const c = path.resolve(child)
+  return c === p || c.startsWith(p + path.sep)
+}
+
+// §3 reset step 5 / uninstall step 4: the executions dir, the logs root, and
+// every entry of the data root **except** the live Chromium profile —
+// Chromium holds open handles on it, so deleting it would fail (on Windows a
+// sharing violation outright). The profile is cleared instead, which is what
+// matters: every §15 localStorage marker (`ad-cli-installed` among them) goes.
+// Its residual Chromium internals are accepted residue (§3).
+async function deleteAllData(dataPath, label) {
+  const root = appSupportDir()
+  const profile = path.join(root, 'electron')
+  // A relocated executions dir may sit anywhere; only a configured location
+  // that would take the live profile with it is left to the entry sweep below.
+  if (dataPath && !containsPath(dataPath, profile)) await deletePath(dataPath, label)
+  await deletePath(logsDir(), label)
+  let entries = []
+  try {
+    entries = fs.readdirSync(root)
+  } catch { /* no data root at all — nothing to sweep */ }
+  for (const name of entries) {
+    if (path.join(root, name) === profile) continue
+    await deletePath(path.join(root, name), label)
+  }
+  try {
+    await session.defaultSession.clearStorageData()
+    await session.defaultSession.clearCache()
+  } catch (e) {
+    appLog(`${label}: couldn't clear the browser profile: ${e?.message || e}`)
+  }
+}
+
+// §3 reset (§4.9 RESET card): erase every §5 file and every secret, then
+// relaunch into onboarding. The service registration, the CLI shim and the app
+// itself deliberately survive — only data is erased.
+ipcMain.handle('reset-all', async () => {
+  // §3 step 1: the same live-execution gate as quit-all/update-install; an
+  // unreachable backend counts as idle.
+  if (await executionsLive()) return { busy: true }
+  const dataPath = await captureDataPath()
+  await deleteSecrets('reset')
+  const err = await runServiceVerb('stop', 'reset')
+  if (err) {
+    // §3 step 4: a stop failure aborts the reset — the app stays up and
+    // nothing has been deleted beyond step 3's secrets.
+    quittingAll = false
+    return { error: err }
+  }
+  await deleteAllData(dataPath, 'reset')
+  appLog('reset: data erased, relaunching')
+  // §3 step 6: the relaunched app finds no backend.json and an empty data root
+  // — ensure-backend re-registers and §10 onboarding runs as on a fresh install.
+  app.relaunch()
+  app.exit(0)
+  return { ok: true }
+})
+
+// §3 uninstall (§4.9 UNINSTALL card): the per-OS finish is named by the §2
+// platform module — null means this platform has none, which hides the card
+// and refuses the IPC (defense in depth).
+const NO_UNINSTALL_ERROR = 'Uninstall is not supported on this platform yet.'
+
+// darwin-only copy (§3): never renders elsewhere, so it has no §9 per-OS entry.
+const TRASH_FAILED_ERROR =
+  "Autowright couldn't move itself to the Trash — drag it to the Trash to finish."
+
+ipcMain.handle('uninstall-supported', () => plat.UNINSTALL != null)
+
+ipcMain.handle('uninstall-app', async (_e, opts) => {
+  const deleteData = Boolean(opts?.deleteData)
+  // §3: Homebrew owns removal on that channel (the cask's `zap` covers the
+  // data too) — the §4.9 card shows the brew command instead of the button.
+  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
+  if (plat.UNINSTALL == null) return { error: NO_UNINSTALL_ERROR }
+  if (await executionsLive()) return { busy: true }
+  // §3 step 2: only with deleteData — an unchecked box leaves every §5 file
+  // and every secret in place for a reinstall.
+  const dataPath = deleteData ? await captureDataPath() : null
+  if (deleteData) await deleteSecrets('uninstall')
+  // §3 step 3: stops the backend, removes the LaunchAgent plist / Task
+  // Scheduler task, and removes the ours-marker CLI shim. A failure aborts —
+  // the app stays up.
+  const err = await runServiceVerb('uninstall', 'uninstall')
+  if (err) {
+    quittingAll = false
+    return { error: err }
+  }
+  if (deleteData) {
+    await deleteAllData(dataPath, 'uninstall')
+    // §3: uninstall is the one flow that removes electron-updater's installer
+    // cache — the residue every other flow accepts.
+    if (plat.OS_TOKEN === 'windows') {
+      const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+      await deletePath(path.join(local, 'autowright-updater'), 'uninstall')
+    }
+  }
+  // §3 step 5: the per-OS finish, packaged builds only — a dev checkout has no
+  // installed artifact to remove.
+  if (!app.isPackaged) {
+    appLog('uninstall: dev checkout, nothing to remove')
+    app.quit()
+    return { ok: true }
+  }
+  if (plat.UNINSTALL === 'trash') {
+    // Autowright.app/Contents/MacOS/Autowright — the bundle is three levels up.
+    const bundle = path.resolve(process.execPath, '..', '..', '..')
+    try {
+      await shell.trashItem(bundle)
+    } catch (e) {
+      // §3: the app does **not** quit — reveal the bundle so the user can
+      // finish by hand.
+      appLog(`uninstall: couldn't trash ${bundle}: ${e?.message || e}`)
+      shell.showItemInFolder(bundle)
+      return { error: TRASH_FAILED_ERROR }
+    }
+    appLog(`uninstall: moved ${bundle} to the Trash, quitting`)
+    app.quit()
+    return { ok: true }
+  }
+  // 'nsis': the per-user NSIS uninstaller sits beside the exe in the install
+  // dir. It removes the program files, Start-menu shortcut and registry entry
+  // (the task and shim are already gone from step 3), and may briefly wait for
+  // this app to exit — so it is spawned detached and unref'd before the quit.
+  // §2's no-console-window invariant does not cover it: it is a deliberate,
+  // user-facing GUI, not a console window.
+  const uninstaller = path.join(path.dirname(process.execPath), 'Uninstall Autowright.exe')
+  if (!fs.existsSync(uninstaller)) {
+    return { error: `Couldn’t find the uninstaller at ${uninstaller}` }
+  }
+  try {
+    spawn(uninstaller, [], { detached: true, stdio: 'ignore' }).unref()
+  } catch (e) {
+    return { error: `Couldn’t start the uninstaller — ${e?.message || e}` }
+  }
+  appLog(`uninstall: started ${uninstaller}, quitting`)
   app.quit()
   return { ok: true }
 })

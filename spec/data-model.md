@@ -970,8 +970,8 @@ of:
 Reinstall (and the uninstall behind the disable confirm) show the §9 busy-commit spinner
 while running, then the card re-reads `cli-status`. A **DEVELOPER**
 card sits last on the page with
-the single **Developer mode** toggle row (developerMode above). A **QUIT** card sits at the
-very bottom of the page (below DEVELOPER), rendered only when the preload bridge exists (like
+the single **Developer mode** toggle row (developerMode above). A **QUIT** card sits below
+DEVELOPER, rendered only when the preload bridge exists (like
 COMMAND LINE; no stored setting). One row titled "Quit Autowright entirely", detail "Stops the
 background service too — schedules and message triggers pause until you next log in or open
 Autowright.", with a "Quit…" button (ellipsis: a confirm follows). The button opens a danger
@@ -980,6 +980,47 @@ consequence, confirm label "Quit Autowright". Confirming fires the §3 `quit-all
 (live execution) → toast "An automation is executing — quit when it finishes." and the row
 resets; error → toast the error text, row resets; success → the app exits (backend stopped
 first — §3 explicit-quit exception). While running, the button shows the §9 busy spinner as
-"Stopping…" (the stop's launchd deregistration wait can take up to ~10 s). Version, updates,
+"Stopping…" (the stop's launchd deregistration wait can take up to ~10 s).
+
+Below QUIT sit the two destructive cards, most severe last — both rendered only when the
+preload bridge exists (like QUIT; no stored setting), both gated on no live executions
+through their §3 IPCs (busy → toast and the row resets, like QUIT), and both showing the §9
+busy spinner on the row button while their flow runs:
+
+A **RESET** card: one row titled "Delete all data and start over", detail "Erases every
+automation, execution, agent, secret, and setting from this Mac, then Autowright restarts
+as new.", with a "Reset…" button (ellipsis: a confirm follows). The button opens a danger
+ConfirmModal — title "Delete all data and start over?", body "Every automation, execution,
+agent, and setting on this Mac is deleted, and every secret is removed from your Keychain.
+Autowright then restarts as if newly installed. This can't be undone.", confirm label
+"Delete everything". Confirming fires the §3 `reset-all` IPC: busy (live execution) →
+toast "An automation is executing — reset when it finishes." and the row resets; error →
+toast the error text, row resets; success → the app relaunches itself into onboarding
+(§3 reset flow — the service registration, the CLI shim, and the app itself deliberately
+survive; only data is erased). While running the button reads "Resetting…".
+
+An **UNINSTALL** card sits at the very bottom of the page: one row titled "Uninstall
+Autowright", detail "Stops and removes the background service, then removes Autowright
+from this Mac.", with an "Uninstall…" button. The card renders only where the shell
+supports it: the §3 `uninstall-supported` invoke (asked on every Settings visit, like
+`cli-status`) answers whether the §2 platform module names an uninstall finish — false
+hides the card entirely. On a §3 brew-managed copy (probed over the same
+`update-brew-managed` IPC the §9.4 About page uses) the row keeps its title and detail but
+the button never renders; in its place the card shows the §14 CommandBlock holding
+`brew uninstall --cask --zap hansololz/tap/autowright` with its Copy button ("Copied to
+clipboard." toast) — Homebrew owns removal on that channel, and its `zap` covers the data
+directories (§3 cask bullet). Otherwise the button opens a danger ConfirmModal — title
+"Uninstall Autowright?", body "The background service stops and is removed, then
+Autowright quits and removes itself from this Mac.", above a checkbox row "Also delete my
+data and secrets" (default unchecked; checking it makes the uninstall also run the §3
+reset deletions — automations, executions, logs, settings, and Keychain secrets), confirm
+label "Uninstall Autowright". Confirming fires the §3 `uninstall-app` IPC with
+`{ deleteData }`: busy → toast "An automation is executing — uninstall when it finishes."
+and the row resets; error → toast the error text, row resets (this includes the §3
+macOS trash-failure line — the app stays open); success → the app removes itself and
+exits (§3 uninstall flow, per-OS). While running the button reads "Uninstalling…". An
+unchecked box leaves every §5 file and every secret in place for a reinstall.
+
+Version, updates,
 GitHub links, licenses, and the disclaimer live on the About page (§9.4), not here.
 

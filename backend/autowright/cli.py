@@ -1051,6 +1051,20 @@ def cmd_secret_set(c: Client, args) -> None:
 
 
 def cmd_secret_delete(c: Client, args) -> None:
+    if args.all:
+        # §20: --all sweeps the whole store, so it takes no name and never
+        # guesses — one or the other, and the destructive guard on top.
+        if args.name:
+            sys.exit("`secret delete --all` deletes every stored secret — "
+                     f"drop the name {args.name!r} or the flag")
+        if not args.yes:
+            sys.exit("deleting every stored secret also removes each value from your "
+                     f"{paths.secret_store_name()} — add --yes to confirm")
+        deleted = c.req("DELETE", "/secrets")["deleted"]
+        print(f"removed {deleted} secret(s) from your {paths.secret_store_name()}")
+        return
+    if not args.name:
+        sys.exit("`secret delete` needs a secret name, or --all to delete every stored secret")
     existing = _secret_by_name(c, args.name)
     if existing is None:
         names = sorted(s["name"] for s in c.req("GET", "/secrets"))
@@ -1344,7 +1358,10 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("--stdin", action="store_true",
                    help="read the value from stdin instead of prompting")
     p = _sub(scg, "delete", cmd_secret_delete, "remove a secret")
-    p.add_argument("name")
+    p.add_argument("name", nargs="?")
+    p.add_argument("--all", action="store_true",
+                   help="delete every stored secret (needs --yes, takes no name)")
+    p.add_argument("--yes", action="store_true", help="confirm the deletion")
 
     agg = _sub(top, "agent", None, "configured AI agents").add_subparsers(
         dest="verb", required=True)

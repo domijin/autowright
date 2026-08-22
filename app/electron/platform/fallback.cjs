@@ -82,6 +82,11 @@ function managedInstall() {
 
 const MANAGED_COPY_ERROR = 'This copy is managed by Homebrew.'
 
+// No uninstall finish here either (§3): the marker exists only to keep the
+// module surfaces identical, and main.cjs answers the plain not-supported line
+// — the §4.9 UNINSTALL card hides entirely.
+const UNINSTALL = null
+
 const SETTINGS_DEEP_LINK = null
 
 function revealPrefersOpen(_abs, isDir) {
@@ -118,6 +123,7 @@ module.exports = {
   updateFeedUrl,
   managedInstall,
   MANAGED_COPY_ERROR,
+  UNINSTALL,
   SETTINGS_DEEP_LINK,
   revealPrefersOpen,
   SERVICE_START_FAILED_DETAIL,

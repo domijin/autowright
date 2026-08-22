@@ -69,6 +69,50 @@ def test_secret_crud_and_usedby(client):
     assert client.put(f"/secrets/{token_id}", json={"value": "x"}).status_code == 404
 
 
+def test_delete_all_secrets_sweeps_the_store(client):
+    """§19 `DELETE /secrets`: every value leaves the Keychain, the metadata is
+    emptied, and the answer counts what went — 0 with nothing stored."""
+    from autowright import keychain
+    from autowright.storage import store
+
+    # nothing stored is success, never an error
+    assert client.delete("/secrets").json() == {"deleted": 0}
+
+    ids = [client.post("/secrets", json={"name": name, "value": f"v-{name}"}).json()["id"]
+           for name in ("ALPHA_TOKEN", "BETA_TOKEN", "GAMMA_TOKEN")]
+    # §4.8: the Keychain is keyed by the secret's id
+    assert [keychain.get_secret(i) for i in ids] == ["v-ALPHA_TOKEN", "v-BETA_TOKEN", "v-GAMMA_TOKEN"]
+
+    r = client.delete("/secrets")
+    assert r.status_code == 200 and r.json() == {"deleted": 3}
+    assert [keychain.get_secret(i) for i in ids] == [None, None, None]
+    assert client.get("/secrets").json() == [] and store.secrets == []
+    # rewritten empty on disk, not left behind for the next load
+    store.load_all()
+    assert store.secrets == []
+    # a second sweep is still success
+    assert client.delete("/secrets").json() == {"deleted": 0}
+
+
+def test_delete_all_secrets_leaves_grants_and_step_references(client):
+    """§19: the sweep is the per-id delete's semantics in bulk — automations
+    keep their `allowed_secrets` grants and step references, and the dangling
+    ids surface as §4.1 `secret-missing` blockers instead."""
+    from autowright.storage import store
+
+    secret_id = client.post("/secrets", json={"name": "MY_TOKEN", "value": "abc"}).json()["id"]
+    user = store.create_automation(make_version(steps=[
+        {"file": "01-use.py", "name": "Use", "description": "",
+         "code": f'from autowright import log, secrets\nlog(secrets["{secret_id}"])\n'}]),
+        "Token user", "mock", allowed_secrets=[secret_id])
+
+    assert client.delete("/secrets").json() == {"deleted": 1}
+    got = client.get(f"/automations/{user['id']}").json()
+    assert got["allowedSecrets"] == [secret_id]
+    assert secret_id in got["steps"][0]["code"]
+    assert any(p["kind"] == "secret-missing" for p in got["problems"])
+
+
 def test_unreadable_store_files_answer_409_and_survive(client):
     """§19 unreadable-store guard: a corrupt top-level file makes its write
     routes answer 409, and the corrupt bytes stay on disk untouched. Import

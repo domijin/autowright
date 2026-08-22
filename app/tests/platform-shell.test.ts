@@ -155,6 +155,20 @@ describe('§3 update machinery is per-OS', () => {
   })
 })
 
+describe('§3 uninstall machinery is per-OS', () => {
+  it('each module names its uninstall finish, the way UPDATER names updates', () => {
+    // §3: the marker main.cjs discriminates on — the modules stay
+    // electron-free, so they name the machinery rather than construct it.
+    expect(darwin.UNINSTALL).toBe('trash')
+    expect(win32.UNINSTALL).toBe('nsis')
+  })
+
+  it('a platform with no finish names none — the §4.9 card hides there', () => {
+    const fallback = require('../electron/platform/fallback.cjs')
+    expect(fallback.UNINSTALL).toBeNull()
+  })
+})
+
 describe('§3 Windows packaging config (electron-builder)', () => {
   const build = (require('../package.json') as { build: unknown }).build as {
     appId: string

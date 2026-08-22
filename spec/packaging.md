@@ -401,7 +401,7 @@ the update bullets below).
 
 **Windows packaging & updates (decided — NSIS + electron-updater).** The Windows
 distributable is built by **electron-builder for the Windows target only** (`--win nsis`),
-driven by a new `scripts/prod.ps1`; macOS keeps `@electron/packager` + `prod.sh` untouched.
+driven by a new `windows-scripts/prod.ps1`; macOS keeps `@electron/packager` + `prod.sh` untouched.
 Rationale: hand-rolling what electron-updater consumes (the NSIS script, `latest.yml`, the
 blockmap, the in-app `app-update.yml`) would re-implement electron-builder badly, and
 electron-builder also provides the sign-later hook for free. Squirrel.Windows was considered
@@ -452,7 +452,7 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   uninstaller does not remove it (~150 MB). Accepted as electron-updater's standard
   behavior; a user who wants it gone deletes the directory by hand. No Autowright code may
   depend on it existing.
-- **Release:** Windows artifacts get their own `scripts/release.ps1` (build via `prod.ps1`,
+- **Release:** Windows artifacts get their own `windows-scripts/release.ps1` (build via `prod.ps1`,
   publish installer + blockmap to the same GitHub release as the mac artifacts, rewrite
   `docs/updates/win32-x86_64/latest.yml`); `release.sh` stays bash/BSD-sed and runs on
   macOS. A release that ships both platforms is two script runs against one tag/version.

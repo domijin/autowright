@@ -101,7 +101,7 @@ const APP_USER_MODEL_ID = 'ai.autowright.app'
 
 // §3: the generic provider is pointed at a *directory* (latest.yml + the
 // installer + its blockmap live under it), never at a single file — the yml
-// is rewritten under docs/updates/win32-x86_64/ by scripts/release.ps1 and
+// is rewritten under docs/updates/win32-x86_64/ by windows-scripts/release.ps1 and
 // served from the same GitHub Pages site as the mac feeds. x86_64 is the only
 // Windows arch that ships, so the base URL carries no arch switch.
 function updateFeedUrl(_arch) {

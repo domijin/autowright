@@ -234,8 +234,6 @@ data on disk); both ends of a served surface change in the same commit.
   previews (below).
   `UI-GUIDE.md` records the renderer conventions.
 - `scripts/` — project scripts (`dev.sh`, `build.sh`, `prod.sh`, `build-clean.sh` — §18;
-  `prod.ps1` + `release.ps1` — the §3 Windows packaging/release pair, PowerShell,
-  runnable only on Windows;
   `uninstall/` — developer-only uninstall scripts for the harness CLIs and Ollama, §18;
   `gen_tray_icon.py` renders the tray template PNGs;
   `gen_icon.cjs` regenerates `app/electron/icon/icon.png` + `icon.icns` from `icon.svg`
@@ -257,7 +255,8 @@ data on disk); both ends of a served surface change in the same commit.
   Developer-only exactly like `scripts/` — the same never-run rule and guard hook cover both
   directories, and the §15 BOM drift guard covers `*.ps1` here too. Currently:
   `dev.ps1` — the §18 Windows dev loop, `scripts/dev.sh` mapped per-OS;
-  `commit.ps1` — the §18 Windows commit helper, `scripts/commit.sh` mapped per-OS.
+  `commit.ps1` — the §18 Windows commit helper, `scripts/commit.sh` mapped per-OS;
+  `prod.ps1` + `release.ps1` — the §3 Windows packaging/release pair.
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
   and compatible harnesses) to drive Autowright end-to-end through the §20 CLI — create/edit
   automations via pull/push workdirs, execute and follow, inspect results, manage params,

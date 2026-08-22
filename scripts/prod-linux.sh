@@ -107,8 +107,8 @@ echo "· bundled Python imports OK"
 # the staged interpreter as extraResources → resources/python, and
 # `linux.publish: null` (no update feed yet, §3). The output directory is
 # overridden here — the checked-in config's `directories.output` points at
-# build/win for prod.ps1. `--publish never`: uploading is a release-script
-# job, once one exists for Linux.
+# build/win for prod.ps1. `--publish never`: uploading is
+# linux-scripts/release.sh's job.
 rm -rf "$OUT"
 echo "· packaging (electron-builder --linux appimage --x64)"
 (cd "$ROOT/app" && npx electron-builder --linux appimage --x64 --publish never \

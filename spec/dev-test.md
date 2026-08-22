@@ -409,6 +409,18 @@ Dev workflow:
   keyring backend), then electron-builder `--linux appimage --x64` with the output
   overridden to `build/linux/` — producing
   `build/linux/Autowright-<version>-linux-x86_64.AppImage`, unsigned by design (§3).
+- **`./linux-scripts/release.sh`** — the Linux release half (bash; §17 `linux-scripts/`, §3
+  Linux packaging block), modeled on `release.ps1` rather than `release.sh`: it never
+  creates a release, tag, or version bump — those stay with `release.sh` on macOS. Steps,
+  in order: requires an authenticated `gh`, an existing GitHub release `v<VERSION>` (fails
+  with the cut-it-from-macOS hint otherwise), and a clean working tree; runs the full test
+  suite in the §15 shift-left order (`build.sh --deps`, `test-fast.sh`,
+  `pytest -m integration`, `npm run test:e2e` — the same suite `release.sh` runs; any
+  failure aborts before anything is built or uploaded); builds the AppImage via
+  `prod-linux.sh` (which re-checks the three-site version gate); uploads it to the
+  existing release with `gh release upload --clobber` (idempotent — a re-run replaces the
+  asset). Commits nothing: no Linux update feed exists yet (§3), so unlike its mac and
+  Windows siblings it has no feed rewrite to publish.
 - **`./scripts/dev.sh`** — fastest dev loop, with hot reloading: invokes `build.sh --deps` only
   (no renderer bundle); shuts down lingering processes from previous sessions — backend by
   command-line pattern (`[Pp]ython -m autowright` — ps shows the venv python's resolved binary,

@@ -634,11 +634,21 @@ refuses, the package manager owns updates).
   pins the AppImage/x64 target, the checked-in `electron/icon/icon.png`, category
   `Utility`, and `publish: null` — no Linux update feed exists yet, so no
   `app-update.yml` may land in the package pointing anywhere (the win32 generic entry is
-  the top-level `publish` config); the port plan's release step replaces the null with
-  the Linux generic-provider entry.
+  the top-level `publish` config); the port plan's update-feed step replaces the null
+  with the Linux generic-provider entry (and adds the feed rewrite to
+  `linux-scripts/release.sh`).
 - **Unsigned, by design:** Linux has no Gatekeeper or SmartScreen equivalent — the
   AppImage ships unsigned and no signing/notarization leg exists (the Windows sign-later
   principle, without the later).
+- **Release:** `linux-scripts/release.sh` publishes the Linux half of a release — the
+  Windows model (`release.ps1`), not the mac one: it never creates a release, tag, or
+  version bump. It requires the GitHub release `v<version>` to exist already (cut from
+  macOS by `release.sh`) and a clean working tree, runs the full test suite in the §15
+  shift-left order (any failure aborts before anything is built or uploaded), builds via
+  `scripts/prod-linux.sh`, and uploads the AppImage to that release with `--clobber`
+  (idempotent — a re-run replaces the asset). It commits nothing: with no Linux update
+  feed yet there is no feed rewrite. A release that ships all three platforms is three
+  script runs against one tag/version.
 
 **Headless mode (decided).** The backend and CLI must work with no GUI ever launched — the §20
 CLI is enabled, so the full surface below is live:

@@ -502,7 +502,7 @@ export default function Onboarding() {
   return (
     <div style={{
       height: '100vh', display: 'flex', flexDirection: 'column',
-      background: 'radial-gradient(1000px 480px at 50% -12%, oklch(0.74 0.155 52 / .05), transparent 70%)',
+      background: 'var(--bg-content)',
     }}>
       <div className="ad-drag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18, padding: '13px 28px', flex: 'none' }}>
         {/* §10: with prior data step 1 is the only screen — no counter. */}

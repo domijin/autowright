@@ -18,7 +18,9 @@ floating rail is per-OS too: macOS paints `--bg-window`, so the rail's gutter co
 around the traffic lights; Windows paints `--bg-content` — gated on the §9 store `platformOs`
 token, never a sniff — so the gutter corners, the content pane, and the `titleBarOverlay`
 read as one uniform surface (there are no lights at the left to justify a darker corner).
-The boot splash and onboarding are not the app shell and keep `--bg-window` on every OS.
+The boot splash is not the app shell and keeps `--bg-window` on every OS; onboarding paints
+the flat `--bg-content` page background on every OS — one background color, no accent glow —
+so it matches the content pane (and the Windows `titleBarOverlay`).
 The window drags from its top
 edge, Apple
 Music-style: a fixed 18 px full-width drag strip spans the whole window top (above sidebar and
@@ -876,6 +878,8 @@ the prefilled issue on GitHub before submitting.
 
 ## 10. Onboarding (2 steps, step label top-right in mono)
 
+The onboarding root paints the flat `--bg-content` page background (§9) — the same single
+color as the app's content pane, with no gradient or glow overlay.
 Onboarding shows whenever `ad-onboarded` (§15) is unset — existing agents or automations do NOT
 bypass it: step 1 always renders. When prior data exists (any agent or any automation), step 1's
 Continue goes straight to the app shell instead of step 2. The step label ("Step 1 of 2" /

@@ -36,5 +36,12 @@ item), §18 (`prod-linux.sh`). Delete this file when the rest lands.
   open item Windows had).
 - AppImage runtime needs FUSE (`libfuse2`) on some distros — decide whether the download
   page documents `--appimage-extract-and-run` as the fallback.
+- Ubuntu 24.04+ AppArmor userns restriction
+  (`kernel.apparmor_restrict_unprivileged_userns=1`): unconfined Chromium cannot create
+  its namespace sandbox and falls back to the SUID helper, which inside an AppImage can
+  never be setuid root — the packaged app aborts exactly like a dev checkout did. Decide
+  the packaged answer before the Linux release (ship an AppArmor profile with the app?
+  document a one-time sysctl?). The dev loop already heals its own checkout:
+  `linux-scripts/dev.sh` fixes `chrome-sandbox` ownership/mode via sudo (§18).
 - README still reads "macOS only" — release-messaging update when Linux (and Windows)
   artifacts are published.

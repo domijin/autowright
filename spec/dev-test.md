@@ -523,6 +523,15 @@ Dev workflow:
     `WorkingDirectory` or `Environment`): cwd `$HOME`, the default user-manager PATH
     (`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`), detached, with
     stdout/stderr redirected to the same two log files under the chosen home.
+  - Electron sandbox heal: Ubuntu 24.04+ restricts unprivileged user namespaces via
+    AppArmor (`kernel.apparmor_restrict_unprivileged_userns=1`), which forces Chromium
+    onto its SUID sandbox helper — npm unpacks `electron/dist/chrome-sandbox` user-owned
+    without the setuid bit, and Electron aborts rather than run unsandboxed. After the
+    deps step, when that sysctl reads `1` and the helper is not already root-owned mode
+    4755, dev.sh heals it (`sudo chown root:root` + `sudo chmod 4755` — the script is
+    run by hand in a terminal, so the sudo prompt is fine); a fresh `npm ci` unpack
+    re-triggers the heal. The sandbox itself stays on — never `--no-sandbox` (dev/release
+    parity). The packaged AppImage faces the same restriction — open item, `LINUX.md`.
 - **`./scripts/build-clean.sh`** — resets the repo to a pre-build state so the next
   `build.sh`/`dev.sh` rebuilds from scratch. First stops anything running **from this repo**
   (deleting `.venv` under the live launchd KeepAlive service would otherwise break):

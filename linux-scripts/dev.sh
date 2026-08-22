@@ -52,6 +52,21 @@ mkdir -p "$DATA" "$LOGS"
 # rewrites are sed-dialect-portable)
 "$ROOT/scripts/build.sh" --deps
 
+# ---- Electron SUID sandbox helper (§18) ----
+# Ubuntu 24.04+ restricts unprivileged user namespaces via AppArmor
+# (kernel.apparmor_restrict_unprivileged_userns=1), so Chromium falls back to
+# its SUID sandbox helper — which npm unpacks user-owned without the setuid
+# bit, and Electron aborts rather than run unsandboxed. Heal it (root:root,
+# mode 4755): this script is run by hand in a terminal, so the sudo prompt is
+# fine. A fresh npm ci unpack resets the helper and re-triggers this.
+SANDBOX="$ROOT/app/node_modules/electron/dist/chrome-sandbox"
+if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ] \
+   && [ -f "$SANDBOX" ] && [ "$(stat -c '%u:%a' "$SANDBOX")" != "0:4755" ]; then
+  echo "· fixing Electron sandbox helper (sudo: chown root:root + chmod 4755)"
+  sudo chown root:root "$SANDBOX"
+  sudo chmod 4755 "$SANDBOX"
+fi
+
 # kill lingering processes matching a command-line pattern (scoped to this repo)
 kill_stale() {
   local pattern="$1" pids

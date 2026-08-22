@@ -6,7 +6,7 @@ runtime, shell + renderer surface, AppImage packaging) have shipped into the spe
 (platform layer, both halves), §3 (Linux service / notifier / keep-awake / packaging
 blocks, headless secret-store constraint), §9 (per-OS copy table Linux column, chrome,
 devlog padding), §13 (tray assets, any-edge panel placement), §4.9 (XDG-autostart login
-item), §18 (`prod-linux.sh`). Delete this file when the rest lands.
+item), §18 (`linux-scripts/prod.sh`). Delete this file when the rest lands.
 
 ## Remaining: updates + release (step 5 of the original plan)
 
@@ -19,7 +19,7 @@ item), §18 (`prod-linux.sh`). Delete this file when the rest lands.
   surface must stay byte-identical), `app/package.json` `build.linux.publish` replaces
   `null` with the generic entry (guard: `app/tests/platform-shell.test.ts` pins the null),
   and the managed-install probe may later detect a distro-package install.
-- **Release leg:** a `release` script leg that builds via `prod-linux.sh`, publishes the
+- **Release leg:** a `release` script leg that builds via `linux-scripts/prod.sh`, publishes the
   AppImage + blockmap to the same GitHub release as the mac/win artifacts, and rewrites
   `docs/updates/linux-x86_64/latest-linux.yml`.
 - **Download page:** `docs/index.html` gains a Linux download path once artifacts exist

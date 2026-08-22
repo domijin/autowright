@@ -318,8 +318,9 @@ data on disk); both ends of a served surface change in the same commit.
   cover all three script directories. Currently:
   `dev.sh` — the §18 Linux dev loop, `scripts/dev.sh` mapped per-OS;
   `commit.sh` — the §18 Linux commit helper, `scripts/commit.sh` mapped per-OS;
-  `release.sh` — the §3/§18 Linux release half (test, build via `scripts/prod-linux.sh`,
-  upload the AppImage to the existing GitHub release — never creates one).
+  `prod.sh` + `release.sh` — the §3/§18 Linux packaging/release pair (`prod.sh` builds
+  the AppImage; `release.sh` tests, builds via it, and uploads the AppImage to the
+  existing GitHub release — never creates one).
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
   and compatible harnesses) to drive Autowright end-to-end through the §20 CLI — create/edit
   automations via pull/push workdirs, execute and follow, inspect results, manage params,

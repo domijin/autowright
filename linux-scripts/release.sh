@@ -16,7 +16,7 @@
 #      test-fast.sh → pytest -m integration → npm run test:e2e — the same
 #      suite release.sh runs); any failure aborts before anything is built
 #      or uploaded;
-#   3. build the AppImage via scripts/prod-linux.sh (which re-checks that
+#   3. build the AppImage via linux-scripts/prod.sh (which re-checks that
 #      every version site matches VERSION);
 #   4. upload the AppImage to that release.
 #
@@ -54,7 +54,7 @@ echo "· running tests"
 
 # ---- build ------------------------------------------------------------------
 echo "· version: $VERSION — building the Linux release"
-"$ROOT/scripts/prod-linux.sh"
+"$ROOT/linux-scripts/prod.sh"
 
 APPIMAGE="$ROOT/build/linux/Autowright-$VERSION-linux-x86_64.AppImage"
 [ -f "$APPIMAGE" ] || { echo "missing after build: $APPIMAGE"; exit 1; }

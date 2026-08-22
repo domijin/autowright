@@ -609,7 +609,7 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
 
 **Linux packaging (decided — AppImage + electron-builder).** The Linux distributable is a
 single AppImage built by **electron-builder for the Linux target only** (`--linux appimage
---x64`; x86-64 is the only Linux arch that ships), driven by `scripts/prod-linux.sh`;
+--x64`; x86-64 is the only Linux arch that ships), driven by `linux-scripts/prod.sh`;
 macOS keeps `@electron/packager` + `prod.sh` and Windows keeps
 `windows-scripts/prod.ps1`, both untouched. AppImage needs no distro packaging review,
 runs on any current distro, and pairs with electron-updater's AppImage support when the
@@ -618,7 +618,7 @@ update path answers the not-supported line). deb/rpm/flatpak are deferred; if on
 added later it is a distro-managed channel like the Homebrew cask (the in-app updater
 refuses, the package manager owns updates).
 
-- **`prod-linux.sh` order mirrors `prod.sh`:** version gate (the same three-site check
+- **`linux-scripts/prod.sh` order mirrors `prod.sh`:** version gate (the same three-site check
   `release.sh --check` performs, reimplemented in the script the way `prod.ps1` does —
   `release.sh` itself stays bash/BSD-sed and runs on macOS), `npm ci` + typechecked vite
   build, download python-build-standalone `x86_64-unknown-linux-gnu-install_only` (the
@@ -646,7 +646,7 @@ refuses, the package manager owns updates).
   version bump. It requires the GitHub release `v<version>` to exist already (cut from
   macOS by `release.sh`) and a clean working tree, runs the full test suite in the §15
   shift-left order (any failure aborts before anything is built or uploaded), builds via
-  `scripts/prod-linux.sh`, and uploads the AppImage to that release with `--clobber`
+  `linux-scripts/prod.sh`, and uploads the AppImage to that release with `--clobber`
   (idempotent — a re-run replaces the asset). It commits nothing: with no Linux update
   feed yet there is no feed rewrite. A release that ships all three platforms is three
   script runs against one tag/version.

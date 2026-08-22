@@ -404,9 +404,10 @@ Dev workflow:
   no ad-hoc fallback), and produces `build/Autowright-<version>-darwin-<arch>.dmg` (hdiutil UDZO),
   the §3 install + update artifact `release.sh` uploads (no separate update zip: the app
   unpacks the DMG itself at update time, §3).
-- **`./scripts/prod-linux.sh`** — the Linux production distribution (§3 Linux packaging
-  block), under `build/linux/` (gitignored). Order mirrors `prod.sh`: the same three-site
-  version gate (reimplemented — `release.sh` is macOS-only), `npm ci` + typechecked vite
+- **`./linux-scripts/prod.sh`** — the Linux production distribution (bash; §17
+  `linux-scripts/`, §3 Linux packaging block), under `build/linux/` (gitignored). Order
+  mirrors `prod.sh`: the same three-site version gate (reimplemented — `release.sh` is
+  macOS-only), `npm ci` + typechecked vite
   build, the pinned relocatable CPython in its `x86_64-unknown-linux-gnu-install_only`
   flavor staged to `build/python` (same tag/version/cache/`AUTOWRIGHT_PBS_URL` knob as
   `prod.sh`), pip install pinned by `constraints.txt`, the
@@ -422,7 +423,7 @@ Dev workflow:
   suite in the §15 shift-left order (`build.sh --deps`, `test-fast.sh`,
   `pytest -m integration`, `npm run test:e2e` — the same suite `release.sh` runs; any
   failure aborts before anything is built or uploaded); builds the AppImage via
-  `prod-linux.sh` (which re-checks the three-site version gate); uploads it to the
+  `linux-scripts/prod.sh` (which re-checks the three-site version gate); uploads it to the
   existing release with `gh release upload --clobber` (idempotent — a re-run replaces the
   asset). Commits nothing: no Linux update feed exists yet (§3), so unlike its mac and
   Windows siblings it has no feed rewrite to publish.

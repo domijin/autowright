@@ -24,9 +24,9 @@ describe('§9 window chrome is per-OS', () => {
     const chrome = win32.mainWindowChrome()
     expect(chrome).toEqual({
       titleBarStyle: 'hidden',
-      // color = --bg-window, symbolColor = the §14 --text-2 hex, height = the
-      // content drag strip.
-      titleBarOverlay: { color: '#090d14', symbolColor: '#c8ccd4', height: 40 },
+      // color = --bg-content (the pane under the overlay), symbolColor = the
+      // §14 --text-2 hex, height = the content drag strip.
+      titleBarOverlay: { color: '#0d1118', symbolColor: '#c8ccd4', height: 40 },
     })
     // trafficLightPosition is a macOS-only option and must never leak in.
     expect(chrome).not.toHaveProperty('trafficLightPosition')

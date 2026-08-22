@@ -8,9 +8,18 @@ One 100 vh dark window. Window chrome is per-OS (§2 shell platform layer,
 `mainWindowChrome()`): macOS uses hidden-title-bar traffic lights (positions below);
 Windows uses `titleBarStyle: 'hidden'` with a native `titleBarOverlay` — the OS draws
 minimize/maximize/close at the top-right over the app's own background (`color` =
-`--bg-window` `#090d14`, `symbolColor` = the §14 `--text-2` hex, `height` 40 so the overlay
+`--bg-content` `#0d1118` — the top-right corner the overlay covers belongs to the content
+pane, so matching `--bg-content` (not `--bg-window`) makes the button strip invisible
+against it; `symbolColor` = the §14 `--text-2` hex, `height` 40 so the overlay
 spans exactly the content drag strip; no macOS-style frameless custom buttons, and the
-overlay region needs no `no-drag` handling — the OS owns it). The window drags from its top
+overlay region needs no `no-drag` handling — the OS owns it). The app-shell root behind the
+floating rail is per-OS too: macOS paints `--bg-window`, so the rail's gutter corners (the
+58 px column above the rail's top 46 and below its 12 px bottom gap) read as window chrome
+around the traffic lights; Windows paints `--bg-content` — gated on the §9 store `platformOs`
+token, never a sniff — so the gutter corners, the content pane, and the `titleBarOverlay`
+read as one uniform surface (there are no lights at the left to justify a darker corner).
+The boot splash and onboarding are not the app shell and keep `--bg-window` on every OS.
+The window drags from its top
 edge, Apple
 Music-style: a fixed 18 px full-width drag strip spans the whole window top (above sidebar and
 content, z-index 100), and the content pane always carries its own 40 px sticky drag strip —

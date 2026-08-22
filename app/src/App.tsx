@@ -214,6 +214,7 @@ export default function App() {
   const login = useStore((s) => s.settings?.login)
   const menuBarIcon = useStore((s) => s.settings?.menuBarIcon)
   const automaticUpdateCheck = useStore((s) => s.settings?.automaticUpdateCheck)
+  const platformOs = useStore((s) => s.platformOs)
 
   useEffect(() => { void boot(); return disconnect }, [])
 
@@ -234,8 +235,11 @@ export default function App() {
   if (surface === 'menubar') return <><MenuBarPanel /><Toast msg={toast} /></>
   if (surface === 'onboard') return <><Onboarding /><Toast msg={toast} /><DevLogOverlay /></>
 
+  // §9 per-OS shell background: on Windows the rail's gutter corners must
+  // match the content pane and the titleBarOverlay — no traffic lights at
+  // the left to justify a darker corner.
   return (
-    <div style={{ height: '100vh', display: 'flex', background: 'var(--bg-window)' }}>
+    <div style={{ height: '100vh', display: 'flex', background: platformOs === 'windows' ? 'var(--bg-content)' : 'var(--bg-window)' }}>
       <div className="ad-drag" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 18, zIndex: 100, pointerEvents: 'none' }} />
       {/* §9: layout reserves a constant 58px for the rail; the fixed panel inside
           Sidebar overlays the content pane when hover-expanded — content never reflows. */}

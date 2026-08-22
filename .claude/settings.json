@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_bash.py\""
+            "command": "if command -v py >/dev/null 2>&1; then py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_bash.py\"; else python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_bash.py\"; fi"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_paths.py\""
+            "command": "if command -v py >/dev/null 2>&1; then py -3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_paths.py\"; else python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_paths.py\"; fi"
           }
         ]
       }

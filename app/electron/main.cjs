@@ -1,6 +1,6 @@
 // Electron main: one app window + a tray (menu-bar) panel window (§9, §13).
 const { app, autoUpdater, BrowserWindow, Menu, Tray, dialog, nativeImage, ipcMain, session, shell, screen } = require('electron')
-const { execFile, spawn } = require('child_process')
+const { execFile } = require('child_process')
 const { randomUUID } = require('crypto')
 const fs = require('fs')
 const http = require('http')
@@ -1035,11 +1035,11 @@ ipcMain.handle('update-install', async () => {
   return { ok: true }
 })
 
-// §3: the explicit service commands the shell runs — `stop` for the §4.9 QUIT
-// and RESET flows, `uninstall` for the §4.9 UNINSTALL card. One shared path:
-// the same interpreter resolution as ensure-backend and the same install
-// interlock (block new `service install` spawns and wait out any in-flight
-// one, so the stop can't be undone by a racing install child). Resolves to
+// §3: the explicit service command the shell runs — `stop` for the §4.9 QUIT
+// and RESET flows. One shared path: the same interpreter resolution as
+// ensure-backend and the same install interlock (block new `service install`
+// spawns and wait out any in-flight one, so the stop can't be undone by a
+// racing install child). Resolves to
 // null on success or the failure text; a caller that keeps the app up resets
 // `quittingAll` itself, since future ensure/version-sync installs may run.
 async function runServiceVerb(verb, label) {
@@ -1075,9 +1075,9 @@ ipcMain.handle('quit-all', async () => {
   return { ok: true }
 })
 
-// §3 reset/uninstall shared steps -------------------------------------------
+// §3 reset steps ------------------------------------------------------------
 
-// §3 reset step 2 / uninstall step 2: the executions dir is user-movable
+// §3 reset step 2: the executions dir is user-movable
 // (§4.9) and may live outside the data root, so its location is captured from
 // the live backend before anything stops it. null when unreachable or
 // unanswered — the deletions below then only cover the §5 roots.
@@ -1092,7 +1092,7 @@ async function captureDataPath() {
   }
 }
 
-// §3 reset step 3 / uninstall step 2: only the backend's keyring reaches the
+// §3 reset step 3: only the backend's keyring reaches the
 // Keychain / Credential Manager, so the sweep has to run while it is still up.
 // A failure (the §19 unreadable-store 409 included) is logged and the flow
 // proceeds: value deletion is best-effort per entry (§4.8), and an unreadable
@@ -1132,7 +1132,7 @@ function containsPath(parent, child) {
   return c === p || c.startsWith(p + path.sep)
 }
 
-// §3 reset step 5 / uninstall step 4: the executions dir, the logs root, and
+// §3 reset step 5: the executions dir, the logs root, and
 // every entry of the data root **except** the live Chromium profile —
 // Chromium holds open handles on it, so deleting it would fail (on Windows a
 // sharing violation outright). The profile is cleared instead, which is what
@@ -1183,88 +1183,6 @@ ipcMain.handle('reset-all', async () => {
   // — ensure-backend re-registers and §10 onboarding runs as on a fresh install.
   app.relaunch()
   app.exit(0)
-  return { ok: true }
-})
-
-// §3 uninstall (§4.9 UNINSTALL card): the per-OS finish is named by the §2
-// platform module — null means this platform has none, which hides the card
-// and refuses the IPC (defense in depth).
-const NO_UNINSTALL_ERROR = 'Uninstall is not supported on this platform yet.'
-
-// darwin-only copy (§3): never renders elsewhere, so it has no §9 per-OS entry.
-const TRASH_FAILED_ERROR =
-  "Autowright couldn't move itself to the Trash — drag it to the Trash to finish."
-
-ipcMain.handle('uninstall-supported', () => plat.UNINSTALL != null)
-
-ipcMain.handle('uninstall-app', async (_e, opts) => {
-  const deleteData = Boolean(opts?.deleteData)
-  // §3: Homebrew owns removal on that channel (the cask's `zap` covers the
-  // data too) — the §4.9 card shows the brew command instead of the button.
-  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
-  if (plat.UNINSTALL == null) return { error: NO_UNINSTALL_ERROR }
-  if (await executionsLive()) return { busy: true }
-  // §3 step 2: only with deleteData — an unchecked box leaves every §5 file
-  // and every secret in place for a reinstall.
-  const dataPath = deleteData ? await captureDataPath() : null
-  if (deleteData) await deleteSecrets('uninstall')
-  // §3 step 3: stops the backend, removes the LaunchAgent plist / Task
-  // Scheduler task, and removes the ours-marker CLI shim. A failure aborts —
-  // the app stays up.
-  const err = await runServiceVerb('uninstall', 'uninstall')
-  if (err) {
-    quittingAll = false
-    return { error: err }
-  }
-  if (deleteData) {
-    await deleteAllData(dataPath, 'uninstall')
-    // §3: uninstall is the one flow that removes electron-updater's installer
-    // cache — the residue every other flow accepts.
-    if (plat.OS_TOKEN === 'windows') {
-      const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
-      await deletePath(path.join(local, 'autowright-updater'), 'uninstall')
-    }
-  }
-  // §3 step 5: the per-OS finish, packaged builds only — a dev checkout has no
-  // installed artifact to remove.
-  if (!app.isPackaged) {
-    appLog('uninstall: dev checkout, nothing to remove')
-    app.quit()
-    return { ok: true }
-  }
-  if (plat.UNINSTALL === 'trash') {
-    // Autowright.app/Contents/MacOS/Autowright — the bundle is three levels up.
-    const bundle = path.resolve(process.execPath, '..', '..', '..')
-    try {
-      await shell.trashItem(bundle)
-    } catch (e) {
-      // §3: the app does **not** quit — reveal the bundle so the user can
-      // finish by hand.
-      appLog(`uninstall: couldn't trash ${bundle}: ${e?.message || e}`)
-      shell.showItemInFolder(bundle)
-      return { error: TRASH_FAILED_ERROR }
-    }
-    appLog(`uninstall: moved ${bundle} to the Trash, quitting`)
-    app.quit()
-    return { ok: true }
-  }
-  // 'nsis': the per-user NSIS uninstaller sits beside the exe in the install
-  // dir. It removes the program files, Start-menu shortcut and registry entry
-  // (the task and shim are already gone from step 3), and may briefly wait for
-  // this app to exit — so it is spawned detached and unref'd before the quit.
-  // §2's no-console-window invariant does not cover it: it is a deliberate,
-  // user-facing GUI, not a console window.
-  const uninstaller = path.join(path.dirname(process.execPath), 'Uninstall Autowright.exe')
-  if (!fs.existsSync(uninstaller)) {
-    return { error: `Couldn’t find the uninstaller at ${uninstaller}` }
-  }
-  try {
-    spawn(uninstaller, [], { detached: true, stdio: 'ignore' }).unref()
-  } catch (e) {
-    return { error: `Couldn’t start the uninstaller — ${e?.message || e}` }
-  }
-  appLog(`uninstall: started ${uninstaller}, quitting`)
-  app.quit()
   return { ok: true }
 })
 

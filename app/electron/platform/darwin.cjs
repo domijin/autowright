@@ -114,13 +114,6 @@ function managedInstall() {
 
 const MANAGED_COPY_ERROR = 'This copy is managed by Homebrew.'
 
-// ---- §3 uninstall -----------------------------------------------------------
-
-// §3: which uninstall finish main.cjs performs here — move the app bundle to
-// the Trash (Electron's `shell.trashItem`). Named, never constructed: platform
-// modules import no `electron`, exactly as with UPDATER above.
-const UNINSTALL = 'trash'
-
 // ---- §9.4 external links + §5 reveal ----------------------------------------
 
 // The one allowed deep link: the §9 permission checklist's Settings pane.
@@ -173,7 +166,6 @@ module.exports = {
   updateFeedUrl,
   managedInstall,
   MANAGED_COPY_ERROR,
-  UNINSTALL,
   SETTINGS_DEEP_LINK,
   revealPrefersOpen,
   SERVICE_START_FAILED_DETAIL,

@@ -38,11 +38,6 @@ contextBridge.exposeInMainWorld('autowright', {
   // §4.9 RESET card: erase every §5 file and every secret, then relaunch into
   // onboarding (§3 reset flow)
   resetAll: () => ipcRenderer.invoke('reset-all'),
-  // §4.9 UNINSTALL card: remove the service, the shim and the app itself —
-  // data only with `{ deleteData: true }` (§3 uninstall flow). The card renders
-  // only where the §2 platform module names an uninstall finish.
-  uninstallApp: (opts) => ipcRenderer.invoke('uninstall-app', opts),
-  uninstallSupported: () => ipcRenderer.invoke('uninstall-supported'),
   // Download percent (null = size unknown). Re-registering replaces the
   // previous listener — the About page re-subscribes on every mount.
   onUpdateProgress: (cb) => {

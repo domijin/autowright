@@ -104,18 +104,23 @@ echo "· bundled Python imports OK"
 # ---- package (electron-builder, Linux AppImage only) ------------------------
 # The build config lives in app/package.json's `build` key: appId
 # ai.autowright.app, the AppImage/x64 target with the §3 Linux artifact name,
-# the staged interpreter as extraResources → resources/python, and
-# `linux.publish: null` (no update feed yet, §3). The output directory is
-# overridden here — the checked-in config's `directories.output` points at
-# build/win for prod.ps1. `--publish never`: uploading is
-# linux-scripts/release.sh's job.
+# the staged interpreter as extraResources → resources/python, and the
+# `linux.publish` generic entry (the §3 Linux feed base — it puts app-update.yml
+# in the AppImage and makes the build emit latest-linux.yml + the blockmap).
+# The output directory is overridden here — the checked-in config's
+# `directories.output` points at build/win for prod.ps1. `--publish never`:
+# uploading is linux-scripts/release.sh's job.
 rm -rf "$OUT"
 echo "· packaging (electron-builder --linux appimage --x64)"
 (cd "$ROOT/app" && npx electron-builder --linux appimage --x64 --publish never \
   -c.directories.output="$OUT")
 
+# The §3 update-feed inputs must exist beside the AppImage — release.sh uploads
+# the blockmap and rewrites the yml into docs/updates/linux-x86_64/.
 APPIMAGE="$OUT/Autowright-$VERSION-linux-x86_64.AppImage"
-[ -f "$APPIMAGE" ] || { echo "packaging failed: $APPIMAGE missing"; exit 1; }
+for artifact in "$APPIMAGE" "$APPIMAGE.blockmap" "$OUT/latest-linux.yml"; do
+  [ -f "$artifact" ] || { echo "packaging failed: $artifact missing"; exit 1; }
+done
 
 echo "· dist done:"
 du -m "$APPIMAGE" | awk '{printf "    %s  (%s MB)\n", $2, $1}'

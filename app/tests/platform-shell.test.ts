@@ -148,10 +148,10 @@ describe('§9 capability flags', () => {
     expect(win32.capabilities)
       .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true })
     // §13: the Linux tray is best-effort (stock GNOME needs an extension) —
-    // the flag stays true so the icon is attempted; no update feed yet. §9:
-    // no application menu — the stock File/Edit/View/Window bar is suppressed.
+    // the flag stays true so the icon is attempted. §9: no application menu —
+    // the stock File/Edit/View/Window bar is suppressed.
     expect(linux.capabilities)
-      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: false, appMenu: false })
+      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: false })
   })
 
   it('every module\'s updates flag and updateFeedUrl agree', () => {
@@ -182,11 +182,21 @@ describe('§3 update machinery is per-OS', () => {
     expect(darwin.UPDATER).toBe('squirrel')
   })
 
+  it('Linux serves the generic-provider feed directory and names AppImageUpdater', () => {
+    // §3: latest-linux.yml + AppImage + blockmap live under this directory —
+    // the generic provider takes the base URL, never a single file. x86_64 is
+    // the only Linux arch that ships, so the answer carries no arch switch.
+    const url = 'https://autowright.ai/updates/linux-x86_64/'
+    expect(linux.updateFeedUrl('x64')).toBe(url)
+    expect(linux.updateFeedUrl('arm64')).toBe(url)
+    expect(url.endsWith('/')).toBe(true)
+    expect(linux.UPDATER).toBe('appimage')
+  })
+
   it('a platform with no feed names no machinery either', () => {
     const fallback = require('../electron/platform/fallback.cjs')
     expect(fallback.UPDATER).toBeNull()
-    expect(linux.UPDATER).toBeNull()
-    expect(linux.updateFeedUrl('x64')).toBeNull()
+    expect(fallback.updateFeedUrl('x64')).toBeNull()
   })
 
   it('the §3 publisherName footgun is set nowhere', () => {
@@ -214,7 +224,7 @@ describe('§3 Windows packaging config (electron-builder)', () => {
     win: { target: { target: string, arch: string[] }[], icon: string }
     linux: {
       target: { target: string, arch: string[] }[], artifactName: string,
-      icon: string, publish: null,
+      icon: string, publish: { provider: string, url: string }[],
     }
     nsis: Record<string, unknown>
   }
@@ -227,12 +237,15 @@ describe('§3 Windows packaging config (electron-builder)', () => {
     expect(Object.keys(build)).not.toContain('mac')
   })
 
-  it('pins the §3 Linux artifact name, icon, and the no-feed publish', () => {
+  it('pins the §3 Linux artifact name, icon, and the generic feed', () => {
     expect(build.linux.artifactName).toBe('Autowright-${version}-linux-x86_64.${ext}')
-    // §3: no Linux update feed exists yet — publish must stay null so no
-    // app-update.yml lands in the AppImage pointing at the win32 feed (the
-    // top-level publish entry). The port plan's release step replaces it.
-    expect(build.linux.publish).toBeNull()
+    // §3: linux.publish overrides the top-level (win32) entry, so the
+    // app-update.yml electron-builder embeds in the AppImage points at the
+    // Linux feed — the same base the §2 linux module serves — never the
+    // Windows one.
+    expect(build.linux.publish).toEqual([
+      { provider: 'generic', url: linux.updateFeedUrl('x64') },
+    ])
     expect(build.linux.icon).toBe('electron/icon/icon.png')
     expect(existsSync(join(ELECTRON_DIR, 'icon', 'icon.png'))).toBe(true)
     // §3 bundled Python: the shared extraResources staging lands at

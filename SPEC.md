@@ -171,14 +171,16 @@ boot, so both ends agree regardless of the OS locale (macOS-only helpers like
 osascript/launchctl may keep the platform default, which is UTF-8 there). The shell
 half mirrors this: `win32.cjs` carries the Windows-correct values (flat `python\python.exe`
 bundled-interpreter layout, the §3 `.cmd` shim, PATH read from the process environment —
-Windows GUI apps inherit the full user PATH, no login-shell probe — native window frame, no
-update feed yet); `linux.cjs` carries the Linux values (XDG roots, `python/bin/python3`
+Windows GUI apps inherit the full user PATH, no login-shell probe — native window frame,
+and the §3 electron-updater NSIS update feed); `linux.cjs` carries the Linux values (XDG
+roots, `python/bin/python3`
 bundled-interpreter layout, the POSIX shim and login-shell PATH probe shared with macOS,
 native window frame — no custom title bar or vibrancy for v1 — colored tray assets with
 work-area-anchored panel placement on any screen edge, the §4.9 login setting honored via
-an XDG-autostart `.desktop` file, no update feed yet); `fallback.cjs` keeps the degraded build for any other platform.
-The Linux update channel and the remaining release surface are audited in the `LINUX.md`
-worksheet until they ship into this spec. Clients gate features on the §19
+an XDG-autostart `.desktop` file, and the §3 electron-updater AppImage update feed);
+`fallback.cjs` keeps the degraded build for any other platform.
+What remains of the Linux port (the download-page and release-messaging surface) is
+audited in the `LINUX.md` worksheet until it ships into this spec. Clients gate features on the §19
 `/health` `os` + `capabilities` fields — never by sniffing the platform at a call site.
 Behavior on macOS is identical to the pre-layer code; the layer exists so a port fills in
 per-OS modules instead of hunting call sites.
@@ -319,8 +321,9 @@ data on disk); both ends of a served surface change in the same commit.
   `dev.sh` — the §18 Linux dev loop, `scripts/dev.sh` mapped per-OS;
   `commit.sh` — the §18 Linux commit helper, `scripts/commit.sh` mapped per-OS;
   `prod.sh` + `release.sh` — the §3/§18 Linux packaging/release pair (`prod.sh` builds
-  the AppImage; `release.sh` tests, builds via it, and uploads the AppImage to the
-  existing GitHub release — never creates one).
+  the AppImage + blockmap + `latest-linux.yml`; `release.sh` tests, builds via it,
+  uploads the AppImage + blockmap to the existing GitHub release — never creates one —
+  and rewrites the §3 update feed under `docs/updates/linux-x86_64/`).
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
   and compatible harnesses) to drive Autowright end-to-end through the §20 CLI — create/edit
   automations via pull/push workdirs, execute and follow, inspect results, manage params,
@@ -449,8 +452,12 @@ data on disk); both ends of a served surface change in the same commit.
   scroll-into-view (IntersectionObserver adding an `.in` class; entrance uses the app's
   §14 motion values — 360 ms `cubic-bezier(0.16,1,0.3,1)`). `::selection` is the accent at
   .35 alpha and links/buttons get a visible `:focus-visible` accent outline, per §14. A
-  faint accent radial glow sits behind the demo window. Also serves `updates/darwin-<arch>.json` — the §3 Squirrel.Mac update
-  feeds, rewritten by `scripts/release.sh` on every release.
+  faint accent radial glow sits behind the demo window. Also serves the §3 per-OS update
+  feeds — `updates/darwin-<arch>.json` (Squirrel.Mac, rewritten by `scripts/release.sh`),
+  `updates/win32-x86_64/latest.yml` (rewritten by `windows-scripts/release.ps1`), and
+  `updates/linux-x86_64/latest-linux.yml` (rewritten by `linux-scripts/release.sh`) —
+  each rewritten only by its own OS's release leg, so every feed names the newest release
+  that actually carries that OS's artifact.
 - `pypi/` — standalone placeholder package reserving the `autowright` name on PyPI
   (`pyproject.toml` hatchling build, version 0.0.1, `Development Status :: 1 - Planning`,
   `src/autowright/__init__.py` with only `__version__`, README stating the real project is in

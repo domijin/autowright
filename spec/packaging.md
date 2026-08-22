@@ -607,14 +607,15 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   The `docs/index.html` download CTA is mac-only until Windows artifacts exist; then it
   gains a Windows download path.
 
-**Linux packaging (decided — AppImage + electron-builder).** The Linux distributable is a
+**Linux packaging & updates (decided — AppImage + electron-builder + electron-updater).**
+The Linux distributable is a
 single AppImage built by **electron-builder for the Linux target only** (`--linux appimage
 --x64`; x86-64 is the only Linux arch that ships), driven by `linux-scripts/prod.sh`;
 macOS keeps `@electron/packager` + `prod.sh` and Windows keeps
 `windows-scripts/prod.ps1`, both untouched. AppImage needs no distro packaging review,
-runs on any current distro, and pairs with electron-updater's AppImage support when the
-Linux update feed ships (port plan; until then `linux.cjs` serves no feed and every §3
-update path answers the not-supported line). deb/rpm/flatpak are deferred; if one is
+runs on any current distro, and pairs with electron-updater's AppImage support (the
+Updater bullet below — the Windows model with the AppImage machinery swapped in).
+deb/rpm/flatpak are deferred; if one is
 added later it is a distro-managed channel like the Homebrew cask (the in-app updater
 refuses, the package manager owns updates).
 
@@ -630,14 +631,34 @@ refuses, the package manager owns updates).
   `--linux appimage --x64` with the shared `extraResources` staging (`build/python` →
   `resources/python`) and the output directory overridden to `build/linux/` on the command
   line (`-c.directories.output` — the checked-in config's output points at `build/win`).
+  Beside the AppImage the build emits its `.blockmap` and `latest-linux.yml` (the
+  electron-updater feed inputs, from the `linux.publish` config below; `--publish never`
+  keeps uploading with `linux-scripts/release.sh`), and the script verifies all three
+  exist.
 - **Artifact:** `Autowright-<version>-linux-x86_64.AppImage` via the `linux.artifactName`
   override (the top-level `artifactName` is the Windows form). The `build.linux` config
   pins the AppImage/x64 target, the checked-in `electron/icon/icon.png`, category
-  `Utility`, and `publish: null` — no Linux update feed exists yet, so no
-  `app-update.yml` may land in the package pointing anywhere (the win32 generic entry is
-  the top-level `publish` config); the port plan's update-feed step replaces the null
-  with the Linux generic-provider entry (and adds the feed rewrite to
-  `linux-scripts/release.sh`).
+  `Utility`, and its own `publish` generic-provider entry — the Linux feed base URL,
+  overriding the top-level win32 entry, so the `app-update.yml` electron-builder embeds
+  in the AppImage points at the Linux feed and never the Windows one.
+- **Updater:** `electron-updater` again, in its AppImage flavor — `linux.cjs` names
+  `UPDATER: 'appimage'` and main.cjs's shared electron-updater path (the win32 Updater
+  bullet) constructs `AppImageUpdater` instead of `NsisUpdater` against the same generic
+  provider, pointed at `https://autowright.ai/updates/linux-x86_64/` (`linux.cjs`
+  `updateFeedUrl`; x86-64 is the only Linux arch, so no arch switch). Feed =
+  `latest-linux.yml` + AppImage + blockmap: the yml is rewritten under
+  `docs/updates/linux-x86_64/` by `linux-scripts/release.sh`; binaries ride the GitHub
+  release — the same hosting split as the mac and Windows feeds. Everything else carries
+  over from the Windows bullet unchanged: the renderer-facing IPC surface
+  (`update-check`/`update-download`/`update-install` states and progress events) is
+  byte-identical, checks run with autoDownload and `autoInstallOnAppQuit` off, and
+  installs happen only through the busy-gated explicit `update-install` flow
+  (`quitAndInstall` swaps the AppImage file at its own path and relaunches; the old
+  backend keeps running until the next launch's version-compare flow restarts it, as on
+  the other platforms). Because each OS's feed is rewritten only when that OS's artifact
+  is uploaded, a release cut without the Linux leg leaves the Linux feed at the newest
+  version that actually has an AppImage — an instance never sees a phantom update or a
+  download URL that 404s.
 - **Unsigned, by design:** Linux has no Gatekeeper or SmartScreen equivalent — the
   AppImage ships unsigned and no signing/notarization leg exists (the Windows sign-later
   principle, without the later).
@@ -646,10 +667,14 @@ refuses, the package manager owns updates).
   version bump. It requires the GitHub release `v<version>` to exist already (cut from
   macOS by `release.sh`) and a clean working tree, runs the full test suite in the §15
   shift-left order (any failure aborts before anything is built or uploaded), builds via
-  `linux-scripts/prod.sh`, and uploads the AppImage to that release with `--clobber`
-  (idempotent — a re-run replaces the asset). It commits nothing: with no Linux update
-  feed yet there is no feed rewrite. A release that ships all three platforms is three
-  script runs against one tag/version.
+  `linux-scripts/prod.sh`, uploads the AppImage + its blockmap to that release with
+  `--clobber` (idempotent — a re-run replaces the assets), and then rewrites
+  `docs/updates/linux-x86_64/latest-linux.yml` from the build output — the bare artifact
+  file name replaced with the released binary's
+  `github.com/<owner>/<repo>/releases/download/…` URL, exactly the `release.ps1`
+  rewrite — and commits + pushes just the feed. The feed is written only after the
+  upload succeeds, so it never names a URL that is not live. A release that ships all
+  three platforms is three script runs against one tag/version.
 
 **Headless mode (decided).** The backend and CLI must work with no GUI ever launched — the §20
 CLI is enabled, so the full surface below is live:

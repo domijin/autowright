@@ -101,25 +101,27 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     expect(src).toMatch(/writeFileSync\(shim, shimText\(python\)/)
   })
 
-  it('electron-updater is required lazily, inside the nsis-only path (§3)', () => {
+  it('electron-updater is required lazily, inside the generic-only path (§3)', () => {
     // prod.sh ships no node_modules in the mac bundle, so a top-level require
     // would break every macOS launch. The one require sits inside the
-    // constructor helper, which only the `nsis` branches ever call.
+    // constructor helper, which only the electron-updater branches ever call.
     const hits = union.match(/require\('electron-updater'\)/g) ?? []
     expect(hits).toHaveLength(1)
-    expect(src).toMatch(/function nsisUpdater\(\) \{[\s\S]{0,200}require\('electron-updater'\)/)
-    // …and every entry point into that path is behind the USE_NSIS gate, so
-    // on macOS nothing can reach the require at all.
-    for (const call of ['fetchUpdateStateNsis()', 'downloadUpdateNsis()',
-      'nsisUpdater().quitAndInstall()']) {
+    expect(src).toMatch(/function genericUpdater\(\) \{[\s\S]{0,200}require\('electron-updater'\)/)
+    // …and every entry point into that path is behind the USE_GENERIC gate,
+    // so on macOS nothing can reach the require at all.
+    for (const call of ['fetchUpdateStateGeneric()', 'downloadUpdateGeneric()',
+      'genericUpdater().quitAndInstall()']) {
       const uses = src.split('\n')
         .filter((l) => l.includes(call) && !/^(async )?function /.test(l.trim()))
       expect(uses).toHaveLength(1)
-      expect(uses[0]).toContain('if (USE_NSIS)')
+      expect(uses[0]).toContain('if (USE_GENERIC)')
     }
     // The marker decides it — never a process.platform sniff in main.cjs.
     expect(src).toContain("plat.UPDATER === 'nsis'")
+    expect(src).toContain("plat.UPDATER === 'appimage'")
     expect(src).not.toContain("process.platform === 'win32'")
+    expect(src).not.toContain("process.platform === 'linux'")
   })
 
   it('no auto-install: cli-install is reachable only via its IPC handler (§3)', () => {
@@ -142,12 +144,13 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
 // the `shell`/`BrowserWindow` stubs record what a call actually did. Real code,
 // real handlers — only the Electron surface underneath is a double.
 
-// The §3 win32 updater double: electron-updater is required lazily by
-// main.cjs, so the stub `require` hands it this fake NsisUpdater — the same
+// The §3 electron-updater double (win32 NsisUpdater / linux AppImageUpdater —
+// one fake serves as both): electron-updater is required lazily by main.cjs,
+// so the stub `require` hands it this fake under either class name — the same
 // "patch the layer underneath, run the real handler" rule as the electron
 // stub itself. Canned answers live on the record so a test can arm them
 // before the handler ever constructs the updater.
-interface NsisRecord {
+interface UpdaterRecord {
   options: { provider?: string, url?: string } | null
   autoDownload: boolean | null
   autoInstallOnAppQuit: boolean | null
@@ -181,7 +184,7 @@ interface MainStub {
   loginItem: boolean[]
   aumids: string[]
   sent: [string, unknown][]
-  nsis: NsisRecord
+  updater: UpdaterRecord
   quits: number
   home: string
 }
@@ -203,38 +206,38 @@ function loadMain(): MainStub {
   const home = mkdtempSync(join(tmpdir(), 'aw-main-'))
   process.env.AUTOWRIGHT_HOME = home
 
-  const nsis: NsisRecord = {
+  const updater: UpdaterRecord = {
     options: null, autoDownload: null, autoInstallOnAppQuit: null,
     checks: 0, downloads: 0, installs: 0,
     check: { updateInfo: { version: '9.9.9' } },
     checkError: null, downloadError: null, listeners: new Map(),
   }
 
-  class FakeNsisUpdater {
+  class FakeUpdater {
     autoDownload = true
     autoInstallOnAppQuit = true
     logger: unknown = null
 
-    constructor(options: { provider?: string, url?: string }) { nsis.options = options }
-    on(event: string, fn: (arg: unknown) => void) { nsis.listeners.set(event, fn) }
+    constructor(options: { provider?: string, url?: string }) { updater.options = options }
+    on(event: string, fn: (arg: unknown) => void) { updater.listeners.set(event, fn) }
 
     async checkForUpdates() {
       // Read the flags as the handler left them: an autoDownload that is
       // still true would mean a check downloads (§3 forbids it).
-      nsis.autoDownload = this.autoDownload
-      nsis.autoInstallOnAppQuit = this.autoInstallOnAppQuit
-      nsis.checks += 1
-      if (nsis.checkError) throw nsis.checkError
-      return nsis.check
+      updater.autoDownload = this.autoDownload
+      updater.autoInstallOnAppQuit = this.autoInstallOnAppQuit
+      updater.checks += 1
+      if (updater.checkError) throw updater.checkError
+      return updater.check
     }
 
     async downloadUpdate() {
-      nsis.downloads += 1
-      if (nsis.downloadError) throw nsis.downloadError
+      updater.downloads += 1
+      if (updater.downloadError) throw updater.downloadError
       return ['installer.exe']
     }
 
-    quitAndInstall() { nsis.installs += 1 }
+    quitAndInstall() { updater.installs += 1 }
   }
 
   const wins: WinRecord[] = []
@@ -299,7 +302,10 @@ function loadMain(): MainStub {
   load(
     (id: string) => {
       if (id === 'electron') return electron
-      if (id === 'electron-updater') return { NsisUpdater: FakeNsisUpdater }
+      // One fake under both class names — main.cjs picks by the §2 marker.
+      if (id === 'electron-updater') {
+        return { NsisUpdater: FakeUpdater, AppImageUpdater: FakeUpdater }
+      }
       return realRequire(id)
     },
     { exports: {} }, {}, ELECTRON_DIR, join(ELECTRON_DIR, 'main.cjs'),
@@ -316,7 +322,7 @@ function loadMain(): MainStub {
       if (!fn) throw new Error(`no app listener for ${event}`)
       fn()
     },
-    opened, revealed, windows, wins, trays, loginItem, aumids, sent, nsis, home,
+    opened, revealed, windows, wins, trays, loginItem, aumids, sent, updater, home,
     get quits() { return quits },
   }
 }
@@ -444,12 +450,15 @@ describe('main.cjs §9 never-paint-blank window guard', () => {
 const platMod = realRequire(join(PLATFORM_DIR, 'index.cjs')) as {
   capabilities: { trayPanel: boolean, loginItem: boolean, dockIcon: boolean, updates: boolean, appMenu: boolean }
   UPDATER: string | null
+  updateFeedUrl: (arch: string) => string | null
 }
 const caps = platMod.capabilities
 // §3: which update machinery this host's module drives — `squirrel` (the mac
-// loopback-proxy flow) or `nsis` (electron-updater). The tests below assert
-// the rule for whichever one this platform declares.
-const USE_NSIS = caps.updates && platMod.UPDATER === 'nsis'
+// loopback-proxy flow) or electron-updater against the generic provider
+// (`nsis` on win32, `appimage` on linux). The tests below assert the rule for
+// whichever one this platform declares.
+const USE_GENERIC = caps.updates
+  && (platMod.UPDATER === 'nsis' || platMod.UPDATER === 'appimage')
 
 describe('main.cjs platform capability wiring (§2/§9)', () => {
   afterEach(() => {
@@ -530,10 +539,10 @@ describe('main.cjs platform capability wiring (§2/§9)', () => {
       })
       return
     }
-    if (USE_NSIS) {
+    if (USE_GENERIC) {
       // With a feed, a failed read stays a bare error state — no detail, so
       // the generic network copy still stands (same shape as darwin's).
-      m.nsis.checkError = new Error('offline in tests')
+      m.updater.checkError = new Error('offline in tests')
       expect(await m.invoke('update-check')).toEqual({ state: 'error' })
       return
     }
@@ -572,12 +581,12 @@ describe('main.cjs platform capability wiring (§2/§9)', () => {
   })
 })
 
-// ---- §3 win32 updates (electron-updater / NsisUpdater) ---------------------
-// The whole block runs only where the platform module names `nsis`; the real
-// handlers run against the fake NsisUpdater the stub `require` supplies, so
-// nothing here touches the network.
+// ---- §3 electron-updater updates (win32 NsisUpdater / linux AppImageUpdater)
+// The whole block runs only where the platform module names electron-updater
+// machinery; the real handlers run against the fake updater the stub
+// `require` supplies, so nothing here touches the network.
 
-describe.skipIf(!USE_NSIS)('main.cjs win32 updater (§3)', () => {
+describe.skipIf(!USE_GENERIC)('main.cjs electron-updater path (§3)', () => {
   afterEach(() => {
     if (savedHome === undefined) delete process.env.AUTOWRIGHT_HOME
     else process.env.AUTOWRIGHT_HOME = savedHome
@@ -585,42 +594,42 @@ describe.skipIf(!USE_NSIS)('main.cjs win32 updater (§3)', () => {
 
   it('is not constructed at module load — nothing checks until it is asked', async () => {
     const m = loadMain()
-    expect(m.nsis.options).toBeNull()
-    expect(m.nsis.checks).toBe(0)
+    expect(m.updater.options).toBeNull()
+    expect(m.updater.checks).toBe(0)
     await m.invoke('update-check')
     // …and only then, against the §2 module's generic-provider feed.
-    expect(m.nsis.options).toEqual({
-      provider: 'generic', url: 'https://autowright.ai/updates/win32-x86_64/',
+    expect(m.updater.options).toEqual({
+      provider: 'generic', url: platMod.updateFeedUrl(process.arch),
     })
-    expect(m.nsis.checks).toBe(1)
+    expect(m.updater.checks).toBe(1)
   })
 
   it('a check only reads the feed: autoDownload and install-on-quit are off (§3)', async () => {
     const m = loadMain()
     await m.invoke('update-check')
-    expect(m.nsis.autoDownload).toBe(false)
-    expect(m.nsis.autoInstallOnAppQuit).toBe(false)
-    expect(m.nsis.downloads).toBe(0)
-    expect(m.nsis.installs).toBe(0)
+    expect(m.updater.autoDownload).toBe(false)
+    expect(m.updater.autoInstallOnAppQuit).toBe(false)
+    expect(m.updater.downloads).toBe(0)
+    expect(m.updater.installs).toBe(0)
   })
 
   it('maps the feed onto the same {state} shape and §9.4 compare rule', async () => {
     const m = loadMain() // the stub app reports version 0.0.0
-    m.nsis.check = { updateInfo: { version: '9.9.9' } }
+    m.updater.check = { updateInfo: { version: '9.9.9' } }
     expect(await m.invoke('update-check')).toEqual({ state: 'available', version: '9.9.9' })
     // …and the remembered version reached the renderer (§3 update-available).
     expect(m.sent).toEqual([])  // no window yet — recorded, not lost
     expect(await m.invoke('update-available')).toBe('9.9.9')
 
-    m.nsis.check = { updateInfo: { version: '0.0.0' } }
+    m.updater.check = { updateInfo: { version: '0.0.0' } }
     expect(await m.invoke('update-check')).toEqual({ state: 'uptodate' })
     expect(await m.invoke('update-available')).toBeNull()
 
     // Malformed counts as not newer, exactly like the mac feed compare.
-    m.nsis.check = { updateInfo: { version: 'not-a-version' } }
+    m.updater.check = { updateInfo: { version: 'not-a-version' } }
     expect(await m.invoke('update-check')).toEqual({ state: 'uptodate' })
 
-    m.nsis.checkError = new Error('ENOTFOUND autowright.ai')
+    m.updater.checkError = new Error('ENOTFOUND autowright.ai')
     expect(await m.invoke('update-check')).toEqual({ state: 'error' })
   })
 
@@ -629,12 +638,12 @@ describe.skipIf(!USE_NSIS)('main.cjs win32 updater (§3)', () => {
     m.invoke('open-app', '/app') // a window to receive the events
     const result = await m.invoke('update-download')
     expect(result).toEqual({ ok: true })
-    expect(m.nsis.downloads).toBe(1)
+    expect(m.updater.downloads).toBe(1)
 
     // The handler subscribed to electron-updater's own progress events and
     // forwards percent — null when the download reports no total to divide by
     // (the §9.4 bar goes indeterminate).
-    const onProgress = m.nsis.listeners.get('download-progress')
+    const onProgress = m.updater.listeners.get('download-progress')
     expect(onProgress).toBeTypeOf('function')
     onProgress?.({ percent: 42.4, total: 1000, transferred: 424 })
     onProgress?.({ percent: 0, total: 0, transferred: 0 })
@@ -646,21 +655,21 @@ describe.skipIf(!USE_NSIS)('main.cjs win32 updater (§3)', () => {
 
   it('update-download reports the updater\'s own failure, and never a stale ok', async () => {
     const m = loadMain()
-    m.nsis.downloadError = new Error('net::ERR_CONNECTION_RESET')
+    m.updater.downloadError = new Error('net::ERR_CONNECTION_RESET')
     expect(await m.invoke('update-download')).toEqual({ error: 'net::ERR_CONNECTION_RESET' })
 
     // Nothing newer in the feed: refuse rather than arm an install of nothing.
     const m2 = loadMain()
-    m2.nsis.check = { updateInfo: { version: '0.0.0' } }
+    m2.updater.check = { updateInfo: { version: '0.0.0' } }
     expect(await m2.invoke('update-download')).toEqual({ error: 'no update available' })
-    expect(m2.nsis.downloads).toBe(0)
+    expect(m2.updater.downloads).toBe(0)
   })
 
   it('update-install quits to install, behind the live-execution gate (§3)', async () => {
     const m = loadMain()
     expect(await m.invoke('update-install')).toEqual({ ok: true })
-    expect(m.nsis.installs).toBe(1)
-    // The gate itself is one shared code path for both platforms: the busy
+    expect(m.updater.installs).toBe(1)
+    // The gate itself is one shared code path for every platform: the busy
     // check runs before either updater is asked to quit.
     expect(src).toMatch(/if \(await executionsLive\(\)\) return \{ busy: true \}[\s\S]{0,400}quitAndInstall\(\)/)
   })
@@ -703,7 +712,7 @@ describe('main.cjs Homebrew-managed updates (§3)', () => {
     if (process.platform !== 'darwin') {
       // §2: only darwin has a managed-install channel, so the escape hatch
       // changes nothing here. Without a feed both actions answer the plain
-      // no-updates line; with one (win32) they run the real update path.
+      // no-updates line; with one (win32/linux) they run the real update path.
       if (!caps.updates) {
         expect(await m.invoke('update-download')).toEqual({ error: 'Updates are not supported on this platform yet.' })
         expect(await m.invoke('update-install')).toEqual({ error: 'Updates are not supported on this platform yet.' })

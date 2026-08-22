@@ -830,22 +830,25 @@ function recordAvailable(version) {
 
 // §3 per-OS update machinery, chosen by the §2 module's marker — never by
 // sniffing process.platform here. `squirrel` is Electron's built-in
-// autoUpdater (macOS, the flow below); `nsis` is electron-updater's
-// NsisUpdater against the generic provider (Windows). The renderer-facing IPC
-// surface is identical either way, so no renderer code forks.
-const USE_NSIS = Boolean(UPDATE_FEED) && plat.UPDATER === 'nsis'
+// autoUpdater (macOS, the flow below); `nsis` and `appimage` are
+// electron-updater's NsisUpdater (Windows) and AppImageUpdater (Linux), both
+// against the generic provider. The renderer-facing IPC surface is identical
+// every way, so no renderer code forks.
+const USE_GENERIC = Boolean(UPDATE_FEED)
+  && (plat.UPDATER === 'nsis' || plat.UPDATER === 'appimage')
 
 // Built on first use and never at module load: requiring main.cjs must not
 // turn into a feed fetch, and electron-updater checks nothing until asked.
-let nsis = null
+let generic = null
 
-function nsisUpdater() {
-  if (nsis) return nsis
-  const { NsisUpdater } = require('electron-updater')
+function genericUpdater() {
+  if (generic) return generic
+  const { NsisUpdater, AppImageUpdater } = require('electron-updater')
+  const Updater = plat.UPDATER === 'nsis' ? NsisUpdater : AppImageUpdater
   // No publisherName until a certificate exists (§3 footgun): with one set,
   // electron-updater verifies the downloaded installer's Authenticode
   // identity, and every update against an unsigned artifact fails.
-  const u = new NsisUpdater({ provider: 'generic', url: UPDATE_FEED })
+  const u = new Updater({ provider: 'generic', url: UPDATE_FEED })
   // §3 manual-only rule: a check just reads latest.yml, downloads and installs
   // are user-initiated, and nothing may install itself on quit — the
   // update-install handler's live-execution gate is the only way in.
@@ -862,17 +865,17 @@ function nsisUpdater() {
       : null
     win?.webContents.send('update-progress', percent)
   })
-  nsis = u
-  return nsis
+  generic = u
+  return generic
 }
 
-// §3 win32 check: the feed read, mapped onto the same `{ state }` shape and
-// the same §9.4 version-compare rule as the mac path — electron-updater's own
-// "is this newer" answer is never consulted, so both platforms agree on what
-// counts as an update.
-async function fetchUpdateStateNsis() {
+// §3 electron-updater check (win32/linux): the feed read, mapped onto the
+// same `{ state }` shape and the same §9.4 version-compare rule as the mac
+// path — electron-updater's own "is this newer" answer is never consulted, so
+// every platform agrees on what counts as an update.
+async function fetchUpdateStateGeneric() {
   try {
-    const result = await nsisUpdater().checkForUpdates()
+    const result = await genericUpdater().checkForUpdates()
     const version = String(result?.updateInfo?.version ?? '')
     if (!isNewerVersion(version, app.getVersion())) {
       recordAvailable(null)
@@ -885,14 +888,14 @@ async function fetchUpdateStateNsis() {
   }
 }
 
-// §3 win32 download: electron-updater streams the installer and emits real
-// progress events, so there is no temp file, no loopback server and no
+// §3 electron-updater download (win32/linux): it streams the binary and emits
+// real progress events, so there is no temp file, no loopback server and no
 // re-implemented percent math here. The check runs first — with autoDownload
-// off it only reads latest.yml — which is both the mac flow's "re-fetch the
+// off it only reads the feed yml — which is both the mac flow's "re-fetch the
 // feed" step and what arms downloadUpdate.
-async function downloadUpdateNsis() {
+async function downloadUpdateGeneric() {
   try {
-    const updater = nsisUpdater()
+    const updater = genericUpdater()
     const result = await updater.checkForUpdates()
     const version = String(result?.updateInfo?.version ?? '')
     if (!isNewerVersion(version, app.getVersion())) return { error: 'no update available' }
@@ -909,7 +912,7 @@ async function fetchUpdateState() {
   // no-updates line, so the §9.4 page never tells the user to retry something
   // that cannot succeed. A real feed failure carries no detail (generic copy).
   if (!UPDATE_FEED) return { state: 'error', error: NO_UPDATES_ERROR }
-  if (USE_NSIS) return fetchUpdateStateNsis()
+  if (USE_GENERIC) return fetchUpdateStateGeneric()
   try {
     const res = await fetch(UPDATE_FEED, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return { state: 'error' }
@@ -946,7 +949,7 @@ ipcMain.handle('update-brew-managed', () => brewManaged())
 ipcMain.handle('update-download', async () => {
   if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
   if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
-  if (USE_NSIS) return downloadUpdateNsis()
+  if (USE_GENERIC) return downloadUpdateGeneric()
   const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
   const stamp = randomUUID()
   const tmpDmg = path.join(app.getPath('temp'), `autowright-update-${stamp}.dmg`)
@@ -1091,10 +1094,10 @@ ipcMain.handle('update-install', async () => {
   if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
   if (await executionsLive()) return { busy: true }
   appLog('update: quitting to install')
-  // §3: the same busy-gated, user-initiated install on both platforms — only
+  // §3: the same busy-gated, user-initiated install on every platform — only
   // the machinery that performs the swap differs (ShipIt vs. the NSIS
-  // installer electron-updater staged).
-  if (USE_NSIS) nsisUpdater().quitAndInstall()
+  // installer vs. the AppImage swap electron-updater staged).
+  if (USE_GENERIC) genericUpdater().quitAndInstall()
   else autoUpdater.quitAndInstall()
   return { ok: true }
 })

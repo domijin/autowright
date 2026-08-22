@@ -82,7 +82,12 @@
       "icon": "electron/icon/icon.png",
       "category": "Utility",
       "synopsis": "Recurring personal automations",
-      "publish": null
+      "publish": [
+        {
+          "provider": "generic",
+          "url": "https://autowright.ai/updates/linux-x86_64/"
+        }
+      ]
     },
     "nsis": {
       "oneClick": true,

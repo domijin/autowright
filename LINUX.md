@@ -1,29 +1,25 @@
 # Linux x86-64 port worksheet
 
 Temporary working notes (SPEC §17): what remains of the Linux port, ordered by dependency.
-Steps 1–4 of the original worksheet (platform modules on both halves, systemd backend
-runtime, shell + renderer surface, AppImage packaging) have shipped into the spec — §2
-(platform layer, both halves), §3 (Linux service / notifier / keep-awake / packaging
-blocks, headless secret-store constraint), §9 (per-OS copy table Linux column, chrome,
-devlog padding), §13 (tray assets, any-edge panel placement), §4.9 (XDG-autostart login
-item), §18 (`linux-scripts/prod.sh`). Delete this file when the rest lands.
+Steps 1–5 of the original worksheet (platform modules on both halves, systemd backend
+runtime, shell + renderer surface, AppImage packaging, updates + release) have shipped
+into the spec — §2
+(platform layer, both halves), §3 (Linux service / notifier / keep-awake / packaging +
+updates blocks, headless secret-store constraint), §9 (per-OS copy table Linux column,
+chrome, devlog padding), §13 (tray assets, any-edge panel placement), §4.9 (XDG-autostart
+login item), §18 (`linux-scripts/prod.sh` + `release.sh`). Delete this file when the rest
+lands.
 
-## Remaining: updates + release (step 5 of the original plan)
+## Remaining
 
-- **Update channel:** electron-updater generic provider pointed at
-  `https://autowright.ai/updates/linux-x86_64/` (`latest-linux.yml` + AppImage + blockmap;
-  yml under `docs/updates/linux-x86_64/`, binaries on the GitHub release — the same
-  hosting split as win32). Work: `linux.cjs` `updateFeedUrl` returns the base and
-  `UPDATER` names the AppImage machinery, `capabilities.updates` flips true, the
-  `main.cjs:843`-area win32 lazy-require block generalizes (the renderer-facing IPC
-  surface must stay byte-identical), `app/package.json` `build.linux.publish` replaces
-  `null` with the generic entry (guard: `app/tests/platform-shell.test.ts` pins the null),
-  and the managed-install probe may later detect a distro-package install.
-- **Release leg:** a `release` script leg that builds via `linux-scripts/prod.sh`, publishes the
-  AppImage + blockmap to the same GitHub release as the mac/win artifacts, and rewrites
-  `docs/updates/linux-x86_64/latest-linux.yml`.
 - **Download page:** `docs/index.html` gains a Linux download path once artifacts exist
   (mac-only until then, per the §17 rule).
+- **First feed publish:** `docs/updates/linux-x86_64/latest-linux.yml` does not exist
+  until the first `linux-scripts/release.sh` run after this change writes it — until
+  then a Linux build's update check errors with the generic network copy (the same
+  window win32 had before its first release).
+- The managed-install probe may later detect a distro-package install (`linux.cjs`
+  `managedInstall` answers false for now).
 
 ## Open items noted during steps 1–4
 

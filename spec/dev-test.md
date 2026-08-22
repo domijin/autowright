@@ -414,7 +414,9 @@ Dev workflow:
   `PYTHONDONTWRITEBYTECODE=1` smoke check (imports include `secretstorage`, the §17 Linux
   keyring backend), then electron-builder `--linux appimage --x64` with the output
   overridden to `build/linux/` — producing
-  `build/linux/Autowright-<version>-linux-x86_64.AppImage`, unsigned by design (§3).
+  `build/linux/Autowright-<version>-linux-x86_64.AppImage`, unsigned by design (§3),
+  plus its `.blockmap` and `latest-linux.yml` (the §3 Linux update-feed inputs; the
+  script verifies all three exist).
 - **`./linux-scripts/release.sh`** — the Linux release half (bash; §17 `linux-scripts/`, §3
   Linux packaging block), modeled on `release.ps1` rather than `release.sh`: it never
   creates a release, tag, or version bump — those stay with `release.sh` on macOS. Steps,
@@ -423,10 +425,13 @@ Dev workflow:
   suite in the §15 shift-left order (`build.sh --deps`, `test-fast.sh`,
   `pytest -m integration`, `npm run test:e2e` — the same suite `release.sh` runs; any
   failure aborts before anything is built or uploaded); builds the AppImage via
-  `linux-scripts/prod.sh` (which re-checks the three-site version gate); uploads it to the
+  `linux-scripts/prod.sh` (which re-checks the three-site version gate); uploads the
+  AppImage + its blockmap to the
   existing release with `gh release upload --clobber` (idempotent — a re-run replaces the
-  asset). Commits nothing: no Linux update feed exists yet (§3), so unlike its mac and
-  Windows siblings it has no feed rewrite to publish.
+  assets); then rewrites `docs/updates/linux-x86_64/latest-linux.yml` from the build
+  output — the bare artifact name replaced with the released binary's download URL, the
+  `release.ps1` rewrite in sed — and commits + pushes just the feed (§3: written only
+  after the upload, so the feed never names a URL that is not live).
 - **`./scripts/dev.sh`** — fastest dev loop, with hot reloading: invokes `build.sh --deps` only
   (no renderer bundle); shuts down lingering processes from previous sessions — backend by
   command-line pattern (`[Pp]ython -m autowright` — ps shows the venv python's resolved binary,

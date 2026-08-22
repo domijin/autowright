@@ -34,11 +34,16 @@ independent of the application menu.
 The boot splash is not the app shell and keeps `--bg-window` on every OS; onboarding paints
 the flat `--bg-content` page background on every OS — one background color, no accent glow —
 so it matches the content pane (and the Windows `titleBarOverlay`).
-The window drags from its top
+On the frameless platforms (macOS, Windows) the window drags from its top
 edge, Apple
 Music-style: a fixed 18 px full-width drag strip spans the whole window top (above sidebar and
 content, z-index 100), and the content pane always carries its own 40 px sticky drag strip —
-every surface — so page content sits at a constant vertical offset. Both shell strips are pure
+every surface — so page content sits at a constant vertical offset. On Linux **neither shell
+strip renders** (gated on the §9 store `platformOs` token, never a sniff): the native title
+bar owns window dragging, so the strips were pure dead padding — with them gone, page content
+starts at its own top padding (shell top spacing matches shell bottom spacing: zero on both
+ends), and a leftover drag strip would sit over the now-risen content and swallow real OS
+clicks (the trap below). Both shell strips are pure
 OS drag surfaces: they carry `pointer-events: none`, so DOM clicks pass through to whatever
 renders beneath them (drag-region collection ignores pointer-events, so window dragging still
 works); they must never hold children. Interactive controls inside drag regions stay clickable
@@ -146,7 +151,10 @@ subsystem and are gated off by `capabilities.imessage` anyway; "this PC" there w
 incoherent.
 
 The sidebar is a **hover-expanding floating rail** anchored to the left window edge: a panel
-(`position: fixed`, `left: 0, top: 46, bottom: 12`, z 50 — above all page content but below
+(`position: fixed`, `left: 0, top: 46, bottom: 12` — on Linux `top: 12`, matching the bottom
+gap: no traffic lights and no shell drag strips leave nothing for 46 px to clear, and the
+symmetric gap is what makes the rail read as evenly floated under a native title bar —
+z 50 — above all page content but below
 every modal backdrop (z 60+), so an open modal dims and blocks the rail like the rest of the
 shell) with square left corners and a 12 px
 radius on the right corners (`0 12px 12px 0`), `--bg-sidebar` background and a hairline border.
@@ -181,7 +189,8 @@ center x ≈ 29: nav-group 10 px padding + row 11 px padding + 16 px icon slot; 
 16 px left padding). There is no collapse toggle and no persisted sidebar state — hover is the
 only mechanism, identical in the app shell and the create/edit shell. The panel sits below the
 two drag strips in z-order but both are pointer-transparent, and it starts below their rects
-(y 46 > 40), so it needs no `no-drag` handling. Navigation is state-driven (`surface` → `page` → detail ids); browser/OS back works,
+(y 46 > 40), so it needs no `no-drag` handling (on Linux both strips are absent, so the
+12 px top needs none either). Navigation is state-driven (`surface` → `page` → detail ids); browser/OS back works,
 but once past onboarding back never re-enters it. Page navigation (`go()`) always lands in the app
 shell: if the create/edit surface is active, it exits back to `surface: app` — so sidebar tabs work
 while editing an automation. Popovers close on outside mousedown. Modals render through a React portal on

@@ -44,6 +44,7 @@ function Sidebar() {
   // known and not yet installed (§3 update-available) — the accent icon alone
   // signals in the collapsed rail. Clicking opens About pre-armed (§9.4).
   const updateAvailable = useStore((s) => s.updateAvailable)
+  const platformOs = useStore((s) => s.platformOs)
   const activeRoot = page === 'automation' ? 'automations' : page === 'execution' ? 'executions' : page === 'agentNew' ? 'agents' : page
   const counts: Record<string, number> = {
     automations: nAutos,
@@ -51,9 +52,10 @@ function Sidebar() {
     agents: nAgents,
     secrets: nSecrets,
   }
-  // §9 floating rail: fixed panel below the traffic lights (top 46 > lights' ~28 bottom),
-  // square left corners against the window edge, 12px radius on the right. Inner content
-  // keeps a fixed 212px width — the .ad-rail hover expansion reveals labels by clip.
+  // §9 floating rail: fixed panel below the traffic lights (top 46 > lights' ~28 bottom);
+  // on Linux the native title bar leaves nothing to clear, so top 12 mirrors the bottom
+  // gap. Square left corners against the window edge, 12px radius on the right. Inner
+  // content keeps a fixed 212px width — the .ad-rail hover expansion reveals labels by clip.
   return (
     <div
       className="ad-rail"
@@ -61,7 +63,7 @@ function Sidebar() {
       style={{
         // z 50: above page content, below every modal backdrop (z 60+) so an
         // open modal dims and blocks the rail too (§9).
-        position: 'fixed', left: 0, top: 46, bottom: 12, zIndex: 50,
+        position: 'fixed', left: 0, top: platformOs === 'linux' ? 12 : 46, bottom: 12, zIndex: 50,
         display: 'flex', flexDirection: 'column',
       }}
     >
@@ -241,7 +243,10 @@ export default function App() {
   // the gutter must match the content pane or it reads as a mismatched strip.
   return (
     <div style={{ height: '100vh', display: 'flex', background: platformOs === 'macos' ? 'var(--bg-window)' : 'var(--bg-content)' }}>
-      <div className="ad-drag" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 18, zIndex: 100, pointerEvents: 'none' }} />
+      {/* §9: shell drag strips are frameless-chrome only — on Linux the native
+          title bar owns dragging, and a leftover strip would sit over the
+          risen content and swallow real OS clicks. */}
+      {platformOs !== 'linux' && <div className="ad-drag" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 18, zIndex: 100, pointerEvents: 'none' }} />}
       {/* §9: layout reserves a constant 58px for the rail; the fixed panel inside
           Sidebar overlays the content pane when hover-expanded — content never reflows. */}
       <div style={{ width: 58, flex: 'none' }}>
@@ -250,7 +255,7 @@ export default function App() {
       <ScrollArea wrapStyle={{ flex: 1, minWidth: 0 }} style={{ background: 'var(--bg-content)', position: 'relative' }}>
         {/* Pure OS drag surface (§9): pointer-transparent so overlays beneath it
             stay DOM-clickable; must never hold children. */}
-        <div className="ad-drag" style={{ position: 'sticky', top: 0, height: 40, zIndex: 101, pointerEvents: 'none' }} />
+        {platformOs !== 'linux' && <div className="ad-drag" style={{ position: 'sticky', top: 0, height: 40, zIndex: 101, pointerEvents: 'none' }} />}
         {/* §9: a render failure is contained to the page — the rail, toasts and
             the rest of the shell survive it. Keyed by surface+page so leaving a
             broken page mounts a fresh boundary instead of a latched one. */}

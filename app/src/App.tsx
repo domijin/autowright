@@ -235,12 +235,12 @@ export default function App() {
   if (surface === 'menubar') return <><MenuBarPanel /><Toast msg={toast} /></>
   if (surface === 'onboard') return <><Onboarding /><Toast msg={toast} /><DevLogOverlay /></>
 
-  // §9 per-OS shell background: on Windows the rail's gutter corners must
-  // match the content pane and the titleBarOverlay — no traffic lights at
-  // the left to justify a darker corner. Linux (native frame) keeps the
-  // macOS `--bg-window` two-tone: plain app styling, nothing to clear.
+  // §9 per-OS shell background: only macOS keeps the `--bg-window` two-tone
+  // rail gutter — it reads as window chrome around the traffic lights. With
+  // no lights at the left (Windows' titleBarOverlay, Linux's native frame),
+  // the gutter must match the content pane or it reads as a mismatched strip.
   return (
-    <div style={{ height: '100vh', display: 'flex', background: platformOs === 'windows' ? 'var(--bg-content)' : 'var(--bg-window)' }}>
+    <div style={{ height: '100vh', display: 'flex', background: platformOs === 'macos' ? 'var(--bg-window)' : 'var(--bg-content)' }}>
       <div className="ad-drag" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 18, zIndex: 100, pointerEvents: 'none' }} />
       {/* §9: layout reserves a constant 58px for the rail; the fixed panel inside
           Sidebar overlays the content pane when hover-expanded — content never reflows. */}

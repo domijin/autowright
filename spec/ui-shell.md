@@ -15,13 +15,14 @@ spans exactly the content drag strip; no macOS-style frameless custom buttons, a
 overlay region needs no `no-drag` handling — the OS owns it). The app-shell root behind the
 floating rail is per-OS too: macOS paints `--bg-window`, so the rail's gutter corners (the
 58 px column above the rail's top 46 and below its 12 px bottom gap) read as window chrome
-around the traffic lights; Windows paints `--bg-content` — gated on the §9 store `platformOs`
-token, never a sniff — so the gutter corners, the content pane, and the `titleBarOverlay`
-read as one uniform surface (there are no lights at the left to justify a darker corner).
+around the traffic lights; every other OS paints `--bg-content` — the gate is
+`platformOs === 'macos'` on the §9 store token, never a sniff — so the gutter corners and
+the content pane read as one uniform surface (on Windows the `titleBarOverlay` joins that
+surface too; there are no lights at the left to justify a darker corner on either OS).
 Linux uses the native window frame for v1 (`mainWindowChrome()` returns `{}` — no custom
-title bar, no overlay; the OS draws its own bar above the 100 vh dark client area) and
-keeps the macOS `--bg-window` shell root: the two-tone rail gutter is plain app styling
-there, needing no chrome to justify it. Linux also suppresses Electron's stock application
+title bar, no overlay; the OS draws its own bar above the 100 vh dark client area): with
+the OS drawing its own bar, nothing justifies a darker gutter, so the two-tone macOS
+treatment would read as a mismatched strip above and below the rail. Linux also suppresses Electron's stock application
 menu (the File/Edit/View/Window bar the default frame would draw under the title bar —
 nothing in the app uses it): the shell calls `Menu.setApplicationMenu(null)` at ready,
 gated on the `appMenu` shell capability (false on Linux only — macOS keeps its system menu

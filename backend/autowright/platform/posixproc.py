@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import time
+from collections.abc import Sequence
 
 
 class PosixProcessControl:
@@ -51,3 +53,62 @@ class PosixProcessControl:
             if len(parts) == 2 and parts[0] == str(pgid) and marker in parts[1]:
                 return True
         return False
+
+    def _pid_table(self) -> list[tuple[int, int, str]]:
+        """(pid, pgid, command) snapshot; [] when the table is unreadable —
+        never kill what can't be verified."""
+        try:
+            out = subprocess.run(["ps", "-axo", "pid=,pgid=,command="],
+                                 capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            return []
+        rows = []
+        for line in out.splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
+                rows.append((int(parts[0]), int(parts[1]), parts[2]))
+        return rows
+
+    def kill_matching(self, markers: Sequence[str], grace_s: float = 2.0) -> int:
+        """§3 quit-entirely sweep: TERM → grace → KILL every process whose
+        command line carries one of `markers`, excluding this process and its
+        own group (the Electron caller during quit-all, the shell job in CLI
+        use, the in-process service.stop() sweeper itself — their command
+        lines can carry a marker too). Returns the matched count."""
+        own_pid, own_pgid = os.getpid(), os.getpgid(0)
+        matched = [(pid, pgid, cmd) for pid, pgid, cmd in self._pid_table()
+                   if pid != own_pid and pgid != own_pgid
+                   and any(m in cmd for m in markers)]
+        if not matched:
+            return 0
+
+        def _signal_all(sig: int, rows) -> None:
+            for pgid in {r[1] for r in rows}:
+                try:
+                    os.killpg(pgid, sig)
+                except (ProcessLookupError, PermissionError):
+                    # The group is gone or partly foreign — fall back to the
+                    # matched pids inside it, one by one.
+                    for pid, row_pgid, _cmd in rows:
+                        if row_pgid != pgid:
+                            continue
+                        try:
+                            os.kill(pid, sig)
+                        except (ProcessLookupError, PermissionError):
+                            pass
+
+        _signal_all(signal.SIGTERM, matched)
+        # §3 pid-reuse guard (group_has_command's spirit): a survivor is the
+        # same pid still showing the same command text — a reused pid with a
+        # different line is somebody else and must not be hard-killed.
+        deadline = time.monotonic() + grace_s
+        survivors = matched
+        while True:
+            table = {(pid, cmd) for pid, _pgid, cmd in self._pid_table()}
+            survivors = [row for row in survivors if (row[0], row[2]) in table]
+            if not survivors or time.monotonic() >= deadline:
+                break
+            time.sleep(0.1)
+        if survivors:
+            _signal_all(signal.SIGKILL, survivors)
+        return len(matched)

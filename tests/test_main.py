@@ -98,3 +98,100 @@ def test_boot_reconciles_keep_awake_from_settings(home, monkeypatch):
                 if isinstance(f, main_mod._DevModeFilter):
                     hnd.removeFilter(f)
     assert calls == [False]  # the setting's value, not the default
+
+
+def test_boot_time_boxes_the_graceful_shutdown(home, monkeypatch):
+    # §3 quit-entirely: the renderer holds /ws open across quit-all and reset,
+    # and an unbounded uvicorn shutdown waits on that socket forever — past the
+    # service stop's own deregistration wait. Same boot harness as above; only
+    # the server config is captured.
+    from autowright import main as main_mod
+
+    captured = {}
+
+    class _Config:
+        def __init__(self, app, **kwargs):
+            captured.update(kwargs)
+
+    class _Stub:
+        def __init__(self, *a, **kw):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    class _Server:
+        def __init__(self, config):
+            pass
+
+        def run(self, sockets=None):
+            pass
+
+    monkeypatch.setattr(main_mod, "Scheduler", _Stub)
+    monkeypatch.setattr(main_mod, "Listeners", _Stub)
+    monkeypatch.setattr(main_mod.uvicorn, "Config", _Config)
+    monkeypatch.setattr(main_mod.uvicorn, "Server", _Server)
+    try:
+        main_mod.main()
+    finally:
+        for hnd in logging.getLogger().handlers:
+            for f in list(hnd.filters):
+                if isinstance(f, main_mod._DevModeFilter):
+                    hnd.removeFilter(f)
+    assert captured["timeout_graceful_shutdown"] == main_mod.SHUTDOWN_GRACE_S == 5
+
+
+def test_lifespan_runs_registered_shutdown_callbacks(home):
+    # §3: uvicorn re-raises the captured SIGTERM once run() returns, so code
+    # after run() never executes on a signal-driven stop — every piece of
+    # shutdown work must run from the api lifespan instead. Error-tolerant:
+    # a failing callback must not keep the next one from running.
+    from fastapi.testclient import TestClient
+
+    from autowright import api
+    from autowright.storage import store
+
+    store.load_all()
+    ran = []
+
+    def broken():
+        raise RuntimeError("boom")
+
+    api.register_shutdown(broken)
+    api.register_shutdown(lambda: ran.append("cleanup"))
+    with TestClient(api.app):
+        pass
+    assert ran == ["cleanup"]
+
+
+def test_sigterm_stop_unlinks_backend_json(tmp_path):
+    # §3: the end-to-end shape of a service stop — a real backend process,
+    # SIGTERMed the way launchd's bootout does it, exits inside the graceful
+    # bound and removes its own backend.json (the lifespan-registered cleanup;
+    # the process dies before any code after Server.run()).
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+
+    env = {**os.environ, "AUTOWRIGHT_HOME": str(tmp_path), "AUTOWRIGHT_PORT": "0"}
+    proc = subprocess.Popen([sys.executable, "-m", "autowright.main"], env=env,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    backend_json = tmp_path / "backend.json"
+    try:
+        deadline = time.monotonic() + 20
+        while not backend_json.exists():
+            assert proc.poll() is None, "backend died before publishing backend.json"
+            assert time.monotonic() < deadline, "backend never published backend.json"
+            time.sleep(0.1)
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=15)
+        assert not backend_json.exists()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=10)

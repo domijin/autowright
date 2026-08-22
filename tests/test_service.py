@@ -454,11 +454,105 @@ def test_stop_unloads_but_keeps_plist_and_shim(svc):
 
 
 @launchd_only
-def test_stop_when_not_installed(svc, capsys):
-    assert svc.mod.stop().startswith("not installed")
+def test_stop_when_not_installed(svc, capsys, no_kill_matching):
+    from autowright import paths
+
+    out = svc.mod.stop()
+    assert out == "not installed — nothing to stop"
+    assert svc.mod.result_code(out) == 1
     assert svc.actions() == []  # nothing to unload
+    # The §3 sweep still ran — with the §15 stub it simply found nothing.
+    assert no_kill_matching[0] == paths.sweep_markers()
     assert svc.mod.main(["stop"]) == 1
     capsys.readouterr()
+
+
+@launchd_only
+def test_stop_without_a_plist_reports_the_strays_it_ended(svc, monkeypatch):
+    """§3: no registration, but a directly-spawned backend (isolated dev) or
+    strays can still be alive — ending them is a successful stop."""
+    monkeypatch.setattr(svc.mod, "_sweep_strays", lambda: 3)
+    out = svc.mod.stop()
+    assert out == "stopped — service was not installed; ended 3 lingering process(es)"
+    assert svc.mod.result_code(out) == 0
+    assert svc.actions() == []  # the sweep is the whole stop
+
+
+@launchd_only
+def test_stop_sweeps_strays_after_the_bootout(svc, monkeypatch):
+    """§3 quit-entirely: the sweep runs once launchd has been told to stop the
+    job (so KeepAlive can't respawn what it kills), and its count rides on the
+    result line as an informational note after the "·"."""
+    svc.plist.parent.mkdir(parents=True, exist_ok=True)
+    svc.plist.write_bytes(b"<plist/>")
+    seen = []
+
+    def sweep():
+        seen.append(svc.actions())
+        return 2
+
+    monkeypatch.setattr(svc.mod, "_sweep_strays", sweep)
+    out = svc.mod.stop()
+    assert out == ("stopped — returns at next login or app launch · "
+                   "ended 2 lingering process(es)")
+    assert svc.mod.result_code(out) == 0
+    assert svc.plist.exists()  # plist survives, as always
+    # Order: the bootout had already run when the sweep fired.
+    assert seen == [[["launchctl", "bootout", f"{_gui_domain()}/{svc.mod.LABEL}"]]]
+
+
+@launchd_only
+def test_stop_gives_launchd_a_second_window_after_the_sweep(svc, monkeypatch):
+    """§3: bootout can outlive _unload's own wait — the sweep's kill is what
+    lets launchd finish the removal, so stop re-polls before judging."""
+    monkeypatch.setattr(svc.mod.time, "sleep", lambda _s: None)
+    svc.plist.parent.mkdir(parents=True, exist_ok=True)
+    svc.plist.write_bytes(b"<plist/>")
+    state = {"swept": False, "polls": 0}
+
+    def sweep():
+        state["swept"] = True
+        return 1
+
+    def registered():
+        if not state["swept"]:
+            return True  # still there through _unload's whole wait
+        state["polls"] += 1
+        return state["polls"] < 3  # gone on the third poll after the sweep
+
+    monkeypatch.setattr(svc.mod, "_sweep_strays", sweep)
+    monkeypatch.setattr(svc.mod, "_registered", registered)
+    out = svc.mod.stop()
+    assert out == ("stopped — returns at next login or app launch · "
+                   "ended 1 lingering process(es)")
+    assert svc.mod.result_code(out) == 0
+    assert state["polls"] > 1  # the second window was actually used
+
+
+@launchd_only
+def test_stop_fails_when_the_job_outlives_the_sweep(svc, monkeypatch):
+    """A job launchd still reports after the sweep is still a failed stop
+    (exit 1) — the app must not quit its UI on top of a live backend."""
+    monkeypatch.setattr(svc.mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(svc.mod, "_sweep_strays", lambda: 1)
+    monkeypatch.setattr(svc.mod, "_registered", lambda: True)
+    svc.plist.parent.mkdir(parents=True, exist_ok=True)
+    svc.plist.write_bytes(b"<plist/>")
+    out = svc.mod.stop()
+    assert out == "stop failed: launchd still reports the job"
+    assert svc.mod.result_code(out) == 1
+
+
+@launchd_only
+def test_install_and_restart_never_sweep(svc, monkeypatch):
+    """§3: the sweep belongs to stop alone — install and restart bring the
+    service back up, and killing our own fresh processes would defeat them."""
+    def forbidden():
+        raise AssertionError("install/restart must not sweep")
+
+    monkeypatch.setattr(svc.mod, "_sweep_strays", forbidden)
+    assert svc.mod.install().startswith("installed and started")
+    assert svc.mod.restart() == "restarted"
 
 
 def test_main_dispatches_stop(dispatch, capsys):

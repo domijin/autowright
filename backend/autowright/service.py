@@ -217,15 +217,40 @@ def status() -> str:
     return "not installed"
 
 
+def _sweep_strays() -> int:
+    """§3 quit-entirely sweep: end every lingering process of ours (executor
+    groups, pip children, stray CLI invocations, a backend that outlived the
+    unload wait) so the app bundle deletes cleanly right after a stop. The
+    count feeds the result line's informational note."""
+    return platform.current().processes.kill_matching(paths.sweep_markers())
+
+
 def stop() -> str:
-    """§3 quit-entirely backend half: unload the job, keep plist and shim."""
+    """§3 quit-entirely backend half: unload the job and sweep stray
+    processes, keep plist and shim."""
     p = plist_path()
     if not p.exists():
+        # §3: no registration, but a directly-spawned backend (isolated dev)
+        # or strays can still be alive — a sweep that ended them is a
+        # successful stop, an empty one keeps the not-installed failure.
+        n = _sweep_strays()
+        if n:
+            return f"stopped — service was not installed; ended {n} lingering process(es)"
         return "not installed — nothing to stop"
     _unload(p)
+    n = _sweep_strays()
+    if n and _registered():
+        # bootout already requested removal, so KeepAlive cannot respawn the
+        # job — the sweep's kill is what lets launchd finish a removal that
+        # outlived _unload's wait. Give it a short second window.
+        for _ in range(20):
+            if not _registered():
+                break
+            time.sleep(0.25)
     if _registered():
         return "stop failed: launchd still reports the job"
-    return "stopped — returns at next login or app launch"
+    note = f" · ended {n} lingering process(es)" if n else ""
+    return f"stopped — returns at next login or app launch{note}"
 
 
 def restart() -> str:

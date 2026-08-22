@@ -119,19 +119,41 @@ def no_notifications(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_kill_matching(monkeypatch):
+    """Default: the §3 quit-entirely sweep is a recorded no-op returning 0.
+    Without this, any test that reaches `service stop` would run a REAL sweep
+    against the developer's machine — the markers include this venv's python
+    and `-m autowright.`, i.e. the very test run. The dedicated kill_matching
+    tests drive the real bodies explicitly against faked process tables."""
+    from autowright.platform import posixproc, windows
+
+    calls: list[list[str]] = []
+
+    def _stub(self, markers, grace_s=2.0):
+        calls.append(list(markers))
+        return 0
+
+    monkeypatch.setattr(posixproc.PosixProcessControl, "kill_matching", _stub)
+    monkeypatch.setattr(windows.WindowsProcessControl, "kill_matching", _stub)
+    yield calls
+
+
+@pytest.fixture(autouse=True)
 def reset_module_globals():
     """Module-global state leaks between tests inside one worker — reset the
     known offenders before every test: the §19 `ollama serve` spawn cooldown,
     the §6 robots/site throttle caches, the §6.2 installed scan, and the two
     process-lifetime dedupe/parking maps in `api` (a served launch id or a
     parked import token from an earlier test must never decide a later one)."""
-    from autowright import api, executor, harness, packages
+    from autowright import api, events, executor, harness, packages
 
     harness._serve_last_spawn = 0.0
     executor._robots.clear()
     executor._site_last.clear()
     packages.invalidate_scan()  # §6.2 installed-scan cache (keyed on the home dir)
     api._served_launches.clear()  # §19 app-start dedupe memory
+    api._shutdown_callbacks.clear()  # §3 main()-registered cleanup from an earlier boot
+    events.hub._loop = None  # a lifespan-running test binds a loop that closes with it
     for token in list(api._import_parked):  # §5.2 parked previews + their spool files
         api._drop_parked(token)
 

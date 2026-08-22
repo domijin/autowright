@@ -47,9 +47,13 @@ export default function SettingsPage() {
   const [cliBusy, setCliBusy] = useState(false)
   // §4.9 disable confirm: turning the toggle off also deletes the command.
   const [cliOffConfirm, setCliOffConfirm] = useState(false)
-  // §4.9 QUIT card (§3 explicit-quit exception)
+  // §4.9 QUIT card (§3 explicit-quit exception). quitOverlay is the blocking
+  // quit overlay's visibility; quitForceConfirm is the busy-answer modal that
+  // retries with force.
   const [quitConfirm, setQuitConfirm] = useState(false)
   const [quitBusy, setQuitBusy] = useState(false)
+  const [quitOverlay, setQuitOverlay] = useState(false)
+  const [quitForceConfirm, setQuitForceConfirm] = useState(false)
   // §4.9 RESET card (§3 reset flow). resetStage doubles as the progress
   // overlay's visibility: null = hidden, otherwise the current §3 stage token.
   const [resetConfirm, setResetConfirm] = useState(false)
@@ -118,16 +122,23 @@ export default function SettingsPage() {
     })()
   }
 
-  // §4.9: stop the backend service, then the app quits (§3). Busy or error
-  // leaves everything running — reset and toast.
-  const quitAll = () => {
+  // §4.9: stop the backend service (with the §3 stray-process sweep), then
+  // the app quits. The blocking quit overlay is up for the whole call. Busy
+  // (only possible without force) drops the overlay and asks the force
+  // question; error drops it and toasts; on { ok } it stays up until the app
+  // exits.
+  const quitAll = (force = false) => {
     if (quitBusy) return
     setQuitBusy(true)
+    setQuitOverlay(true)
     void (async () => {
-      const r = await window.autowright?.quitAll().catch((e: Error) => ({ error: e.message }))
-      if (r && 'busy' in r) showToast('An automation is executing — quit when it finishes.')
+      const r = await window.autowright?.quitAll(force).catch((e: Error) => ({ error: e.message }))
+      if (r && 'busy' in r) setQuitForceConfirm(true)
       else if (r && 'error' in r) showToast(r.error)
-      // on { ok } the app is exiting — nothing to do
+      if (r && 'ok' in r) return
+      // Any non-ok answer (busy, error, or unexpected) drops the overlay —
+      // it has no user dismissal path, so it must never outlive the call.
+      setQuitOverlay(false)
       setQuitBusy(false)
     })()
   }
@@ -440,7 +451,7 @@ export default function SettingsPage() {
               <button
                 className="ad-btn-soft"
                 onClick={() => setQuitConfirm(true)}
-                disabled={quitBusy}
+                disabled={quitBusy || quitForceConfirm}
                 style={{ flex: 'none' }}
               >
                 {quitBusy ? (
@@ -504,6 +515,19 @@ export default function SettingsPage() {
         />
       )}
 
+      {/* §4.9 force-confirm modal: the quit-all IPC answered busy — a live
+          execution. Confirming retries with force, which skips the gate. */}
+      {quitForceConfirm && (
+        <ConfirmModal
+          title="An automation is executing"
+          body="Shut down everything and quit? The running automation will be killed."
+          confirmLabel="Shut down and quit"
+          danger
+          onConfirm={() => { setQuitForceConfirm(false); quitAll(true) }}
+          onCancel={() => setQuitForceConfirm(false)}
+        />
+      )}
+
       {resetConfirm && (
         <ConfirmModal
           title="Delete all data and start over?"
@@ -514,6 +538,16 @@ export default function SettingsPage() {
           onCancel={() => setResetConfirm(false)}
         />
       )}
+
+      {/* §4.9 quit overlay: non-dismissable while §3 quit-all runs — on
+          success it stays up until the app exits. */}
+      <BlockingOverlay open={quitOverlay} ariaLabel="Quitting Autowright">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
+          <Spinner size={22} />
+          <div style={{ fontSize: 15, fontWeight: 600, marginTop: 4 }}>Quitting Autowright…</div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Stopping everything…</div>
+        </div>
+      </BlockingOverlay>
 
       {/* §4.9 reset progress overlay: non-dismissable while §3 reset-all runs —
           on success it stays up until the app relaunches itself. */}

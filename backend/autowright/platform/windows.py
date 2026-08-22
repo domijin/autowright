@@ -17,7 +17,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from .. import paths
@@ -200,6 +200,33 @@ class WindowsProcessControl:
         table on POSIX)."""
         return False
 
+    def kill_matching(self, markers: Sequence[str], grace_s: float = 2.0) -> int:
+        """§3 quit-entirely sweep: kill every process whose command line
+        carries one of `markers`, by the taskkill tree kill (both TERM/KILL
+        grades collapse to it — `grace_s` is ignored). The enumerating
+        PowerShell's own command line embeds the marker literals, so it must
+        exclude itself (`$PID`), and the sweeping python is excluded by pid.
+        Rows with a NULL CommandLine (elevated/system processes) are skipped —
+        never kill what can't be verified. Returns the matched count."""
+        clauses = " -or ".join(f"$c.Contains({_ps_literal(m)})" for m in markers)
+        script = (
+            "$ErrorActionPreference = 'SilentlyContinue'; "
+            "Get-CimInstance Win32_Process | ForEach-Object { "
+            "$c = $_.CommandLine; "
+            f"if ($c -and $_.ProcessId -ne $PID -and "
+            f"$_.ProcessId -ne {os.getpid()} -and ({clauses})) "
+            "{ 'AWPID:' + $_.ProcessId } }"
+        )
+        _code, out, _err = _powershell(script)
+        pids = []
+        for line in out.splitlines():
+            tail = line.strip().removeprefix("AWPID:")
+            if tail != line.strip() and tail.isdigit():
+                pids.append(int(tail))
+        for pid in pids:
+            self.kill_group(pid)
+        return len(pids)
+
 
 # ------------------------------------------------ §3 service: Task Scheduler
 
@@ -359,6 +386,12 @@ def _await_running(want: bool) -> str | None:
     if want:
         return f"the task is registered but did not start (state {state})"
     return "the task is still running"
+
+
+def _sweep_strays() -> int:
+    """§3 quit-entirely sweep, Windows half: same markers, taskkill tree
+    kills (see WindowsProcessControl.kill_matching)."""
+    return WindowsProcessControl().kill_matching(paths.sweep_markers())
 
 
 def _backend_program() -> tuple[str, str | None]:
@@ -605,17 +638,27 @@ class WindowsService:
         return "stopped (task present) — returns at next logon or app launch"
 
     def stop(self) -> str:
-        """§3 quit-entirely backend half: stop the task, keep it registered."""
+        """§3 quit-entirely backend half: stop the task, keep it registered,
+        then sweep stray processes — the graceful pass never runs on a Windows
+        stop, so the sweep is what clears the own-process-group children the
+        tree kill orphans (pip, executors, stray CLI invocations)."""
         state, err = _query_state()
         if err:
             return f"stop failed: {err}"
         if state == _ABSENT:
+            # §3: no registration, but strays can still be alive — a sweep
+            # that ended them is a successful stop (mirrors macOS).
+            n = _sweep_strays()
+            if n:
+                return f"stopped — service was not installed; ended {n} lingering process(es)"
             return "not installed — nothing to stop"
         if err := _stop_task():
             return f"stop failed: {err}"
         if err := _await_running(False):
             return f"stop failed: {err}"
-        return "stopped — returns at next logon or app launch"
+        n = _sweep_strays()
+        note = f" · ended {n} lingering process(es)" if n else ""
+        return f"stopped — returns at next logon or app launch{note}"
 
     def restart(self) -> str:
         state, err = _query_state()

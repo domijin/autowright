@@ -31,7 +31,10 @@ description: Build, launch, and drive Autowright (Electron + Python backend) to 
 ## Gotchas
 
 - **Driving Electron registers the REAL launchd service** even with an isolated
-  `AUTOWRIGHT_HOME`: main.cjs registers `ai.autowright.backend` on every launch, and the
+  `AUTOWRIGHT_HOME` — but only when no backend is already reachable: with a healthy
+  backend.json in the isolated home, ensure-backend returns early and never registers
+  (observed 2026-08-22; a `service stop` then reads "service was not installed").
+  Otherwise main.cjs registers `ai.autowright.backend` on launch, and the
   service runs against the real `~/Library/Application Support/Autowright`. After a
   verify session, check `launchctl list | grep autowright` and restore the pre-session state
   (`launchctl bootout gui/501/ai.autowright.backend` + remove the plist if it didn't exist

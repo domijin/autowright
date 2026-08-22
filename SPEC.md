@@ -138,6 +138,16 @@ pid+creation-time identity check lands (orphan recovery never kills what it can'
 Hard-kill contract, all platforms: callers pass `sig=None` to mean kill-hard —
 `signal.SIGKILL` must never appear at a call site (the name does not exist on Windows);
 `signal.SIGTERM` exists everywhere and Windows treats any signal as the tree kill.
+`ProcessControl` also carries `kill_matching(markers, grace_s)` (§3 quit-entirely sweep):
+kill every process whose command line contains one of the marker substrings, always
+excluding the calling process and its own process group (the Electron caller during
+quit-all, the shell job in CLI use, and the in-process `service.stop()` sweeper itself).
+POSIX: one `ps -axo pid=,pgid=,command=` snapshot, SIGTERM per matched group (per-pid
+fallback on lookup/permission errors), a grace wait re-snapshotting in 0.1 s steps, then
+SIGKILL only for survivors whose pid still shows the same command text (the pid-reuse
+guard). Windows: the §3 `Win32_Process` enumeration plus the `taskkill /F /T` tree kill,
+grace ignored. It returns the matched count; an unreadable process table kills nothing
+and returns 0 (never kill what can't be verified).
 Pipe-encoding contract, all platforms: every text-mode subprocess pipe on a cross-OS code
 path (executor, harness invocation and probes, pip, installer streaming) is opened with
 explicit `encoding="utf-8", errors="replace"` — never the locale default, which is cp1252 on

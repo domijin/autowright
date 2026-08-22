@@ -7,7 +7,7 @@ implementations import (posixproc.py), never in a superclass.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -53,6 +53,7 @@ class ProcessControl(Protocol):
     def signal_group(self, proc, sig: int | None = None) -> None: ...
     def kill_group(self, pgid: int) -> None: ...
     def group_has_command(self, pgid: int, marker: str) -> bool: ...
+    def kill_matching(self, markers: Sequence[str], grace_s: float = 2.0) -> int: ...
 
 
 @dataclass(frozen=True)

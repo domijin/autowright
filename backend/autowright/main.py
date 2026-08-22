@@ -23,6 +23,13 @@ from .yamlio import atomic_write_text
 LOG_CAP = 100 * 1024 * 1024  # §5 log size cap
 LOG_TRIM_TO = LOG_CAP // 2  # trim target — half the cap, so a saturated log isn't rewritten every boot
 
+# §3 time-boxed graceful shutdown: the renderer keeps /ws open during quit-all
+# and reset, and an unbounded uvicorn shutdown waits on open WebSockets forever,
+# blowing the service stop's 10 s deregistration wait. At this bound uvicorn
+# force-closes connections; the lifespan shutdown and the backend.json unlink
+# below still run after it.
+SHUTDOWN_GRACE_S = 5
+
 
 def trim_logs() -> None:
     """§5 log size cap: at startup, trim any over-cap backend log in place to
@@ -141,6 +148,30 @@ def main() -> None:
     scheduler.start()
     listeners = Listeners(store, api.engine)  # §6 message-trigger listener manager
     listeners.start()
+
+    # §3: all shutdown work runs from the api lifespan — uvicorn re-raises the
+    # captured SIGTERM once run() returns, so the `finally` below never
+    # executes on a signal-driven stop (a launchd bootout, quit-all, reset).
+    # Run-once: the finally still covers a run() that returns without a signal.
+    shutdown_done = threading.Event()
+
+    def shutdown() -> None:
+        if shutdown_done.is_set():
+            return
+        shutdown_done.set()
+        stop_guard.set()  # before the unlink below — the guard must not resurrect the file
+        scheduler.stop()
+        listeners.stop()
+        try:
+            # Only remove our own discovery file: during a service restart the
+            # successor may already have published its fresh port/token here —
+            # deleting that would strand the UI/CLI on nothing (§3).
+            if json.loads(paths.backend_json().read_text()).get("pid") == os.getpid():
+                paths.backend_json().unlink()
+        except (OSError, ValueError):
+            pass
+
+    api.register_shutdown(shutdown)
     # §3/§4.9 permanent assertion, through the §2 platform layer.
     platform.current().power.reconcile(bool(store.settings.get("keepAwake")))
     # §4.9 developerMode: request logging (every HTTP request via the uvicorn access
@@ -157,20 +188,11 @@ def main() -> None:
         handler.setdefault("filters", []).append("devmode")
     try:
         config = uvicorn.Config(api.app, host="127.0.0.1", port=port,
-                                log_level="info", log_config=log_config)
+                                log_level="info", log_config=log_config,
+                                timeout_graceful_shutdown=SHUTDOWN_GRACE_S)
         uvicorn.Server(config).run(sockets=[sock])
     finally:
-        stop_guard.set()  # before the unlink below — the guard must not resurrect the file
-        scheduler.stop()
-        listeners.stop()
-        try:
-            # Only remove our own discovery file: during a service restart the
-            # successor may already have published its fresh port/token here —
-            # deleting that would strand the UI/CLI on nothing (§3).
-            if json.loads(paths.backend_json().read_text()).get("pid") == os.getpid():
-                paths.backend_json().unlink()
-        except (OSError, ValueError):
-            pass
+        shutdown()
 
 
 if __name__ == "__main__":

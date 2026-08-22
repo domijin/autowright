@@ -70,6 +70,22 @@ def console_python() -> str:
     return sys.executable
 
 
+def sweep_markers() -> list[str]:
+    """§3 quit-entirely sweep: command-line substrings that identify our own
+    processes. Module invocations (`-m autowright.`) survive interpreter-path
+    resolution in `ps` (a dev venv python shows its resolved framework binary,
+    never the venv path), the interpreter itself covers the packaged app's
+    argv[0] (pip children included), its `bin/autowright*` siblings cover the
+    dev entry-point scripts, and the Windows console sibling covers the
+    pythonw/python pair. Never the realpath'd interpreter: in dev that is a
+    shared system python and would match unrelated processes."""
+    exe = Path(sys.executable)
+    markers = ["-m autowright.", str(exe), str(exe.parent / "autowright")]
+    if console_python() != str(exe):
+        markers.append(console_python())
+    return markers
+
+
 def _default_data_root() -> Path:
     """§5 per-OS data root (the platform-token row of the §5 table)."""
     token = current_os()

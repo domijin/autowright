@@ -976,15 +976,25 @@ COMMAND LINE; no stored setting). One row titled "Quit Autowright entirely", det
 background service too — schedules and message triggers pause until you next log in or open
 Autowright.", with a "Quit…" button (ellipsis: a confirm follows). The button opens a danger
 ConfirmModal — title "Quit Autowright entirely?", body restating the pause-until-next-launch
-consequence, confirm label "Quit Autowright". Confirming fires the §3 `quit-all` IPC: busy
-(live execution) → toast "An automation is executing — quit when it finishes." and the row
-resets; error → toast the error text, row resets; success → the app exits (backend stopped
-first — §3 explicit-quit exception). While running, the button shows the §9 busy spinner as
-"Stopping…" (the stop's launchd deregistration wait can take up to ~10 s).
+consequence, confirm label "Quit Autowright". Confirming raises the **quit overlay** (the
+same §14 `BlockingOverlay` as RESET below: full-window, portalled above every surface, no
+user dismissal path) holding the §9 busy spinner, the title "Quitting Autowright…", and the
+muted line "Stopping everything…" (static — quit is a single stop step, no stage pushes),
+then fires the §3 `quit-all` IPC. Busy (live execution, only possible without `force`) →
+the overlay drops and a second danger ConfirmModal opens — the **force-confirm modal**,
+title "An automation is executing", body "Shut down everything and quit? The running
+automation will be killed.", confirm label "Shut down and quit" — whose confirm re-raises
+the overlay and re-fires `quit-all` with `force: true` (skips the gate; §3 quit-entirely).
+Error → the overlay drops and the error text toasts. Success → the overlay stays up until
+the app exits (backend stopped and strays swept first — §3 explicit-quit exception; after
+it, the app bundle can be deleted immediately). The stop typically takes a few seconds and
+is bounded at ~20 s (deregistration wait plus the stray-process sweep); the overlay blocks
+every interaction for the whole run.
 
 A **RESET** card sits at the very bottom of the page (below QUIT), rendered only when the
 preload bridge exists (like QUIT; no stored setting), gated on no live executions through
-its §3 IPC (busy → toast and the row resets, like QUIT), and showing the §9 busy spinner on
+its §3 IPC (busy → toast "An automation is executing — reset when it finishes." and the row
+resets; unlike QUIT there is no force path), and showing the §9 busy spinner on
 the row button while its flow runs: one row titled "Delete all data and start over", detail "Erases every
 automation, execution, agent, secret, and setting from this Mac, then Autowright restarts
 as new.", with a "Reset…" button (ellipsis: a confirm follows). The button opens a danger

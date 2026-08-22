@@ -31,7 +31,7 @@ declare global {
       updateInstall(): Promise<{ ok: true } | { busy: true } | { error: string }>
       updateBrewManaged(): Promise<boolean>
       // §4.9 QUIT card (§3 explicit-quit exception)
-      quitAll(): Promise<{ ok: true } | { busy: true } | { error: string }>
+      quitAll(force?: boolean): Promise<{ ok: true } | { busy: true } | { error: string }>
       // §4.9 RESET card (§3 reset flow): erases every §5 root and every secret,
       // then the app relaunches itself into onboarding — the service
       // registration, the CLI shim, and the app itself survive.

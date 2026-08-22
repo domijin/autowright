@@ -38,6 +38,15 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     expect(src).toContain("runServiceVerb('stop', 'reset')")
   })
 
+  it('quit-all gates on live executions unless the renderer forces it (§3)', () => {
+    // The §4.9 force-confirm modal's retry passes { force: true }, the one way
+    // past the gate — and the gate still runs before the stop for every
+    // unforced call.
+    expect(src).toContain("ipcMain.handle('quit-all', async (_e, opts) => {")
+    expect(src).toMatch(
+      /if \(!opts\?\.force && await executionsLive\(\)\) return \{ busy: true \}[\s\S]{0,200}runServiceVerb\('stop', 'quit-all'\)/)
+  })
+
   it('never executes the CLI — autowright.cli appears only inside the shim file text', () => {
     // main.cjs itself never mentions the CLI; the platform modules mention it
     // exactly once each, as the shim file's contents (the shimText run line,

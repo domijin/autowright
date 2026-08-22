@@ -44,6 +44,17 @@ def auth(cred: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> None:
         raise HTTPException(401, "bad token")
 
 
+# §3: main() registers its shutdown work here — uvicorn re-raises the captured
+# SIGTERM once run() returns, so nothing after run() (a `finally` included)
+# ever executes on a signal-driven stop. The lifespan below is the one place
+# shutdown code reliably runs.
+_shutdown_callbacks: list = []
+
+
+def register_shutdown(callback) -> None:
+    _shutdown_callbacks.append(callback)
+
+
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
     hub.bind_loop(asyncio.get_running_loop())
@@ -58,6 +69,14 @@ async def _lifespan(_: FastAPI):
     # §3: drafting harnesses die with it too — a stopping backend must never
     # leave an agent harness session group running with nobody to collect it.
     draft_jobs.kill_all_building()
+    # §3: main()'s registered cleanup (guard thread, scheduler, listeners,
+    # backend.json unlink) — error-tolerant, a failing callback must not keep
+    # the next one from running.
+    for callback in _shutdown_callbacks:
+        try:
+            callback()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # §19: no interactive docs. /health is the only unauthenticated route, and any

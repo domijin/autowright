@@ -2,14 +2,36 @@
 the §5 per-OS root table (backend half of the drift guard — the Electron half
 is app/tests/platform-roots.test.ts; both pin the same spec table)."""
 import json
+import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from autowright import paths, platform, service
-from autowright.platform import darwin, fallback, windows
+from autowright.platform import darwin, fallback, posixproc, windows
+
+# The §15 `no_kill_matching` autouse fixture (conftest.py) swaps both sweep
+# bodies for a recorded no-op, so no test ever sweeps the developer's own
+# machine. These bindings are taken at collection — before any fixture runs —
+# so the dedicated sweep tests below can drive the REAL bodies against faked
+# process tables.
+REAL_POSIX_SWEEP = posixproc.PosixProcessControl.kill_matching
+REAL_WINDOWS_SWEEP = windows.WindowsProcessControl.kill_matching
+
+# The §2 ProcessControl protocol surface. Every build composes all of it — a
+# platform missing one method breaks a call site only at runtime, so the
+# composition tests below check the whole set (the §3 quit-entirely sweep's
+# `kill_matching` included).
+PROCESS_CONTROL = ("session_kwargs", "signal_group", "kill_group",
+                   "group_has_command", "kill_matching")
+
+
+def _composes_process_control(plat) -> bool:
+    return all(callable(getattr(plat.processes, name, None)) for name in PROCESS_CONTROL)
 
 
 # ---------------------------------------------------------------- composition
@@ -25,6 +47,8 @@ def test_darwin_build_composes_full_capabilities():
     assert isinstance(plat.service, darwin.LaunchdService)
     assert isinstance(plat.notifier, darwin.OsascriptNotifier)
     assert isinstance(plat.power, darwin.CaffeinatePower)
+    assert isinstance(plat.processes, posixproc.PosixProcessControl)
+    assert _composes_process_control(plat)
 
 
 # What each §2 build composes, keyed by §5.1 platform token — the one table the
@@ -67,6 +91,9 @@ def test_fallback_build_flags_everything_off():
     release = plat.power.hold_execution()
     release()
     release()  # double release is harmless
+    # Process control is real even in a degraded build (Linux runs the POSIX one).
+    assert isinstance(plat.processes, posixproc.PosixProcessControl)
+    assert _composes_process_control(plat)
 
 
 def test_windows_build_composes_real_service_process_control_and_power():
@@ -80,6 +107,7 @@ def test_windows_build_composes_real_service_process_control_and_power():
     assert isinstance(plat.processes, windows.WindowsProcessControl)
     assert isinstance(plat.power, windows.WindowsPower)
     assert isinstance(plat.notifier, windows.WindowsNotifier)
+    assert _composes_process_control(plat)
 
 
 def test_windows_notifications_capability_is_probed_not_assumed(monkeypatch):
@@ -135,6 +163,183 @@ def test_console_python_swaps_pythonw_for_its_console_sibling(monkeypatch, tmp_p
     monkeypatch.setattr(paths, "current_os", lambda: "windows")
     monkeypatch.setattr(paths.sys, "executable", str(console))
     assert paths.console_python() == str(console)  # already the console one
+
+
+def test_sweep_markers_cover_module_form_interpreter_and_entry_point(monkeypatch, tmp_path):
+    """§3 quit-entirely: what the sweep matches command lines against — the
+    module form (it survives `ps`'s interpreter-path resolution), this
+    interpreter, and the `bin/autowright*` entry-point scripts beside it."""
+    exe = tmp_path / "bin" / "python3.13"
+    monkeypatch.setattr(paths.sys, "executable", str(exe))
+    monkeypatch.setattr(paths, "console_python", lambda: str(exe))
+    assert paths.sweep_markers() == [
+        "-m autowright.", str(exe), str(tmp_path / "bin" / "autowright")]
+
+    # The Windows pythonw/python pair: the console sibling runs our children,
+    # so its own path is a marker too — appended only when it differs.
+    console = tmp_path / "bin" / "python.exe"
+    monkeypatch.setattr(paths, "console_python", lambda: str(console))
+    assert paths.sweep_markers() == [
+        "-m autowright.", str(exe), str(tmp_path / "bin" / "autowright"), str(console)]
+
+
+# ------------------------------------------------- §3 quit-entirely sweep
+#
+# No process is ever signalled here: the POSIX tests drive the real
+# kill_matching body (REAL_POSIX_SWEEP, bound at collection) against a scripted
+# `ps` table with os.killpg/os.kill recorded, and the Windows test drives the
+# real body with _powershell and the tree kill recorded.
+
+def _sweep(markers, grace_s=2.0) -> int:
+    return REAL_POSIX_SWEEP(posixproc.PosixProcessControl(), markers, grace_s)
+
+
+@pytest.fixture()
+def ps_table(monkeypatch):
+    """A scripted process table plus recorded signals. Each `ps` call answers
+    the next snapshot (the last one repeats), and the grace clock only advances
+    when the body sleeps — so nothing here waits on wall time."""
+    state = SimpleNamespace(snapshots=[[]], signals=[], reads=0, now=0.0)
+
+    def fake_ps(argv, **kw):
+        assert argv[:2] == ["ps", "-axo"]
+        state.reads += 1
+        rows = state.snapshots[min(state.reads - 1, len(state.snapshots) - 1)]
+        return SimpleNamespace(
+            stdout="".join(f"{pid} {pgid} {cmd}\n" for pid, pgid, cmd in rows))
+
+    monkeypatch.setattr(posixproc.subprocess, "run", fake_ps)
+    monkeypatch.setattr(posixproc.os, "killpg",
+                        lambda pgid, sig: state.signals.append(("killpg", pgid, sig)))
+    monkeypatch.setattr(posixproc.os, "kill",
+                        lambda pid, sig: state.signals.append(("kill", pid, sig)))
+    monkeypatch.setattr(posixproc.time, "monotonic", lambda: state.now)
+    monkeypatch.setattr(posixproc.time, "sleep",
+                        lambda s: setattr(state, "now", state.now + s))
+    return state
+
+
+def test_posix_sweep_terminates_the_group_then_kills_the_survivor(ps_table):
+    """§3: TERM per group, a grace window, then KILL for whatever is still
+    there. The count is what matched, not what needed the second signal."""
+    backend = "/opt/Autowright/python -m autowright.main"
+    ps_table.snapshots = [
+        [(4001, 4001, backend),
+         (4002, 4001, "/opt/Autowright/python -m autowright.executor 7")],
+        [(4001, 4001, backend)],  # the executor died on TERM, the backend hung on
+    ]
+    assert _sweep(["-m autowright."], grace_s=0.3) == 2
+    assert ps_table.signals == [("killpg", 4001, signal.SIGTERM),
+                                ("killpg", 4001, signal.SIGKILL)]
+
+
+def test_posix_sweep_counts_every_match_and_signals_each_group_once(ps_table):
+    """One TERM per *group*, whatever the marker that matched — and a command
+    line carrying no marker is left alone."""
+    ps_table.snapshots = [
+        [(4301, 4301, "/opt/Autowright/python -m autowright.main"),
+         (4302, 4301, "/opt/Autowright/python -m pip install httpx"),
+         (4303, 4303, "/opt/Autowright/bin/autowright run daily"),
+         (4304, 4304, "/usr/bin/vim autowright-notes.txt")],
+        [],
+    ]
+    markers = ["-m autowright.", "/opt/Autowright/python",
+               "/opt/Autowright/bin/autowright"]
+    assert _sweep(markers, grace_s=1.0) == 3
+    # The group order is a set's — the pairs are what matter.
+    assert set(ps_table.signals) == {("killpg", 4301, signal.SIGTERM),
+                                     ("killpg", 4303, signal.SIGTERM)}
+
+
+def test_posix_sweep_never_signals_this_process(ps_table):
+    """The sweeper itself runs `-m autowright.service stop` — a marker match."""
+    ps_table.snapshots = [
+        [(os.getpid(), os.getpgid(0) + 1, "python -m autowright.service stop")]]
+    assert _sweep(["-m autowright."]) == 0
+    assert ps_table.signals == []
+
+
+def test_posix_sweep_never_signals_its_own_process_group(ps_table):
+    """§3: the Electron caller during quit-all and the shell job in CLI use sit
+    in the sweeper's own group and carry a marker too."""
+    ps_table.snapshots = [
+        [(os.getpid() + 1, os.getpgid(0), "Electron … -m autowright.main")]]
+    assert _sweep(["-m autowright."]) == 0
+    assert ps_table.signals == []
+
+
+def test_posix_sweep_leaves_a_process_that_died_on_term(ps_table):
+    ps_table.snapshots = [[(4100, 4100, "/opt/Autowright/python -m autowright.main")],
+                          []]
+    assert _sweep(["-m autowright."], grace_s=1.0) == 1
+    assert ps_table.signals == [("killpg", 4100, signal.SIGTERM)]
+
+
+def test_posix_sweep_spares_a_reused_pid_with_another_command(ps_table):
+    """§3 pid-reuse guard: the survivor check is (pid, command) — the same pid
+    running somebody else's line by KILL time is not ours to kill."""
+    ps_table.snapshots = [
+        [(4200, 4200, "/opt/Autowright/python -m autowright.executor 3")],
+        [(4200, 4200, "/usr/bin/vim notes.txt")],
+    ]
+    assert _sweep(["-m autowright."], grace_s=1.0) == 1
+    assert ps_table.signals == [("killpg", 4200, signal.SIGTERM)]
+
+
+def test_posix_sweep_falls_back_to_per_pid_signals_when_the_group_is_gone(ps_table,
+                                                                         monkeypatch):
+    """A group that is gone (or partly foreign) answers ProcessLookupError —
+    the matched pids inside it are then signalled one by one."""
+    def refuse(pgid, sig):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(posixproc.os, "killpg", refuse)
+    ps_table.snapshots = [
+        [(4401, 4400, "/opt/Autowright/python -m autowright.main"),
+         (4402, 4400, "/opt/Autowright/python -m autowright.executor 1")],
+        [],
+    ]
+    assert _sweep(["-m autowright."], grace_s=1.0) == 2
+    assert ps_table.signals == [("kill", 4401, signal.SIGTERM),
+                                ("kill", 4402, signal.SIGTERM)]
+
+
+def test_posix_sweep_signals_nothing_when_the_table_is_unreadable(ps_table, monkeypatch):
+    """§3: never kill what can't be verified — an unreadable `ps` sweeps
+    nothing and reports nothing ended."""
+    def unreadable(argv, **kw):
+        raise OSError("no ps on this box")
+
+    monkeypatch.setattr(posixproc.subprocess, "run", unreadable)
+    assert _sweep(["-m autowright."]) == 0
+    assert ps_table.signals == []
+
+
+def test_windows_sweep_matches_command_lines_and_tree_kills_each_pid(monkeypatch):
+    """§3 Windows half: one CIM enumeration whose matches come back as
+    AWPID lines, then a taskkill tree kill per pid."""
+    scripts = []
+    killed = []
+
+    def fake_powershell(script, **kw):
+        scripts.append(script)
+        return 0, "AWPID:123\nnoise\nAWPID:456\n", ""
+
+    monkeypatch.setattr(windows, "_powershell", fake_powershell)
+    monkeypatch.setattr(windows.WindowsProcessControl, "kill_group",
+                        lambda self, pgid: killed.append(pgid))
+    markers = ["-m autowright.", r"C:\Program Files\Autowright\pythonw.exe"]
+    n = REAL_WINDOWS_SWEEP(windows.WindowsProcessControl(), markers)
+    assert n == 2
+    assert killed == [123, 456]  # one tree kill each, non-AWPID lines ignored
+
+    script = scripts[0]
+    assert "$_.ProcessId -ne $PID" in script  # the enumerating PowerShell itself
+    assert f"$_.ProcessId -ne {os.getpid()}" in script  # the sweeping python
+    assert "$c -and" in script  # a NULL CommandLine can't be verified — skipped
+    assert "$c.Contains('-m autowright.')" in script
+    assert r"$c.Contains('C:\Program Files\Autowright\pythonw.exe')" in script
+    assert '"' not in script  # single-quoted PS literals only — nothing to mangle
 
 
 def test_windows_kill_group_is_a_taskkill_tree_kill(monkeypatch):
@@ -384,6 +589,34 @@ def test_windows_stop_when_not_installed(win_service):
     assert out == "not installed — nothing to stop"
     assert service.result_code(out) == 1
     assert "Stop-ScheduledTask" not in _cmdlets(win_service.scripts)
+
+
+def test_windows_stop_reports_the_strays_it_ended(win_service, monkeypatch):
+    """§3: the tree kill orphans own-process-group children (pip, executors,
+    stray CLI invocations) — the sweep ends them, and says how many."""
+    win_service.task["state"] = "Running"
+    monkeypatch.setattr(windows, "_sweep_strays", lambda: 2)
+    out = win_service.service.stop()
+    assert out == ("stopped — returns at next logon or app launch · "
+                   "ended 2 lingering process(es)")
+    assert service.result_code(out) == 0
+    assert win_service.task["state"] == "Ready"  # still registered
+
+
+def test_windows_stop_without_a_task_still_sweeps(win_service, monkeypatch):
+    """No registration, but strays can still be alive — ending them is a
+    successful stop (the macOS rule, mirrored)."""
+    monkeypatch.setattr(windows, "_sweep_strays", lambda: 3)
+    out = win_service.service.stop()
+    assert out == "stopped — service was not installed; ended 3 lingering process(es)"
+    assert service.result_code(out) == 0
+    assert "Stop-ScheduledTask" not in _cmdlets(win_service.scripts)
+
+
+def test_windows_sweep_strays_uses_the_shared_markers(no_kill_matching):
+    """Both halves sweep for the same §3 markers — one definition, in paths."""
+    assert windows._sweep_strays() == 0
+    assert no_kill_matching == [paths.sweep_markers()]
 
 
 def test_windows_stop_reports_a_task_that_is_still_running(win_service):

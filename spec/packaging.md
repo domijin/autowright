@@ -202,10 +202,33 @@ the update bullets below).
     print (`Get-ScheduledTask` exposes none): the Windows lines are `active (task
     running)`, `stopped (task present) — returns at next logon or app launch` (exit 0), and
     `not installed` (exit 1) — same three states as macOS, pid replaced by the task view.
+    Windows `stop` runs the same stray-process sweep as macOS (quit-entirely bullet below)
+    after `Stop-ScheduledTask` verifies: `kill_matching` enumerates `Win32_Process` command
+    lines via `Get-CimInstance` with plain `.Contains()` marker matches (never `-like`
+    wildcards, so marker paths need no escaping), skips rows with a NULL `CommandLine`
+    (never kill what can't be verified), and excludes both the enumerating PowerShell
+    (`$PID` — its own command line embeds the marker literals) and the sweeping python's
+    pid; each match dies by the `taskkill /F /T /PID` tree kill, both TERM/KILL grades
+    collapsing to it as everywhere on Windows. The sweep is the compensation for the
+    graceful pass never running here: it clears the own-process-group children the tree
+    kill orphans (pip, executors, stray CLI invocations).
 - Step processes die with their backend: graceful shutdown hard-kills every live step group,
   and startup recovery SIGKILLs any group a crashed backend orphaned (via the record's
   persisted `pgid`, §4.5, with a pid-reuse guard) before marking its record interrupted —
   otherwise the orphan keeps writing `memory/` while the next cron tick starts a second copy.
+  Graceful shutdown is time-boxed: uvicorn runs with `timeout_graceful_shutdown` set to the
+  `main.py` `SHUTDOWN_GRACE_S` constant (5 s), because the renderer keeps its §19 `/ws`
+  socket open during quit-all and reset, and an unbounded shutdown waits on open WebSockets
+  forever, blowing the stop's 10 s deregistration wait. At the bound uvicorn force-closes
+  the connections and the lifespan shutdown still runs. Every piece of the backend's
+  shutdown work lives in that lifespan: uvicorn re-raises the captured SIGTERM once its
+  `run()` returns, killing the process before any code after `run()` (a `finally` in
+  `main()` included) can execute, so `main()` registers its cleanup (stopping the
+  discovery-guard thread, the scheduler, and the listeners, then unlinking its own
+  `backend.json`) with the api module via `api.register_shutdown`, and the lifespan runs
+  those callbacks, each once and error-tolerant, after the kill passes. A signal-driven
+  stop therefore removes `backend.json` on macOS; the Windows tree kill still leaves it
+  (the stale-file caveat in the Windows block).
   §8 drafting harnesses die with the backend too: graceful shutdown cancels every
   still-building drafting job and SIGKILLs its harness session group outright (the process is
   exiting, so cancel's term-then-kill grace thread would never get to fire). Unlike step
@@ -218,13 +241,29 @@ the update bullets below).
   running. The §4.9 `login` setting controls only whether the UI starts at login — the backend
   service stays registered regardless once onboarding completes.
   **One explicit exception:** the Settings page's "Quit Autowright entirely" action (§4.9 QUIT
-  card). It runs `python -m autowright.service stop` — bootout only; the plist and the CLI shim
-  stay on disk — and then quits the Electron app. The action is gated on no live executions
-  (same rule as update-install; busy → the renderer toasts and nothing stops). If the stop
-  fails, the app does **not** quit — the error is surfaced instead; the app must never quit its
-  UI while the backend it promised to stop keeps running. A stopped backend returns at next
-  login (`RunAtLoad`) or next app launch (ensure-backend re-heals) — stopped, never
-  uninstalled.
+  card). It runs `python -m autowright.service stop` and then quits the Electron app; the
+  plist and the CLI shim stay on disk. `stop` is bootout **plus a stray-process sweep**: after
+  launchd deregisters the job (or the 10 s deregistration wait expires), the stop TERM-then-KILLs
+  every remaining process whose command line carries an Autowright marker (the §2
+  `kill_matching` primitive), always excluding the stop process itself and its own process
+  group (the Electron caller). The markers come from `paths.sweep_markers()`: the module
+  invocation `-m autowright.` (survives interpreter-path resolution in `ps`, which shows a
+  venv python's resolved framework binary in dev), the current interpreter path
+  (`sys.executable`, which in the packaged app is the in-bundle python and so also matches
+  pip children), the `bin/autowright*` entry scripts beside it, and on Windows the console
+  sibling from `paths.console_python()`. Never the realpath'd interpreter: in dev that is a
+  shared system python and would match unrelated processes. The invariant this buys:
+  immediately after a successful quit-all, no process holds the app bundle open, so the user
+  can move Autowright.app to the Trash with no "in use" alert. A sweep that ended processes
+  appends an informational `· ended N lingering process(es)` note to the success line (after
+  `·`, so `service.result_code` is unchanged). The live-execution gate is a confirmation, not
+  a hard block: a busy answer makes the renderer ask whether to shut everything down anyway
+  (§4.9 force-confirm modal) and, on confirm, retry the `quit-all` IPC with `force: true`,
+  which skips the gate; the backend's graceful shutdown (`kill_all_live`) plus the sweep end
+  the running execution. If the stop fails, the app does **not** quit — the error is surfaced
+  instead; the app must never quit its UI while the backend it promised to stop keeps running.
+  A stopped backend returns at next login (`RunAtLoad`) or next app launch (ensure-backend
+  re-heals) — stopped, never uninstalled.
 - **Reset — delete all data and start over (§4.9 RESET card, decided).** The renderer confirm
   fires a `reset-all` IPC; the Electron main process orchestrates, in order:
   1. The same live-execution gate as quit-all/update-install (busy → `{ busy: true }`,
@@ -252,7 +291,9 @@ the update bullets below).
      briefly (up to ~10 s total): the stop-verification gap above means the backend's file
      handles (`executions.db`, its own log file) can outlive a reported stop by a moment.
      Deletion failures that survive the retries are logged and the flow continues — a
-     leftover file must not strand the app mid-reset.
+     leftover file must not strand the app mid-reset. Step 4's stray-process sweep means
+     the backend's file handles are normally gone before deletion starts, leaving the
+     retry loop to cover the Windows stop-verification gap alone.
   6. `app.relaunch()` + `app.exit(0)`. The relaunched app finds no `backend.json` and an
      empty data root: ensure-backend re-registers the service, the backend recreates the §5
      layout with defaults, and §10 onboarding runs as on a fresh install. In a dev launch
@@ -519,9 +560,19 @@ CLI is enabled, so the full surface below is live:
   `~/Library/LaunchAgents/` directly (the very same code the app's ensure-backend step runs at
   launch — one registration path; install rewrites and adopts an existing registration).
   `service uninstall`, `service status`, `service restart`, and `service stop` accompany it.
-  `stop` unloads the job but leaves the plist and shim on disk ("stopped until next login or
-  app launch" — the §4.9 quit-entirely action's backend half); it reports failure (exit 1) when
-  launchd still lists the job afterwards, and "not installed" (exit 1) with no plist. `status`
+  `stop` unloads the job **and sweeps stray Autowright processes** (the quit-entirely bullet
+  above: `kill_matching` over `paths.sweep_markers()`, run after the unload so nothing
+  KeepAlive-respawns) but leaves the plist and shim on disk ("stopped until next login or
+  app launch" — the §4.9 quit-entirely action's backend half). The sweep is also the
+  escalation for a backend that outlived the unload wait: its command line carries
+  `-m autowright.main`, so killing it lets launchd finish the pending removal, and after a
+  sweep that ended anything the stop re-polls registration (up to 5 s) before judging.
+  It reports failure (exit 1) when launchd still lists the job afterwards. With no plist:
+  a sweep that ended processes answers `stopped — service was not installed; ended N
+  lingering process(es)` (exit 0 — this is how quit-all succeeds against a directly-spawned
+  dev backend), and a sweep that found nothing keeps `not installed — nothing to stop`
+  (exit 1). `install` and `restart` never sweep — they run during version-sync while
+  executions may legitimately be live. `status`
   distinguishes the states: job unloaded but plist present → "stopped (plist present)", exit 0
   (stopped on purpose is not a failure); no plist → "not installed", exit 1.
   Two launchd realities the install/restart path must handle: (a) booting out a *running* job is

@@ -32,9 +32,10 @@ contextBridge.exposeInMainWorld('autowright', {
   // §3 Homebrew-managed detection: true while the Caskroom dir exists — the
   // §9.4 row swaps Download for the brew upgrade notice.
   updateBrewManaged: () => ipcRenderer.invoke('update-brew-managed'),
-  // §4.9 QUIT card: stop the backend service, then quit the app (§3
-  // explicit-quit exception)
-  quitAll: () => ipcRenderer.invoke('quit-all'),
+  // §4.9 QUIT card: stop the backend service (plus stray-process sweep), then
+  // quit the app (§3 explicit-quit exception). `force` skips the
+  // live-execution gate — the §4.9 force-confirm modal's retry.
+  quitAll: (force) => ipcRenderer.invoke('quit-all', { force: !!force }),
   // §4.9 RESET card: erase every §5 file and every secret, then relaunch into
   // onboarding (§3 reset flow)
   resetAll: () => ipcRenderer.invoke('reset-all'),

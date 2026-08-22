@@ -1093,11 +1093,14 @@ async function runServiceVerb(verb, label) {
 }
 
 // §3 explicit-quit exception (§4.9 QUIT card): stop the backend LaunchAgent
-// (bootout only — plist and shim stay; it returns at next login or app
-// launch), then quit the app. On any stop failure the app stays up — never
-// quit the UI while the backend it promised to stop keeps running.
-ipcMain.handle('quit-all', async () => {
-  if (await executionsLive()) return { busy: true }
+// (bootout plus the stray-process sweep — plist and shim stay; it returns at
+// next login or app launch), then quit the app. On any stop failure the app
+// stays up — never quit the UI while the backend it promised to stop keeps
+// running. `force` (the §4.9 force-confirm modal's retry) skips the
+// live-execution gate: the backend's graceful shutdown and the stop's sweep
+// end the running execution.
+ipcMain.handle('quit-all', async (_e, opts) => {
+  if (!opts?.force && await executionsLive()) return { busy: true }
   const err = await runServiceVerb('stop', 'quit-all')
   if (err) {
     // The app stays up (§3), so future ensure/version-sync installs may run.

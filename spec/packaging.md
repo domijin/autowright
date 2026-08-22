@@ -441,7 +441,11 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   arrives: sign the app exe and the installer, set `publisherName` in the updater config
   (electron-updater then verifies the downloaded installer's Authenticode identity), and
   flip this rule to always-signed. **Never set `publisherName` before signing starts** — it
-  would make updates fail against unsigned artifacts.
+  would make updates fail against unsigned artifacts. Known cosmetics until the cert lands:
+  the uninstall registry entry carries empty Publisher/InstallLocation values, and the exe's
+  `CompanyName` version resource reads electron-builder's default ("GitHub, Inc.") because
+  `app/package.json` sets no `author` field — adding one would fix it but touches the shared
+  mac pipeline, so it is deliberately deferred to the signing change.
 - **Updater cache residue (known, accepted):** the NSIS install caches a byte copy of the
   installer at `%LOCALAPPDATA%\autowright-updater\` (electron-updater's
   `updaterCacheDirName` — the baseline its differential downloads diff against), and the

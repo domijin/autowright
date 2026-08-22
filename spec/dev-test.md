@@ -268,7 +268,11 @@ chat thread's scrolling body — the element whose scrollTop the pinning tests m
 `chat-progress` (§11 thread's transient live-job progress entry — its stage label text
 also appears verbatim as settled activity-entry titles, so bare text can't reach it),
 `version-menu` (§11 editor version pill). New e2e targets that role/label/text cannot
-reach unambiguously get a test id added here.
+reach unambiguously get a test id added here. Selectors that assert copy covered by the
+§9 per-OS table (machine noun, secret-store name) must resolve the value for the OS the
+suite runs on, never a hard-coded single-OS literal; two specs currently pin mac forms
+(`FOUND ON THIS MAC` in `app.e2e.ts`, `Save to Keychain` in `agents-secrets.e2e.ts`) and
+get converted when e2e first runs on Windows.
 
 ## 16. Seed / demo data (tests only)
 

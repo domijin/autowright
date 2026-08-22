@@ -568,7 +568,13 @@ remain plain dicts (§2).
   `%LOCALAPPDATA%\Programs\Ollama` (its per-user installer's location). The
   fallback-dir *executable* check is per-OS too: `os.access(X_OK)` on POSIX, existence with a
   `PATHEXT` extension (`.exe`, `.cmd`, `.bat`, …) on Windows, where the execute bit does not
-  exist (`shutil.which` already honors `PATHEXT` for the PATH half). The provider config and
+  exist (`shutil.which` already honors `PATHEXT` for the PATH half). A binary that resolves
+to a `.cmd`/`.bat` shim on Windows (the npm global channel — `gemini`, `opencode`) is
+spawned as `[%COMSPEC%, '/d', '/c', <resolved path>, …]`, never as the bare script: `/d`
+skips cmd.exe AutoRun hooks, whose output (a machine may register one under
+`HKLM\…\Command Processor\AutoRun`) would otherwise land on the child's stdout and corrupt
+probe and invocation parsing — the same hazard the §15 test conftest and §18 dev loop
+already neutralize. The provider config and
   credential paths need no per-OS fork: OpenCode keeps `~/.config/opencode/opencode.json` +
   `~/.local/share/opencode/auth.json` and Gemini keeps `~/.gemini/oauth_creds.json` on native
   Windows as well — `expanduser` resolves them under the user profile. The fallback dirs exist

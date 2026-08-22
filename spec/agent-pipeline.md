@@ -29,7 +29,7 @@ with no positional prompt (verified against the real CLI at ~40 K chars); Gemini
 `-p <prompt>`, piped stdin runs it non-interactively; Codex — `codex exec` with no prompt
 argument reads stdin; OpenCode — `opencode run` with no message reads stdin. The last three
 follow their vendors' documented stdin modes and must be re-verified live as each CLI lands
-on a Windows machine (the §17 WINDOWS.md worksheet tracks that). Agents never touch the
+on a Windows machine. Agents never touch the
 data directory — the backend writes files only after validation passes.
 
 **Instruction files** (markdown next to the code, loaded at import — never inline in Python;

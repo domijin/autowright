@@ -133,7 +133,7 @@ function revealPrefersOpen(abs, isDir) {
 const SERVICE_START_FAILED_DETAIL =
   'The backend service failed to start. Details in app.log.'
 
-// Nothing to capture until a Windows ServiceManager exists (WINDOWS.md).
+// No extra diagnostics to capture: the §3 service result lines already land in app.log.
 function serviceDiagnostics(_log) {}
 
 const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true }

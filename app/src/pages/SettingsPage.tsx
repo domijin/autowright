@@ -42,18 +42,6 @@ export default function SettingsPage() {
   // §4.9 RESET card (§3 reset flow)
   const [resetConfirm, setResetConfirm] = useState(false)
   const [resetBusy, setResetBusy] = useState(false)
-  // §4.9 UNINSTALL card: the §3 `uninstall-supported` invoke answers whether
-  // this platform module names an uninstall finish — asked on every Settings
-  // visit, like cli-status. False (and a shell too old to answer) hides the
-  // card entirely.
-  const [uninstallOk, setUninstallOk] = useState(false)
-  // §3/§9.4 brew-managed copy: Homebrew owns removal, so the card shows the
-  // cask command instead of a button. Same IPC the About page probes.
-  const [brew, setBrew] = useState(false)
-  const [uninstallConfirm, setUninstallConfirm] = useState(false)
-  const [uninstallBusy, setUninstallBusy] = useState(false)
-  // §4.9 confirm checkbox: also run the §3 reset deletions. Default unchecked.
-  const [deleteData, setDeleteData] = useState(false)
 
   useEffect(() => {
     if (settings) setDays(String(settings.days))
@@ -61,9 +49,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     void window.autowright?.cliStatus().then((s) => setCli(s)).catch(() => {})
-    // §4.9 UNINSTALL gating, re-read on every Settings visit like cli-status.
-    void window.autowright?.uninstallSupported?.().then((b) => setUninstallOk(!!b)).catch(() => {})
-    void window.autowright?.updateBrewManaged?.().then((b) => setBrew(!!b)).catch(() => {})
   }, [])
 
   // §4.9: fires §3 cli-install — a silent write into ~/.local/bin, no dialog;
@@ -140,21 +125,6 @@ export default function SettingsPage() {
       else if (r && 'error' in r) showToast(r.error)
       // on { ok } the app is relaunching — nothing to do
       setResetBusy(false)
-    })()
-  }
-
-  // §4.9 UNINSTALL: the §3 uninstall-app IPC, carrying the confirm's checkbox.
-  // Errors (the macOS trash-failure line included) leave the app open.
-  const uninstallApp = (alsoDeleteData: boolean) => {
-    if (uninstallBusy) return
-    setUninstallBusy(true)
-    void (async () => {
-      const r = await window.autowright?.uninstallApp?.({ deleteData: alsoDeleteData })
-        .catch((e: Error) => ({ error: e.message }))
-      if (r && 'busy' in r) showToast('An automation is executing — uninstall when it finishes.')
-      else if (r && 'error' in r) showToast(r.error)
-      // on { ok } the app is removing itself and exiting — nothing to do
-      setUninstallBusy(false)
     })()
   }
 
@@ -489,41 +459,6 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {window.autowright && uninstallOk && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <Eyebrow style={{ paddingLeft: 2 }}>UNINSTALL</Eyebrow>
-          <div className="ad-card" style={card}>
-            <div style={{ padding: '15px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={rowTitle}>Uninstall Autowright</div>
-                  <div style={rowSub}>
-                    Stops and removes the background service, then removes Autowright from this {copy.machine}.
-                  </div>
-                </div>
-                {/* §3 brew-managed: Homebrew owns removal — no button, the cask
-                    command instead (its `zap` covers the data directories). */}
-                {!brew && (
-                  <button
-                    className="ad-btn-soft"
-                    onClick={() => { setDeleteData(false); setUninstallConfirm(true) }}
-                    disabled={uninstallBusy}
-                    style={{ flex: 'none' }}
-                  >
-                    {uninstallBusy ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                        <Spinner size={12} /> Uninstalling…
-                      </span>
-                    ) : 'Uninstall…'}
-                  </button>
-                )}
-              </div>
-              {brew && <CommandBlock command="brew uninstall --cask --zap hansololz/tap/autowright" />}
-            </div>
-          </div>
-        </div>
-      )}
-
       {cliOffConfirm && (
         <ConfirmModal
           title="Turn off the autowright command?"
@@ -555,32 +490,6 @@ export default function SettingsPage() {
           onConfirm={() => { setResetConfirm(false); resetAll() }}
           onCancel={() => setResetConfirm(false)}
         />
-      )}
-
-      {uninstallConfirm && (
-        <ConfirmModal
-          title="Uninstall Autowright?"
-          body={`The background service stops and is removed, then Autowright quits and removes itself from this ${copy.machine}.`}
-          confirmLabel="Uninstall Autowright"
-          danger
-          onConfirm={() => { setUninstallConfirm(false); uninstallApp(deleteData) }}
-          onCancel={() => setUninstallConfirm(false)}
-        >
-          {/* §4.9: checking it makes the uninstall also run the §3 reset
-              deletions — automations, executions, logs, settings, secrets. */}
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5,
-            color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
-          }}>
-            <input
-              type="checkbox"
-              checked={deleteData}
-              onChange={(e) => setDeleteData(e.target.checked)}
-              style={{ accentColor: 'var(--accent)' }}
-            />
-            Also delete my data and secrets
-          </label>
-        </ConfirmModal>
       )}
     </div>
   )

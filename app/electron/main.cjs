@@ -1039,9 +1039,9 @@ ipcMain.handle('update-install', async () => {
 // and RESET flows. One shared path: the same interpreter resolution as
 // ensure-backend and the same install interlock (block new `service install`
 // spawns and wait out any in-flight one, so the stop can't be undone by a
-// racing install child). Resolves to
-// null on success or the failure text; a caller that keeps the app up resets
-// `quittingAll` itself, since future ensure/version-sync installs may run.
+// racing install child). Resolves to null on success or the failure text; a
+// caller that keeps the app up resets `quittingAll` itself, since future
+// ensure/version-sync installs may run.
 async function runServiceVerb(verb, label) {
   // Dev launches have no bundled Python — backend.json publishes the
   // interpreter that runs the backend (§3 discovery fields), same code path.
@@ -1077,10 +1077,10 @@ ipcMain.handle('quit-all', async () => {
 
 // §3 reset steps ------------------------------------------------------------
 
-// §3 reset step 2: the executions dir is user-movable
-// (§4.9) and may live outside the data root, so its location is captured from
-// the live backend before anything stops it. null when unreachable or
-// unanswered — the deletions below then only cover the §5 roots.
+// §3 reset step 2: the executions dir is user-movable (§4.9) and may live
+// outside the data root, so its location is captured from the live backend
+// before anything stops it. null when unreachable or unanswered — the
+// deletions below then only cover the §5 roots.
 async function captureDataPath() {
   const res = await backendFetch('/settings')
   if (!res?.ok) return null
@@ -1092,9 +1092,8 @@ async function captureDataPath() {
   }
 }
 
-// §3 reset step 3: only the backend's keyring reaches the
-// Keychain / Credential Manager, so the sweep has to run while it is still up.
-// A failure (the §19 unreadable-store 409 included) is logged and the flow
+// §3 reset step 3: only the backend's keyring reaches the Keychain /
+// Credential Manager, so the sweep has to run while it is still up. A failure (the §19 unreadable-store 409 included) is logged and the flow
 // proceeds: value deletion is best-effort per entry (§4.8), and an unreadable
 // secrets.yaml means those ids were unreachable this session anyway.
 async function deleteSecrets(label) {
@@ -1132,10 +1131,10 @@ function containsPath(parent, child) {
   return c === p || c.startsWith(p + path.sep)
 }
 
-// §3 reset step 5: the executions dir, the logs root, and
-// every entry of the data root **except** the live Chromium profile —
-// Chromium holds open handles on it, so deleting it would fail (on Windows a
-// sharing violation outright). The profile is cleared instead, which is what
+// §3 reset step 5: the executions dir, the logs root, and every entry of the
+// data root **except** the live Chromium profile — Chromium holds open handles
+// on it, so deleting it would fail (on Windows a sharing violation outright).
+// The profile is cleared instead, which is what
 // matters: every §15 localStorage marker (`ad-cli-installed` among them) goes.
 // Its residual Chromium internals are accepted residue (§3).
 async function deleteAllData(dataPath, label) {

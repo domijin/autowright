@@ -26,16 +26,16 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     expect(src).toContain("'-m', 'autowright.service', 'install'")
   })
 
-  it('quit-all, reset and uninstall drive -m autowright.service, nothing else', () => {
-    // The three explicit service commands share one runner (§3: same
-    // interpreter resolution + install interlock), so the verbs are pinned
-    // here rather than one literal argv per flow.
+  it('quit-all and reset drive -m autowright.service, nothing else', () => {
+    // Both explicit service commands share one runner (§3: same interpreter
+    // resolution + install interlock), so the verbs are pinned here rather
+    // than one literal argv per flow.
     expect(src).toContain("execFile(py, ['-m', 'autowright.service', verb]")
     const verbs = [...src.matchAll(/runServiceVerb\('([a-z]+)'/g)].map((m) => m[1])
-    expect(new Set(verbs)).toEqual(new Set(['stop', 'uninstall']))
+    expect(new Set(verbs)).toEqual(new Set(['stop']))
+    expect(verbs).toHaveLength(2)
     expect(src).toContain("runServiceVerb('stop', 'quit-all')")
     expect(src).toContain("runServiceVerb('stop', 'reset')")
-    expect(src).toContain("runServiceVerb('uninstall', 'uninstall')")
   })
 
   it('never executes the CLI — autowright.cli appears only inside the shim file text', () => {
@@ -56,21 +56,15 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     }
   })
 
-  it('spawns only launchctl, the login shell, the backend python and the uninstaller', () => {
+  it('spawns only launchctl, the login shell, and the backend python', () => {
     // Every child-process call site across main.cjs + platform modules:
     // execFile('launchctl'|shell|py, …). `shell` is the §3 login-shell PATH
-    // probe (printf $PATH, nothing else). The one `spawn` is the §3 uninstall
-    // finish on win32 — the per-user NSIS uninstaller, a deliberate
-    // user-facing GUI — and nothing else.
+    // probe (printf $PATH, nothing else). `spawn` is not used at all (the
+    // word may appear in comments only).
     const calls = [...union.matchAll(/(?<![.\w])(?:execFile|spawn|exec)\(\s*([^,)]+)/g)].map((m) => m[1].trim())
     for (const first of calls) {
-      expect(["'launchctl'", 'shell', 'py', 'uninstaller']).toContain(first)
+      expect(["'launchctl'", 'shell', 'py']).toContain(first)
     }
-    // …and that one is resolved from the install dir, never from a path the
-    // renderer supplied.
-    expect(src).toContain(
-      "const uninstaller = path.join(path.dirname(process.execPath), 'Uninstall Autowright.exe')")
-    expect(src.match(/spawn\(uninstaller/g) ?? []).toHaveLength(1)
     expect(calls.length).toBeGreaterThanOrEqual(3)
     // …and every python call site runs the service module, nothing else.
     const pyCalls = [...union.matchAll(/execFile\(\s*py\s*,\s*\[([^\]]*)\]/g)].map((m) => m[1])

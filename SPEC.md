@@ -52,7 +52,7 @@ authored scripts and the logs (via §6 runtime injection + redaction). Neither p
 step *cannot* transmit a value it was given at runtime - the engine is not a sandbox (§6.2), so
 the copy must never imply that secret values can never leave the machine.
 - "Your automations execute only on this Mac"
-- "Secrets live in your Keychain, never in a script or log"
+- "Secrets live in your Keychain"
 
 ## 2. Architecture
 

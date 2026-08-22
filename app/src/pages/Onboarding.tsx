@@ -518,7 +518,7 @@ export default function Onboarding() {
       </ScrollArea>
 
       <div style={{ flex: 'none', borderTop: '1px solid var(--hairline)', padding: '13px 28px', display: 'flex', justifyContent: 'center', gap: 26, flexWrap: 'wrap' }}>
-        {[`Your automations execute only on this ${copy.machine}`, `Secrets live in your ${copy.secretStore}, never in a script or log`].map((p) => (
+        {[`Your automations execute only on this ${copy.machine}`, `Secrets live in your ${copy.secretStore}`].map((p) => (
           <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)' }} />
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p}</span>

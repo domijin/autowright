@@ -283,12 +283,12 @@ describe('§9 per-OS copy — the §1 onboarding promise', () => {
   it('windows: the promise names the PC and the Credential Manager', async () => {
     await promise('windows')
     expect(screen.getByText('Your automations execute only on this PC')).toBeTruthy()
-    expect(screen.getByText('Secrets live in your Credential Manager, never in a script or log')).toBeTruthy()
+    expect(screen.getByText('Secrets live in your Credential Manager')).toBeTruthy()
   })
 
   it('macOS: the promise is unchanged', async () => {
     await promise('macos')
     expect(screen.getByText('Your automations execute only on this Mac')).toBeTruthy()
-    expect(screen.getByText('Secrets live in your Keychain, never in a script or log')).toBeTruthy()
+    expect(screen.getByText('Secrets live in your Keychain')).toBeTruthy()
   })
 })

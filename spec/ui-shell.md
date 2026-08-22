@@ -93,7 +93,7 @@ substitutes per this table, with no other wording change:
 `Mac` → `PC` as the machine noun in every inflection (`this Mac`, `your Mac`, `any Mac`) —
 including model-facing §8 prompt text that names the user's machine (the SYSTEM TOOLS
 header, the chat call's diagnosis rule) · `Keychain` → `Credential Manager` (the §1
-promise line becomes "Secrets live in your Credential Manager, never in a script or log");
+promise line becomes "Secrets live in your Credential Manager");
 the macOS-only remedy clause "— unlock the login Keychain and try again" in the §19
 secret-write 503s has no Windows analogue and becomes plain "— try again" ·
 `Show in Finder` → `Show in Explorer` (reveal semantics unchanged) · `menu bar` → `tray`

@@ -41,3 +41,45 @@ lands.
   `linux-scripts/dev.sh` fixes `chrome-sandbox` ownership/mode via sudo (§18).
 - README still reads "macOS only" — release-messaging update when Linux (and Windows)
   artifacts are published.
+
+## Deferred from the 2026-08-22 pre-release audit
+
+Linux-specific findings parked until the Linux release becomes active work. Each names
+the file it lives in; none block the macOS release.
+
+- **Published 0.5.0 AppImage is broken and should be pulled from the v0.5.0 GitHub
+  release.** It was built before the AppImage-updater commit (ee2a847), so it ships
+  `updates: false` (About answers "Updates are not supported on this platform yet."
+  forever); the release carries no `.AppImage.blockmap`; `release/linux-x86_64/
+  latest-linux.yml` does not exist. It also hits the AppArmor userns abort above on
+  stock Ubuntu 24.04+. Users can reach it today through the site's static
+  latest-release fallback link. Delete the asset until a real `linux-scripts/release.sh`
+  run publishes a working one.
+- **New-agent page swallows the Linux sign-in instruction.**
+  `app/src/pages/AgentNewPage.tsx:177-185` treats every 409 from `/agents/login` as
+  "already signed in - ready to save". On Linux, `installer.login` raises the
+  "run this command in your terminal" instruction for claude/gemini/opencode, which
+  `api.py` turns into a 409 - so the user gets a false success toast and never sees the
+  command. `Onboarding.tsx:288-291` already does this right by matching on the
+  "already signed in" message text; the page must use the same check.
+- **Tray stranding on GNOME without a StatusNotifier host.** `new Tray()` succeeds and
+  returns a live object even when no host renders it, so the `main.cjs:1297-1303`
+  residency guard (non-null tray keeps the app alive after the last window closes)
+  leaves a running process with no window and no visible icon. The guard only protects
+  against a constructor that throws. Needs a real probe or a different residency rule.
+- **`window-all-closed` never fires once the tray panel has been opened** (shared with
+  Windows - see WINDOWS.md). The panel is a `closable: false` BrowserWindow that is only
+  ever hidden, so Electron's all-closed event is unreachable afterward.
+- **Service-manager timeout multiplication twin.** `platform/linux.py` `_await_active`
+  polls 40 x with each probe blocking up to 30 s (worst case ~20 min). Apply the same
+  wall-clock-deadline fix the macOS `service.py` gets.
+- **`app/src/acknowledgements.md` lost the Linux keyring closure** (cffi, cryptography,
+  jeepney, pycparser, SecretStorage) when a macOS regeneration overwrote a Linux one
+  (467aa24). `build.sh` regenerates per-build so the AppImage itself is fine, but the
+  checked-in file under-reports; regenerate on a Linux build when convenient.
+- **`PRIVACY.md` hardcodes macOS copy** ("your Mac", `~/Library/Application Support`,
+  "macOS Keychain") and is rendered verbatim in-app; needs a per-OS seam before any
+  Linux release (shared with Windows).
+- **`linux-scripts/release.sh` hygiene:** stale "GitHub Pages serves the yml" comment
+  (feeds moved to raw in 0c4e6f5), and no current-branch guard while the feed URLs
+  hardcode `/main/` (a release cut from a topic branch leaves raw serving the old feed).

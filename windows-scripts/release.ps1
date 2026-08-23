@@ -121,10 +121,13 @@ with open(path, "w", newline="\n") as f:
     json.dump(data, f, indent=2, sort_keys=True)
     f.write("\n")
 '@
+# The script goes in over stdin (`-`), not `-c`: Windows PowerShell 5.1 does
+# not escape embedded double quotes when building a native command line, so a
+# `-c` payload would reach Python with its string quotes stripped.
 if (Get-Command py -ErrorAction SilentlyContinue) {
-    Invoke-Native 'downloads.json merge' { py -3 -c $PYMERGE $DOWNLOADS 'win32-x86_64' $VERSION $DOWNLOAD_URL }
+    Invoke-Native 'downloads.json merge' { $PYMERGE | py -3 - $DOWNLOADS 'win32-x86_64' $VERSION $DOWNLOAD_URL }
 } else {
-    Invoke-Native 'downloads.json merge' { python -c $PYMERGE $DOWNLOADS 'win32-x86_64' $VERSION $DOWNLOAD_URL }
+    Invoke-Native 'downloads.json merge' { $PYMERGE | python - $DOWNLOADS 'win32-x86_64' $VERSION $DOWNLOAD_URL }
 }
 
 Write-Host '· publishing update feed (release/win32-x86_64/latest.yml + docs/downloads.json)'

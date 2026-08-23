@@ -888,7 +888,7 @@ keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac fro
   the setting itself stays stored and CLI-visible everywhere, but the card never promises an
   assertion the OS can't hold.
 automaticUpdateCheck: bool (default true) — "Check for updates automatically" ("Once a day,
-  ask autowright.ai whether a newer version exists. Downloads still start only when you ask.")
+  ask GitHub whether a newer version exists. Downloads still start only when you ask.")
   — on by default (PRIVACY.md names the daily check and its off switch; existing installs
   gain the key as true through the defaults merge). Turning it off restores strict
   manual-only checking. Stored here for §20 CLI parity; consumed by the Electron shell's §3

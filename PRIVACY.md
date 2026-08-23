@@ -27,12 +27,13 @@ drafting also stays entirely on your Mac.
 
 ## Network connections Autowright itself makes
 
-- **Check for updates** — once a day by default: one request to autowright.ai
-  (served by GitHub Pages) to read the latest version number, nothing more.
+- **Check for updates** — once a day by default: one request to GitHub
+  (raw.githubusercontent.com, where the update feed lives) to read the latest
+  version number, nothing more.
   Turn off "Check for updates automatically" on the About page and Autowright
   never checks in the background — only when you press the button. Downloading
-  an update — always started by you — fetches it from GitHub. Those servers
-  see your IP address, as with any web request.
+  an update — always started by you — also fetches it from GitHub. Those
+  servers see your IP address, as with any web request.
 - **Installing an AI or a model** — only when you ask during setup: downloads
   come from the provider's official source (npm, Ollama, or the vendor's
   installer).
@@ -45,4 +46,4 @@ network themselves — but only in the ways you reviewed and saved.
 This policy lives at the root of the repository; any change to it is visible in
 the project's git history.
 
-_Last updated: 2026-08-12_
+_Last updated: 2026-08-22_

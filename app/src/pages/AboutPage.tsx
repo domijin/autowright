@@ -165,7 +165,7 @@ export default function AboutPage() {
     // network hiccup the user could retry away.
     error: upd.state === 'error' && upd.error
       ? upd.error
-      : "Couldn't reach autowright.ai — try again later.",
+      : "Couldn't reach GitHub — try again later.",
   }[upd.state]
 
   // One action button for the whole flow: check → download → restart. On a
@@ -247,7 +247,7 @@ export default function AboutPage() {
           <div style={{ flex: 1 }}>
             <div style={rowTitle}>Check for updates automatically</div>
             <div style={rowSub}>
-              Once a day, ask autowright.ai whether a newer version exists. Downloads still
+              Once a day, ask GitHub whether a newer version exists. Downloads still
               start only when you ask.
             </div>
           </div>

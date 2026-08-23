@@ -14,7 +14,7 @@ lands.
 
 - **Download page:** `docs/index.html` gains a Linux download path once artifacts exist
   (mac-only until then, per the §17 rule).
-- **First feed publish:** `docs/updates/linux-x86_64/latest-linux.yml` does not exist
+- **First feed publish:** `release/linux-x86_64/latest-linux.yml` does not exist
   until the first `linux-scripts/release.sh` run after this change writes it — until
   then a Linux build's update check errors with the generic network copy (the same
   window win32 had before its first release).

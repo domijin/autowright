@@ -13,9 +13,11 @@
 #      that every version site matches VERSION and prints the §3 UNSIGNED
 #      warning when no certificate is configured);
 #   3. upload the installer + its blockmap to that release;
-#   4. rewrite docs\updates\win32-x86_64\latest.yml from the build output — the
-#      §3 electron-updater feed — pointing it at the released binaries, then
-#      commit + push that feed, exactly as release.sh does for the mac feed.
+#   4. rewrite release\win32-x86_64\latest.yml from the build output — the
+#      §3 electron-updater feed — pointing it at the released binaries, update
+#      the win32-x86_64 entry in docs\downloads.json (the website's download
+#      index), then commit + push those files, exactly as release.sh does for
+#      the mac feed.
 #
 # Running it is always the developer's act: it is the only thing here that
 # commits, and it commits nothing but the feed.
@@ -84,7 +86,7 @@ if ($LASTEXITCODE -ne 0 -or -not $OWNER_REPO) { Fail 'could not read the reposit
 $INSTALLER_NAME = [System.IO.Path]::GetFileName($INSTALLER)
 $DOWNLOAD_URL = "https://github.com/$OWNER_REPO/releases/download/$TAG/$INSTALLER_NAME"
 
-$FEED_DIR = Join-Path $ROOT 'docs\updates\win32-x86_64'
+$FEED_DIR = Join-Path $ROOT 'release\win32-x86_64'
 New-Item -ItemType Directory -Force -Path $FEED_DIR | Out-Null
 $FEED = Join-Path $FEED_DIR 'latest.yml'
 
@@ -101,9 +103,33 @@ if (-not (Select-String -Path $FEED -SimpleMatch $DOWNLOAD_URL -Quiet)) {
     Fail "latest.yml was not rewritten with the release URL — check $BUILT_YML"
 }
 
-Write-Host '· publishing update feed (docs/updates/win32-x86_64/latest.yml)'
-Invoke-Native 'git add' { git -C $ROOT add $FEED }
-$staged = git -C $ROOT status --porcelain -- $FEED
+# §17 docs/downloads.json — the website's download index: update only the
+# win32-x86_64 entry, leaving the other OS legs' entries alone. Python runs
+# the same merge as the bash legs (indent-2, sorted keys, LF), so the three
+# release scripts never churn each other's output.
+$DOWNLOADS = Join-Path $ROOT 'docs\downloads.json'
+$PYMERGE = @'
+import json, sys
+path, key, version, url = sys.argv[1:]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {}
+data[key] = {"url": url, "version": version}
+with open(path, "w", newline="\n") as f:
+    json.dump(data, f, indent=2, sort_keys=True)
+    f.write("\n")
+'@
+if (Get-Command py -ErrorAction SilentlyContinue) {
+    Invoke-Native 'downloads.json merge' { py -3 -c $PYMERGE $DOWNLOADS 'win32-x86_64' $VERSION $DOWNLOAD_URL }
+} else {
+    Invoke-Native 'downloads.json merge' { python -c $PYMERGE $DOWNLOADS 'win32-x86_64' $VERSION $DOWNLOAD_URL }
+}
+
+Write-Host '· publishing update feed (release/win32-x86_64/latest.yml + docs/downloads.json)'
+Invoke-Native 'git add' { git -C $ROOT add $FEED $DOWNLOADS }
+$staged = git -C $ROOT status --porcelain -- $FEED $DOWNLOADS
 if ($staged) {
     Invoke-Native 'git commit' { git -C $ROOT commit -q -m "Publish $TAG update feed (win32-x86_64)" }
     Invoke-Native 'git push' { git -C $ROOT push -q origin HEAD }

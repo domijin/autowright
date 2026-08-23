@@ -533,7 +533,7 @@ describe('main.cjs platform capability wiring (§2/§9)', () => {
     if (!caps.updates) {
       // No feed on this platform: the check answers the error state carrying
       // the plain line, so the §9.4 page renders it instead of the generic
-      // "Couldn't reach autowright.ai" network copy.
+      // "Couldn't reach GitHub" network copy.
       expect(await m.invoke('update-check')).toEqual({
         state: 'error', error: 'Updates are not supported on this platform yet.',
       })
@@ -629,7 +629,7 @@ describe.skipIf(!USE_GENERIC)('main.cjs electron-updater path (§3)', () => {
     m.updater.check = { updateInfo: { version: 'not-a-version' } }
     expect(await m.invoke('update-check')).toEqual({ state: 'uptodate' })
 
-    m.updater.checkError = new Error('ENOTFOUND autowright.ai')
+    m.updater.checkError = new Error('ENOTFOUND raw.githubusercontent.com')
     expect(await m.invoke('update-check')).toEqual({ state: 'error' })
   })
 

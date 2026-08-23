@@ -13,7 +13,7 @@
 #      version site matches VERSION and prints the §3 UNSIGNED warning when no
 #      certificate is configured);
 #   3. upload the installer + its blockmap to that release;
-#   4. rewrite docs\updates\win32-x86_64\latest.yml from the build output — the
+#   4. rewrite release\win32-x86_64\latest.yml from the build output — the
 #      §3 electron-updater feed — pointing it at the released binaries, then
 #      commit + push that feed, exactly as release.sh does for the mac feed.
 #
@@ -84,7 +84,7 @@ if ($LASTEXITCODE -ne 0 -or -not $OWNER_REPO) { Fail 'could not read the reposit
 $INSTALLER_NAME = [System.IO.Path]::GetFileName($INSTALLER)
 $DOWNLOAD_URL = "https://github.com/$OWNER_REPO/releases/download/$TAG/$INSTALLER_NAME"
 
-$FEED_DIR = Join-Path $ROOT 'docs\updates\win32-x86_64'
+$FEED_DIR = Join-Path $ROOT 'release\win32-x86_64'
 New-Item -ItemType Directory -Force -Path $FEED_DIR | Out-Null
 $FEED = Join-Path $FEED_DIR 'latest.yml'
 
@@ -101,7 +101,7 @@ if (-not (Select-String -Path $FEED -SimpleMatch $DOWNLOAD_URL -Quiet)) {
     Fail "latest.yml was not rewritten with the release URL — check $BUILT_YML"
 }
 
-Write-Host '· publishing update feed (docs/updates/win32-x86_64/latest.yml)'
+Write-Host '· publishing update feed (release/win32-x86_64/latest.yml)'
 Invoke-Native 'git add' { git -C $ROOT add $FEED }
 $staged = git -C $ROOT status --porcelain -- $FEED
 if ($staged) {

@@ -169,7 +169,7 @@ describe('§3 update machinery is per-OS', () => {
     // §3: latest.yml + installer + blockmap live under this directory — the
     // generic provider takes the base URL, never a single file. x86_64 is the
     // only Windows arch that ships, so the answer carries no arch switch.
-    const url = 'https://autowright.ai/updates/win32-x86_64/'
+    const url = 'https://raw.githubusercontent.com/hansololz/autowright/main/release/win32-x86_64/'
     expect(win32.updateFeedUrl('x64')).toBe(url)
     expect(win32.updateFeedUrl('arm64')).toBe(url)
     expect(url.endsWith('/')).toBe(true)
@@ -177,8 +177,8 @@ describe('§3 update machinery is per-OS', () => {
   })
 
   it('macOS keeps the per-arch Squirrel.Mac JSON feed', () => {
-    expect(darwin.updateFeedUrl('x64')).toBe('https://autowright.ai/updates/darwin-x86_64.json')
-    expect(darwin.updateFeedUrl('arm64')).toBe('https://autowright.ai/updates/darwin-arm64.json')
+    expect(darwin.updateFeedUrl('x64')).toBe('https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-x86_64/feed.json')
+    expect(darwin.updateFeedUrl('arm64')).toBe('https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/feed.json')
     expect(darwin.UPDATER).toBe('squirrel')
   })
 
@@ -186,7 +186,7 @@ describe('§3 update machinery is per-OS', () => {
     // §3: latest-linux.yml + AppImage + blockmap live under this directory —
     // the generic provider takes the base URL, never a single file. x86_64 is
     // the only Linux arch that ships, so the answer carries no arch switch.
-    const url = 'https://autowright.ai/updates/linux-x86_64/'
+    const url = 'https://raw.githubusercontent.com/hansololz/autowright/main/release/linux-x86_64/'
     expect(linux.updateFeedUrl('x64')).toBe(url)
     expect(linux.updateFeedUrl('arm64')).toBe(url)
     expect(url.endsWith('/')).toBe(true)

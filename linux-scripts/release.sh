@@ -19,10 +19,11 @@
 #   3. build the AppImage via linux-scripts/prod.sh (which re-checks that
 #      every version site matches VERSION);
 #   4. upload the AppImage + its blockmap to that release;
-#   5. rewrite docs/updates/linux-x86_64/latest-linux.yml from the build
-#      output — the §3 electron-updater feed — pointing it at the released
-#      binaries, then commit + push that feed, exactly as release.sh and
-#      release.ps1 do for their feeds.
+#   5. rewrite release/linux-x86_64/latest-linux.yml from the build output —
+#      the §3 electron-updater feed — pointing it at the released binaries,
+#      update the linux-x86_64 entry in docs/downloads.json (the website's
+#      download index), then commit + push those files, exactly as release.sh
+#      and release.ps1 do for their feeds.
 #
 # Running it is always the developer's act: it is the only thing here that
 # commits, and it commits nothing but the feed.
@@ -87,18 +88,37 @@ OWNER_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner | tr -d '[:spa
 APPIMAGE_NAME="$(basename "$APPIMAGE")"
 DOWNLOAD_URL="https://github.com/$OWNER_REPO/releases/download/$TAG/$APPIMAGE_NAME"
 
-FEED_DIR="$ROOT/docs/updates/linux-x86_64"
+FEED_DIR="$ROOT/release/linux-x86_64"
 FEED="$FEED_DIR/latest-linux.yml"
 mkdir -p "$FEED_DIR"
+DOWNLOADS="$ROOT/docs/downloads.json"
 # `path:` (top level) and `- url:` (files[]) both carry the bare file name in
 # electron-builder's output; nothing else in the yml mentions it.
 sed "s|$APPIMAGE_NAME|$DOWNLOAD_URL|g" "$BUILT_YML" > "$FEED"
 grep -qF "$DOWNLOAD_URL" "$FEED" \
   || { echo "latest-linux.yml was not rewritten with the release URL — check $BUILT_YML"; exit 1; }
 
-echo "· publishing update feed (docs/updates/linux-x86_64/latest-linux.yml)"
-git -C "$ROOT" add "$FEED"
-if [ -n "$(git -C "$ROOT" status --porcelain -- "$FEED")" ]; then
+# §17 docs/downloads.json — the website's download index: update only the
+# linux-x86_64 entry, leaving the other OS legs' entries alone. python3 keeps
+# the merge and formatting identical across all three release scripts, so the
+# legs never churn each other's output.
+python3 - "$DOWNLOADS" "linux-x86_64" "$VERSION" "$DOWNLOAD_URL" <<'PY'
+import json, sys
+path, key, version, url = sys.argv[1:]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {}
+data[key] = {"url": url, "version": version}
+with open(path, "w", newline="\n") as f:
+    json.dump(data, f, indent=2, sort_keys=True)
+    f.write("\n")
+PY
+
+echo "· publishing update feed (release/linux-x86_64/latest-linux.yml + docs/downloads.json)"
+git -C "$ROOT" add "$FEED" "$DOWNLOADS"
+if [ -n "$(git -C "$ROOT" status --porcelain -- "$FEED" "$DOWNLOADS")" ]; then
   git -C "$ROOT" commit -q -m "Publish $TAG update feed (linux-x86_64)"
   git -C "$ROOT" push -q origin HEAD
 else

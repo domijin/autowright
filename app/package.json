@@ -35,7 +35,7 @@
     "publish": [
       {
         "provider": "generic",
-        "url": "https://autowright.ai/updates/win32-x86_64/"
+        "url": "https://raw.githubusercontent.com/hansololz/autowright/main/release/win32-x86_64/"
       }
     ],
     "files": [
@@ -85,7 +85,7 @@
       "publish": [
         {
           "provider": "generic",
-          "url": "https://autowright.ai/updates/linux-x86_64/"
+          "url": "https://raw.githubusercontent.com/hansololz/autowright/main/release/linux-x86_64/"
         }
       ]
     },

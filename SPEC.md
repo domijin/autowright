@@ -299,7 +299,8 @@ data on disk); both ends of a served surface change in the same commit.
   `claude --model claude-opus-5 -p` from the staged diff, and commits;
   `release.sh` sets the app version from the repo-root `VERSION` file, invokes
   `prod.sh` to build the release distributable, publishes the DMG as a
-  GitHub release via `gh`, rewrites the §3 update feed under `docs/updates/`, and
+  GitHub release via `gh`, rewrites the §3 update feed under the repo-root `release/`
+  and the built arch's entry in the §17 `docs/downloads.json` distributable index, and
   last publishes the §3 Homebrew cask to the separate `homebrew-tap` repository, §18;
   `test-fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
   `test-all.sh` runs every test tier in the same order — the fast gate via `test-fast.sh`,
@@ -323,7 +324,8 @@ data on disk); both ends of a served surface change in the same commit.
   `prod.sh` + `release.sh` — the §3/§18 Linux packaging/release pair (`prod.sh` builds
   the AppImage + blockmap + `latest-linux.yml`; `release.sh` tests, builds via it,
   uploads the AppImage + blockmap to the existing GitHub release — never creates one —
-  and rewrites the §3 update feed under `docs/updates/linux-x86_64/`).
+  and rewrites the §3 update feed under `release/linux-x86_64/` plus its
+  `docs/downloads.json` entry).
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code
   and compatible harnesses) to drive Autowright end-to-end through the §20 CLI — create/edit
   automations via pull/push workdirs, execute and follow, inspect results, manage params,
@@ -359,10 +361,10 @@ data on disk); both ends of a served surface change in the same commit.
   name - "Autowright · open source · runs locally", so the brand appears as page text above
   the fold, not only in the wordmark - headline, one-paragraph pitch, "Download for
   macOS" → a direct download of the latest versioned DMG: on load, page JS fetches the
-  same-origin §3 update feed (relative URL `updates/darwin-arm64.json`, so it also works
+  same-origin `downloads.json` distributable index (relative URL, so it also works
   when the page is served from a sub-path in local previews) and rewrites the download
-  anchors' `href` to
-  `releases/download/v<currentRelease>/Autowright-<currentRelease>-darwin-arm64.dmg`, so
+  anchors' `href` to the `darwin-arm64` entry's `url` — the released DMG's
+  `github.com/…/releases/download/…` URL, so
   the click downloads the DMG with the version in its filename; the static fallback
   `href` (no JS, fetch failure) is the repo's latest-release GitHub page,
   "View source") · an animated app-window demo
@@ -447,16 +449,26 @@ data on disk); both ends of a served surface change in the same commit.
   project), which is what lets a search engine treat this Autowright as an entity separate
   from the businesses of the same name. `docs/robots.txt` allows every crawler and points at
   `https://autowright.ai/sitemap.xml`; `docs/sitemap.xml` lists the single canonical page
-  (the `updates/` feeds are machine endpoints and stay out of it). Section elements that a
+  (`downloads.json` is a machine endpoint and stays out of it). Section elements that a
   search engine may deep-link carry stable `id`s (`how`, `features`, `faq`). Sections below the demo fade up on first
   scroll-into-view (IntersectionObserver adding an `.in` class; entrance uses the app's
   §14 motion values — 360 ms `cubic-bezier(0.16,1,0.3,1)`). `::selection` is the accent at
   .35 alpha and links/buttons get a visible `:focus-visible` accent outline, per §14. A
-  faint accent radial glow sits behind the demo window. Also serves the §3 per-OS update
-  feeds — `updates/darwin-<arch>.json` (Squirrel.Mac, rewritten by `scripts/release.sh`),
-  `updates/win32-x86_64/latest.yml` (rewritten by `windows-scripts/release.ps1`), and
-  `updates/linux-x86_64/latest-linux.yml` (rewritten by `linux-scripts/release.sh`) —
-  each rewritten only by its own OS's release leg, so every feed names the newest release
+  faint accent radial glow sits behind the demo window. Also serves `downloads.json` — the
+  distributable index the page's download anchors read: one key per artifact
+  (`darwin-arm64`, `win32-x86_64`, `linux-x86_64`, …), each `{ version, url }` naming that
+  OS's released installer download URL. Each entry is rewritten only by its own OS's
+  release leg (alongside that leg's §3 update feed in the repo-root §17 `release/` — the
+  feeds themselves are not part of this site), so every entry names the newest release
+  that actually carries that OS's artifact. The page consumes only `darwin-arm64` while
+  the download CTA is mac-only (§3).
+- `release/` — the §3 per-OS update feeds, one directory per OS:
+  `darwin-<arch>/feed.json` (Squirrel.Mac, rewritten by `scripts/release.sh`),
+  `win32-x86_64/latest.yml` (rewritten by `windows-scripts/release.ps1`), and
+  `linux-x86_64/latest-linux.yml` (rewritten by `linux-scripts/release.sh`). Not part of
+  the `docs/` Pages site: installed apps fetch the feeds raw from GitHub at
+  `https://raw.githubusercontent.com/hansololz/autowright/main/release/…` (§3). Each feed
+  is rewritten only by its own OS's release leg, so every feed names the newest release
   that actually carries that OS's artifact.
 - `pypi/` — standalone placeholder package reserving the `autowright` name on PyPI
   (`pyproject.toml` hatchling build, version 0.0.1, `Development Status :: 1 - Planning`,

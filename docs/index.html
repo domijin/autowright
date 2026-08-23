@@ -856,15 +856,16 @@
 })();
 </script>
 <script>
-// download buttons - point at the latest versioned DMG via the update feed;
+// download buttons - point at the latest versioned DMG via the same-origin
+// downloads.json index (rewritten by each OS's release leg);
 // the static href (the releases page) stays as the no-JS / fetch-failure fallback
-fetch("updates/darwin-arm64.json")
+fetch("downloads.json")
   .then((r) => (r.ok ? r.json() : Promise.reject()))
-  .then((feed) => {
-    const v = feed.currentRelease;
-    if (!/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/.test(v)) return;
-    const url = `https://github.com/hansololz/autowright/releases/download/v${v}/Autowright-${v}-darwin-arm64.dmg`;
-    document.querySelectorAll("a[data-download]").forEach((a) => { a.href = url; });
+  .then((index) => {
+    const entry = index["darwin-arm64"];
+    if (!entry || !/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/.test(entry.version)) return;
+    if (!/^https:\/\/github\.com\/hansololz\/autowright\/releases\/download\//.test(entry.url)) return;
+    document.querySelectorAll("a[data-download]").forEach((a) => { a.href = entry.url; });
   })
   .catch(() => {});
 </script>

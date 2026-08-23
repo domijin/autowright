@@ -9,7 +9,8 @@
 #                                    build the distributable via prod.sh, then
 #                                    publish a GitHub release (tag v<version>)
 #                                    with the DMG attached, rewrite
-#                                    the §3 Squirrel feed in docs/updates/, and
+#                                    the §3 Squirrel feed in release/ plus the
+#                                    docs/downloads.json download entry, and
 #                                    last publish the §3 Homebrew cask to the
 #                                    homebrew-tap repo. Needs a clean working tree
 #                                    and an authenticated `gh` CLI.
@@ -264,12 +265,13 @@ else
   gh release create "v$VERSION" "$DMG" \
     --title "v$VERSION" --generate-notes
 
-  # ---- update feed (SPEC §3): Squirrel.Mac JSON for this arch, via GitHub Pages ----
+  # ---- update feed (SPEC §3): Squirrel.Mac JSON for this arch, raw from GitHub ----
   # Written only after the release exists, so the feed never points at a URL
   # that isn't live yet.
   OWNER_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-  FEED="$ROOT/docs/updates/darwin-$ARCH.json"
-  mkdir -p "$ROOT/docs/updates"
+  DMG_URL="https://github.com/$OWNER_REPO/releases/download/v$VERSION/$(basename "$DMG")"
+  FEED="$ROOT/release/darwin-$ARCH/feed.json"
+  mkdir -p "$ROOT/release/darwin-$ARCH"
   cat > "$FEED" <<EOF
 {
   "currentRelease": "$VERSION",
@@ -279,14 +281,34 @@ else
       "updateTo": {
         "version": "$VERSION",
         "name": "v$VERSION",
-        "url": "https://github.com/$OWNER_REPO/releases/download/v$VERSION/$(basename "$DMG")"
+        "url": "$DMG_URL"
       }
     }
   ]
 }
 EOF
-  echo "· publishing update feed (docs/updates/darwin-$ARCH.json)"
-  git -C "$ROOT" add "$FEED"
+
+  # §17 docs/downloads.json — the website's download index: update only this
+  # arch's entry, leaving the other OS legs' entries alone. python3 keeps the
+  # merge and formatting identical across all three release scripts, so the
+  # legs never churn each other's output.
+  DOWNLOADS="$ROOT/docs/downloads.json"
+  python3 - "$DOWNLOADS" "darwin-$ARCH" "$VERSION" "$DMG_URL" <<'PY'
+import json, sys
+path, key, version, url = sys.argv[1:]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {}
+data[key] = {"url": url, "version": version}
+with open(path, "w", newline="\n") as f:
+    json.dump(data, f, indent=2, sort_keys=True)
+    f.write("\n")
+PY
+
+  echo "· publishing update feed (release/darwin-$ARCH/feed.json + docs/downloads.json)"
+  git -C "$ROOT" add "$FEED" "$DOWNLOADS"
   git -C "$ROOT" commit -q -m "Publish v$VERSION update feed (darwin-$ARCH)"
   git -C "$ROOT" push -q origin HEAD
 

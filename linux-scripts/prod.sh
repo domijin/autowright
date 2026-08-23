@@ -116,7 +116,7 @@ echo "· packaging (electron-builder --linux appimage --x64)"
   -c.directories.output="$OUT")
 
 # The §3 update-feed inputs must exist beside the AppImage — release.sh uploads
-# the blockmap and rewrites the yml into docs/updates/linux-x86_64/.
+# the blockmap and rewrites the yml into the repo-root release/linux-x86_64/.
 APPIMAGE="$OUT/Autowright-$VERSION-linux-x86_64.AppImage"
 for artifact in "$APPIMAGE" "$APPIMAGE.blockmap" "$OUT/latest-linux.yml"; do
   [ -f "$artifact" ] || { echo "packaging failed: $artifact missing"; exit 1; }

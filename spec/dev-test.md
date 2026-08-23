@@ -351,9 +351,10 @@ Dev workflow:
   then runs `gh release create v<version> <DMG> --title "v<version>"
   --generate-notes` to tag the pushed commit and upload the DMG (the §3 install + update
   artifact, the release's only asset);
-  then rewrites the built arch's Squirrel feed (`docs/updates/darwin-<arch>.json`, §3 —
-  `currentRelease` + one entry pointing at the release DMG's download URL) and commits +
-  pushes it with a plain git commit; finally updates the §3 Homebrew cask in the separate
+  then rewrites the built arch's Squirrel feed (`release/darwin-<arch>/feed.json`, §3 —
+  `currentRelease` + one entry pointing at the release DMG's download URL) and its
+  `darwin-<arch>` entry in the §17 `docs/downloads.json` download index, and commits +
+  pushes them with a plain git commit; finally updates the §3 Homebrew cask in the separate
   `homebrew-tap` repository and pushes it to that repo's `main`. Requires the `gh` CLI,
   authenticated (`gh auth login`); fails with a hint otherwise. Files are rewritten only
   when their version actually differs, so an unchanged `pyproject.toml` mtime never
@@ -428,10 +429,11 @@ Dev workflow:
   `linux-scripts/prod.sh` (which re-checks the three-site version gate); uploads the
   AppImage + its blockmap to the
   existing release with `gh release upload --clobber` (idempotent — a re-run replaces the
-  assets); then rewrites `docs/updates/linux-x86_64/latest-linux.yml` from the build
+  assets); then rewrites `release/linux-x86_64/latest-linux.yml` from the build
   output — the bare artifact name replaced with the released binary's download URL, the
-  `release.ps1` rewrite in sed — and commits + pushes just the feed (§3: written only
-  after the upload, so the feed never names a URL that is not live).
+  `release.ps1` rewrite in sed — plus the `linux-x86_64` entry in the §17
+  `docs/downloads.json` download index, and commits + pushes just those files (§3:
+  written only after the upload, so the feed never names a URL that is not live).
 - **`./scripts/dev.sh`** — fastest dev loop, with hot reloading: invokes `build.sh --deps` only
   (no renderer bundle); shuts down lingering processes from previous sessions — backend by
   command-line pattern (`[Pp]ython -m autowright` — ps shows the venv python's resolved binary,

@@ -142,11 +142,12 @@ const APP_USER_MODEL_ID = null
 
 // §3: the generic provider is pointed at a *directory* (latest-linux.yml + the
 // AppImage + its blockmap live under it), never at a single file — the yml is
-// rewritten under docs/updates/linux-x86_64/ by linux-scripts/release.sh and
-// served from the same GitHub Pages site as the mac and Windows feeds. x86-64
-// is the only Linux arch that ships, so the base URL carries no arch switch.
+// rewritten under the repo-root release/linux-x86_64/ by
+// linux-scripts/release.sh and fetched raw from GitHub, like the mac and
+// Windows feeds. x86-64 is the only Linux arch that ships, so the base URL
+// carries no arch switch.
 function updateFeedUrl(_arch) {
-  return 'https://autowright.ai/updates/linux-x86_64/'
+  return 'https://raw.githubusercontent.com/hansololz/autowright/main/release/linux-x86_64/'
 }
 
 // No managed-install channel (distro package) exists for Autowright yet.

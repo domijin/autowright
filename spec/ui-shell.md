@@ -813,7 +813,7 @@ with a bordered **Retry** button that re-attempts the import.
   `update-check` (one fetch of the §3 feed) and reads "Checking…" (disabled) while in
   flight. Results render in the row's sub-line: `available` → "Version `<x.y.z>` is
   available." and the button becomes **"Download update"**; `uptodate` → "You're up
-  to date."; `error` → "Couldn't reach autowright.ai — try again later." The version
+  to date."; `error` → "Couldn't reach GitHub — try again later." The version
   compare (in main) is numeric on dot-split parts, ignoring a leading `v`; a
   malformed version counts as not newer. "Download update" calls `update-download`
   and reads "Downloading…" (disabled); while it runs a §14 `ProgressBar` renders

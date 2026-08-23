@@ -105,10 +105,10 @@ const UPDATER = 'squirrel'
 // AppUserModelID is a Windows concept — no-op here (§3).
 const APP_USER_MODEL_ID = null
 
-// One static Squirrel.Mac JSON feed per arch on the docs/ GitHub Pages site,
-// rewritten by release.sh each release.
+// One static Squirrel.Mac JSON feed per arch in the repo-root release/
+// directory, fetched raw from GitHub, rewritten by release.sh each release.
 function updateFeedUrl(arch) {
-  return `https://autowright.ai/updates/darwin-${arch === 'x64' ? 'x86_64' : 'arm64'}.json`
+  return `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-${arch === 'x64' ? 'x86_64' : 'arm64'}/feed.json`
 }
 
 // §3 Homebrew-managed detection: the install is brew-managed while the cask's

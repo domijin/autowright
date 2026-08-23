@@ -426,11 +426,13 @@ the update bullets below).
     release. Squirrel.Mac consumes zips, not DMGs, so the app builds the zip itself at
     update time from the downloaded DMG (see Flow). `prod.sh` emits no separate update zip.
   - **Feed:** one static Squirrel.Mac JSON feed per arch at
-    `https://autowright.ai/updates/darwin-<arch>.json` (`arm64` | `x86_64`; the files live in
-    §17 `docs/updates/`, served by GitHub Pages). After publishing the release, `release.sh`
+    `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-<arch>/feed.json`
+    (`arm64` | `x86_64`; the files live in the repo-root §17 `release/` — one directory
+    per OS — fetched raw from GitHub, not from the Pages site). After publishing the release, `release.sh`
     rewrites the built arch's feed — `currentRelease` plus a single `releases[]` entry whose
     `updateTo.url` is the release DMG's `github.com/<owner>/<repo>/releases/download/…` URL —
-    and commits + pushes it (plain git commit, not `commit.sh`).
+    — updates the built arch's `{ version, url }` entry in §17 `docs/downloads.json` (the
+    site's download index), and commits + pushes both (plain git commit, not `commit.sh`).
   - **Flow** (Electron main; the renderer drives it over IPC, §9.4 renders it):
     `update-check` fetches the feed (10 s timeout, no cache) and compares `currentRelease`
     against `app.getVersion()` with the §9.4 rule (numeric on dot-split parts, leading `v`
@@ -570,10 +572,12 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
 - **Updater:** `electron-updater` (NsisUpdater) as an app dependency, used only on win32.
   main.cjs's update block is per-OS behind the §2 platform layer: darwin keeps the
   Squirrel.Mac JSON feed + loopback-proxy flow byte-identical; win32 uses the generic
-  provider pointed at `https://autowright.ai/updates/win32-x86_64/` (`win32.cjs`
-  `updateFeedUrl` returns that base once the feed is live). Feed = `latest.yml` + installer
-  + blockmap: the yml is rewritten under `docs/updates/win32-x86_64/` by the release
-  script; binaries ride the GitHub release — the same hosting split as the mac feed. The
+  provider pointed at
+  `https://raw.githubusercontent.com/hansololz/autowright/main/release/win32-x86_64/`
+  (`win32.cjs` `updateFeedUrl` returns that base once the feed is live). Feed =
+  `latest.yml` + installer + blockmap: the yml is rewritten under `release/win32-x86_64/`
+  by the release script; binaries ride the GitHub release — the same hosting split as the
+  mac feed. The
   renderer-facing IPC surface (`update-check`/`update-download`/`update-install` states and
   progress events) stays byte-identical so no renderer code forks. The §3 manual-install
   rule carries over: a check only ever reads the feed — `checkForUpdates` runs with
@@ -602,7 +606,8 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   depend on it existing.
 - **Release:** Windows artifacts get their own `windows-scripts/release.ps1` (build via `prod.ps1`,
   publish installer + blockmap to the same GitHub release as the mac artifacts, rewrite
-  `docs/updates/win32-x86_64/latest.yml`); `release.sh` stays bash/BSD-sed and runs on
+  `release/win32-x86_64/latest.yml` and the `win32-x86_64` entry in
+  `docs/downloads.json`); `release.sh` stays bash/BSD-sed and runs on
   macOS. A release that ships both platforms is two script runs against one tag/version.
   The `docs/index.html` download CTA is mac-only until Windows artifacts exist; then it
   gains a Windows download path.
@@ -644,10 +649,11 @@ refuses, the package manager owns updates).
 - **Updater:** `electron-updater` again, in its AppImage flavor — `linux.cjs` names
   `UPDATER: 'appimage'` and main.cjs's shared electron-updater path (the win32 Updater
   bullet) constructs `AppImageUpdater` instead of `NsisUpdater` against the same generic
-  provider, pointed at `https://autowright.ai/updates/linux-x86_64/` (`linux.cjs`
-  `updateFeedUrl`; x86-64 is the only Linux arch, so no arch switch). Feed =
+  provider, pointed at
+  `https://raw.githubusercontent.com/hansololz/autowright/main/release/linux-x86_64/`
+  (`linux.cjs` `updateFeedUrl`; x86-64 is the only Linux arch, so no arch switch). Feed =
   `latest-linux.yml` + AppImage + blockmap: the yml is rewritten under
-  `docs/updates/linux-x86_64/` by `linux-scripts/release.sh`; binaries ride the GitHub
+  `release/linux-x86_64/` by `linux-scripts/release.sh`; binaries ride the GitHub
   release — the same hosting split as the mac and Windows feeds. Everything else carries
   over from the Windows bullet unchanged: the renderer-facing IPC surface
   (`update-check`/`update-download`/`update-install` states and progress events) is
@@ -669,10 +675,11 @@ refuses, the package manager owns updates).
   shift-left order (any failure aborts before anything is built or uploaded), builds via
   `linux-scripts/prod.sh`, uploads the AppImage + its blockmap to that release with
   `--clobber` (idempotent — a re-run replaces the assets), and then rewrites
-  `docs/updates/linux-x86_64/latest-linux.yml` from the build output — the bare artifact
+  `release/linux-x86_64/latest-linux.yml` from the build output — the bare artifact
   file name replaced with the released binary's
   `github.com/<owner>/<repo>/releases/download/…` URL, exactly the `release.ps1`
-  rewrite — and commits + pushes just the feed. The feed is written only after the
+  rewrite — plus the `linux-x86_64` entry in `docs/downloads.json`, and commits + pushes
+  just those files. The feed is written only after the
   upload succeeds, so it never names a URL that is not live. A release that ships all
   three platforms is three script runs against one tag/version.
 

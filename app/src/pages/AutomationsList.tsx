@@ -4,6 +4,7 @@ import { api } from '../api'
 import { useStore } from '../store'
 import type { Automation, ImportPreview, ImportSummary } from '../types'
 import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, P, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
+import { TRANSFER_PARKED } from '../config'
 import { usePlatformCopy } from '../platformCopy'
 import { useTriggerPreview } from '../triggers'
 
@@ -480,7 +481,7 @@ export default function AutomationsList() {
         right={(
           <HeaderActions>
             {/* §9.1 import/export parked — entry point hidden, modal + backend kept */}
-            {false && (
+            {!TRANSFER_PARKED && (
               <BtnGhost onClick={() => setImportOpen(true)}>
                 Import
               </BtnGhost>

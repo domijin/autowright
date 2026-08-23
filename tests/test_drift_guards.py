@@ -1,13 +1,20 @@
 """§15 drift guards: cheap textual checks over facts that live in more than one
 hand-maintained file, where nothing else would catch the two copies diverging.
 
-Two guards, both deliberately dumb (read the file, pull the fact out, compare):
+Three guards, all deliberately dumb (read the file, pull the fact out, compare):
 
 1. the app version: `VERSION` is the single source (§17), synced into three
    other files by `release.sh`; a hand-edit to any one of them must fail here.
 2. the §6.2 curated package list: four homes, two of which name *import*
    modules and two of which name *distributions*, so the mapping between them
    is written out below instead of guessed.
+3. the §3 per-OS update feeds under `release/` plus the §17
+   `docs/downloads.json` index: hand-maintained-looking JSON/YAML that nothing
+   else reads at test time, written by three separate release legs, and whose
+   contents are only ever exercised by a shipped app fetching them over the
+   network. A feed naming an artifact the app cannot consume (a `.zip` where
+   `update-download` mounts a `.dmg`), or a version that ran ahead of the
+   release that exists, is invisible until an installed copy tries to update.
 """
 import json
 import re
@@ -15,7 +22,13 @@ import sys
 import tomllib
 from pathlib import Path
 
+import yaml
+
 REPO = Path(__file__).resolve().parent.parent
+
+# §3/§17: binaries always ride the GitHub release of the repo the feeds live in;
+# only the feed files themselves are served from raw.githubusercontent.com.
+RELEASE_DOWNLOAD_PREFIX = "https://github.com/hansololz/autowright/releases/download/"
 
 # §6.2 curated packages: import name → pip distribution name. Equal where the
 # two agree; spelled out where they don't (this mapping is the whole reason the
@@ -118,6 +131,134 @@ def test_curated_list_matches_the_spec():
         "distribution, plus the import module where they differ): "
         f"only in the spec {sorted(listed - expected)}, "
         f"only in the list {sorted(expected - listed)}")
+
+
+# ---------------------------------------------------------------- §3 update feeds
+
+# key in docs/downloads.json → (feed file under release/, extension of the artifact
+# that OS's updater consumes). The extension is the load-bearing half: macOS mounts
+# the DMG with `hdiutil attach` and builds Squirrel's zip from the mounted `.app`,
+# electron-updater runs the NSIS `.exe`, and the AppImage flow swaps the
+# `.AppImage` file in place. A feed pointing at anything else fails at update time
+# on a user's machine, never here.
+FEEDS = {
+    "darwin-arm64": ("release/darwin-arm64/feed.json", ".dmg"),
+    "darwin-x86_64": ("release/darwin-x86_64/feed.json", ".dmg"),
+    "win32-x86_64": ("release/win32-x86_64/latest.yml", ".exe"),
+    "linux-x86_64": ("release/linux-x86_64/latest-linux.yml", ".AppImage"),
+}
+
+
+def _semver_tuple(version: str) -> tuple[int, ...]:
+    """Numeric core only - enough to order this repo's release tags."""
+    core = re.split(r"[-+]", version, maxsplit=1)[0]
+    return tuple(int(part) for part in core.split("."))
+
+
+def _feed_facts(rel: str) -> tuple[str, list[str]]:
+    """(version, [download urls]) for a feed on disk, whichever OS wrote it."""
+    text = _read(rel)
+    if rel.endswith(".json"):  # Squirrel.Mac
+        data = json.loads(text)
+        urls = [entry["updateTo"]["url"] for entry in data["releases"]]
+        versions = {data["currentRelease"], *(e["version"] for e in data["releases"])}
+        assert len(versions) == 1, (
+            f"{rel} disagrees with itself: currentRelease and the releases[] "
+            f"versions are {sorted(versions)}")
+        return data["currentRelease"], urls
+    data = yaml.safe_load(text)  # electron-updater
+    urls = [data["path"]] + [f["url"] for f in data.get("files", [])]
+    return str(data["version"]), urls
+
+
+def _present_feeds() -> dict[str, tuple[str, str, list[str]]]:
+    """key → (rel path, version, urls) for every feed that exists on disk. Feeds
+    appear one OS at a time (§3: each leg writes only its own), so absence is
+    never a failure - the Linux feed has no file until a Linux release is cut."""
+    found = {}
+    for key, (rel, _ext) in FEEDS.items():
+        if (REPO / rel).exists():
+            version, urls = _feed_facts(rel)
+            found[key] = (rel, version, urls)
+    return found
+
+
+def test_update_feeds_name_a_consumable_artifact():
+    """§3: every URL a feed hands the updater must be a GitHub release download
+    for this repo, embed the feed's own version, and carry the extension that
+    OS's update flow can actually open."""
+    feeds = _present_feeds()
+    assert feeds, "no §3 update feed found under release/ - did the feeds move?"
+    for key, (rel, version, urls) in feeds.items():
+        _rel, ext = FEEDS[key]
+        assert urls, f"{rel} names no download URL"
+        for url in urls:
+            assert url.startswith(RELEASE_DOWNLOAD_PREFIX), (
+                f"{rel} points at {url!r}; §3 binaries ride the GitHub release "
+                f"({RELEASE_DOWNLOAD_PREFIX}…), only the feed itself is raw-served")
+            assert url.endswith(ext), (
+                f"{rel} points at {url!r}, but the {key} update flow consumes a "
+                f"{ext} - a feed naming any other artifact fails at update time "
+                "on an installed copy, not here")
+            assert f"/v{version}/" in url and version in url.rsplit("/", 1)[-1], (
+                f"{rel} says version {version!r} but its URL {url!r} names a "
+                "different release")
+
+
+def test_update_feeds_never_run_ahead_of_the_version_file():
+    """§3/§17: a feed is rewritten only *after* its release is published, so a
+    feed newer than `VERSION` names a release that does not exist yet. The
+    reverse is legitimate and deliberately not flagged: each OS leg rewrites
+    only its own feed, so a release cut without the Windows or Linux leg leaves
+    that feed at the newest version which actually carries that OS's artifact."""
+    version = _read("VERSION").strip()
+    for key, (rel, feed_version, _urls) in _present_feeds().items():
+        assert _semver_tuple(feed_version) <= _semver_tuple(version), (
+            f"{rel} is at {feed_version}, ahead of VERSION ({version}) - it names "
+            "a release that has not been published")
+
+
+def test_a_macos_feed_tracks_the_version_file():
+    """§18: releases are cut from macOS by `release.sh`, which bumps `VERSION`
+    *and* rewrites the built arch's Squirrel feed in the same run. So the mac
+    feed for the arch the release was built on always equals `VERSION`; a
+    mismatch means the feed write or its push was lost (recover with
+    `release.sh --feed`). Any arch satisfies it - the guard does not care which
+    machine cut the release, only that the mac half is not stale."""
+    version = _read("VERSION").strip()
+    darwin = {key: facts for key, facts in _present_feeds().items()
+              if key.startswith("darwin-")}
+    assert darwin, "no darwin feed under release/ - the mac update feed is gone"
+    assert any(feed_version == version for _rel, feed_version, _urls in darwin.values()), (
+        f"no darwin feed is at VERSION ({version}); found "
+        f"{ {rel: v for rel, v, _ in darwin.values()} }. Re-publish with "
+        "`./scripts/release.sh --feed`.")
+
+
+def test_downloads_index_agrees_with_the_feeds():
+    """§17 `docs/downloads.json` is the website's download index - the same
+    release URLs the feeds name, rewritten by the same release legs. It is the
+    only copy of those URLs a human ever reads, so nothing else would catch it
+    drifting away from the feed beside it."""
+    downloads = json.loads(_read("docs/downloads.json"))
+    assert downloads, "docs/downloads.json is empty"
+    feeds = _present_feeds()
+    for key, entry in downloads.items():
+        url, entry_version = entry["url"], entry["version"]
+        assert url.startswith(RELEASE_DOWNLOAD_PREFIX), (
+            f"docs/downloads.json[{key}] points at {url!r}; downloads come from "
+            "the GitHub release")
+        assert f"/v{entry_version}/" in url and entry_version in url.rsplit("/", 1)[-1], (
+            f"docs/downloads.json[{key}] says version {entry_version!r} but its "
+            f"URL {url!r} names a different release")
+        if key in feeds:
+            rel, feed_version, feed_urls = feeds[key]
+            assert entry_version == feed_version, (
+                f"docs/downloads.json[{key}] is at {entry_version} but {rel} is "
+                f"at {feed_version} - the same release leg writes both")
+            assert url in feed_urls, (
+                f"docs/downloads.json[{key}] offers {url!r}, which {rel} does not "
+                "name - the site and the updater must hand out the same artifact")
 
 
 def test_powershell_scripts_start_with_a_utf8_bom():

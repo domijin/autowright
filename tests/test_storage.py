@@ -16,7 +16,8 @@ def test_create_and_reload_roundtrip(store, home):
     s2.load_all()
     b = s2.autos[a["id"]]
     assert b["name"] == "My Test Job"
-    assert b["triggers"] == [trig]
+    # §4.3: created enabled → stamped, and the stamp survives the reload.
+    assert b["triggers"] == [{**trig, "enabledAt": a["triggers"][0]["enabledAt"]}]
     assert s2.auto_json(b)["triggerChip"] == "Daily 7:30"
     ver = b["versions"][1]
     assert ver["steps"][0]["name"] == "Say hello"
@@ -557,7 +558,7 @@ def test_load_triggers_discord_roundtrip(store):
     s2 = Store()
     s2.load_all()
     loaded = s2.autos[a["id"]]["triggers"]
-    assert loaded == [trig]
+    assert loaded == [{**trig, "enabledAt": a["triggers"][0]["enabledAt"]}]
 
 
 def test_load_skips_unresolvable_secret_entries(store, caplog):
@@ -1277,8 +1278,9 @@ def test_problems_overdue_first_and_labels(store):
     cur = a["versions"][a["current_version"]]
     # freshly created — nothing missed yet, no entry
     assert store.problems_json(a, cur) == []
-    # never ran, created long ago → overdue, never-run label
+    # never ran, created long ago (and enabled back then) → overdue, never-run label
     a["created_at"] = "2020-01-01T08:00:00"
+    a["triggers"][0]["enabledAt"] = "2020-01-01T08:00:00+00:00"
     probs = store.problems_json(a, cur)
     assert probs[0] == {"kind": "overdue", "label":
                         "Scheduled executions are being missed — it has never run."}
@@ -1294,3 +1296,63 @@ def test_problems_overdue_first_and_labels(store):
     a["_last_exec_at"] = "2020-01-05T09:00:00"
     a["triggers"][0]["enabled"] = False
     assert all(p["kind"] != "overdue" for p in store.problems_json(a, cur))
+
+
+def test_overdue_ignores_occurrences_that_passed_while_a_trigger_was_off(store):
+    """§4.1/§4.3: overdue counts from the enable stamp, so the moments that
+    passed while a cron sat off are ignored when it comes back on — a
+    re-enable after a week away must not fire the audit the instant it lands.
+    Genuine misses after the stamp still flag."""
+    from datetime import datetime, timedelta
+
+    trig = {"id": "t1", "kind": "cron", "enabled": False,
+            "expression": "0 8 * * *", "source": "user"}
+    a = store.create_automation(make_version(), "Napper", None, triggers=[trig])
+    a["created_at"] = "2020-01-01T08:00:00"  # old automation that never ran
+    assert not store.overdue(a)  # off: nothing to miss
+    assert "enabledAt" not in a["triggers"][0]  # a disabled entry is never stamped
+
+    store.patch_automation(a, {"triggers": [{**trig, "enabled": True}]})
+    assert a["triggers"][0]["enabledAt"]  # the write path stamped the transition
+    assert not store.overdue(a)  # years of 8:00s passed while off — ignored
+    # two 8:00s after the stamp with no run → genuinely overdue
+    assert store.overdue(a, datetime.now() + timedelta(days=3))
+
+
+def test_overdue_ignores_a_cron_added_to_an_old_automation(store):
+    """§4.1/§4.3: a cron minted enabled is stamped at that moment, so adding
+    one to an automation created (or last run) long ago starts the count from
+    the add, not from the stale baseline."""
+    from datetime import datetime, timedelta
+
+    a = store.create_automation(make_version(), "Ancient", None, triggers=[])
+    a["created_at"] = "2020-01-01T08:00:00"
+    a["_last_exec_at"] = "2020-01-05T09:00:00"
+    store.patch_automation(a, {"triggers": [
+        {"id": "new", "kind": "cron", "enabled": True,
+         "expression": "0 8 * * *", "source": "user"}]})
+    assert not store.overdue(a)
+    assert store.overdue(a, datetime.now() + timedelta(days=3))
+
+
+def test_enable_stamp_is_kept_across_edits_and_never_healed(store):
+    """§4.3: an already-on trigger keeps its stamp across an unrelated edit of
+    the list (a schedule change is not a re-enable), and a trigger stored
+    without one is never healed — it keeps counting from the run baseline."""
+    trig = {"id": "t1", "kind": "cron", "enabled": True,
+            "expression": "0 8 * * *", "source": "user"}
+    a = store.create_automation(make_version(), "Steady", None, triggers=[trig])
+    stamp = a["triggers"][0]["enabledAt"]
+    store.patch_automation(a, {"triggers": [{**trig, "expression": "0 9 * * *"}]})
+    assert a["triggers"][0]["enabledAt"] == stamp  # not re-stamped
+    # a client can't set it either — the stored value wins
+    store.patch_automation(a, {"triggers": [{**trig, "enabledAt": "2999-01-01T00:00:00+00:00"}]})
+    assert a["triggers"][0]["enabledAt"] == stamp
+
+    # legacy: stored without the stamp, edited while on → still no stamp, and
+    # overdue keeps counting from the run baseline alone (§4.3 lenient load).
+    a["triggers"][0].pop("enabledAt")
+    a["created_at"] = "2020-01-01T08:00:00"
+    store.patch_automation(a, {"triggers": [dict(trig)]})
+    assert "enabledAt" not in a["triggers"][0]
+    assert store.overdue(a)

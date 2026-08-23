@@ -992,6 +992,8 @@ def test_overdue_sweep_notifies_after_two_consecutive_sweeps(store, monkeypatch)
         {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 8 * * *",
          "source": "user"}])
     a["created_at"] = "2026-07-01T08:00:00"  # never ran; many 8:00s already missed
+    # §4.3: on since then too — a fresh enable stamp would (rightly) clear it.
+    a["triggers"][0]["enabledAt"] = datetime(2026, 7, 1, 8, 0).astimezone().isoformat()
 
     sched._tick()  # within the first hour — no sweep yet
     assert posted == []

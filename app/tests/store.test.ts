@@ -619,6 +619,49 @@ describe('loadExecution / setSurface', () => {
     await store.useStore.getState().loadExecution('eL')
     expect(store.useStore.getState().executionFull.eL).toEqual(ex('eL', 1))
   })
+  // §19 monotonic refetch: a GET resolving after the finished event must not
+  // regress a terminal record to queued/executing. Dropping is right — but a
+  // drop with nothing in the full slot would lose the body outright (the page
+  // renders zero steps forever), so that one case schedules a single refetch.
+  it('drops a stale non-terminal body over a terminal full record — and refetches nothing', async () => {
+    const full = ex('eM1', 100, { status: 'succeeded' })
+    store.useStore.setState({ executions: [], executionFull: { eM1: full } })
+    vi.mocked(apiMod.api.getExecution).mockReset()
+      .mockResolvedValue(ex('eM1', 100, { status: 'executing' }))
+    await store.useStore.getState().loadExecution('eM1')
+    expect(store.useStore.getState().executionFull.eM1).toEqual(full)
+    // A body already landed, so nothing is stranded — no retry is owed.
+    await new Promise((r) => setTimeout(r, 20))
+    expect(apiMod.api.getExecution).toHaveBeenCalledTimes(1)
+  })
+
+  it('drops a stale body over the list header alone, then the one refetch lands it', async () => {
+    const header = ex('eM2', 100, { status: 'succeeded' })
+    const body = ex('eM2', 100, { status: 'succeeded', duration: '4s' })
+    store.useStore.setState({ executions: [header], executionFull: {} })
+    vi.mocked(apiMod.api.getExecution).mockReset()
+      .mockResolvedValueOnce(ex('eM2', 100, { status: 'executing' }))
+      .mockResolvedValueOnce(body)
+    await store.useStore.getState().loadExecution('eM2')
+    // The stale body is dropped, so the full slot is still empty…
+    expect(store.useStore.getState().executionFull.eM2).toBeUndefined()
+    // …and the scheduled refetch brings the terminal body in through the
+    // ordinary path.
+    await vi.waitFor(() => expect(store.useStore.getState().executionFull.eM2).toEqual(body))
+    expect(apiMod.api.getExecution).toHaveBeenCalledTimes(2)
+  })
+
+  it('the recovery refetch is one-shot — a body that stays stale never loops', async () => {
+    store.useStore.setState({ executions: [ex('eM3', 100, { status: 'failed' })], executionFull: {} })
+    vi.mocked(apiMod.api.getExecution).mockReset()
+      .mockResolvedValue(ex('eM3', 100, { status: 'executing' }))
+    await store.useStore.getState().loadExecution('eM3')
+    await new Promise((r) => setTimeout(r, 20))
+    // The first call plus its one retry — and no third.
+    expect(apiMod.api.getExecution).toHaveBeenCalledTimes(2)
+    expect(store.useStore.getState().executionFull.eM3).toBeUndefined()
+  })
+
   it('setSurface app from onboard stamps ad-onboarded (§10)', () => {
     // this Node build exposes no working localStorage global — stub the
     // production mechanism (§15) with an in-memory one for the assertion

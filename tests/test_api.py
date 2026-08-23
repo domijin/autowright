@@ -966,6 +966,9 @@ def test_patch_automation_triggers_and_grants(client):
     assert j["triggers"][0]["id"] == tid
     assert j["triggerChip"] == "2 triggers"
     assert j["allTriggersOff"] is False
+    # §4.3: the off-to-on transition stamped the survivor, and the fresh entry
+    # arrived enabled — both carry an `enabledAt` the response round-trips.
+    assert all(t["enabledAt"] for t in j["triggers"])
 
 
 def test_app_started_fires_enabled_app_start_triggers(client, monkeypatch):

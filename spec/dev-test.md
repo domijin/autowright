@@ -136,11 +136,37 @@ the second config exists so untypechecked TypeScript cannot accumulate outside `
 
 **Drift guards.** `tests/test_drift_guards.py` holds the cheap textual guards over facts
 that live in more than one hand-maintained file: the app version agrees across `VERSION`,
-`backend/pyproject.toml`, `backend/autowright/__init__.py`, and `app/package.json`; and the
+`backend/pyproject.toml`, `backend/autowright/__init__.py`, and `app/package.json`; the
 §6.2 curated-package list agrees across its four homes: `imports_check.ALLOWED_IMPORTS`
 (import names), the `backend/pyproject.toml` dependencies (distribution names),
 `instructions/framework-instructions.md`, and §6.2 itself, with the import-name ↔
-distribution-name mapping written out in the guard.
+distribution-name mapping written out in the guard; and every `*.ps1` in the §17 script
+directories still starts with a UTF-8 BOM (Windows PowerShell 5.1 misreads a BOM-less file
+as ANSI and fails to parse the scripts' non-ASCII result lines).
+
+The same file guards the §3 update feeds under `release/` and the §17
+`docs/downloads.json` index, which nothing else reads at test time - their only real
+consumer is a shipped app fetching them over the network, so a wrong artifact or a
+version that ran ahead of the published release stays invisible until an installed copy
+tries to update. Four checks, over whichever feeds exist on disk (a feed is absent until
+its OS's release leg first runs, and absence is never a failure): every download URL a
+feed hands the updater is a `github.com/hansololz/autowright/releases/download/…` URL,
+embeds that feed's own version, and carries the extension that OS's update flow can
+actually open (`.dmg` for the Squirrel.Mac `hdiutil attach` path, `.exe` for the NSIS
+updater, `.AppImage` for the AppImage updater); no feed is *newer* than `VERSION` (it
+would name a release that does not exist - the reverse is legitimate and deliberately
+unflagged, since each leg rewrites only its own feed); at least one `darwin-<arch>` feed
+equals `VERSION` (`release.sh` bumps `VERSION` and rewrites the mac feed in one run, so a
+lagging mac feed means a lost feed write or push - recover with `release.sh --feed`); and
+each `docs/downloads.json` entry names a release-download URL embedding its own version
+and, where that key's feed exists, matches the feed's version and offers the very URL the
+feed names.
+
+The §9 per-OS **copy table** is drift-guarded on both sides the way the §5 root table is:
+`tests/test_platform.py` pins `backend/autowright/paths.py`'s per-OS strings and
+`app/tests` pins `app/src/platformCopyTable.ts`, both against the same §9 table - so the
+backend-served copy and the renderer's copy can never disagree silently about what a
+machine or a secret store is called on a given OS.
 
 **Shift-left order.** Tiers run cheapest-first so failures surface early: Vitest unit
 (<1 s) → `tsc --noEmit` (both configs) → pytest unit (seconds) → pytest `-m integration`
@@ -275,9 +301,11 @@ also appears verbatim as settled activity-entry titles, so bare text can't reach
 `version-menu` (§11 editor version pill). New e2e targets that role/label/text cannot
 reach unambiguously get a test id added here. Selectors that assert copy covered by the
 §9 per-OS table (machine noun, secret-store name) must resolve the value for the OS the
-suite runs on, never a hard-coded single-OS literal; two specs currently pin mac forms
-(`FOUND ON THIS MAC` in `app.e2e.ts`, `Save to Keychain` in `agents-secrets.e2e.ts`) and
-get converted when e2e first runs on Windows.
+suite runs on, never a hard-coded single-OS literal: every such assertion reads the
+harness's `COPY` export (`platformCopy` for the host platform - the same table the
+renderer uses), so the specs that once pinned mac forms (`FOUND ON THIS MAC` in
+`app.e2e.ts`, `Save to Keychain` in `agents-secrets.e2e.ts`, and the result-file copy in
+`result-files.e2e.ts`) now pass unchanged on Windows and Linux.
 
 ## 16. Seed / demo data (tests only)
 
@@ -333,7 +361,11 @@ Dev workflow:
 - **`./scripts/release.sh <version>`** — cuts a release end to end: sets the app version,
   builds the distributable, and publishes it as a GitHub release. Steps, in order:
   refuses if the working tree is dirty (the release commit must contain only the version
-  bump), if the tag `v<version>` already exists (checked locally and on `origin`, before
+  bump), if the checkout is not on `main` (the §3 feed URLs are pinned to
+  `raw.githubusercontent.com/…/main/release/…`, so a feed committed on any other branch is
+  never the file installed apps read - the same on-main rule the tap preflight applies to
+  the `homebrew-tap` checkout, applied to this repo), if the tag `v<version>` already
+  exists (checked locally and on `origin`, before
   anything is modified), or if the new version is not strictly higher than the current
   `VERSION` (semver ordering: numeric core compared field by field; on an equal core a
   release outranks any pre-release, and two pre-releases compare lexically); validates the
@@ -365,6 +397,18 @@ Dev workflow:
   git/GitHub actions): **`--sync`** rewrites the three sites from `VERSION` without
   taking a new version (what `build.sh` runs); **`--check`** verifies all three match
   `VERSION` and exits non-zero listing every mismatch (what `prod.sh` runs).
+  - **`--feed` (recovery).** Sibling of `--cask`, for the other half of the post-release
+    tail: it re-runs only the feed step - rewrite `release/darwin-<arch>/feed.json` and the
+    `darwin-<arch>` entry in `docs/downloads.json` for the current `VERSION`, then commit
+    and push just those two files - against a release that is already published. The
+    recovery path when the feed write, its commit, or its push failed after the GitHub
+    release went out, which a re-run of `<version>` cannot fix (the tag already exists).
+    Requires `gh`, the checkout on `main`, and the release `v<VERSION>` to exist; it reads
+    that release's asset list to prove the DMG the feed is about to name is live, and never
+    downloads it. Builds nothing and touches no version site. Idempotent, split the way the
+    cask publish is split: an already-current pair commits nothing, but the push still runs
+    whenever `main` is ahead of `origin/main`. The full release flow calls the same three
+    functions, so the recovery path and the release path can never write different feeds.
   - **Homebrew cask publish (§3).** Fully scripted, never hand-edited. The tap checkout is
     always `../homebrew-tap`, the sibling of the repo root — the two repositories live in the
     same parent directory, and there is no override; the cask file is `Casks/autowright.rb`
@@ -376,7 +420,10 @@ Dev workflow:
     **last**, after the release and the update feed, and only for an `arm64` build (the cask
     is `depends_on arch: :arm64`; an `x86_64` release logs that it skipped the cask rather
     than overwriting the arm64 URL). It rewrites the cask's `version` line to the released
-    version and its `sha256` line to `shasum -a 256` of the uploaded DMG, runs `brew style`
+    version, its `sha256` line to `shasum -a 256` of the uploaded DMG, and its `livecheck`
+    URL to the §3 raw arm64 feed URL (re-pinned every release, not merely left alone - the
+    four-space indent scopes that rewrite to the `livecheck do` block, since the cask's own
+    `url` stanza sits at two spaces and ends in a comma), runs `brew style`
     on the result when `brew` is present, then commits `autowright <version>` and pushes the
     tap's `main` to GitHub. Commit and push are decided separately: an already-current cask
     commits nothing, but the push still runs whenever `main` is ahead of `origin/main`, so

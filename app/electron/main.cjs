@@ -95,8 +95,15 @@ function bundledPython() {
   return fs.existsSync(py) ? py : null
 }
 
-// The backend's running version (from /health), or null when unreachable —
+// The backend's running version (from /health), or null when it is not ours —
 // doubles as the liveness probe and feeds the §3 launch-time version compare.
+// §3: a 200 on the recorded port proves nothing on its own. backend.json can
+// name a stale port that any other local server now listens on, and treating
+// that stranger as our backend would mark ensure-backend 'ok', never install
+// the service, and wait forever. Only a /health body that identifies this app
+// (`app === 'Autowright'`) and carries a non-empty version counts as healthy;
+// non-JSON, a foreign app name and an empty version all read as unreachable,
+// so ensure-backend installs (or version-syncs) instead of hanging.
 async function backendVersion() {
   const info = backendInfo()
   if (!info) return null
@@ -105,12 +112,16 @@ async function backendVersion() {
       signal: AbortSignal.timeout(1500),
     })
     if (!res.ok) return null
-    return String((await res.json()).version ?? '')
+    const body = await res.json()
+    if (body?.app !== 'Autowright') return null
+    return String(body.version ?? '') || null
   } catch {
     return null
   }
 }
 
+// Healthy ≙ our backend answered and named itself — never merely "something
+// answered on that port".
 async function backendHealthy() {
   return (await backendVersion()) !== null
 }
@@ -234,6 +245,8 @@ async function syncBackendVersion(py, running) {
 async function ensureBackend() {
   const py = bundledPython()
   if (!py) return
+  // Non-null ≙ our backend, identified and versioned. A foreign server on a
+  // stale backend.json port lands in the install branch below, not in 'ok'.
   const running = await backendVersion()
   if (running !== null) {
     ensureStatus = { state: 'ok', detail: '' }
@@ -348,6 +361,20 @@ function attachContextMenu(w) {
   })
 }
 
+// §9: how long a window may stay unshown before the watchdog below decides
+// the app is invisibly alive and does something about it.
+const WINDOW_WATCHDOG_MS = 15_000
+
+// §9: the one way the shell says out loud that it cannot paint. The message
+// always names app.log, which carries the detail. Never throws — a host with
+// no dialog available (a driven test run) must still reach the log line.
+function showStartupError(detail) {
+  try {
+    dialog.showErrorBox('Autowright',
+      `${detail}\n\nDetails are in ${path.join(logsDir(), 'app.log')}.`)
+  } catch { /* no dialog here — the appLog line is the whole report */ }
+}
+
 function createWindow(hash) {
   win = new BrowserWindow({
     width: 1280,
@@ -372,6 +399,15 @@ function createWindow(hash) {
   winLoaded = false
   let failed = false
   let failStreak = 0
+  let rendererDeaths = 0
+  // §9 watchdog: whatever else goes wrong, the app is never left running with
+  // no window at all. Armed with the window, disarmed the moment it shows (or
+  // the window closes), and fired below when neither happened in time.
+  let watchdog = null
+  const clearWatchdog = () => {
+    if (watchdog) clearTimeout(watchdog)
+    watchdog = null
+  }
   win.webContents.on('did-start-loading', () => { failed = false })
   win.webContents.on('did-fail-load', (_e, code, desc, _url, isMainFrame) => {
     if (!isMainFrame) return
@@ -388,12 +424,48 @@ function createWindow(hash) {
     }
     if (!winLoaded) {
       winLoaded = true
+      clearWatchdog()
       if (win) { win.show(); win.focus() }
     }
   })
+  // §9: the renderer can die before it ever loads (out of memory, a crash in
+  // the bundle) — did-finish-load then never comes and the window would stay
+  // hidden forever, a live app with nothing to click. One reload is worth
+  // trying; a second death has nothing left to paint, so say so and quit
+  // rather than staying resident and invisible.
+  win.webContents.on('render-process-gone', (_e, details) => {
+    rendererDeaths += 1
+    appLog(`window: renderer process gone (${details?.reason || 'unknown'}) — death ${rendererDeaths}`)
+    if (rendererDeaths === 1) {
+      if (win) load(win, hash || '/app')
+      return
+    }
+    clearWatchdog()
+    showStartupError('The app window kept crashing.')
+    app.quit()
+  })
   load(win, hash || '/app')
+  // §9 watchdog: if the window still hasn't shown by now, act rather than sit
+  // there invisible. A renderer that merely loaded slowly gets shown anyway;
+  // when every attempt so far failed there is nothing to paint, so the failure
+  // is reported once instead — the 1 s retry above keeps running behind it and
+  // still shows the window if the renderer ever arrives.
+  watchdog = setTimeout(() => {
+    watchdog = null
+    if (winLoaded || !win) return
+    if (failStreak > 0) {
+      appLog(`window: nothing loaded ${WINDOW_WATCHDOG_MS / 1000} s after creation `
+        + `(${failStreak} failed attempt(s)) — still retrying`)
+      showStartupError('The app window could not load.')
+      return
+    }
+    appLog(`window: still hidden ${WINDOW_WATCHDOG_MS / 1000} s after creation — showing it anyway`)
+    winLoaded = true
+    win.show()
+    win.focus()
+  }, WINDOW_WATCHDOG_MS)
   attachContextMenu(win)
-  win.on('closed', () => { win = null })
+  win.on('closed', () => { clearWatchdog(); win = null })
   hardenWindow(win)
 }
 
@@ -494,16 +566,30 @@ function applyShellSettings(s) {
   }
 }
 
+// Two failures live here and they are not the same thing: the fetch failing
+// means the backend is down (silent, expected, retried on the next poll),
+// while applyShellSettings throwing is a shell-side bug (tray create, login
+// item, update timer) that used to read as "backend down" and vanish. Keep
+// them apart so only the first one is silent — the §4.9 apply-settings IPC
+// lets the same throw surface too, it just surfaces it to the renderer.
 async function syncShellSettings() {
   const info = backendInfo()
   if (!info) return
+  let settings = null
   try {
     const res = await fetch(`http://127.0.0.1:${info.port}/settings`, {
       headers: { Authorization: `Bearer ${info.token}` },
       signal: AbortSignal.timeout(5000),
     })
-    if (res.ok) applyShellSettings(await res.json())
+    if (!res.ok) return
+    settings = await res.json()
   } catch { /* backend down — keep the current state */ }
+  if (!settings) return
+  try {
+    applyShellSettings(settings)
+  } catch (err) {
+    appLog(`settings: applying shell settings failed: ${String(err?.message || err)}`)
+  }
 }
 
 // Tray-click toggle guard: on macOS the focused panel blurs (and hides)
@@ -790,7 +876,8 @@ ipcMain.handle('tray-alert', (_e, on) => {
 
 // §3 in-app updates (Squirrel.Mac): manual-only — nothing here runs until the
 // §9.4 "Check for updates" button calls update-check. One static JSON feed per
-// arch on the docs/ GitHub Pages site, rewritten by release.sh each release.
+// arch under release/ in the repo, served over raw.githubusercontent.com and
+// rewritten by release.sh each release.
 // Null where the platform declares no update capability, or has one but no
 // channel yet: every §3 update path checks it and answers the degraded line,
 // so the IPC surface stays byte-identical for the renderer either way.
@@ -947,8 +1034,11 @@ ipcMain.handle('update-brew-managed', () => brewManaged())
 // fork: an unsigned build takes the same path and surfaces Squirrel's real
 // signature error.
 ipcMain.handle('update-download', async () => {
-  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
+  // §3: the no-feed line comes first. A managed-copy answer only makes sense
+  // where a managed channel exists at all — on a platform that serves no feed
+  // it would promise an update route this build simply doesn't have.
   if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
+  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
   if (USE_GENERIC) return downloadUpdateGeneric()
   const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
   const stamp = randomUUID()
@@ -1088,10 +1178,12 @@ ipcMain.handle('update-download', async () => {
 // stays valid); the old backend keeps running until the next launch's
 // version-compare flow restarts it.
 ipcMain.handle('update-install', async () => {
-  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
   // §3: no feed → nothing can be staged; quitAndInstall with nothing staged
   // must never quit the app for no swap (unreachable on macOS, real on win32).
+  // Same order as update-download: a platform with no feed says so, and only a
+  // platform that has one can be managed by someone else's copy of it.
   if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
+  if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
   if (await executionsLive()) return { busy: true }
   appLog('update: quitting to install')
   // §3: the same busy-gated, user-initiated install on every platform — only
@@ -1275,17 +1367,30 @@ app.whenReady().then(() => {
   if (!caps.appMenu) Menu.setApplicationMenu(null)
   void ensureBackend()
   createWindow()
-  if (caps.trayPanel) createTray()
-  void notifyAppStarted()
-  void refreshTrayAlert()
-  void syncShellSettings()
-  setInterval(() => { void refreshTrayAlert(); void syncShellSettings() }, 60_000)
-  // The hidden tray panel is also a BrowserWindow, so count only the main
+  // The reopen handler is registered before anything that can throw: whatever
+  // else fails at ready, the dock/tray must always be able to bring the window
+  // back. The hidden tray panel is also a BrowserWindow, so count only the main
   // window — `getAllWindows().length` would block reopening from the Dock.
   // §9: a not-yet-loaded window stays hidden even on an explicit reopen — it
   // shows itself on the first successful load.
   app.on('activate', () => { if (win === null) createWindow(); else if (winLoaded) { win.show(); win.focus() } })
-})
+  // §13: a tray that fails to create (a broken package missing its icon asset)
+  // is logged and skipped. It must never take the rest of the ready chain with
+  // it — the §6 app-start triggers, the tray-alert poll and the §4.9 settings
+  // reconcile all run either way.
+  if (caps.trayPanel) {
+    try {
+      createTray()
+    } catch (err) {
+      appLog(`tray: creating the tray icon failed: ${String(err?.message || err)}`)
+    }
+  }
+  void notifyAppStarted()
+  void refreshTrayAlert()
+  void syncShellSettings()
+  setInterval(() => { void refreshTrayAlert(); void syncShellSettings() }, 60_000)
+  // Last resort: nothing in the chain above may die silently.
+}).catch((err) => appLog(`ready: startup failed: ${String(err?.message || err)}`))
 
 // §9 close rule, per-OS. §3 holds either way: quitting the app never stops the
 // backend — we are always a client (the one exception is the explicit quit-all

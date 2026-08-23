@@ -1,6 +1,9 @@
 """§2 platform layer: composition, capability flags, degraded fallbacks, and
 the §5 per-OS root table (backend half of the drift guard — the Electron half
-is app/tests/platform-roots.test.ts; both pin the same spec table)."""
+is app/tests/platform-roots.test.ts; both pin the same spec table). The §9
+per-OS copy table is guarded the same way: this file holds the backend half
+(paths.machine_noun / secret_store_name), app/tests/platform-copy-table.test.ts
+the renderer one."""
 import json
 import os
 import shutil
@@ -1106,6 +1109,41 @@ def test_root_table_windows_defaults_and_localappdata(bare_home, monkeypatch):
     monkeypatch.setenv("LOCALAPPDATA", str(bare_home / "LocalAppData"))
     assert paths.app_support() == bare_home / "LocalAppData" / "Autowright"
     assert paths.logs_dir() == bare_home / "LocalAppData" / "Autowright" / "Logs"
+
+
+# ------------------------------------------------------ §9 per-OS copy table
+
+
+def test_copy_table_machine_noun():
+    """§9 per-OS copy rule, backend half: "Mac" on macOS, "PC" on Windows and
+    Linux alike. The renderer half is app/src/platformCopyTable.ts, pinned by
+    app/tests/platform-copy-table.test.ts — the two must never drift."""
+    assert paths.machine_noun("macos") == "Mac"
+    assert paths.machine_noun("windows") == "PC"
+    assert paths.machine_noun("linux") == "PC"
+
+
+def test_copy_table_secret_store_name():
+    """§9 per-OS copy rule, backend half: the §4.8 store's user-facing name.
+    Same three strings the renderer table serves."""
+    assert paths.secret_store_name("macos") == "Keychain"
+    assert paths.secret_store_name("windows") == "Credential Manager"
+    assert paths.secret_store_name("linux") == "system keyring"
+
+
+def test_copy_table_defaults_to_the_running_platform(monkeypatch):
+    """Both helpers default to `current_os()` — the caller never has to know
+    which platform it is on. An empty token is the same as none (the renderer's
+    '' boot default has no equivalent here: the backend always knows its own
+    OS), and an unrecognized token falls back to the §5.1 non-macOS shape."""
+    for token in ("macos", "windows", "linux"):
+        monkeypatch.setattr(paths, "current_os", lambda token=token: token)
+        assert paths.machine_noun() == paths.machine_noun(token)
+        assert paths.machine_noun("") == paths.machine_noun(token)
+        assert paths.secret_store_name() == paths.secret_store_name(token)
+        assert paths.secret_store_name("") == paths.secret_store_name(token)
+    assert paths.machine_noun("plan9") == "PC"
+    assert paths.secret_store_name("plan9") == "Keychain"
 
 
 def test_autowright_home_overrides_every_os(monkeypatch, tmp_path):

@@ -7,6 +7,12 @@ import uuid
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from . import timefmt
+
+# §4.3 enable stamp: the moment the trigger last became live, a §5 stored
+# timestamp. Backend-owned — stamp_enabled is the only writer.
+ENABLED_AT = "enabledAt"
+
 # §4.3 discord `secret` = a §4.8 secret id (uuid, lowercase hyphenated — the §4 id form).
 SECRET_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
@@ -345,6 +351,42 @@ def normalize_triggers(raw: list,
     return out, None
 
 
+def stamp_enabled(new: list[dict], old: list[dict] | None = None,
+                  now_iso: str | None = None) -> list[dict]:
+    """§4.3 enable stamp: reconcile an incoming trigger list against the stored
+    one by id, returning the list to store. An entry that arrives enabled and
+    wasn't (a create, an off-to-on edit) gets a fresh `enabledAt`; one that was
+    already on carries its stamp forward, so changing a live cron's expression
+    is not a re-enable. A disabled entry keeps whatever stamp it had — the next
+    on-transition overwrites it. A stored trigger that predates the field is
+    never stamped by a write that doesn't turn it on (§4.3: no self-heal), and
+    any client-sent value is discarded — the backend owns this field."""
+    prev = {t["id"]: t for t in (old or []) if t.get("id")}
+    out = []
+    for t in new:
+        t = {k: v for k, v in t.items() if k != ENABLED_AT}
+        was = prev.get(t.get("id"))
+        if t.get("enabled") and not (was and was.get("enabled")):
+            t[ENABLED_AT] = now_iso or timefmt.now_iso()
+        elif was and was.get(ENABLED_AT):
+            t[ENABLED_AT] = was[ENABLED_AT]
+        out.append(t)
+    return out
+
+
+def enabled_since(t: dict) -> datetime | None:
+    """§4.3 `enabledAt` as the local naive datetime trigger math runs in. None
+    for a trigger stored before the field existed, or one whose stamp is
+    unreadable (§5 lenient — the §4.1 baseline just falls back)."""
+    raw = t.get(ENABLED_AT)
+    if not isinstance(raw, str):
+        return None
+    try:
+        return timefmt.parse_local(raw).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
 def _hm(hour: int, minute: int) -> str:
     return f"{hour}:{minute:02d}"
 
@@ -458,16 +500,21 @@ def next_at(triggers: list[dict], after: datetime | None = None) -> datetime | N
 
 def is_overdue(triggers: list[dict], baseline: datetime, now: datetime | None = None) -> bool:
     """§4.1 overdue: some enabled cron trigger has had two consecutive
-    occurrences pass since `baseline` (local naive, like every trigger_next
-    time) with no run — two, not one, so a single legitimately skipped
-    moment (§6 busy-skip, a restart at the wrong minute) never flags. Cron
-    only: one-shots are consumed by the §4.3 spent rule, and
-    app-start/message triggers have no schedule."""
+    occurrences pass since its baseline with no run — two, not one, so a single
+    legitimately skipped moment (§6 busy-skip, a restart at the wrong minute)
+    never flags. The baseline is per trigger: the later of `baseline` (the
+    automation's run baseline, local naive like every trigger_next time) and
+    the trigger's §4.3 enable stamp, so occurrences that passed while it was
+    off never count — a re-enable, or a cron added to an old automation, starts
+    counting from that moment, exactly as the §6 scheduler fires. Cron only:
+    one-shots are consumed by the §4.3 spent rule, and app-start/message
+    triggers have no schedule."""
     now = now or datetime.now()
     for t in triggers:
         if t.get("kind") != "cron" or not t.get("enabled"):
             continue
-        first = trigger_next(t, after=baseline)
+        since = enabled_since(t)  # None for a trigger stored without the stamp
+        first = trigger_next(t, after=max(baseline, since) if since else baseline)
         second = trigger_next(t, after=first) if first else None
         if second is not None and second < now:
             return True

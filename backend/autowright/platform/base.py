@@ -44,10 +44,12 @@ class PowerAssertion(Protocol):
 class ProcessControl(Protocol):
     """§3 process-group control. The spawn sites themselves stay in their
     owning modules — the §15 suites patch `<module>.subprocess` — and take
-    only their session *policy* from `session_kwargs()`. POSIX-shaped for now
-    (pgids and signals, persisted per §4.5 with the own-session → pgid == pid
-    invariant); a Windows implementation will widen this surface (job
-    objects, pid + creation time instead of pgid) when that port lands."""
+    only their session *policy* from `session_kwargs()`. The surface is
+    POSIX-shaped (pgids and signals, persisted per §4.5 with the own-session →
+    pgid == pid invariant); the shipped Windows implementation maps it onto
+    process trees — one process group per child, taskkill /T for both signal
+    grades, and no pid-reuse verification (it needs pid + creation time), so
+    `group_has_command` answers False there."""
 
     def session_kwargs(self) -> dict: ...
     def signal_group(self, proc, sig: int | None = None) -> None: ...

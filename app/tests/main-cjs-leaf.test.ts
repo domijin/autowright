@@ -131,6 +131,48 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     expect(src).toContain("ipcMain.handle('cli-install', () => cliInstall())")
   })
 
+  it('the /health probe proves the backend is ours, not merely that something answered (§3)', () => {
+    // The hole this closes: backend.json can name a stale port some other
+    // local server now owns. Counting its 200 as our backend marked
+    // ensure-backend 'ok', skipped the service install, and waited forever.
+    // The probe now reads the body: our app name, and a version that isn't
+    // empty. Anything else (non-JSON throws into the catch) answers null, so
+    // ensureBackend falls through to the install branch.
+    expect(src).toMatch(/async function backendVersion\(\)[\s\S]{0,400}body\?\.app !== 'Autowright'/)
+    expect(src).toMatch(/backendVersion\(\)[\s\S]{0,500}String\(body\.version \?\? ''\) \|\| null/)
+    // …and every caller still reads "healthy" off exactly that answer, so the
+    // stricter probe can't be routed around.
+    expect(src).toContain('return (await backendVersion()) !== null')
+    expect(src).toMatch(/const running = await backendVersion\(\)\n\s*if \(running !== null\) \{/)
+  })
+
+  it('the ready chain survives a throwing tray (§9/§13)', () => {
+    // createTray() used to run first with no try/catch and no .catch on the
+    // chain: a bad tray image in a broken package silently killed the §6
+    // app-start triggers, the §13 tray poll, the §4.9 settings reconcile and
+    // the macOS activate handler with it.
+    const ready = src.slice(src.indexOf('app.whenReady()'))
+    // The reopen handler is registered before anything that can throw.
+    expect(ready.indexOf("app.on('activate'")).toBeLessThan(ready.indexOf('createTray()'))
+    expect(ready).toMatch(/if \(caps\.trayPanel\) \{\n\s*try \{\n\s*createTray\(\)\n\s*\} catch \(err\) \{[\s\S]{0,120}appLog\(/)
+    // …and the polls/reconcile sit after the catch, so they run either way.
+    for (const call of ['void notifyAppStarted()', 'void refreshTrayAlert()', 'void syncShellSettings()']) {
+      expect(ready.indexOf(call)).toBeGreaterThan(ready.indexOf('createTray()'))
+    }
+    // Last resort: nothing in the chain may reject into the void.
+    expect(ready).toMatch(/\}\)\.catch\(\(err\) => appLog\(/)
+  })
+
+  it('syncShellSettings tells a down backend apart from a shell-side throw', () => {
+    // One catch used to swallow both, so a throw out of applyShellSettings
+    // (tray create, login item, update timer) read as "backend down" and left
+    // no trace anywhere.
+    const fn = src.slice(src.indexOf('async function syncShellSettings()'))
+      .slice(0, src.slice(src.indexOf('async function syncShellSettings()')).indexOf('\n}\n') + 3)
+    expect(fn).toMatch(/catch \{ \/\* backend down/)
+    expect(fn).toMatch(/try \{\n\s*applyShellSettings\(settings\)\n\s*\} catch \(err\) \{\n\s*appLog\(/)
+  })
+
   it('cli-uninstall deletes only marker-carrying shims, via its IPC handler (§3)', () => {
     expect(src).toContain("ipcMain.handle('cli-uninstall', () => cliUninstall())")
     // The marker gate sits before the unlink — foreign files are never touched.
@@ -187,6 +229,10 @@ interface MainStub {
   updater: UpdaterRecord
   quits: number
   home: string
+  // §9 watchdog / renderer-death reporting: every dialog.showErrorBox the
+  // shell put up, and the app.log lines behind them.
+  errors: [string, string][]
+  log: () => string
 }
 
 const realRequire = createRequire(join(ELECTRON_DIR, 'main.cjs'))
@@ -202,6 +248,7 @@ function loadMain(): MainStub {
   const loginItem: boolean[] = []
   const aumids: string[] = []
   const sent: [string, unknown][] = []
+  const errors: [string, string][] = []
   let quits = 0
   const home = mkdtempSync(join(tmpdir(), 'aw-main-'))
   process.env.AUTOWRIGHT_HOME = home
@@ -287,7 +334,9 @@ function loadMain(): MainStub {
       constructor(icon: unknown) { trays.push(icon) }
       setToolTip() {} on() {} setImage() {} destroy() {}
     },
-    dialog: {},
+    dialog: {
+      showErrorBox: (title: string, body: string) => { errors.push([title, body]) },
+    },
     nativeImage: { createFromPath: () => ({ setTemplateImage() {} }) },
     ipcMain: { handle: (name: string, fn: never) => { handlers.set(name, fn) } },
     shell: {
@@ -322,7 +371,11 @@ function loadMain(): MainStub {
       if (!fn) throw new Error(`no app listener for ${event}`)
       fn()
     },
-    opened, revealed, windows, wins, trays, loginItem, aumids, sent, updater, home,
+    opened, revealed, windows, wins, trays, loginItem, aumids, sent, updater, home, errors,
+    // AUTOWRIGHT_HOME points app.log at this test's own home (§15).
+    log: () => {
+      try { return readFileSync(join(home, 'logs', 'app.log'), 'utf-8') } catch { return '' }
+    },
     get quits() { return quits },
   }
 }
@@ -422,6 +475,92 @@ describe('main.cjs §9 never-paint-blank window guard', () => {
     w.fire('did-start-loading')
     w.fire('did-finish-load')
     expect(w.shows).toBe(1)
+  })
+
+  it('a slow renderer is shown anyway once the 15 s watchdog fires', () => {
+    vi.useFakeTimers()
+    const m = loadMain()
+    m.invoke('open-app', '/app')
+    const w = m.wins[0]
+    // Nothing at all happens: no failure, no finish. Without the watchdog the
+    // app would sit here alive with no window for the rest of its life.
+    vi.advanceTimersByTime(14_000)
+    expect(w.shows).toBe(0)
+    vi.advanceTimersByTime(1_000)
+    expect(w.shows).toBe(1)
+    expect(w.focuses).toBe(1)
+    expect(m.errors).toEqual([]) // there was something to paint — no error box
+    expect(m.log()).toContain('showing it anyway')
+    // …and a late did-finish-load doesn't show it a second time.
+    w.fire('did-start-loading')
+    w.fire('did-finish-load')
+    expect(w.shows).toBe(1)
+  })
+
+  it('a successful load disarms the watchdog — no second show, no error box', () => {
+    vi.useFakeTimers()
+    const m = loadMain()
+    m.invoke('open-app', '/app')
+    const w = m.wins[0]
+    w.fire('did-start-loading')
+    w.fire('did-finish-load')
+    expect(w.shows).toBe(1)
+    vi.advanceTimersByTime(60_000)
+    expect(w.shows).toBe(1)
+    expect(m.errors).toEqual([])
+  })
+
+  it('nothing to paint after 15 s: the error box names app.log, the retry keeps running', () => {
+    vi.useFakeTimers()
+    const m = loadMain()
+    m.invoke('open-app', '/app')
+    const w = m.wins[0]
+    w.fire('did-start-loading')
+    w.fire('did-fail-load', -6, 'ERR_FILE_NOT_FOUND', 'file:///dist/index.html', true)
+    w.fire('did-finish-load')
+    vi.advanceTimersByTime(15_000)
+    // Never shown blank — the window has nothing in it. The failure is told
+    // instead, and it points at the log.
+    expect(w.shows).toBe(0)
+    expect(m.errors).toHaveLength(1)
+    expect(m.errors[0][0]).toBe('Autowright')
+    expect(m.errors[0][1]).toContain(join(m.home, 'logs', 'app.log'))
+    // The 1 s retry still ran (and would keep running against a real
+    // Chromium, which re-fires did-fail-load), so a renderer that arrives late
+    // still wins.
+    expect(w.loads).toBe(2)
+    w.fire('did-start-loading')
+    w.fire('did-finish-load')
+    expect(w.shows).toBe(1)
+    // …and the box is a one-shot: the watchdog already fired.
+    vi.advanceTimersByTime(60_000)
+    expect(m.errors).toHaveLength(1)
+  })
+
+  it('a dead renderer reloads once; a second death reports and quits (§9)', () => {
+    vi.useFakeTimers()
+    const m = loadMain()
+    m.invoke('open-app', '/app')
+    const w = m.wins[0]
+    expect(w.loads).toBe(1)
+    // did-finish-load never comes when the renderer process dies — without a
+    // handler the window would stay hidden forever with no error at all.
+    w.fire('render-process-gone', { reason: 'oom' })
+    expect(w.loads).toBe(2)
+    expect(m.quits).toBe(0)
+    expect(m.errors).toEqual([])
+    expect(m.log()).toContain('renderer process gone (oom)')
+    // A second death has nothing left to try: say so and quit rather than
+    // staying resident and invisible.
+    w.fire('render-process-gone', { reason: 'crashed' })
+    expect(w.loads).toBe(2)
+    expect(m.errors).toHaveLength(1)
+    expect(m.errors[0][1]).toContain(join(m.home, 'logs', 'app.log'))
+    expect(m.quits).toBe(1)
+    // The watchdog was disarmed with it — no box on top of the box.
+    vi.advanceTimersByTime(60_000)
+    expect(m.errors).toHaveLength(1)
+    expect(w.shows).toBe(0)
   })
 
   it('showApp on an unloaded window stays hidden; after the load it shows again', () => {

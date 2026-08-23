@@ -496,7 +496,12 @@ class Store:
                                {"from": t["from"],
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {})}
                                if t["kind"] == "imessage" else {}),
-                            **({"timezone": t["timezone"]} if t.get("timezone") and t["kind"] in ("cron", "time") else {})})
+                            **({"timezone": t["timezone"]} if t.get("timezone") and t["kind"] in ("cron", "time") else {}),
+                            # §4.3 enable stamp — loaded as stored; a trigger
+                            # written before the field existed stays without it
+                            # (never healed, §4.1 falls back to the run baseline).
+                            **({triggerlib.ENABLED_AT: t[triggerlib.ENABLED_AT]}
+                               if isinstance(t.get(triggerlib.ENABLED_AT), str) else {})})
             elif isinstance(t, dict) and t.get("kind") == "time":
                 # A past one-shot found on disk was missed while the backend was
                 # down — consumed (§4.3), never loaded.
@@ -706,7 +711,9 @@ class Store:
             a = {
                 # §4.1: the create manifest seeds desc; user-owned from here on
                 "id": automation_id, "name": name, "description": ver.get("description", ""), "current_version": 1,
-                "triggers": triggers or [],
+                # §4.3: an entry created enabled is stamped now — nothing that
+                # passed before the automation existed can ever be "missed".
+                "triggers": triggerlib.stamp_enabled(triggers or []),
                 "agent_id": agent_id,
                 # §4.1: an explicit empty list is a real choice ("no step
                 # agents") — only a missing field falls back to the drafter.
@@ -997,7 +1004,9 @@ class Store:
                     a[k_int] = patch[k_api]
             if "triggers" in patch:
                 # Whole-list replace (§19) — the API validated + normalized it.
-                a["triggers"] = patch["triggers"]
+                # §4.3: the enable stamps reconcile here, against the stored
+                # list, so every write path gets them (and none can be faked).
+                a["triggers"] = triggerlib.stamp_enabled(patch["triggers"], a["triggers"])
             if "paramValues" in patch:
                 a["param_values"].update(patch["paramValues"])
             for k_api, k_int, clamp in [("maxParallel", "max_parallel", clamp_max_parallel),
@@ -1755,8 +1764,11 @@ class Store:
     def overdue(self, a: dict, now: datetime | None = None) -> bool:
         """§4.1 overdue, shared by problems_json and the §6 scheduler sweep:
         two consecutive enabled-cron occurrences passed since the last real
-        run (or since created_at if it never ran) with no execution. Derived
-        from the execution index and the clock — never stored."""
+        run (or since created_at if it never ran) with no execution. Each
+        trigger counts from that run baseline or its own §4.3 enable stamp,
+        whichever is later, so a re-enable never false-fires on moments that
+        passed while it was off. Derived from the execution index, the stored
+        stamp, and the clock — the verdict itself is never stored."""
         base = (lenient_local(a.get("_last_exec_at")) if a.get("_last_exec_at") else None) \
             or lenient_local(a.get("created_at"))
         if base is None:  # §5 lenient: a damaged created_at drops the audit, never 500s

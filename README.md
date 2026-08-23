@@ -38,7 +38,7 @@ Macs; the app is Developer-ID signed and notarized. Or build from source — see
 - **Live execution view** — Per-step status, streamed logs, and full execution history.
 - **Menu-bar surface** — Glance at what's running and fire jobs without opening the window.
 - **Local and file-first** — Automations are YAML and Python on disk, secrets stay in the
-  macOS Keychain, and everything runs on your Mac; portable `.autowright` export/import.
+  macOS Keychain, and everything runs on your Mac.
 - **CLI with full app parity** — Author automations as files, execute and follow them,
   manage secrets and triggers. Headless- and agent-friendly with explicit per-automation
   secret grants.
@@ -53,6 +53,8 @@ Macs; the app is Developer-ID signed and notarized. Or build from source — see
 - **GitHub sync** — Keep your automations in a GitHub repo and pull changes into the app.
 - **Automation & agent marketplace** — Browse, share, and install automations and agents
   made by others.
+- **Portable `.autowright` export/import**: Built and available from the CLI; the in-app
+  Import and Export entry points are currently disabled.
 - **More harness integrations** — Beyond the current four (Claude Code, Gemini CLI, Codex,
   OpenCode).
 - **Richer triggers** — React to file-system changes, calendar events, and more.

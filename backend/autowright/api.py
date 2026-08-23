@@ -916,7 +916,15 @@ def _clear_import_spool() -> None:
     d = paths.import_spool_dir()
     if not d.exists():
         return
-    for p in d.iterdir():
+    try:
+        stale = list(d.iterdir())
+    except OSError as e:
+        # An unlistable spool dir (bad permissions, a data path on a
+        # disconnected volume) must never brick startup into a launchd crash
+        # loop — the sweep is housekeeping, so skip it with a warning.
+        log.warning("couldn't read the import spool dir %s (%s) — skipping the sweep", d, e)
+        return
+    for p in stale:
         try:
             p.unlink()
         except OSError:

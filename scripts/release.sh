@@ -22,6 +22,12 @@
 #                                    the recovery path when the cask step failed after
 #                                    the release went out (a re-run of <version> can't:
 #                                    the tag already exists). Idempotent.
+#   ./scripts/release.sh --feed      rewrite and push the §3 update feed
+#                                    (release/darwin-<arch>/feed.json) plus the
+#                                    docs/downloads.json entry for the current VERSION
+#                                    against its existing GitHub release - the recovery
+#                                    path when the feed commit or push failed after the
+#                                    release went out. Idempotent.
 #
 # Files are rewritten only when their version actually differs, so pyproject.toml's
 # mtime (build.sh's .backend-stamp trigger) never churns on a no-op sync.
@@ -38,15 +44,26 @@ INIT_PY="$ROOT/backend/autowright/__init__.py"
 TAP_DIR="$(dirname "$ROOT")/homebrew-tap"
 TAP_REMOTE="https://github.com/hansololz/homebrew-tap.git"
 CASK_REL="Casks/autowright.rb"
+# The cask's `livecheck` reads the same §3 feed the in-app updater reads. The cask is
+# arm64-only, so it is always the arm64 mac feed - and always the raw GitHub URL, never
+# the retired autowright.ai/updates/… Pages path. publish_cask pins it on every release
+# so a hand-edit or a stale checkout can never leave `brew livecheck` pointing at a dead
+# host.
+CASK_LIVECHECK_URL="https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/feed.json"
 
 ARCH="$(uname -m)"
+
+# §3 update feed for the built arch + the §17 website download index. Both are
+# rewritten after the GitHub release exists, and pushed together.
+FEED="$ROOT/release/darwin-$ARCH/feed.json"
+DOWNLOADS="$ROOT/docs/downloads.json"
 
 # GNU sed and BSD sed disagree on in-place editing (GNU: -i, BSD: -i '') — probe
 # the dialect once so the version rewrites run on Linux too (build.sh --sync path).
 if sed --version > /dev/null 2>&1; then SED_I=(sed -i -E); else SED_I=(sed -i '' -E); fi
 
 usage() {
-  echo "usage: $(basename "$0") <version> | --sync | --check | --cask"
+  echo "usage: $(basename "$0") <version> | --sync | --check | --cask | --feed"
   exit 2
 }
 
@@ -56,6 +73,19 @@ require_gh() {
     || { echo "gh CLI not found — install with: brew install gh && gh auth login"; exit 1; }
   gh auth status > /dev/null 2>&1 \
     || { echo "gh CLI not authenticated — run: gh auth login"; exit 1; }
+}
+
+# require_main_branch - this repo's checkout must sit on main before anything is
+# published. The §3 update feeds are fetched from
+# raw.githubusercontent.com/<owner>/<repo>/main/release/..., so a feed committed on
+# any other branch is never the file installed apps read: the release would go out
+# with an update feed that silently stays at the previous version. Same rule
+# tap_preflight applies to the homebrew-tap checkout, applied to this repo.
+require_main_branch() {
+  local branch
+  branch="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
+  [ "$branch" = "main" ] \
+    || { echo "on branch '$branch', not main - the §3 feed URLs are pinned to /main/; switch before releasing"; exit 1; }
 }
 
 # tap_preflight — make the §3 Homebrew tap checkout ready to receive a bump: cloned,
@@ -101,6 +131,13 @@ publish_cask() {
     || { echo "cask version line not rewritten — check $cask"; exit 1; }
   grep -q "^  sha256 \"$sha\"$" "$cask" \
     || { echo "cask sha256 line not rewritten — check $cask"; exit 1; }
+  # The livecheck URL is pinned, not just left alone: it is the only line naming the §3
+  # feed host, and a stale one fails silently (brew livecheck just stops reporting). The
+  # four-space indent scopes the match to the `livecheck do` block - the cask's own `url`
+  # stanza sits at two spaces and ends in a comma.
+  "${SED_I[@]}" "s|^(    url \")[^\"]+(\")$|\1$CASK_LIVECHECK_URL\2|" "$cask"
+  grep -q "^    url \"$CASK_LIVECHECK_URL\"$" "$cask" \
+    || { echo "cask livecheck url not rewritten - check $cask"; exit 1; }
   # Output is captured rather than streamed: brew re-bundles its rubocop gems on stderr
   # from time to time, which has no place in a release log unless the lint fails.
   if command -v brew > /dev/null; then
@@ -127,6 +164,88 @@ publish_cask() {
   echo "· homebrew cask published (hansololz/tap/autowright $version)"
 }
 
+# release_dmg_url <version> - the download URL of that release's arm64/x86_64 DMG.
+# One spelling of the URL for every caller, so the feed, the download index, and the
+# --feed recovery path can never disagree about it.
+release_dmg_url() {
+  local version="$1" owner_repo
+  owner_repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+  printf 'https://github.com/%s/releases/download/v%s/Autowright-%s-darwin-%s.dmg' \
+    "$owner_repo" "$version" "$version" "$ARCH"
+}
+
+# write_feed <version> <dmg-url> - rewrite the built arch's Squirrel.Mac JSON feed
+# (SPEC §3): `currentRelease` plus one `releases[]` entry pointing at the released
+# DMG. Called only once the release is live, so the feed never names a URL that
+# isn't. The URL must stay a .dmg - the §3 update-download flow mounts it with
+# `hdiutil attach` and builds Squirrel's zip from the mounted .app.
+write_feed() {
+  local version="$1" dmg_url="$2"
+  mkdir -p "$(dirname "$FEED")"
+  cat > "$FEED" <<EOF
+{
+  "currentRelease": "$version",
+  "releases": [
+    {
+      "version": "$version",
+      "updateTo": {
+        "version": "$version",
+        "name": "v$version",
+        "url": "$dmg_url"
+      }
+    }
+  ]
+}
+EOF
+}
+
+# write_downloads <key> <version> <url> - the §17 docs/downloads.json website
+# download index: update only this OS/arch's entry, leaving the other OS legs'
+# entries alone. python3 keeps the merge and formatting identical across all three
+# release scripts, so the legs never churn each other's output.
+write_downloads() {
+  python3 - "$DOWNLOADS" "$1" "$2" "$3" <<'PY'
+import json, sys
+path, key, version, url = sys.argv[1:]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except FileNotFoundError:
+    data = {}
+data[key] = {"url": url, "version": version}
+with open(path, "w", newline="\n") as f:
+    json.dump(data, f, indent=2, sort_keys=True)
+    f.write("\n")
+PY
+}
+
+# push_feed <version> - commit + push just the feed and the download index (plain
+# git commit, not commit.sh). Idempotent, and split the way publish_cask splits:
+# an already-current pair commits nothing, but the push still runs whenever main
+# is ahead of origin/main, so an earlier failed push can never leave the served
+# feed lagging the checkout. The commit names its paths explicitly, so a --feed
+# recovery run never sweeps up unrelated work.
+push_feed() {
+  local version="$1"
+  if [ -n "$(git -C "$ROOT" status --porcelain -- "$FEED" "$DOWNLOADS")" ]; then
+    echo "· publishing update feed (release/darwin-$ARCH/feed.json + docs/downloads.json)"
+    git -C "$ROOT" add "$FEED" "$DOWNLOADS"
+    git -C "$ROOT" commit -q -m "Publish v$version update feed (darwin-$ARCH)" \
+      -- "$FEED" "$DOWNLOADS"
+  else
+    echo "· update feed already at $version - no feed commit"
+  fi
+  git -C "$ROOT" fetch -q origin main \
+    || { echo "cannot reach origin - the feed commit is local only; re-run: $(basename "$0") --feed"; exit 1; }
+  if [ -z "$(git -C "$ROOT" log --oneline origin/main..HEAD)" ]; then
+    echo "· update feed already on origin/main - nothing to push"
+    return 0
+  fi
+  git -C "$ROOT" push -q origin HEAD \
+    || { echo "failed to push the update feed - re-run: $(basename "$0") --feed"; exit 1; }
+  echo "· update feed pushed (v$version, darwin-$ARCH)"
+}
+
 # semver_gt <a> <b> — true when a is strictly higher than b. Numeric core compared
 # field by field; on an equal core a release outranks any pre-release, and two
 # pre-releases compare lexically (close enough to semver for this repo's tags).
@@ -146,7 +265,8 @@ semver_gt() {
 [ $# -eq 1 ] || usage
 MODE="$1"
 
-if [ "$MODE" != "--sync" ] && [ "$MODE" != "--check" ] && [ "$MODE" != "--cask" ]; then
+if [ "$MODE" != "--sync" ] && [ "$MODE" != "--check" ] \
+   && [ "$MODE" != "--cask" ] && [ "$MODE" != "--feed" ]; then
   if ! printf '%s' "$MODE" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
     echo "invalid version: '$MODE' (expected MAJOR.MINOR.PATCH[-prerelease])"
     exit 2
@@ -156,6 +276,7 @@ if [ "$MODE" != "--sync" ] && [ "$MODE" != "--check" ] && [ "$MODE" != "--cask" 
   require_gh
   [ -z "$(git -C "$ROOT" status --porcelain)" ] \
     || { echo "working tree dirty — commit or stash before releasing"; exit 1; }
+  require_main_branch
   if git -C "$ROOT" rev-parse -q --verify "refs/tags/v$MODE" > /dev/null \
      || git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/v$MODE" > /dev/null 2>&1; then
     echo "tag v$MODE already exists — pick a new version"
@@ -190,6 +311,27 @@ if [ "$MODE" = "--cask" ]; then
   gh release download "v$VERSION" -p "$DMG_NAME" -D "$CASK_TMP" \
     || { echo "release v$VERSION has no asset $DMG_NAME"; exit 1; }
   publish_cask "$VERSION" "$CASK_TMP/$DMG_NAME"
+  exit 0
+fi
+
+# ---- --feed: republish the §3 update feed alone, against an existing release ----
+# Recovery for a feed rewrite/commit/push that failed after the GitHub release went
+# out (a re-run of <version> can't: the tag already exists). Touches no version site,
+# builds nothing, and never downloads the DMG - only the release's asset list is read,
+# to prove the URL the feed is about to name is live.
+if [ "$MODE" = "--feed" ]; then
+  require_gh
+  require_main_branch
+  gh release view "v$VERSION" > /dev/null 2>&1 \
+    || { echo "no GitHub release v$VERSION — cut it with: $(basename "$0") $VERSION"; exit 1; }
+  FEED_DMG_NAME="Autowright-$VERSION-darwin-$ARCH.dmg"
+  gh release view "v$VERSION" --json assets -q '.assets[].name' \
+    | grep -qx "$FEED_DMG_NAME" \
+    || { echo "release v$VERSION has no asset $FEED_DMG_NAME - the feed would name a dead URL"; exit 1; }
+  FEED_DMG_URL="$(release_dmg_url "$VERSION")"
+  write_feed "$VERSION" "$FEED_DMG_URL"
+  write_downloads "darwin-$ARCH" "$VERSION" "$FEED_DMG_URL"
+  push_feed "$VERSION"
   exit 0
 fi
 
@@ -267,50 +409,11 @@ else
 
   # ---- update feed (SPEC §3): Squirrel.Mac JSON for this arch, raw from GitHub ----
   # Written only after the release exists, so the feed never points at a URL
-  # that isn't live yet.
-  OWNER_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-  DMG_URL="https://github.com/$OWNER_REPO/releases/download/v$VERSION/$(basename "$DMG")"
-  FEED="$ROOT/release/darwin-$ARCH/feed.json"
-  mkdir -p "$ROOT/release/darwin-$ARCH"
-  cat > "$FEED" <<EOF
-{
-  "currentRelease": "$VERSION",
-  "releases": [
-    {
-      "version": "$VERSION",
-      "updateTo": {
-        "version": "$VERSION",
-        "name": "v$VERSION",
-        "url": "$DMG_URL"
-      }
-    }
-  ]
-}
-EOF
-
-  # §17 docs/downloads.json — the website's download index: update only this
-  # arch's entry, leaving the other OS legs' entries alone. python3 keeps the
-  # merge and formatting identical across all three release scripts, so the
-  # legs never churn each other's output.
-  DOWNLOADS="$ROOT/docs/downloads.json"
-  python3 - "$DOWNLOADS" "darwin-$ARCH" "$VERSION" "$DMG_URL" <<'PY'
-import json, sys
-path, key, version, url = sys.argv[1:]
-try:
-    with open(path) as f:
-        data = json.load(f)
-except FileNotFoundError:
-    data = {}
-data[key] = {"url": url, "version": version}
-with open(path, "w", newline="\n") as f:
-    json.dump(data, f, indent=2, sort_keys=True)
-    f.write("\n")
-PY
-
-  echo "· publishing update feed (release/darwin-$ARCH/feed.json + docs/downloads.json)"
-  git -C "$ROOT" add "$FEED" "$DOWNLOADS"
-  git -C "$ROOT" commit -q -m "Publish v$VERSION update feed (darwin-$ARCH)"
-  git -C "$ROOT" push -q origin HEAD
+  # that isn't live yet. Same three functions the --feed recovery mode runs.
+  DMG_URL="$(release_dmg_url "$VERSION")"
+  write_feed "$VERSION" "$DMG_URL"
+  write_downloads "darwin-$ARCH" "$VERSION" "$DMG_URL"
+  push_feed "$VERSION"
 
   # ---- Homebrew cask (SPEC §3): bump the tap, last, once the release is live ----
   publish_cask "$VERSION" "$DMG"

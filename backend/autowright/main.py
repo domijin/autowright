@@ -10,6 +10,7 @@ import re
 import socket
 import sys
 import threading
+from collections.abc import Callable
 
 import uvicorn
 
@@ -98,20 +99,35 @@ class _DevModeFilter(logging.Filter):
         return record.levelno >= logging.WARNING or bool(store.settings.get("developerMode"))
 
 
-def republish_if_lost(payload: str) -> bool:
+# §3: serializes the discovery guard's republish against shutdown's unlink —
+# the two must never interleave into a resurrected backend.json.
+_publish_lock = threading.Lock()
+
+
+def republish_if_lost(payload: str, stopped: Callable[[], bool] | None = None) -> bool:
     """§3 discovery guard: rewrite backend.json when it is missing or
     unreadable (recreating the §5 dirs first) — an externally wiped
     Application Support dir must not strand clients on a healthy backend that
     launchd KeepAlive will never restart. A well-formed file is left alone
     whatever pid it holds: during a service restart it may already be the
-    successor's. Returns True when it rewrote."""
+    successor's. Returns True when it rewrote.
+
+    `stopped` is the shutdown flag, re-checked under `_publish_lock` right
+    before the write: shutdown sets it and then unlinks the file, and a guard
+    already past its read would otherwise republish a stale port/token on top
+    of the unlink — breaking the §3 guarantee that a signal-driven stop leaves
+    no backend.json behind. The lock makes the check-then-write atomic against
+    that unlink, so the two can only interleave in a harmless order."""
     try:
         json.loads(paths.backend_json().read_text())
         return False
     except (OSError, ValueError):
-        paths.ensure_dirs()
-        atomic_write_text(paths.backend_json(), payload, mode=0o600)
-        return True
+        with _publish_lock:
+            if stopped is not None and stopped():
+                return False
+            paths.ensure_dirs()
+            atomic_write_text(paths.backend_json(), payload, mode=0o600)
+            return True
 
 
 def main() -> None:
@@ -146,7 +162,9 @@ def main() -> None:
 
     def _guard() -> None:
         while not stop_guard.wait(10):
-            republish_if_lost(discovery)
+            # The flag is re-checked inside, immediately before the write: a
+            # shutdown landing mid-republish must win, not be undone.
+            republish_if_lost(discovery, stop_guard.is_set)
 
     threading.Thread(target=_guard, name="backend-json-guard", daemon=True).start()
     scheduler = Scheduler(store, api.engine)
@@ -167,14 +185,17 @@ def main() -> None:
         stop_guard.set()  # before the unlink below — the guard must not resurrect the file
         scheduler.stop()
         listeners.stop()
-        try:
-            # Only remove our own discovery file: during a service restart the
-            # successor may already have published its fresh port/token here —
-            # deleting that would strand the UI/CLI on nothing (§3).
-            if json.loads(paths.backend_json().read_text()).get("pid") == os.getpid():
-                paths.backend_json().unlink()
-        except (OSError, ValueError):
-            pass
+        # Under the same lock the guard writes beneath: setting the flag alone
+        # would still lose to a guard already past its read (§3).
+        with _publish_lock:
+            try:
+                # Only remove our own discovery file: during a service restart the
+                # successor may already have published its fresh port/token here —
+                # deleting that would strand the UI/CLI on nothing (§3).
+                if json.loads(paths.backend_json().read_text()).get("pid") == os.getpid():
+                    paths.backend_json().unlink()
+            except (OSError, ValueError):
+                pass
 
     api.register_shutdown(shutdown)
     # §3/§4.9 permanent assertion, through the §2 platform layer.

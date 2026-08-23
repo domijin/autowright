@@ -1,8 +1,8 @@
 """Filesystem locations (§5). Two per-OS roots (data + logs) picked from the
 platform token — the §5 root table; every other location hangs off them.
 AUTOWRIGHT_HOME overrides both for dev/tests (logs go to <home>/logs).
-macOS is the only shipped platform; the Linux/Windows rows are the §5 reserved
-decisions, implemented here so a future port changes no call sites. The
+All three builds ship (macOS, Linux, Windows), so every row of the table is
+live — the call sites never branch on the OS themselves. The
 Electron shell resolves the same two roots in electron/platform/ — the tables
 must never drift (§15 guard)."""
 from __future__ import annotations

@@ -1,18 +1,22 @@
-// §2 platform layer (shell half), degraded build for Linux (and any unknown
-// platform — win32 routes to win32.cjs). Not an implementation: explicit
-// placeholders so a non-macOS dev launch degrades in plain words (native
-// window frame, no vibrancy, no update feed) instead of crashing on mac-only
-// Electron options. Replacing this with a real linux.cjs with the same
-// surface as darwin.cjs is the entire shell-side port surface — main.cjs
-// won't change.
+// §2 platform layer (shell half), degraded build for any platform with no
+// module of its own — macOS, Windows and Linux each route to theirs, so
+// nothing shipped lands here. Not an implementation: explicit placeholders so
+// an unknown platform degrades in plain words (native window frame, no tray,
+// no login item, no update feed) instead of crashing on options only one OS
+// understands. Every export darwin.cjs has exists here, so main.cjs never
+// forks on which module it got; giving a new platform a real module of its own
+// with the same surface is the entire shell-side port surface.
 const { execFile } = require('child_process')
 const os = require('os')
 const path = require('path')
 
 const roots = require('./roots.cjs')
 
-const OS_TOKEN = process.platform === 'win32' ? 'windows' : 'linux' // §5.1 vocabulary
-const OS_NAME = process.platform === 'win32' ? 'Windows' : 'Linux' // §4.1 display form
+// §5.1 vocabulary / §4.1 display form. An unknown platform has no name of its
+// own to serve, so it answers the POSIX-shaped defaults the rest of this
+// module is built on.
+const OS_TOKEN = 'linux'
+const OS_NAME = 'Linux'
 
 function dataRootDefault() { return roots.dataRootDefault(process.platform) }
 function logsRootDefault() { return roots.logsRootDefault(process.platform) }
@@ -21,7 +25,7 @@ function bundledPythonPath(resourcesPath) {
   return path.join(resourcesPath, 'python', 'bin', 'python3')
 }
 
-// Native frame and decorations — no custom chrome off macOS yet.
+// Native frame and decorations: the only chrome every windowing system draws.
 function mainWindowChrome() {
   return {}
 }
@@ -38,14 +42,17 @@ function panelPosition(pt, display) {
   return { x: Math.round(x), y: display.workArea.y + 6 }
 }
 
-// The template PNG renders poorly off macOS; a real port ships per-OS assets.
+// Tray assets are per-OS and this platform has none of its own. The
+// `trayPanel` capability is false, so main.cjs never asks — the checked-in
+// PNGs stand in only to keep the module surfaces identical.
 function trayIconSpec(alert) {
   return { file: alert ? 'trayAlert.png' : 'trayTemplate.png', template: false }
 }
 
 function setDockIcon(_app, _iconPath) {}
 
-// POSIX shim — right for Linux (the Windows .cmd shim lives in win32.cjs).
+// §3 shim in its POSIX form — the shape every non-Windows platform uses (the
+// Windows .cmd shim lives in win32.cjs).
 const SHIM_MARKER = '# autowright CLI shim'
 
 function defaultShimPath() {
@@ -79,12 +86,15 @@ function updateFeedUrl(_arch) {
   return null
 }
 
+// §3 managed-install detection: a managed channel is per-OS (Homebrew is the
+// macOS one) and this platform declares none, so no copy here is ever managed.
 function managedInstall() {
-  return Boolean(process.env.AUTOWRIGHT_CASKROOM
-    && require('fs').existsSync(process.env.AUTOWRIGHT_CASKROOM))
+  return false
 }
 
-const MANAGED_COPY_ERROR = 'This copy is managed by Homebrew.'
+// Kept only so the module surfaces stay identical — with no feed and no
+// managed channel, nothing on this platform can ever answer it.
+const MANAGED_COPY_ERROR = 'This copy is managed by a package manager.'
 
 const SETTINGS_DEEP_LINK = null
 
@@ -92,8 +102,9 @@ function revealPrefersOpen(_abs, isDir) {
   return isDir
 }
 
-// §9 failure copy: the Gatekeeper line is macOS copy (darwin.cjs) — off macOS
-// the plain line is all we can honestly say.
+// §9 failure copy: the Gatekeeper line is macOS copy (darwin.cjs) — with no
+// knowledge of this platform's service manager, the plain line is all we can
+// honestly say.
 const SERVICE_START_FAILED_DETAIL =
   'The backend service failed to start. Details in app.log.'
 

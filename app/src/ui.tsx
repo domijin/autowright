@@ -361,7 +361,7 @@ export function GreenCheck({ label }: { label: string }) {
 /** §9/§19 `agentInstall` gating: each provider's own install page — where an
  * OS can't run the install (or the Terminal sign-in), the card's action is
  * replaced by a line linking the provider's name here. */
-export const VENDOR_INSTALL: Record<string, { name: string; url: string }> = {
+const VENDOR_INSTALL: Record<string, { name: string; url: string }> = {
   claude: { name: 'Claude Code', url: 'https://claude.com/product/claude-code' },
   gemini: { name: 'Gemini CLI', url: 'https://github.com/google-gemini/gemini-cli' },
   codex: { name: 'Codex', url: 'https://developers.openai.com/codex/cli' },

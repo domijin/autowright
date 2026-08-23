@@ -179,7 +179,8 @@ def _close_pipe(f) -> None:
 
 
 def _processes():
-    """§2 platform layer process-group control (POSIX today; platform/)."""
+    """§2 platform layer process-group control — POSIX-shaped, with the
+    Windows tree-kill mapping behind the same Protocol (platform/)."""
     return platform.current().processes
 
 

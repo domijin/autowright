@@ -172,11 +172,19 @@ problems: [{ kind, label }] — derived at serialization, never stored: the "wou
   checked against the execution record, so the chip still never cries wolf. Kinds,
   in serialized order (each `label` is the exact UI copy):
   - `overdue` — the schedule is being missed: some **enabled cron** trigger has had **two
-    consecutive occurrences** pass since the baseline with no real run. Baseline = the
-    latest real execution's start (the `lastStatus` population: `skipped`/`queued`/test
-    records excluded), falling back to the automation's `created_at` if it never ran;
-    overdue iff the second §4.3 next-occurrence after the baseline (the same DST-aware
-    math as `nextAt`) is already in the past. Two missed moments, not one, is the grace:
+    consecutive occurrences** pass since its baseline with no real run. The baseline is
+    **per trigger**: the later of the automation's run baseline - the latest real
+    execution's start (the `lastStatus` population: `skipped`/`queued`/test records
+    excluded), falling back to the automation's `created_at` if it never ran - and that
+    trigger's §4.3 `enabledAt` stamp; overdue iff the second §4.3 next-occurrence after
+    that baseline (the same DST-aware math as `nextAt`) is already in the past. The stamp
+    is what keeps a re-enable honest: occurrences that passed while the trigger was off
+    are ignored even after it comes back on, so turning a cron on again after a week
+    away (or adding a cron to an automation created long ago) starts counting from that
+    moment - the same rule the §6 scheduler fires by, which never fires an occurrence
+    that passed while the trigger was off. A trigger stored without the stamp counts from
+    the run baseline alone, exactly as before (§4.3 - no compat shim, nothing healed).
+    Two missed moments, not one, is the grace:
     a single occurrence legitimately skipped (§6 busy-skip, a restart at the wrong
     minute) never flags. Cron triggers only — one-shots are consumed by the §4.3 spent
     rule, and app-start/message triggers have no schedule; disabled triggers never count.
@@ -284,7 +292,8 @@ the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-d
 Manual starts (Execute now, the menu bar, CLI) are
 not triggers in this list — they always work, whatever the list holds.
 
-Trigger shape: `{ id: uuid, kind, enabled: bool, …kind fields }` plus the backend-derived display
+Trigger shape: `{ id: uuid, kind, enabled: bool, enabledAt?, …kind fields }` plus the
+backend-derived display
 strings `label` and `short`. The backend assigns `id` to entries that arrive without one. Kinds:
 
 | kind | fields | fires | label / short |
@@ -295,6 +304,20 @@ strings `label` and `short`. The backend assigns `id` to entries that arrive wit
 | `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: id of the §4.8 secret holding the bot token (a secret uuid) · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a list of Discord user ids (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
 | `imessage` | `from`: sender handle (E.164 phone or email) · optional `pattern`: text filter | at every matching iMessage on this Mac (rules below) | "iMessage · `<from>`" (+ " · “`<pattern>`”" when set) / "iMessage" |
 | `pubsub` | — | future message trigger | — |
+
+**Enable stamp (`enabledAt`)** - the moment the trigger last became live: a §5 stored
+timestamp (UTC ISO-8601 with offset), written when the trigger is created enabled and again
+on every off-to-on transition. It is **backend-owned at every write path that replaces an
+automation's trigger list** (the §19 PATCH, create, an edit save, the §20 CLI - all of them
+whole-list replaces): the incoming list is reconciled against the stored one by `id`, the
+stamp carried forward for a trigger that was already on and minted fresh for one that
+arrives enabled and was not. A client can never set it - a sent value is discarded. Turning
+a trigger off keeps the old stamp (the next on-transition overwrites it), and an edit that
+leaves an already-on trigger on never re-stamps it: changing a live cron's expression is
+not a re-enable. It rides in the stored trigger and round-trips through the API like any
+other trigger field. Its one use is the §4.1 `overdue` baseline. A trigger on disk without
+the field keeps the plain baseline (§5 lenient load) - never stamped on load or save, no
+compat shim; an unreadable value reads as absent.
 
 **Timezone (`timezone`)** — optional IANA zone name (e.g. `Asia/Tokyo`) on `cron` and `time`
 triggers. Absent → the machine's local time (labels unchanged). Present → `expression` matches and

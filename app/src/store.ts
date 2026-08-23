@@ -157,6 +157,12 @@ let executionMru: string[] = []
 // exactly the "this view was truncated" signal the §7 notice reads.
 export const LOG_TAIL = 2000
 
+// §19 monotonic-refetch recovery: ids whose dropped body was already replaced
+// by one scheduled refetch. The drop only strands a body when nothing has
+// landed in the full slot yet, so exactly one retry is owed per execution —
+// this is what makes it one and not a loop.
+const executionRefetched = new Set<string>()
+
 function touchExecutionMru(id: string) {
   executionMru = [id, ...executionMru.filter((x) => x !== id)].slice(0, EXECUTION_CACHE_KEEP)
 }
@@ -525,7 +531,19 @@ export const useStore = create<Model>((set, get) => ({
       const nonTerminal = (s: string) => s === 'queued' || s === 'executing'
       const cur = get().executionFull[executionId]
         ?? get().executions.find((x) => x.id === executionId)
-      if (cur && !nonTerminal(cur.status) && nonTerminal(e.status)) return
+      if (cur && !nonTerminal(cur.status) && nonTerminal(e.status)) {
+        // §19: dropping is right, losing the body is not. With nothing in the
+        // full slot the drop leaves the header alone — a page opened mid-run
+        // whose finished event outraced its first GET would render zero steps
+        // forever. Schedule exactly one fresh GET: it returns the terminal
+        // body, which lands through the ordinary path below.
+        if (!get().executionFull[executionId] && !executionRefetched.has(executionId)) {
+          executionRefetched.add(executionId)
+          setTimeout(() => { void get().loadExecution(executionId) }, 0)
+        }
+        return
+      }
+      executionRefetched.delete(executionId)
       set({ executionFull: { ...get().executionFull, [executionId]: e } })
     } catch { /* deleted */ }
   },

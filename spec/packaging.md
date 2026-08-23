@@ -45,7 +45,14 @@ the update bullets below).
   process probes the backend (`backend.json` + unauthenticated `GET /health`, short timeout); if
   unreachable, it runs the bundled service module — `Contents/Resources/python/bin/python3 -m
   autowright.service install` — which writes the LaunchAgent plist and bootstraps it via
-  `launchctl`. `service.py` owns this and is directly runnable (`python -m autowright.service
+  `launchctl`. **The probe validates the payload, not just reachability** (`backendVersion()`):
+  a response counts as our backend only when it parses as JSON whose `app` field equals
+  `Autowright` and whose `version` field is a non-empty string. Anything else - a bare 200, an
+  HTML error page, another service's JSON - is treated as unhealthy, so a foreign server
+  squatting the port a stale `backend.json` records can never satisfy ensure-backend, and the
+  version-compare bullet below (which reads the same validated `version`) can never be driven
+  by a stranger's payload. An unhealthy answer takes the same path as an unreachable one:
+  `service install` runs and re-publishes `backend.json` with the real port. `service.py` owns this and is directly runnable (`python -m autowright.service
   install|uninstall|status|restart`); the §20 CLI's `autowright service …` group is a thin
   wrapper over the same functions. **The UI and the backend never invoke the CLI** — the CLI is
   a pure client leaf (it calls the backend API and the service module; nothing calls it). The
@@ -104,8 +111,9 @@ the update bullets below).
   shim is a batch file `autowright.cmd`: `@echo off`, a `rem autowright CLI shim` marker line,
   then `"<python>" -m autowright.cli %*`, CRLF line endings, installed at
   `%LOCALAPPDATA%\Autowright\bin\autowright.cmd` (user-owned, same no-privilege rule; the
-  backend `service install` healing half below stays macOS-shaped until the Windows
-  ServiceManager lands). The command name is `autowright` (no short alias for now).
+  backend `service install` healing half below covers this `.cmd` shim too, through the
+  Windows ServiceManager in `platform/windows.py`). The command name is `autowright` (no
+  short alias for now).
   **One install location per OS:** `~/.local/bin/autowright` (macOS/Linux) /
   `%LOCALAPPDATA%\Autowright\bin\autowright.cmd` (Windows) — user-owned, so no privilege and no
   password, ever. There is no admin-prompt (osascript) flow anywhere anymore. Creation happens
@@ -428,7 +436,23 @@ the update bullets below).
   - **Feed:** one static Squirrel.Mac JSON feed per arch at
     `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-<arch>/feed.json`
     (`arm64` | `x86_64`; the files live in the repo-root §17 `release/` — one directory
-    per OS — fetched raw from GitHub, not from the Pages site). After publishing the release, `release.sh`
+    per OS — fetched raw from GitHub, not from the Pages site).
+    **Host choice, decided deliberately (applies to all three per-OS feeds).** Serving the
+    feeds from `raw.githubusercontent.com` keeps them in the same repo and the same commit as
+    the release that produced them: no second deploy step, no Pages build to wait on, and the
+    feed can never disagree with `release/` on `main`. The accepted cost is raw's CDN cache -
+    it answers with `max-age=300`, so a freshly pushed feed can lag up to ~5 minutes before
+    every edge serves it. That is acceptable for both check modes: the automatic check runs
+    daily, and the §9.4 manual button is re-clickable, so a user who checks in that window
+    just checks again. Nothing in the app tries to defeat the cache beyond its own
+    no-store fetch. The switch is a **clean break**: pre-0.6.0 installs fetch the old
+    `https://autowright.ai/updates/darwin-<arch>.json` Pages URLs, which no longer exist and
+    are deliberately not restored - those builds are orphaned and will never see an update
+    offer. No real users had them (only the author and testers ran 0.5.0), so the cost of the
+    break is zero and re-hosting a legacy feed forever is not worth it; an orphaned copy is
+    replaced by downloading the current DMG by hand. From 0.6.0 on, the feed URL is the raw
+    one and moving it again would carry the same one-way cost.
+    After publishing the release, `release.sh`
     rewrites the built arch's feed — `currentRelease` plus a single `releases[]` entry whose
     `updateTo.url` is the release DMG's `github.com/<owner>/<repo>/releases/download/…` URL —
     — updates the built arch's `{ version, url }` entry in §17 `docs/downloads.json` (the
@@ -545,9 +569,15 @@ the update bullets below).
   and `zap trash:` covering the §5 data directory, the logs directory, the LaunchAgent plist
   and preferences/saved-state, and the `~/.local/bin/autowright` shim — never the
   Keychain secrets (§4.8), which the user removes by hand.
-  A `livecheck` block reads `currentRelease` from the same arch feed the updater uses, so the
-  cask stays checkable by `brew livecheck` and would be autobump-eligible if it ever moved to
-  core. Version bumps are `release.sh`'s job (§18), never a manual edit.
+  A `livecheck` block reads `currentRelease` from the same feed the updater uses - the cask
+  is arm64-only, so always
+  `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/feed.json`,
+  the raw URL from the Feed bullet above and never the retired `autowright.ai/updates/…`
+  Pages path - so the cask stays checkable by `brew livecheck` and would be autobump-eligible
+  if it ever moved to core. Version bumps are `release.sh`'s job (§18), never a manual edit,
+  and the same publish step re-pins the livecheck URL on every release: it is the one line
+  naming the feed host, and a stale one fails silently (`brew livecheck` simply stops
+  reporting a version).
 
 **Windows packaging & updates (decided — NSIS + electron-updater).** The Windows
 distributable is built by **electron-builder for the Windows target only** (`--win nsis`),

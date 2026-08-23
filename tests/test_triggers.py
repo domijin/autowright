@@ -410,6 +410,61 @@ def test_is_overdue_two_missed_cron_occurrences():
     assert not is_overdue(off, base, datetime(2026, 8, 1, 0, 0))
 
 
+def test_is_overdue_counts_from_the_enable_stamp():
+    """§4.1/§4.3: the per-trigger baseline is the later of the run baseline and
+    the trigger's enable stamp — occurrences that passed while it was off are
+    ignored after a re-enable, and misses after the stamp still flag. A trigger
+    stored without the stamp keeps the plain baseline."""
+    from autowright.triggers import is_overdue
+
+    base = datetime(2026, 7, 1, 8, 30)  # a stale run baseline
+    stamped = [{"id": "t", "kind": "cron", "enabled": True, "expression": "0 8 * * *",
+                "source": "user",
+                # re-enabled July 20, local — a fortnight of 8:00s passed while off
+                "enabledAt": datetime(2026, 7, 20, 9, 0).astimezone().isoformat()}]
+    assert not is_overdue(stamped, base, datetime(2026, 7, 21, 8, 1))  # one since the stamp
+    assert is_overdue(stamped, base, datetime(2026, 7, 22, 8, 1))      # two since the stamp
+    # without the stamp the same list is overdue on the stale baseline alone
+    legacy = [{k: v for k, v in stamped[0].items() if k != "enabledAt"}]
+    assert is_overdue(legacy, base, datetime(2026, 7, 21, 8, 1))
+    # an unreadable stamp reads as absent (§5 lenient), never raises
+    assert is_overdue([{**stamped[0], "enabledAt": "whenever"}], base,
+                      datetime(2026, 7, 21, 8, 1))
+    # a stamp older than the run baseline never widens the window
+    old = [{**stamped[0], "enabledAt": datetime(2020, 1, 1).astimezone().isoformat()}]
+    assert not is_overdue(old, base, datetime(2026, 7, 2, 9, 0))
+
+
+def test_stamp_enabled_transitions():
+    """§4.3 enable stamp: minted on an off-to-on transition and on an entry
+    created enabled, carried forward while it stays on, kept while off, and
+    never invented for a stored trigger that has none."""
+    from autowright.triggers import stamp_enabled
+
+    t = {"id": "t", "kind": "cron", "enabled": False, "expression": "0 8 * * *",
+         "source": "user"}
+    assert stamp_enabled([t]) == [t]  # off → nothing stamped
+    on = stamp_enabled([{**t, "enabled": True}], [t], now_iso="2026-07-20T09:00:00+00:00")
+    assert on[0]["enabledAt"] == "2026-07-20T09:00:00+00:00"
+    # still on → carried forward, whatever else changed
+    same = stamp_enabled([{**t, "enabled": True, "expression": "0 9 * * *"}], on,
+                         now_iso="2026-08-01T00:00:00+00:00")
+    assert same[0]["enabledAt"] == "2026-07-20T09:00:00+00:00"
+    # off keeps the old stamp; back on mints a fresh one
+    off = stamp_enabled([t], on, now_iso="2026-08-01T00:00:00+00:00")
+    assert off[0]["enabledAt"] == "2026-07-20T09:00:00+00:00"
+    again = stamp_enabled([{**t, "enabled": True}], off, now_iso="2026-08-02T00:00:00+00:00")
+    assert again[0]["enabledAt"] == "2026-08-02T00:00:00+00:00"
+    # a stored stampless trigger that stays on is never healed
+    legacy = stamp_enabled([{**t, "enabled": True}], [{**t, "enabled": True}],
+                           now_iso="2026-08-02T00:00:00+00:00")
+    assert "enabledAt" not in legacy[0]
+    # a client-sent stamp is discarded
+    faked = stamp_enabled([{**t, "enabled": True, "enabledAt": "2999-01-01T00:00:00+00:00"}],
+                          [{**t, "enabled": True}], now_iso="2026-08-02T00:00:00+00:00")
+    assert "enabledAt" not in faked[0]
+
+
 def test_is_overdue_ignores_unscheduled_kinds():
     """§4.1: one-shots are the §4.3 spent rule's job; message/app-start
     triggers have no schedule — none of them can be overdue."""

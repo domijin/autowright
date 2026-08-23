@@ -59,7 +59,15 @@ once per failure streak plus a recovery line. Chromium fires `did-finish-load` e
 failed navigation, so a per-attempt failure flag set by `did-fail-load` (main frame only) is
 what separates success from failure. Every other show path — the deep-link/second-instance
 `showApp`, the dock/tray `activate` reopen — defers to that first load: a still-loading or
-failed window is never shown blank.
+failed window is never shown blank. Two guards keep that rule from stranding a live app
+behind no window at all. A renderer process that dies (`render-process-gone` - out of
+memory, a crash in the bundle) is logged to `app.log` and reloaded once; a second death
+in the same window has nothing left to paint, so the shell shows an error box naming
+`app.log` and quits rather than staying resident and invisible. And a watchdog armed when
+the window is created fires 15 s later if the window still has not shown: with a renderer
+that simply loaded slowly it shows the window anyway, and with nothing ever loaded (every
+attempt so far failed) it shows the same `app.log` error box once while the 1 s retry keeps
+running behind it. Either way an app that is running is an app the user can see.
 
 **Closing the window (per-OS):** on macOS, `window-all-closed` never quits — the app is a
 tray-and-dock app and stays resident. On Windows there is no dock: closing the window keeps

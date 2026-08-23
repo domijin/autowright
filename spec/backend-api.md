@@ -237,6 +237,10 @@ remain plain dicts (§2).
   lose its content before or during its run. Past execution records are untouched
   (§4.5 stores its own step list), but a failed execution on a deleted version can no
   longer retry — the §7 retry's version resolution answers 404
+- **The five §5.1 transfer endpoints that follow** (`export`, `import`, `import/preview`,
+  `import/url`, `import/confirm`) have **no UI consumer today**: §5.1 is parked in the app
+  (§9.1 Import button, §9.2 Export row hidden), leaving the §20 CLI as their only client.
+  They stay served and fully specified; nothing about their contracts changes while parked
 - `GET /automations/{id}/export?values=0|1` — the §5.1 transfer archive as `application/zip`
   (`Content-Disposition` filename `<name>.autowright`, name sanitized for the filesystem);
   `values=0` omits `param_values` from the manifest (default `1`)
@@ -669,7 +673,11 @@ already neutralize. The provider config and
   the executions-list header**: readers resolve full-first, so a stale body written into the
   empty full slot would out-rank a header the finished event already moved to terminal. Without
   this rule the stale body re-runs every status-transition observer, e.g. doubling the §11
-  test-settled chip. A §7 in-place retry legitimately returns a finished record to
+  test-settled chip. A drop must not lose the body outright: when the guard drops a
+  non-terminal body and **no full record for that execution has landed yet**, the client
+  schedules one fresh `GET /executions/{id}` so a full record still arrives - otherwise an
+  execution page opened mid-run whose `finished` event outraces its first GET holds the
+  header alone and renders permanently with zero steps. A §7 in-place retry legitimately returns a finished record to
   `executing`, but it announces that through `execution.started`, which this rule leaves alone. `automation.changed` carries `automationId` plus
   `automation` — the changed automation in list shape, or `null` when it was deleted —
   whenever exactly one automation changed; clients patch that one row in place by **merging**

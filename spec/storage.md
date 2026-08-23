@@ -22,8 +22,8 @@ serialized (§4.1 shared time labels).
 
 **Per-OS roots (§2 platform layer, decided):** every location below hangs off two roots picked
 by `paths.py` from the platform token; `AUTOWRIGHT_HOME` overrides both everywhere (logs move
-to `<home>/logs`), dev and prod alike. macOS is the only shipped platform; the Linux and
-Windows rows are reserved decisions so a future port changes no call sites:
+to `<home>/logs`), dev and prod alike. All three platform builds ship (§2), so every
+row below is live and a port changes no call sites:
 
 | OS | data root | logs root |
 | --- | --- | --- |
@@ -107,7 +107,8 @@ automations/<uuid>/
                                # description (§4.1: seeded from the create manifest, user-owned
                                # thereafter),
                                # current_version (pointer: current = versions/v<N>/),
-                               # triggers [{id, kind, enabled, expression | at | channel+secret…}]
+                               # triggers [{id, kind, enabled, enabledAt?,
+                               #            expression | at | channel+secret…}]
                                # (§4.3 stored fields per kind; never the derived
                                # label/short/connection), agent_id,
                                # enabled_agents (§4.7 agent uuids), allowed_secrets
@@ -462,6 +463,12 @@ never used for lookups.
 
 ### 5.1 Transfer archives — export / import (decided)
 
+**Parked in the UI.** The two entry points are hidden: the §9.1 Import button and the §9.2
+Export row. Their modals and every behavior below are kept and unchanged, just unreachable
+from the app; the §20 CLI commands and the §19 endpoints stay live, so the CLI is the only
+client today. This section remains the source of truth for the format. Un-parking is flipping
+one constant back (§9.1) with no other change.
+
 An automation can be exported to a single shareable file and imported on any machine. The file
 is `<name>.autowright` — a plain zip. **References plus safe metadata travel; credentials,
 grants, uuids, and local state never do.** Archive layout:
@@ -597,6 +604,10 @@ differs from the running platform) — rendered by the §9.1 summary modal.
 
 ### 5.2 URL import (decided)
 
+**Parked in the UI** with §5.1: the §9.1 import modal is the only UI entry point and it is
+unreachable, so URL import reaches users through the §20 CLI alone. The endpoints and the
+flow below stay served and unchanged.
+
 An archive can be imported straight from the web: the backend downloads it and runs the §5.1
 import path unchanged — same validation, same 422-writes-nothing rule, same summary. The
 security posture is §5.1's, unchanged: triggers land off, created secrets are valueless
@@ -639,6 +650,7 @@ that will land (no re-download between review and import):
 - The one-shot `POST /automations/import` (raw body, §5.1) stays for callers that need no
   preview: the §20 CLI file import and the §17 agent skill.
 
-The UI flow is the §9.1 import modal. The §20 `automation import` accepts a URL and confirms
-immediately — the typed command is the user's explicit action, so no interactive preview.
+The two-phase flow is written for the §9.1 import modal, which is parked and unreachable
+today, so no shipped client uses preview/confirm. The §20 `automation import` accepts a URL
+and confirms immediately — the typed command is the user's explicit action, so no interactive preview.
 

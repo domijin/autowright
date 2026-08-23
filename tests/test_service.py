@@ -635,6 +635,21 @@ def test_republish_rewrites_corrupt_file(home):
     assert json.loads(paths.backend_json().read_text()) == {"port": 1}
 
 
+def test_republish_stands_down_once_shutdown_has_started(home):
+    """§3: shutdown sets the stop flag and then unlinks backend.json — a guard
+    already past its read must not resurrect it. The flag is re-checked (under
+    the publish lock) immediately before the write, so a signal-driven stop
+    really does leave no file behind."""
+    from autowright import main as backend_main, paths
+
+    paths.backend_json().unlink(missing_ok=True)
+    assert backend_main.republish_if_lost('{"port": 1}', lambda: True) is False
+    assert not paths.backend_json().exists()
+    # unflagged, the same call still republishes
+    assert backend_main.republish_if_lost('{"port": 1}', lambda: False) is True
+    assert paths.backend_json().exists()
+
+
 def test_republish_leaves_any_valid_file_alone(home):
     from autowright import main as backend_main, paths
 

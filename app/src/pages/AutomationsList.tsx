@@ -479,9 +479,12 @@ export default function AutomationsList() {
       <PageTitle
         right={(
           <HeaderActions>
-            <BtnGhost onClick={() => setImportOpen(true)}>
-              Import
-            </BtnGhost>
+            {/* §9.1 import/export parked — entry point hidden, modal + backend kept */}
+            {false && (
+              <BtnGhost onClick={() => setImportOpen(true)}>
+                Import
+              </BtnGhost>
+            )}
             {(pendingDraft || slotJob) && (
               <BtnGhost onClick={() => setSurface('create', 'app')}>
                 Resume draft

@@ -77,7 +77,17 @@ describe('§9.1 Needs fixing chip', () => {
   })
 })
 
-describe('§5.1/§9.1 import os-mismatch notes', () => {
+describe('§9.1 import/export parked', () => {
+  it('the Import button is not rendered', () => {
+    seed([auto()])
+    render(<AutomationsList />)
+    expect(screen.queryByText('Import')).toBeNull()
+  })
+})
+
+// Skipped while import/export is parked (§9.1): the flow's only entry point,
+// the list-page Import button, is hidden, so the modal can't be reached.
+describe.skip('§5.1/§9.1 import os-mismatch notes', () => {
   it('preview and summary both carry the Built-on warning', async () => {
     mockedApi.importFromUrl.mockResolvedValueOnce({
       token: 't1', preview: preview({ os: 'windows', osMismatch: true }),

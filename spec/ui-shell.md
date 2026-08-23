@@ -300,7 +300,9 @@ draft has none; confirm button "Discard and start new") deletes the slot
 with `[]` — the one discard that deletes the thread, §4.4 thread lifetime) before opening
 the create flow, so the fresh session starts with an empty thread. Without a
 pending draft, the single New automation button opens the create flow directly. Left of
-these sits a ghost **Import** button (always present): it opens the **import modal**
+these sits a ghost **Import** button — **currently hidden** (import/export is parked as of
+2026-08-22: the button is not rendered, but the modal code, backend routes, and CLI stay in
+place and this section still describes them): it opens the **import modal**
 (§5.2 two-phase import). Input step: title "Import automation" over a one-line muted intro
 ("Add an automation someone shared — from a link, or a file on this Mac."), an
 eyebrow-labeled URL field (FROM A LINK; mono text, placeholder
@@ -380,7 +382,9 @@ shrinks; the description ellipsizes first). When the description is empty the de
 and the chip stands alone on the row.
 Then the version chip dropdown (§4.4 read-only history + footer
 explainer), status badge, then the §9 header-action cluster: Edit (ghost), Execute now (accent
-primary), ellipsis menu at the far right edge (**Export…**, then Delete automation… in red). Export… opens a small modal — "Export "`<name>`"" with one toggle row,
+primary), ellipsis menu at the far right edge (**Export…** — **currently hidden**, the same 2026-08-22
+import/export parking as the list page's Import button; the menu shows only Delete
+automation… in red). Export… opens a small modal — "Export "`<name>`"" with one toggle row,
 "Include parameter values" (on; help: "Your saved parameter values travel with the file — turn
 this off when sharing with someone else."), footer note "Secret values and memory are never
 included in the file", accent Export / quiet Cancel — then a native save dialog (main-process IPC, default

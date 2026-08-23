@@ -244,10 +244,13 @@ export default function AutomationDetail() {
               <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
             </button>
             <PopMenu show={actOpen} style={{ top: 'calc(100% + 6px)', right: 0, minWidth: 210 }}>
-              <MenuRow onClick={() => { setActOpen(false); setExportValues(true); setExportAsk(true) }}>
-                <i className="fa-solid fa-file-export" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-                Export…
-              </MenuRow>
+              {/* §9.2 import/export parked — Export… row hidden, modal + backend kept */}
+              {false && (
+                <MenuRow onClick={() => { setActOpen(false); setExportValues(true); setExportAsk(true) }}>
+                  <i className="fa-solid fa-file-export" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                  Export…
+                </MenuRow>
+              )}
               <MenuRow danger onClick={() => { setActOpen(false); setDelAsk(true) }}>
                 <i className="fa-solid fa-trash-can" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
                 Delete automation…

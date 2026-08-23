@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import signal
 import socket
 import sys
 import threading
@@ -155,10 +156,37 @@ def main() -> None:
         "port": port, "token": api.AUTH_TOKEN, "version": __version__, "pid": os.getpid(),
         "python": paths.console_python(),
     })
+    stop_guard = threading.Event()
+
+    def unlink_own_backend_json() -> None:
+        # Only remove our own discovery file: during a service restart the
+        # successor may already have published its fresh port/token here —
+        # deleting that would strand the UI/CLI on nothing (§3). Under the
+        # same lock the guard writes beneath, so it cannot resurrect the file.
+        with _publish_lock:
+            try:
+                if json.loads(paths.backend_json().read_text()).get("pid") == os.getpid():
+                    paths.backend_json().unlink()
+            except (OSError, ValueError):
+                pass
+
+    # §3: uvicorn owns SIGTERM/SIGINT only once Server.run() installs its
+    # handlers — a stop signal landing between the publish below and that
+    # installation would die on the default handler and leave backend.json
+    # behind. Until (and again after) run(): unlink our own file, then die by
+    # the signal's default action, so exit semantics match a plain kill.
+    def _early_term(signum: int, _frame: object) -> None:
+        stop_guard.set()
+        unlink_own_backend_json()
+        signal.signal(signum, signal.SIG_DFL)
+        signal.raise_signal(signum)
+
+    signal.signal(signal.SIGTERM, _early_term)
+    signal.signal(signal.SIGINT, _early_term)
+
     atomic_write_text(paths.backend_json(), discovery, mode=0o600)
     # §3 discovery guard: backend.json is written once at boot — if something
     # deletes it while we live, clients are stranded forever. Re-publish it.
-    stop_guard = threading.Event()
 
     def _guard() -> None:
         while not stop_guard.wait(10):
@@ -185,17 +213,7 @@ def main() -> None:
         stop_guard.set()  # before the unlink below — the guard must not resurrect the file
         scheduler.stop()
         listeners.stop()
-        # Under the same lock the guard writes beneath: setting the flag alone
-        # would still lose to a guard already past its read (§3).
-        with _publish_lock:
-            try:
-                # Only remove our own discovery file: during a service restart the
-                # successor may already have published its fresh port/token here —
-                # deleting that would strand the UI/CLI on nothing (§3).
-                if json.loads(paths.backend_json().read_text()).get("pid") == os.getpid():
-                    paths.backend_json().unlink()
-            except (OSError, ValueError):
-                pass
+        unlink_own_backend_json()
 
     api.register_shutdown(shutdown)
     # §3/§4.9 permanent assertion, through the §2 platform layer.

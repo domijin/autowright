@@ -281,9 +281,19 @@ the update bullets below).
   `main()` included) can execute, so `main()` registers its cleanup (stopping the
   discovery-guard thread, the scheduler, and the listeners, then unlinking its own
   `backend.json`) with the api module via `api.register_shutdown`, and the lifespan runs
-  those callbacks, each once and error-tolerant, after the kill passes. A signal-driven
-  stop therefore removes `backend.json` on macOS; the Windows tree kill still leaves it
-  (the stale-file caveat in the Windows block).
+  those callbacks, each once and error-tolerant, after the kill passes. Uvicorn owns
+  SIGTERM/SIGINT only once `run()` installs its handlers, though — and `backend.json` is
+  published before `run()` (bind → listen → publish, then the guard thread, scheduler,
+  listeners, and power reconcile all start). A stop signal landing in that boot window
+  would die on the default handler and leave the file behind, so `main()` installs an
+  interim SIGTERM/SIGINT handler immediately before publishing: it stops the discovery
+  guard, unlinks its own `backend.json` (same pid check and `_publish_lock` as the
+  lifespan cleanup), then restores the default disposition and re-raises, so the process
+  still dies by the signal. Uvicorn saves that handler as the previous one and re-raises
+  onto it after `run()`, where it finds the file already unlinked and just re-kills —
+  exit semantics are identical in both paths. A signal-driven
+  stop therefore removes `backend.json` on macOS at any point after publish; the Windows
+  tree kill still leaves it (the stale-file caveat in the Windows block).
   §8 drafting harnesses die with the backend too: graceful shutdown cancels every
   still-building drafting job and SIGKILLs its harness session group outright (the process is
   exiting, so cancel's term-then-kill grace thread would never get to fire). Unlike step

@@ -231,12 +231,14 @@ def stop() -> str:
     p = plist_path()
     if not p.exists():
         # §3: no registration, but a directly-spawned backend (isolated dev)
-        # or strays can still be alive — a sweep that ended them is a
-        # successful stop, an empty one keeps the not-installed failure.
+        # or strays can still be alive — sweep them. Either way this is a
+        # successful stop: stop is idempotent, and "nothing registered,
+        # nothing running" already satisfies it (it must not abort the §4.9
+        # QUIT/RESET flows on a machine whose registration is missing).
         n = _sweep_strays()
         if n:
             return f"stopped — service was not installed; ended {n} lingering process(es)"
-        return "not installed — nothing to stop"
+        return "already stopped — service not installed, nothing was running"
     _unload(p)
     n = _sweep_strays()
     if n and _registered():

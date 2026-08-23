@@ -631,7 +631,16 @@ already neutralize. The provider config and
   execution-data location; creates the dir, reloads from it, moves nothing; answers 409 while
   an execution is in progress — it still writes into the old location — **or while a §6
   firing-queue entry is waiting**: the in-memory queue would not survive the reload, so the
-  entry would neither execute nor finish `skipped`, and its sender would never be told)
+  entry would neither execute nor finish `skipped`, and its sender would never be told.
+  The target — the chosen folder itself when its basename is already `executions`, else its
+  `executions` child — must be **empty or already an Autowright executions dir**: every
+  existing entry must be `executions.db`/`-wal`/`-shm` or a directory containing
+  `execution.yaml`; dot-hidden files (`.DS_Store`) are ignored; anything else answers 422
+  "that folder already has unrelated files in it — choose an empty folder". The store must
+  own its directory exclusively: `dataSize` sums everything under it, the startup reconcile
+  scans it, and the §3 reset deletes execution content from it — adopting a folder of
+  unrelated user files invites both wrong numbers and grief, and pointing back at a
+  previous Autowright location keeps working)
 - **Unreadable-store guard (shared)** — any route whose write would rewrite a §5 top-level
   store file that failed to load this session (`settings.yaml`, `agents.yaml`,
   `secrets.yaml` — the §5 read-only degradation) answers 409

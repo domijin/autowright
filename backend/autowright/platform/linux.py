@@ -226,12 +226,12 @@ class SystemdService:
         then sweep stray processes (directly-spawned dev backends, stray CLI
         invocations — whatever lives outside the unit's cgroup)."""
         if not unit_path().exists():
-            # §3: no registration, but strays can still be alive — a sweep
-            # that ended them is a successful stop (mirrors macOS).
+            # §3: no registration, but strays can still be alive — sweep them.
+            # Either way a successful, idempotent stop (mirrors macOS).
             n = _sweep_strays()
             if n:
                 return f"stopped — service was not installed; ended {n} lingering process(es)"
-            return "not installed — nothing to stop"
+            return "already stopped — service not installed, nothing was running"
         if err := _run_ok("stop", UNIT_NAME):
             return f"stop failed: {err}"
         if err := _await_active(False):

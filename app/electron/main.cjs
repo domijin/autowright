@@ -1287,24 +1287,41 @@ async function deletePath(target, label) {
   }
 }
 
-function containsPath(parent, child) {
-  const p = path.resolve(parent)
-  const c = path.resolve(child)
-  return c === p || c.startsWith(p + path.sep)
+// §3 reset step 5: the executions dir is deleted selectively, never wholesale —
+// it is user-movable and (the §19 set-time guard notwithstanding) may have
+// accumulated foreign files; reset must never delete a file Autowright did not
+// write. Only the DB family and per-execution dirs (identified by a contained
+// execution.yaml) go, then the dir itself only if that left it empty.
+// Selectivity is also what keeps the live Chromium profile safe even from a
+// dataPath pointed at the data root itself: the profile matches neither rule.
+async function deleteExecutionData(dataPath, label) {
+  const dbFamily = new Set(['executions.db', 'executions.db-wal', 'executions.db-shm'])
+  let entries = []
+  try {
+    entries = fs.readdirSync(dataPath, { withFileTypes: true })
+  } catch { return } // gone or unreadable (an unmounted volume) — nothing to do
+  for (const entry of entries) {
+    const p = path.join(dataPath, entry.name)
+    if (dbFamily.has(entry.name)
+      || (entry.isDirectory() && fs.existsSync(path.join(p, 'execution.yaml')))) {
+      await deletePath(p, label)
+    }
+  }
+  try {
+    fs.rmdirSync(dataPath)
+  } catch { /* foreign files remain (or in use) — the dir stays, they survive */ }
 }
 
-// §3 reset step 5: the executions dir, the logs root, and every entry of the
-// data root **except** the live Chromium profile — Chromium holds open handles
-// on it, so deleting it would fail (on Windows a sharing violation outright).
-// The profile is cleared instead, which is what
+// §3 reset step 5: the executions dir (selectively, above), the logs root, and
+// every entry of the data root **except** the live Chromium profile — Chromium
+// holds open handles on it, so deleting it would fail (on Windows a sharing
+// violation outright). The profile is cleared instead, which is what
 // matters: every §15 localStorage marker (`ad-cli-installed` among them) goes.
 // Its residual Chromium internals are accepted residue (§3).
 async function deleteAllData(dataPath, label) {
   const root = appSupportDir()
   const profile = path.join(root, 'electron')
-  // A relocated executions dir may sit anywhere; only a configured location
-  // that would take the live profile with it is left to the entry sweep below.
-  if (dataPath && !containsPath(dataPath, profile)) await deletePath(dataPath, label)
+  if (dataPath) await deleteExecutionData(dataPath, label)
   await deletePath(logsDir(), label)
   let entries = []
   try {

@@ -332,13 +332,21 @@ the update bullets below).
      session anyway.
   4. `service stop` through the same interpreter resolution and install-interlock as
      quit-all. A stop failure aborts the reset with `{ error }` — the app stays up, and at
-     that point nothing has been deleted beyond step 3's secrets.
-  5. Delete the executions dir (the captured `dataPath`), the logs root, and every entry of
+     that point nothing has been deleted beyond step 3's secrets. An absent registration
+     with nothing running is **not** a failure (stop is idempotent, headless-mode stop
+     bullet) — reset proceeds on a machine whose service was never registered.
+  5. Delete the execution data in the captured `dataPath`, the logs root, and every entry of
      the data root **except** the live Chromium profile `electron/` — Chromium holds open
-     handles on it, so deleting it would fail (on Windows, a sharing violation outright). A
-     `dataPath` that itself contains the live profile (a user pointed it at the data root) is
-     not deleted wholesale — the per-entry sweep still covers everything else, preserving the
-     except-the-live-profile invariant. The
+     handles on it, so deleting it would fail (on Windows, a sharing violation outright).
+     The executions dir is deleted **selectively, never wholesale**: only entries Autowright
+     wrote — `executions.db` (and its `-wal`/`-shm` siblings) and per-execution directories
+     identified by a contained `execution.yaml` — then the directory itself is removed only
+     if that left it empty. The dir is user-movable and (§19 guard notwithstanding) may have
+     accumulated foreign files; reset must never delete a file Autowright did not write.
+     Selectivity also makes the except-the-live-profile invariant hold by construction even
+     for a `dataPath` pointed at the data root itself: the profile matches neither rule, so
+     no wholesale-delete guard is needed. The data root's own per-entry sweep stays
+     wholesale — everything directly under the root is Autowright's. The
      profile is cleared with `session.defaultSession.clearStorageData()` plus `clearCache()`
      instead — every §15 localStorage marker (`ad-cli-installed` among them) goes, which is
      what matters — and the directory's residual Chromium internals are accepted residue
@@ -733,8 +741,12 @@ CLI is enabled, so the full surface below is live:
   It reports failure (exit 1) when launchd still lists the job afterwards. With no plist:
   a sweep that ended processes answers `stopped — service was not installed; ended N
   lingering process(es)` (exit 0 — this is how quit-all succeeds against a directly-spawned
-  dev backend), and a sweep that found nothing keeps `not installed — nothing to stop`
-  (exit 1). `install` and `restart` never sweep — they run during version-sync while
+  dev backend), and a sweep that found nothing answers `already stopped — service not
+  installed, nothing was running` (exit 0). Stop is **idempotent**: its goal is "no backend
+  running", and an absent registration with nothing alive already satisfies it. This is
+  also what lets the §4.9 QUIT and RESET flows proceed on a machine whose registration is
+  missing (a failed ensure-backend, a headless `service uninstall`) instead of aborting on
+  a stop "failure" that had nothing to do. `install` and `restart` never sweep — they run during version-sync while
   executions may legitimately be live. `status`
   distinguishes the states: job unloaded but plist present → "stopped (plist present)", exit 0
   (stopped on purpose is not a failure); no plist → "not installed", exit 1.

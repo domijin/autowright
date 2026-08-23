@@ -3375,6 +3375,41 @@ def test_data_path_switch_moves_the_executions_root(client, tmp_path):
     assert r2.json()["dataPath"] == str(new_root / "executions")
 
 
+def test_data_path_refuses_a_folder_with_unrelated_files(client, tmp_path):
+    """§19: the target must be empty or a previous Autowright executions dir —
+    the store owns its directory exclusively (dataSize sums it, the reconcile
+    scans it, the §3 reset deletes execution content from it), so a user
+    folder of unrelated files is refused rather than adopted."""
+    from autowright.storage import store
+
+    # A dir of the user's own, not the live home's auto-created executions dir
+    # (the `home` fixture points AUTOWRIGHT_HOME at tmp_path).
+    docs = tmp_path / "userstuff"
+    taken = docs / "executions"
+    taken.mkdir(parents=True)
+    (taken / "thesis.docx").write_text("precious")
+    before = store.settings.get("dataPath")
+    r = client.post("/settings/data-path", json={"path": str(taken)})
+    assert r.status_code == 422
+    assert "unrelated files" in r.json()["detail"]
+    assert store.settings.get("dataPath") == before
+    # The same folder chosen via its parent resolves to the same target and
+    # hits the same guard.
+    r = client.post("/settings/data-path", json={"path": str(docs)})
+    assert r.status_code == 422
+    # A previous Autowright location — the DB family, per-execution dirs, and
+    # Finder droppings — keeps working.
+    (taken / "thesis.docx").unlink()
+    (taken / "executions.db").write_bytes(b"")
+    (taken / ".DS_Store").write_bytes(b"")
+    old = taken / "0f9a3c1e-aaaa-bbbb-cccc-000000000000"
+    old.mkdir()
+    (old / "execution.yaml").write_text("id: x\n")
+    r = client.post("/settings/data-path", json={"path": str(taken)})
+    assert r.status_code == 200
+    assert r.json()["dataPath"] == str(taken)
+
+
 # ---------- §19 websocket streaming + app lifespan ----------
 
 def test_ws_streams_events_and_lifespan_repairs(client, monkeypatch):

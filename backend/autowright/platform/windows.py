@@ -646,12 +646,12 @@ class WindowsService:
         if err:
             return f"stop failed: {err}"
         if state == _ABSENT:
-            # §3: no registration, but strays can still be alive — a sweep
-            # that ended them is a successful stop (mirrors macOS).
+            # §3: no registration, but strays can still be alive — sweep them.
+            # Either way a successful, idempotent stop (mirrors macOS).
             n = _sweep_strays()
             if n:
                 return f"stopped — service was not installed; ended {n} lingering process(es)"
-            return "not installed — nothing to stop"
+            return "already stopped — service not installed, nothing was running"
         if err := _stop_task():
             return f"stop failed: {err}"
         if err := _await_running(False):

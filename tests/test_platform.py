@@ -595,9 +595,10 @@ def test_windows_stop_keeps_the_task_registered(win_service):
 
 
 def test_windows_stop_when_not_installed(win_service):
+    """§3: idempotent stop — absent registration, nothing running, exit 0."""
     out = win_service.service.stop()
-    assert out == "not installed — nothing to stop"
-    assert service.result_code(out) == 1
+    assert out == "already stopped — service not installed, nothing was running"
+    assert service.result_code(out) == 0
     assert "Stop-ScheduledTask" not in _cmdlets(win_service.scripts)
 
 
@@ -916,11 +917,11 @@ def test_linux_stop_reports_the_strays_it_ended(systemd, monkeypatch):
 def test_linux_stop_when_not_installed(systemd, monkeypatch):
     """§3: with no unit a sweep that ended strays is a successful stop (how
     quit-all succeeds against a directly-spawned dev backend); an empty sweep
-    keeps the not-installed failure."""
+    is a successful, idempotent no-op."""
     monkeypatch.setattr(linux, "_sweep_strays", lambda: 0)
     out = systemd.service.stop()
-    assert out == "not installed — nothing to stop"
-    assert service.result_code(out) == 1
+    assert out == "already stopped — service not installed, nothing was running"
+    assert service.result_code(out) == 0
     assert "stop" not in _systemd_verbs(systemd.calls)
 
     monkeypatch.setattr(linux, "_sweep_strays", lambda: 3)

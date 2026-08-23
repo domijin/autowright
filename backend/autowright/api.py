@@ -1975,6 +1975,22 @@ def set_data_path(body: models.DataPath) -> dict:
         target.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         raise HTTPException(422, f"can't create that directory: {e}") from e
+    # §19: the store must own its directory exclusively — dataSize sums it,
+    # the startup reconcile scans it, and the §3 reset deletes execution
+    # content from it. Only an empty dir or a previous Autowright executions
+    # dir (the DB family plus per-execution dirs) may be adopted; dot-hidden
+    # files (.DS_Store) don't count.
+    db_family = {"executions.db", "executions.db-wal", "executions.db-shm"}
+    try:
+        for entry in target.iterdir():
+            if entry.name.startswith(".") or entry.name in db_family:
+                continue
+            if entry.is_dir() and (entry / "execution.yaml").is_file():
+                continue
+            raise HTTPException(
+                422, "that folder already has unrelated files in it — choose an empty folder")
+    except OSError as e:
+        raise HTTPException(422, f"can't read that directory: {e}") from e
     # Nothing moves: execution state lives in the executions dir, so switching
     # the path just closes the old DB and reloads from the new location. The
     # whole swap holds the lock — an engine thread finishing mid-swap would

@@ -343,7 +343,7 @@ def test_main_exit_code_on_failure(svc, capsys):
 def test_result_code_from_real_action_output(svc, capsys):
     # §3/§20: result_code is the one exit-code rule, shared by main() and the
     # CLI `service` wrapper; probe it against real action output.
-    assert svc.mod.result_code(svc.mod.stop()) == 1       # no plist: not installed
+    assert svc.mod.result_code(svc.mod.stop()) == 0       # no plist: idempotent already-stopped
     assert svc.mod.result_code(svc.mod.install()) == 0
     assert svc.mod.result_code(svc.mod.status()) == 0     # plist present: stopped, not a failure
 
@@ -475,15 +475,18 @@ def test_stop_unloads_but_keeps_plist_and_shim(svc):
 
 @launchd_only
 def test_stop_when_not_installed(svc, capsys, no_kill_matching):
+    """§3: stop is idempotent — no registration and nothing running already
+    satisfies it (exit 0), so quit-all/reset proceed on an unregistered
+    machine instead of aborting."""
     from autowright import paths
 
     out = svc.mod.stop()
-    assert out == "not installed — nothing to stop"
-    assert svc.mod.result_code(out) == 1
+    assert out == "already stopped — service not installed, nothing was running"
+    assert svc.mod.result_code(out) == 0
     assert svc.actions() == []  # nothing to unload
     # The §3 sweep still ran — with the §15 stub it simply found nothing.
     assert no_kill_matching[0] == paths.sweep_markers()
-    assert svc.mod.main(["stop"]) == 1
+    assert svc.mod.main(["stop"]) == 0
     capsys.readouterr()
 
 

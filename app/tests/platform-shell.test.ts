@@ -183,9 +183,10 @@ describe('§3 update machinery is per-OS', () => {
   })
 
   it('Linux serves the generic-provider feed directory and names AppImageUpdater', () => {
-    // §3: latest-linux.yml + AppImage + blockmap live under this directory —
-    // the generic provider takes the base URL, never a single file. x86_64 is
-    // the only Linux arch that ships, so the answer carries no arch switch.
+    // §3: latest-linux.yml lives under this directory (the block map is
+    // embedded in the AppImage itself, not a separate feed file) — the generic
+    // provider takes the base URL, never a single file. x86_64 is the only
+    // Linux arch that ships, so the answer carries no arch switch.
     const url = 'https://raw.githubusercontent.com/hansololz/autowright/main/release/linux-x86_64/'
     expect(linux.updateFeedUrl('x64')).toBe(url)
     expect(linux.updateFeedUrl('arm64')).toBe(url)

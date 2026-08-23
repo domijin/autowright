@@ -18,7 +18,8 @@
 #      or uploaded;
 #   3. build the AppImage via linux-scripts/prod.sh (which re-checks that
 #      every version site matches VERSION);
-#   4. upload the AppImage + its blockmap to that release;
+#   4. upload the AppImage to that release (the update block map rides embedded
+#      inside the AppImage — no separate .blockmap asset, §3);
 #   5. rewrite release/linux-x86_64/latest-linux.yml from the build output —
 #      the §3 electron-updater feed — pointing it at the released binaries,
 #      update the linux-x86_64 entry in docs/downloads.json (the website's
@@ -62,26 +63,26 @@ echo "· version: $VERSION — building the Linux release"
 "$ROOT/linux-scripts/prod.sh"
 
 APPIMAGE="$ROOT/build/linux/Autowright-$VERSION-linux-x86_64.AppImage"
-BLOCKMAP="$APPIMAGE.blockmap"
 BUILT_YML="$ROOT/build/linux/latest-linux.yml"
-for artifact in "$APPIMAGE" "$BLOCKMAP" "$BUILT_YML"; do
+for artifact in "$APPIMAGE" "$BUILT_YML"; do
   [ -f "$artifact" ] || { echo "missing after build: $artifact"; exit 1; }
 done
 
-# ---- publish the binaries onto the existing release -------------------------
-# --clobber so a re-run after a failed feed write replaces the assets instead
+# ---- publish the binary onto the existing release ---------------------------
+# --clobber so a re-run after a failed feed write replaces the asset instead
 # of erroring out on the second upload.
-echo "· uploading the AppImage + blockmap to $TAG"
-gh release upload "$TAG" "$APPIMAGE" "$BLOCKMAP" --clobber
+echo "· uploading the AppImage to $TAG"
+gh release upload "$TAG" "$APPIMAGE" --clobber
 
 # ---- update feed (§3): latest-linux.yml under docs/, binaries on the release
 # Same hosting split as the mac and Windows feeds: GitHub Pages serves the yml,
 # the release serves the bytes. electron-updater's generic provider resolves
 # each file's `url` against the feed's base URL, and an absolute URL is taken
-# as-is (the blockmap is fetched at `<url>.blockmap`, which is exactly the
-# uploaded asset's name) — so the rewrite below is all that is needed to point
-# it at the release assets. Written only after the upload, so the feed never
-# names a URL that is not live.
+# as-is; AppImageUpdater reads the embedded block map via an HTTP Range request
+# for the AppImage's last blockMapSize bytes (GitHub release downloads serve
+# ranges) — so the rewrite below is all that is needed to point the feed at the
+# release asset. Written only after the upload, so the feed never names a URL
+# that is not live.
 OWNER_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner | tr -d '[:space:]')"
 [ -n "$OWNER_REPO" ] || { echo "could not read the repository name from gh"; exit 1; }
 

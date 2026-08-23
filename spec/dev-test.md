@@ -467,8 +467,8 @@ Dev workflow:
   keyring backend), then electron-builder `--linux appimage --x64` with the output
   overridden to `build/linux/` — producing
   `build/linux/Autowright-<version>-linux-x86_64.AppImage`, unsigned by design (§3),
-  plus its `.blockmap` and `latest-linux.yml` (the §3 Linux update-feed inputs; the
-  script verifies all three exist).
+  plus `latest-linux.yml` (the §3 Linux update feed; the script verifies both exist —
+  the block map is embedded in the AppImage itself, §3, never a separate artifact).
 - **`./linux-scripts/release.sh`** — the Linux release half (bash; §17 `linux-scripts/`, §3
   Linux packaging block), modeled on `release.ps1` rather than `release.sh`: it never
   creates a release, tag, or version bump — those stay with `release.sh` on macOS. Steps,
@@ -478,9 +478,9 @@ Dev workflow:
   `pytest -m integration`, `npm run test:e2e` — the same suite `release.sh` runs; any
   failure aborts before anything is built or uploaded); builds the AppImage via
   `linux-scripts/prod.sh` (which re-checks the three-site version gate); uploads the
-  AppImage + its blockmap to the
+  AppImage to the
   existing release with `gh release upload --clobber` (idempotent — a re-run replaces the
-  assets); then rewrites `release/linux-x86_64/latest-linux.yml` from the build
+  asset; the block map rides embedded in the AppImage, §3); then rewrites `release/linux-x86_64/latest-linux.yml` from the build
   output — the bare artifact name replaced with the released binary's download URL, the
   `release.ps1` rewrite in sed — plus the `linux-x86_64` entry in the §17
   `docs/downloads.json` download index, and commits + pushes just those files (§3:

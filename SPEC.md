@@ -328,8 +328,8 @@ data on disk); both ends of a served surface change in the same commit.
   `dev.sh` — the §18 Linux dev loop, `scripts/dev.sh` mapped per-OS;
   `commit.sh` — the §18 Linux commit helper, `scripts/commit.sh` mapped per-OS;
   `prod.sh` + `release.sh` — the §3/§18 Linux packaging/release pair (`prod.sh` builds
-  the AppImage + blockmap + `latest-linux.yml`; `release.sh` tests, builds via it,
-  uploads the AppImage + blockmap to the existing GitHub release — never creates one —
+  the AppImage — block map embedded, §3 — + `latest-linux.yml`; `release.sh` tests,
+  builds via it, uploads the AppImage to the existing GitHub release — never creates one —
   and rewrites the §3 update feed under `release/linux-x86_64/` plus its
   `docs/downloads.json` entry).
 - `skills/autowright/` — the agent skill (`SKILL.md`): teaches an AI coding agent (Claude Code

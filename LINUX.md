@@ -50,7 +50,7 @@ the file it lives in; none block the macOS release.
 - **Published 0.5.0 AppImage is broken and should be pulled from the v0.5.0 GitHub
   release.** It was built before the AppImage-updater commit (ee2a847), so it ships
   `updates: false` (About answers "Updates are not supported on this platform yet."
-  forever); the release carries no `.AppImage.blockmap`; `release/linux-x86_64/
+  forever) and carries no embedded update block map; `release/linux-x86_64/
   latest-linux.yml` does not exist. It also hits the AppArmor userns abort above on
   stock Ubuntu 24.04+. Users can reach it today through the site's static
   latest-release fallback link. Delete the asset until a real `linux-scripts/release.sh`

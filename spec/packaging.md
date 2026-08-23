@@ -674,10 +674,11 @@ refuses, the package manager owns updates).
   `--linux appimage --x64` with the shared `extraResources` staging (`build/python` →
   `resources/python`) and the output directory overridden to `build/linux/` on the command
   line (`-c.directories.output` — the checked-in config's output points at `build/win`).
-  Beside the AppImage the build emits its `.blockmap` and `latest-linux.yml` (the
-  electron-updater feed inputs, from the `linux.publish` config below; `--publish never`
-  keeps uploading with `linux-scripts/release.sh`), and the script verifies all three
-  exist.
+  Beside the AppImage the build emits `latest-linux.yml` (the electron-updater feed,
+  from the `linux.publish` config below; `--publish never` keeps uploading with
+  `linux-scripts/release.sh`), and the script verifies both exist. Unlike NSIS there is
+  no separate `.blockmap` artifact: for the AppImage target electron-builder **embeds**
+  the block map in the AppImage itself and records its size as the yml's `blockMapSize`.
 - **Artifact:** `Autowright-<version>-linux-x86_64.AppImage` via the `linux.artifactName`
   override (the top-level `artifactName` is the Windows form). The `build.linux` config
   pins the AppImage/x64 target, the checked-in `electron/icon/icon.png`, category
@@ -690,9 +691,12 @@ refuses, the package manager owns updates).
   provider, pointed at
   `https://raw.githubusercontent.com/hansololz/autowright/main/release/linux-x86_64/`
   (`linux.cjs` `updateFeedUrl`; x86-64 is the only Linux arch, so no arch switch). Feed =
-  `latest-linux.yml` + AppImage + blockmap: the yml is rewritten under
+  `latest-linux.yml` + AppImage: the yml is rewritten under
   `release/linux-x86_64/` by `linux-scripts/release.sh`; binaries ride the GitHub
-  release — the same hosting split as the mac and Windows feeds. Everything else carries
+  release — the same hosting split as the mac and Windows feeds. Differential download
+  needs no extra asset: the block map is embedded in the AppImage (the prod.sh bullet),
+  and `AppImageUpdater` reads it with an HTTP Range request for the file's last
+  `blockMapSize` bytes — which GitHub release downloads serve. Everything else carries
   over from the Windows bullet unchanged: the renderer-facing IPC surface
   (`update-check`/`update-download`/`update-install` states and progress events) is
   byte-identical, checks run with autoDownload and `autoInstallOnAppQuit` off, and
@@ -711,8 +715,9 @@ refuses, the package manager owns updates).
   version bump. It requires the GitHub release `v<version>` to exist already (cut from
   macOS by `release.sh`) and a clean working tree, runs the full test suite in the §15
   shift-left order (any failure aborts before anything is built or uploaded), builds via
-  `linux-scripts/prod.sh`, uploads the AppImage + its blockmap to that release with
-  `--clobber` (idempotent — a re-run replaces the assets), and then rewrites
+  `linux-scripts/prod.sh`, uploads the AppImage to that release with
+  `--clobber` (idempotent — a re-run replaces the asset; the block map rides embedded
+  inside it, so there is no second binary to upload), and then rewrites
   `release/linux-x86_64/latest-linux.yml` from the build output — the bare artifact
   file name replaced with the released binary's
   `github.com/<owner>/<repo>/releases/download/…` URL, exactly the `release.ps1`

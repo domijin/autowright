@@ -33,11 +33,11 @@ declare global {
       // §4.9 QUIT card (§3 explicit-quit exception)
       quitAll(force?: boolean): Promise<{ ok: true } | { busy: true } | { error: string }>
       // §4.9 RESET card (§3 reset flow): erases every §5 root and every secret,
-      // then the app relaunches itself into onboarding — the service
-      // registration, the CLI shim, and the app itself survive.
+      // then the app quits; the next launch runs onboarding as a fresh
+      // install. The service registration, the CLI shim, and the app survive.
       resetAll(): Promise<{ ok: true } | { busy: true } | { error: string }>
       // §3 reset-progress stage tokens ('secrets' | 'service' | 'data' |
-      // 'relaunch') for the §4.9 reset progress overlay's stage line.
+      // 'quit') for the §4.9 reset progress overlay's stage line.
       onResetProgress(cb: (stage: string) => void): void
       onUpdateProgress(cb: (percent: number | null) => void): void
       updateAvailable(): Promise<string | null>

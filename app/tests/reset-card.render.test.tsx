@@ -1,6 +1,6 @@
 // §4.9 RESET card — the destructive card below QUIT, last on the page. It
 // renders only with the preload bridge. Busy and error leave everything in
-// place and toast; success is the shell's business (the app relaunches).
+// place and toast; success is the shell's business (the app quits).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Settings } from '../src/types'
@@ -46,16 +46,16 @@ describe('RESET card (§4.9)', () => {
   const openConfirm = async () => {
     render(<SettingsPage />)
     fireEvent.click(await screen.findByRole('button', { name: 'Reset…' }))
-    return screen.findByRole('alertdialog', { name: 'Delete all data and start over?' })
+    return screen.findByRole('alertdialog', { name: 'Delete all data and quit app?' })
   }
 
   it('renders the row with its consequence copy', async () => {
     render(<SettingsPage />)
     await screen.findByText('RESET')
-    await screen.findByText('Delete all data and start over')
+    await screen.findByText('Delete all data and quit app')
     await screen.findByText(
       'Erases every automation, execution, agent, secret, and setting from this Mac, '
-      + 'then Autowright restarts as new.',
+      + 'then Autowright quits. The next launch starts as new.',
     )
     await screen.findByRole('button', { name: 'Reset…' })
   })
@@ -64,8 +64,8 @@ describe('RESET card (§4.9)', () => {
     await openConfirm()
     expect(screen.getByText(
       'Every automation, execution, agent, and setting on this Mac is deleted, and every '
-      + 'secret is removed from your Keychain. Autowright then restarts as if newly '
-      + 'installed. This can’t be undone.',
+      + 'secret is removed from your Keychain. Autowright then quits, and the next launch '
+      + 'starts as if newly installed. This can’t be undone.',
     )).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Delete everything' })).toBeTruthy()
   })
@@ -73,27 +73,27 @@ describe('RESET card (§4.9)', () => {
   it('cancel fires nothing', async () => {
     await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    finishModalAnim('Delete all data and start over?')
+    finishModalAnim('Delete all data and quit app?')
     await waitFor(() =>
-      expect(screen.queryByRole('alertdialog', { name: 'Delete all data and start over?' })).toBeNull())
+      expect(screen.queryByRole('alertdialog', { name: 'Delete all data and quit app?' })).toBeNull())
     expect(resetAll).not.toHaveBeenCalled()
   })
 
   it('confirm invokes reset-all once and shows Resetting…', async () => {
-    resetAll.mockReturnValue(new Promise(() => {})) // in flight — the app relaunches
+    resetAll.mockReturnValue(new Promise(() => {})) // in flight — the app quits
     await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: 'Delete everything' }))
-    finishModalAnim('Delete all data and start over?')
+    finishModalAnim('Delete all data and quit app?')
     await waitFor(() => expect(resetAll).toHaveBeenCalledTimes(1))
     await screen.findByText('Resetting…')
     expect(screen.getByRole('button', { name: /Resetting…/ })).toHaveProperty('disabled', true)
   })
 
   it('confirm raises the non-dismissable progress overlay', async () => {
-    resetAll.mockReturnValue(new Promise(() => {})) // in flight — the app relaunches
+    resetAll.mockReturnValue(new Promise(() => {})) // in flight — the app quits
     await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: 'Delete everything' }))
-    finishModalAnim('Delete all data and start over?')
+    finishModalAnim('Delete all data and quit app?')
     const overlay = await screen.findByRole('alertdialog', { name: 'Deleting all data' })
     await screen.findByText('Deleting all data…')
     await screen.findByText('Preparing…')
@@ -109,7 +109,7 @@ describe('RESET card (§4.9)', () => {
     // The page subscribed on mount; drive the captured callback by hand.
     const push = onResetProgress.mock.calls[0][0]
     fireEvent.click(screen.getByRole('button', { name: 'Delete everything' }))
-    finishModalAnim('Delete all data and start over?')
+    finishModalAnim('Delete all data and quit app?')
     await screen.findByText('Preparing…')
     act(() => push('service'))
     await screen.findByText('Stopping the background service…')
@@ -129,7 +129,7 @@ describe('RESET card (§4.9)', () => {
     resetAll.mockResolvedValue({ busy: true })
     await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: 'Delete everything' }))
-    finishModalAnim('Delete all data and start over?')
+    finishModalAnim('Delete all data and quit app?')
     await waitFor(() => expect(showToast).toHaveBeenCalledWith(
       'An automation is executing — reset when it finishes.'))
     const btn = await screen.findByRole('button', { name: 'Reset…' })
@@ -143,7 +143,7 @@ describe('RESET card (§4.9)', () => {
     resetAll.mockResolvedValue({ error: 'stop failed: launchd still reports the job' })
     await openConfirm()
     fireEvent.click(screen.getByRole('button', { name: 'Delete everything' }))
-    finishModalAnim('Delete all data and start over?')
+    finishModalAnim('Delete all data and quit app?')
     await waitFor(() => expect(showToast).toHaveBeenCalledWith(
       'stop failed: launchd still reports the job'))
     await screen.findByRole('button', { name: 'Reset…' })
@@ -163,12 +163,12 @@ describe('RESET card (§4.9)', () => {
     await openConfirm()
     expect(screen.getByText(
       'Erases every automation, execution, agent, secret, and setting from this PC, '
-      + 'then Autowright restarts as new.',
+      + 'then Autowright quits. The next launch starts as new.',
     )).toBeTruthy()
     expect(screen.getByText(
       'Every automation, execution, agent, and setting on this PC is deleted, and every '
-      + 'secret is removed from your Credential Manager. Autowright then restarts as if '
-      + 'newly installed. This can’t be undone.',
+      + 'secret is removed from your Credential Manager. Autowright then quits, and the '
+      + 'next launch starts as if newly installed. This can’t be undone.',
     )).toBeTruthy()
     expect(screen.queryByText(/Keychain/)).toBeNull()
   })

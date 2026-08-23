@@ -460,19 +460,8 @@ Dev workflow:
   startup stale-process sweep (defensive — the §19 ws handler exits on disconnect, so a plain
   SIGTERM normally suffices); the script exits 130. The SIGKILL path leaves a stale `backend.json` behind, which the next
   startup already tolerates (fresh-file compare).
-  Relaunch supervision: a §4.9 reset relaunches Electron from inside the app (`app.relaunch()`,
-  §3 reset step 6), and the relaunched process inherits `AUTOWRIGHT_RENDERER_URL` — so after
-  the foreground Electron exits, the script watches briefly (three 2 s polls) for a
-  self-relaunched Electron from this repo before tearing anything down. Finding one, it
-  re-ensures the backend **only if it is actually down** (`backend.json` port + `/health`
-  probe — a healthy backend is never restarted, §3): `service install` in the normal mode, the
-  isolated direct spawn otherwise (the reset's `service stop` took it down, and a dev
-  Electron's ensure-backend is a no-op with no bundled Python, §3). Vite stays up, and the
-  script waits for the relaunched process to exit — repeating for every further relaunch —
-  before falling through to the usual teardown. The Ctrl+C path also sweeps this repo's
-  Electron: a relaunched instance is not console-attached, so the terminal's SIGINT never
-  reaches it. Without this supervision the relaunched app would sit hidden forever (§9 never
-  paints an unloaded window), retrying a dead Vite URL with no backend.
+  Nothing self-relaunches: a §4.9 reset quits the app outright (§3 reset step 6), so once
+  the foreground Electron exits the script falls straight through to teardown.
   Isolated mode: setting any `AUTOWRIGHT_*` knob (§15) switches dev.sh to spawning the backend
   directly with that env instead of via launchd (the plist carries no env) — detached, cwd `/`,
   launchd PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), same log filenames under the chosen home.
@@ -516,19 +505,13 @@ Dev workflow:
     share the calling PowerShell process).
   - Teardown: a `finally` block replaces the bash traps — every exit sweeps Vite; Ctrl+C
     (which reaches the console-attached Electron on its own) additionally uninstalls the
-    service and sweeps the backend **and this repo's Electron** (a relaunched instance is
-    not console-attached), while a normal Electron quit and the startup-failure
+    service and sweeps the backend, while a normal Electron quit and the startup-failure
     exits leave the backend running, exactly as dev.sh does. No `exit 130` (PowerShell
     cannot set an exit code from a Ctrl+C-interrupted `finally`).
-  - Relaunch supervision, same contract as dev.sh: the CIM watch additionally filters on
-    process creation time — only Electron processes created around or after the foreground
-    exit count, so the exited session's lingering helpers can never read as a relaunch —
-    the down-check reuses the startup health-probe form, the re-ensure is `service install`
-    (or the isolated direct spawn), and `Wait-Process` stands in for the pgrep wait.
 - **`./linux-scripts/dev.sh`** — dev.sh on Linux (bash; §17 `linux-scripts/`). Same
   contract — deps only, stale-process sweep, real service, Vite + Electron with HMR,
-  release semantics on normal quit, full teardown on Ctrl+C (exit 130), the same relaunch
-  supervision, isolated mode, and `--fresh` wipe rule — mapped per-OS:
+  release semantics on normal quit, full teardown on Ctrl+C (exit 130), the same
+  isolated mode and `--fresh` wipe rule — mapped per-OS:
   - Deps stay `scripts/build.sh --deps` verbatim: build.sh is plain bash and runs
     natively on Linux, version sync and acknowledgements regen included (the release.sh
     version rewrites are sed-dialect-portable, above).

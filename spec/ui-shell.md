@@ -59,9 +59,7 @@ once per failure streak plus a recovery line. Chromium fires `did-finish-load` e
 failed navigation, so a per-attempt failure flag set by `did-fail-load` (main frame only) is
 what separates success from failure. Every other show path — the deep-link/second-instance
 `showApp`, the dock/tray `activate` reopen — defers to that first load: a still-loading or
-failed window is never shown blank. The §3 reset relaunch leans on this in dev: the
-relaunched app stays invisible while the §18 harness brings the dev server back, instead of
-painting a dead-URL window.
+failed window is never shown blank.
 
 **Closing the window (per-OS):** on macOS, `window-all-closed` never quits — the app is a
 tray-and-dock app and stays resident. On Windows there is no dock: closing the window keeps

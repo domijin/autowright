@@ -311,7 +311,7 @@ the update bullets below).
   instead; the app must never quit its UI while the backend it promised to stop keeps running.
   A stopped backend returns at next login (`RunAtLoad`) or next app launch (ensure-backend
   re-heals) — stopped, never uninstalled.
-- **Reset — delete all data and start over (§4.9 RESET card, decided).** The renderer confirm
+- **Reset — delete all data and quit app (§4.9 RESET card, decided).** The renderer confirm
   fires a `reset-all` IPC; the Electron main process orchestrates, in order:
   1. The same live-execution gate as quit-all/update-install (busy → `{ busy: true }`,
      nothing touched; an unreachable backend counts as idle).
@@ -341,17 +341,17 @@ the update bullets below).
      leftover file must not strand the app mid-reset. Step 4's stray-process sweep means
      the backend's file handles are normally gone before deletion starts, leaving the
      retry loop to cover the Windows stop-verification gap alone.
-  6. `app.relaunch()` + `app.exit(0)`. The relaunched app finds no `backend.json` and an
-     empty data root: ensure-backend re-registers the service, the backend recreates the §5
-     layout with defaults, and §10 onboarding runs as on a fresh install. In a dev launch
-     the §18 harness supervises past this relaunch — the relaunched process inherits
-     `AUTOWRIGHT_RENDERER_URL` and has no bundled Python, so dev.sh/dev.ps1 keep Vite alive
-     and re-ensure the stopped backend; the §9 never-paint rule keeps the relaunched window
-     hidden (never blank) until the dev server answers.
+  6. `app.exit(0)`. The app quits and stays quit (no relaunch); launching it again is the
+     user's move. That next launch finds no `backend.json` and an empty data root:
+     ensure-backend re-registers the service, the backend recreates the §5 layout with
+     defaults, and §10 onboarding runs as on a fresh install. In a dev launch the quit ends
+     the §18 harness's foreground Electron like any other quit: the exit trap clears Vite,
+     and the backend stays stopped (step 4 took it down) until the next dev run
+     re-installs it.
 
   Each destructive step announces itself to the main window as it starts — a
   `reset-progress` renderer push carrying a stage token: `secrets` (step 3), `service`
-  (step 4), `data` (step 5), `relaunch` (step 6). Fire-and-forget, no renderer ack —
+  (step 4), `data` (step 5), `quit` (step 6). Fire-and-forget, no renderer ack —
   these drive the §4.9 reset progress overlay's stage line; the busy gate and the
   `dataPath` capture push nothing (the overlay shows "Preparing…" until the first token).
 

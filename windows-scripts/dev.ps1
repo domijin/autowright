@@ -195,51 +195,6 @@ try {
     $env:AUTOWRIGHT_RENDERER_URL = "http://127.0.0.1:$VPORT"
     Push-Location $APP
     try { & node (Join-Path $APP 'node_modules\electron\cli.js') . } finally { Pop-Location }
-
-    # ---- relaunch supervision (§18) ----
-    # A §4.9 reset relaunches Electron from inside the app (app.relaunch, §3
-    # reset step 6). The relaunched process inherits AUTOWRIGHT_RENDERER_URL and
-    # has no bundled Python, so tearing down now would leave it blank on a dead
-    # vite URL with no backend. Watch briefly for a *fresh* repo Electron — the
-    # creation-time filter keeps the exited session's lingering helpers from
-    # ever reading as a relaunch — re-ensure the backend only if it is actually
-    # down (a healthy backend is never restarted, §3), and keep vite alive until
-    # Electron is really gone. Loops so a reset inside the relaunched app is
-    # supervised the same way.
-    while ($true) {
-        $exitStamp = (Get-Date).AddSeconds(-5)
-        $relaunched = @()
-        foreach ($i in 1..3) {
-            Start-Sleep -Seconds 2
-            $relaunched = @(Get-CimInstance Win32_Process | Where-Object {
-                $_.CommandLine -and $_.CommandLine -like "*$ROOT\app\node_modules\electron*" -and
-                $_.CreationDate -and $_.CreationDate -gt $exitStamp })
-            if ($relaunched.Count) { break }
-        }
-        if (-not $relaunched.Count) { break }
-        $healthy = $false
-        try {
-            $bport = (Get-Content $backendJson -Raw -ErrorAction Stop | ConvertFrom-Json).port
-            if ($bport) {
-                Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 "http://127.0.0.1:$bport/health" | Out-Null
-                $healthy = $true
-            }
-        } catch {}
-        if (-not $healthy) {
-            Write-Host '· Electron relaunched itself (reset) — re-ensuring the backend'
-            if ($ISOLATED) {
-                Start-Process -FilePath $VENV_PY -ArgumentList '-m', 'autowright.main' `
-                    -WorkingDirectory (Join-Path $env:SystemRoot 'System32') -WindowStyle Hidden `
-                    -RedirectStandardOutput (Join-Path $LOGS 'backend.out.log') `
-                    -RedirectStandardError (Join-Path $LOGS 'backend.err.log')
-            } else {
-                cmd /d /c "`"$AUTOWRIGHT`" service install >nul 2>&1"
-            }
-        }
-        foreach ($proc in $relaunched) {
-            try { Wait-Process -Id $proc.ProcessId -ErrorAction Stop } catch {}
-        }
-    }
     $script:done = $true
 } finally {
     # every exit clears vite and the renderer-URL knob (this process is the
@@ -255,9 +210,5 @@ try {
         Write-Host '· ctrl-c — stopping the backend'
         cmd /d /c "`"$AUTOWRIGHT`" service uninstall >nul 2>&1"
         Stop-Stale @('python', '-m autowright')
-        # A relaunched Electron (§4.9 reset) is not console-attached, so the
-        # Ctrl+C never reached it — sweep it too, keeping the "Ctrl+C shuts the
-        # whole app down" contract.
-        Stop-Stale @("$ROOT\app\node_modules\electron")
     }
 }

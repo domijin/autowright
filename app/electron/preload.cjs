@@ -36,8 +36,8 @@ contextBridge.exposeInMainWorld('autowright', {
   // quit the app (§3 explicit-quit exception). `force` skips the
   // live-execution gate — the §4.9 force-confirm modal's retry.
   quitAll: (force) => ipcRenderer.invoke('quit-all', { force: !!force }),
-  // §4.9 RESET card: erase every §5 file and every secret, then relaunch into
-  // onboarding (§3 reset flow)
+  // §4.9 RESET card: erase every §5 file and every secret, then quit the app
+  // (§3 reset flow; the next launch runs onboarding as a fresh install)
   resetAll: () => ipcRenderer.invoke('reset-all'),
   // §3 reset-progress stage tokens for the §4.9 reset progress overlay.
   // Re-registering replaces the previous listener, like onUpdateProgress.

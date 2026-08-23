@@ -999,28 +999,29 @@ A **RESET** card sits at the very bottom of the page (below QUIT), rendered only
 preload bridge exists (like QUIT; no stored setting), gated on no live executions through
 its §3 IPC (busy → toast "An automation is executing — reset when it finishes." and the row
 resets; unlike QUIT there is no force path), and showing the §9 busy spinner on
-the row button while its flow runs: one row titled "Delete all data and start over", detail "Erases every
-automation, execution, agent, secret, and setting from this Mac, then Autowright restarts
-as new.", with a "Reset…" button (ellipsis: a confirm follows). The button opens a danger
-ConfirmModal — title "Delete all data and start over?", body "Every automation, execution,
+the row button while its flow runs: one row titled "Delete all data and quit app", detail "Erases every
+automation, execution, agent, secret, and setting from this Mac, then Autowright quits.
+The next launch starts as new.", with a "Reset…" button (ellipsis: a confirm follows). The button opens a danger
+ConfirmModal — title "Delete all data and quit app?", body "Every automation, execution,
 agent, and setting on this Mac is deleted, and every secret is removed from your Keychain.
-Autowright then restarts as if newly installed. This can't be undone.", confirm label
+Autowright then quits, and the next launch starts as if newly installed. This can't be
+undone.", confirm label
 "Delete everything". Confirming fires the §3 `reset-all` IPC and immediately raises the
 **reset progress overlay** (`BlockingOverlay` in `ui.tsx`, §14): a full-window blocking
 surface — the `Modal` backdrop + card, portalled to body above every other surface
 (z-index 120) — holding the §9 busy spinner, the title "Deleting all data…", and a muted
 stage line driven by the §3 `reset-progress` pushes: "Preparing…" until the first push,
 then `secrets` → "Removing secrets…", `service` → "Stopping the background service…",
-`data` → "Deleting data…", `relaunch` → "Restarting…". The overlay is deliberately
+`data` → "Deleting data…", `quit` → "Quitting…". The overlay is deliberately
 non-dismissable — no close button, no backdrop-click, no Escape (it is not the shared
 `Modal`, which bakes both in) — so nothing in the window is reachable while data is being
 erased; it still enters and exits on the §14 fade tokens like any two-way surface. The
 row button reads "Resetting…" (§9 busy spinner) beneath it. Then, per the IPC result:
 busy (live execution) → the overlay closes, toast "An automation is executing — reset
 when it finishes." and the row resets; error → overlay closes, toast the error text, row
-resets; success → the overlay stays up until the app relaunches itself into onboarding
-(§3 reset flow — the service registration, the CLI shim, and the app itself deliberately
-survive; only data is erased). There is no
+resets; success → the overlay stays up until the app quits (§3 reset flow: no relaunch,
+and the next launch runs §10 onboarding as on a fresh install; the service registration,
+the CLI shim, and the app itself deliberately survive; only data is erased). There is no
 in-app uninstall: removing the app itself is the OS's (or Homebrew's `zap`) territory.
 
 Version, updates,

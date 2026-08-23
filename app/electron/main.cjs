@@ -1230,9 +1230,10 @@ async function deleteAllData(dataPath, label) {
   }
 }
 
-// §3 reset (§4.9 RESET card): erase every §5 file and every secret, then
-// relaunch into onboarding. The service registration, the CLI shim and the app
-// itself deliberately survive — only data is erased.
+// §3 reset (§4.9 RESET card): erase every §5 file and every secret, then quit
+// the app; the next launch runs §10 onboarding as on a fresh install. The
+// service registration, the CLI shim and the app itself deliberately survive —
+// only data is erased.
 ipcMain.handle('reset-all', async () => {
   // §3 step 1: the same live-execution gate as quit-all/update-install; an
   // unreachable backend counts as idle.
@@ -1253,11 +1254,11 @@ ipcMain.handle('reset-all', async () => {
   }
   stage('data')
   await deleteAllData(dataPath, 'reset')
-  appLog('reset: data erased, relaunching')
-  // §3 step 6: the relaunched app finds no backend.json and an empty data root
-  // — ensure-backend re-registers and §10 onboarding runs as on a fresh install.
-  stage('relaunch')
-  app.relaunch()
+  appLog('reset: data erased, quitting')
+  // §3 step 6: the app quits and stays quit. The next launch finds no
+  // backend.json and an empty data root: ensure-backend re-registers and §10
+  // onboarding runs as on a fresh install.
+  stage('quit')
   app.exit(0)
   return { ok: true }
 })

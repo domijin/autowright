@@ -28,7 +28,7 @@ const RESET_STAGE_LABEL: Record<string, string> = {
   secrets: 'Removing secrets…',
   service: 'Stopping the background service…',
   data: 'Deleting data…',
-  relaunch: 'Restarting…',
+  quit: 'Quitting…',
 }
 
 export default function SettingsPage() {
@@ -144,9 +144,9 @@ export default function SettingsPage() {
   }
 
   // §4.9 RESET: the §3 reset-all IPC erases every §5 root and every secret,
-  // then relaunches the app into onboarding. The blocking progress overlay is
-  // up for the whole flow. Busy or error changes nothing — close the overlay,
-  // toast, and reset the row.
+  // then quits the app (the next launch starts as new). The blocking progress
+  // overlay is up for the whole flow. Busy or error changes nothing — close
+  // the overlay, toast, and reset the row.
   const resetAll = () => {
     if (resetBusy) return
     setResetBusy(true)
@@ -155,7 +155,7 @@ export default function SettingsPage() {
       const r = await window.autowright?.resetAll?.().catch((e: Error) => ({ error: e.message }))
       if (r && 'busy' in r) showToast('An automation is executing — reset when it finishes.')
       else if (r && 'error' in r) showToast(r.error)
-      // on { ok } the app is relaunching — keep the overlay up until it does
+      // on { ok } the app is quitting — keep the overlay up until it does
       if (r && 'ok' in r) return
       setResetStage(null)
       setResetBusy(false)
@@ -471,9 +471,9 @@ export default function SettingsPage() {
           <div className="ad-card" style={card}>
             <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
               <div style={{ flex: 1 }}>
-                <div style={rowTitle}>Delete all data and start over</div>
+                <div style={rowTitle}>Delete all data and quit app</div>
                 <div style={rowSub}>
-                  Erases every automation, execution, agent, secret, and setting from this {copy.machine}, then Autowright restarts as new.
+                  Erases every automation, execution, agent, secret, and setting from this {copy.machine}, then Autowright quits. The next launch starts as new.
                 </div>
               </div>
               <button
@@ -530,8 +530,8 @@ export default function SettingsPage() {
 
       {resetConfirm && (
         <ConfirmModal
-          title="Delete all data and start over?"
-          body={`Every automation, execution, agent, and setting on this ${copy.machine} is deleted, and every secret is removed from your ${copy.secretStore}. Autowright then restarts as if newly installed. This can’t be undone.`}
+          title="Delete all data and quit app?"
+          body={`Every automation, execution, agent, and setting on this ${copy.machine} is deleted, and every secret is removed from your ${copy.secretStore}. Autowright then quits, and the next launch starts as if newly installed. This can’t be undone.`}
           confirmLabel="Delete everything"
           danger
           onConfirm={() => { setResetConfirm(false); resetAll() }}
@@ -550,7 +550,7 @@ export default function SettingsPage() {
       </BlockingOverlay>
 
       {/* §4.9 reset progress overlay: non-dismissable while §3 reset-all runs —
-          on success it stays up until the app relaunches itself. */}
+          on success it stays up until the app quits. */}
       <BlockingOverlay open={resetStage !== null} ariaLabel="Deleting all data">
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
           <Spinner size={22} />

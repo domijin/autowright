@@ -94,10 +94,6 @@ shutdown_backend() {
   echo "· ctrl-c — stopping the backend"
   "$ROOT/.venv/bin/autowright" service uninstall > /dev/null 2>&1 || true
   kill_stale "[Pp]ython -m autowright"
-  # A relaunched Electron (§4.9 reset) is not terminal-attached, so the SIGINT
-  # never reached it — sweep it too, keeping the "Ctrl+C shuts the whole app
-  # down" contract.
-  kill_stale "$ROOT/app/node_modules/electron"
   exit 130
 }
 trap shutdown_backend INT TERM
@@ -135,32 +131,3 @@ done
 # ---- electron (foreground; quitting it leaves the backend up, like release) ----
 echo "· launching Electron (HMR via http://127.0.0.1:$VPORT)"
 cd "$ROOT/app" && AUTOWRIGHT_RENDERER_URL="http://127.0.0.1:$VPORT" npx electron . || true
-
-# ---- relaunch supervision (§18) ----
-# A §4.9 reset relaunches Electron from inside the app (app.relaunch, §3 reset
-# step 6). The relaunched process inherits AUTOWRIGHT_RENDERER_URL and has no
-# bundled Python, so tearing down now would leave it blank on a dead vite URL
-# with no backend. Watch briefly for the relaunch, re-ensure the backend only
-# if it is actually down (a healthy backend is never restarted, §3), and keep
-# vite alive until Electron is really gone. Loops so a reset inside the
-# relaunched app is supervised the same way.
-while true; do
-  RELAUNCHED=""
-  for _ in 1 2 3; do
-    sleep 2
-    if pgrep -f "$ROOT/app/node_modules/electron" > /dev/null 2>&1; then RELAUNCHED=1; break; fi
-  done
-  [ -n "$RELAUNCHED" ] || break
-  BPORT=$(python3 -c "import json;print(json.load(open('$DATA/backend.json'))['port'])" 2>/dev/null || true)
-  if [ -z "$BPORT" ] || ! curl -sf "http://127.0.0.1:$BPORT/health" > /dev/null 2>&1; then
-    echo "· Electron relaunched itself (reset) — re-ensuring the backend"
-    if [ "$ISOLATED" = "1" ]; then
-      (cd / && PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
-        "$ROOT/.venv/bin/python" -m autowright.main \
-        > "$LOGS/backend.out.log" 2> "$LOGS/backend.err.log" &)
-    else
-      "$ROOT/.venv/bin/autowright" service install > /dev/null 2>&1 || true
-    fi
-  fi
-  while pgrep -f "$ROOT/app/node_modules/electron" > /dev/null 2>&1; do sleep 2; done
-done

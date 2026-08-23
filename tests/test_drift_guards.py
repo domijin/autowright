@@ -18,6 +18,7 @@ Three guards, all deliberately dumb (read the file, pull the fact out, compare):
 """
 import json
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -218,19 +219,34 @@ def test_update_feeds_never_run_ahead_of_the_version_file():
             "a release that has not been published")
 
 
+def _committed_version() -> str:
+    """The last *committed* `VERSION` - what the newest published release can
+    be. `release.sh <version>` runs this suite with the bump still uncommitted
+    (the feed is written only once the GitHub release is live), so mid-release
+    the working-tree file legitimately runs ahead of every feed; the committed
+    copy does not. Falls back to the file outside a git checkout."""
+    try:
+        return subprocess.run(
+            ["git", "-C", str(REPO), "show", "HEAD:VERSION"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return _read("VERSION").strip()
+
+
 def test_a_macos_feed_tracks_the_version_file():
     """§18: releases are cut from macOS by `release.sh`, which bumps `VERSION`
     *and* rewrites the built arch's Squirrel feed in the same run. So the mac
-    feed for the arch the release was built on always equals `VERSION`; a
-    mismatch means the feed write or its push was lost (recover with
-    `release.sh --feed`). Any arch satisfies it - the guard does not care which
-    machine cut the release, only that the mac half is not stale."""
-    version = _read("VERSION").strip()
+    feed for the arch the release was built on always equals the committed
+    `VERSION`; a mismatch means the feed write or its push was lost (recover
+    with `release.sh --feed`). Any arch satisfies it - the guard does not care
+    which machine cut the release, only that the mac half is not stale."""
+    version = _committed_version()
     darwin = {key: facts for key, facts in _present_feeds().items()
               if key.startswith("darwin-")}
     assert darwin, "no darwin feed under release/ - the mac update feed is gone"
     assert any(feed_version == version for _rel, feed_version, _urls in darwin.values()), (
-        f"no darwin feed is at VERSION ({version}); found "
+        f"no darwin feed is at the committed VERSION ({version}); found "
         f"{ {rel: v for rel, v, _ in darwin.values()} }. Re-publish with "
         "`./scripts/release.sh --feed`.")
 

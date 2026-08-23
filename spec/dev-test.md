@@ -156,8 +156,12 @@ actually open (`.dmg` for the Squirrel.Mac `hdiutil attach` path, `.exe` for the
 updater, `.AppImage` for the AppImage updater); no feed is *newer* than `VERSION` (it
 would name a release that does not exist - the reverse is legitimate and deliberately
 unflagged, since each leg rewrites only its own feed); at least one `darwin-<arch>` feed
-equals `VERSION` (`release.sh` bumps `VERSION` and rewrites the mac feed in one run, so a
-lagging mac feed means a lost feed write or push - recover with `release.sh --feed`); and
+equals the last *committed* `VERSION` - `git show HEAD:VERSION`, falling back to the file
+outside a git checkout (`release.sh` bumps `VERSION` and rewrites the mac feed in one run,
+so a lagging mac feed means a lost feed write or push - recover with `release.sh --feed`;
+the committed copy is the one compared because `release.sh <version>` runs this very suite
+with the bump still uncommitted and writes the feed only after the GitHub release is live,
+so mid-release the working-tree file legitimately runs ahead of every feed); and
 each `docs/downloads.json` entry names a release-download URL embedding its own version
 and, where that key's feed exists, matches the feed's version and offers the very URL the
 feed names.

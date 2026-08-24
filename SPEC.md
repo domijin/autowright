@@ -17,7 +17,9 @@ words from other languages except established technical terms.
 - **Data:** §4 data model (entities) → [spec/data-model.md](spec/data-model.md) ·
   §5 storage (files on disk, incl. §5.1 transfer archives · §5.2 URL import; both parked
   in the UI, CLI-only today) →
-  [spec/storage.md](spec/storage.md)
+  [spec/storage.md](spec/storage.md) ·
+  §21 backward compatibility (promise, migrate-on-load, decision log) →
+  [spec/compatibility.md](spec/compatibility.md)
 - **Runtime:** §6 engine contract & framework policies (incl. §6.1 step SDK · §6.2 curated
   packages · §6.3 memory snapshots) → [spec/engine.md](spec/engine.md) ·
   §7 execution lifecycle → [spec/execution.md](spec/execution.md) ·
@@ -196,8 +198,9 @@ client-visible may. Full words: `expression` not `expr`,
 `timezone` not `tz`, `automation` not `auto`, `versionLabel` not `ver`, `snapshot_id` /
 `secret_id` not `sid`. Exceptions are established conventions only: `id`, universal domain
 terms (`cron`, `os`, the `Ms` epoch-milliseconds suffix), and the backend's internal `exec_*`
-helper prefix. Renames carry no compatibility aliasing (the §4.7 lenient-load rule covers old
-data on disk); both ends of a served surface change in the same commit.
+helper prefix. Renames carry no compatibility aliasing on served surfaces; both ends of a
+served surface change in the same commit. A rename or reshape of a *stored* field lands a §21
+migrate-on-load migration so data written by released versions keeps loading (§21).
 
 ## 17. Repository structure
 

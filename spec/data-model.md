@@ -930,8 +930,8 @@ cliEnabled: bool (default true) — whether the user wants the `autowright` comm
   drives the COMMAND LINE card's toggle (below) and the §3 one-shot first-run install. On by
   default: fresh installs and pre-key upgrades resolve to true through the defaults merge,
   while any stored value is kept as written, including the materialized `false` that
-  0.3.4/0.3.5 saves wrote for users who never touched the toggle (accepted: no migration, per
-  the no-compat-handlers rule). The §3 shim
+  0.3.4/0.3.5 saves wrote for users who never touched the toggle (accepted: no migration - a
+  standing pre-policy decision recorded in the §21.4 log). The §3 shim
   files on disk stay the truth about what's actually installed — this key only records the
   user's choice (stored backend-side like every setting, §20 CLI parity included)
 dataPath (default ~/Library/Application Support/Autowright/executions), dataSize

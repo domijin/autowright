@@ -235,7 +235,8 @@ agent authoring step code reads the engine contract — the step SDK, curated im
 sections — from the same canonical file the drafting pipeline sends to harness agents.
 
 Old flat commands (`autowright list`, `execute`, `executions`, `tail`, `secrets`, `agents`,
-`export`, `import`) are replaced by the groups above — no aliases, no back-compat (§ rules).
+`export`, `import`) are replaced by the groups above — no aliases, no back-compat (the CLI
+command surface is out of the §21 compat scope, §21.3).
 `service` keeps its §3 verbs unchanged.
 
 **Deferred (not yet in the CLI):** agent add/edit/delete/install/login (interactive TUI flows,

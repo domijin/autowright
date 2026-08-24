@@ -228,6 +228,9 @@ Scenarios stay high-value journeys —
 everything finer-grained belongs to the unit/integration tiers:
 
 - onboarding on an empty home, real agent detection (fake CLI)
+- onboarding commit against a backend that already holds a grant-name-clashing agent (a
+  partially-landed earlier commit): Use-as-default reuses it per the §10 idempotent-commit
+  rule and lands in the app shell — never the already-exists toast that stranded step 2
 - list → detail → execute → result on a seeded-via-API home
 - the create-flow journey: request → AI draft via the fake CLI through the real §8 chat +
   chained-sync pipeline → Test draft run → Create → execute → execution page

@@ -452,12 +452,35 @@ export default function Onboarding() {
       connection.push({ id: LOCAL_ID, body: { name: null, harness: 'OpenCode', mode: 'ollama', model: ob.localModel ?? LOCAL_MODEL } })
     }
     if (connection.length === 0) return
-    const existing = useStore.getState().agents
     const defPid = pick ?? connection[0].id
+    // §10 idempotent commit: each card resolves by its §4.7 effective grant
+    // name (name, else harness — case-insensitive) against the backend's LIVE
+    // agents — a partially-landed earlier commit leaves agents the store
+    // snapshot may not carry yet, and re-posting one 422s. The picked card
+    // goes first so a within-commit clash (the plain OpenCode card and the
+    // local card are both grant-named "OpenCode") resolves to the pick.
+    const grantKey = (a: { name: string | null; harness: string }) =>
+      (a.name ?? a.harness).trim().toLowerCase()
+    const byGrant = new Map((await api.listAgents()).map((a) => [grantKey(a), a.id]))
+    const ordered = connection.filter((c) => c.id === defPid)
+      .concat(connection.filter((c) => c.id !== defPid))
     let defaultId: string | null = null
-    for (const { id: cid, body } of connection) {
-      const dup = existing.find((a) => a.harness === body.harness && a.model === body.model)
-      const id = dup ? dup.id : (await api.addAgent(body)).id
+    for (const { id: cid, body } of ordered) {
+      let id = byGrant.get(grantKey(body))
+      if (!id) {
+        try {
+          id = (await api.addAgent(body)).id
+        } catch (e) {
+          // §4.7 already-exists 422 (an agent of this name landed mid-commit)
+          // means reuse, never failure (§10).
+          const err = e as Error & { status?: number }
+          if (err.status !== 422 || !err.message.includes('already exists')) throw e
+          const landed = (await api.listAgents()).find((a) => grantKey(a) === grantKey(body))
+          if (!landed) throw e
+          id = landed.id
+        }
+        byGrant.set(grantKey(body), id)
+      }
       if (cid === defPid) defaultId = id
     }
     if (defaultId) {

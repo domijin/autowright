@@ -192,6 +192,7 @@ export const api = {
   cancelDraftJob: (jobId: string) => req('DELETE', `/drafts/${jobId}`),
   // §19 background continuation: the editor consumed a settled job's outcome
   ackDraftJob: (jobId: string) => req('POST', `/drafts/${jobId}/ack`),
+  listAgents: () => req<import('./types').Agent[]>('GET', '/agents'),
   addAgent: (body: Record<string, unknown>) => req<import('./types').Agent>('POST', '/agents', body),
   patchAgent: (id: string, body: Record<string, unknown>) => req('PATCH', `/agents/${id}`, body),
   deleteAgent: (id: string) => req('DELETE', `/agents/${id}`),

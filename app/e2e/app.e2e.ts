@@ -83,4 +83,43 @@ describe('autowright e2e', () => {
     await page.getByText('All good').first().waitFor({ timeout: 20_000 })
     await shot(page, 'automation-detail-succeeded.png')
   }, 120_000)
+
+  it('onboarding commit reuses a grant-name-clashing agent instead of failing', async () => {
+    backend = await new Backend().start()
+    handle = await launchApp(backend.home, false)
+    const { page } = handle
+
+    // Walk to step 2 and wait for the fake Claude Code card to connect.
+    const toConnect = page.getByRole('button', { name: 'Connect your AI →' })
+    await toConnect.waitFor({ timeout: 30_000 })
+    await toConnect.click()
+    const claudeBtn = page
+      .getByTestId('onboard-agent-card').filter({ hasText: 'Claude Code' })
+      .getByRole('button', { name: 'Use as default →' })
+    await claudeBtn.waitFor({ timeout: 20_000 })
+
+    // While the renderer sits on step 2, an agent whose §4.7 grant name
+    // clashes with the card about to be committed lands backend-side — what a
+    // partially-landed earlier commit leaves behind. Named "Claude Code" on a
+    // Codex harness so only the §10 grant-name rule can resolve it (a
+    // harness+model comparison never matches it).
+    const planted = await backend.api('POST', '/agents', {
+      name: 'Claude Code', harness: 'Codex', mode: 'default', model: null, description: '',
+    }) as { id: string }
+
+    // The commit must reuse the planted agent and land in the app shell —
+    // never the "already exists" toast that used to strand step 2.
+    await claudeBtn.click()
+    await page.getByRole('heading', { name: 'Automations' }).waitFor({ timeout: 20_000 })
+    expect(await page.getByText(/already exists/).count()).toBe(0)
+
+    // Still exactly one agent grant-named "Claude Code": the planted one,
+    // reused as the pick and made the default.
+    const agents = await backend.api('GET', '/agents') as
+      Array<{ id: string; name: string | null; harness: string; default: boolean }>
+    const clashing = agents.filter((a) => (a.name ?? a.harness).toLowerCase() === 'claude code')
+    expect(clashing).toHaveLength(1)
+    expect(clashing[0].id).toBe(planted.id)
+    expect(clashing[0].default).toBe(true)
+  }, 120_000)
 })

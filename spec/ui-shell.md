@@ -1066,7 +1066,20 @@ connected/ready cards are committed as agent records — a harness card as
 model, or `qwen3:8b` after a download (a null name always falls
 back to the harness name for display, so agent labels read harness · model, e.g.
 "OpenCode · qwen3:8b" — never the model twice) — and any existing
-automations get the chosen default agent. While committing, all Use-as-default buttons are disabled
+automations get the chosen default agent.
+
+The commit is idempotent against the backend's live agents (§4.7 grant-name uniqueness): each
+card resolves by its effective grant name (name, else harness — case-insensitively) against a
+fresh `GET /agents` read at commit time — never the renderer's snapshot, which can lag a
+partially-landed earlier commit — and a match is **reused** instead of re-posted. The picked
+card commits first, and the same rule dedupes within the commit itself: when the plain
+OpenCode card and the Free local AI card are both connected, both resolve to the grant name
+"OpenCode", so only the first in commit order (the picked card, else the found card before
+the local card) is created and the other binds to it. A POST that still answers the §4.7
+already-exists 422 (an agent of that name landed mid-commit) re-reads the agents and binds to
+the existing record. A commit therefore never surfaces "agent names must be unique" — the
+failure that used to strand onboarding on step 2, where every retry (and Skip) re-hit the
+same 422. While committing, all Use-as-default buttons are disabled
 and the pressed one swaps its label for a `LoadingRow`-style spinner + "Setting up…" (§9
 busy-commit convention), and "Skip for now" disables with them (it fires the same commit —
 an enabled skip would double-fire it). Otherwise "Skip for now" is always

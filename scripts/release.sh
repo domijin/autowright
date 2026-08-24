@@ -8,9 +8,12 @@
 #                                    integration → E2E), commit + push the bump,
 #                                    build the distributable via prod.sh, then
 #                                    publish a GitHub release (tag v<version>)
-#                                    with the DMG attached, rewrite
-#                                    the §3 Squirrel feed in release/ plus the
-#                                    docs/downloads.json download entry, and
+#                                    with the DMG (install) and update zip
+#                                    attached, rewrite the §3 electron-updater
+#                                    feed (latest-mac.yml) in release/ plus the
+#                                    docs/downloads.json download entry (and,
+#                                    for 0.6.1 only, the §3 legacy-bridge
+#                                    feed.json), and
 #                                    last publish the §3 Homebrew cask to the
 #                                    homebrew-tap repo. Needs a clean working tree
 #                                    and an authenticated `gh` CLI.
@@ -23,11 +26,14 @@
 #                                    the release went out (a re-run of <version> can't:
 #                                    the tag already exists). Idempotent.
 #   ./scripts/release.sh --feed      rewrite and push the §3 update feed
-#                                    (release/darwin-<arch>/feed.json) plus the
+#                                    (release/darwin-<arch>/latest-mac.yml, plus the
+#                                    legacy feed.json for 0.6.1 only) and the
 #                                    docs/downloads.json entry for the current VERSION
 #                                    against its existing GitHub release - the recovery
 #                                    path when the feed commit or push failed after the
-#                                    release went out. Idempotent.
+#                                    release went out. Reuses the zip in build/ for the
+#                                    yml's sha512/size when it survived, otherwise
+#                                    downloads the released zip to hash it. Idempotent.
 #
 # Files are rewritten only when their version actually differs, so pyproject.toml's
 # mtime (build.sh's .backend-stamp trigger) never churns on a no-op sync.
@@ -44,19 +50,26 @@ INIT_PY="$ROOT/backend/autowright/__init__.py"
 TAP_DIR="$(dirname "$ROOT")/homebrew-tap"
 TAP_REMOTE="https://github.com/hansololz/homebrew-tap.git"
 CASK_REL="Casks/autowright.rb"
-# The cask's `livecheck` reads the same §3 feed the in-app updater reads. The cask is
-# arm64-only, so it is always the arm64 mac feed - and always the raw GitHub URL, never
-# the retired autowright.ai/updates/… Pages path. publish_cask pins it on every release
-# so a hand-edit or a stale checkout can never leave `brew livecheck` pointing at a dead
-# host.
-CASK_LIVECHECK_URL="https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/feed.json"
+# The cask's `livecheck` reads the same §3 latest-mac.yml the in-app updater reads. The
+# cask is arm64-only, so it is always the arm64 mac feed - and always the raw GitHub URL,
+# never the retired autowright.ai/updates/… Pages path and never the frozen legacy
+# feed.json (pinned at 0.6.1 forever, it would silently stop livecheck reporting).
+# publish_cask pins it on every release so a hand-edit or a stale checkout can never
+# leave `brew livecheck` pointing at a dead host.
+CASK_LIVECHECK_URL="https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/latest-mac.yml"
 
 ARCH="$(uname -m)"
 
 # §3 update feed for the built arch + the §17 website download index. Both are
 # rewritten after the GitHub release exists, and pushed together.
-FEED="$ROOT/release/darwin-$ARCH/feed.json"
+FEED="$ROOT/release/darwin-$ARCH/latest-mac.yml"
 DOWNLOADS="$ROOT/docs/downloads.json"
+
+# §3 legacy 0.6.0 bridge: the Squirrel.Mac JSON feed pre-0.6.1 installs read. It is
+# rewritten exactly once - by the 0.6.1 release, pointing stranded 0.6.0 copies at the
+# 0.6.1 DMG - and frozen forever after (§21.4 decision log; the §15 drift guards pin it).
+LEGACY_FEED="$ROOT/release/darwin-$ARCH/feed.json"
+LEGACY_BRIDGE_VERSION="0.6.1"
 
 # GNU sed and BSD sed disagree on in-place editing (GNU: -i, BSD: -i '') — probe
 # the dialect once so the version rewrites run on Linux too (build.sh --sync path).
@@ -164,25 +177,52 @@ publish_cask() {
   echo "· homebrew cask published (hansololz/tap/autowright $version)"
 }
 
-# release_dmg_url <version> - the download URL of that release's arm64/x86_64 DMG.
-# One spelling of the URL for every caller, so the feed, the download index, and the
-# --feed recovery path can never disagree about it.
-release_dmg_url() {
-  local version="$1" owner_repo
+# release_asset_url <version> <ext> - the download URL of that release's arm64/x86_64
+# artifact (.dmg installs, .zip updates). One spelling of the URL for every caller, so
+# the feed, the download index, and the --feed recovery path can never disagree about it.
+release_asset_url() {
+  local version="$1" ext="$2" owner_repo
   owner_repo="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-  printf 'https://github.com/%s/releases/download/v%s/Autowright-%s-darwin-%s.dmg' \
-    "$owner_repo" "$version" "$version" "$ARCH"
+  printf 'https://github.com/%s/releases/download/v%s/Autowright-%s-darwin-%s%s' \
+    "$owner_repo" "$version" "$version" "$ARCH" "$ext"
 }
 
-# write_feed <version> <dmg-url> - rewrite the built arch's Squirrel.Mac JSON feed
-# (SPEC §3): `currentRelease` plus one `releases[]` entry pointing at the released
-# DMG. Called only once the release is live, so the feed never names a URL that
-# isn't. The URL must stay a .dmg - the §3 update-download flow mounts it with
-# `hdiutil attach` and builds Squirrel's zip from the mounted .app.
+# write_feed <version> <zip-url> <zip-path> - rewrite the built arch's electron-updater
+# feed (SPEC §3, latest-mac.yml): the released zip's absolute URL plus its base64 sha512
+# and byte size, computed from the local artifact (electron-updater refuses a download
+# whose digest disagrees, so the hashed file must be the uploaded one). Called only once
+# the release is live, so the feed never names a URL that isn't. Only the zip is listed -
+# the DMG is the install artifact and belongs to docs/downloads.json.
 write_feed() {
-  local version="$1" dmg_url="$2"
+  local version="$1" zip_url="$2" zip_path="$3" sha512 size
+  sha512="$(openssl dgst -sha512 -binary "$zip_path" | base64 | tr -d '\n')"
+  size="$(stat -f%z "$zip_path" 2>/dev/null || stat -c%s "$zip_path")"
   mkdir -p "$(dirname "$FEED")"
   cat > "$FEED" <<EOF
+version: $version
+files:
+  - url: $zip_url
+    sha512: $sha512
+    size: $size
+path: $zip_url
+sha512: $sha512
+releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
+EOF
+}
+
+# write_legacy_feed <version> <dmg-url> - the §3 one-time 0.6.0 bridge: rewrite the built
+# arch's legacy Squirrel.Mac JSON feed so installed 0.6.0 copies (whose updater downloads
+# the DMG and rebuilds Squirrel's zip from it on-device) can still reach 0.6.1. Runs only
+# when the released version IS the bridge version; every later release leaves feed.json
+# frozen - rewriting it past 0.6.1 would hand 0.6.0 installs a release whose DMG their
+# flow can still consume, but the frozen two-hop bridge is the §21.4-logged decision and
+# the §15 drift guards enforce it.
+write_legacy_feed() {
+  local version="$1" dmg_url="$2"
+  [ "$version" = "$LEGACY_BRIDGE_VERSION" ] || return 0
+  echo "· writing the §3 legacy 0.6.0 bridge feed (feed.json → v$version DMG)"
+  mkdir -p "$(dirname "$LEGACY_FEED")"
+  cat > "$LEGACY_FEED" <<EOF
 {
   "currentRelease": "$version",
   "releases": [
@@ -227,11 +267,16 @@ PY
 # recovery run never sweeps up unrelated work.
 push_feed() {
   local version="$1"
-  if [ -n "$(git -C "$ROOT" status --porcelain -- "$FEED" "$DOWNLOADS")" ]; then
-    echo "· publishing update feed (release/darwin-$ARCH/feed.json + docs/downloads.json)"
-    git -C "$ROOT" add "$FEED" "$DOWNLOADS"
+  # The legacy bridge feed is part of the commit only where it exists on disk
+  # (it changes on the 0.6.1 release; a fresh x86_64 leg may never have one) -
+  # a pathspec naming a file git has never seen would fail the commit.
+  local paths=("$FEED" "$DOWNLOADS")
+  [ -f "$LEGACY_FEED" ] && paths+=("$LEGACY_FEED")
+  if [ -n "$(git -C "$ROOT" status --porcelain -- "${paths[@]}")" ]; then
+    echo "· publishing update feed (release/darwin-$ARCH/latest-mac.yml + docs/downloads.json)"
+    git -C "$ROOT" add "${paths[@]}"
     git -C "$ROOT" commit -q -m "Publish v$version update feed (darwin-$ARCH)" \
-      -- "$FEED" "$DOWNLOADS"
+      -- "${paths[@]}"
   else
     echo "· update feed already at $version - no feed commit"
   fi
@@ -316,21 +361,32 @@ fi
 
 # ---- --feed: republish the §3 update feed alone, against an existing release ----
 # Recovery for a feed rewrite/commit/push that failed after the GitHub release went
-# out (a re-run of <version> can't: the tag already exists). Touches no version site,
-# builds nothing, and never downloads the DMG - only the release's asset list is read,
-# to prove the URL the feed is about to name is live.
+# out (a re-run of <version> can't: the tag already exists). Touches no version site
+# and builds nothing. The release's asset list is read to prove the URLs the feed is
+# about to name are live; the zip itself is reused from build/ when it survived (the
+# yml needs its sha512/size), otherwise downloaded back from the release to hash.
 if [ "$MODE" = "--feed" ]; then
   require_gh
   require_main_branch
   gh release view "v$VERSION" > /dev/null 2>&1 \
     || { echo "no GitHub release v$VERSION — cut it with: $(basename "$0") $VERSION"; exit 1; }
-  FEED_DMG_NAME="Autowright-$VERSION-darwin-$ARCH.dmg"
-  gh release view "v$VERSION" --json assets -q '.assets[].name' \
-    | grep -qx "$FEED_DMG_NAME" \
-    || { echo "release v$VERSION has no asset $FEED_DMG_NAME - the feed would name a dead URL"; exit 1; }
-  FEED_DMG_URL="$(release_dmg_url "$VERSION")"
-  write_feed "$VERSION" "$FEED_DMG_URL"
-  write_downloads "darwin-$ARCH" "$VERSION" "$FEED_DMG_URL"
+  FEED_ASSETS="$(gh release view "v$VERSION" --json assets -q '.assets[].name')"
+  for name in "Autowright-$VERSION-darwin-$ARCH.dmg" "Autowright-$VERSION-darwin-$ARCH.zip"; do
+    printf '%s\n' "$FEED_ASSETS" | grep -qx "$name" \
+      || { echo "release v$VERSION has no asset $name - the feed would name a dead URL"; exit 1; }
+  done
+  FEED_ZIP="$ROOT/build/Autowright-$VERSION-darwin-$ARCH.zip"
+  if [ ! -f "$FEED_ZIP" ]; then
+    FEED_TMP="$(mktemp -d)"
+    trap 'rm -rf "$FEED_TMP"' EXIT
+    echo "· downloading Autowright-$VERSION-darwin-$ARCH.zip from release v$VERSION (for its sha512)"
+    gh release download "v$VERSION" -p "Autowright-$VERSION-darwin-$ARCH.zip" -D "$FEED_TMP" \
+      || { echo "failed to download the released zip"; exit 1; }
+    FEED_ZIP="$FEED_TMP/Autowright-$VERSION-darwin-$ARCH.zip"
+  fi
+  write_feed "$VERSION" "$(release_asset_url "$VERSION" .zip)" "$FEED_ZIP"
+  write_legacy_feed "$VERSION" "$(release_asset_url "$VERSION" .dmg)"
+  write_downloads "darwin-$ARCH" "$VERSION" "$(release_asset_url "$VERSION" .dmg)"
   push_feed "$VERSION"
   exit 0
 fi
@@ -400,19 +456,23 @@ else
   echo "· version: $VERSION — building release"
   "$ROOT/scripts/prod.sh"
 
-  # ---- publish the GitHub release (tags the pushed commit, uploads the DMG) ----
+  # ---- publish the GitHub release (tags the pushed commit, uploads DMG + zip) ----
   DMG="$ROOT/build/Autowright-$VERSION-darwin-$ARCH.dmg"
+  ZIP="$ROOT/build/Autowright-$VERSION-darwin-$ARCH.zip"
   [ -f "$DMG" ] || { echo "DMG missing after build: $DMG"; exit 1; }
+  [ -f "$ZIP" ] || { echo "update zip missing after build: $ZIP"; exit 1; }
   echo "· creating GitHub release v$VERSION"
-  gh release create "v$VERSION" "$DMG" \
+  gh release create "v$VERSION" "$DMG" "$ZIP" \
     --title "v$VERSION" --generate-notes
 
-  # ---- update feed (SPEC §3): Squirrel.Mac JSON for this arch, raw from GitHub ----
+  # ---- update feed (SPEC §3): latest-mac.yml for this arch, raw from GitHub ----
   # Written only after the release exists, so the feed never points at a URL
-  # that isn't live yet. Same three functions the --feed recovery mode runs.
-  DMG_URL="$(release_dmg_url "$VERSION")"
-  write_feed "$VERSION" "$DMG_URL"
-  write_downloads "darwin-$ARCH" "$VERSION" "$DMG_URL"
+  # that isn't live yet. Same functions the --feed recovery mode runs. The
+  # legacy write is the §3 one-time 0.6.0 bridge - a no-op for every version
+  # but 0.6.1.
+  write_feed "$VERSION" "$(release_asset_url "$VERSION" .zip)" "$ZIP"
+  write_legacy_feed "$VERSION" "$(release_asset_url "$VERSION" .dmg)"
+  write_downloads "darwin-$ARCH" "$VERSION" "$(release_asset_url "$VERSION" .dmg)"
   push_feed "$VERSION"
 
   # ---- Homebrew cask (SPEC §3): bump the tap, last, once the release is live ----

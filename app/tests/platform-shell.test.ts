@@ -176,10 +176,17 @@ describe('§3 update machinery is per-OS', () => {
     expect(win32.UPDATER).toBe('nsis')
   })
 
-  it('macOS keeps the per-arch Squirrel.Mac JSON feed', () => {
-    expect(darwin.updateFeedUrl('x64')).toBe('https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-x86_64/feed.json')
-    expect(darwin.updateFeedUrl('arm64')).toBe('https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/feed.json')
-    expect(darwin.UPDATER).toBe('squirrel')
+  it('macOS serves per-arch generic-provider feed directories and names MacUpdater', () => {
+    // §3: latest-mac.yml lives under these directories — the generic provider
+    // takes the base URL and appends the darwin channel file name itself.
+    // Per-arch (unlike the single win32/linux base): the two mac arches ship
+    // separate zips, and a feed that lists only its own arch keeps
+    // MacUpdater's arm64 file filtering trivially satisfied. Never the legacy
+    // feed.json beside them — that file is the frozen §3 0.6.0 bridge.
+    expect(darwin.updateFeedUrl('x64')).toBe('https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-x86_64/')
+    expect(darwin.updateFeedUrl('arm64')).toBe('https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/')
+    expect(darwin.updateFeedUrl('arm64')!.endsWith('/')).toBe(true)
+    expect(darwin.UPDATER).toBe('mac')
   })
 
   it('Linux serves the generic-provider feed directory and names AppImageUpdater', () => {

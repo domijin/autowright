@@ -66,6 +66,18 @@ Interaction with existing rules:
 Newest first. One entry per compatibility decision: what changed, the migration, the first
 version that writes the new shape, and the oldest shape still read.
 
+- **2026-08-23 - mac updater migrated to electron-updater; 0.6.0 update bridge.** Not a
+  stored-data shape, but a compatibility promise to a released version, so it is logged
+  here. v0.6.1 replaces the mac in-app updater (Squirrel JSON `feed.json` + on-device
+  DMG-to-zip repack) with electron-updater's `MacUpdater` reading
+  `release/darwin-<arch>/latest-mac.yml` (§3). Bridge: the v0.6.1 release leg rewrites the
+  legacy `feed.json` one last time to point at the v0.6.1 DMG, then the file is frozen
+  forever and the v0.6.1 DMG release asset is never deleted - an installed 0.6.0 updates
+  0.6.0 → 0.6.1 through the old feed, then rides electron-updater from there. Guarded by
+  the §15 drift guards (frozen feed never rewritten past 0.6.1, still a live `.dmg` release
+  URL). First version writing the new shape: v0.6.1 (`latest-mac.yml`); oldest client still
+  served: v0.6.0 (via the frozen bridge). Pre-0.6.0 installs stay orphaned (the §3 clean
+  break, unchanged).
 - **2026-08-23 - policy adopted.** Baseline v0.6.0; scope on-disk user data (§21.1);
   strategy migrate-on-load (§21.2); transfer archives, API/CLI skew, and forward
   compatibility out of scope (§21.3). No migrations exist yet - the formats v0.6.0 writes

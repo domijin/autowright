@@ -148,11 +148,11 @@ The same file guards the §3 update feeds under `release/` and the §17
 `docs/downloads.json` index, which nothing else reads at test time - their only real
 consumer is a shipped app fetching them over the network, so a wrong artifact or a
 version that ran ahead of the published release stays invisible until an installed copy
-tries to update. Four checks, over whichever feeds exist on disk (a feed is absent until
+tries to update. Five checks, over whichever feeds exist on disk (a feed is absent until
 its OS's release leg first runs, and absence is never a failure): every download URL a
 feed hands the updater is a `github.com/hansololz/autowright/releases/download/…` URL,
 embeds that feed's own version, and carries the extension that OS's update flow can
-actually open (`.dmg` for the Squirrel.Mac `hdiutil attach` path, `.exe` for the NSIS
+actually open (`.zip` for the mac electron-updater/Squirrel path, `.exe` for the NSIS
 updater, `.AppImage` for the AppImage updater); no feed is *newer* than `VERSION` (it
 would name a release that does not exist - the reverse is legitimate and deliberately
 unflagged, since each leg rewrites only its own feed); at least one `darwin-<arch>` feed
@@ -161,10 +161,16 @@ outside a git checkout (`release.sh` bumps `VERSION` and rewrites the mac feed i
 so a lagging mac feed means a lost feed write or push - recover with `release.sh --feed`;
 the committed copy is the one compared because `release.sh <version>` runs this very suite
 with the bump still uncommitted and writes the feed only after the GitHub release is live,
-so mid-release the working-tree file legitimately runs ahead of every feed); and
+so mid-release the working-tree file legitimately runs ahead of every feed; until the
+v0.6.1 release first writes `latest-mac.yml`, the legacy feed satisfies this check);
 each `docs/downloads.json` entry names a release-download URL embedding its own version
-and, where that key's feed exists, matches the feed's version and offers the very URL the
-feed names.
+and, where that key's feed exists, matches the feed's version - for `win32`/`linux` it
+must offer the very URL the feed names, while the `darwin` entries offer the DMG beside
+the feed's zip (§3: install and update artifacts differ on mac), same release, same
+basename, only the extension apart; and the legacy `darwin-<arch>/feed.json` bridge
+feeds (§3) stay internally consistent, name a live `.dmg` release URL, and are never
+rewritten past `0.6.1` - the frozen bridge is load-bearing for stranded 0.6.0 installs,
+so a rewrite is a bug, not a refresh.
 
 The §9 per-OS **copy table** is drift-guarded on both sides the way the §5 root table is:
 `tests/test_platform.py` pins `backend/autowright/paths.py`'s per-OS strings and
@@ -382,14 +388,19 @@ Dev workflow:
   `pytest -m integration`, then `npm run test:e2e` — §15 shift-left order; any failure
   aborts the release with the bump uncommitted); commits the bump via `scripts/commit.sh`
   (AI-generated message; skipped when the version is unchanged) and pushes; invokes
-  `prod.sh` to produce the versioned `.app` + DMG (which re-checks the DMG itself: the
+  `prod.sh` to produce the versioned `.app` + DMG + update zip (which re-checks the
+  artifacts itself: the
   in-bundle import smoke test and the Gatekeeper assessment);
-  then runs `gh release create v<version> <DMG> --title "v<version>"
-  --generate-notes` to tag the pushed commit and upload the DMG (the §3 install + update
-  artifact, the release's only asset);
-  then rewrites the built arch's Squirrel feed (`release/darwin-<arch>/feed.json`, §3 —
-  `currentRelease` + one entry pointing at the release DMG's download URL) and its
-  `darwin-<arch>` entry in the §17 `docs/downloads.json` download index, and commits +
+  then runs `gh release create v<version> <DMG> <zip> --title "v<version>"
+  --generate-notes` to tag the pushed commit and upload the DMG (the §3 install
+  artifact) and the zip (the §3 update artifact);
+  then rewrites the built arch's update feed (`release/darwin-<arch>/latest-mac.yml`, §3 —
+  the zip's release download URL plus its base64 sha512 and byte size, computed from the
+  built zip) and its
+  `darwin-<arch>` entry in the §17 `docs/downloads.json` download index (the DMG URL) —
+  plus, exactly when the version being released is `0.6.1`, the one-time §3 legacy-bridge
+  rewrite of `release/darwin-<arch>/feed.json` to point stranded 0.6.0 installs at the
+  0.6.1 DMG (any other version leaves `feed.json` untouched, frozen) — and commits +
   pushes them with a plain git commit; finally updates the §3 Homebrew cask in the separate
   `homebrew-tap` repository and pushes it to that repo's `main`. Requires the `gh` CLI,
   authenticated (`gh auth login`); fails with a hint otherwise. Files are rewritten only
@@ -402,14 +413,17 @@ Dev workflow:
   taking a new version (what `build.sh` runs); **`--check`** verifies all three match
   `VERSION` and exits non-zero listing every mismatch (what `prod.sh` runs).
   - **`--feed` (recovery).** Sibling of `--cask`, for the other half of the post-release
-    tail: it re-runs only the feed step - rewrite `release/darwin-<arch>/feed.json` and the
+    tail: it re-runs only the feed step - rewrite `release/darwin-<arch>/latest-mac.yml`
+    (and, for `0.6.1` only, the §3 legacy-bridge `feed.json`) and the
     `darwin-<arch>` entry in `docs/downloads.json` for the current `VERSION`, then commit
-    and push just those two files - against a release that is already published. The
+    and push just those files - against a release that is already published. The
     recovery path when the feed write, its commit, or its push failed after the GitHub
     release went out, which a re-run of `<version>` cannot fix (the tag already exists).
     Requires `gh`, the checkout on `main`, and the release `v<VERSION>` to exist; it reads
-    that release's asset list to prove the DMG the feed is about to name is live, and never
-    downloads it. Builds nothing and touches no version site. Idempotent, split the way the
+    that release's asset list to prove the artifacts the feed is about to name are live,
+    and reuses the zip in `build/` for the yml's sha512/size when it survived - otherwise
+    it downloads the released zip to a temp dir to hash it (the yml cannot be written
+    without the digest). Builds nothing and touches no version site. Idempotent, split the way the
     cask publish is split: an already-current pair commits nothing, but the push still runs
     whenever `main` is ahead of `origin/main`. The full release flow calls the same three
     functions, so the recovery path and the release path can never write different feeds.
@@ -425,7 +439,7 @@ Dev workflow:
     is `depends_on arch: :arm64`; an `x86_64` release logs that it skipped the cask rather
     than overwriting the arm64 URL). It rewrites the cask's `version` line to the released
     version, its `sha256` line to `shasum -a 256` of the uploaded DMG, and its `livecheck`
-    URL to the §3 raw arm64 feed URL (re-pinned every release, not merely left alone - the
+    URL to the §3 raw arm64 `latest-mac.yml` URL (re-pinned every release, not merely left alone - the
     four-space indent scopes that rewrite to the `livecheck do` block, since the cask's own
     `url` stanza sits at two spaces and ends in a comma), runs `brew style`
     on the result when `brew` is present, then commits `autowright <version>` and pushes the

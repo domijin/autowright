@@ -829,8 +829,8 @@ with a bordered **Retry** button that re-attempts the import.
   and reads "Downloading…" (disabled); while it runs a §14 `ProgressBar` renders
   under the sub-line, fed by the §3 `update-progress` IPC events — determinate
   percent, or indeterminate when the download size is unknown; after the stream
-  finishes it holds 100% while the app unpacks the DMG and Squirrel stages the
-  update (§3). On `{ ok }` the bar goes
+  finishes it holds 100% while Squirrel verifies and stages the
+  update (§3 — on macOS; the other OSes settle when the download finishes). On `{ ok }` the bar goes
   away and the button becomes **"Restart to
   update"** with sub-line "Update downloaded — restarts the app, not your
   automations."; on `{ error }` the sub-line shows "Update failed: `<error>`" and

@@ -297,7 +297,9 @@ migrate-on-load migration so data written by released versions keeps loading (§
   (the shipped renderer, `src` only) and `tsconfig.test.json` extending it over everything
   else that is TypeScript but never shipped: `tests/`, `e2e/`, the Vite/Vitest configs, and
   `ds-entry.ts` (§15). `ds-entry.ts` is the renderer entry point for the `.design-sync/`
-  previews (below).
+  previews (below). `dev-app-update.yml` at the `app/` root is electron-updater's dev-mode
+  config file (§3 mac update Flow: unpackaged launches read it for the updater cache
+  directory name; the packaged bundle carries the `app-update.yml` `prod.sh` writes).
   `UI-GUIDE.md` records the renderer conventions.
 - `scripts/` — project scripts (`dev.sh`, `build.sh`, `prod.sh`, `build-clean.sh` — §18;
   `uninstall/` — developer-only uninstall scripts for the harness CLIs and Ollama, §18;
@@ -307,7 +309,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   `commit.sh` stages all uncommitted changes, generates a commit message via
   `claude --model claude-opus-5 -p` from the staged diff, and commits;
   `release.sh` sets the app version from the repo-root `VERSION` file, invokes
-  `prod.sh` to build the release distributable, publishes the DMG as a
+  `prod.sh` to build the release distributable, publishes the DMG (install artifact) and
+  the update zip as a
   GitHub release via `gh`, rewrites the §3 update feed under the repo-root `release/`
   and the built arch's entry in the §17 `docs/downloads.json` distributable index, and
   last publishes the §3 Homebrew cask to the separate `homebrew-tap` repository, §18;
@@ -473,7 +476,9 @@ migrate-on-load migration so data written by released versions keeps loading (§
   that actually carries that OS's artifact. The page consumes only `darwin-arm64` while
   the download CTA is mac-only (§3).
 - `release/` — the §3 per-OS update feeds, one directory per OS:
-  `darwin-<arch>/feed.json` (Squirrel.Mac, rewritten by `scripts/release.sh`),
+  `darwin-<arch>/latest-mac.yml` (electron-updater, rewritten by `scripts/release.sh`;
+  beside it `darwin-<arch>/feed.json`, the legacy Squirrel.Mac feed 0.6.0 installs read,
+  frozen at 0.6.1 — the §3 one-time bridge — and never rewritten again),
   `win32-x86_64/latest.yml` (rewritten by `windows-scripts/release.ps1`), and
   `linux-x86_64/latest-linux.yml` (rewritten by `linux-scripts/release.sh`). Not part of
   the `docs/` Pages site: installed apps fetch the feeds raw from GitHub at

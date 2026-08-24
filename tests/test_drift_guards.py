@@ -12,9 +12,11 @@ Three guards, all deliberately dumb (read the file, pull the fact out, compare):
    `docs/downloads.json` index: hand-maintained-looking JSON/YAML that nothing
    else reads at test time, written by three separate release legs, and whose
    contents are only ever exercised by a shipped app fetching them over the
-   network. A feed naming an artifact the app cannot consume (a `.zip` where
-   `update-download` mounts a `.dmg`), or a version that ran ahead of the
-   release that exists, is invisible until an installed copy tries to update.
+   network. A feed naming an artifact the app cannot consume (a `.dmg` where
+   electron-updater feeds Squirrel a `.zip`), or a version that ran ahead of
+   the release that exists, is invisible until an installed copy tries to
+   update. The frozen §3 legacy bridge feeds get their own guard: they are
+   load-bearing for stranded 0.6.0 installs, so a rewrite past 0.6.1 is a bug.
 """
 import json
 import re
@@ -137,17 +139,28 @@ def test_curated_list_matches_the_spec():
 # ---------------------------------------------------------------- §3 update feeds
 
 # key in docs/downloads.json → (feed file under release/, extension of the artifact
-# that OS's updater consumes). The extension is the load-bearing half: macOS mounts
-# the DMG with `hdiutil attach` and builds Squirrel's zip from the mounted `.app`,
-# electron-updater runs the NSIS `.exe`, and the AppImage flow swaps the
-# `.AppImage` file in place. A feed pointing at anything else fails at update time
-# on a user's machine, never here.
+# that OS's updater consumes). The extension is the load-bearing half: macOS feeds
+# Squirrel.Mac the `.zip` electron-updater downloads, electron-updater runs the
+# NSIS `.exe`, and the AppImage flow swaps the `.AppImage` file in place. A feed
+# pointing at anything else fails at update time on a user's machine, never here.
 FEEDS = {
-    "darwin-arm64": ("release/darwin-arm64/feed.json", ".dmg"),
-    "darwin-x86_64": ("release/darwin-x86_64/feed.json", ".dmg"),
+    "darwin-arm64": ("release/darwin-arm64/latest-mac.yml", ".zip"),
+    "darwin-x86_64": ("release/darwin-x86_64/latest-mac.yml", ".zip"),
     "win32-x86_64": ("release/win32-x86_64/latest.yml", ".exe"),
     "linux-x86_64": ("release/linux-x86_64/latest-linux.yml", ".AppImage"),
 }
+
+# §3 legacy 0.6.0 bridge: the Squirrel.Mac JSON feeds pre-0.6.1 mac installs read.
+# Rewritten exactly once - by the 0.6.1 release, pointing at the 0.6.1 DMG (that
+# updater mounts the DMG and builds Squirrel's zip on-device) - then frozen
+# forever: a stranded 0.6.0 copy hops 0.6.0 → 0.6.1 through them and rides
+# electron-updater from there (§21.4). The bridge version is the ceiling, never a
+# floor: before the 0.6.1 release the files still sit at 0.6.0.
+LEGACY_FEEDS = {
+    "darwin-arm64": "release/darwin-arm64/feed.json",
+    "darwin-x86_64": "release/darwin-x86_64/feed.json",
+}
+LEGACY_BRIDGE_CEILING = "0.6.1"
 
 
 def _semver_tuple(version: str) -> tuple[int, ...]:
@@ -219,6 +232,33 @@ def test_update_feeds_never_run_ahead_of_the_version_file():
             "a release that has not been published")
 
 
+def test_legacy_bridge_feeds_stay_frozen():
+    """§3/§21.4: the legacy Squirrel feeds are the only update path stranded
+    0.6.0 installs have. Whichever exist must stay internally consistent, name
+    a live-shaped `.dmg` release URL for their own version, and never move past
+    the 0.6.1 bridge - a later rewrite would not break 0.6.0 copies (their flow
+    can consume any DMG), but the frozen two-hop bridge is the logged decision,
+    so a rewrite is a bug, not a refresh."""
+    for key, rel in LEGACY_FEEDS.items():
+        if not (REPO / rel).exists():
+            continue  # an arch's legacy feed exists only if 0.6.0 shipped for it
+        version, urls = _feed_facts(rel)
+        assert _semver_tuple(version) <= _semver_tuple(LEGACY_BRIDGE_CEILING), (
+            f"{rel} is at {version}, past the frozen §3 bridge version "
+            f"({LEGACY_BRIDGE_CEILING}) - the legacy feed must never be "
+            "rewritten after the 0.6.1 release")
+        assert urls, f"{rel} names no download URL"
+        for url in urls:
+            assert url.startswith(RELEASE_DOWNLOAD_PREFIX), (
+                f"{rel} points at {url!r}; §3 binaries ride the GitHub release")
+            assert url.endswith(".dmg"), (
+                f"{rel} points at {url!r}, but the pre-0.6.1 update flow "
+                "consumes a .dmg")
+            assert f"/v{version}/" in url and version in url.rsplit("/", 1)[-1], (
+                f"{rel} says version {version!r} but its URL {url!r} names a "
+                "different release")
+
+
 def _committed_version() -> str:
     """The last *committed* `VERSION` - what the newest published release can
     be. `release.sh <version>` runs this suite with the bump still uncommitted
@@ -236,14 +276,20 @@ def _committed_version() -> str:
 
 def test_a_macos_feed_tracks_the_version_file():
     """§18: releases are cut from macOS by `release.sh`, which bumps `VERSION`
-    *and* rewrites the built arch's Squirrel feed in the same run. So the mac
+    *and* rewrites the built arch's update feed in the same run. So the mac
     feed for the arch the release was built on always equals the committed
     `VERSION`; a mismatch means the feed write or its push was lost (recover
     with `release.sh --feed`). Any arch satisfies it - the guard does not care
-    which machine cut the release, only that the mac half is not stale."""
+    which machine cut the release, only that the mac half is not stale. Until
+    the 0.6.1 release first writes `latest-mac.yml`, the legacy bridge feeds
+    are the mac feeds, so they count as candidates too."""
     version = _committed_version()
     darwin = {key: facts for key, facts in _present_feeds().items()
               if key.startswith("darwin-")}
+    for key, rel in LEGACY_FEEDS.items():
+        if (REPO / rel).exists():
+            legacy_version, legacy_urls = _feed_facts(rel)
+            darwin[f"{key}-legacy"] = (rel, legacy_version, legacy_urls)
     assert darwin, "no darwin feed under release/ - the mac update feed is gone"
     assert any(feed_version == version for _rel, feed_version, _urls in darwin.values()), (
         f"no darwin feed is at the committed VERSION ({version}); found "
@@ -272,9 +318,19 @@ def test_downloads_index_agrees_with_the_feeds():
             assert entry_version == feed_version, (
                 f"docs/downloads.json[{key}] is at {entry_version} but {rel} is "
                 f"at {feed_version} - the same release leg writes both")
-            assert url in feed_urls, (
-                f"docs/downloads.json[{key}] offers {url!r}, which {rel} does not "
-                "name - the site and the updater must hand out the same artifact")
+            if key.startswith("darwin-"):
+                # §3: install (DMG) and update (zip) artifacts differ on mac -
+                # same release, same basename, only the extension apart.
+                dmg_beside_zip = {u[: -len(".zip")] + ".dmg"
+                                  for u in feed_urls if u.endswith(".zip")}
+                assert url in dmg_beside_zip, (
+                    f"docs/downloads.json[{key}] offers {url!r}, which is not "
+                    f"the DMG beside any zip {rel} names - the site's install "
+                    "artifact and the updater's zip must come from one release")
+            else:
+                assert url in feed_urls, (
+                    f"docs/downloads.json[{key}] offers {url!r}, which {rel} does not "
+                    "name - the site and the updater must hand out the same artifact")
 
 
 def test_powershell_scripts_start_with_a_utf8_bom():

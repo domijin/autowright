@@ -97,18 +97,21 @@ function applyLoginItem(app, enabled) {
 
 // ---- §3 updates -------------------------------------------------------------
 
-// §3: which update machinery main.cjs drives here — Squirrel.Mac via Electron's
-// built-in autoUpdater (its ShipIt helper already ships in the bundle). The
-// module names it rather than constructing it: platform modules never import
-// `electron`.
-const UPDATER = 'squirrel'
+// §3: which update machinery main.cjs drives here — electron-updater's
+// MacUpdater (Squirrel.Mac underneath; its ShipIt helper already ships in the
+// bundle). The module names it rather than constructing it: platform modules
+// never import `electron`.
+const UPDATER = 'mac'
 // AppUserModelID is a Windows concept — no-op here (§3).
 const APP_USER_MODEL_ID = null
 
-// One static Squirrel.Mac JSON feed per arch in the repo-root release/
-// directory, fetched raw from GitHub, rewritten by release.sh each release.
+// §3: the generic provider is pointed at a *directory* per arch
+// (latest-mac.yml lives under it; electron-updater appends the darwin channel
+// file name itself), rewritten under the repo-root release/ by release.sh and
+// fetched raw from GitHub, like the Windows and Linux feeds. The legacy
+// Squirrel feed.json beside it belongs to pre-0.6.1 installs only (§3 bridge).
 function updateFeedUrl(arch) {
-  return `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-${arch === 'x64' ? 'x86_64' : 'arm64'}/feed.json`
+  return `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-${arch === 'x64' ? 'x86_64' : 'arm64'}/`
 }
 
 // §3 Homebrew-managed detection: the install is brew-managed while the cask's

@@ -20,7 +20,8 @@ port plan, not here, until they ship.
 **Implementation status:** the launchd/CLI/discovery half is implemented (`service.py`, `cli.py`,
 `backend.json`), and so is app-launch registration (the ensure-backend step below). The
 distributable build is implemented (`./scripts/prod.sh`, §18):
-`Autowright.app` with the bundled relocatable Python in `Contents/Resources/python/` plus a DMG,
+`Autowright.app` with the bundled relocatable Python in `Contents/Resources/python/` plus a DMG
+and the §3 update zip,
 always Developer-ID-signed with hardened runtime and notarized — there is no ad-hoc fallback.
 (An ad-hoc build is not distributable: on a downloaded, quarantined copy, Gatekeeper silently
 refuses to spawn the unsigned bundled Python as a LaunchAgent — see the install-verification
@@ -28,8 +29,10 @@ note below.) The identity comes from `CODESIGN_IDENTITY`, or is auto-detected as
 "Developer ID Application" identity in the Keychain; the script aborts up front if neither
 yields one. Notarization: `prod.sh` submits a zip of the signed app via
 `xcrun notarytool submit --wait` (Keychain credentials profile named by `NOTARY_PROFILE`, default
-`autowright-notary`), staples the ticket to the app, builds the DMG from the stapled app, signs
-the DMG, then submits and staples the DMG as well — so both artifacts pass Gatekeeper offline.
+`autowright-notary`), staples the ticket to the app, builds the update zip and the DMG from the
+stapled app, signs
+the DMG, then submits and staples the DMG as well — so both artifacts pass Gatekeeper offline
+(the update zip carries the stapled app and needs no submission of its own).
 The launch-time version-compare/re-register flow and the in-app updater are implemented (see
 the update bullets below).
 
@@ -422,14 +425,22 @@ the update bullets below).
 - **One app process** (`requestSingleInstanceLock`): a second launch (a login item racing a
   manual open, `open -n`) quits immediately and focuses the existing window via the
   `second-instance` event — never a second tray icon, never a second §6 `POST /app-started`.
-- **In-app updates (decided):** the app checks for updates automatically by default — §4.9
+- **In-app updates (decided — electron-updater from v0.6.1):** the app checks for updates
+  automatically by default — §4.9
   `automaticUpdateCheck`, default true; PRIVACY.md names the daily check and its off switch.
   Turning the toggle off restores strict manual-only checking (no background or launch
   checks; everything starts from the About page's "Check for updates" button). Downloads and
   installs are always manual, both modes — a check only ever reads the feed. Machinery
-  is Squirrel.Mac via Electron's built-in `autoUpdater` (its `ShipIt` helper
-  already ships in the bundle). The repo and its releases must stay public — the update DMG is
-  downloaded unauthenticated.
+  is `electron-updater`'s `MacUpdater` against the same generic provider the Windows and
+  Linux legs use — one updater library, one feed format, and one main-process code path on
+  every OS. Under the hood `MacUpdater` still drives Squirrel.Mac (Electron's built-in
+  `autoUpdater`; its `ShipIt` helper already ships in the bundle): electron-updater
+  downloads the update zip itself — sha512-verified against the feed, with real progress
+  events — and serves it to Squirrel through its own loopback proxy, which is exactly the
+  hand-off the pre-0.6.1 flow hand-rolled (v0.6.0 and earlier downloaded the release DMG,
+  rebuilt Squirrel's zip from it with `hdiutil`/`ditto`, and ran their own loopback server;
+  all of that is deleted, not kept beside the library). The repo and its releases must stay
+  public — the update zip is downloaded unauthenticated.
   - **Automatic check:** `applyShellSettings` reconciles §4.9 `automaticUpdateCheck`
     exactly like `login`/`menuBarIcon` (startup, 60 s poll, renderer push). On the off→on
     transition (which includes a launch with the setting on — the default) it runs the same
@@ -447,14 +458,34 @@ the update bullets below).
     A later check answering up-to-date clears the remembered version and pushes `null` (the
     feed rolled back, or the user updated by hand); an `error` check leaves it alone.
     Otherwise it clears only with the app restart that installs the update.
-  - **Artifacts:** the DMG (`Autowright-<version>-darwin-<arch>.dmg`) is the only release
-    artifact, serving install and update alike; `release.sh` uploads just it to the GitHub
-    release. Squirrel.Mac consumes zips, not DMGs, so the app builds the zip itself at
-    update time from the downloaded DMG (see Flow). `prod.sh` emits no separate update zip.
-  - **Feed:** one static Squirrel.Mac JSON feed per arch at
-    `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-<arch>/feed.json`
+  - **Artifacts:** each release ships two per-arch mac artifacts. The DMG
+    (`Autowright-<version>-darwin-<arch>.dmg`) is the install artifact — the website
+    download (§17 `docs/downloads.json` keeps naming it), the Homebrew cask, and the
+    one-time legacy bridge below all hand out the DMG. The zip
+    (`Autowright-<version>-darwin-<arch>.zip`) is the update artifact: Squirrel.Mac
+    consumes zips, and electron-updater downloads the zip directly instead of rebuilding
+    it from the DMG on the user's machine the way the pre-0.6.1 flow did. `prod.sh` builds
+    it right after stapling the app — `ditto -c -k --keepParent` of the same stapled
+    bundle that goes into the DMG, so the app inside already carries its notarization
+    ticket and the zip needs no submission of its own. `release.sh` uploads both to the
+    GitHub release. No `.blockmap` is published for the zip and the updater sets
+    `disableDifferentialDownload` on darwin: every mac update is a full download (the
+    Windows leg keeps its differential path; for the mac channel the differential attempt
+    could only ever fail against a missing blockmap and then fall back anyway).
+  - **Feed:** one `latest-mac.yml` per arch under
+    `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-<arch>/`
     (`arm64` | `x86_64`; the files live in the repo-root §17 `release/` — one directory
-    per OS — fetched raw from GitHub, not from the Pages site).
+    per OS — fetched raw from GitHub, not from the Pages site). The §2 darwin module
+    serves the *directory* base URL, exactly like the Windows and Linux modules;
+    electron-updater's generic provider appends its darwin channel file name
+    (`latest-mac.yml`) itself. Same yml shape as the other OS feeds — `version`,
+    `files[]` (absolute `github.com/<owner>/<repo>/releases/download/…` URL, base64
+    `sha512`, `size`), `path`, `sha512`, `releaseDate` — and like them it names absolute
+    release URLs, never paths relative to the feed. Only the zip is listed: the DMG is
+    the install artifact and lives in `docs/downloads.json`. Because each arch has its
+    own feed directory, a feed never lists both arches — `MacUpdater`'s arm64 file
+    filtering is satisfied by the artifact names themselves (`…-darwin-arm64.zip`
+    contains `arm64`; `…-darwin-x86_64.zip` does not).
     **Host choice, decided deliberately (applies to all three per-OS feeds).** Serving the
     feeds from `raw.githubusercontent.com` keeps them in the same repo and the same commit as
     the release that produced them: no second deploy step, no Pages build to wait on, and the
@@ -471,35 +502,62 @@ the update bullets below).
     replaced by downloading the current DMG by hand. From 0.6.0 on, the feed URL is the raw
     one and moving it again would carry the same one-way cost.
     After publishing the release, `release.sh`
-    rewrites the built arch's feed — `currentRelease` plus a single `releases[]` entry whose
-    `updateTo.url` is the release DMG's `github.com/<owner>/<repo>/releases/download/…` URL —
-    — updates the built arch's `{ version, url }` entry in §17 `docs/downloads.json` (the
-    site's download index), and commits + pushes both (plain git commit, not `commit.sh`).
-  - **Flow** (Electron main; the renderer drives it over IPC, §9.4 renders it):
-    `update-check` fetches the feed (10 s timeout, no cache) and compares `currentRelease`
+    rewrites the built arch's `latest-mac.yml` — computing the uploaded zip's base64
+    sha512 and byte size itself —
+    updates the built arch's `{ version, url }` entry in §17 `docs/downloads.json` (the
+    site's download index; the DMG URL), and commits + pushes both (plain git commit, not
+    `commit.sh`).
+  - **Legacy 0.6.0 bridge (one-time, then frozen):** v0.6.0 shipped the previous updater —
+    Electron's built-in `autoUpdater` reading a Squirrel.Mac JSON feed at
+    `release/darwin-<arch>/feed.json` and rebuilding Squirrel's zip from the release DMG
+    on the user's machine. So installed 0.6.0 copies can still reach the new world, the
+    v0.6.1 release leg — and only that one (`release.sh` gates on the version) — also
+    rewrites `feed.json` one last time, pointing its `updateTo.url` at the v0.6.1 DMG.
+    From v0.6.2 on `feed.json` is never rewritten again: it stays in the repo frozen at
+    0.6.1 — a 0.6.0 straggler hops 0.6.0 → 0.6.1, and electron-updater carries it from
+    there — and the v0.6.1 DMG release asset is permanent (deleting it would orphan every
+    remaining 0.6.0 install). No dual-updater code ships: 0.6.1 contains only the
+    electron-updater path; the bridge lives entirely in what the release publishes. The
+    §15 drift guards pin the frozen feed (internally consistent, a live `.dmg` release
+    URL, never past 0.6.1). The decision is logged in §21.4.
+  - **Flow** (Electron main; the renderer drives it over IPC, §9.4 renders it; one shared
+    electron-updater code path for all three OSes — the §2 module's `UPDATER` marker only
+    picks the class, `mac` → `MacUpdater`, and darwin adds the Squirrel hand-off tail
+    below; `autoDownload` and `autoInstallOnAppQuit` stay off everywhere, §3 manual-only
+    rule):
+    `update-check` runs `checkForUpdates()` (with those flags off, purely a feed read)
+    and compares the answered version
     against `app.getVersion()` with the §9.4 rule (numeric on dot-split parts, leading `v`
-    ignored, malformed = not newer) → `{ state: 'uptodate' | 'available' | 'error', … }`.
-    `update-download` downloads the DMG itself so the UI can show determinate progress —
-    Squirrel's `autoUpdater` emits no progress events. It re-fetches the feed, streams the
-    `updateTo.url` DMG to a temp file, and pushes progress to the main window as
-    `update-progress` IPC events (percent from `Content-Length`; `null` when the header is
-    missing — the §9.4 bar goes indeterminate). It then builds the zip Squirrel needs from
-    that DMG: `hdiutil attach` (read-only, `-nobrowse`, an explicit temp mountpoint), the
-    single `*.app` on the volume zipped via `ditto -c -k --keepParent` to a temp file (a
-    volume holding no `.app` is an error), then `hdiutil detach`. That zip is handed to
-    Squirrel through a one-shot loopback HTTP server (`127.0.0.1`, ephemeral port) serving
-    the feed JSON — rewritten so `updateTo.url` points at the server's own zip route — and
-    the zip file; `autoUpdater.setFeedURL` targets that local feed (`serverType: 'json'`),
-    `checkForUpdates()` runs, and the handler resolves `{ ok: true }` on `update-downloaded`
-    or `{ error }` on the first `error` event; if Squirrel emits neither within 10 minutes
-    the handler settles with a plain-word error instead of hanging the §9.4 flow forever.
-    Server, temp DMG, temp zip, and any still-attached mount are cleaned up on every
-    outcome (detach retries with `-force`). There is no dev fork: an unsigned dev build takes
-    the same path and surfaces Squirrel's real signature error in the UI.
+    ignored, malformed = not newer) → `{ state: 'uptodate' | 'available' | 'error', … }` —
+    electron-updater's own "is this newer" answer is never consulted, so every platform
+    agrees on what counts as an update.
+    `update-download` re-checks, then runs `downloadUpdate()`: electron-updater streams
+    the zip, verifies its sha512 against the feed, and emits real progress events,
+    forwarded to the main window as `update-progress` IPC events (percent, or `null` when
+    the download reports no total — the §9.4 bar goes indeterminate). `MacUpdater` then
+    starts its loopback proxy and points Squirrel's feed URL at it, but — with
+    `autoInstallOnAppQuit` off — never engages Squirrel, so the darwin handler finishes
+    the hand-off itself: it subscribes to Electron's `autoUpdater`
+    `update-downloaded`/`error` events, calls its `checkForUpdates()` (Squirrel fetches
+    the zip from the proxy, verifies the code signature, stages the bundle), and resolves
+    `{ ok: true }` once Squirrel staged or `{ error }` on the first `error` event; if
+    Squirrel emits neither within 10 minutes the handler settles with a plain-word error
+    instead of hanging the §9.4 flow forever. The §9.4 bar holds 100% while Squirrel
+    stages. There is no dev fork: `forceDevUpdateConfig` is set unconditionally (a
+    packaged app ignores it) so an unpackaged dev launch runs the same real path — the
+    provider config always comes from the constructor options, never from a yml — and an
+    unsigned dev build surfaces Squirrel's real signature error in the UI.
+    electron-updater does read `app-update.yml` beside the app for its cache directory
+    name: `prod.sh` writes one into `Contents/Resources/` before signing (provider, url,
+    `updaterCacheDirName: autowright-updater` — cache at
+    `~/Library/Caches/autowright-updater`, the §3 cask's `zap` list covers it), and the
+    checked-in `app/dev-app-update.yml` serves the same role for unpackaged dev launches.
     `update-install` asks the backend for live executions
     (`GET /executions?status=executing`) and answers `{ busy: true }` while any is running —
     swapping the bundle mid-execution risks a step lazily importing mixed versions; an
-    unreachable backend counts as idle. Otherwise it calls `autoUpdater.quitAndInstall()`.
+    unreachable backend counts as idle. Otherwise it calls electron-updater's
+    `quitAndInstall()` — Squirrel already staged during download, so this quits straight
+    into the swap.
     ShipIt swaps the bundle at the same path, so the LaunchAgent's absolute interpreter path
     stays valid. On a platform whose §2 module serves no update feed URL, **every** update
     path answers the same plain "Updates are not supported on this platform yet." line up
@@ -585,13 +643,16 @@ the update bullets below).
   harmlessly. `uninstall launchctl:` before `quit:`, since
   launchd would otherwise keep restarting a backend whose bundled interpreter was just removed;
   and `zap trash:` covering the §5 data directory, the logs directory, the LaunchAgent plist
-  and preferences/saved-state, and the `~/.local/bin/autowright` shim — never the
+  and preferences/saved-state, the `~/.local/bin/autowright` shim, and the
+  `~/Library/Caches/autowright-updater` electron-updater cache (§3 Flow) — never the
   Keychain secrets (§4.8), which the user removes by hand.
-  A `livecheck` block reads `currentRelease` from the same feed the updater uses - the cask
-  is arm64-only, so always
-  `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/feed.json`,
-  the raw URL from the Feed bullet above and never the retired `autowright.ai/updates/…`
-  Pages path - so the cask stays checkable by `brew livecheck` and would be autobump-eligible
+  A `livecheck` block reads `version` from the same `latest-mac.yml` the in-app updater
+  reads (`:yaml` strategy) - the cask is arm64-only, so always
+  `https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/latest-mac.yml`,
+  the raw URL from the Feed bullet above. Never the retired `autowright.ai/updates/…`
+  Pages path, and never the legacy `feed.json` - that file is frozen at 0.6.1 (§3 bridge)
+  and would silently stop livecheck reporting anything newer - so the cask stays
+  checkable by `brew livecheck` and would be autobump-eligible
   if it ever moved to core. Version bumps are `release.sh`'s job (§18), never a manual edit,
   and the same publish step re-pins the livecheck URL on every release: it is the one line
   naming the feed host, and a stale one fails silently (`brew livecheck` simply stops
@@ -599,7 +660,9 @@ the update bullets below).
 
 **Windows packaging & updates (decided — NSIS + electron-updater).** The Windows
 distributable is built by **electron-builder for the Windows target only** (`--win nsis`),
-driven by a new `windows-scripts/prod.ps1`; macOS keeps `@electron/packager` + `prod.sh` untouched.
+driven by a new `windows-scripts/prod.ps1`; macOS keeps `@electron/packager` + `prod.sh`
+(which emit the mac update zip and `app-update.yml` themselves — §3 mac update bullets —
+rather than moving the mac build onto electron-builder).
 Rationale: hand-rolling what electron-updater consumes (the NSIS script, `latest.yml`, the
 blockmap, the in-app `app-update.yml`) would re-implement electron-builder badly, and
 electron-builder also provides the sign-later hook for free. Squirrel.Windows was considered
@@ -617,9 +680,10 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   upgrade must always find the previous install, and the stable GUID + path + appId are
   what let a future signed build upgrade an unsigned install in place. Needs `icon.ico`
   generated beside the existing icns/png (§14 assets, `scripts/gen_icon.cjs`).
-- **Updater:** `electron-updater` (NsisUpdater) as an app dependency, used only on win32.
-  main.cjs's update block is per-OS behind the §2 platform layer: darwin keeps the
-  Squirrel.Mac JSON feed + loopback-proxy flow byte-identical; win32 uses the generic
+- **Updater:** `electron-updater` (NsisUpdater on win32; since v0.6.1 every OS runs
+  electron-updater — darwin's `MacUpdater` flow is specified in the §3 mac update bullets
+  above). main.cjs's update block is one shared code path; the §2 platform layer's
+  `UPDATER` marker picks the class. win32 uses the generic
   provider pointed at
   `https://raw.githubusercontent.com/hansololz/autowright/main/release/win32-x86_64/`
   (`win32.cjs` `updateFeedUrl` returns that base once the feed is live). Feed =

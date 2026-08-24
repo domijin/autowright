@@ -3,7 +3,6 @@ const { app, autoUpdater, BrowserWindow, Menu, Tray, dialog, nativeImage, ipcMai
 const { execFile } = require('child_process')
 const { randomUUID } = require('crypto')
 const fs = require('fs')
-const http = require('http')
 const os = require('os')
 const path = require('path')
 
@@ -874,10 +873,10 @@ ipcMain.handle('tray-alert', (_e, on) => {
   if (tray) tray.setImage(trayIcon(!!on))
 })
 
-// §3 in-app updates (Squirrel.Mac): manual-only — nothing here runs until the
-// §9.4 "Check for updates" button calls update-check. One static JSON feed per
-// arch under release/ in the repo, served over raw.githubusercontent.com and
-// rewritten by release.sh each release.
+// §3 in-app updates (electron-updater on every OS): manual-only — nothing here
+// runs until the §9.4 "Check for updates" button calls update-check. One feed
+// directory per OS/arch under release/ in the repo, served over
+// raw.githubusercontent.com and rewritten by each OS's release script.
 // Null where the platform declares no update capability, or has one but no
 // channel yet: every §3 update path checks it and answers the degraded line,
 // so the IPC surface stays byte-identical for the renderer either way.
@@ -916,13 +915,12 @@ function recordAvailable(version) {
 }
 
 // §3 per-OS update machinery, chosen by the §2 module's marker — never by
-// sniffing process.platform here. `squirrel` is Electron's built-in
-// autoUpdater (macOS, the flow below); `nsis` and `appimage` are
-// electron-updater's NsisUpdater (Windows) and AppImageUpdater (Linux), both
-// against the generic provider. The renderer-facing IPC surface is identical
-// every way, so no renderer code forks.
-const USE_GENERIC = Boolean(UPDATE_FEED)
-  && (plat.UPDATER === 'nsis' || plat.UPDATER === 'appimage')
+// sniffing process.platform here. All three markers name electron-updater
+// classes against the generic provider: `mac` is MacUpdater (Squirrel.Mac
+// underneath), `nsis` is NsisUpdater (Windows), `appimage` is AppImageUpdater
+// (Linux). One shared code path — the renderer-facing IPC surface is identical
+// every way, so no renderer code forks; darwin adds only the Squirrel
+// hand-off tail below.
 
 // Built on first use and never at module load: requiring main.cjs must not
 // turn into a feed fetch, and electron-updater checks nothing until asked.
@@ -930,22 +928,34 @@ let generic = null
 
 function genericUpdater() {
   if (generic) return generic
-  const { NsisUpdater, AppImageUpdater } = require('electron-updater')
-  const Updater = plat.UPDATER === 'nsis' ? NsisUpdater : AppImageUpdater
+  const { MacUpdater, NsisUpdater, AppImageUpdater } = require('electron-updater')
+  const Updater = { mac: MacUpdater, nsis: NsisUpdater, appimage: AppImageUpdater }[plat.UPDATER]
   // No publisherName until a certificate exists (§3 footgun): with one set,
   // electron-updater verifies the downloaded installer's Authenticode
   // identity, and every update against an unsigned artifact fails.
   const u = new Updater({ provider: 'generic', url: UPDATE_FEED })
-  // §3 manual-only rule: a check just reads latest.yml, downloads and installs
-  // are user-initiated, and nothing may install itself on quit — the
-  // update-install handler's live-execution gate is the only way in.
+  // §3 manual-only rule: a check just reads the feed yml, downloads and
+  // installs are user-initiated, and nothing may install itself on quit — the
+  // update-install handler's live-execution gate is the only way in. (On
+  // darwin the off flag also keeps MacUpdater from engaging Squirrel during
+  // the download; the hand-off tail below runs that under the handler's
+  // control instead.)
   u.autoDownload = false
   u.autoInstallOnAppQuit = false
+  // §15 dev parity: an unpackaged (dev/driven) launch runs the same real
+  // update path — without this electron-updater silently skips every check
+  // while app.isPackaged is false. A packaged app ignores the flag, and the
+  // provider config always comes from the constructor options above, never
+  // from a dev-app-update.yml (which exists only to name the updater cache
+  // directory, §3).
+  u.forceDevUpdateConfig = true
+  // §3: no .blockmap is published for the mac zip — skip the differential
+  // attempt that could only ever fail and fall back to the full download.
+  if (plat.UPDATER === 'mac') u.disableDifferentialDownload = true
   const log = (m) => appLog(`update: ${String(m?.stack || m?.message || m)}`)
   u.logger = { info: log, warn: log, error: log, debug: () => {} }
-  // §3 determinate progress on the same update-progress IPC the mac flow
-  // pushes: percent, or null (indeterminate bar) when the server sent no
-  // total to divide by.
+  // §3 determinate progress: percent on the update-progress IPC, or null
+  // (indeterminate bar) when the server sent no total to divide by.
   u.on('download-progress', (p) => {
     const percent = p?.total && Number.isFinite(p?.percent)
       ? Math.min(100, Math.round(p.percent))
@@ -956,11 +966,14 @@ function genericUpdater() {
   return generic
 }
 
-// §3 electron-updater check (win32/linux): the feed read, mapped onto the
-// same `{ state }` shape and the same §9.4 version-compare rule as the mac
-// path — electron-updater's own "is this newer" answer is never consulted, so
-// every platform agrees on what counts as an update.
-async function fetchUpdateStateGeneric() {
+// §3 check: the feed read, mapped onto the `{ state }` shape and the §9.4
+// version-compare rule — electron-updater's own "is this newer" answer is
+// never consulted, so every platform agrees on what counts as an update.
+async function fetchUpdateState() {
+  // §3: no feed on this platform — answer the error state carrying the plain
+  // no-updates line, so the §9.4 page never tells the user to retry something
+  // that cannot succeed. A real feed failure carries no detail (generic copy).
+  if (!UPDATE_FEED) return { state: 'error', error: NO_UPDATES_ERROR }
   try {
     const result = await genericUpdater().checkForUpdates()
     const version = String(result?.updateInfo?.version ?? '')
@@ -975,12 +988,45 @@ async function fetchUpdateStateGeneric() {
   }
 }
 
-// §3 electron-updater download (win32/linux): it streams the binary and emits
-// real progress events, so there is no temp file, no loopback server and no
-// re-implemented percent math here. The check runs first — with autoDownload
-// off it only reads the feed yml — which is both the mac flow's "re-fetch the
-// feed" step and what arms downloadUpdate.
-async function downloadUpdateGeneric() {
+// §3 darwin tail of update-download: after downloadUpdate(), MacUpdater has
+// verified the zip against the feed's sha512 and pointed Squirrel.Mac at its
+// own loopback proxy — but with the manual-only flags off it never engages
+// Squirrel. Engage it here and settle only once Squirrel staged the bundle:
+// the §9.4 bar holds 100% meanwhile, and an unsigned dev build surfaces
+// Squirrel's real signature error (no dev fork). Squirrel can also emit none
+// of its events (a hand-off it silently drops) — without the give-up timer
+// the §9.4 About page would wait on this promise forever. Resolves null on
+// staged, the error text otherwise.
+function stageWithSquirrel(updater) {
+  return new Promise((resolve) => {
+    if (updater.squirrelDownloadedUpdate) return resolve(null)
+    let settled = false
+    const settle = (error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(giveUp)
+      autoUpdater.removeListener('update-downloaded', onDone)
+      autoUpdater.removeListener('error', onErr)
+      resolve(error)
+    }
+    const giveUp = setTimeout(() => settle('the updater stopped responding'), 10 * 60_000)
+    const onDone = () => settle(null)
+    const onErr = (err) => settle(String(err?.message || err))
+    autoUpdater.on('update-downloaded', onDone)
+    autoUpdater.on('error', onErr)
+    try {
+      autoUpdater.checkForUpdates()
+    } catch (err) {
+      settle(String(err?.message || err))
+    }
+  })
+}
+
+// §3 download: electron-updater streams the binary, verifies it against the
+// feed, and emits real progress events — no temp files and no re-implemented
+// percent math here. The check runs first — with autoDownload off it only
+// reads the feed yml — which is what arms downloadUpdate.
+async function downloadUpdate() {
   try {
     const updater = genericUpdater()
     const result = await updater.checkForUpdates()
@@ -988,30 +1034,13 @@ async function downloadUpdateGeneric() {
     if (!isNewerVersion(version, app.getVersion())) return { error: 'no update available' }
     await updater.downloadUpdate(result?.cancellationToken)
     win?.webContents.send('update-progress', 100)
+    if (plat.UPDATER === 'mac') {
+      const error = await stageWithSquirrel(updater)
+      if (error) return { error }
+    }
     return { ok: true }
   } catch (err) {
     return { error: String(err?.message || err) }
-  }
-}
-
-async function fetchUpdateState() {
-  // §3: no feed on this platform — answer the error state carrying the plain
-  // no-updates line, so the §9.4 page never tells the user to retry something
-  // that cannot succeed. A real feed failure carries no detail (generic copy).
-  if (!UPDATE_FEED) return { state: 'error', error: NO_UPDATES_ERROR }
-  if (USE_GENERIC) return fetchUpdateStateGeneric()
-  try {
-    const res = await fetch(UPDATE_FEED, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
-    if (!res.ok) return { state: 'error' }
-    const version = String((await res.json()).currentRelease ?? '')
-    if (!isNewerVersion(version, app.getVersion())) {
-      recordAvailable(null)
-      return { state: 'uptodate' }
-    }
-    recordAvailable(version)
-    return { state: 'available', version }
-  } catch {
-    return { state: 'error' }
   }
 }
 
@@ -1027,159 +1056,21 @@ ipcMain.handle('update-check', () => fetchUpdateState())
 ipcMain.handle('update-available', () => availableVersion)
 ipcMain.handle('update-brew-managed', () => brewManaged())
 
-// Squirrel's autoUpdater emits no download-progress events, so the DMG is
-// downloaded here first — streamed to a temp file, percent pushed to the
-// renderer as update-progress events — then unpacked into the zip Squirrel
-// consumes and handed over through a one-shot loopback feed (§3). No dev
-// fork: an unsigned build takes the same path and surfaces Squirrel's real
-// signature error.
 ipcMain.handle('update-download', async () => {
   // §3: the no-feed line comes first. A managed-copy answer only makes sense
   // where a managed channel exists at all — on a platform that serves no feed
   // it would promise an update route this build simply doesn't have.
   if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
   if (brewManaged()) return { error: plat.MANAGED_COPY_ERROR }
-  if (USE_GENERIC) return downloadUpdateGeneric()
-  const sendPercent = (percent) => win?.webContents.send('update-progress', percent)
-  const stamp = randomUUID()
-  const tmpDmg = path.join(app.getPath('temp'), `autowright-update-${stamp}.dmg`)
-  const tmpZip = path.join(app.getPath('temp'), `autowright-update-${stamp}.zip`)
-  const mount = path.join(app.getPath('temp'), `autowright-update-${stamp}.mount`)
-  const run = (cmd, args) => new Promise((res, rej) => {
-    execFile(cmd, args, (err, stdout, stderr) => {
-      if (err) rej(new Error(String(stderr || err?.message || err).trim()))
-      else res(stdout)
-    })
-  })
-  let attached = false
-  const detach = async () => {
-    if (!attached) return
-    // -force second: a Finder or Spotlight peek at the volume must not strand
-    // the mount (and its temp dir) for the rest of the app's life.
-    await run('hdiutil', ['detach', mount]).catch(() => run('hdiutil', ['detach', mount, '-force']))
-      .catch(() => {})
-    attached = false
-  }
-  let server = null
-  const cleanup = () => {
-    // closeAllConnections first: close() alone only stops new connections, so
-    // a kept-alive Squirrel socket would hold the loopback server open for the
-    // rest of the app's life.
-    server?.closeAllConnections?.()
-    server?.close()
-    detach().then(() => fs.rm(mount, { recursive: true, force: true }, () => {}))
-    fs.rm(tmpDmg, { force: true }, () => {})
-    fs.rm(tmpZip, { force: true }, () => {})
-  }
-  try {
-    const feedRes = await fetch(UPDATE_FEED, { cache: 'no-store', signal: AbortSignal.timeout(10_000) })
-    if (!feedRes.ok) throw new Error(`update feed: HTTP ${feedRes.status}`)
-    const feed = await feedRes.json()
-    const entry = (Array.isArray(feed?.releases) ? feed.releases : [])
-      .find((r) => r?.version === feed?.currentRelease)
-    if (!entry?.updateTo?.url) throw new Error('update feed has no download URL')
-
-    // Percent from Content-Length; null (indeterminate bar) when absent.
-    const dmgRes = await fetch(entry.updateTo.url, { signal: AbortSignal.timeout(30 * 60_000) })
-    if (!dmgRes.ok || !dmgRes.body) throw new Error(`update download: HTTP ${dmgRes.status}`)
-    const total = Number(dmgRes.headers.get('content-length')) || 0
-    const out = fs.createWriteStream(tmpDmg)
-    let got = 0
-    let lastPercent = -1
-    for await (const chunk of dmgRes.body) {
-      got += chunk.length
-      const percent = total ? Math.min(100, Math.round((got / total) * 100)) : null
-      if (percent !== lastPercent) { lastPercent = percent; sendPercent(percent) }
-      if (!out.write(chunk)) await new Promise((res) => out.once('drain', res))
-    }
-    await new Promise((res, rej) => { out.on('error', rej); out.end(res) })
-    sendPercent(100)
-
-    // §3: Squirrel consumes zips, not DMGs — build the zip it needs from the
-    // downloaded DMG: attach read-only, zip the single .app, detach.
-    fs.mkdirSync(mount, { recursive: true })
-    await run('hdiutil', ['attach', tmpDmg, '-nobrowse', '-readonly', '-mountpoint', mount])
-    attached = true
-    const appName = fs.readdirSync(mount).find((name) => name.endsWith('.app'))
-    if (!appName) throw new Error('the downloaded update holds no app')
-    await run('ditto', ['-c', '-k', '--keepParent', path.join(mount, appName), tmpZip])
-    await detach()
-
-    // Loopback hand-off: serve the feed (updateTo.url rewritten to this
-    // server's own zip route) and the staged zip; Squirrel re-downloads
-    // locally, verifies, and stages as usual.
-    const port = await new Promise((res, rej) => {
-      server = http.createServer((req, resp) => {
-        // A request landing after cleanup (kept-alive socket, temp zip gone,
-        // server closing) must get an error response, never a throw: an
-        // uncaught exception here would crash the main process.
-        try {
-          if (req.url === '/feed.json') {
-            const localFeed = {
-              ...feed,
-              releases: [{ ...entry, updateTo: { ...entry.updateTo, url: `http://127.0.0.1:${server.address().port}/update.zip` } }],
-            }
-            resp.setHeader('Content-Type', 'application/json')
-            resp.end(JSON.stringify(localFeed))
-          } else if (req.url === '/update.zip') {
-            resp.setHeader('Content-Type', 'application/zip')
-            resp.setHeader('Content-Length', String(fs.statSync(tmpZip).size))
-            const zip = fs.createReadStream(tmpZip)
-            zip.on('error', () => resp.destroy())
-            zip.pipe(resp)
-          } else {
-            resp.statusCode = 404
-            resp.end()
-          }
-        } catch {
-          try { resp.statusCode = 500; resp.end() } catch { resp.destroy() }
-        }
-      })
-      server.on('error', rej)
-      server.listen(0, '127.0.0.1', () => res(server.address().port))
-    })
-
-    return await new Promise((resolve) => {
-      let settled = false
-      const settle = (result) => {
-        if (settled) return
-        settled = true
-        clearTimeout(giveUp)
-        autoUpdater.removeListener('update-downloaded', onDone)
-        autoUpdater.removeListener('update-not-available', onNone)
-        autoUpdater.removeListener('error', onErr)
-        cleanup()
-        resolve(result)
-      }
-      // Squirrel can emit none of the three events (a hand-off it silently
-      // drops). Without this the loopback server and the staged zip leak and
-      // the §9.4 About page waits on this promise forever.
-      const giveUp = setTimeout(() => settle({ error: 'the updater stopped responding' }), 10 * 60_000)
-      const onDone = () => settle({ ok: true })
-      const onNone = () => settle({ error: 'no update available' })
-      const onErr = (err) => settle({ error: String(err?.message || err) })
-      autoUpdater.on('update-downloaded', onDone)
-      autoUpdater.on('update-not-available', onNone)
-      autoUpdater.on('error', onErr)
-      try {
-        autoUpdater.setFeedURL({ url: `http://127.0.0.1:${port}/feed.json`, serverType: 'json' })
-        autoUpdater.checkForUpdates()
-      } catch (err) {
-        settle({ error: String(err?.message || err) })
-      }
-    })
-  } catch (err) {
-    cleanup()
-    return { error: String(err?.message || err) }
-  }
+  return downloadUpdate()
 })
 
-// ShipIt swaps the bundle at the same path (the LaunchAgent's interpreter path
-// stays valid); the old backend keeps running until the next launch's
-// version-compare flow restarts it.
+// ShipIt (macOS) swaps the bundle at the same path (the LaunchAgent's
+// interpreter path stays valid); the old backend keeps running until the next
+// launch's version-compare flow restarts it.
 ipcMain.handle('update-install', async () => {
   // §3: no feed → nothing can be staged; quitAndInstall with nothing staged
-  // must never quit the app for no swap (unreachable on macOS, real on win32).
+  // must never quit the app for no swap.
   // Same order as update-download: a platform with no feed says so, and only a
   // platform that has one can be managed by someone else's copy of it.
   if (!UPDATE_FEED) return { error: NO_UPDATES_ERROR }
@@ -1189,8 +1080,7 @@ ipcMain.handle('update-install', async () => {
   // §3: the same busy-gated, user-initiated install on every platform — only
   // the machinery that performs the swap differs (ShipIt vs. the NSIS
   // installer vs. the AppImage swap electron-updater staged).
-  if (USE_GENERIC) genericUpdater().quitAndInstall()
-  else autoUpdater.quitAndInstall()
+  genericUpdater().quitAndInstall()
   return { ok: true }
 })
 

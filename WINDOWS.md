@@ -35,10 +35,12 @@ release. Each item moves into the §-sections as it ships; delete the file when 
 - **`skills/autowright/SKILL.md:43-50` hardcodes the POSIX PATH help**
   (`~/.local/bin`, the zsh `~/.zprofile` one-liner) - wrong on Windows; needs per-OS
   wording before the skill is advertised to Windows users.
-- **NSIS electron-updater path has zero test coverage on macOS hosts.**
-  `app/tests/main-cjs-leaf.test.ts` skips the electron-updater describe unless the host
-  declares the nsis/appimage flow. Run the renderer suite (and e2e) on a real Windows
-  host before the next Windows release.
+- **NSIS-specific updater behavior has zero test coverage on macOS hosts.** Since the
+  0.6.1 mac migration the electron-updater describe in `app/tests/main-cjs-leaf.test.ts`
+  runs on every OS (darwin uses MacUpdater), so the shared handler logic is covered on
+  mac hosts - but NsisUpdater-specific behavior (installer swap, differential/blockmap)
+  still is not. Run the renderer suite (and e2e) on a real Windows host before the next
+  Windows release.
 - **`windows-scripts/release.ps1` hygiene:** stale "GitHub Pages" comment (feeds moved
   to raw in 0c4e6f5), and no current-branch guard while the feed URLs hardcode `/main/`.
 - **`PRIVACY.md` hardcodes macOS copy** and is rendered verbatim in-app; needs a per-OS

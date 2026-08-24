@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build the production distribution (SPEC §3): "Autowright.app" with the
 # relocatable CPython (python-build-standalone) + the autowright backend and
-# curated packages in Contents/Resources/python/, plus a DMG — all
+# curated packages in Contents/Resources/python/, plus a DMG (install
+# artifact) and the electron-updater update zip — all
 # under build/. Always Developer-ID-signed with hardened runtime and notarized —
 # no ad-hoc fallback: a downloaded (quarantined) ad-hoc build can never start
 # its backend LaunchAgent (Gatekeeper silently refuses to spawn the unsigned
@@ -78,16 +79,32 @@ echo "· installing backend into bundled Python (pinned by backend/constraints.t
 cp "$ROOT/app/electron/icon/icon.icns" "$BUILD/icon.icns"
 
 # ---- package Electron (.app) ----
-# Only electron/ + dist/ + package.json ship: the renderer is fully bundled into
-# dist/ and main.cjs/preload.cjs use Electron builtins only, so node_modules,
-# src/ and the vite scaffolding stay out of the bundle.
+# Only electron/ + dist/ + package.json + electron-updater's runtime closure
+# ship: the renderer is fully bundled into dist/ and main.cjs/preload.cjs use
+# Electron builtins plus electron-updater (§3), so src/, the vite scaffolding
+# and every other node_module stay out of the bundle. The closure is computed,
+# not hand-pinned, so an electron-updater upgrade can never silently strand a
+# missing transitive dependency inside the bundle.
+UPDATER_PKGS="$(cd "$ROOT/app" && node -e '
+const seen = new Set()
+const walk = (name) => {
+  if (seen.has(name)) return
+  seen.add(name)
+  const pkg = require(`./node_modules/${name}/package.json`)
+  Object.keys(pkg.dependencies || {}).forEach(walk)
+}
+walk("electron-updater")
+process.stdout.write([...seen].sort().join("|"))
+')"
+[ -n "$UPDATER_PKGS" ] || { echo "failed to compute the electron-updater dependency closure"; exit 1; }
 echo "· packaging Autowright.app"
 (cd "$ROOT/app" && npx electron-packager . "Autowright" \
   --platform=darwin --arch="$EP_ARCH" --out "$BUILD/pkg" --overwrite \
   --icon "$BUILD/icon.icns" \
   --app-bundle-id ai.autowright.app \
   --ignore '^/src($|/)' \
-  --ignore '^/node_modules($|/)' \
+  --ignore "^/node_modules/(?!($UPDATER_PKGS)(/|\$))" \
+  --ignore '^/dev-app-update\.yml$' \
   --ignore '^/e2e($|/)' \
   --ignore '^/tests($|/)' \
   --ignore '^/brand-electron\.cjs$' \
@@ -106,6 +123,17 @@ APP="$BUILD/pkg/Autowright-darwin-$ARCH/Autowright.app"
 echo "· bundling Python → Contents/Resources/python"
 rm -rf "$APP/Contents/Resources/python"
 cp -R "$PYSTAGE" "$APP/Contents/Resources/python"
+
+# ---- §3 electron-updater config (app-update.yml) ----
+# electron-updater reads it at runtime for its cache directory name (main.cjs
+# passes the feed URL to the constructor, which overrides provider/url — they
+# are still written accurately). Must land before signing: it is part of the
+# bundle's sealed resources.
+cat > "$APP/Contents/Resources/app-update.yml" <<EOF
+provider: generic
+url: https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-$ARCH/
+updaterCacheDirName: autowright-updater
+EOF
 
 # ---- smoke check: bundled interpreter works from inside the bundle ----
 # MUST run before signing: imports write .pyc files into Resources/python, and
@@ -179,8 +207,15 @@ xcrun notarytool submit "$APPZIP" --keychain-profile "$NOTARY_PROFILE" --wait \
 rm -f "$APPZIP"
 xcrun stapler staple "$APP"
 
-# ---- DMG (SPEC §3: the only release artifact — install and update alike) ----
+# ---- update zip (SPEC §3: the electron-updater/Squirrel update artifact) ----
+# Built from the same stapled bundle the DMG carries, so the app inside
+# already passes Gatekeeper offline; the zip itself needs no notarization.
 VERSION="$(node -p "require('$ROOT/app/package.json').version")"
+ZIP="$BUILD/Autowright-$VERSION-darwin-$ARCH.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP" "$ZIP"
+
+# ---- DMG (SPEC §3: the install artifact — website download + Homebrew cask) ----
 DMG="$BUILD/Autowright-$VERSION-darwin-$ARCH.dmg"
 rm -f "$DMG"
 hdiutil create -volname "Autowright" -srcfolder "$APP" -ov -quiet -format UDZO "$DMG"
@@ -202,3 +237,4 @@ echo "· Gatekeeper assessment OK (app + DMG)"
 echo "· dist done:"
 echo "    $APP"
 echo "    $DMG"
+echo "    $ZIP"

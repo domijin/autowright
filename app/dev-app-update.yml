@@ -1,0 +1,10 @@
+# §3 electron-updater dev-mode config. An unpackaged (dev/driven) launch runs
+# the same real update path as production — main.cjs sets forceDevUpdateConfig
+# — and electron-updater then reads this file where a packaged app reads the
+# app-update.yml prod.sh writes into Contents/Resources/. Only
+# updaterCacheDirName is actually consumed: the provider and url below are
+# documentation (main.cjs always passes the §2 module's feed URL to the
+# updater constructor, which overrides them).
+provider: generic
+url: https://raw.githubusercontent.com/hansololz/autowright/main/release/darwin-arm64/
+updaterCacheDirName: autowright-updater

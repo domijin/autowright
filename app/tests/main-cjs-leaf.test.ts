@@ -65,22 +65,21 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     }
   })
 
-  it('spawns only the service managers, the login shell, the backend python, and the mac update helpers', () => {
+  it('spawns only the service managers, the login shell, and the backend python', () => {
     // Every child-process call site across main.cjs + platform modules:
-    // execFile('launchctl'|'systemctl'|shell|py|cmd, …). `shell` is the §3
+    // execFile('launchctl'|'systemctl'|shell|py, …). `shell` is the §3
     // login-shell PATH probe (printf $PATH, nothing else); 'launchctl' /
-    // 'systemctl' are the §2 serviceDiagnostics captures; `cmd` is the mac
-    // update flow's run() wrapper, pinned to hdiutil/ditto below. `spawn` is
-    // not used at all (the word may appear in comments only).
+    // 'systemctl' are the §2 serviceDiagnostics captures. The pre-0.6.1 mac
+    // update flow's hdiutil/ditto helpers are gone — electron-updater
+    // downloads the zip directly (§3). `spawn` is not used at all (the word
+    // may appear in comments only).
     const calls = [...union.matchAll(/(?<![.\w])(?:execFile|spawn|exec)\(\s*([^,)]+)/g)].map((m) => m[1].trim())
     for (const first of calls) {
-      expect(["'launchctl'", "'systemctl'", 'shell', 'py', 'cmd']).toContain(first)
+      expect(["'launchctl'", "'systemctl'", 'shell', 'py']).toContain(first)
     }
     expect(calls.length).toBeGreaterThanOrEqual(3)
-    // The run() wrapper (the one `cmd` caller) drives only the §3 DMG-unpack
-    // helpers — nothing else may ride it.
-    const runCalls = [...src.matchAll(/(?<![.\w])run\(\s*'([^']+)'/g)].map((m) => m[1])
-    expect(new Set(runCalls)).toEqual(new Set(['hdiutil', 'ditto']))
+    expect(union).not.toContain("'hdiutil'")
+    expect(union).not.toContain("'ditto'")
     // …and every python call site runs the service module, nothing else.
     const pyCalls = [...union.matchAll(/execFile\(\s*py\s*,\s*\[([^\]]*)\]/g)].map((m) => m[1])
     expect(pyCalls.length).toBeGreaterThanOrEqual(1)
@@ -101,27 +100,27 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     expect(src).toMatch(/writeFileSync\(shim, shimText\(python\)/)
   })
 
-  it('electron-updater is required lazily, inside the generic-only path (§3)', () => {
-    // prod.sh ships no node_modules in the mac bundle, so a top-level require
-    // would break every macOS launch. The one require sits inside the
-    // constructor helper, which only the electron-updater branches ever call.
+  it('electron-updater is required lazily, behind the feed gate (§3)', () => {
+    // The mac bundle ships only electron-updater's runtime closure, and
+    // constructing an updater must never happen at module load (requiring
+    // main.cjs must not turn into network machinery). The one require sits
+    // inside the constructor helper.
     const hits = union.match(/require\('electron-updater'\)/g) ?? []
     expect(hits).toHaveLength(1)
     expect(src).toMatch(/function genericUpdater\(\) \{[\s\S]{0,200}require\('electron-updater'\)/)
-    // …and every entry point into that path is behind the USE_GENERIC gate,
-    // so on macOS nothing can reach the require at all.
-    for (const call of ['fetchUpdateStateGeneric()', 'downloadUpdateGeneric()',
-      'genericUpdater().quitAndInstall()']) {
-      const uses = src.split('\n')
-        .filter((l) => l.includes(call) && !/^(async )?function /.test(l.trim()))
-      expect(uses).toHaveLength(1)
-      expect(uses[0]).toContain('if (USE_GENERIC)')
-    }
-    // The marker decides it — never a process.platform sniff in main.cjs.
-    expect(src).toContain("plat.UPDATER === 'nsis'")
-    expect(src).toContain("plat.UPDATER === 'appimage'")
+    // …and every path that can reach the helper refuses first without a feed
+    // (fetchUpdateState + both handlers open on the UPDATE_FEED gate), so on a
+    // feedless platform nothing can reach the require at all.
+    const gates = src.match(/if \(!UPDATE_FEED\) return \{ (state: 'error', )?error: NO_UPDATES_ERROR \}/g) ?? []
+    expect(gates).toHaveLength(3)
+    // The marker decides the class — never a process.platform sniff in
+    // main.cjs — and all three OSes go through the same electron-updater map.
+    expect(src).toMatch(/\{ mac: MacUpdater, nsis: NsisUpdater, appimage: AppImageUpdater \}\[plat\.UPDATER\]/)
     expect(src).not.toContain("process.platform === 'win32'")
     expect(src).not.toContain("process.platform === 'linux'")
+    // The darwin Squirrel hand-off tail is the one per-OS fork, keyed on the
+    // marker, and it runs strictly inside the download handler's flow.
+    expect(src).toMatch(/if \(plat\.UPDATER === 'mac'\) \{\n\s*const error = await stageWithSquirrel\(updater\)/)
   })
 
   it('no auto-install: cli-install is reachable only via its IPC handler (§3)', () => {
@@ -186,12 +185,15 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
 // the `shell`/`BrowserWindow` stubs record what a call actually did. Real code,
 // real handlers — only the Electron surface underneath is a double.
 
-// The §3 electron-updater double (win32 NsisUpdater / linux AppImageUpdater —
-// one fake serves as both): electron-updater is required lazily by main.cjs,
-// so the stub `require` hands it this fake under either class name — the same
-// "patch the layer underneath, run the real handler" rule as the electron
-// stub itself. Canned answers live on the record so a test can arm them
-// before the handler ever constructs the updater.
+// The §3 electron-updater double (darwin MacUpdater / win32 NsisUpdater /
+// linux AppImageUpdater — one fake serves as all three): electron-updater is
+// required lazily by main.cjs, so the stub `require` hands it this fake under
+// every class name — the same "patch the layer underneath, run the real
+// handler" rule as the electron stub itself. Canned answers live on the
+// record so a test can arm them before the handler ever constructs the
+// updater. Like the real MacUpdater, downloadUpdate flips
+// squirrelDownloadedUpdate, so the darwin hand-off tail settles immediately
+// instead of waiting on the stub autoUpdater's silence.
 interface UpdaterRecord {
   options: { provider?: string, url?: string } | null
   autoDownload: boolean | null
@@ -263,6 +265,7 @@ function loadMain(): MainStub {
   class FakeUpdater {
     autoDownload = true
     autoInstallOnAppQuit = true
+    squirrelDownloadedUpdate = false
     logger: unknown = null
 
     constructor(options: { provider?: string, url?: string }) { updater.options = options }
@@ -281,6 +284,9 @@ function loadMain(): MainStub {
     async downloadUpdate() {
       updater.downloads += 1
       if (updater.downloadError) throw updater.downloadError
+      // The real MacUpdater sets this once Squirrel staged the bundle; the
+      // fake stages "instantly" so main.cjs's stageWithSquirrel resolves.
+      this.squirrelDownloadedUpdate = true
       return ['installer.exe']
     }
 
@@ -351,9 +357,9 @@ function loadMain(): MainStub {
   load(
     (id: string) => {
       if (id === 'electron') return electron
-      // One fake under both class names — main.cjs picks by the §2 marker.
+      // One fake under all three class names — main.cjs picks by the §2 marker.
       if (id === 'electron-updater') {
-        return { NsisUpdater: FakeUpdater, AppImageUpdater: FakeUpdater }
+        return { MacUpdater: FakeUpdater, NsisUpdater: FakeUpdater, AppImageUpdater: FakeUpdater }
       }
       return realRequire(id)
     },
@@ -592,12 +598,11 @@ const platMod = realRequire(join(PLATFORM_DIR, 'index.cjs')) as {
   updateFeedUrl: (arch: string) => string | null
 }
 const caps = platMod.capabilities
-// §3: which update machinery this host's module drives — `squirrel` (the mac
-// loopback-proxy flow) or electron-updater against the generic provider
-// (`nsis` on win32, `appimage` on linux). The tests below assert the rule for
-// whichever one this platform declares.
-const USE_GENERIC = caps.updates
-  && (platMod.UPDATER === 'nsis' || platMod.UPDATER === 'appimage')
+// §3: every platform with a feed drives electron-updater against the generic
+// provider (`mac` on darwin, `nsis` on win32, `appimage` on linux); a
+// platform without one (fallback) has no machinery at all. The tests below
+// assert the rule for whichever this platform declares.
+const HAS_UPDATER = caps.updates
 
 describe('main.cjs platform capability wiring (§2/§9)', () => {
   afterEach(() => {
@@ -678,19 +683,10 @@ describe('main.cjs platform capability wiring (§2/§9)', () => {
       })
       return
     }
-    if (USE_GENERIC) {
-      // With a feed, a failed read stays a bare error state — no detail, so
-      // the generic network copy still stands (same shape as darwin's).
-      m.updater.checkError = new Error('offline in tests')
-      expect(await m.invoke('update-check')).toEqual({ state: 'error' })
-      return
-    }
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline in tests'))
-    try {
-      expect(await m.invoke('update-check')).toEqual({ state: 'error' })
-    } finally {
-      fetchSpy.mockRestore()
-    }
+    // With a feed, a failed read stays a bare error state — no detail, so
+    // the generic network copy still stands, on every platform.
+    m.updater.checkError = new Error('offline in tests')
+    expect(await m.invoke('update-check')).toEqual({ state: 'error' })
   })
 
   it('window-all-closed: a dock keeps the app resident; without one, only a live tray does (§9)', () => {
@@ -720,12 +716,12 @@ describe('main.cjs platform capability wiring (§2/§9)', () => {
   })
 })
 
-// ---- §3 electron-updater updates (win32 NsisUpdater / linux AppImageUpdater)
-// The whole block runs only where the platform module names electron-updater
-// machinery; the real handlers run against the fake updater the stub
+// ---- §3 electron-updater updates (darwin MacUpdater / win32 NsisUpdater /
+// linux AppImageUpdater). The whole block runs wherever the platform module
+// serves a feed; the real handlers run against the fake updater the stub
 // `require` supplies, so nothing here touches the network.
 
-describe.skipIf(!USE_GENERIC)('main.cjs electron-updater path (§3)', () => {
+describe.skipIf(!HAS_UPDATER)('main.cjs electron-updater path (§3)', () => {
   afterEach(() => {
     if (savedHome === undefined) delete process.env.AUTOWRIGHT_HOME
     else process.env.AUTOWRIGHT_HOME = savedHome

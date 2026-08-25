@@ -252,6 +252,22 @@ def _common_context(current: dict | None, grants: dict) -> list[str]:
         "INSTRUCTIONS name a choice, follow them; otherwise pick the most appropriate "
         "entries yourself."
     ]
+    # §8/§5.1: the import's no-match map, right after the grants context —
+    # the steps still carry placeholder ids for these, and a fix means
+    # replacing each with a granted record (or dropping the reference).
+    unresolved = (current or {}).get("unresolved_references") or {}
+    parts.append(
+        "=== IMPORTED REFERENCES THAT NEED FIXING ===\n"
+        "These references came from an imported file and matched nothing on "
+        f"this {paths.machine_noun()}. The steps still carry placeholder ids "
+        "for them; when the user asks to fix the automation, replace each with "
+        "a granted record from the lists above (or remove the reference).\n"
+        + (yaml.safe_dump(
+            [{"kind": e.get("kind"), "name": e.get("name"),
+              "description": e.get("description") or ""}
+             for e in unresolved.values()],
+            sort_keys=False, allow_unicode=True).strip()
+           if unresolved else "none"))
     # §8: instructions travel with every call — always present (`none` when the
     # automation has none) so TASK references to the section never dangle. The
     # chat call may return an updated instructions.md when the user asks; the
@@ -940,14 +956,18 @@ def validate_chat(raw: str, files: dict[str, str],
 
 
 def validate_steps(files: dict[str, str], grants: dict | None = None,
-                   trigger_secret_ids: set[str] | None = None) -> tuple[dict, list[str]]:
+                   trigger_secret_ids: set[str] | None = None,
+                   unresolved: dict | None = None) -> tuple[dict, list[str]]:
     """§8 sync-call validation. Returns (draft dict sans spec, errors). `grants`
     holds the call's agent/secret grant entries — per-step `agents`/`secrets`
     lists must name entries from them. `trigger_secret_ids` are the CURRENT
     triggers' token-secret ids: a drafted discord trigger's `secret` must be a
     granted secret's id OR one of these — re-emitting an existing trigger
     through the §4.3 merge must never fail on a token that was (correctly)
-    never step-granted."""
+    never step-granted. `unresolved` is the automation's §4.1
+    unresolved_references map when one exists: an ungranted id it carries gets
+    the §8 imported-file error copy instead of a raw id, so the user and the
+    repair round see what the §5.1 import wanted."""
     errors: list[str] = []
     if "manifest.yaml" not in files:
         errors.append("manifest.yaml is missing")
@@ -1048,6 +1068,17 @@ def validate_steps(files: dict[str, str], grants: dict | None = None,
     def _label(names: dict, entry_id: str) -> str:
         return names.get(entry_id) or entry_id
 
+    def _imported_no_match(kind: str, entry_id: str, pick: str) -> str | None:
+        """§8/§5.1: the specialized copy for an id the import minted for a
+        reference with no local match — the same words the §9.2/§11 red
+        surfaces use, so the user and the agent see one explanation."""
+        entry = (unresolved or {}).get(entry_id)
+        if entry and entry.get("kind") == kind:
+            return (f"this step still uses {entry['name']}, which came from the "
+                    f"imported file and has no match on this {paths.machine_noun()}. "
+                    f"Pick one of your {pick} or remove the reference.")
+        return None
+
     for s in steps:
         if not isinstance(s, dict):
             continue
@@ -1067,8 +1098,10 @@ def validate_steps(files: dict[str, str], grants: dict | None = None,
                 seen_ids: set[str] = set()
                 for x in ags:
                     if x["id"] not in agent_names:
-                        errors.append(f"step {s.get('name')}: agent id {x['id']!r} isn't among "
-                                      f"the granted agents — granted: {_granted(agent_names)}")
+                        errors.append(f"step {s.get('name')}: "
+                                      + (_imported_no_match("agent", x["id"], "agents")
+                                         or f"agent id {x['id']!r} isn't among the granted "
+                                            f"agents — granted: {_granted(agent_names)}"))
                     if x["id"] in seen_ids:
                         errors.append(f"step {s.get('name')}: agent "
                                       f"{_label(agent_names, x['id'])!r} is listed twice")
@@ -1124,8 +1157,10 @@ def validate_steps(files: dict[str, str], grants: dict | None = None,
                 seen_sec: set[str] = set()
                 for x in secs:
                     if x["id"] not in secret_names:
-                        errors.append(f"step {s.get('name')}: secret id {x['id']!r} isn't among "
-                                      f"the allowed secrets — allowed: {_granted(secret_names)}")
+                        errors.append(f"step {s.get('name')}: "
+                                      + (_imported_no_match("secret", x["id"], "secrets")
+                                         or f"secret id {x['id']!r} isn't among the allowed "
+                                            f"secrets — allowed: {_granted(secret_names)}"))
                     if x["id"] in seen_sec:
                         errors.append(f"step {s.get('name')}: secret "
                                       f"{_label(secret_names, x['id'])!r} is listed twice")
@@ -1139,8 +1174,10 @@ def validate_steps(files: dict[str, str], grants: dict | None = None,
         # secret's id — at runtime it would raise, so it fails validation here.
         for ref in set(SECRET_REF_RE.findall(files.get(s.get("file", ""), ""))):
             if ref not in secret_names:
-                errors.append(f"step {s.get('name')}: code subscripts secrets[{ref!r}], which "
-                              f"isn't among the allowed secrets — allowed: {_granted(secret_names)}")
+                errors.append(f"step {s.get('name')}: "
+                              + (_imported_no_match("secret", ref, "secrets")
+                                 or f"code subscripts secrets[{ref!r}], which isn't among "
+                                    f"the allowed secrets — allowed: {_granted(secret_names)}"))
         pkgs = s.get("packages")
         if pkgs is not None:
             if (not isinstance(pkgs, list)

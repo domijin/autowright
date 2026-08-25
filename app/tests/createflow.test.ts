@@ -94,6 +94,18 @@ describe('secretRefsOf', () => {
       { id: DB_ID, steps: [1] },
     ])
   })
+
+  it('§5.1: an unresolved imported id carries the archive name', () => {
+    const steps = [step({ code: `a = secrets["${ALPHA_ID}"] + secrets["${DB_ID}"]` })]
+    expect(secretRefsOf(steps, {
+      [ALPHA_ID]: { kind: 'secret', name: 'STRIPE_KEY', description: 'billing token' },
+      // an agent entry never names a secret ref, and neither does a missing one
+      [DB_ID]: { kind: 'agent', name: 'Researcher', description: '' },
+    })).toEqual([
+      { id: ALPHA_ID, steps: [0], importedName: 'STRIPE_KEY' },
+      { id: DB_ID, steps: [0] },
+    ])
+  })
 })
 
 describe('instrToMd', () => {

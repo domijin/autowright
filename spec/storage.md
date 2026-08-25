@@ -463,18 +463,14 @@ never used for lookups.
 
 ### 5.1 Transfer archives — export / import (decided)
 
-**Parked in the UI.** The two entry points are hidden: the §9.1 Import button and the §9.2
-Export row. Their modals and every behavior below are kept and unchanged, just unreachable
-from the app; the §20 CLI commands and the §19 endpoints stay live, so the CLI is the only
-client today. This section remains the source of truth for the format. Un-parking is flipping
-one constant back (§9.1) with no other change.
-
 An automation can be exported to a single shareable file and imported on any machine. The file
 is `<name>.autowright` — a plain zip. **References plus safe metadata travel; credentials,
 grants, uuids, and local state never do.** Archive layout:
 
 ```
-manifest.yaml                # format_version: 1 (import rejects any other with 422),
+manifest.yaml                # format_version: 2 (import rejects any other with 422; a
+                             #   format-1 archive gets re-export guidance - the numeric-
+                             #   reference break carried no migration, §21.3),
                              # exported_at, app_version (recorded on every export; import
                              #   does not read it today — diagnostics plus a reserved hook
                              #   for future version gating; format_version stays the only
@@ -485,14 +481,14 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              #   import stamps it as §4.1 `originOs` and a mismatch with
                              #   the running platform flags the §4.1 os-mismatch problem
                              #   — never a rejection),
-                             # agent: the drafting agent's name (absent when none) — names
-                             #   the agents.yaml entry the imported agent_id maps to,
+                             # agent: the drafting agent's REF - the agents.yaml entry the
+                             #   imported agent_id resolves through (absent when none),
                              # triggers: [{kind, expression? | timezone? | channel+secret… | from…}] —
                              #   cron, app_start, discord, and imessage (§4.3 stored
                              #   fields; the token itself never travels, and a discord
-                             #   entry's `secret` is the secret's NAME — export resolves
-                             #   the trigger's §4.3 secret id to its name, import maps it
-                             #   back to the local record's id); no ids,
+                             #   entry's `secret` is the secrets.yaml REF - export
+                             #   assigns it, import resolves it through the §5.1 match
+                             #   ladders); no local ids,
                              #   no enabled state, no cron `source` (import stamps
                              #   `source: spec` — the archive travels with its spec,
                              #   §4.3); one-shot `time` triggers are moments
@@ -501,53 +497,106 @@ manifest.yaml                # format_version: 1 (import rejects any other with 
                              #   values" was checked at export
 automation/                  # exactly the §5 version-folder shape; import copies it
   automation.yaml            #   description, param definitions, steps manifest, packages —
-                             #   no when/note (import stamps v1 fresh), never the
+                             #   step agents:/secrets: entries in {ref, why?} form; no
+                             #   when/note (import stamps v1 fresh), never the
                              #   draft-only step_agents/allowed_secrets/triggers/param_values/concurrency keys
   spec.md                    #   verbatim
   instructions.md            #   verbatim; absent when none
   notes.md                   #   verbatim; absent when empty (§4.1 notes)
-  NN-name.py                 #   every step script, verbatim
+  NN-name.py                 #   every step script, verbatim except the ref-form
+                             #   secrets["1"]/agents["2"] code subscripts (below)
 agents.yaml                  # configs of referenced agents (the automation's drafting
                              # agent + every agent referenced by a step's agents: entry
-                             # ids, resolved to names at export):
-                             # [{name, description, harness, mode, model}] — no ids, no credentials
-secrets.yaml                 # referenced secret names (union of every step's secrets:
-                             # entry ids and code-referenced ids — resolved to names at
-                             # export — and every
-                             # discord trigger's bot-token secret):
-                             # [{name, description}] — never values
+                             # ids), keyed by ref:
+                             # [{ref, name, description, harness, mode, model}] — no local
+                             # ids, no credentials
+secrets.yaml                 # referenced secrets (union of every step's secrets:
+                             # entry ids and code-referenced ids and every
+                             # discord trigger's bot-token secret), keyed by ref:
+                             # [{ref, name, description}] — never values
 ```
 
-**Identity across machines.** Uuids are meaningless on another Mac, so none travel and import
-mints everything fresh: a new automation id + directory, new trigger ids. Secrets are matched
-by **name** (unique + immutable, §4.8); agents are matched by name + config. Step and trigger
-references **translate at the boundary** (well-defined, since names are unique on both
-sides): export rewrites ids to names — step `agents:`/`secrets:` entries become
-`{ name, why }`, the literal `secrets["<id>"]`/`agents["<id>"]` code subscripts become
-`secrets["<NAME>"]`/`agents["<Name>"]` (any §6.1 trailing `# NAME` comment travels verbatim —
-it names the name, so it stays accurate in both forms), and a discord
-trigger's `secret` id becomes the secret's name — and import rewrites the names back to the
-matched/created records' **local ids**, manifest entries and code subscripts alike. An
-export reference whose id matches
-no stored record answers 422 naming the step (or trigger) — a dangling reference must be
-repaired before the automation can travel, since there is no name to carry it. Import
-symmetrically rejects an archive that still carries id-form step entries or uuid code
-subscripts ("re-export the automation"). Inside an
-archive, names ARE the reference format; on disk they never are (§4.1/§4.3/§4.8: ids only).
+**Identity across machines.** Uuids are meaningless on another machine, so none travel:
+inside an archive, small numeric **refs** are the reference format ("1", "2", ... - decimal
+strings assigned per kind in listing order at export; a hand-written YAML integer reads as
+its string form). Export rewrites ids to refs - step `agents:`/`secrets:` entries become
+`{ ref, why? }`, the literal `secrets["<id>"]`/`agents["<id>"]` code subscripts become
+`secrets["1"]`/`agents["2"]` (any §6.1 trailing `# NAME` comment travels verbatim - it
+names the record's name at export time), and a discord trigger's `secret` id becomes its
+secrets.yaml ref. An export reference whose id matches no stored record answers 422 naming
+the step (or trigger) — a dangling reference must be repaired before the automation can
+travel, since there is no record to carry; when the id is a §4.1 unresolved reference,
+the 422 says so in the import's own words ("step `<name>` still uses `<NAME>` from the
+imported file, which has no match on this Mac - fix it in the editor before exporting")
+instead of the deleted-record copy. Import resolves each ref through the match
+ladders below and rewrites it to the resolved record's **local id** - or to a freshly
+minted unresolved id (below) - manifest entries, code subscripts, and trigger secrets
+alike. When a code subscript's immediately-trailing `#` comment text equals the archive
+ref's name and the match landed on a record with a different name, import rewrites the
+comment to the matched record's name, so the §6.1 comment stays truthful after a renaming
+match; any other comment is left alone. Everything else import mints fresh: a new
+automation id + directory, new trigger ids. Import rejects an archive that carries
+uuid-form or name-form references - step entries with `id` or `name` keys, or a
+`secrets[...]`/`agents[...]` subscript whose key is not a listed ref ("re-export the
+automation with the current version"). Inside an archive, refs ARE the reference format;
+on disk they never are (§4.1/§4.3/§4.8: ids only).
+
+**Matching - import never creates records.** No agent or secret record is ever created by
+import (no placeholders, no copies of the exporter's agents). Each archive ref instead
+resolves against the existing local records through a deterministic ladder; a ref no rung
+matches lands **unresolved** (below). Matching runs in passes across all refs of a kind
+(pass 1 for every ref, then pass 2 over the leftovers, and so on), and a local record can
+be **claimed by at most one archive ref** - two refs can never collapse onto one record,
+which would double up step entries and grants; within a pass, refs resolve in listing
+order, and a claimed record leaves the candidate pool for every later pass.
+
+- **Secrets:** (1) exact name equality (§4.8 names are unique + immutable);
+  (2) similarity best-match (below) over the unclaimed secrets. Else unresolved.
+- **Agents:** (1) exact match - §4.7 grant name (casefolded) + harness + mode + effective
+  model (`model` compares as null when mode is `default`); (2) configuration match -
+  harness + mode + effective model equal, any name - over the unclaimed agents, tie-broken
+  by (higher similarity score, then the local default agent, then name casefold, then id);
+  (3) similarity best-match over the unclaimed agents regardless of harness. Else
+  unresolved.
+- **The drafting agent** (manifest `agent` ref) resolves through the same ladder as an
+  ordinary agents.yaml entry. When it lands unresolved, or the manifest has no `agent`,
+  the imported `agent_id` is the local default agent (null when the machine has no
+  agents). That fallback claims no record and never stands in for the same ref's step
+  references - a step must not silently run on a different agent, so those stay
+  unresolved.
+
+**Similarity** - the fuzzy rung, pinned so every build matches identically. Tokenize a
+name or description by splitting camelCase boundaries and every non-alphanumeric run,
+lowercasing, and dropping tokens shorter than 2 characters plus the stopwords `a agent an
+and api at auth be bot by cli credential credentials default for from id in is it key
+local main model my new of on or our pass password secret that the this to token use used
+uses using value with your`. `similarity(A, B)` is Jaccard overlap `|A ∩ B| / |A ∪ B|`,
+and 0 when either set is empty. A candidate's score is the name similarity when either
+side's description tokenizes empty, else `0.7 × name similarity + 0.3 × description
+similarity`. Candidates order by (score descending, name casefold, id); the head matches
+only when its score is at least **0.60**, its name similarity is greater than 0 (a
+description-only match never wires a credential), and it is either the only candidate or
+leads the second-best score by at least **0.15**; otherwise the ref is unresolved. Worked
+examples (names only): archive `STRIPE_KEY` vs local `STRIPE_API_KEY` both tokenize to
+{stripe} - similarity 1.0, matches; `GITHUB_TOKEN` vs `GITLAB_TOKEN` share nothing after
+stopwords - 0, unresolved; `SLACK_BOT_TOKEN` vs `SLACK_USER_TOKEN` score 1/2 - below
+0.60, unresolved.
 
 **Import behavior** (the whole archive validates before anything is written — any failure
 answers 422 and writes nothing):
 
 - Validate: `format_version`, every yaml's schema, step files matching the steps manifest
-  (step `agents:`/`secrets:` entries in the archive's `{ name, why }` form — the §4.1 id
-  form is rejected: ids never travel), §4.2 param kinds, §4.7 agent configs
+  (step `agents:`/`secrets:` entries in the archive's `{ ref, why? }` form — the §4.1 id
+  form and the old name form are rejected: local ids never travel), §4.2 param kinds,
+  §4.7 agent configs
   (harness/mode/model rules), §4.8 secret names, trigger
-  kinds with at most one `app_start`. The manifest's optional `os` must be a non-empty
+  kinds with at most one `app_start`. Refs must be unique per kind. The manifest's optional `os` must be a non-empty
   string when present — unrecognized values are legal (they store and compare as-is,
-  §4.1 `originOs`), so a newer platform token never blocks an import. Every name-form reference must resolve against the
+  §4.1 `originOs`), so a newer platform token never blocks an import. Every ref must resolve against the
   archive's own `agents.yaml`/`secrets.yaml` — step `agents:`/`secrets:` entries, each
-  discord trigger's token secret, and the `secrets["NAME"]`/`agents["Name"]` subscripts
-  inside step code alike; a miss answers 422 naming the step (or trigger), so import can
+  discord trigger's token secret, and every `secrets[...]`/`agents[...]` subscript key
+  inside step code alike (one scan, which is also what catches uuid-form and name-form
+  leftovers); a miss answers 422 naming the step (or trigger), so import can
   never land code whose references only fail later at execution time. Imported steps obey the §8 step bounds: `retries`
   is 1–10, `timeout` never combines with `no_timeout`, and `retries` never combines with
   `infinite_retries` — an archive can't land a step no drafting call could produce. Step
@@ -567,51 +616,53 @@ answers 422 and writes nothing):
 - Every trigger imports **off** — nothing fires unexpectedly on a new machine.
 - `param_values` from the manifest seed the top-level file (§5 name+kind matching applies at
   execution time as usual); absent values fall back to definition defaults.
-- **Secrets:** a referenced name that doesn't exist locally is created as a §4.8 placeholder
-  (`set: false`, description from the archive). An existing name is the same secret by definition —
-  left completely untouched.
-- **Agents:** an archive agent matching a local record exactly (name + harness + mode + model)
-  reuses it; otherwise a new record is created with the archive's config, its effective §4.7
-  grant name deduped by the §4.1 suffix rule when a differently-configured local agent
-  already holds it (base = the archive name, or the harness name when unnamed; the archive's
-  name-form references still map to the created record - the name→id translation happens at
-  import time, so the rename repoints nothing). §4.7 uniqueness therefore holds across every
-  write path, import included. Two archive agents sharing an effective name
-  (case-insensitive) fail validation with 422 - their name-form step references would be
-  ambiguous. A created
-  agent whose harness isn't installed or signed in surfaces through the ordinary §12/§19
-  install and sign-in flows. The drafting `agent_id` maps to the matched/created record; an
-  archive with no agents falls back to the local default agent.
-- **Grants — auto-grant only what the import itself created.** Created placeholder secrets
-  (valueless — nothing to leak) and created agents (exactly the exporter's config) are granted
-  on the new automation — passed **directly into the automation-creation call** as its grant
+- **Secrets and agents resolve through the §5.1 match ladders** - records are never
+  created. A matched agent whose harness isn't installed or signed in surfaces through the
+  ordinary §12/§19 install and sign-in flows (the summary's `ready` flag badges it).
+- **Unresolved references land as a first-class needs-attention state - never a
+  rejection.** For each ref no rung matched, import mints a fresh local id that matches no
+  record, substitutes it exactly like a matched id (code subscripts, step entries, a
+  discord trigger's `secret`), and records it in the automation's stored §4.1
+  `unresolved_references` map (`{id: {kind, name, description}}`, from the archive entry).
+  The import still succeeds: the automation lands needing attention - the §4.1
+  secret-unresolved / agent-unresolved problems, the §9.2/§11 red tags naming the archive
+  record - and the user rebinds or removes the reference in the editor, where the §8
+  drafting context carries the wanted names and descriptions so the chat agent can help.
+  Nothing unresolved is ever granted.
+- **Grants — auto-grant every match.** `allowedSecrets` = the matched secrets;
+  `stepAgents` = the matched step agents plus the resolved drafting agent (deduped, the
+  drafting agent first when it was not already among them, so a bare `agent: true` step's
+  first-enabled-agent fallback lands on the drafting agent). Both are passed **directly
+  into the automation-creation call** as its grant
   lists (one write): there is no post-create grant patch, so no window ever exists in which
-  the automation is stored with different grants than it ends up with, and a wiring mistake
-  can never momentarily grant a pre-existing local agent. Anything that matched a
-  **pre-existing** local record is *not*
-  auto-granted — silently granting would hand the imported automation a real local credential
-  or agent; the §9.1 import summary lists each for one-click review in the editor.
+  the automation is stored with different grants than it ends up with. A clean import
+  therefore works immediately; the review gate is that every trigger arrives off - nothing
+  fires until the user reviews and enables - and a similarity match is visible before it
+  lands (`matchedBy` in the §19 preview and summary).
+- **Packages:** a successful import through the §19 API starts the §6.2 package ensure in
+  the background (the declared packages; the automation republishes over the §19 WebSocket
+  when it finishes, so a package-missing problem clears without a reload). The §20 CLI
+  additionally runs its own foreground ensure - idempotent, serialized on the same pip
+  lock, so the overlap is harmless.
 - Memory starts empty; no executions, snapshots, or drafts are created.
 
-The import response carries a **summary** — secrets created (need values), existing secrets
-referenced but not granted, agents created (each with a `ready` flag — the §19 check-ready
-rule run at import time on the created agent's harness/mode/model, so the §9.1 modal badges
-a not-ready harness Needs setup) vs. reused, declared packages (the app installs
-them on first execution as usual, §6.2; a §20 CLI import runs the ensure right away),
+The import response carries a **summary** — `secretsMatched` and `agentsMatched`
+(`[{name, matchedTo, matchedBy}]` - the archive name, the matched local record's name, and
+the rung that matched: `name | similarity` for secrets, `name | configuration |
+similarity` for agents; matched agents add `ready`, the §19 check-ready rule run at import
+time on the matched record's harness/mode/model, so the §9.1 modal badges a not-ready
+harness Needs setup), `unresolved` (`[{kind, name, description}]`, archive order, secrets
+before agents), declared `packages` (§6.2),
 `renamedFrom` (the archive's name; only when the §4.1 dedupe renamed the automation), and
 `os` + `osMismatch` (the manifest's platform token — null when absent — and whether it
 differs from the running platform) — rendered by the §9.1 summary modal.
 
 ### 5.2 URL import (decided)
 
-**Parked in the UI** with §5.1: the §9.1 import modal is the only UI entry point and it is
-unreachable, so URL import reaches users through the §20 CLI alone. The endpoints and the
-flow below stay served and unchanged.
-
 An archive can be imported straight from the web: the backend downloads it and runs the §5.1
 import path unchanged — same validation, same 422-writes-nothing rule, same summary. The
-security posture is §5.1's, unchanged: triggers land off, created secrets are valueless
-placeholders, nothing pre-existing is auto-granted.
+security posture is §5.1's, unchanged: triggers land off, no records are ever created, and
+only matched records are granted.
 
 **URL rules** — anything that fits no rule answers 422 with the reason:
 
@@ -639,18 +690,20 @@ that will land (no re-download between review and import):
   path stay in memory; eviction, expiry, and confirm delete the file, and backend startup
   clears the whole directory (a crashed process leaves its spool files behind). The response carries the token plus a
   **preview**: name, description, steps (name/description/agent flag), param definitions, triggers,
-  declared packages, and the §5.1 match rules run dry — each referenced secret with
-  `exists`, each agent with `reused`, and `landsAs`: the automation name the import will
-  land under, the §4.1 dedupe run dry (equal to `name` when the name is free; best-effort —
-  confirm re-runs the dedupe, so a name taken between preview and confirm still lands
-  deduped); URL fetches add `sourceUrl` (as pasted) and
+  declared packages, and the §5.1 match ladders run dry — each referenced secret and agent
+  with `matchedTo` (the matched local record's name, null when unresolved) and `matchedBy`
+  (the rung, null when unresolved), and `landsAs`: the automation name the import will
+  land under, the §4.1 dedupe run dry (equal to `name` when the name is free). The preview
+  is best-effort — confirm re-runs the dedupe and the match ladders against the store as
+  it stands then, so a name taken or a record added or removed between preview and confirm
+  still lands correctly, and the summary is the authoritative record of what happened;
+  URL fetches add `sourceUrl` (as pasted) and
   `resolvedUrl` (after GitHub resolution; equal for direct links).
 - `POST /automations/import/confirm` `{token}` lands the parked bytes through the §5.1
   import. A spent, expired, or unknown token answers 404.
 - The one-shot `POST /automations/import` (raw body, §5.1) stays for callers that need no
   preview: the §20 CLI file import and the §17 agent skill.
 
-The two-phase flow is written for the §9.1 import modal, which is parked and unreachable
-today, so no shipped client uses preview/confirm. The §20 `automation import` accepts a URL
+The two-phase flow serves the §9.1 import modal. The §20 `automation import` accepts a URL
 and confirms immediately — the typed command is the user's explicit action, so no interactive preview.
 

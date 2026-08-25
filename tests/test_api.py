@@ -131,8 +131,11 @@ def test_unreadable_store_files_answer_409_and_survive(client):
     assert client.patch("/settings", json={"days": 5}).status_code == 409
     assert client.post("/agents", json={"harness": "Claude Code",
                                         "mode": "default"}).status_code == 409
+    # §19/§5.1: the import routes are NOT among them - import creates no agent
+    # or secret records, so an unreadable store file can't block it; a bad
+    # archive answers the ordinary 422 instead.
     r = client.post("/automations/import", content=b"whatever")
-    assert r.status_code == 409
+    assert r.status_code == 422
     for p in (paths.settings_file(), paths.agents_file(), paths.secrets_file()):
         assert p.read_text(encoding="utf-8") == corrupt
 
@@ -174,10 +177,18 @@ def test_export_import_endpoints(client):
     assert body["automation"]["name"] == "Port me 2"
     assert body["automation"]["id"] != a["id"]
     assert body["automation"]["allTriggersOff"] is True
-    assert set(body["summary"]) == {"secretsCreated", "secretsExisting",
-                                    "agentsCreated", "agentsReused", "packages",
-                                    "renamedFrom", "os", "osMismatch"}
+    assert set(body["summary"]) == {"secretsMatched", "agentsMatched", "unresolved",
+                                    "packages", "renamedFrom", "os", "osMismatch"}
     assert body["summary"]["renamedFrom"] == "Port me"
+    # §5.1: the drafting agent matched the local record by name; nothing was
+    # created and nothing is unresolved
+    matched = body["summary"]["agentsMatched"]
+    assert [(g["name"], g["matchedTo"], g["matchedBy"]) for g in matched] == [
+        ("Claude Code", "Claude Code", "name")]
+    assert isinstance(matched[0]["ready"], bool)
+    assert body["summary"]["unresolved"] == []
+    assert body["automation"]["unresolvedReferences"] == {}
+    assert len(store.agents) == 1 and store.secrets == []
     # §5.1: a same-machine round trip records the platform and never mismatches
     from autowright import paths
 
@@ -186,6 +197,25 @@ def test_export_import_endpoints(client):
     assert client.post("/automations/import", content=b"junk",
                        headers={"Content-Type": "application/octet-stream"}).status_code == 422
     assert client.get("/automations/nope/export").status_code == 404
+
+
+def test_export_unexportable_reference_is_422_not_500(client):
+    """§5.1/§19: a reference no stored record holds — a deleted secret, or a
+    §4.1 unresolved reference a needs-attention import left behind — answers a
+    clean 422 naming the step, never a 500. The §9.2 export toast and the §20
+    CLI both print that `detail`."""
+    from autowright.storage import new_id, store
+
+    gone = new_id()
+    ver = {"description": "", "params": [],
+           "steps": [{"name": "Fetch mail", "description": "",
+                      "code": f'from autowright import secrets\nx = secrets["{gone}"]\n'}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": None}
+    a = store.create_automation(ver, name="Dangler", agent_id=None, triggers=[])
+    r = client.get(f"/automations/{a['id']}/export")
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "Fetch mail" in detail and "repair it before exporting" in detail
 
 
 def test_import_preview_confirm_flow(client):
@@ -214,6 +244,12 @@ def test_import_preview_confirm_flow(client):
     # archive carries no `source`
     assert body["preview"]["triggers"] == [{"kind": "cron", "expression": "0 9 * * *",
                                             "source": "spec"}]
+    # §5.2: the §5.1 match ladders run dry - matchedTo/matchedBy per reference,
+    # never the retired exists/reused flags
+    assert body["preview"]["agents"] == [
+        {"name": "Claude Code", "harness": "Claude Code", "mode": "default",
+         "model": None, "matchedTo": "Claude Code", "matchedBy": "name"}]
+    assert body["preview"]["secrets"] == []
 
     r2 = client.post("/automations/import/confirm", json={"token": body["token"]})
     assert r2.status_code == 200
@@ -310,6 +346,117 @@ def test_import_url_endpoint(client, monkeypatch):
     r = client.post("/automations/import/url", json={"url": "http://x/a.autowright"})
     assert r.status_code == 422 and "https" in r.json()["detail"]
     assert client.post("/automations/import/url", json={}).status_code == 422
+
+
+def _archive_of(client, store, sid):
+    """Export an automation whose only step subscripts secret `sid` (§5.1)."""
+    ver = {"description": "", "params": [],
+           "steps": [{"name": "Go", "description": "",
+                      "code": 'from autowright import secrets\n'
+                              f'x = secrets["{sid}"]  # MAIL_PASS\n'}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": None}
+    a = store.create_automation(ver, name="Needs fixing", agent_id="mock",
+                                allowed_secrets=[sid])
+    return a, client.get(f"/automations/{a['id']}/export").content
+
+
+def test_import_with_no_match_lands_needing_attention(client, monkeypatch):
+    """§19/§5.1: a reference that matches nothing still imports (200) - the
+    automation lands with the §4.1 unresolvedReferences map and the
+    secret-unresolved problem, and the §19 save gate then refuses a version
+    that still carries the placeholder id with the §8 imported-file copy."""
+    from autowright import harness, paths
+    from autowright.storage import new_id, store
+
+    monkeypatch.setattr(harness, "check_ready",
+                        lambda name, model=None, mode="default": True)
+    sid = new_id()
+    store.secrets = [{"id": sid, "name": "MAIL_PASS", "description": "mail", "set": True}]
+    _a, data = _archive_of(client, store, sid)
+    store.secrets = []  # the importing machine holds no such secret
+
+    r = client.post("/automations/import", content=data,
+                    headers={"Content-Type": "application/octet-stream"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"]["secretsMatched"] == []
+    assert body["summary"]["unresolved"] == [
+        {"kind": "secret", "name": "MAIL_PASS", "description": "mail"}]
+    auto = body["automation"]
+    (minted,) = auto["unresolvedReferences"]
+    assert auto["unresolvedReferences"][minted] == {
+        "kind": "secret", "name": "MAIL_PASS", "description": "mail"}
+    assert auto["allowedSecrets"] == []
+    assert auto["problems"] == [
+        {"kind": "secret-unresolved",
+         "label": f"Imported secret MAIL_PASS has no match on this {paths.machine_noun()}. "
+                  "Pick one of your secrets on the edit page."}]
+
+    # §19/§8: saving a version that still uses the placeholder id is a 422 in
+    # the imported-file words, not a raw id
+    draft = make_version()
+    draft["steps"][0]["code"] += f'x = secrets["{minted}"]\n'
+    r = client.post(f"/automations/{auto['id']}/versions", json={"draft": draft})
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "this step still uses MAIL_PASS, which came from the imported file" in detail
+    assert f"has no match on this {paths.machine_noun()}" in detail
+    assert "Pick one of your secrets or remove the reference." in detail
+    assert minted not in detail
+
+    # replacing it with a real secret saves, and the map prunes with the save
+    real = client.post("/secrets", json={"name": "MAIL_PASS", "value": "v"}).json()["id"]
+    fixed = make_version()
+    fixed["steps"][0]["code"] += f'x = secrets["{real}"]\n'
+    r = client.post(f"/automations/{auto['id']}/versions", json={"draft": fixed})
+    assert r.status_code == 200
+    assert store.autos[auto["id"]].get("unresolved_references") in (None, {})
+    assert client.get(f"/automations/{auto['id']}").json()["unresolvedReferences"] == {}
+
+
+def test_import_starts_the_package_ensure_in_the_background(client, monkeypatch):
+    """§19/§5.1: a successful import with declared packages kicks the §6.2
+    ensure off the request thread and republishes the automation when it
+    finishes; an import with none starts nothing."""
+    import threading
+
+    from autowright import packages as pkglib
+    from autowright.storage import store
+
+    calls, done = [], threading.Event()
+
+    def fake_ensure(pkgs):
+        calls.append(pkgs)
+        done.set()
+        return []
+
+    monkeypatch.setattr(pkglib, "ensure", fake_ensure)
+    ver = {"description": "", "params": [],
+           "packages": [{"pip": "pandas", "import": "pandas", "why": "builds the table"}],
+           "steps": [{"name": "Go", "description": "", "code": "print(1)\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": None}
+    a = store.create_automation(ver, name="Packaged", agent_id="mock")
+    data = client.get(f"/automations/{a['id']}/export").content
+    r = client.post("/automations/import", content=data,
+                    headers={"Content-Type": "application/octet-stream"})
+    assert r.status_code == 200
+    assert r.json()["summary"]["packages"] == [
+        {"pip": "pandas", "import": "pandas", "why": "builds the table"}]
+    assert done.wait(10)
+    assert calls == [[{"pip": "pandas", "import": "pandas", "why": "builds the table"}]]
+
+    # nothing declared → no ensure at all
+    calls.clear()
+    plain = store.create_automation(
+        {"description": "", "params": [],
+         "steps": [{"name": "Go", "description": "", "code": "print(1)\n"}],
+         "spec": [{"kind": "h1", "text": "T"}], "instructions": None},
+        name="Plain", agent_id="mock")
+    plain_data = client.get(f"/automations/{plain['id']}/export").content
+    assert client.post("/automations/import", content=plain_data,
+                       headers={"Content-Type": "application/octet-stream"}
+                       ).status_code == 200
+    assert calls == []
 
 def test_draft_job_and_create_flow(client):
     # §8 unified flow: the first message is a chat job (new-automation rule) —

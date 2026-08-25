@@ -1811,3 +1811,48 @@ describe('CreateFlow background continuation & re-attach (§11/§19)', () => {
     expect(screen.getByText('watch a price')).toBeTruthy()
   })
 })
+
+// §5.1/§11: an imported automation whose agent / secret references matched
+// nothing on this Mac. The §4.1 unresolvedReferences map names the archive
+// records, so the editor's warnings and red rows read as names, not short ids.
+describe('§5.1/§11 imported unresolved references', () => {
+  const IMP_SECRET_ID = '33333333-3333-4333-8333-333333333333'
+  const IMP_AGENT_ID = '44444444-4444-4444-8444-444444444444'
+  const IMPORTED = {
+    ...AUTO,
+    steps: [{
+      file: '01-a.py', name: 'Fetch pages', description: '', agent: true,
+      agents: [{ id: IMP_AGENT_ID }], code: `k = secrets["${IMP_SECRET_ID}"]`,
+    }],
+    unresolvedReferences: {
+      [IMP_SECRET_ID]: { kind: 'secret', name: 'STRIPE_KEY', description: 'billing token' },
+      [IMP_AGENT_ID]: { kind: 'agent', name: 'Researcher', description: 'reads the web' },
+    },
+  } as unknown as Automation
+
+  it('the agents and secrets cards name the archive records', () => {
+    storeMod.useStore.setState({ automations: [IMPORTED] })
+    render(<CreateFlow />)
+    expect(screen.getByText(
+      'Step 1 calls Researcher from the imported file, which has no match on this Mac'
+      + ' - pick an agent or ask your AI to fix it.')).toBeTruthy()
+    expect(screen.getByText(
+      'STRIPE_KEY came from the imported file and has no match on this Mac'
+      + ' - pick one of your secrets or ask your AI to fix it.')).toBeTruthy()
+    // the missing-secret row heads with the archive name, not the short id
+    expect(screen.getByText(
+      'used by step 1 - no match on this Mac; pick a secret or ask your AI to fix it')).toBeTruthy()
+    expect(screen.queryByText('33333333…')).toBeNull()
+  })
+
+  it('without the map the same ids keep the deleted-reference wording', () => {
+    storeMod.useStore.setState({ automations: [{ ...IMPORTED, unresolvedReferences: {} } as unknown as Automation] })
+    render(<CreateFlow />)
+    expect(screen.getByText(
+      '44444444… isn’t one of your agents — the execution would fail at step 1.')).toBeTruthy()
+    expect(screen.getByText(
+      'Step 1 uses a secret that no longer exists (33333333…) — the execution would fail there.'
+      + ' Sync the steps to rewrite them.')).toBeTruthy()
+    expect(screen.queryByText('STRIPE_KEY')).toBeNull()
+  })
+})

@@ -2,7 +2,7 @@
 // seeds, draft serialization, the §4.3 trigger merge, spec-text helpers, and
 // the chat-thread/blocker helpers. No React here — everything is plain data
 // in/data out, unit-tested via the CreateFlow page's re-exports.
-import type { Agent, Automation, Blocker, ChatEntry, ConcurrencyStage, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, TriggerOp, VersionInfo } from '../../types'
+import type { Agent, Automation, Blocker, ChatEntry, ConcurrencyStage, DraftPayload, DraftTest, DraftTrigger, PackageDep, ParamDef, SpecBlock, Step, Trigger, TriggerOp, UnresolvedRefs, VersionInfo } from '../../types'
 import { shortId, stepSecretIds, stepSecretTags } from '../../steps'
 
 // The step-secret scanners live in the shared step-list module (../../steps)
@@ -128,16 +128,24 @@ export function needsMessageTriggerSetup(steps: Step[], triggers: DraftTrigger[]
 }
 
 // §11: which steps reference which agent — keyed by §4.7 agent id; `name` is
-// the live agent's name resolved at derivation time (display only).
-export interface AgentRef { id: string; name: string; steps: number[] }
-// §11: which steps reference which secret — keyed by §4.8 secret id.
-export interface SecretRef { id: string; steps: number[] }
-export function secretRefsOf(steps: Step[]): SecretRef[] {
+// the live agent's name resolved at derivation time (display only);
+// `imported` marks a missing id the §4.1 unresolvedReferences map carries
+// (name is then the archive record's).
+export interface AgentRef { id: string; name: string; steps: number[]; imported?: boolean }
+// §11: which steps reference which secret — keyed by §4.8 secret id;
+// `importedName` is the archive record's name when the id is a §4.1
+// unresolved reference.
+export interface SecretRef { id: string; steps: number[]; importedName?: string }
+export function secretRefsOf(steps: Step[], unresolved?: UnresolvedRefs): SecretRef[] {
   const refs: SecretRef[] = []
   steps.forEach((s, i) => {
     for (const id of stepSecretIds(s)) {
       let e = refs.find((z) => z.id === id)
-      if (!e) { e = { id, steps: [] }; refs.push(e) }
+      if (!e) {
+        const un = unresolved?.[id]?.kind === 'secret' ? unresolved[id] : null
+        e = { id, steps: [], ...(un ? { importedName: un.name } : {}) }
+        refs.push(e)
+      }
       if (!e.steps.includes(i)) e.steps.push(i)
     }
   })

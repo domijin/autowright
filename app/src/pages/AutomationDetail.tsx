@@ -2,7 +2,6 @@
 // Thin page shell — the section cards live in ./detail/ (§17).
 import React, { useEffect, useState } from 'react'
 import { api } from '../api'
-import { TRANSFER_PARKED } from '../config'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import type { Automation } from '../types'
@@ -245,13 +244,10 @@ export default function AutomationDetail() {
               <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
             </button>
             <PopMenu show={actOpen} style={{ top: 'calc(100% + 6px)', right: 0, minWidth: 210 }}>
-              {/* §9.2 import/export parked — Export… row hidden, modal + backend kept */}
-              {!TRANSFER_PARKED && (
-                <MenuRow onClick={() => { setActOpen(false); setExportValues(true); setExportAsk(true) }}>
-                  <i className="fa-solid fa-file-export" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-                  Export…
-                </MenuRow>
-              )}
+              <MenuRow onClick={() => { setActOpen(false); setExportValues(true); setExportAsk(true) }}>
+                <i className="fa-solid fa-file-export" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                Export…
+              </MenuRow>
               <MenuRow danger onClick={() => { setActOpen(false); setDelAsk(true) }}>
                 <i className="fa-solid fa-trash-can" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
                 Delete automation…
@@ -425,6 +421,7 @@ export default function AutomationDetail() {
               steps={steps}
               agents={agents}
               secrets={secrets}
+              unresolvedReferences={auto.unresolvedReferences}
               fallbackAgent={(() => {
                 const first = auto.stepAgents.map((id) => agents.find((z) => z.id === id)).find((g) => !!g)
                 return first ? (first.name || first.harness) : 'agent'

@@ -172,6 +172,15 @@ around the name, plain words). The **grants context** travels in every call, two
   both, the §19 defaults apply (the stored automation's grants; with no automation, all
   configured agents and all stored secrets — the Review page's all-on seeds).
 
+Right after the grants context, both call shapes carry an **IMPORTED REFERENCES THAT NEED
+FIXING** section whenever the automation's §4.1 `unresolvedReferences` is non-empty (the
+backend attaches the stored map to the §19 `current` body like triggers): a yaml list of
+`{ kind, name, description }` - what the §5.1 import wanted and could not match - headed
+with the rule that the steps still carry placeholder ids for these, and the agent should
+replace each with a granted record from the lists above (or drop the reference) when the
+user asks to fix the automation. Rendered as the literal `none` when the automation has
+no such map, so the section reads the same in every call.
+
 **System-tools context** (both call shapes, right after the build instructions). The §6
 installed-tools probe's result as a **SYSTEM TOOLS** section — the curated CLIs found on
 this Mac as a yaml list of `name` + resolved `path` (the literal `none` when the probe
@@ -566,11 +575,16 @@ notes rewrite (§11).
 6. Per-step `secrets` lists hold `{ id, why }` entries — the id must be an allowed secret's
    §4.8 uuid, copied from the grants yaml (an unknown id, a `name` key in an entry, or the
    same id twice in one step's list is a validation error; the unknown-id error lists the
-   granted secrets as `NAME (id)`), and `why` is a required one-line note on
+   granted secrets as `NAME (id)` - except when the id is in the automation's §4.1
+   `unresolvedReferences`, where it reads "step `<step>`: this step still uses `<NAME>`,
+   which came from the imported file and has no match on this Mac. Pick one of your
+   secrets or remove the reference." - the same copy the §19 save gate and the repair
+   round show, so the user and the agent see one explanation), and `why` is a required one-line note on
    why the step needs that secret (the key tag's tooltip, §9.2).
    Step code is additionally scanned for literal `secrets["<id>"]` subscripts — every
    code-referenced id must also be an allowed secret's id (a validation error otherwise:
-   the code would fail at runtime); the scan drives the Review-screen
+   the code would fail at runtime; an id in `unresolvedReferences` gets the same
+   imported-file copy as above); the scan drives the Review-screen
    secret warnings (§11). Ids must be literal quoted strings — a variable subscript is
    invisible to the scan and forbidden by the prompt rules; the mandatory trailing `# NAME`
    comment at each use is prompt-side convention only, never parsed.
@@ -578,7 +592,10 @@ notes rewrite (§11).
    `agents` list (agent steps only) holds `{ id, why? }` entries whose ids must be
    enabled-agent §4.7 uuids from the grants yaml (an unknown id, a `name` key in an entry,
    or the same id twice in one list is a validation error; the unknown-id error lists the
-   granted agents as `Name (id)`) — the step stores the id, and the engine resolves ids
+   granted agents as `Name (id)` - except when the id is in the automation's §4.1
+   `unresolvedReferences`, where it reads "step `<step>`: this step still uses `<Name>`,
+   which came from the imported file and has no match on this Mac. Pick one of your
+   agents or remove the reference.") — the step stores the id, and the engine resolves ids
    against the automation's enabled
    agents at execution time. Step code is additionally scanned for literal `agents["<id>"]`
    subscripts — every code-referenced id must be among that step's declared entries (the

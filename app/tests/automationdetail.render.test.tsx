@@ -37,6 +37,7 @@ const auto = (over: Partial<Automation> = {}): Automation => ({
   allTriggersOff: false, nextAt: null, instructions: '', notes: '', lastStatus: 'succeeded',
   live: [], maxParallel: 1, maxQueued: 10, resultChip: null, resultStatus: null,
   lastExecutionLabel: 'Today', agentId: null, stepAgents: [], allowedSecrets: [], problems: [],
+  unresolvedReferences: {},
   snapshotSettings: { preVersion: true, preClear: true, preRestore: true }, specMeta: '',
   ...over,
 })
@@ -127,6 +128,20 @@ describe('§9.2 capacity popup', () => {
   })
 })
 
+describe('§9.2 actions menu', () => {
+  it('the Export… row is always there and opens the export modal', () => {
+    seed(auto())
+    render(<AutomationDetail />)
+    expect(screen.queryByText('Export…')).toBeNull()  // the menu starts closed
+    fireEvent.click(screen.getByLabelText('Automation actions'))
+    expect(screen.getByText('Export…')).toBeTruthy()
+    expect(screen.getByText('Delete automation…')).toBeTruthy()
+    fireEvent.click(screen.getByText('Export…'))
+    expect(screen.getByText('Export “Job”')).toBeTruthy()
+    expect(screen.getByText('Include parameter values')).toBeTruthy()
+  })
+})
+
 describe('§9.2 needs-fixing banner', () => {
   it('is absent when the problems list is empty', () => {
     seed(auto())
@@ -157,6 +172,22 @@ describe('§9.2 needs-fixing banner', () => {
     expect(edits.length).toBe(2)
     expect(screen.queryByText('Open Secrets')).toBeNull()
     // a banner row's Edit opens the §11 editor surface
+    fireEvent.click(edits[edits.length - 1])
+    expect(storeMod.useStore.getState().surface).toBe('create')
+  })
+
+  it('imported unresolved-reference rows open the editor', () => {
+    seed(auto({ problems: [
+      { kind: 'secret-unresolved', label: 'STRIPE_KEY came from the imported file and has no match on this Mac - pick one of your secrets on the edit page.' },
+      { kind: 'agent-unresolved', label: 'Researcher came from the imported file and has no match on this Mac - pick an agent on the edit page.' },
+    ] }))
+    render(<AutomationDetail />)
+    expect(screen.getByText('This automation needs fixing')).toBeTruthy()
+    // §9.2: both new §4.1 kinds fall through to the editor link — one Edit per
+    // row plus the page header's own.
+    const edits = screen.getAllByText('Edit')
+    expect(edits.length).toBe(3)
+    expect(screen.queryByText('Open Secrets')).toBeNull()
     fireEvent.click(edits[edits.length - 1])
     expect(storeMod.useStore.getState().surface).toBe('create')
   })

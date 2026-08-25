@@ -167,12 +167,20 @@ direct `*.autowright` link on any host, or a `github.com` repo/release page reso
 archive asset). A URL goes through §19 `POST /automations/import/url` and confirms
 immediately — the typed command is the user's explicit action, so no interactive preview;
 when GitHub resolution changed the URL, the resolved source is printed. A file path POSTs
-`/automations/import` unchanged. Both paths print the same summary lines — a created agent
-whose harness isn't ready (summary `ready: false`, §19) is marked "(needs setup)", a
+`/automations/import` unchanged. Both paths print the same summary lines, in order: a
 summary carrying `renamedFrom` (§5.1 name dedupe) prints
-`renamed from "<renamedFrom>" - that name already exists`, and one carrying `osMismatch`
-(§5.1) prints `built on <OS> - its steps may need rewriting on this machine` — and run
-the package ensure. `<OS>` is the §4.1 `os-mismatch` display name (macOS / Windows / Linux;
+`renamed from "<renamedFrom>" - that name already exists`; one carrying `osMismatch`
+(§5.1) prints `built on <OS> - its steps may need rewriting on this machine`; then
+`secrets matched:` and `agents matched:` (each §19 match as its archive name, with
+` -> <matchedTo>` appended only when the local name differs; a matched agent whose harness
+isn't ready - summary `ready: false`, §19 - is marked "(needs setup)"); then
+`no match on this machine: secret MAIL_PASS, agent Coder` for the summary's `unresolved`
+list. After those, the CLI runs
+the package ensure (the §19 import already started the same ensure in the background,
+§5.1 - the foreground run is idempotent and serializes on the same pip lock, so it either
+shows the install progress or returns immediately). When `unresolved` is non-empty the
+CLI closes with `this automation needs attention - open it and fix the highlighted agents
+and secrets` before the triggers-off line. `<OS>` is the §4.1 `os-mismatch` display name (macOS / Windows / Linux;
 an unrecognized token shows verbatim), never the raw §5.1 lowercase platform token: the CLI
 and the UI name a platform the same way. Every CLI surface that prints a platform follows
 this rule.

@@ -1027,15 +1027,21 @@ editors enter with
   red when its
   id matches an agent that isn't enabled — red tooltip "`<name>` isn't enabled for steps —
   this step
-  would fail" — and renders the red deleted state (short id prefix) when the id matches no
-  agent at all — red tooltip "This step calls an agent that no longer exists — this step
+  would fail" — and renders the red deleted state when the id matches no
+  agent at all: the archive record's NAME when the automation's §4.1
+  `unresolvedReferences` carries the id (red tooltip "This step calls `<NAME>` from the
+  imported file. No agent on this Mac matched it, so this step would fail."), else the
+  short id prefix — red tooltip "This step calls an agent that no longer exists — this step
   would fail"; an empty list shows one tag
   naming the automation's first enabled agent (step-`why` tooltip rule), and reads "no agent"
   in red when none is
   enabled — red tooltip "No agent is enabled for steps — this step would fail"), a step shows
   one key-icon tag per secret it uses (its `secrets` entries' ids unioned with
   the literal `secrets["<id>"]` references in its code, each resolved to the live §4.8
-  secret's name — a dangling id renders the red deleted state with its short id prefix;
+  secret's name — a dangling id renders the red deleted state: the archive record's NAME
+  when §4.1 `unresolvedReferences` carries the id (red tooltip "This step uses `<NAME>`
+  from the imported file. No secret on this Mac matched it, so this step would fail."),
+  else its short id prefix;
   same §9.2 secret tooltip — "This step uses the
   `<NAME>` secret from your Keychain", with " — `<why>`" appended when the declared entry
   carries its §4.1 per-use note), a step shows one box-icon tag per declared §6.2 package
@@ -1064,7 +1070,9 @@ editors enter with
   there. Enable it below.") — a grant gap (Dirty gating above), locking Save until the agent is
   re-enabled or a sync rewrites the steps. A step whose entry id matches no agent at all
   warns ("This step calls an agent that no longer exists — the execution would fail at
-  step N."). All three derivations compare ids, never names — a rename changes nothing here. Per-automation
+  step N.") - except an id carried by §4.1 `unresolvedReferences`, which warns with the
+  imported name instead ("Step N calls `<NAME>` from the imported file, which has no
+  match on this Mac - pick an agent or ask your AI to fix it."). All three derivations compare ids, never names — a rename changes nothing here. Per-automation
   agent enablement list with "X of Y enabled"; agents called by steps — including
   named-but-disabled ones — show a "called by step N" note. Agents created anywhere else
   (Agents page) arrive unchecked in edit mode — stored grants never widen silently, same rule
@@ -1077,7 +1085,10 @@ editors enter with
 - **Secrets** — card eyebrow "SECRETS · ALLOWED FOR STEPS". Step code is scanned for literal
   `secrets["<id>"]` subscripts (unioned with the declared entry ids); secrets that exist but
   aren't allowed, and
-  referenced ids matching no stored secret, each produce warnings with fix affordances. The
+  referenced ids matching no stored secret, each produce warnings with fix affordances - a
+  missing id carried by §4.1 `unresolvedReferences` warns with the imported name
+  ("`<NAME>` came from the imported file and has no match on this Mac - pick one of your
+  secrets or ask your AI to fix it.") instead of the short id. The
   card's checkboxes toggle secret **ids** in `allowedSecrets` (§4.1); all matching is by id. A used-but-not-allowed
   secret is a grant gap (Dirty gating above): it locks saving until the secret is re-allowed or a
   sync rewrites the steps. A missing-from-Keychain secret only warns — adding the value through the

@@ -2667,3 +2667,88 @@ def test_validate_steps_rejects_non_dict_entries():
     )
     _, errors = validate_steps({"manifest.yaml": manifest})
     assert any("must be a mapping" in e for e in errors)
+
+
+# ---------- §8/§5.1 imported references ----------
+
+GHOST_SECRET = "22222222-2222-4222-8222-222222222222"
+GHOST_AGENT = "33333333-3333-4333-8333-333333333333"
+
+
+def _imported_files():
+    return {
+        "manifest.yaml": ("description: d\nnote: n\nsteps:\n"
+                          f"  - {{ file: 01-a.py, name: A, description: x,\n"
+                          f"      secrets: [{{ id: {GHOST_SECRET}, why: auth }}] }}\n"
+                          f"  - {{ file: 02-b.py, name: B, description: y, agent: true, why: w,\n"
+                          f"      agents: [{{ id: {GHOST_AGENT} }}] }}\n"),
+        "01-a.py": f'from autowright import secrets\nx = secrets["{GHOST_SECRET}"]\n',
+        "02-b.py": "from autowright import log\nlog('b')\n",
+    }
+
+
+def test_unresolved_ids_get_the_imported_file_error_copy():
+    """§8/§5.1: an ungranted id the import minted for a reference with no local
+    match reads as the imported-file copy at all three sites - the agent entry,
+    the secret entry, and the secret code subscript - instead of a raw id."""
+    from autowright import paths
+
+    grants = {"agents": [{"id": FAST_ID, "name": "Fast"}],
+              "secrets": [{"id": TOKEN_ID, "name": "TOKEN"}]}
+    unresolved = {GHOST_SECRET: {"kind": "secret", "name": "MAIL_PASS", "description": ""},
+                  GHOST_AGENT: {"kind": "agent", "name": "Ghost", "description": ""}}
+    noun = paths.machine_noun()
+    files = _imported_files()
+
+    # without the map the ordinary raw-id copy stands
+    _, plain = validate_steps(files, grants)
+    assert any(f"secret id '{GHOST_SECRET}' isn't among the allowed secrets" in e
+               for e in plain)
+    assert any(f"agent id '{GHOST_AGENT}' isn't among the granted agents" in e
+               for e in plain)
+    assert any(f"code subscripts secrets['{GHOST_SECRET}']" in e for e in plain)
+
+    _, errors = validate_steps(files, grants, unresolved=unresolved)
+    secret_copy = (f"step A: this step still uses MAIL_PASS, which came from the imported "
+                   f"file and has no match on this {noun}. Pick one of your secrets or "
+                   "remove the reference.")
+    agent_copy = (f"step B: this step still uses Ghost, which came from the imported "
+                  f"file and has no match on this {noun}. Pick one of your agents or "
+                  "remove the reference.")
+    # the manifest entry AND the code subscript both speak the same words
+    assert errors.count(secret_copy) == 2
+    assert agent_copy in errors
+    assert not any(GHOST_SECRET in e or GHOST_AGENT in e for e in errors)
+
+    # the map is keyed by kind too - an entry of the wrong kind never claims an
+    # id, so that site keeps the raw copy
+    _, mixed = validate_steps(files, grants, unresolved={
+        GHOST_SECRET: {"kind": "agent", "name": "MAIL_PASS", "description": ""}})
+    assert any(f"secret id '{GHOST_SECRET}' isn't among the allowed secrets" in e
+               for e in mixed)
+    assert any(f"agent id '{GHOST_AGENT}' isn't among the granted agents" in e
+               for e in mixed)
+
+
+def test_prompts_carry_the_imported_references_section():
+    """§8: both call shapes render the §4.1 unresolvedReferences map as its own
+    section right after the grants context - the literal `none` when empty, so
+    the section reads the same in every call."""
+    cur = {"unresolved_references": {
+        "id-1": {"kind": "secret", "name": "MAIL_PASS", "description": "mail"},
+        "id-2": {"kind": "agent", "name": "Ghost", "description": ""}}}
+    for p in (build_chat_prompt("x", cur, GRANTS),
+              build_steps_prompt("# T\n\nBody.", cur, GRANTS)):
+        assert "=== IMPORTED REFERENCES THAT NEED FIXING ===" in p
+        assert "placeholder ids" in p
+        assert ("- kind: secret\n  name: MAIL_PASS\n  description: mail\n"
+                "- kind: agent\n  name: Ghost\n  description: ''") in p
+        # right after the grants context, before the build instructions
+        assert (p.index("=== GRANTS FOR THIS AUTOMATION ===")
+                < p.index("=== IMPORTED REFERENCES THAT NEED FIXING ===")
+                < p.index("=== BUILD INSTRUCTIONS"))
+
+    for p in (build_chat_prompt("x", None, GRANTS),
+              build_steps_prompt("# T\n\nBody.", {"spec": "# T"}, GRANTS)):
+        seg = p.split("=== IMPORTED REFERENCES THAT NEED FIXING ===")[1].split("\n\n=== ")[0]
+        assert seg.rstrip().endswith("\nnone")

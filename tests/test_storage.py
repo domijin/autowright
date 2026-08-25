@@ -1356,3 +1356,206 @@ def test_enable_stamp_is_kept_across_edits_and_never_healed(store):
     store.patch_automation(a, {"triggers": [dict(trig)]})
     assert "enabledAt" not in a["triggers"][0]
     assert store.overdue(a)
+
+
+# ---------- §4.1 unresolvedReferences (§5.1 import's no-match map) ----------
+
+def _imported(store, *, secret_in_code=None, secret_in_entry=None, agent_in_entry=None,
+              trigger_secret=None, unresolved=None, name="Imported"):
+    """An automation shaped like a §5.1 import landing: minted ids that match
+    no stored record, carried by the stored unresolved_references map."""
+    from autowright.storage import new_id
+
+    ver = make_version()
+    if secret_in_code:
+        ver["steps"][0]["code"] += f'x = secrets["{secret_in_code}"]  # WANTED\n'
+    if secret_in_entry:
+        ver["steps"][0]["secrets"] = [{"id": secret_in_entry, "why": "w"}]
+    if agent_in_entry:
+        ver["steps"][1]["agent"] = True
+        ver["steps"][1]["why"] = "judgment"
+        ver["steps"][1]["agents"] = [{"id": agent_in_entry}]
+    triggers = ([{"id": new_id(), "kind": "discord", "enabled": False,
+                  "channel": "42", "secret": trigger_secret}] if trigger_secret else [])
+    return store.create_automation(ver, name, None, triggers=triggers,
+                                   unresolved_references=unresolved)
+
+
+def test_unresolved_references_load_is_lenient(store, home):
+    """§4.1/§5: entries that aren't a uuid-keyed mapping with a valid kind and
+    a string name are dropped with a warning on load, never fatal."""
+    from autowright.storage import Store, load_yaml, new_id, save_yaml
+
+    good, odd_desc = new_id(), new_id()
+    a = _imported(store, secret_in_code=good,
+                  unresolved={good: {"kind": "secret", "name": "MAIL_PASS",
+                                     "description": "mail"}})
+    top_file = store.auto_dir(a) / "automation.yaml"
+    top = load_yaml(top_file)
+    top["unresolved_references"] = {
+        good: {"kind": "secret", "name": "MAIL_PASS", "description": "mail"},
+        "not-a-uuid": {"kind": "secret", "name": "NOPE"},
+        new_id(): {"kind": "bogus", "name": "NOPE"},          # unknown kind
+        new_id(): {"kind": "agent", "name": ""},              # empty name
+        new_id(): {"kind": "agent", "name": 7},               # non-string name
+        new_id(): "just a string",                            # not a mapping
+        # kind + name are the structural rules; a non-string description is
+        # normalized rather than dropped
+        odd_desc: {"kind": "secret", "name": "ODD", "description": 5},
+    }
+    save_yaml(top_file, top)
+
+    s2 = Store()
+    s2.load_all()
+    b = s2.autos[a["id"]]
+    assert b["unresolved_references"] == {
+        good: {"kind": "secret", "name": "MAIL_PASS", "description": "mail"},
+        odd_desc: {"kind": "secret", "name": "ODD", "description": ""}}
+    # a whole map that isn't a mapping degrades to empty, not a lost automation
+    top["unresolved_references"] = ["MAIL_PASS"]
+    save_yaml(top_file, top)
+    s3 = Store()
+    s3.load_all()
+    assert "unresolved_references" not in s3.autos[a["id"]]
+
+
+def test_save_new_version_prunes_unresolved_references(store):
+    """§4.1: an edit save prunes entries the new version no longer references -
+    a fixed reference stops carrying its label while the rest keep theirs."""
+    from autowright.storage import load_yaml, new_id
+
+    sid, aid = new_id(), new_id()
+    a = _imported(store, secret_in_code=sid, agent_in_entry=aid,
+                  unresolved={sid: {"kind": "secret", "name": "MAIL_PASS", "description": ""},
+                              aid: {"kind": "agent", "name": "Ghost", "description": ""}})
+    assert set(a["unresolved_references"]) == {sid, aid}
+
+    # v2 drops the secret subscript, keeps the agent entry
+    ver2 = {k: v for k, v in a["versions"][1].items() if k != "when"}
+    ver2["steps"] = [dict(s) for s in ver2["steps"]]
+    ver2["steps"][0]["code"] = "from autowright import log\nlog('clean')\n"
+    store.save_new_version(a, ver2)
+    assert list(a["unresolved_references"]) == [aid]
+    assert list(load_yaml(store.auto_dir(a) / "automation.yaml")
+                ["unresolved_references"]) == [aid]
+
+    # v3 drops the agent too → the key leaves automation.yaml entirely
+    ver3 = {k: v for k, v in a["versions"][a["current_version"]].items() if k != "when"}
+    ver3["steps"] = [dict(s) for s in ver3["steps"]]
+    ver3["steps"][1].pop("agents")
+    store.save_new_version(a, ver3)
+    assert "unresolved_references" not in a
+    assert "unresolved_references" not in load_yaml(store.auto_dir(a) / "automation.yaml")
+
+
+def test_restore_version_keeps_unresolved_references(store):
+    """§4.1: a restore is not a rework (the `originOs` rule) - the map rides
+    through untouched even when the restored version references nothing."""
+    from autowright.storage import new_id
+
+    sid = new_id()
+    a = _imported(store, secret_in_code=sid,
+                  unresolved={sid: {"kind": "secret", "name": "MAIL_PASS", "description": ""}})
+    clean = {k: v for k, v in a["versions"][1].items() if k != "when"}
+    clean["steps"] = [dict(s) for s in clean["steps"]]
+    clean["steps"][0]["code"] = "from autowright import log\nlog('clean')\n"
+    store.save_new_version(a, clean)
+    assert "unresolved_references" not in a          # the save pruned it
+    a["unresolved_references"] = {sid: {"kind": "secret", "name": "MAIL_PASS",
+                                        "description": ""}}
+    store.restore_version(a, 1)
+    assert a["unresolved_references"] == {sid: {"kind": "secret", "name": "MAIL_PASS",
+                                                "description": ""}}
+
+
+def test_trigger_replace_prunes_unresolved_references(store):
+    """§4.1: a trigger replace prunes the entries a dropped discord trigger was
+    the last holder of."""
+    from autowright.storage import new_id
+
+    sid, other = new_id(), new_id()
+    a = _imported(store, secret_in_code=other, trigger_secret=sid,
+                  unresolved={sid: {"kind": "secret", "name": "BOT_TOKEN", "description": ""},
+                              other: {"kind": "secret", "name": "MAIL_PASS", "description": ""}})
+    assert set(a["unresolved_references"]) == {sid, other}
+    store.patch_automation(a, {"triggers": []})
+    assert list(a["unresolved_references"]) == [other]
+
+
+def test_auto_json_unresolved_references_always_present_and_filtered(store):
+    """§4.1: serialized as `unresolvedReferences` - {} when none, and filtered
+    to ids the current version (or a discord trigger) still references."""
+    from autowright.storage import new_id
+
+    plain = store.create_automation(make_version(), "Plain", None)
+    assert store.auto_json(plain)["unresolvedReferences"] == {}
+
+    sid, stale = new_id(), new_id()
+    a = _imported(store, secret_in_code=sid,
+                  unresolved={sid: {"kind": "secret", "name": "MAIL_PASS", "description": "mail"},
+                              stale: {"kind": "agent", "name": "Ghost", "description": ""}})
+    assert store.auto_json(a)["unresolvedReferences"] == {
+        sid: {"kind": "secret", "name": "MAIL_PASS", "description": "mail"}}
+    # the stored map is untouched by the filter - only the serialization narrows
+    assert set(a["unresolved_references"]) == {sid, stale}
+
+
+def test_problems_unresolved_kinds_precedence_and_order(store):
+    """§4.1: `secret-unresolved` / `agent-unresolved` name the archive record,
+    take the missing slot (mutually exclusive per id), carry the trigger copy
+    for a trigger's token secret, and serialize before the missing rows."""
+    from autowright.storage import new_id
+
+    step_sid, trig_sid, gone_sid = new_id(), new_id(), new_id()
+    agent_id, gone_agent = new_id(), new_id()
+    ver = make_version()
+    ver["steps"][0]["code"] += (f'x = secrets["{step_sid}"]\n'
+                                f'y = secrets["{gone_sid}"]\n')
+    ver["steps"][1]["agent"] = True
+    ver["steps"][1]["why"] = "judgment"
+    ver["steps"][1]["agents"] = [{"id": agent_id}, {"id": gone_agent}]
+    a = store.create_automation(
+        ver, "Needs fixing", None,
+        triggers=[{"id": new_id(), "kind": "discord", "enabled": False,
+                   "channel": "42", "secret": trig_sid}],
+        unresolved_references={
+            step_sid: {"kind": "secret", "name": "MAIL_PASS", "description": ""},
+            trig_sid: {"kind": "secret", "name": "BOT_TOKEN", "description": ""},
+            agent_id: {"kind": "agent", "name": "Ghost", "description": ""},
+            # kind mismatch: this id is referenced as an agent, so the entry
+            # doesn't claim it - it stays the ordinary missing row
+            gone_agent: {"kind": "secret", "name": "WRONG_KIND", "description": ""}})
+    noun = paths.machine_noun()
+    assert [(p["kind"], p["label"]) for p in store.auto_json(a)["problems"]] == [
+        ("secret-unresolved", f"Imported secret MAIL_PASS has no match on this {noun}. "
+                              "Pick one of your secrets on the edit page."),
+        ("secret-unresolved", f"A trigger needs the imported secret BOT_TOKEN, "
+                              f"which has no match on this {noun}."),
+        ("secret-missing", "A step references a deleted secret."),
+        ("agent-unresolved", f"Imported agent Ghost has no match on this {noun}. "
+                             "Choose one of your agents on the edit page."),
+        ("agent-missing", "A step references a deleted agent."),
+    ]
+
+
+def test_automation_yaml_without_unresolved_references_loads(store, home):
+    """§21.4 (2026-08-24) fixture: `unresolved_references` is additive - an
+    automation.yaml written before the key existed loads as an empty map,
+    serializes as {}, and stays keyless through later top-level writes."""
+    from autowright.storage import Store, load_yaml, save_yaml
+
+    a = store.create_automation(make_version(), "Pre-change", None)
+    top_file = store.auto_dir(a) / "automation.yaml"
+    top = load_yaml(top_file)
+    top.pop("unresolved_references", None)          # the pre-change shape
+    save_yaml(top_file, top)
+    assert "unresolved_references" not in load_yaml(top_file)
+
+    s2 = Store()
+    s2.load_all()
+    b = s2.autos[a["id"]]
+    assert "unresolved_references" not in b
+    assert s2.auto_json(b)["unresolvedReferences"] == {}
+    # a later top-level write keeps the key absent - no data rewrite exists
+    s2.patch_automation(b, {"name": "Pre-change renamed"})
+    assert "unresolved_references" not in load_yaml(top_file)

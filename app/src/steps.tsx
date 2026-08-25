@@ -7,7 +7,7 @@
 // detail page's debounced ParamRow.
 import React, { useEffect, useState } from 'react'
 import { usePlatformCopy } from './platformCopy'
-import type { Agent, PackageDep, ParamDef, SecretMeta, Step } from './types'
+import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from './types'
 import { Caret, Collapse, MiniBadge, PyCode, Tag, Toggle, agName, dispModel, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
 
 // §4.1/§6.1 code-reference scan: literal quoted uuid subscripts only.
@@ -18,12 +18,18 @@ export const shortId = (id: string) => `${id.slice(0, 8)}…`
 // literal secrets["<id>"] references in its code (§4.1). Tags carry the
 // declared entry's per-use `why`; a code-referenced id with no entry has none.
 // Display resolves ids to LIVE names; a dangling id renders the red deleted
-// state under its short id prefix (missing: true).
-export function stepSecretTags(s: Step, secrets: SecretMeta[]):
-    { id: string; name: string; missing: boolean; why?: string }[] {
+// state (missing: true) — under the archive record's NAME when the
+// automation's §4.1 unresolvedReferences carries the id (imported: true),
+// else under its short id prefix.
+export function stepSecretTags(s: Step, secrets: SecretMeta[], unresolved?: UnresolvedRefs):
+    { id: string; name: string; missing: boolean; imported?: boolean; why?: string }[] {
   const resolve = (id: string, why?: string) => {
     const sec = secrets.find((z) => z.id === id)
-    return { id, name: sec ? sec.name : shortId(id), missing: !sec, ...(why ? { why } : {}) }
+    const un = !sec && unresolved?.[id]?.kind === 'secret' ? unresolved[id] : null
+    return {
+      id, name: sec ? sec.name : un ? un.name : shortId(id), missing: !sec,
+      ...(un ? { imported: true } : {}), ...(why ? { why } : {}),
+    }
   }
   const tags = (s.secrets ?? []).map((e) => resolve(e.id, e.why))
   for (const m of (s.code || '').matchAll(SECRET_REF_RE)) {
@@ -67,6 +73,7 @@ type StepRowProps = {
   onToggle: () => void
   last: boolean
   secrets: SecretMeta[]
+  unresolvedReferences?: UnresolvedRefs
 } & (
   | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[]; packages: PackageDep[] }
   | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
@@ -76,18 +83,26 @@ function StepRow(props: StepRowProps) {
   const { step, i, open, onToggle, last } = props
   // §9 per-OS copy rule: the secret-store name in the secret tag tooltips.
   const copy = usePlatformCopy()
-  const stepSecrets = stepSecretTags(step, props.secrets)
+  const unres = props.unresolvedReferences
+  const stepSecrets = stepSecretTags(step, props.secrets, unres)
+  // §5.1: a dangling agent id carried by unresolvedReferences shows the
+  // archive record's name with the imported-file tooltip.
+  const unresAgent = (id: string) => (unres?.[id]?.kind === 'agent' ? unres[id] : null)
   if (props.variant === 'editor') {
     const { availAgents, allAgents, packages } = props
     // §4.1: one tag per entry in the step's `agents` list, resolved BY ID to
     // the live agent (a rename updates the tag); an empty list falls
     // back to the automation's first enabled agent ("no agent" when none is).
     // enabled=false + ag → exists but not enabled; ag=null → deleted agent.
-    const agentTags: { nm: string | null; why?: string; ag: Agent | null; enabled: boolean }[] = step.agent
+    const agentTags: { nm: string | null; why?: string; ag: Agent | null; enabled: boolean; imported?: boolean }[] = step.agent
       ? ((step.agents ?? []).length
         ? (step.agents ?? []).map((e) => {
           const ag = allAgents.find((g) => g.id === e.id) ?? null
-          return { nm: ag ? agName(ag) : shortId(e.id), why: e.why, ag, enabled: availAgents.some((g) => g.id === e.id) }
+          const un = ag ? null : unresAgent(e.id)
+          return {
+            nm: ag ? agName(ag) : un ? un.name : shortId(e.id), why: e.why, ag,
+            enabled: availAgents.some((g) => g.id === e.id), ...(un ? { imported: true } : {}),
+          }
         })
         : [{ nm: availAgents[0] ? agName(availAgents[0]) : null, ag: availAgents[0] ?? null, enabled: !!availAgents[0] }])
       : []
@@ -105,16 +120,18 @@ function StepRow(props: StepRowProps) {
                 <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{i + 1}.</span> {step.name}
               </div>
               {/* §11: why = the entry's role note, falling back to the step's own why */}
-              {agentTags.map(({ nm, why, ag, enabled }, j) => (
+              {agentTags.map(({ nm, why, ag, enabled, imported }, j) => (
                 <Tag
                   key={j}
                   title={ag && enabled
                     ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution${(why || step.why) ? ` — ${why || step.why}` : ''}`
                     : ag
                       ? `${agName(ag)} isn’t enabled for steps — this step would fail`
-                      : nm
-                        ? 'This step calls an agent that no longer exists — this step would fail'
-                        : 'No agent is enabled for steps — this step would fail'}
+                      : imported
+                        ? `This step calls ${nm} from the imported file. No agent on this ${copy.machine} matched it, so this step would fail.`
+                        : nm
+                          ? 'This step calls an agent that no longer exists — this step would fail'
+                          : 'No agent is enabled for steps — this step would fail'}
                   icon="fa-microchip"
                   c={ag && enabled ? 'var(--accent-hover)' : 'var(--red-text)'}
                   style={{
@@ -129,7 +146,9 @@ function StepRow(props: StepRowProps) {
                 <Tag
                   key={t.id}
                   title={t.missing
-                    ? 'This step uses a secret that no longer exists — this step would fail'
+                    ? t.imported
+                      ? `This step uses ${t.name} from the imported file. No secret on this ${copy.machine} matched it, so this step would fail.`
+                      : 'This step uses a secret that no longer exists — this step would fail'
                     : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`}
                   icon="fa-key" c={t.missing ? 'var(--red-text)' : 'var(--text-muted)'}
                   style={t.missing
@@ -186,11 +205,16 @@ function StepRow(props: StepRowProps) {
   }
   // 'detail' variant — §9.2: gutter step number, accent-only agent tags;
   // entry ids resolve to LIVE names (a rename updates the tag); a dangling id
-  // renders the red deleted state under its short id prefix.
-  const agentTags: { name: string; why?: string; missing: boolean }[] = step.agents?.length
+  // renders the red deleted state — the archive record's name when
+  // unresolvedReferences carries it, else the short id prefix.
+  const agentTags: { name: string; why?: string; missing: boolean; imported?: boolean }[] = step.agents?.length
     ? step.agents.map((e) => {
       const ag = props.agents.find((g) => g.id === e.id)
-      return { name: ag ? agName(ag) : shortId(e.id), why: e.why, missing: !ag }
+      const un = ag ? null : unresAgent(e.id)
+      return {
+        name: ag ? agName(ag) : un ? un.name : shortId(e.id), why: e.why, missing: !ag,
+        ...(un ? { imported: true } : {}),
+      }
     })
     : [{ name: props.fallbackAgent, missing: false }]
   return (
@@ -206,7 +230,9 @@ function StepRow(props: StepRowProps) {
                 icon="fa-microchip"
                 c={t.missing ? 'var(--red-text)' : 'var(--accent)'}
                 title={t.missing
-                  ? 'This step calls an agent that no longer exists — this step would fail'
+                  ? t.imported
+                    ? `This step calls ${t.name} from the imported file. No agent on this ${copy.machine} matched it, so this step would fail.`
+                    : 'This step calls an agent that no longer exists — this step would fail'
                   : `This step calls the ${t.name} AI agent${(t.why || step.why) ? ` — ${t.why || step.why}` : ''}`}
                 style={t.missing
                   ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
@@ -221,7 +247,9 @@ function StepRow(props: StepRowProps) {
                 icon="fa-key"
                 c={t.missing ? 'var(--red-text)' : undefined}
                 title={t.missing
-                  ? 'This step uses a secret that no longer exists — this step would fail'
+                  ? t.imported
+                    ? `This step uses ${t.name} from the imported file. No secret on this ${copy.machine} matched it, so this step would fail.`
+                    : 'This step uses a secret that no longer exists — this step would fail'
                   : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`}
                 style={t.missing
                   ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
@@ -271,7 +299,7 @@ function StepRow(props: StepRowProps) {
 // §14 collapse transition and the expand reads as a pop. Steps open
 // independently: auto-closing the previous step would run its collapse
 // simultaneously and the two motions cancel into a layout shuffle.
-export type StepListProps = { steps: Step[]; secrets: SecretMeta[] } & (
+export type StepListProps = { steps: Step[]; secrets: SecretMeta[]; unresolvedReferences?: UnresolvedRefs } & (
   | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[]; packages: PackageDep[] }
   | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
 )

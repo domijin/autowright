@@ -4,7 +4,6 @@ import { api } from '../api'
 import { useStore } from '../store'
 import type { Automation, ImportPreview, ImportSummary } from '../types'
 import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, P, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
-import { TRANSFER_PARKED } from '../config'
 import { usePlatformCopy } from '../platformCopy'
 import { useTriggerPreview } from '../triggers'
 
@@ -57,33 +56,49 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
               Built on {osName(summary.os)} — its steps may need rewriting before they run on this {copy.machine}.
             </p>
           )}
-          {summary.secretsCreated.length > 0 && section('SECRETS THAT NEED VALUES', (
+          {(summary.secretsMatched.length > 0 || summary.agentsMatched.length > 0) && section(`MATCHED ON THIS ${copy.machine.toUpperCase()}`, (
             <>
-              {summary.secretsCreated.map((n) => nameRow(n, (
-                <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>
+              {/* §5.1: the archive name, with "uses <local>" when the match
+                  renamed; a not-ready matched agent gets the §12 badge. */}
+              {summary.secretsMatched.map((m) => nameRow(m.name, m.matchedTo !== m.name ? (
+                <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>uses {m.matchedTo}</span>
+              ) : undefined))}
+              {summary.agentsMatched.map((m) => nameRow(m.name, (
+                <>
+                  {m.matchedTo !== m.name && (
+                    <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>uses {m.matchedTo}</span>
+                  )}
+                  {!m.ready && <MiniBadge c={P.amber} bg={P.amberBg}>Needs setup</MiniBadge>}
+                </>
               )))}
-              <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: '6px 0 0' }}>
-                Add their values on the Secrets page.
-              </p>
             </>
           ))}
-          {(summary.secretsExisting.length > 0 || summary.agentsReused.length > 0) && section(`ALREADY ON THIS ${copy.machine.toUpperCase()} — NOT GRANTED`, (
+          {summary.unresolved.length > 0 && section('NEEDS ATTENTION', (
             <>
-              {[...summary.secretsExisting, ...summary.agentsReused].map((n) => nameRow(n))}
-              <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: '6px 0 0' }}>
-                Review and grant them on the edit page.
+              {summary.unresolved.map((u) => (
+                <div key={`${u.kind}:${u.name}`} style={{ padding: '3px 0' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <i
+                      className={`fa-solid ${u.kind === 'secret' ? 'fa-key' : 'fa-microchip'}`}
+                      style={{ fontSize: 10, color: 'var(--text-faint)' }}
+                    />
+                    <span style={{ font: `500 12px var(--mono)`, color: 'var(--text)' }}>{u.name}</span>
+                  </div>
+                  {u.description && (
+                    <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: '1px 0 0 18px' }}>
+                      {u.description}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--amber)', margin: '6px 0 0' }}>
+                No match was found on this {copy.machine} - pick a replacement on the edit page.
               </p>
             </>
-          ))}
-          {summary.agentsCreated.length > 0 && section('AGENTS ADDED', (
-            // §12 badge, backend-computed `ready` (§5.1): not-ready harness → Needs setup.
-            summary.agentsCreated.map((g) => nameRow(g.name, g.ready ? undefined : (
-              <MiniBadge c={P.amber} bg={P.amberBg}>Needs setup</MiniBadge>
-            )))
           ))}
           {summary.packages.length > 0 && (
             <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)', margin: '16px 0 0' }}>
-              {summary.packages.length} package{summary.packages.length === 1 ? '' : 's'} install on the first execution.
+              {summary.packages.length} package{summary.packages.length === 1 ? ' is' : 's are'} installing in the background.
             </p>
           )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
@@ -282,14 +297,22 @@ function ImportModal({ onDone, onClose }: {
                 {s.agent && <MiniBadge c="var(--accent)" bg="var(--accent-bg)">AGENT</MiniBadge>}
               </div>
             )))}
+            {/* §5.1/§9.1: the match ladders run dry — ON THIS MAC (exact),
+                USES <local> (renaming match), amber NO MATCH (would land
+                needing attention). */}
             {pv.preview.secrets.length > 0 && section('SECRETS', (
-              pv.preview.secrets.map((s) => nameRow(s.name, s.exists
-                ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">ON THIS {copy.machine.toUpperCase()}</MiniBadge>
-                : <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>))
+              pv.preview.secrets.map((s) => nameRow(s.name, s.matchedTo === null
+                ? <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NO MATCH</MiniBadge>
+                : s.matchedTo === s.name
+                  ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">ON THIS {copy.machine.toUpperCase()}</MiniBadge>
+                  : <MiniBadge c="var(--gray)" bg="var(--gray-bg)">USES {s.matchedTo}</MiniBadge>))
             ))}
             {pv.preview.agents.length > 0 && section('AGENTS', (
-              pv.preview.agents.map((g) => nameRow(g.name, g.reused
-                ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">REUSED</MiniBadge> : undefined))
+              pv.preview.agents.map((g) => nameRow(g.name, g.matchedTo === null
+                ? <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NO MATCH</MiniBadge>
+                : g.matchedTo === g.name
+                  ? <MiniBadge c="var(--gray)" bg="var(--gray-bg)">ON THIS {copy.machine.toUpperCase()}</MiniBadge>
+                  : <MiniBadge c="var(--gray)" bg="var(--gray-bg)">USES {g.matchedTo}</MiniBadge>))
             ))}
             <div style={{ borderTop: '1px solid var(--hairline)', marginTop: 18, paddingTop: 12 }}>
               {pv.preview.osMismatch && (
@@ -298,9 +321,14 @@ function ImportModal({ onDone, onClose }: {
                   Built on {osName(pv.preview.os)} — its steps may need rewriting before they run on this {copy.machine}.
                 </p>
               )}
+              {[...pv.preview.secrets, ...pv.preview.agents].some((x) => x.matchedTo === null) && (
+                <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--amber)', margin: '0 0 4px' }}>
+                  Some agents or secrets have no match on this {copy.machine} - the automation arrives needing attention.
+                </p>
+              )}
               {pv.preview.packages.length > 0 && (
                 <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)', margin: '0 0 4px' }}>
-                  {pv.preview.packages.length} package{pv.preview.packages.length === 1 ? '' : 's'} install on the first execution.
+                  {pv.preview.packages.length} package{pv.preview.packages.length === 1 ? ' installs' : 's install'} with the import.
                 </p>
               )}
               <p style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)', margin: 0 }}>
@@ -480,12 +508,9 @@ export default function AutomationsList() {
       <PageTitle
         right={(
           <HeaderActions>
-            {/* §9.1 import/export parked — entry point hidden, modal + backend kept */}
-            {!TRANSFER_PARKED && (
-              <BtnGhost onClick={() => setImportOpen(true)}>
-                Import
-              </BtnGhost>
-            )}
+            <BtnGhost onClick={() => setImportOpen(true)}>
+              Import
+            </BtnGhost>
             {(pendingDraft || slotJob) && (
               <BtnGhost onClick={() => setSurface('create', 'app')}>
                 Resume draft

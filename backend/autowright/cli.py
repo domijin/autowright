@@ -659,17 +659,26 @@ def cmd_automation_import(c: Client, args) -> None:
         # §4.1 display way ("macOS"), never the raw §5.1 token ("macos").
         print(f"  built on {paths.os_display_name(s.get('os'))} - "
               "its steps may need rewriting on this machine")
-    if s.get("secretsCreated"):
-        print(f"  secrets that need values: {', '.join(s['secretsCreated'])}")
-    if s.get("secretsExisting"):
-        print(f"  existing secrets to grant on the edit page: {', '.join(s['secretsExisting'])}")
-    if s.get("agentsCreated"):
-        print("  agents added: " + ", ".join(
-            g["name"] + ("" if g["ready"] else " (needs setup)")
-            for g in s["agentsCreated"]))
-    if s.get("agentsReused"):
-        print(f"  agents reused: {', '.join(s['agentsReused'])}")
+    def _match_label(m: dict, ready_suffix: bool = False) -> str:
+        # §20: the archive name, with " -> local" only when the match renamed;
+        # a matched agent whose harness isn't ready is marked like §12.
+        label = m["name"] + (f" -> {m['matchedTo']}" if m["matchedTo"] != m["name"] else "")
+        if ready_suffix and not m.get("ready", True):
+            label += " (needs setup)"
+        return label
+
+    if s.get("secretsMatched"):
+        print("  secrets matched: " + ", ".join(_match_label(m) for m in s["secretsMatched"]))
+    if s.get("agentsMatched"):
+        print("  agents matched: " + ", ".join(
+            _match_label(m, ready_suffix=True) for m in s["agentsMatched"]))
+    if s.get("unresolved"):
+        print("  no match on this machine: " + ", ".join(
+            f"{u['kind']} {u['name']}" for u in s["unresolved"]))
     ensure_packages(c, s.get("packages") or [])
+    if s.get("unresolved"):
+        print("  this automation needs attention - open it and fix the "
+              "highlighted agents and secrets")
     print("  triggers imported off — enable them with `autowright automation trigger on`")
 
 

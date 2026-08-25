@@ -184,9 +184,13 @@ export interface Automation {
   // and the §9.2 banner. `label` is the exact UI copy; `kind` picks the
   // banner row's action link — and `overdue` also feeds the §13 tray dot.
   problems: { kind: 'overdue'
-                  | 'secret-missing' | 'secret-ungranted' | 'secret-unset'
-                  | 'agent-missing' | 'agent-ungranted' | 'package-missing'
+                  | 'secret-unresolved' | 'secret-missing' | 'secret-ungranted' | 'secret-unset'
+                  | 'agent-unresolved' | 'agent-missing' | 'agent-ungranted' | 'package-missing'
                   | 'os-mismatch'; label: string }[]
+  // §4.1/§5.1: the import's no-match map — the id is the minted placeholder
+  // the steps carry; name/description are the archive record's. Always
+  // present ({} when none), filtered to still-referenced ids.
+  unresolvedReferences: UnresolvedRefs
   snapshotSettings: SnapshotSettings // §6.3 automatic-snapshot toggles
   specMeta: string
   latest?: (ExecutionResult & { executionId: string; when: string }) | null
@@ -294,14 +298,21 @@ export interface SecretMeta {
   usedBy: { id: string; name: string }[]
 }
 
-// §5.1 import summary — what the import created vs. matched (§19).
-// Created agents carry `ready` (backend §19 check-ready rule at import time)
-// so the summary modal can badge a not-ready harness Needs setup (§12 badge).
+// §4.1/§5.1 unresolvedReferences — the archive references import could not
+// match, keyed by the minted placeholder id the steps carry.
+export type UnresolvedRefs = Record<string, { kind: 'secret' | 'agent'; name: string; description: string }>
+
+// §5.1 how a reference matched: the ladder rung (§19 matchedBy).
+export type MatchedBy = 'name' | 'configuration' | 'similarity'
+
+// §5.1 import summary — what matched (auto-granted) and what landed
+// unresolved (§19). Matched agents carry `ready` (backend §19 check-ready
+// rule at import time) so the summary modal can badge a not-ready harness
+// Needs setup (§12 badge).
 export interface ImportSummary {
-  secretsCreated: string[]
-  secretsExisting: string[]
-  agentsCreated: { name: string; ready: boolean }[]
-  agentsReused: string[]
+  secretsMatched: { name: string; matchedTo: string; matchedBy: MatchedBy }[]
+  agentsMatched: { name: string; matchedTo: string; matchedBy: MatchedBy; ready: boolean }[]
+  unresolved: { kind: 'secret' | 'agent'; name: string; description: string }[]
   packages: PackageDep[]
   // §5.1: the archive's name when the §4.1 dedupe renamed the landed automation.
   renamedFrom: string | null
@@ -311,8 +322,9 @@ export interface ImportSummary {
   osMismatch: boolean
 }
 
-// §5.2 import preview — the archive's contents plus the §5.1 match rules run
-// dry (`exists`/`reused`); sourceUrl/resolvedUrl only on URL fetches (§19)
+// §5.2 import preview — the archive's contents plus the §5.1 match ladders
+// run dry (`matchedTo`/`matchedBy`, null when the reference would land
+// unresolved); sourceUrl/resolvedUrl only on URL fetches (§19)
 export interface ImportPreview {
   name: string
   // §5.2: the §4.1 name dedupe run dry — what the import will land as
@@ -323,8 +335,8 @@ export interface ImportPreview {
   params: { name: string; kind: string }[]
   triggers: { kind: 'cron' | 'app_start' | 'discord' | 'imessage'; expression?: string; timezone?: string; channel?: string; from?: string; pattern?: string }[]
   packages: PackageDep[]
-  agents: { name: string; harness: string; mode: string; model: string | null; reused: boolean }[]
-  secrets: { name: string; description: string; exists: boolean }[]
+  agents: { name: string; harness: string; mode: string; model: string | null; matchedTo: string | null; matchedBy: MatchedBy | null }[]
+  secrets: { name: string; description: string; matchedTo: string | null; matchedBy: MatchedBy | null }[]
   // §5.1 platform token + mismatch flag — same rule as the import summary.
   os: string | null
   osMismatch: boolean

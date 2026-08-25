@@ -54,7 +54,9 @@ Interaction with existing rules:
 ### 21.3 Out of scope (recorded so they can be revisited)
 
 - **Transfer archives (§5.1):** no promise yet that an export written by an older version
-  imports into a newer app.
+  imports into a newer app. Exercised 2026-08-24: archive `format_version` 2 (numeric
+  refs, match-or-flag import) replaced format 1 as a clean break - a format-1 archive is
+  rejected with re-export guidance, no migration path.
 - **API/CLI version skew:** no promise for an older CLI or app shell against a newer
   backend. §3 packaging ships shell and backend at one locked version, and the CLI command
   surface keeps its no-alias rule (§20).
@@ -66,6 +68,15 @@ Interaction with existing rules:
 Newest first. One entry per compatibility decision: what changed, the migration, the first
 version that writes the new shape, and the oldest shape still read.
 
+- **2026-08-24 - `unresolved_references` added to automation.yaml.** The §5.1
+  match-or-flag import stores the archive references it could not match as a top-level
+  `unresolved_references` map (`{id: {kind, name, description}}`, §4.1) on the imported
+  automation - written only by import, pruned by save-new-version and trigger replaces,
+  kept by restores. Additive: an absent key is the old shape and loads as an empty map, so
+  no data rewrite exists; recognition is structural (absent key). Loading stays §5
+  lenient for malformed entries. First version writing the new shape: the next release
+  after 2026-08-24; oldest shape still read: v0.6.0 (key absent). Fixture test:
+  `tests/test_storage.py::test_automation_yaml_without_unresolved_references_loads`.
 - **2026-08-23 - mac updater migrated to electron-updater; 0.6.0 update bridge.** Not a
   stored-data shape, but a compatibility promise to a released version, so it is logged
   here. v0.6.1 replaces the mac in-app updater (Squirrel JSON `feed.json` + on-device

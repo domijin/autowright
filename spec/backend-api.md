@@ -237,27 +237,31 @@ remain plain dicts (§2).
   lose its content before or during its run. Past execution records are untouched
   (§4.5 stores its own step list), but a failed execution on a deleted version can no
   longer retry — the §7 retry's version resolution answers 404
-- **The five §5.1 transfer endpoints that follow** (`export`, `import`, `import/preview`,
-  `import/url`, `import/confirm`) have **no UI consumer today**: §5.1 is parked in the app
-  (§9.1 Import button, §9.2 Export row hidden), leaving the §20 CLI as their only client.
-  They stay served and fully specified; nothing about their contracts changes while parked
 - `GET /automations/{id}/export?values=0|1` — the §5.1 transfer archive as `application/zip`
   (`Content-Disposition` filename `<name>.autowright`, name sanitized for the filesystem);
   `values=0` omits `param_values` from the manifest (default `1`)
 - `POST /automations/import` — the §5.1 archive as the raw request body
   (`application/octet-stream`, no multipart) → `{ automation, summary }` where `summary` is
-  `{ secretsCreated, secretsExisting, agentsCreated, agentsReused, packages, renamedFrom,
-  os, osMismatch }` —
+  `{ secretsMatched, agentsMatched, unresolved, packages, renamedFrom, os, osMismatch }` —
+  `secretsMatched` is `[{ name, matchedTo, matchedBy }]` and `agentsMatched`
+  `[{ name, matchedTo, matchedBy, ready }]`: `name` the archive record's name, `matchedTo`
+  the matched local record's name, `matchedBy` the §5.1 ladder rung (`name | similarity`
+  for secrets, `name | configuration | similarity` for agents), and `ready` computed at
+  import time by the one §19
+  check-ready rule (`/agents/{id}/check`) for the matched agent's harness/mode/model — it
+  backs the §9.1 summary modal's Needs setup badge; `unresolved` is
+  `[{ kind, name, description }]` (§5.1 archive order, secrets before agents) — the
+  references that matched nothing and landed as §4.1 `unresolvedReferences`;
   `renamedFrom` is the archive's automation name when the §4.1 dedupe renamed the landed
   automation, else `null`; `os` is the manifest's platform token (`null` when absent) and
   `osMismatch` whether it differs from the running platform (`false` when absent), §5.1;
-  `agentsCreated` is `[{ name, ready }]`, `ready` computed at import time by the one §19
-  check-ready rule (`/agents/{id}/check`) for the created agent's harness/mode/model — it
-  backs the §9.1 summary modal's Needs setup badge (created agents can share a name with a
-  pre-existing local agent, §5.1, so the renderer can't look readiness up by name); the
-  other three are name lists and `packages` the §6.2 declarations. Validates the whole
+  `packages` the §6.2 declarations. A successful import also starts the §6.2 package
+  ensure for those declarations in the background and republishes the automation over the
+  WebSocket when it finishes (§5.1), so a `package-missing` problem clears without a
+  reload. Validates the whole
   archive first; any failure answers
-  422 with the reason and writes nothing. Size caps (untrusted input): the upload itself is
+  422 with the reason and writes nothing (import writes only the new automation — never
+  the agents or secrets stores). Size caps (untrusted input): the upload itself is
   capped at 64 MB (413), one member at 32 MB decompressed and the whole archive at 256 MB
   decompressed (422) — a crafted archive can't balloon into memory
 - `POST /automations/import/preview` — raw archive body exactly like `/automations/import`
@@ -268,10 +272,13 @@ remain plain dicts (§2).
   like an expired one; a spool file that can't be written answers 507 with the reason, and one
   that has vanished by confirm time answers the same 404 as an expired token). `preview` is `{ name, landsAs, description, steps: [{name,
   description, agent}], params: [{name, kind}], triggers, packages, agents: [{name, harness, mode,
-  model, reused}], secrets: [{name, description, exists}], os, osMismatch }` — `reused`/`exists`
-  are the §5.1 match
-  rules run dry, `landsAs` the §4.1 name dedupe run dry (§5.2 — equal to `name` when free,
-  best-effort until confirm), and `os`/`osMismatch` the §5.1 platform token + mismatch flag
+  model, matchedTo, matchedBy}], secrets: [{name, description, matchedTo, matchedBy}], os,
+  osMismatch }` — `matchedTo`/`matchedBy`
+  are the §5.1 match ladders run dry (the matched local record's name and the rung; both
+  `null` when the reference would land unresolved), `landsAs` the §4.1 name dedupe run dry
+  (§5.2 — equal to `name` when free,
+  best-effort until confirm — confirm re-runs the dedupe and the ladders, §5.2), and
+  `os`/`osMismatch` the §5.1 platform token + mismatch flag
   (same rule as the import summary)
 - `POST /automations/import/url` `{ url }` → same `{ token, preview }` shape plus
   `preview.sourceUrl` (as given) and `preview.resolvedUrl` (after §5.2 GitHub resolution;
@@ -645,9 +652,10 @@ already neutralize. The provider config and
   store file that failed to load this session (`settings.yaml`, `agents.yaml`,
   `secrets.yaml` — the §5 read-only degradation) answers 409
   "`<path>` is unreadable on disk — fix or remove the file, then restart Autowright."
-  This covers the agents and secrets writes, `PATCH /settings`, `POST /settings/data-path`,
-  and the §5.1 import routes — import checks **before** landing anything, so a refused
-  import never half-applies (no Keychain writes, no automation folders).
+  This covers the agents and secrets writes, `PATCH /settings`, and
+  `POST /settings/data-path`. The §5.1 import routes are no longer among them: import
+  never writes the agents or secrets stores (it creates no records), so an unreadable
+  store file cannot block an import.
 - `WS /ws?token=` — events, each `{ event, ... }`: `execution.started` (also re-published when a
   failed execution retries in place — same execution id, updated record), `execution.queued`
   (a §6 firing was admitted to the queue — carries the new `queued` record, so it reaches the

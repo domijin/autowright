@@ -230,7 +230,14 @@ export const api = {
     const r = await fetch(`${base}/automations/${automationId}/export?values=${values ? 1 : 0}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-    if (!r.ok) throw new Error(r.statusText)
+    if (!r.ok) {
+      // §19 error convention (same as req/rawPost): surface the API's `detail`,
+      // so the §9.2 export toast says WHY — e.g. the §5.1 422 naming the step
+      // whose secret or agent reference has no record to travel with.
+      let detail = ''
+      try { detail = (await r.json()).detail } catch { /* ignore */ }
+      throw Object.assign(new Error(detail || r.statusText), { status: r.status })
+    }
     return r.arrayBuffer()
   },
   importAutomation: (data: Uint8Array) =>

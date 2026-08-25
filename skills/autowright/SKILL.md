@@ -175,7 +175,10 @@ autowright agent list · agent check <name>        # AI agents available to agen
   defaults for missing shapes) rather than assuming a fresh dir; check the real shape
   first with `memory show`.
 - `automation export <name> [file.autowright]` / `automation import <file-or-https-url>`
-  share automations as archives (secrets travel as names only, never values; imported
-  triggers arrive off). Export includes the user's param values — `--no-values` leaves
+  share automations as archives (secrets travel as names and descriptions only, never
+  values; imported triggers arrive off). Import matches referenced agents and secrets
+  against the user's existing records and never creates any; a reference with no local
+  match lands the automation needing attention - the user fixes it in the app's editor.
+  Export includes the user's param values — `--no-values` leaves
   them out when the archive is for someone else.
 - `settings show` / `settings set days=30 notifications=all developerMode=on dataPath=/path`.

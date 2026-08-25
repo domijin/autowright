@@ -434,6 +434,10 @@ class Store:
             # counts as a mismatch); a non-string is dropped, not fatal.
             **({"origin_os": top["origin_os"].strip()}
                if isinstance(top.get("origin_os"), str) and top["origin_os"].strip() else {}),
+            # §4.1 unresolvedReferences — §5.1 import's no-match map; absent
+            # key = the pre-change shape, loading as empty (§21.4 2026-08-24).
+            **({"unresolved_references": ur}
+               if (ur := self._load_unresolved(top.get("unresolved_references"))) else {}),
             "created_at": top.get("created_at"),
             "updated_at": top.get("updated_at"),
             "versions": {},
@@ -457,6 +461,24 @@ class Store:
             log.warning("automation %r at %s has no version folders — skipping it at load", a["name"], d)
             return None
         return a
+
+    @staticmethod
+    def _load_unresolved(raw) -> dict:
+        """§4.1 unresolved_references from automation.yaml — lenient like every
+        §5 read: entries that aren't a uuid-keyed mapping with a valid kind and
+        a string name are dropped with a warning, never fatal."""
+        if not isinstance(raw, dict):
+            return {}
+        out: dict[str, dict] = {}
+        for k, v in raw.items():
+            if (isinstance(k, str) and re.fullmatch(_UUID, k)
+                    and isinstance(v, dict) and v.get("kind") in ("secret", "agent")
+                    and isinstance(v.get("name"), str) and v["name"]):
+                out[k] = {"kind": v["kind"], "name": v["name"],
+                          "description": v.get("description") if isinstance(v.get("description"), str) else ""}
+            else:
+                log.warning("dropping malformed unresolved reference %r: %r", k, v)
+        return out
 
     @staticmethod
     def _load_snapshot_settings(raw: dict | None) -> dict:
@@ -605,6 +627,10 @@ class Store:
             "max_parallel": a["max_parallel"],
             "max_queued": a["max_queued"],
             **({"origin_os": a["origin_os"]} if a.get("origin_os") else {}),
+            # §4.1: absent when empty — the pre-change shape stays the shape
+            # for automations that carry nothing unresolved (§21.4 2026-08-24).
+            **({"unresolved_references": a["unresolved_references"]}
+               if a.get("unresolved_references") else {}),
             "created_at": a["created_at"],
             "updated_at": a["updated_at"],
         })
@@ -703,7 +729,8 @@ class Store:
                           triggers: list[dict] | None = None,
                           enabled_agents: list[str] | None = None,
                           allowed_secrets: list[str] | None = None,
-                          origin_os: str | None = None) -> dict:
+                          origin_os: str | None = None,
+                          unresolved_references: dict | None = None) -> dict:
         with self.lock:
             name = self.free_automation_name(name)  # §4.1 uniqueness
             automation_id = new_id()
@@ -727,6 +754,10 @@ class Store:
                 # next edit save (save_new_version) — a local rework
                 # supersedes "built elsewhere".
                 **({"origin_os": origin_os} if origin_os else {}),
+                # §4.1 unresolvedReferences: written only by §5.1 import,
+                # pruned by save_new_version / a trigger replace.
+                **({"unresolved_references": dict(unresolved_references)}
+                   if unresolved_references else {}),
                 "versions": {}, "draft": None,
                 # §4.1 `live` is a set: maxParallel may allow several at once.
                 "_last_status": "none", "_last_exec_at": None, "_live": set(),
@@ -738,6 +769,43 @@ class Store:
             self._write_toplevel(a)
             self.autos[automation_id] = a
             return a
+
+    @staticmethod
+    def effective_reference_ids(cur: dict) -> tuple[set[str], set[str]]:
+        """§4.1 effective references of a version, per kind: the step manifest
+        entries unioned with the literal code subscripts (secrets, agents)."""
+        secret_ids: set[str] = set()
+        agent_ids: set[str] = set()
+        for s in cur.get("steps", []) or []:
+            secret_ids |= {e["id"] for e in s.get("secrets") or [] if e.get("id")}
+            secret_ids |= set(SECRET_REF_RE.findall(s.get("code", "") or ""))
+            agent_ids |= {e["id"] for e in s.get("agents") or [] if e.get("id")}
+            agent_ids |= set(AGENT_REF_RE.findall(s.get("code", "") or ""))
+        return secret_ids, agent_ids
+
+    def referenced_unresolved(self, a: dict) -> dict:
+        """§4.1: the stored unresolved_references filtered to ids the current
+        version (or a discord trigger) still references — the serialized form,
+        and what a prune keeps."""
+        unresolved = a.get("unresolved_references") or {}
+        if not unresolved:
+            return {}
+        cur = a["versions"].get(a["current_version"], {})
+        secret_ids, agent_ids = self.effective_reference_ids(cur)
+        trigger_ids = {t["secret"] for t in a["triggers"]
+                       if t.get("kind") == "discord" and t.get("secret")}
+        live = secret_ids | agent_ids | trigger_ids
+        return {k: v for k, v in unresolved.items() if k in live}
+
+    def _prune_unresolved(self, a: dict) -> None:
+        """§4.1: drop unresolved_references entries the automation no longer
+        references. Called by save_new_version and a trigger replace — never by
+        a restore (restoring is not a rework, the originOs rule)."""
+        kept = self.referenced_unresolved(a)
+        if kept:
+            a["unresolved_references"] = kept
+        else:
+            a.pop("unresolved_references", None)
 
     def save_new_version(self, a: dict, ver: dict) -> int:
         """§4.4/§5: write vN+1 folder, then flip the pointer atomically."""
@@ -754,6 +822,9 @@ class Store:
             # §4.1: an edit save clears originOs — a local rework supersedes
             # "built elsewhere" (a restore keeps it: not a rework).
             a.pop("origin_os", None)
+            # §4.1: the same save prunes unresolved references the new version
+            # no longer carries — a fixed reference stops carrying its label.
+            self._prune_unresolved(a)
             self._write_toplevel(a)
             return n
 
@@ -1007,6 +1078,9 @@ class Store:
                 # §4.3: the enable stamps reconcile here, against the stored
                 # list, so every write path gets them (and none can be faked).
                 a["triggers"] = triggerlib.stamp_enabled(patch["triggers"], a["triggers"])
+                # §4.1: a trigger replace prunes unresolved references a
+                # dropped discord trigger was the last holder of.
+                self._prune_unresolved(a)
             if "paramValues" in patch:
                 a["param_values"].update(patch["paramValues"])
             for k_api, k_int, clamp in [("maxParallel", "max_parallel", clamp_max_parallel),
@@ -1794,23 +1868,29 @@ class Store:
         secrets_by_id = {s["id"]: s for s in self.secrets}
         agents_by_id = {g["id"]: g for g in self.agents}
         # §4.1 effective references: manifest entries ∪ code subscripts.
-        step_secret_ids: set[str] = set()
-        step_agent_ids: set[str] = set()
-        for s in cur.get("steps", []) or []:
-            step_secret_ids |= {e["id"] for e in s.get("secrets") or [] if e.get("id")}
-            step_secret_ids |= set(SECRET_REF_RE.findall(s.get("code", "") or ""))
-            step_agent_ids |= {e["id"] for e in s.get("agents") or [] if e.get("id")}
-            step_agent_ids |= set(AGENT_REF_RE.findall(s.get("code", "") or ""))
+        step_secret_ids, step_agent_ids = self.effective_reference_ids(cur)
         trigger_secret_ids = {t["secret"] for t in a["triggers"]
                               if t.get("kind") == "discord" and t.get("secret")}
+        # §4.1/§5.1: a dangling id carried by unresolved_references is an
+        # import's no-match, not a deletion — unresolved and missing share the
+        # precedence slot and are mutually exclusive per id by construction.
+        unresolved_map = a.get("unresolved_references") or {}
         allowed = set(a["allowed_secrets"] or [])
         missing_step = missing_trigger = 0
+        unresolved_step: list[str] = []
+        unresolved_trigger: list[str] = []
         ungranted: list[str] = []
         unset: list[str] = []
         for sid in step_secret_ids | trigger_secret_ids:
             sec = secrets_by_id.get(sid)
             if sec is None:
-                if sid in step_secret_ids:
+                entry = unresolved_map.get(sid)
+                if entry and entry.get("kind") == "secret":
+                    if sid in step_secret_ids:
+                        unresolved_step.append(entry["name"])
+                    else:
+                        unresolved_trigger.append(entry["name"])
+                elif sid in step_secret_ids:
                     missing_step += 1
                 else:
                     missing_trigger += 1
@@ -1819,6 +1899,15 @@ class Store:
                 ungranted.append(sec["name"])
             elif not sec.get("set", True):
                 unset.append(sec["name"])
+        noun = paths.machine_noun()
+        out += [{"kind": "secret-unresolved",
+                 "label": f"Imported secret {n} has no match on this {noun}. "
+                          "Pick one of your secrets on the edit page."}
+                for n in sorted(unresolved_step)]
+        out += [{"kind": "secret-unresolved",
+                 "label": f"A trigger needs the imported secret {n}, "
+                          f"which has no match on this {noun}."}
+                for n in sorted(unresolved_trigger)]
         out += [{"kind": "secret-missing",
                  "label": "A step references a deleted secret."}] * missing_step
         out += [{"kind": "secret-missing",
@@ -1830,15 +1919,24 @@ class Store:
                  "label": f"Secret {n} has no value yet — add it on the Secrets page."}
                 for n in sorted(unset)]
         agent_missing = 0
+        agent_unresolved: list[str] = []
         agent_ungranted: list[str] = []
         enabled = set(a["enabled_agents"] or [])
         for aid in step_agent_ids:
             g = agents_by_id.get(aid)
             if g is None:
-                agent_missing += 1
+                entry = unresolved_map.get(aid)
+                if entry and entry.get("kind") == "agent":
+                    agent_unresolved.append(entry["name"])
+                else:
+                    agent_missing += 1
             elif aid not in enabled:
                 # §8 grant name: the agent's name, or its harness when unnamed.
                 agent_ungranted.append(g.get("name") or g.get("harness", ""))
+        out += [{"kind": "agent-unresolved",
+                 "label": f"Imported agent {n} has no match on this {noun}. "
+                          "Choose one of your agents on the edit page."}
+                for n in sorted(agent_unresolved)]
         out += [{"kind": "agent-missing",
                  "label": "A step references a deleted agent."}] * agent_missing
         out += [{"kind": "agent-ungranted",
@@ -1904,6 +2002,9 @@ class Store:
             "stepAgents": a["enabled_agents"],
             "allowedSecrets": a["allowed_secrets"],
             "problems": self.problems_json(a, cur),
+            # §4.1: always present ({} when none), filtered to ids the current
+            # version or a discord trigger still references.
+            "unresolvedReferences": self.referenced_unresolved(a),
             "snapshotSettings": {"preVersion": a["memory_snapshots"]["pre_version"],
                                  "preClear": a["memory_snapshots"]["pre_clear"],
                                  "preRestore": a["memory_snapshots"]["pre_restore"]},

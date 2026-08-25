@@ -301,7 +301,11 @@ export default function CreateFlow() {
   // ---- review: derived (§11 dirty gating) ----
   // Memoized: the grant scan walks every step's code (regexes included via
   // secRefs) and would otherwise re-run on every keystroke anywhere in the editor.
-  const secRefs = useMemo(() => (rev ? secretRefsOf(rev.steps) : []), [rev?.steps]) // eslint-disable-line react-hooks/exhaustive-deps
+  // §5.1/§11 (edit mode): the automation's unresolvedReferences map names
+  // imported references that matched nothing — the red tags and warnings
+  // show the archive name instead of a short id.
+  const unresolvedRefs = isEdit ? auto?.unresolvedReferences : undefined
+  const secRefs = useMemo(() => (rev ? secretRefsOf(rev.steps, unresolvedRefs) : []), [rev?.steps, unresolvedRefs]) // eslint-disable-line react-hooks/exhaustive-deps
   const derived = useMemo(() => {
     const availAgents = rev ? rev.enabledAgents.map((id) => agents.find((g) => g.id === id)).filter((g): g is Agent => !!g) : []
     const agName = (g: Agent) => g.name || g.harness
@@ -316,7 +320,11 @@ export default function CreateFlow() {
         if (r) r.steps.push(i)
         else {
           const g = agents.find((x) => x.id === id)
-          agRefs.push({ id, name: g ? agName(g) : `${id.slice(0, 8)}…`, steps: [i] })
+          const un = !g && unresolvedRefs?.[id]?.kind === 'agent' ? unresolvedRefs[id] : null
+          agRefs.push({
+            id, name: g ? agName(g) : un ? un.name : `${id.slice(0, 8)}…`, steps: [i],
+            ...(un ? { imported: true } : {}),
+          })
         }
       }
     })
@@ -343,7 +351,7 @@ export default function CreateFlow() {
     })
     const secretGap = secNotAllowed.length > 0
     return { availAgents, agentStepIdx, agNotEnabled, agMissing, agFallbackIdx, agNone, secNotAllowed, secMissing, agWarn, secWarn, agentGap, secretGap }
-  }, [rev?.steps, rev?.enabledAgents, rev?.allowedSecrets, agents, secrets, secRefs]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rev?.steps, rev?.enabledAgents, rev?.allowedSecrets, agents, secrets, secRefs, unresolvedRefs]) // eslint-disable-line react-hooks/exhaustive-deps
   const { availAgents, agentStepIdx, agNotEnabled, agMissing, agFallbackIdx, agNone, secNotAllowed, secMissing, agWarn, secWarn, agentGap, secretGap } = derived
   // §11: the spec card defaults open and is force-open while being edited;
   // the agents and secrets cards default collapsed
@@ -1238,6 +1246,7 @@ export default function CreateFlow() {
                 lockStyle={lockStyle}
                 agents={agents}
                 secrets={secrets}
+                unresolvedReferences={unresolvedRefs}
                 availAgents={availAgents}
                 agentStepIdx={agentStepIdx}
                 agWarn={agWarn}
@@ -1291,6 +1300,7 @@ export default function CreateFlow() {
                   availAgents={availAgents}
                   agents={agents}
                   secrets={secrets}
+                  unresolvedReferences={unresolvedRefs}
                   pkgSecOpenEff={pkgSecOpenEff}
                   updatePkgs={(pips) => void updatePkgs(pips)}
                   installPkgs={() => void installPkgs()}

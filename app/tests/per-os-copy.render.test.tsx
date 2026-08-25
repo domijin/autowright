@@ -241,6 +241,7 @@ const AUTO: Automation = {
   allTriggersOff: false, nextAt: null, instructions: '', notes: '', lastStatus: 'succeeded',
   live: [], maxParallel: 1, maxQueued: 10, resultChip: null, resultStatus: null,
   lastExecutionLabel: 'Today', agentId: null, stepAgents: [], allowedSecrets: [], problems: [],
+  unresolvedReferences: {},
   snapshotSettings: { preVersion: true, preClear: true, preRestore: true }, specMeta: '',
 }
 

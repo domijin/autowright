@@ -157,6 +157,21 @@ originOs: macos | windows | linux | absent — the platform the automation was e
   next edit save on this machine (§4.4 save-new-version) — a local rework supersedes "built
   elsewhere"; a version restore keeps it (restoring is not a rework) — and set by no other
   write path.
+unresolvedReferences: { id: { kind: secret|agent, name, description } } — the §5.1 archive
+  references import could not match to a local record: id is the fresh uuid import minted
+  into the step entries / code subscripts / trigger secret (it matches no stored record by
+  construction), and name + description are the archive record's, so the UI and the §8
+  drafting context can say what was wanted. Stored top-level (§5 automation.yaml,
+  snake_case `unresolved_references`, absent when empty), never versioned, written only by
+  §5.1 import. Pruned - never grown - by the §4.4 save-new-version write and by a trigger
+  replace: entries whose id no longer appears in the current version's effective
+  references (the step manifest ∪ code-subscript union above, plus discord trigger
+  secrets) are dropped, so a fixed reference stops carrying its label while the rest keep
+  theirs; a version restore keeps the map (restoring is not a rework, the `originOs`
+  rule). Serialized as `unresolvedReferences` ({} when none), filtered to
+  still-referenced ids. Loading is lenient like every §5 read: entries that are not a
+  uuid-keyed mapping with a valid kind and a string name are dropped with a logged
+  warning, never fatal.
 problems: [{ kind, label }] — derived at serialization, never stored: the "would this fire
   successfully — and is it firing at all" audit backing the §9.1 Needs fixing chip, the
   §9.2 banner, and §20 output.
@@ -194,17 +209,29 @@ problems: [{ kind, label }] — derived at serialization, never stored: the "wou
     dot, and the §6 overdue notification are its discovery path. "Scheduled executions
     are being missed — it last ran <§4.1 date label>." / never ran: "Scheduled
     executions are being missed — it has never run."
+  - `secret-unresolved` — an effective step secret or a discord trigger's token secret
+    references an id in `unresolvedReferences` (kind secret): the §5.1 import found no
+    match for it, and the id matches no stored record by construction, so this kind and
+    `secret-missing` are mutually exclusive per id and share the missing slot in the
+    precedence below. "Imported secret NAME has no match on this Mac. Pick one of your
+    secrets on the edit page." / trigger case: "A trigger needs the imported secret NAME,
+    which has no match on this Mac."
   - `secret-missing` — an effective step secret (manifest entries ∪ code subscripts) or a
-    discord trigger's token secret references an id no stored record holds. "A step
+    discord trigger's token secret references an id no stored record holds (and no
+    `unresolvedReferences` entry names). "A step
     references a deleted secret." / "A trigger references a deleted secret."
   - `secret-ungranted` — an effective step secret exists but isn't in `allowedSecrets`
     (discord trigger secrets are not grant-gated, §4.3). "Secret NAME isn't allowed for
     this automation yet — grant it on the edit page."
   - `secret-unset` — a referenced secret (step or discord trigger) whose record has
     `set: false`. "Secret NAME has no value yet — add it on the Secrets page."
+  - `agent-unresolved` — an effective step agent references an id in
+    `unresolvedReferences` (kind agent): the §5.1 import found no match for it (mutually
+    exclusive with `agent-missing` per id, same slot in the precedence). "Imported agent
+    NAME has no match on this Mac. Choose one of your agents on the edit page."
   - `agent-missing` — an effective step agent (manifest `agents:` entries ∪ code
-    subscripts, the same union as secrets above) references an id no stored record holds.
-    "A step references a deleted agent."
+    subscripts, the same union as secrets above) references an id no stored record holds
+    (and no `unresolvedReferences` entry names). "A step references a deleted agent."
   - `agent-ungranted` — an effective step agent that exists but isn't in `stepAgents`.
     "Agent NAME isn't enabled for this automation yet — enable it on the edit page."
   - `package-missing` — a current-version declared package whose distribution the §6.2
@@ -216,9 +243,11 @@ problems: [{ kind, label }] — derived at serialization, never stored: the "wou
     steps may need rewriting before they run on this Mac." (<OS> is the display name:
     macOS / Windows / Linux; an unrecognized stored token shows verbatim and always
     mismatches.)
-  A secret or agent yields at most one entry — precedence missing > ungranted > unset,
-  the order the §7 gates fail in — and entries dedupe per referenced record (a secret
-  three steps use is one row), sorted by name within a kind. Empty list = nothing to fix.
+  A secret or agent yields at most one entry — precedence (unresolved | missing) >
+  ungranted > unset, the order the §7 gates fail in; unresolved and missing are one slot,
+  told apart by the `unresolvedReferences` map — and entries dedupe per referenced record
+  (a secret three steps use is one row), sorted by name within a kind. Empty list =
+  nothing to fix.
 ```
 
 ### 4.2 Parameter kinds
@@ -841,6 +870,8 @@ still load. A stored entry without an `id` cannot be referenced and is skipped a
 with a warning, like any record that fails to resolve (§5 lenient load) — never healed,
 never fatal. Steps bind agents by id (§4.1), so a rename never repoints a step; uniqueness
 exists for the §8 grants yaml, the §20 case-insensitive name flags, and unambiguous display.
+Import (§5.1) never creates an agent record: an archive reference either matches an
+existing agent or lands unresolved (§4.1 `unresolvedReferences`).
 All four harnesses are selectable. The app can install any of them (plus Ollama, for the
 local-model mode) and help the user sign in when the harness needs an account (§10 step 2,
 §19 install/login endpoints).
@@ -879,7 +910,8 @@ with a blank value
 keeps the stored state (a set secret keeps its value, an unset one stays unset) and updates only
 the description. An execution needing an unset secret fails before any step with "secret `NAME`
 has no value yet — add it on the Secrets page" (same pre-step gate as a missing Keychain entry,
-§7). Import (§5.1) creates placeholders for referenced secrets that don't exist locally.
+§7). Import (§5.1) never creates a secret record: an archive reference either matches an
+existing secret or lands unresolved (§4.1 `unresolvedReferences`).
 Step scripts reference them by id subscript with the name in a trailing comment
 (`secrets["<id>"]  # NAME`, §6.1 — always a literal quoted id); values are injected at
 runtime and redacted from logs. Redaction labels, error copy, and `redactedSecrets` stay

@@ -308,9 +308,7 @@ draft has none; confirm button "Discard and start new") deletes the slot
 with `[]` — the one discard that deletes the thread, §4.4 thread lifetime) before opening
 the create flow, so the fresh session starts with an empty thread. Without a
 pending draft, the single New automation button opens the create flow directly. Left of
-these sits a ghost **Import** button — **currently hidden** (import/export is parked as of
-2026-08-22: the button is not rendered, but the modal code, backend routes, and CLI stay in
-place and this section still describes them): it opens the **import modal**
+these sits a ghost **Import** button: it opens the **import modal**
 (§5.2 two-phase import). Input step: title "Import automation" over a one-line muted intro
 ("Add an automation someone shared — from a link, or a file on this Mac."), an
 eyebrow-labeled URL field (FROM A LINK; mono text, placeholder
@@ -330,11 +328,15 @@ archive's `name`, a faint caption under the source row says
 a source row (inset box — link or
 file-zipper icon, mono text: the resolved URL, or the chosen file's name), then only the
 sections that apply — TRIGGERS as §4.3 `triggerLabel` chips, STEPS as numbered rows (faint
-mono index, step name, accent AGENT mini-badge where `agent`), SECRETS (amber NOT SET
-mini-badge when `exists` is false — it will be created as a placeholder; gray ON THIS MAC
-when true), AGENTS (gray REUSED / plain when new) — and a hairline-divided footer note:
+mono index, step name, accent AGENT mini-badge where `agent`), SECRETS and AGENTS (one
+row per archive record, mini-badged by the §19 preview's dry-run match: gray ON THIS MAC
+when `matchedTo` equals the archive name, gray USES `<matchedTo>` when the match renamed,
+amber NO MATCH when `matchedTo` is null - that reference will land needing attention) —
+and a hairline-divided footer note:
 when the preview carries `osMismatch`, an amber first line "Built on `<OS>` — its steps
 may need rewriting before they run on this Mac." (`<OS>` per the §4.1 display-name rule),
+when any row is NO MATCH an amber line "Some agents or secrets have no match on this
+Mac - the automation arrives needing attention.",
 then the packages count when any, plus "Its triggers arrive off — review the scripts in the
 editor before enabling them." Footer: quiet **Back** (returns to the input step) / accent
 **Import** — POSTs `/automations/import/confirm` with the preview's token, closes the
@@ -347,12 +349,14 @@ second muted line ("Renamed from "`<renamedFrom>`", which already exists on this
 and when it carries `osMismatch` an amber line ("Built on `<OS>` — its steps may need
 rewriting before they run on this Mac.", the §4.1 display-name rule — the same warning
 persists on the automation as the §4.1 os-mismatch problem),
-then only the sections that apply — "Secrets that
-need values" (one row per created placeholder: name + amber Not set tag — "add values on
-the Secrets page"), "Already on this Mac — not granted" (pre-existing secrets/agents the
-automation references, §5.1: "review and grant them on the edit page"), "Agents added"
-(created agent names; a not-ready harness shows the §12 Needs setup badge), and a packages
-note ("`<n>` packages install on the first execution") when the manifest declares any.
+then only the sections that apply — "Matched on this Mac" (one row per §19
+`secretsMatched`/`agentsMatched` entry: the archive name, with "uses `<matchedTo>`"
+appended when the match renamed; a matched agent whose `ready` is false shows the §12
+Needs setup badge), "Needs attention" (one row per `unresolved` entry: kind icon + the
+archive name + its description as a muted sub-line, over an amber caption "No match was
+found on this Mac - pick a replacement on the edit page."), and a packages
+note ("`<n>` packages are installing in the background", §5.1 background ensure) when the
+manifest declares any.
 Footer: accent **Open automation** (navigates to the new detail page) / quiet Close. One card per automation: name, description,
 status badge, trigger chip (`triggerChip`, plus an OFF tag when `allTriggersOff`), an amber
 **Needs fixing** chip when the automation's §4.1 `problems` list is non-empty (the §7
@@ -390,8 +394,7 @@ shrinks; the description ellipsizes first). When the description is empty the de
 and the chip stands alone on the row.
 Then the version chip dropdown (§4.4 read-only history + footer
 explainer), status badge, then the §9 header-action cluster: Edit (ghost), Execute now (accent
-primary), ellipsis menu at the far right edge (**Export…** — **currently hidden**, the same 2026-08-22
-import/export parking as the list page's Import button; the menu shows only Delete
+primary), ellipsis menu at the far right edge (**Export…**, then Delete
 automation… in red). Export… opens a small modal — "Export "`<name>`"" with one toggle row,
 "Include parameter values" (on; help: "Your saved parameter values travel with the file — turn
 this off when sharing with someone else."), footer note "Secret values and memory are never
@@ -432,7 +435,8 @@ Sections top to bottom:
   non-empty: an amber-bordered banner (the §7 attention tint), title "This automation
   needs fixing", then one row per problem in §4.1 order — the problem's `label` as the row
   text, with a quiet right-aligned action link per kind: `secret-unset` → **Open Secrets**
-  (navigates to the Secrets page); `secret-missing`, `secret-ungranted`, `agent-missing`,
+  (navigates to the Secrets page); `secret-missing`, `secret-unresolved`,
+  `secret-ungranted`, `agent-missing`, `agent-unresolved`,
   `agent-ungranted`, and `os-mismatch` → **Edit** (opens the §11 edit page, where steps
   are rewritten and grants are set on save); `package-missing` → no action (its label
   already says it installs on the first execution); `overdue` → no action (informational —
@@ -692,15 +696,20 @@ Sections top to bottom:
   why exists, never a why alone): an agent step carries one microchip-icon tag per entry in
   its `agents`
   list — the entry's id resolved to the LIVE agent's name, so a rename updates the tag
-  immediately; an id matching no stored agent renders the red deleted state (short id
-  prefix, tooltip "This step calls an agent that no longer exists — this step would fail") —
+  immediately; an id matching no stored agent renders the red deleted state — when the
+  automation's §4.1 `unresolvedReferences` carries the id, the red tag shows the archive
+  record's NAME (tooltip "This step calls `<NAME>` from the imported file. No agent on
+  this Mac matched it, so this step would fail."), otherwise a short id
+  prefix (tooltip "This step calls an agent that no longer exists — this step would fail") —
   (tooltip "This step calls the `<name>` AI agent", with " — `<why>`" appended — the
   entry's §4.1 per-agent role note, falling back to the step's `why`; an empty list shows a
   single tag naming the automation's first enabled agent, fallback "agent", with the
   step-`why` tooltip rule), a step carries one key-icon tag per secret it
   uses (its `secrets` entries' ids unioned with the literal `secrets["<id>"]` references in
   its code, each resolved to the live §4.8 secret's name — a dangling id gets the same red
-  deleted treatment (short id prefix);
+  deleted treatment: the archive NAME when `unresolvedReferences` carries the id (tooltip
+  "This step uses `<NAME>` from the imported file. No secret on this Mac matched it, so
+  this step would fail."), else a short id prefix;
   tooltip "This step uses the `<NAME>` secret from your Keychain", with " — `<why>`"
   appended when the declared entry carries its §4.1 per-use note — code-referenced ids
   with no declared entry have none), and every

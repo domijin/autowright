@@ -299,14 +299,17 @@ def _version_content(v: dict) -> dict:
             "notes": v.get("notes") or ""}
 
 
-def _validate_draft_steps(d: dict) -> None:
+def _validate_draft_steps(d: dict, a: dict | None = None) -> None:
     """§19 server-side step validation: POST /automations and /versions run
     the §8 step validators (`drafting.validate_steps` — ast.parse, the §6.2
     import allowlist, manifest schema and step-file ordering, the
     timeout/retry rules) on the sent draft and answer 422 with the errors —
     an invalid draft can never land as a version, whatever client sent it.
     Grants context mirrors the §20 CLI's existence check: all configured
-    agents + all stored secrets (ids; names ride along for error copy)."""
+    agents + all stored secrets (ids; names ride along for error copy).
+    `a` (the automation being saved, when one exists) supplies the §4.1
+    unresolved_references map so a still-unfixed imported reference gets the
+    §8 imported-file error copy instead of a raw id."""
     import yaml
 
     files: dict[str, str] = {}
@@ -327,7 +330,8 @@ def _validate_draft_steps(d: dict) -> None:
     files["manifest.yaml"] = yaml.safe_dump(manifest, sort_keys=False)
     grants = {"agents": [{"id": g["id"], "name": harness.grant_name(g)} for g in store.agents],
               "secrets": [{"id": s["id"], "name": s["name"]} for s in store.secrets]}
-    _, errors = drafting.validate_steps(files, grants)
+    _, errors = drafting.validate_steps(
+        files, grants, unresolved=(a or {}).get("unresolved_references"))
     if errors:
         raise HTTPException(422, "the draft doesn't validate: " + "; ".join(errors))
 
@@ -660,7 +664,7 @@ def save_version(automation_id: str, body: models.VersionSave) -> dict:
             d["triggers"], existing_ids={t["id"] for t in a["triggers"]})
         if err:
             raise HTTPException(422, err)
-    _validate_draft_steps(d)  # §19: the §8 validators run server-side
+    _validate_draft_steps(d, a)  # §19: the §8 validators run server-side
     # A refused settle must be side-effect free: check the 409 condition
     # before the cancels (the in-lock check below stays authoritative).
     with store.lock:
@@ -841,7 +845,13 @@ def put_chat_thread(owner: str, body: models.ChatPut) -> dict:
 @app.get("/automations/{automation_id}/export", dependencies=[Depends(auth)])
 def export_auto(automation_id: str, values: int = 1):
     a = _auto_or_404(automation_id)
-    data = transfer.export_automation(store, a, include_values=bool(values))
+    try:
+        data = transfer.export_automation(store, a, include_values=bool(values))
+    except transfer.TransferError as e:
+        # §5.1: an export reference matching no stored record (a deleted secret
+        # or agent, or a §4.1 unresolved import reference) answers 422 naming
+        # the step or trigger — never a 500.
+        raise HTTPException(422, str(e)) from e
     from urllib.parse import quote
 
     from fastapi.responses import Response
@@ -869,20 +879,29 @@ async def _archive_body(request: Request) -> bytes:
 
 
 def _land_import(data: bytes) -> dict:
-    # §19 unreadable-store guard, checked before landing anything: an import
-    # writes agents.yaml and secrets.yaml, and a refusal mid-land would leave
-    # Keychain values and automation folders half-applied.
-    store.require_writable(paths.agents_file())
-    store.require_writable(paths.secrets_file())
+    # §5.1: import never writes the agents or secrets stores (it creates no
+    # records), so the §19 unreadable-store guard doesn't apply here — the
+    # only writes are the new automation and its param values.
     try:
         a, summary = transfer.import_automation(store, data)
     except transfer.TransferError as e:
         raise HTTPException(422, str(e)) from e
-    if summary["secretsCreated"]:
-        hub.publish("secrets.changed")
-    if summary["agentsCreated"]:
-        hub.publish("agents.changed")
     _publish_auto_changed(a)
+    if summary["packages"]:
+        # §5.1: a successful import starts the §6.2 package ensure in the
+        # background and republishes the automation when it finishes, so a
+        # package-missing problem clears without a reload. The §20 CLI's own
+        # foreground ensure is idempotent and serializes on the same pip lock.
+        pkgs = [dict(p) for p in summary["packages"]]
+
+        def ensure_imported() -> None:
+            try:
+                pkglib.ensure(pkgs)
+            except Exception:  # noqa: BLE001 — §6.2: a failed install stays a problem entry
+                log.exception("post-import package ensure failed")
+            _publish_auto_changed(a)
+
+        threading.Thread(target=ensure_imported, daemon=True).start()
     return {"automation": _auto_json_locked(a), "summary": summary}
 
 
@@ -1305,6 +1324,12 @@ def post_draft(body: models.DraftJobStart) -> dict:
         # the key with a None value (§5 load model).
         current = dict(current or {})
         current["triggers"] = auto["triggers"]
+    if auto and auto.get("unresolved_references"):
+        # §8: the §5.1 import's no-match map rides every call shape as the
+        # IMPORTED REFERENCES THAT NEED FIXING section, so the agent knows
+        # what the archive wanted and can rebind or drop the references.
+        current = dict(current or {})
+        current["unresolved_references"] = auto["unresolved_references"]
     if auto and mode == "chat":
         # §8 AUTOMATION section: name/description are §4.1 top-level identity, not
         # versioned content — attach the stored values when the body's

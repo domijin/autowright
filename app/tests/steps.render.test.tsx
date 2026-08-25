@@ -5,7 +5,7 @@
 // kinds with each variant's cosmetic contract.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { Agent, PackageDep, ParamDef, SecretMeta, Step } from '../src/types'
+import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from '../src/types'
 import { ParamValueEditor, StepList, stepPackageTags, stepSecretTags } from '../src/steps'
 
 afterEach(() => cleanup())
@@ -19,6 +19,15 @@ const SECRETS: SecretMeta[] = [
   { id: MAIL_ID, name: 'MAIL_PASSWORD', description: '', set: true, usedBy: [] },
   { id: CRM_ID, name: 'CRM_API_KEY', description: '', set: true, usedBy: [] },
 ]
+// §4.1/§5.1 imported placeholders: ids the archive's references were minted
+// as, carried by the automation's unresolvedReferences map because nothing on
+// this Mac matched them.
+const IMP_SECRET_ID = '33333333-3333-4333-8333-333333333333'
+const IMP_AGENT_ID = '44444444-4444-4444-8444-444444444444'
+const UNRESOLVED: UnresolvedRefs = {
+  [IMP_SECRET_ID]: { kind: 'secret', name: 'STRIPE_KEY', description: 'billing token' },
+  [IMP_AGENT_ID]: { kind: 'agent', name: 'Researcher', description: 'reads the web' },
+}
 const step = (over: Partial<Step> = {}): Step => ({ name: 'Fetch page', description: 'reads it', code: '', ...over })
 
 describe('StepList (shared)', () => {
@@ -44,6 +53,73 @@ describe('StepList (shared)', () => {
     const tags = screen.getAllByText('99999999…')
     expect(tags.length).toBe(2) // one agent tag, one secret tag
     const labels = tags.map((el) => el.closest('span')?.getAttribute('aria-label'))
+    expect(labels).toContain('This step calls an agent that no longer exists — this step would fail')
+    expect(labels).toContain('This step uses a secret that no longer exists — this step would fail')
+  })
+
+  it('detail variant: an unresolved imported id shows the archive name and the imported tooltip', () => {
+    const steps = [step({
+      agent: true,
+      agents: [{ id: IMP_AGENT_ID }],
+      code: `x = secrets["${IMP_SECRET_ID}"]`,
+    })]
+    render(
+      <StepList
+        variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS}
+        unresolvedReferences={UNRESOLVED} fallbackAgent="Cloud writer"
+      />,
+    )
+    // the red tags read as the archive's names, never the short id
+    expect(screen.queryByText('33333333…')).toBeNull()
+    expect(screen.queryByText('44444444…')).toBeNull()
+    expect(screen.getByText('Researcher').closest('span')?.getAttribute('aria-label'))
+      .toBe('This step calls Researcher from the imported file. '
+        + 'No agent on this Mac matched it, so this step would fail.')
+    expect(screen.getByText('STRIPE_KEY').closest('span')?.getAttribute('aria-label'))
+      .toBe('This step uses STRIPE_KEY from the imported file. '
+        + 'No secret on this Mac matched it, so this step would fail.')
+  })
+
+  it('detail variant: a dangling id outside the map keeps the short-id deleted state', () => {
+    const steps = [step({
+      agent: true,
+      agents: [{ id: GONE_ID }, { id: IMP_AGENT_ID }],
+      code: `a = secrets["${GONE_ID}"]\nb = secrets["${IMP_SECRET_ID}"]`,
+    })]
+    render(
+      <StepList
+        variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS}
+        unresolvedReferences={UNRESOLVED} fallbackAgent="Cloud writer"
+      />,
+    )
+    const labels = screen.getAllByText('99999999…').map((el) => el.closest('span')?.getAttribute('aria-label'))
+    expect(labels).toContain('This step calls an agent that no longer exists — this step would fail')
+    expect(labels).toContain('This step uses a secret that no longer exists — this step would fail')
+    // the imported pair beside them still reads as the archive names
+    expect(screen.getByText('Researcher')).toBeTruthy()
+    expect(screen.getByText('STRIPE_KEY')).toBeTruthy()
+  })
+
+  it('editor variant: an unresolved imported id shows the archive name and the imported tooltip', () => {
+    const steps = [step({
+      agent: true,
+      agents: [{ id: IMP_AGENT_ID }, { id: GONE_ID }],
+      code: `a = secrets["${IMP_SECRET_ID}"]\nb = secrets["${GONE_ID}"]`,
+    })]
+    render(
+      <StepList
+        variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]}
+        secrets={SECRETS} unresolvedReferences={UNRESOLVED} packages={[]}
+      />,
+    )
+    expect(screen.getByText('Researcher').closest('span')?.getAttribute('aria-label'))
+      .toBe('This step calls Researcher from the imported file. '
+        + 'No agent on this Mac matched it, so this step would fail.')
+    expect(screen.getByText('STRIPE_KEY').closest('span')?.getAttribute('aria-label'))
+      .toBe('This step uses STRIPE_KEY from the imported file. '
+        + 'No secret on this Mac matched it, so this step would fail.')
+    // an id the map doesn't carry keeps the plain deleted wording
+    const labels = screen.getAllByText('99999999…').map((el) => el.closest('span')?.getAttribute('aria-label'))
     expect(labels).toContain('This step calls an agent that no longer exists — this step would fail')
     expect(labels).toContain('This step uses a secret that no longer exists — this step would fail')
   })
@@ -158,6 +234,22 @@ describe('stepSecretTags', () => {
   it('a dangling id keeps its short prefix and missing flag', () => {
     const tags = stepSecretTags(step({ code: `a = secrets["${GONE_ID}"]` }), SECRETS)
     expect(tags).toEqual([{ id: GONE_ID, name: '99999999…', missing: true }])
+  })
+
+  it('§5.1: an unresolved imported id takes the archive name and the imported flag', () => {
+    const tags = stepSecretTags(
+      step({ code: `a = secrets["${IMP_SECRET_ID}"]\nb = secrets["${GONE_ID}"]` }),
+      SECRETS, UNRESOLVED,
+    )
+    expect(tags).toEqual([
+      { id: IMP_SECRET_ID, name: 'STRIPE_KEY', missing: true, imported: true },
+      { id: GONE_ID, name: '99999999…', missing: true },
+    ])
+  })
+
+  it('§5.1: an agent entry in the map never resolves a secret tag', () => {
+    const tags = stepSecretTags(step({ code: `a = secrets["${IMP_AGENT_ID}"]` }), SECRETS, UNRESOLVED)
+    expect(tags).toEqual([{ id: IMP_AGENT_ID, name: '44444444…', missing: true }])
   })
 })
 

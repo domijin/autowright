@@ -23,16 +23,25 @@ from .drafting import STEP_FILE_RE
 from .specmd import blocks_to_md, md_to_blocks
 from .storage import AGENT_REF_RE, SECRET_REF_RE, Store, new_id
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
-# §5.1 identity translation: inside an archive, NAMES are the reference format
-# (uuids are install-local and never travel). Export rewrites the §4.1/§6.1 id
-# references — step `agents:`/`secrets:` entries, the `secrets["<id>"]` /
-# `agents["<id>"]` code subscripts, and a discord trigger's `secret` — to
-# names; import rewrites them back to the matched/created records' local ids.
-# These regexes match the archive's name-form code subscripts.
-ARCHIVE_SECRET_REF_RE = re.compile(r"\bsecrets\[\s*[\"']([A-Z][A-Z0-9_]*)[\"']\s*\]")
-ARCHIVE_AGENT_REF_RE = re.compile(r"\bagents\[\s*[\"']([^\"'\n]+)[\"']\s*\]")
+# §5.1 identity translation: inside an archive, numeric REFS are the reference
+# format (uuids are install-local and never travel; names ride agents.yaml /
+# secrets.yaml as match material). Export rewrites the §4.1/§6.1 id
+# references - step `agents:`/`secrets:` entries, the `secrets["<id>"]` /
+# `agents["<id>"]` code subscripts, and a discord trigger's `secret` - to
+# refs; import resolves each ref through the §5.1 match ladders and rewrites
+# it to the matched local record's id, or to a freshly minted unresolved id.
+# These regexes match the archive's ref-form code subscripts; the _ANY_
+# variants match every subscript key, so validation catches uuid-form and
+# name-form leftovers in one scan.
+ARCHIVE_SECRET_REF_RE = re.compile(r"\bsecrets\[\s*[\"']([0-9]+)[\"']\s*\]")
+ARCHIVE_AGENT_REF_RE = re.compile(r"\bagents\[\s*[\"']([0-9]+)[\"']\s*\]")
+_ANY_SECRET_SUBSCRIPT_RE = re.compile(r"\bsecrets\[\s*[\"']([^\"'\n]*)[\"']\s*\]")
+_ANY_AGENT_SUBSCRIPT_RE = re.compile(r"\bagents\[\s*[\"']([^\"'\n]*)[\"']\s*\]")
+# §5.1 ref rule: decimal strings assigned per kind in listing order; a
+# hand-written YAML integer reads as its string form.
+_REF_RE = re.compile(r"^[0-9]+$")
 PARAM_KINDS = ("text", "number", "toggle", "list", "kv")
 MODES = ("default", "ollama", "custom")
 # Any well-formed uuid passes the §4.3 field validator — the archive form
@@ -51,85 +60,106 @@ def safe_filename(name: str) -> str:
 
 
 # ---------- export ----------
-class _RefResolver:
-    """§5.1 export-side id → name translation. Every resolution failure is a
-    TransferError naming what dangles — a reference with no stored record has
-    no name to travel by, so the automation must be repaired first (§5.1)."""
+class _ExportRefs:
+    """§5.1 export-side id → ref translation. Every resolution failure is a
+    TransferError naming what dangles — a reference with no stored record must
+    be repaired before the automation can travel (§5.1). Refs are assigned per
+    kind in listing order once the referenced sets are collected."""
 
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, unresolved: dict | None = None):
         self.secrets_by_id = {s["id"]: s for s in store.secrets}
         self.agents_by_id = {g["id"]: g for g in store.agents}
+        # §5.1/§4.1: the automation's unresolved_references map — a dangling id
+        # it carries gets the import's own error copy, not the deleted-record
+        # wording (the record never existed on this machine).
+        self.unresolved = unresolved or {}
+        self.secret_ref_by_id: dict[str, str] = {}
+        self.agent_ref_by_id: dict[str, str] = {}
 
-    def secret_name(self, sid: str, where: str) -> str:
+    def _dangling(self, kind: str, rid: str, where: str, noun: str) -> TransferError:
+        entry = self.unresolved.get(rid)
+        if entry and entry.get("kind") == kind:
+            return TransferError(
+                f"{where} still uses {entry['name']} from the imported file, which has "
+                f"no match on this {paths.machine_noun()} - fix it in the editor "
+                "before exporting")
+        return TransferError(f"{where} references {noun} that no longer exists "
+                             f"({rid[:8]}…) — repair it before exporting")
+
+    def secret_record(self, sid: str, where: str) -> dict:
         s = self.secrets_by_id.get(sid)
         if s is None:
-            raise TransferError(f"{where} references a secret that no longer exists "
-                                f"({sid[:8]}…) — repair it before exporting")
-        return s["name"]
+            raise self._dangling("secret", sid, where, "a secret")
+        return s
 
-    def agent_name(self, aid: str, where: str) -> str:
+    def agent_record(self, aid: str, where: str) -> dict:
         g = self.agents_by_id.get(aid)
         if g is None:
-            raise TransferError(f"{where} references an agent that no longer exists "
-                                f"({aid[:8]}…) — repair it before exporting")
-        name = harness.grant_name(g)
-        if any(c in name for c in "\"'\\\n"):
-            # The name lands inside a double-quoted code subscript on export —
-            # a quote or backslash would corrupt the step's code.
-            raise TransferError(f"agent name {name!r} can't travel in an archive — "
-                                "rename it without quotes or backslashes, then export again")
-        return name
+            raise self._dangling("agent", aid, where, "an agent")
+        return g
 
-    def code(self, code: str, where: str) -> str:
-        """Rewrite the §6.1 id subscripts to the archive's name form. Existing
-        trailing `# NAME` comments stay — they name the name, still accurate."""
+    def assign(self, secret_ids: list[str], agent_ids: list[str]) -> None:
+        self.secret_ref_by_id = {sid: str(i) for i, sid in enumerate(secret_ids, 1)}
+        self.agent_ref_by_id = {aid: str(i) for i, aid in enumerate(agent_ids, 1)}
+
+    def code(self, code: str) -> str:
+        """Rewrite the §6.1 id subscripts to the archive's ref form. Existing
+        trailing `# NAME` comments travel verbatim — they name the record's
+        name at export time (import rewrites them after a renaming match)."""
         code = SECRET_REF_RE.sub(
-            lambda m: f'secrets["{self.secret_name(m.group(1), where)}"]', code)
+            lambda m: f'secrets["{self.secret_ref_by_id[m.group(1)]}"]', code)
         return AGENT_REF_RE.sub(
-            lambda m: f'agents["{self.agent_name(m.group(1), where)}"]', code)
+            lambda m: f'agents["{self.agent_ref_by_id[m.group(1)]}"]', code)
 
 
-def _referenced_secret_names(refs: _RefResolver, ver: dict,
-                             triggers: list[dict] | None = None) -> list[str]:
+def _referenced_secret_ids(refs: _ExportRefs, ver: dict,
+                           triggers: list[dict] | None = None) -> list[str]:
     """Union of every step's `secrets:` entry ids and code-referenced ids plus
-    every discord trigger's token secret — resolved to names (§5.1)."""
-    names: set[str] = set()
+    every discord trigger's token secret — a dangling id raises; the archive
+    listing order is by record name (§5.1)."""
+    ids: set[str] = set()
     for s in ver.get("steps", []):
         where = f"step {s.get('name')!r}"
-        names |= {refs.secret_name(e["id"], where)
-                  for e in s.get("secrets") or [] if e.get("id")}
-        names |= {refs.secret_name(sid, where)
-                  for sid in SECRET_REF_RE.findall(s.get("code", ""))}
-    names |= {refs.secret_name(t["secret"], "a Discord trigger")
-              for t in triggers or [] if t.get("kind") == "discord"}
-    return sorted(names)
+        for sid in ({e["id"] for e in s.get("secrets") or [] if e.get("id")}
+                    | set(SECRET_REF_RE.findall(s.get("code", "")))):
+            refs.secret_record(sid, where)
+            ids.add(sid)
+    for t in triggers or []:
+        if t.get("kind") == "discord":
+            refs.secret_record(t["secret"], "a Discord trigger")
+            ids.add(t["secret"])
+    return sorted(ids, key=lambda sid: refs.secrets_by_id[sid]["name"])
 
 
-def _referenced_agents(store: Store, refs: _RefResolver, a: dict, ver: dict) -> list[dict]:
+def _referenced_agent_ids(store: Store, refs: _ExportRefs, a: dict, ver: dict) -> list[str]:
     """The drafting agent + every step-referenced agent (manifest entry ids
     and agents["<id>"] code subscripts, §4.1) — deduped by record id, archive
-    order stable."""
-    by_id: dict[str, dict] = {}
+    order stable (drafting first, then per-step sorted ids)."""
+    out: list[str] = []
     drafting = next((g for g in store.agents if g["id"] == a["agent_id"]), None)
     if drafting:
-        by_id[drafting["id"]] = drafting
+        out.append(drafting["id"])
     for s in ver.get("steps", []):
         where = f"step {s.get('name')!r}"
         ids = {e["id"] for e in s.get("agents") or [] if e.get("id")}
         ids |= set(AGENT_REF_RE.findall(s.get("code", "")))
         for aid in sorted(ids):
-            refs.agent_name(aid, where)  # raises on a dangling id
-            by_id.setdefault(aid, refs.agents_by_id[aid])
-    return [{"name": harness.grant_name(g), "description": g.get("description") or "",
-             "harness": g.get("harness"), "mode": g.get("mode", "default"),
-             "model": g.get("model")} for g in by_id.values()]
+            refs.agent_record(aid, where)
+            if aid not in out:
+                out.append(aid)
+    return out
 
 
 def export_automation(store: Store, a: dict, include_values: bool = True) -> bytes:
     """The §5.1 archive for an automation's current version, as zip bytes."""
     with store.lock:
         ver = a["versions"][a["current_version"]]
-        refs = _RefResolver(store)
+        refs = _ExportRefs(store, a.get("unresolved_references"))
+        # §5.1: collect the referenced sets first (dangling ids raise here,
+        # nothing half-built), then assign the per-kind refs in listing order.
+        secret_ids = _referenced_secret_ids(refs, ver, a["triggers"])
+        agent_ids = _referenced_agent_ids(store, refs, a, ver)
+        refs.assign(secret_ids, agent_ids)
         manifest: dict = {
             "format_version": FORMAT_VERSION,
             "exported_at": timefmt.now_iso(),
@@ -141,11 +171,11 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
         }
         drafting = next((g for g in store.agents if g["id"] == a["agent_id"]), None)
         if drafting:
-            manifest["agent"] = harness.grant_name(drafting)
+            manifest["agent"] = refs.agent_ref_by_id[drafting["id"]]
         # §5.1: cron, app_start, discord, and imessage — one-shot `time`
         # triggers are moments in time; no ids, no enabled state. A discord
-        # trigger's §4.3 secret id is resolved to the token secret's *name*
-        # (the archive reference format) — never the value.
+        # trigger's §4.3 secret id becomes the token secret's secrets.yaml
+        # REF (the archive reference format) — never the value.
         triggers = []
         for t in a["triggers"]:
             if t["kind"] == "cron":
@@ -155,7 +185,7 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
                 triggers.append({"kind": "app_start"})
             elif t["kind"] == "discord":
                 triggers.append({"kind": "discord", "channel": t["channel"],
-                                 "secret": refs.secret_name(t["secret"], "a Discord trigger"),
+                                 "secret": refs.secret_ref_by_id[t["secret"]],
                                  **({"pattern": t["pattern"]} if t.get("pattern") else {}),
                                  **({"mention": True} if t.get("mention") else {}),
                                  **({"author": t["author"]} if t.get("author") else {})})
@@ -175,21 +205,20 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
             meta["packages"] = pkgs
         steps = []
         for s in ver["steps"]:
-            where = f"step {s.get('name')!r}"
             entry = {"file": s["file"], "name": s.get("name", ""), "description": s.get("description", "")}
             if s.get("agent"):
                 entry["agent"] = True
                 entry["why"] = s.get("why", "")
                 if s.get("agents"):
-                    # §5.1: id entries translate to the archive's { name, why? }
-                    # form — a dangling id raises above nothing being written.
+                    # §5.1: id entries translate to the archive's { ref, why? }
+                    # form — dangling ids raised during collection above.
                     entry["agents"] = [
-                        {"name": refs.agent_name(e["id"], where),
+                        {"ref": refs.agent_ref_by_id[e["id"]],
                          **({"why": e["why"]} if e.get("why") else {})}
                         for e in s["agents"] if e.get("id")]
             if s.get("secrets"):
                 entry["secrets"] = [
-                    {"name": refs.secret_name(e["id"], where),
+                    {"ref": refs.secret_ref_by_id[e["id"]],
                      **({"why": e["why"]} if e.get("why") else {})}
                     for e in s["secrets"] if e.get("id")]
             if s.get("packages"):
@@ -209,10 +238,15 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
                 entry["infinite_retries"] = True
             steps.append(entry)
         meta["steps"] = steps
-        agents = _referenced_agents(store, refs, a, ver)
-        secret_desc = {s["name"]: s.get("description") or "" for s in store.secrets}
-        secrets = [{"name": n, "description": secret_desc.get(n, "")}
-                   for n in _referenced_secret_names(refs, ver, a["triggers"])]
+        agents = [{"ref": refs.agent_ref_by_id[aid],
+                   "name": harness.grant_name(g := refs.agents_by_id[aid]),
+                   "description": g.get("description") or "",
+                   "harness": g.get("harness"), "mode": g.get("mode", "default"),
+                   "model": g.get("model")} for aid in agent_ids]
+        secrets = [{"ref": refs.secret_ref_by_id[sid],
+                    "name": refs.secrets_by_id[sid]["name"],
+                    "description": refs.secrets_by_id[sid].get("description") or ""}
+                   for sid in secret_ids]
         files: list[tuple[str, str]] = [
             ("manifest.yaml", yaml.safe_dump(manifest, sort_keys=False, allow_unicode=True)),
             ("automation/automation.yaml", yaml.safe_dump(meta, sort_keys=False, allow_unicode=True)),
@@ -223,9 +257,8 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
         if (ver.get("notes") or "").strip():
             files.append(("automation/notes.md", ver["notes"].strip() + "\n"))
         for s in ver["steps"]:
-            # §5.1: the code's id subscripts travel in name form.
-            files.append((f"automation/{s['file']}",
-                          refs.code(s.get("code", ""), f"step {s.get('name')!r}")))
+            # §5.1: the code's id subscripts travel in ref form.
+            files.append((f"automation/{s['file']}", refs.code(s.get("code", ""))))
         files.append(("agents.yaml", yaml.safe_dump({"agents": agents}, sort_keys=False, allow_unicode=True)))
         files.append(("secrets.yaml", yaml.safe_dump({"secrets": secrets}, sort_keys=False, allow_unicode=True)))
     buf = io.BytesIO()
@@ -283,13 +316,29 @@ def _text(z: zipfile.ZipFile, path: str, required: bool = True) -> str | None:
         raise TransferError(f"{path} isn't valid UTF-8") from None
 
 
+def _entry_ref(g: dict) -> str | None:
+    """The §5.1 ref of an archive entry: a decimal string ("1", "2", …); a
+    hand-written YAML integer reads as its string form. None when malformed."""
+    r = g.get("ref")
+    if isinstance(r, bool):
+        return None
+    if isinstance(r, int):
+        r = str(r)
+    if isinstance(r, str) and _REF_RE.match(r.strip()):
+        return r.strip()
+    return None
+
+
 def _validate(z: zipfile.ZipFile) -> dict:
     """Parse + validate everything up front; returns the parsed archive."""
     _check_sizes(z)
     manifest = _yaml_or_reject(z, "manifest.yaml")
     if manifest.get("format_version") != FORMAT_VERSION:
-        raise TransferError(f"unsupported archive format {manifest.get('format_version')!r} — "
-                            f"this app reads format {FORMAT_VERSION}")
+        # §5.1/§21.3: the numeric-reference break carried no migration — any
+        # other format (the retired format 1 included) gets re-export guidance.
+        raise TransferError(f"unsupported archive format {manifest.get('format_version')!r} - "
+                            f"this app reads format {FORMAT_VERSION}; re-export the "
+                            "automation with the current version and import that file")
     name = manifest.get("name")
     if not isinstance(name, str) or not name.strip():
         raise TransferError("the manifest has no automation name")
@@ -312,13 +361,17 @@ def _validate(z: zipfile.ZipFile) -> dict:
         if t["kind"] == "app_start" and any(x["kind"] == "app_start" for x in triggers):
             raise TransferError("the archive holds more than one app_start trigger")
         if t["kind"] == "discord":
-            # §5.1: the archive's `secret` is the token secret's NAME (ids
-            # never travel) — checked here; the §4.3 uuid rule applies only
-            # after import maps it to the local record's id.
+            # §5.1: the archive's `secret` is the token secret's secrets.yaml
+            # REF (local ids never travel) — checked here; the §4.3 uuid rule
+            # applies only after import resolves it to a local id. A YAML
+            # integer reads as its string form (§5.1 ref rule).
             sec = t.get("secret")
-            if not isinstance(sec, str) or not SECRET_NAME_RE.match(sec.strip()):
+            if isinstance(sec, int) and not isinstance(sec, bool):
+                sec = t["secret"] = str(sec)
+            if not isinstance(sec, str) or not _REF_RE.match(sec.strip()):
                 raise TransferError("invalid trigger in the archive: a Discord trigger "
-                                    "needs the name of the secret holding the bot token")
+                                    "needs the numbered reference of the secret holding "
+                                    "the bot token")
         probe = ({"kind": "discord", "channel": t.get("channel"), "secret": _PROBE_SECRET_ID,
                   "pattern": t.get("pattern"), "mention": t.get("mention", False),
                   "author": t.get("author")}
@@ -391,40 +444,38 @@ def _validate(z: zipfile.ZipFile) -> dict:
             raise TransferError(f"duplicate step filename: {s['file']!r}")
         seen_files.add(s["file"])
         code = _text(z, f"automation/{s['file']}")
-        # §5.1: ids never travel — an archive whose code still subscripts by
-        # uuid was built outside the export path and would land dangling
-        # references; reject it whole.
-        if SECRET_REF_RE.search(code) or AGENT_REF_RE.search(code):
-            raise TransferError(f"step {s['file']!r} references secrets or agents by "
-                                "install-local id — archives carry names; re-export "
-                                "the automation and import that archive")
         entry = {"file": s["file"], "name": s["name"], "description": s.get("description", ""),
                  "code": code}
         if s.get("agent"):
             entry["agent"] = True
             entry["why"] = s.get("why", "")
-            # §5.1: agent grants travel as {name, why?} entries — the §4.1 id
-            # form is rejected (ids never travel); other malformed foreign
-            # entries are dropped, not imported.
-            if any(isinstance(g, dict) and "id" in g for g in s.get("agents") or []):
-                raise TransferError(f"step {s['file']!r} lists agents by install-local "
-                                    "id — archives carry names; re-export the automation")
+            # §5.1: agent grants travel as {ref, why?} entries — the §4.1 id
+            # form and the retired name form are rejected (local ids never
+            # travel); other malformed foreign entries are dropped, not
+            # imported.
+            if any(isinstance(g, dict) and ("id" in g or "name" in g)
+                   for g in s.get("agents") or []):
+                raise TransferError(f"step {s['file']!r} lists agents by id or name - "
+                                    "archives carry numbered references; re-export the "
+                                    "automation with the current version")
             entry["agents"] = [
-                {"name": g["name"],
+                {"ref": r,
                  **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
                 for g in (s.get("agents") or [])
-                if isinstance(g, dict) and isinstance(g.get("name"), str)]
+                if isinstance(g, dict) and (r := _entry_ref(g)) is not None]
         if s.get("secrets"):
-            # §5.1: like agents, secret grants travel as {name, why} entries —
-            # the id form is rejected; malformed foreign entries are dropped.
-            if any(isinstance(g, dict) and "id" in g for g in s["secrets"]):
-                raise TransferError(f"step {s['file']!r} lists secrets by install-local "
-                                    "id — archives carry names; re-export the automation")
+            # §5.1: like agents, secret grants travel as {ref, why?} entries —
+            # the id and name forms are rejected; malformed foreign entries
+            # are dropped.
+            if any(isinstance(g, dict) and ("id" in g or "name" in g) for g in s["secrets"]):
+                raise TransferError(f"step {s['file']!r} lists secrets by id or name - "
+                                    "archives carry numbered references; re-export the "
+                                    "automation with the current version")
             entry["secrets"] = [
-                {"name": g["name"],
+                {"ref": r,
                  **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
                 for g in s["secrets"]
-                if isinstance(g, dict) and isinstance(g.get("name"), str)]
+                if isinstance(g, dict) and (r := _entry_ref(g)) is not None]
         if s.get("packages"):
             # §5.1: per-step package notes travel as {import, why} entries —
             # malformed foreign entries are dropped, not imported.
@@ -457,7 +508,11 @@ def _validate(z: zipfile.ZipFile) -> dict:
 
     agents = _yaml_or_reject(z, "agents.yaml", required=False).get("agents") or []
     for g in agents:
-        if (not isinstance(g, dict) or not isinstance(g.get("name"), str) or not g["name"]
+        if not isinstance(g, dict) or (ref := _entry_ref(g)) is None:
+            raise TransferError(f"invalid agent in the archive: {g!r} - every entry "
+                                "needs a numbered ref")
+        g["ref"] = ref
+        if (not isinstance(g.get("name"), str) or not g["name"]
                 or g.get("harness") not in harness.HARNESS_ID):
             raise TransferError(f"invalid agent in the archive: {g!r}")
         mode = g.get("mode", "default")
@@ -468,59 +523,70 @@ def _validate(z: zipfile.ZipFile) -> dict:
                 "a local-model agent needs Claude Code, Codex, or OpenCode")
         if mode != "default" and not g.get("model"):
             raise TransferError(f"agent {g['name']!r} needs a model for mode {mode!r}")
-    # §5.1: two archive agents sharing a name (case-insensitive, the §4.7
-    # comparison) would make the archive's name-form step references ambiguous.
-    lowered = [g["name"].lower() for g in agents]
-    if len(set(lowered)) != len(lowered):
-        raise TransferError("duplicate agent names in the archive - "
-                            "agent names must be unique")
+    agent_refs = [g["ref"] for g in agents]
+    if len(set(agent_refs)) != len(agent_refs):
+        raise TransferError("duplicate agent refs in the archive - refs must be unique")
     secrets = _yaml_or_reject(z, "secrets.yaml", required=False).get("secrets") or []
     for s in secrets:
-        if (not isinstance(s, dict) or not isinstance(s.get("name"), str)
+        if not isinstance(s, dict) or (ref := _entry_ref(s)) is None:
+            raise TransferError(f"invalid secret in the archive: {s!r} - every entry "
+                                "needs a numbered ref")
+        s["ref"] = ref
+        if (not isinstance(s.get("name"), str)
                 or not SECRET_NAME_RE.match(s["name"])):
             raise TransferError(f"invalid secret in the archive: {s!r}")
+    secret_refs = [s["ref"] for s in secrets]
+    if len(set(secret_refs)) != len(secret_refs):
+        raise TransferError("duplicate secret refs in the archive - refs must be unique")
 
-    # §5.1: every name-form reference the import must map to a local id has to
-    # be resolvable — step grant entries against the archive's agents.yaml /
-    # secrets.yaml, and each discord trigger's token secret likewise (the
-    # matched-or-created record is what the reference becomes).
-    agent_names = {g["name"] for g in agents if isinstance(g, dict)}
-    secret_names = {s["name"] for s in secrets if isinstance(s, dict)}
+    # §5.1: every ref must resolve against the archive's own agents.yaml /
+    # secrets.yaml — step grant entries, each discord trigger's token secret,
+    # and every code subscript key alike (one scan, which is also what catches
+    # uuid-form and name-form leftovers), so import can never land code whose
+    # references only fail later at execution time.
+    agent_ref_set = set(agent_refs)
+    secret_ref_set = set(secret_refs)
     for t in triggers:
-        if t["kind"] == "discord" and t["secret"] not in secret_names:
+        if t["kind"] == "discord" and t["secret"] not in secret_ref_set:
             raise TransferError(f"a Discord trigger references secret {t['secret']} "
                                 "that isn't listed in the archive's secrets.yaml")
     for s in steps:
         for g in s.get("agents") or []:
-            if g["name"] not in agent_names:
-                raise TransferError(f"step {s['file']!r} references agent {g['name']!r} "
+            if g["ref"] not in agent_ref_set:
+                raise TransferError(f"step {s['file']!r} references agent {g['ref']} "
                                     "that isn't listed in the archive's agents.yaml")
         for g in s.get("secrets") or []:
-            if g["name"] not in secret_names:
-                raise TransferError(f"step {s['file']!r} references secret {g['name']} "
+            if g["ref"] not in secret_ref_set:
+                raise TransferError(f"step {s['file']!r} references secret {g['ref']} "
                                     "that isn't listed in the archive's secrets.yaml")
-        # §5.1: the name-form code subscripts must resolve too — an unmapped
-        # name would land code the executor rejects at execution time instead
-        # of the promised up-front 422 with nothing written.
-        for m in ARCHIVE_AGENT_REF_RE.finditer(s["code"]):
-            if m.group(1) not in agent_names:
-                raise TransferError(f"step {s['file']!r} code references agent {m.group(1)!r} "
-                                    "that isn't listed in the archive's agents.yaml")
-        for m in ARCHIVE_SECRET_REF_RE.finditer(s["code"]):
-            if m.group(1) not in secret_names:
-                raise TransferError(f"step {s['file']!r} code references secret {m.group(1)} "
-                                    "that isn't listed in the archive's secrets.yaml")
+        for m in _ANY_AGENT_SUBSCRIPT_RE.finditer(s["code"]):
+            if m.group(1) not in agent_ref_set:
+                raise TransferError(f"step {s['file']!r} subscripts agents[{m.group(1)!r}], "
+                                    "which is not one of the archive's numbered "
+                                    "references - re-export the automation with the "
+                                    "current version")
+        for m in _ANY_SECRET_SUBSCRIPT_RE.finditer(s["code"]):
+            if m.group(1) not in secret_ref_set:
+                raise TransferError(f"step {s['file']!r} subscripts secrets[{m.group(1)!r}], "
+                                    "which is not one of the archive's numbered "
+                                    "references - re-export the automation with the "
+                                    "current version")
 
-    agent_name = manifest.get("agent")
-    if agent_name is not None and not isinstance(agent_name, str):
-        # An unhashable name would crash the import mid-write later — the §5.1
-        # promise is 422 up front, nothing written.
-        raise TransferError("the manifest's agent must be a name string")
+    agent_ref = manifest.get("agent")
+    if isinstance(agent_ref, int) and not isinstance(agent_ref, bool):
+        agent_ref = str(agent_ref)
+    if agent_ref is not None:
+        if not isinstance(agent_ref, str) or not _REF_RE.match(agent_ref.strip()):
+            raise TransferError("the manifest's agent must be a numbered ref")
+        agent_ref = agent_ref.strip()
+        if agent_ref not in agent_ref_set:
+            raise TransferError(f"the manifest's agent {agent_ref} isn't listed in the "
+                                "archive's agents.yaml")
 
     spec_md = _text(z, "automation/spec.md")
     instr = _text(z, "automation/instructions.md", required=False)
     notes = _text(z, "automation/notes.md", required=False)
-    return {"name": name.strip(), "agent": agent_name, "os": os_token,
+    return {"name": name.strip(), "agent": agent_ref, "os": os_token,
             "triggers": triggers, "param_values": values,
             "description": meta.get("description", ""), "params": params, "packages": packages,
             "steps": steps, "spec": md_to_blocks(spec_md), "instructions": (instr or "").strip() or None,
@@ -537,42 +603,177 @@ def _open_archive(data: bytes) -> zipfile.ZipFile:
         raise TransferError("not a valid .autowright archive") from None
 
 
-def _agent_match(store: Store, g: dict) -> dict | None:
-    """The §5.1 exact-config match: name + harness + mode + model."""
-    model = g.get("model") if g.get("mode", "default") != "default" else None
-    return next((x for x in store.agents
-                 if harness.grant_name(x) == g["name"]
-                 and x.get("harness") == g["harness"]
-                 and x.get("mode", "default") == g.get("mode", "default")
-                 and x.get("model") == model), None)
+# ---------- §5.1 match ladders ----------
+# Import never creates agent or secret records: every archive ref resolves
+# against the existing local records through a deterministic ladder, or lands
+# unresolved. The similarity rung is pinned in §5.1 so every build matches
+# identically.
+_CAMEL_SPLIT_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_NONWORD_RE = re.compile(r"[^A-Za-z0-9]+")
+_STOPWORDS = frozenset((
+    "a agent an and api at auth be bot by cli credential credentials default "
+    "for from id in is it key local main model my new of on or our pass "
+    "password secret that the this to token use used uses using value with "
+    "your").split())
+_ACCEPT_SCORE = 0.60
+_MARGIN = 0.15
 
 
-def _free_grant_name(store: Store, name: str) -> str:
-    """§5.1/§4.7: a created agent's effective grant name dedupes by the §4.1
-    suffix rule when a differently-configured local agent already holds it —
-    §4.7 uniqueness holds across every write path, import included."""
-    taken = {harness.grant_name(x).lower() for x in store.agents}
-    if name.lower() not in taken:
-        return name
-    n = 2
-    while f"{name} {n}".lower() in taken:
-        n += 1
-    return f"{name} {n}"
+def _tokens(text: str | None) -> frozenset[str]:
+    """§5.1 tokenizer: split camelCase boundaries and non-alphanumeric runs,
+    lowercase, drop tokens shorter than 2 characters and the stopwords."""
+    parts = _NONWORD_RE.split(_CAMEL_SPLIT_RE.sub(" ", text or ""))
+    return frozenset(p.lower() for p in parts
+                     if len(p) >= 2 and p.lower() not in _STOPWORDS)
+
+
+def _similarity(a: frozenset, b: frozenset) -> float:
+    """Jaccard overlap; 0 when either set is empty (§5.1)."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _score(archive_name: str, archive_desc: str | None,
+           local_name: str, local_desc: str | None) -> tuple[float, float]:
+    """(score, name similarity): the name similarity alone when either side's
+    description tokenizes empty, else 0.7 x name + 0.3 x description (§5.1)."""
+    n = _similarity(_tokens(archive_name), _tokens(local_name))
+    da, db = _tokens(archive_desc), _tokens(local_desc)
+    if not da or not db:
+        return n, n
+    return 0.7 * n + 0.3 * _similarity(da, db), n
+
+
+def _best(archive_name: str, archive_desc: str | None,
+          candidates: list[tuple[dict, str, str]]) -> dict | None:
+    """The §5.1 similarity acceptance rule over (record, name, description)
+    candidates: order by (score desc, name casefold, id); the head matches
+    only when score >= 0.60, its name similarity is > 0 (a description-only
+    match never wires a credential), and it is alone or leads the second-best
+    score by >= 0.15."""
+    scored = sorted(
+        ((*_score(archive_name, archive_desc, lname, ldesc), lname, rec)
+         for rec, lname, ldesc in candidates),
+        key=lambda x: (-x[0], x[2].casefold(), x[3]["id"]))
+    if not scored:
+        return None
+    score, name_sim, _, rec = scored[0]
+    if score < _ACCEPT_SCORE or name_sim <= 0:
+        return None
+    if len(scored) > 1 and score - scored[1][0] < _MARGIN:
+        return None
+    return rec
+
+
+def _effective_model(g: dict):
+    """§4.7: `model` compares as null when mode is `default`."""
+    return g.get("model") if g.get("mode", "default") != "default" else None
+
+
+def match_archive(store: Store, arch: dict) -> dict:
+    """§5.1: resolve every archive ref against the local records — one entry
+    point for preview (dry) and landing, so the two can never disagree.
+    Pass-based with the claim rule: a local record is matched by at most one
+    archive ref; within a pass, refs resolve in listing order, and a claimed
+    record leaves the candidate pool for every later pass."""
+    secret_res: dict[str, dict | None] = {e["ref"]: None for e in arch["secrets"]}
+    secret_how: dict[str, str] = {}
+    unclaimed_s = {s["id"]: s for s in store.secrets}
+    by_name = {s["name"]: s for s in store.secrets}
+    for e in arch["secrets"]:                      # pass 1: exact name
+        rec = by_name.get(e["name"])
+        if rec is not None and rec["id"] in unclaimed_s:
+            secret_res[e["ref"]] = rec
+            secret_how[e["ref"]] = "name"
+            del unclaimed_s[rec["id"]]
+    for e in arch["secrets"]:                      # pass 2: similarity
+        if secret_res[e["ref"]] is not None:
+            continue
+        rec = _best(e["name"], e.get("description"),
+                    [(s, s["name"], s.get("description") or "")
+                     for s in unclaimed_s.values()])
+        if rec is not None:
+            secret_res[e["ref"]] = rec
+            secret_how[e["ref"]] = "similarity"
+            del unclaimed_s[rec["id"]]
+
+    agent_res: dict[str, dict | None] = {e["ref"]: None for e in arch["agents"]}
+    agent_how: dict[str, str] = {}
+    unclaimed_a = {g["id"]: g for g in store.agents}
+    for e in arch["agents"]:                       # pass 1: exact name + config
+        target = (e["name"].casefold(), e["harness"],
+                  e.get("mode", "default"), _effective_model(e))
+        rec = next((g for g in unclaimed_a.values()
+                    if (harness.grant_name(g).casefold(), g.get("harness"),
+                        g.get("mode", "default"), _effective_model(g)) == target), None)
+        if rec is not None:
+            agent_res[e["ref"]] = rec
+            agent_how[e["ref"]] = "name"
+            del unclaimed_a[rec["id"]]
+    for e in arch["agents"]:                       # pass 2: configuration
+        if agent_res[e["ref"]] is not None:
+            continue
+        cfg = (e["harness"], e.get("mode", "default"), _effective_model(e))
+        cands = [g for g in unclaimed_a.values()
+                 if (g.get("harness"), g.get("mode", "default"),
+                     _effective_model(g)) == cfg]
+        if cands:
+            # §5.1 tie-break: higher similarity score, then the local default
+            # agent, then name casefold, then id.
+            rec = min(cands, key=lambda g: (
+                -_score(e["name"], e.get("description"),
+                        harness.grant_name(g), g.get("description") or "")[0],
+                0 if g["id"] == store.default_agent_id else 1,
+                harness.grant_name(g).casefold(), g["id"]))
+            agent_res[e["ref"]] = rec
+            agent_how[e["ref"]] = "configuration"
+            del unclaimed_a[rec["id"]]
+    for e in arch["agents"]:                       # pass 3: similarity
+        if agent_res[e["ref"]] is not None:
+            continue
+        rec = _best(e["name"], e.get("description"),
+                    [(g, harness.grant_name(g), g.get("description") or "")
+                     for g in unclaimed_a.values()])
+        if rec is not None:
+            agent_res[e["ref"]] = rec
+            agent_how[e["ref"]] = "similarity"
+            del unclaimed_a[rec["id"]]
+
+    # §5.1: the drafting agent resolves through the same ladder; unresolved or
+    # absent falls back to the local default agent. The fallback claims no
+    # record and never stands in for the same ref's step references.
+    drafting = agent_res.get(arch["agent"]) if arch.get("agent") else None
+    if drafting is None:
+        drafting = next((g for g in store.agents
+                         if g["id"] == store.default_agent_id), None)
+    return {"secrets": secret_res, "agents": agent_res,
+            "secret_how": secret_how, "agent_how": agent_how,
+            "drafting": drafting}
 
 
 def preview_archive(store: Store, data: bytes) -> dict:
-    """§5.2 preview: validate fully, write nothing, run the §5.1 match rules dry."""
+    """§5.2 preview: validate fully, write nothing, run the §5.1 match ladders
+    dry — matchedTo/matchedBy are null for a reference that would land
+    unresolved (best-effort: confirm re-runs the ladders on the store then)."""
     with _open_archive(data) as z:
         arch = _validate(z)
     with store.lock:
-        secrets = [{"name": s["name"], "description": s.get("description") or "",
-                    "exists": any(x["name"] == s["name"] for x in store.secrets)}
-                   for s in arch["secrets"]]
-        agents = [{"name": g["name"], "harness": g["harness"],
-                   "mode": g.get("mode", "default"),
-                   "model": g.get("model") if g.get("mode", "default") != "default" else None,
-                   "reused": _agent_match(store, g) is not None}
-                  for g in arch["agents"]]
+        m = match_archive(store, arch)
+        secrets = []
+        for e in arch["secrets"]:
+            rec = m["secrets"][e["ref"]]
+            secrets.append({"name": e["name"], "description": e.get("description") or "",
+                            "matchedTo": rec["name"] if rec else None,
+                            "matchedBy": m["secret_how"].get(e["ref"])})
+        agents = []
+        for e in arch["agents"]:
+            rec = m["agents"][e["ref"]]
+            agents.append({"name": e["name"], "harness": e["harness"],
+                           "mode": e.get("mode", "default"),
+                           "model": _effective_model(e),
+                           "matchedTo": harness.grant_name(rec) if rec else None,
+                           "matchedBy": m["agent_how"].get(e["ref"])})
         # §5.2: the §4.1 name dedupe run dry — the name the import will land
         # under (best-effort: confirm re-runs the dedupe on the store then).
         lands_as = store.free_automation_name(arch["name"])
@@ -589,46 +790,44 @@ def preview_archive(store: Store, data: bytes) -> dict:
 
 
 def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
-    """Validate and land a §5.1 archive; returns (automation, summary)."""
+    """Validate and land a §5.1 archive; returns (automation, summary).
+    Import creates no agent or secret records, so there is nothing to roll
+    back: the only writes are the automation creation and its param values."""
     with _open_archive(data) as z:
         arch = _validate(z)
     with store.lock:
-        created_secret_ids: list[str] = []
-        created_ids: list[str] = []
-        prev_default = store.default_agent_id
-        try:
-            a, created_secrets, existing_secrets, created_recs, reused_agents = \
-                _land_archive(store, arch, created_secret_ids, created_ids)
-        except BaseException:
-            # §5.1: a failed import writes nothing. The secret and agent records
-            # are persisted before the automation exists (their ids are what the
-            # steps reference), so a failure past that point has to take them
-            # back out - otherwise the retry lands duplicates and the user is
-            # left with orphans no automation uses.
-            if created_secret_ids:
-                doomed = set(created_secret_ids)
-                store.secrets = [s for s in store.secrets if s["id"] not in doomed]
-                store.save_secrets()
-            if created_ids:
-                doomed = set(created_ids)
-                store.agents = [g for g in store.agents if g["id"] not in doomed]
-                store.default_agent_id = prev_default
-                store.save_agents()
-            raise
-    # §5.1 summary: each created agent carries `ready` — the one §19 check-ready
-    # rule, run outside the store lock (it may spawn a status subprocess) and
-    # memoized per harness config so agents sharing one harness check once.
+        a, m = _land_archive(store, arch)
+    # §5.1 summary: each matched agent carries `ready` — the one §19
+    # check-ready rule, run at import time outside the store lock (it may
+    # spawn a status subprocess) and memoized per harness config so agents
+    # sharing one harness check once.
     ready_memo: dict[tuple, bool] = {}
 
     def _ready(rec: dict) -> bool:
-        key = (rec["harness"], rec["mode"], rec["model"])
+        key = (rec.get("harness"), rec.get("mode", "default"), rec.get("model"))
         if key not in ready_memo:
-            ready_memo[key] = harness.check_ready(rec["harness"], rec["model"], rec["mode"])
+            ready_memo[key] = harness.check_ready(rec.get("harness"), rec.get("model"),
+                                                  rec.get("mode", "default"))
         return ready_memo[key]
 
-    summary = {"secretsCreated": created_secrets, "secretsExisting": existing_secrets,
-               "agentsCreated": [{"name": r["name"], "ready": _ready(r)} for r in created_recs],
-               "agentsReused": reused_agents,
+    secrets_matched = [{"name": e["name"], "matchedTo": rec["name"],
+                        "matchedBy": m["secret_how"][e["ref"]]}
+                       for e in arch["secrets"]
+                       if (rec := m["secrets"][e["ref"]]) is not None]
+    agents_matched = [{"name": e["name"], "matchedTo": harness.grant_name(rec),
+                       "matchedBy": m["agent_how"][e["ref"]], "ready": _ready(rec)}
+                      for e in arch["agents"]
+                      if (rec := m["agents"][e["ref"]]) is not None]
+    # §5.1: archive order, secrets before agents.
+    unresolved = ([{"kind": "secret", "name": e["name"],
+                    "description": e.get("description") or ""}
+                   for e in arch["secrets"] if m["secrets"][e["ref"]] is None]
+                  + [{"kind": "agent", "name": e["name"],
+                      "description": e.get("description") or ""}
+                     for e in arch["agents"] if m["agents"][e["ref"]] is None])
+    summary = {"secretsMatched": secrets_matched,
+               "agentsMatched": agents_matched,
+               "unresolved": unresolved,
                "packages": arch["packages"],
                # §5.1: the archive's name when the §4.1 dedupe renamed the
                # landed automation, else None.
@@ -638,110 +837,141 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
     return a, summary
 
 
-def _land_archive(store: Store, arch: dict, created_secret_ids: list[str],
-                  created_ids: list[str]) -> tuple:
-    """The §5.1 import's write half - caller holds store.lock and owns the
-    rollback. The two id lists are filled in as records land, so the caller can
-    undo exactly what this call appended."""
-    # Secrets: a missing referenced name becomes a §4.8 placeholder;
-    # an existing name is the same secret by definition — untouched.
-    created_secrets, existing_secrets = [], []
-    for s in arch["secrets"]:
-        if any(x["name"] == s["name"] for x in store.secrets):
-            existing_secrets.append(s["name"])
-        else:
-            rec = {"id": new_id(), "name": s["name"],
-                   "description": s.get("description") or "", "set": False}
-            store.secrets.append(rec)
-            created_secrets.append(s["name"])
-            created_secret_ids.append(rec["id"])
-    if created_secrets:
-        store.save_secrets()
-    # Agents: exact config match (name + harness + mode + model) reuses the
-    # local record; anything else is created, its grant name deduped
-    # (§5.1) — the archive's name-form references map to the record here,
-    # so the rename repoints nothing.
-    created_recs, reused_agents = [], []
-    matched: dict[str, dict] = {}   # archive name → local record
-    for g in arch["agents"]:
-        model = g.get("model") if g.get("mode", "default") != "default" else None
-        local = _agent_match(store, g)
-        if local:
-            matched[g["name"]] = local
-            reused_agents.append(g["name"])
-        else:
-            rec = {"id": new_id(), "name": _free_grant_name(store, g["name"]),
-                   "description": g.get("description") or "",
-                   "harness": g["harness"], "mode": g.get("mode", "default"),
-                   "model": model}
-            store.agents.append(rec)
-            if store.default_agent_id is None:
-                store.default_agent_id = rec["id"]  # §4.7: the first agent is the default
-            matched[g["name"]] = rec
-            created_recs.append(rec)
-            created_ids.append(rec["id"])
-    if created_recs:
-        store.save_agents()
-    # The drafting agent_id maps by name; no archive agents → local default.
-    drafting = matched.get(arch["agent"]) if arch.get("agent") else None
-    if drafting is None:
-        drafting = next((x for x in store.agents
-                         if x["id"] == store.default_agent_id), None)
-    # §5.1: rewrite the archive's name-form references to the matched or
-    # created records' LOCAL ids — step grant entries, code subscripts,
-    # and each discord trigger's token secret. On disk, ids are the only
-    # reference format (§4.1/§4.3/§4.8).
-    secret_id_by_name = {s["name"]: s["id"] for s in store.secrets}
-    agent_id_by_name = {name: rec["id"] for name, rec in matched.items()}
+def _ref_substituter(kind_word: str, id_by_ref: dict[str, str],
+                     archive_names: dict[str, str], target_names: dict[str, str]):
+    """§5.1 import-side code rewrite for one kind: the ref subscript becomes
+    the resolved local id, and an immediately-trailing `#` comment whose text
+    equals the archive ref's name is rewritten to the matched record's name
+    when the match renamed — the §6.1 comment stays truthful. Any other
+    comment is left alone."""
+    pattern = re.compile(
+        rf"\b{kind_word}\[\s*[\"']([0-9]+)[\"']\s*\](?:([ \t]*#[ \t]*)([^\n]*))?")
 
-    def _local_code(code: str) -> str:
-        # _validate guaranteed every name resolves against the archive's
-        # yaml, and every archive agent/secret has a local record by now.
-        code = ARCHIVE_SECRET_REF_RE.sub(
-            lambda m: f'secrets["{secret_id_by_name[m.group(1)]}"]', code)
-        return ARCHIVE_AGENT_REF_RE.sub(
-            lambda m: f'agents["{agent_id_by_name[m.group(1)]}"]', code)
+    def repl(m: re.Match) -> str:
+        ref = m.group(1)
+        out = f'{kind_word}["{id_by_ref[ref]}"]'
+        if m.group(2) is not None:
+            comment = m.group(3)
+            if (comment.strip() == archive_names[ref]
+                    and target_names[ref] != archive_names[ref]):
+                comment = target_names[ref]
+            out += m.group(2) + comment
+        return out
+
+    return lambda code: pattern.sub(repl, code)
+
+
+def _land_archive(store: Store, arch: dict) -> tuple[dict, dict]:
+    """The §5.1 import's write half — caller holds store.lock. Never creates
+    agent or secret records: refs resolve through the §5.1 match ladders, and
+    an unresolved ref lands as a freshly minted local id (matching no record)
+    plus a §4.1 unresolved_references entry, so the automation arrives
+    needing attention instead of failing. Returns (automation, match)."""
+    m = match_archive(store, arch)
+    unresolved: dict[str, dict] = {}
+    secret_id_by_ref: dict[str, str] = {}
+    secret_name_by_ref = {e["ref"]: e["name"] for e in arch["secrets"]}
+    secret_target_name: dict[str, str] = {}
+    for e in arch["secrets"]:
+        rec = m["secrets"][e["ref"]]
+        if rec is not None:
+            secret_id_by_ref[e["ref"]] = rec["id"]
+            secret_target_name[e["ref"]] = rec["name"]
+        else:
+            mid = new_id()
+            secret_id_by_ref[e["ref"]] = mid
+            secret_target_name[e["ref"]] = e["name"]
+            unresolved[mid] = {"kind": "secret", "name": e["name"],
+                               "description": e.get("description") or ""}
+    agent_id_by_ref: dict[str, str] = {}
+    agent_name_by_ref = {e["ref"]: e["name"] for e in arch["agents"]}
+    agent_target_name: dict[str, str] = {}
+    for e in arch["agents"]:
+        rec = m["agents"][e["ref"]]
+        if rec is not None:
+            agent_id_by_ref[e["ref"]] = rec["id"]
+            agent_target_name[e["ref"]] = harness.grant_name(rec)
+        else:
+            mid = new_id()
+            agent_id_by_ref[e["ref"]] = mid
+            agent_target_name[e["ref"]] = e["name"]
+            unresolved[mid] = {"kind": "agent", "name": e["name"],
+                               "description": e.get("description") or ""}
+
+    sub_secrets = _ref_substituter("secrets", secret_id_by_ref,
+                                   secret_name_by_ref, secret_target_name)
+    sub_agents = _ref_substituter("agents", agent_id_by_ref,
+                                  agent_name_by_ref, agent_target_name)
 
     steps = []
     for s in arch["steps"]:
         entry = dict(s)
-        entry["code"] = _local_code(entry.get("code", ""))
+        entry["code"] = sub_agents(sub_secrets(entry.get("code", "")))
         if entry.get("agents"):
-            entry["agents"] = [
-                {"id": agent_id_by_name[g["name"]],
-                 **({"why": g["why"]} if g.get("why") else {})}
-                for g in entry["agents"]]
+            # Belt and braces under the claim rule: two refs can't resolve to
+            # one record, so the dedupe below should never drop anything —
+            # but a step listing one ref twice must still land it once.
+            seen: set[str] = set()
+            out = []
+            for g in entry["agents"]:
+                lid = agent_id_by_ref[g["ref"]]
+                if lid in seen:
+                    continue
+                seen.add(lid)
+                out.append({"id": lid, **({"why": g["why"]} if g.get("why") else {})})
+            entry["agents"] = out
         if entry.get("secrets"):
-            entry["secrets"] = [
-                {"id": secret_id_by_name[g["name"]],
-                 **({"why": g["why"]} if g.get("why") else {})}
-                for g in entry["secrets"]]
+            seen = set()
+            out = []
+            for g in entry["secrets"]:
+                lid = secret_id_by_ref[g["ref"]]
+                if lid in seen:
+                    continue
+                seen.add(lid)
+                out.append({"id": lid, **({"why": g["why"]} if g.get("why") else {})})
+            entry["secrets"] = out
         steps.append(entry)
     ver = {"description": arch["description"], "note": "Imported", "params": arch["params"],
            "packages": arch["packages"], "steps": steps,
            "spec": arch["spec"], "instructions": arch["instructions"], "notes": arch["notes"]}
     triggers = [{"id": new_id(), "enabled": False,
                  **(t if t.get("kind") != "discord"
-                    else {**t, "secret": secret_id_by_name[t["secret"]]})}
+                    else {**t, "secret": secret_id_by_ref[t["secret"]]})}
                 for t in arch["triggers"]]
-    # §5.1 grants: only what this import created, passed directly into the
-    # creation call as its grant lists (one write) — no post-create grant
-    # patch, so no window ever exists in which the automation is stored
-    # with different grants (an explicit empty list also overrides
-    # create_automation's drafting-agent fallback).
+    # §5.1 grants — auto-grant every match: the matched secrets, and the
+    # matched step agents plus the resolved drafting agent (drafting first
+    # when it was not already among them, so a bare `agent: true` step's
+    # first-enabled-agent fallback lands on the drafting agent). Passed
+    # directly into the creation call as its grant lists (one write) — no
+    # post-create grant patch, so no window ever exists in which the
+    # automation is stored with different grants. Nothing unresolved is ever
+    # granted (an explicit empty list also overrides create_automation's
+    # drafting-agent fallback).
+    drafting = m["drafting"]
+    enabled_agents: list[str] = [drafting["id"]] if drafting else []
+    for e in arch["agents"]:
+        rec = m["agents"][e["ref"]]
+        if rec is not None and rec["id"] not in enabled_agents:
+            enabled_agents.append(rec["id"])
+    allowed_secrets: list[str] = []
+    for e in arch["secrets"]:
+        rec = m["secrets"][e["ref"]]
+        if rec is not None and rec["id"] not in allowed_secrets:
+            allowed_secrets.append(rec["id"])
     a = store.create_automation(ver, name=arch["name"],
                                 agent_id=drafting["id"] if drafting else None,
                                 triggers=triggers,
-                                enabled_agents=list(created_ids),
-                                allowed_secrets=list(created_secret_ids),
+                                enabled_agents=enabled_agents,
+                                allowed_secrets=allowed_secrets,
                                 # §5.1: the manifest's platform token
                                 # stamps §4.1 originOs — a mismatch flags
                                 # the os-mismatch problem, never rejects.
-                                origin_os=arch["os"])
+                                origin_os=arch["os"],
+                                unresolved_references=unresolved or None)
     if arch["param_values"]:
         # Values are the one manifest field creation can't seed.
         store.patch_automation(a, {"paramValues": arch["param_values"]})
-    return a, created_secrets, existing_secrets, created_recs, reused_agents
+    return a, m
 
 
 # ---------- URL import (§5.2) ----------

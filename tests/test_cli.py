@@ -1081,15 +1081,28 @@ def test_cmd_automation_export_default_filename(tmp_path, monkeypatch, capsys):
 
 
 def test_cmd_automation_import_prints_summary(tmp_path, capsys):
+    """§20/§5.1: the match lines name the archive record, adding "-> local"
+    only when the match renamed and "(needs setup)" for a not-ready agent; the
+    no-match line lists the §4.1 unresolved references, and the needs-attention
+    line closes the summary after the package ensure."""
     src = tmp_path / "in.autowright"
     src.write_bytes(b"ARCHIVE")
     raw = json.dumps({
         "automation": {"name": "Imported 2", "id": "deadbeef-1"},
-        "summary": {"secretsCreated": ["BOT_TOKEN"], "secretsExisting": ["API_TOKEN"],
-                    "agentsCreated": [{"name": "Fast local", "ready": False}],
-                    "agentsReused": ["Claude"],
-                    "packages": [{"pip": "requests"}],
-                    "renamedFrom": "Imported"},
+        "summary": {
+            "secretsMatched": [
+                {"name": "API_KEY", "matchedTo": "API_KEY", "matchedBy": "name"},
+                {"name": "STRIPE_KEY", "matchedTo": "STRIPE_API_KEY",
+                 "matchedBy": "similarity"}],
+            "agentsMatched": [
+                {"name": "Researcher", "matchedTo": "Claude",
+                 "matchedBy": "configuration", "ready": False},
+                {"name": "Coder", "matchedTo": "Coder", "matchedBy": "name",
+                 "ready": True}],
+            "unresolved": [{"kind": "secret", "name": "MAIL_PASS", "description": ""},
+                           {"kind": "agent", "name": "Ghost", "description": ""}],
+            "packages": [{"pip": "requests"}],
+            "renamedFrom": "Imported"},
     }).encode()
     c = _RouteClient(raw=raw, reply={"packages": [
         {"pip": "requests", "import": "requests", "status": "installed",
@@ -1103,11 +1116,35 @@ def test_cmd_automation_import_prints_summary(tmp_path, capsys):
     assert "imported 'Imported 2' [deadbeef]" in out
     # §5.1 name dedupe surfaces in the summary lines
     assert "renamed from 'Imported' - that name already exists" in out
-    assert "secrets that need values: BOT_TOKEN" in out
-    assert "existing secrets to grant on the edit page: API_TOKEN" in out
-    assert "agents added: Fast local (needs setup)" in out
-    assert "agents reused: Claude" in out
+    assert "  secrets matched: API_KEY, STRIPE_KEY -> STRIPE_API_KEY" in out
+    assert "  agents matched: Researcher -> Claude (needs setup), Coder" in out
+    assert "  no match on this machine: secret MAIL_PASS, agent Ghost" in out
     assert "package requests 2.32.3 installed" in out
+    attention = "  this automation needs attention - open it and fix the highlighted agents and secrets"
+    assert attention in out
+    # §20 order: the needs-attention line lands after the ensure, before the
+    # triggers-off line
+    assert (out.index("package requests 2.32.3 installed")
+            < out.index(attention)
+            < out.index("triggers imported off"))
+
+
+def test_cmd_automation_import_clean_summary_stays_quiet(tmp_path, capsys):
+    """§20: nothing matched and nothing unresolved → no match lines, and no
+    needs-attention line."""
+    src = tmp_path / "in.autowright"
+    src.write_bytes(b"ARCHIVE")
+    raw = json.dumps({
+        "automation": {"name": "Clean", "id": "deadbeef-1"},
+        "summary": {"secretsMatched": [], "agentsMatched": [], "unresolved": [],
+                    "packages": [], "renamedFrom": None},
+    }).encode()
+    _run(_RouteClient(raw=raw), "automation", "import", str(src))
+    out = capsys.readouterr().out
+    assert "imported 'Clean' [deadbeef]" in out
+    assert "matched:" not in out
+    assert "no match on this machine" not in out
+    assert "needs attention" not in out
     assert "triggers imported off" in out
 
 
@@ -1118,8 +1155,8 @@ def test_cmd_automation_import_reports_os_mismatch(tmp_path, capsys):
     archive prints nothing."""
     src = tmp_path / "in.autowright"
     src.write_bytes(b"ARCHIVE")
-    summary = {"secretsCreated": [], "secretsExisting": [], "agentsCreated": [],
-               "agentsReused": [], "packages": [], "osMismatch": True, "os": "windows"}
+    summary = {"secretsMatched": [], "agentsMatched": [], "unresolved": [],
+               "packages": [], "osMismatch": True, "os": "windows"}
     raw = json.dumps({"automation": {"name": "Ported", "id": "deadbeef-1"},
                       "summary": summary}).encode()
     _run(_RouteClient(raw=raw), "automation", "import", str(src))
@@ -1156,8 +1193,8 @@ def test_cmd_automation_import_url_confirms_immediately(capsys):
     reply = {"token": "tok1",
              "preview": {"resolvedUrl": "https://gh/dl/watcher.autowright"},
              "automation": {"name": "Web", "id": "cafebabe-2"},
-             "summary": {"secretsCreated": [], "secretsExisting": [],
-                         "agentsCreated": [], "agentsReused": [], "packages": []}}
+             "summary": {"secretsMatched": [], "agentsMatched": [], "unresolved": [],
+                         "packages": []}}
     c = _RouteClient(reply=reply)
     _run(c, "automation", "import", "https://github.com/alice/watcher")
     assert c.calls == [

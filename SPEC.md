@@ -15,8 +15,7 @@ words from other languages except established technical terms.
 - **Foundations:** §1 product · §2 components (both below, in this file) ·
   §3 packaging & process lifecycle → [spec/packaging.md](spec/packaging.md)
 - **Data:** §4 data model (entities) → [spec/data-model.md](spec/data-model.md) ·
-  §5 storage (files on disk, incl. §5.1 transfer archives · §5.2 URL import; both parked
-  in the UI, CLI-only today) →
+  §5 storage (files on disk, incl. §5.1 transfer archives · §5.2 URL import) →
   [spec/storage.md](spec/storage.md) ·
   §21 backward compatibility (promise, migrate-on-load, decision log) →
   [spec/compatibility.md](spec/compatibility.md)
@@ -70,10 +69,9 @@ Four components (per top-level README):
 - **Python engine** — executes an automation's steps as scripts, streams per-step status and logs,
   enforces the framework policies (§6), injects secrets at runtime, persists execution results.
 - **CLI** — command-line access to the same backend, covering every UI surface (§20): manage,
-  author (pull/push workdirs), and execute automations; executions, secrets, agents, settings.
-  It also carries §5.1 export/import, which the UI does not: those entry points are parked
-  (§9.1 Import button, §9.2 Export row), so that one surface is CLI-only today while the §19
-  endpoints stay served. Headless operation is a supported mode (§3), not just a debug aid, and the
+  author (pull/push workdirs), and execute automations; executions, secrets, agents,
+  settings, and §5.1 export/import.
+  Headless operation is a supported mode (§3), not just a debug aid, and the
   §17 agent skill drives everything through it. **Invariant: the CLI is a pure leaf — the UI
   and the backend must never depend on or invoke it.** Dependency direction is one-way (CLI →
   backend API, CLI → `service.py`); the app registers the backend via
@@ -427,8 +425,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   returns) · a three-step "how it works" strip (say it → read it → let it run) · three promise
   cards (the two §1 core promises plus the review promise "Nothing executes until you
   approve it") · a feature grid (five cards: message triggers, runs-with-window-closed +
-  menu bar, versions, memory + snapshots, execution history; the page advertises no
-  `.autowright` share/import while §5.1 is parked in the UI) ·
+  menu bar, versions, memory + snapshots, execution history; the page does not yet advertise
+  `.autowright` sharing) ·
   supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · a
   question-and-answer section ("Common questions", six items in the two-column card grid the
   promise cards use, each a `<h3>` question over an answer paragraph). Its purpose is

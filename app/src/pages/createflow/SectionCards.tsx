@@ -8,7 +8,7 @@ import { usePlatformCopy } from '../../platformCopy'
 import { SecretModal } from '../../SecretModal'
 import { useTriggerPreview } from '../../triggers'
 import { StepList } from '../../steps'
-import type { Agent, SecretMeta } from '../../types'
+import type { Agent, SecretMeta, UnresolvedRefs } from '../../types'
 import { Caret, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
 import { Markdown, SpecMarkdown } from '../../result'
 import { type AgentRef, type Rev, type SecretRef, applyTestValues, instrToMd, instructionCache, shortId, specToText, stepList, textToSpec } from './model'
@@ -144,6 +144,7 @@ export interface LeftColumnProps {
   lockStyle?: React.CSSProperties
   agents: Agent[]
   secrets: SecretMeta[]
+  unresolvedReferences?: UnresolvedRefs
   availAgents: Agent[]
   agentStepIdx: number[]
   agWarn: boolean
@@ -166,7 +167,7 @@ export interface LeftColumnProps {
 
 export function LeftColumn({
   rev, up, fw, isEdit, isCreateEmpty, busyRewrite, viewingOld, testLive, lockStyle,
-  agents, secrets, availAgents, agentStepIdx,
+  agents, secrets, unresolvedReferences, availAgents, agentStepIdx,
   agWarn, agNone, agNotEnabled, agMissing, agFallbackIdx,
   secWarn, secNotAllowed, secMissing, secRefs,
   specOpenEff, agSecOpenEff, secSecOpenEff, instrOpenEff, notesOpenEff,
@@ -377,7 +378,9 @@ export function LeftColumn({
               <WarnBanner text={[
                 ...(agNone ? [`Step${agFallbackIdx.length > 1 ? 's' : ''} ${stepList(agFallbackIdx)} need${agFallbackIdx.length > 1 ? '' : 's'} an agent, but none is enabled — the execution would fail there. Enable one below.`] : []),
                 ...agNotEnabled.map((r) => `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} call${r.steps.length > 1 ? '' : 's'} ${r.name}, but it isn’t enabled here — the execution would fail there. Enable it below.`),
-                ...agMissing.map((r) => `${r.name} isn’t one of your agents — the execution would fail at step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)}.`),
+                ...agMissing.map((r) => (r.imported
+                  ? `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} call${r.steps.length > 1 ? '' : 's'} ${r.name} from the imported file, which has no match on this ${copy.machine} - pick an agent or ask your AI to fix it.`
+                  : `${r.name} isn’t one of your agents — the execution would fail at step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)}.`)),
               ].join(' ')} />
             )}
             {agents.map((g) => {
@@ -446,7 +449,9 @@ export function LeftColumn({
                   const nm = secrets.find((z) => z.id === r.id)?.name ?? shortId(r.id)
                   return `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} use${r.steps.length > 1 ? '' : 's'} ${nm}, but it isn’t allowed here — the execution would fail there. Allow it below.`
                 }),
-                ...secMissing.map((r) => `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} use${r.steps.length > 1 ? '' : 's'} a secret that no longer exists (${shortId(r.id)}) — the execution would fail there. Sync the steps to rewrite them.`),
+                ...secMissing.map((r) => (r.importedName
+                  ? `${r.importedName} came from the imported file and has no match on this ${copy.machine} - pick one of your secrets or ask your AI to fix it.`
+                  : `Step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} use${r.steps.length > 1 ? '' : 's'} a secret that no longer exists (${shortId(r.id)}) — the execution would fail there. Sync the steps to rewrite them.`)),
               ].join(' ')} />
             )}
             {secrets.map((s) => {
@@ -488,9 +493,11 @@ export function LeftColumn({
               }}>
                 <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 11, color: 'var(--red-text)' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: "500 12px var(--mono)", color: 'var(--red-text)' }}>{shortId(r.id)}</div>
+                  <div style={{ font: "500 12px var(--mono)", color: 'var(--red-text)' }}>{r.importedName ?? shortId(r.id)}</div>
                   <div style={{ font: "400 11px var(--sans)", color: 'var(--text-muted)' }}>
-                    used by step{r.steps.length > 1 ? 's' : ''} {stepList(r.steps)} — this secret no longer exists; sync the steps
+                    {r.importedName
+                      ? `used by step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} - no match on this ${copy.machine}; pick a secret or ask your AI to fix it`
+                      : `used by step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} — this secret no longer exists; sync the steps`}
                   </div>
                 </div>
               </div>
@@ -647,6 +654,7 @@ export interface RightCardsProps {
   availAgents: Agent[]
   agents: Agent[]           // every configured agent — the step tags resolve entry ids
   secrets: SecretMeta[]     // every stored secret — the step tags resolve entry ids
+  unresolvedReferences?: UnresolvedRefs // §5.1 imported no-match names for the red tags (edit mode)
   pkgSecOpenEff: boolean
   updatePkgs: (pips: string[]) => void
   installPkgs: () => void
@@ -654,7 +662,7 @@ export interface RightCardsProps {
 
 export function RightCards({
   rev, up, liveParams, liveConcurrency, drafting, isCreateEmpty, outOfSync, busyRewrite,
-  availAgents, agents, secrets, pkgSecOpenEff, updatePkgs, installPkgs,
+  availAgents, agents, secrets, unresolvedReferences, pkgSecOpenEff, updatePkgs, installPkgs,
 }: RightCardsProps) {
   // §19: the §11 draft-trigger chips label through POST /triggers/preview —
   // the renderer keeps no local trigger-math mirror (§4.3)
@@ -676,7 +684,7 @@ export function RightCards({
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', opacity: outOfSync || busyRewrite ? 0.45 : 1, transition: 'opacity var(--t-hover) var(--ease-enter)', marginBottom: -1 }}>
-          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} packages={rev.packages} />
+          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} unresolvedReferences={unresolvedReferences} packages={rev.packages} />
         </div>
       </div>
 

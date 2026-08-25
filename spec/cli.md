@@ -56,20 +56,63 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   `execution list --status` registers the §4.6 statuses as argparse `choices` (an unlisted value
   is a usage error rather than a silently empty list — the §19 filter is an equality match, so
   nothing outside the vocabulary could ever have matched), `settings set` lists its keys with
-  each one's value form, and `param set` lists the per-kind value forms. The reference forms
-  (id · id prefix · exact name · unique name substring) appear on every `<automation>` positional
-  from one shared helper, so the resolution rule above is discoverable at the point of use, and
-  every optional `<execution>` positional says that omitting it means the latest execution.
+  each one's value form, and `param set` lists the per-kind value forms. Every `<automation>`
+  positional carries the compact reference forms from one shared helper (name · part of a name ·
+  id · id prefix), and the full rule — case-insensitivity, and that every `[abcd1234]` the CLI
+  prints resolves back — is stated once, in the description of each group whose verbs take one,
+  rather than repeated down a listing. Every optional `<execution>` positional says that
+  omitting it means the latest execution.
   Commands whose input shape isn't obvious from the flags alone — `automation
   pull|push|create|execute|export|import`, `param set`, `trigger add`, `execution list|result`,
   `secret set|delete`, `settings set`, `service` — carry an `epilog` of concrete example command
-  lines, and the top-level `--help` epilog carries examples plus the exit-code table. Help prose
+  lines. Only commands carry one: the parsers that hold subcommands (the top level and every
+  group) show their listing and stop, so nothing repeats above a listing the reader hasn't
+  reached yet. Help prose
   is written for whoever is at the terminal: no § references, and a flag's stated accepted values
   are exactly the values the command parses. `Help` (an `argparse.HelpFormatter` subclass) wraps
   descriptions the ordinary way while leaving those example blocks line-for-line as written —
   argparse's own raw formatter is all-or-nothing and would leave the prose unwrapped too, and
   `_fill_text` is the single hook both run through, so the `Examples:` opener every example
-  epilog carries is what tells them apart.
+  epilog carries is what tells them apart. Descriptions are written as **paragraphs**: the
+  first one says what the command does and is what listings print, the ones after it carry the
+  detail, caveats, and what happens next. `_fill_text` wraps each paragraph separately rather
+  than collapsing them into one block.
+- **A bare invocation prints help:** `autowright` with no command prints the full top-level
+  help — the same text `--help` prints, expanded listing included — and exits **0**. It is not a
+  usage error: typing the bare command is how someone finds out what the CLI does, and answering
+  with a one-line usage stub wastes the one moment they asked. The same holds at every level, so
+  `autowright automation` prints the automation listing and `autowright automation trigger` the
+  trigger one. This is why no `add_subparsers` in the tree is `required`: a parser with no
+  command of its own defaults `fn` to printing its own help, with `client` false so a bare
+  invocation never needs a reachable backend (`autowright` must answer on a machine whose
+  backend is down — that is when someone is most likely to type it). Everything else stays a
+  usage error exiting 1: an unknown command, an unknown flag, a missing **positional**, a bad
+  choice.
+- **Expanded command listings:** argparse's stock listing prints a bare name and one-liner per
+  subcommand, so the flags of a command are reachable only by running its own `--help`. `Parser`
+  overrides `format_help` to replace that listing with an expanded one, generated from the parser
+  tree so it can never drift from what the CLI actually accepts. Each entry under the
+  `COMMANDS:` / `VERBS:` heading (the subparsers `metavar`, pluralized) is a **signature line** —
+  the command name followed by every positional in `<angle brackets>` (`[optional]`, `...` when
+  repeatable) and every flag in `[square brackets]` with its value placeholder — then the first
+  paragraph of its description, then a blank line, then a labelled block of one indented row per
+  positional and flag carrying that argument's own help. The label is `arguments:` under a
+  command and `verbs:` under a group, and the rows indent two past it. Prose and rows must not
+  run together at the same indent: the blank line and the label are what stop a listing reading
+  as one undifferentiated column, and the label's wording is the second half of that — it says
+  which kind of block this is without the reader inferring it from the shape of the rows.
+  A subcommand that is itself a group lists its verb names with their
+  one-liners instead of expanding them, which bounds the depth: any `--help` prints its own level
+  in full and names the level below. The heading closes with a line pointing at
+  `<prog> <command> --help` for the full description and examples. The generator is the single
+  source of these listings — a new command is documented by giving its parser a description and
+  its arguments help, never by editing a listing by hand.
+  A parser holding subcommands ends there: `format_help` drops the help action along with the
+  subparsers action, which leaves argparse's `options:` section holding nothing and therefore
+  omitted. `-h` is not news to anyone who just typed a command to find out what it does, and a
+  section listing only itself is the kind of noise that teaches people to stop reading help. A
+  command's own `--help` still shows its options as usual, because there the section carries
+  the command's real flags.
 - **Needs fixing parity (§4.1 `problems`):** `automation list`'s human rows carry a plain
   `needs fixing` marker, after the status column and immediately before the result chip,
   when an automation's `problems` list is non-empty, and

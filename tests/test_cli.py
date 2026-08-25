@@ -6,6 +6,7 @@ No real server anywhere — the Client's request layer is faked/stubbed.
 import copy
 import io
 import json
+import re
 
 import pytest
 
@@ -718,7 +719,7 @@ def test_usage_errors_exit_1_not_2():
     from autowright import cli
 
     for argv in (["nosuchcommand"],
-                 ["automation"],                       # missing required verb
+                 ["automation", "nosuchverb"],         # unknown verb
                  ["automation", "show"],               # missing positional
                  ["automation", "list", "--nope"],     # unknown flag
                  ["service", "frobnicate"]):           # bad choice
@@ -926,6 +927,105 @@ def test_every_command_documents_itself():
     walk(cli.build_parser(full=True), "autowright")
     assert not no_description, f"commands with no description: {no_description}"
     assert not no_help, f"arguments with no help: {no_help}"
+
+
+def _help_for(*argv) -> str:
+    import contextlib
+
+    from autowright import cli
+
+    out = io.StringIO()
+    with pytest.raises(SystemExit), contextlib.redirect_stdout(out):
+        cli.build_parser(full=True).parse_args([*argv, "--help"])
+    # 3.14's argparse colorizes help; assert on the plain text
+    return re.sub(r"\x1b\[[0-9;]*m", "", out.getvalue())
+
+
+def test_bare_invocation_prints_help_and_succeeds(monkeypatch, capsys):
+    """§20 bare invocation: `autowright` with no command prints the full help
+    and exits 0 — not a usage error, and not a one-line usage stub. The same at
+    every level, and without ever needing a reachable backend."""
+    monkeypatch.setenv("COLUMNS", "100")
+
+    from autowright import cli
+
+    # 3.14's argparse colorizes help; compare on the plain text
+    plain = re.compile(r"\x1b\[[0-9;]*m")
+
+    for argv in ([], ["automation"], ["automation", "trigger"], ["secret"]):
+        args = cli.build_parser(full=True).parse_args(argv)
+        # never builds a Client: `autowright` must answer with the backend down
+        assert args.client is False, argv
+        args.fn(None, args)
+        out = plain.sub("", capsys.readouterr().out)
+        assert out.startswith("usage: autowright"), argv
+        assert ("COMMANDS:" in out or "VERBS:" in out), argv
+
+    # the top-level bare help is the same text --help prints
+    bare = cli.build_parser(full=True)
+    bare.parse_args([]).fn(None, None)
+    assert plain.sub("", capsys.readouterr().out) == plain.sub("", bare.format_help())
+
+
+def test_command_listing_expands_every_flag(monkeypatch):
+    """§20 expanded command listings: a group's `--help` prints each verb's full
+    signature and one row per argument, generated from the parser tree — the
+    flags of a command are readable without running its own --help."""
+    monkeypatch.setenv("COLUMNS", "100")
+    text = _help_for("automation")
+
+    assert "VERBS:" in text
+    # the signature carries positionals in <> and every flag in []
+    assert "push <automation> <dir> [--note TEXT]" in text
+    assert "[--grant-agent NAME]... [--grant-secret NAME]..." in text
+    # ...and each argument gets its own row with its own help
+    assert "--grant-secret NAME" in text
+    assert "the workdir to validate and save" in text
+    # a repeatable flag says so; a defaulted positional is bracketed
+    assert "pull <automation> [<dir>]" in text
+    assert "Run `autowright automation <verb> --help`" in text
+
+    # §20: a blank line and a label separate the prose from the rows, and the
+    # label names which kind of block it is — a command's arguments, a group's
+    # verbs — with the rows indented past it
+    assert "\n\n      arguments:\n        <automation>  " in text
+    assert "\n\n      verbs:\n        list  " in text  # `param`, a group inside a group
+
+
+def test_listing_parsers_end_at_the_listing(monkeypatch):
+    """§20: a parser holding subcommands shows its listing and stops — no
+    `options:` section holding nothing but -h, and no epilog above a listing the
+    reader hasn't reached yet. A command's own --help still shows its options,
+    because there the section carries its real flags."""
+    monkeypatch.setenv("COLUMNS", "100")
+
+    for argv in ([], ["automation"], ["automation", "trigger"], ["execution"]):
+        text = _help_for(*argv)
+        assert "options:" not in text, argv
+        assert "-h, --help" not in text, argv
+        assert text.rstrip().endswith("examples."), argv  # the closing pointer line
+
+    # a leaf keeps both
+    leaf = _help_for("automation", "execute")
+    assert "options:" in leaf and "-h, --help" in leaf
+    assert "Examples:" in leaf
+
+
+def test_command_listing_names_the_level_below_without_expanding_it(monkeypatch):
+    """§20: a subcommand that is itself a group is listed by its verb names, so
+    each level prints in full and names the next instead of recursing."""
+    monkeypatch.setenv("COLUMNS", "100")
+    top, group = _help_for(), _help_for("automation")
+
+    # `automation` is a group at the top level: verbs by name, not expanded
+    assert "list every automation on this machine" in top
+    assert "push <automation> <dir>" not in top
+    # one level down, those same verbs are expanded in full
+    assert "push <automation> <dir>" in group
+    # and `trigger` (a group inside a group) is named, not expanded again
+    assert "trigger" in group
+    assert "add <automation> [<cron>]" not in group
+    assert "add <automation> [<cron>]" in _help_for("automation", "trigger")
 
 
 def test_example_epilogs_keep_their_line_breaks():

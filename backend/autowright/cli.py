@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import getpass
 import json
+import shutil
 import sys
+import textwrap
 import time
 import urllib.parse
 import urllib.request
@@ -1176,24 +1178,178 @@ class Parser(argparse.ArgumentParser):
     be able to branch on. Usage errors take the ordinary error exit (1), with
     the usage line and the message on stderr like every other CLI error.
     Subparsers inherit this class (argparse's `parser_class` defaults to the
-    parent's type), so the whole tree exits alike."""
+    parent's type), so the whole tree exits alike — and so every level of the
+    tree gets the §20 expanded command listing from `format_help` below."""
 
     def error(self, message: str):
         self.print_usage(sys.stderr)
         sys.exit(f"{self.prog}: {message}")
 
+    def format_help(self) -> str:
+        """§20 expanded command listings: argparse's stock subcommand list is a
+        bare name and one-liner, which leaves a command's flags reachable only by
+        running its own `--help`. Swap it for the generated listing in
+        `_commands_block` — usage line, description, and options are argparse's
+        as usual, so only the listing itself is ours."""
+        sub = next((a for a in self._actions
+                    if isinstance(a, argparse._SubParsersAction)), None)
+        if sub is None:
+            return super().format_help()
+
+        head = self._get_formatter()
+        head.add_usage(self.usage, self._actions, self._mutually_exclusive_groups)
+        head.add_text(self.description)
+
+        tail = self._get_formatter()
+        for group in self._action_groups:
+            # The subparsers action is the listing — never also a bare row under
+            # "positional arguments" — and -h is not news to someone who just
+            # typed a command to find out what it does. Dropping both leaves
+            # these parsers with an empty options section, which is then skipped.
+            actions = [a for a in group._group_actions
+                       if a is not sub and not isinstance(a, argparse._HelpAction)]
+            if not actions:
+                continue
+            tail.start_section(group.title)
+            tail.add_text(group.description)
+            tail.add_arguments(actions)
+            tail.end_section()
+        tail.add_text(self.epilog)
+
+        return head.format_help() + _commands_block(self, sub) + tail.format_help()
+
 
 class Help(argparse.HelpFormatter):
-    """§20 help text: wrap descriptions like argparse's default formatter, but
-    leave an epilog's example block line-for-line as written. argparse's own
+    """§20 help text: wrap each paragraph of a description separately (argparse's
+    default collapses blank lines, running the summary and the detail together),
+    but leave an epilog's example block line-for-line as written. argparse's own
     RawDescriptionHelpFormatter is all-or-nothing — it would leave the prose
-    unwrapped too — and `_fill_text` is the one hook both run through, so the
+    unwrapped too — and `_fill_text` is the one hook they all run through, so the
     `Examples:` opener every example epilog carries is what tells them apart."""
 
     def _fill_text(self, text: str, width: int, indent: str) -> str:
         if text.startswith("Examples:"):
             return "\n".join(indent + line for line in text.splitlines())
-        return super()._fill_text(text, width, indent)
+        fill = super()._fill_text
+        return "\n\n".join(fill(p, width, indent) for p in text.split("\n\n"))
+
+
+# ------------------------------------------------- §20 expanded command listing
+
+def _summary(parser) -> str:
+    """The first paragraph of a description — what a listing prints. The rest of
+    the description is detail, kept for the command's own `--help`."""
+    return (parser.description or "").split("\n\n")[0]
+
+
+def _placeholder(action) -> str:
+    """A positional's placeholder: its metavar in <angle brackets>, or the choices
+    it accepts when it has none (`service`'s verb list)."""
+    if action.choices and not action.metavar:
+        return "<" + "|".join(str(c) for c in action.choices) + ">"
+    name = action.metavar or action.dest
+    return name if name.startswith("<") else f"<{name}>"
+
+
+def _token(action) -> str:
+    """One argument as it appears on a signature line."""
+    if not action.option_strings:
+        token = _placeholder(action)
+        if action.nargs == "?":
+            return f"[{token}]"
+        if action.nargs == "+":
+            return f"{token}..."
+        if action.nargs == "*":
+            return f"[{token}...]"
+        return token
+    flag = action.option_strings[0]
+    if action.nargs == 0:  # store_true and friends take no value
+        return f"[{flag}]"
+    # A repeatable flag (the grant flags, --author) says so with an ellipsis.
+    repeat = "..." if action.__class__.__name__ == "_AppendAction" else ""
+    return f"[{flag} {action.metavar or action.dest.upper()}]{repeat}"
+
+
+def _label(action) -> str:
+    """One argument as it appears in the indented row under a signature line.
+    A positional whose signature spells out its choices is named by its dest
+    here — the vocabulary is already on the signature line, and repeating it
+    would push every help string off the column."""
+    if not action.option_strings:
+        return f"<{action.dest}>" if action.choices and not action.metavar \
+            else _placeholder(action)
+    flags = ", ".join(action.option_strings)
+    return flags if action.nargs == 0 else f"{flags} {action.metavar or action.dest.upper()}"
+
+
+def _one_liners(sub) -> dict:
+    """The `help` one-liner each subcommand was registered with — what a group
+    lists its verbs by, one level down from the level being expanded."""
+    return {a.dest: a.help or "" for a in sub._get_subactions()}
+
+
+def _arguments(parser) -> list:
+    """A command's own arguments, positionals first — the order they are typed
+    in, which is not the order they were registered in (`--json` is added by
+    `_sub` before the command's positionals exist)."""
+    args = [a for a in parser._actions
+            if not isinstance(a, (argparse._HelpAction, argparse._SubParsersAction))]
+    return [a for a in args if not a.option_strings] + [a for a in args if a.option_strings]
+
+
+def _wrap(text: str, width: int, indent: str, hanging: str | None = None) -> list[str]:
+    return textwrap.wrap(text, max(width, len(indent) + 20), initial_indent=indent,
+                         subsequent_indent=hanging if hanging is not None else indent) or []
+
+
+def _commands_block(parser, sub) -> str:
+    """§20: the generated listing that replaces argparse's name-and-one-liner
+    list. Every entry carries its full signature — positionals in <angle
+    brackets>, flags in [square brackets] — its summary, and one row per
+    argument. A subcommand that is itself a group lists its verbs by name
+    instead of expanding them, so each `--help` prints its own level in full and
+    names the level below."""
+    width = min(shutil.get_terminal_size().columns - 2, 96)
+    title = ((sub.metavar or "command") + "s").upper()
+    out = ["", f"{title}:"]
+
+    for name, child in sub.choices.items():
+        signature = " ".join([name] + [_token(a) for a in _arguments(child)])
+        out += _wrap(signature, width, "  ", hanging="      ")
+        out += _wrap(_summary(child), width, "      ")
+
+        # A group lists its verbs by their one-liners; a leaf expands its own
+        # arguments. Either way this level prints in full and names the next.
+        nested = next((a for a in child._actions
+                       if isinstance(a, argparse._SubParsersAction)), None)
+        rows = (list(_one_liners(nested).items()) if nested else
+                [(_label(a), a.help or "") for a in _arguments(child)])
+        # §20: a blank line and a label keep the prose and the rows from reading
+        # as one column, and name which kind of block this is.
+        if rows:
+            out += ["", f"      {'verbs' if nested else 'arguments'}:"]
+        pad = min(max((len(label) for label, _ in rows), default=0), 24)
+        for label, text in rows:
+            gutter = " " * (10 + pad)
+            if len(label) > pad:
+                out += [f"        {label}"] + _wrap(text, width, gutter)
+            else:
+                first, *rest = _wrap(text, width, gutter) or [gutter]
+                out += [f"        {label.ljust(pad)}  {first.strip()}"] + rest
+        out.append("")
+
+    out += _wrap(f"Run `{parser.prog} <{(sub.metavar or 'command').lower()}> --help` for the "
+                 "full description, the accepted values, and examples.", width, "  ")
+    return "\n".join(out) + "\n\n"
+
+
+def _help_fn(parser):
+    """§20: what a parser with no command of its own does — print its own help.
+    `client` goes false alongside it, so a bare `autowright` answers on a machine
+    whose backend is down, which is exactly when someone types it."""
+    def show(_c, _args) -> None:
+        parser.print_help()
+    return show
 
 
 def _sub(parent, name: str, fn, help: str, client: bool = True, json_flag: bool = False,
@@ -1202,7 +1358,9 @@ def _sub(parent, name: str, fn, help: str, client: bool = True, json_flag: bool 
     # `description` is the prose `<command> --help` prints, defaulting to it.
     p = parent.add_parser(name, help=help, description=description or help, epilog=epilog,
                           formatter_class=Help)
-    p.set_defaults(fn=fn, client=client)
+    # fn is None for a group — `autowright automation` prints the automation
+    # listing instead of failing on the missing verb (§20 bare invocation).
+    p.set_defaults(fn=fn or _help_fn(p), client=client and fn is not None)
     if json_flag:
         p.add_argument("--json", action="store_true",
                        help="print the raw API JSON instead of the human columns")
@@ -1213,8 +1371,10 @@ def _sub(parent, name: str, fn, help: str, client: bool = True, json_flag: bool 
 # from one helper — the resolution rule is discoverable at the point of use.
 _REF_FORMS = ("its name (case-insensitive), a unique part of its name, its id, or a unique "
               "id prefix — every [abcd1234] form these commands print resolves back")
-_REF = "the automation: " + _REF_FORMS
-_EXEC_REF = "the execution, by id or id prefix (default: the most recent execution)"
+# The compact form for the argument rows; the long form is stated once, in the
+# description of each group whose verbs take one.
+_REF = "which automation: its name, a unique part of its name, its id, or an id prefix"
+_EXEC_REF = "which execution, by id or id prefix (default: the most recent one)"
 
 
 def _ref(p) -> None:
@@ -1233,21 +1393,6 @@ CLI_ENABLED = True
 _DISABLED_NOTE = ("Automation commands are disabled in this release — "
                   "create, edit, and execute automations in the Autowright app.")
 
-_TOP_EXAMPLES = """Examples:
-  autowright status                                    is the backend up?
-  autowright automation list                           what is on this machine
-  autowright automation show "daily report"            one automation in full
-  autowright automation pull "daily report" ./report   get its files to edit
-  autowright automation push "daily report" ./report   save them as the next version
-  autowright automation execute "daily report" -f      execute it, watching the logs
-  autowright execution tail                            follow the latest execution
-
-Exit codes:
-  0  success
-  1  any error — no backend, HTTP error, validation, bad reference, bad usage, Ctrl-C
-  2  a followed execution finished in some status other than succeeded, and nothing
-     else ever exits 2, so a script can branch on it without reading the output"""
-
 
 def _grant_flags(p) -> None:
     """§20 grant model: the explicit, repeatable grant flags on create/push."""
@@ -1264,8 +1409,19 @@ def _add_service(top) -> None:
              client=False,
              description="Control the background service that keeps Autowright running when "
                          "the app isn't open — the thing that fires your schedules and "
-                         "watches for message triggers. This is the only group that works "
-                         "with the backend down, and the only one that needs no app running.",
+                         "watches for message triggers."
+                         "\n\n"
+                         "This is the only group that works with the backend down, so it is "
+                         "where you start when another command says it can't reach one. "
+                         "`status` reports whether the service is registered and running; "
+                         "`install` registers it to come up at login and starts it now."
+                         "\n\n"
+                         "`stop` leaves it registered so it returns at the next login. "
+                         "`uninstall` unregisters it entirely, and also removes the "
+                         "`autowright` command from your PATH if Autowright was the one that "
+                         "put it there, so run it from inside the app bundle if you mean to "
+                         "carry on from a terminal. Automations, secrets, and execution "
+                         "history are untouched by any of these.",
              epilog="Examples:\n"
                     "  autowright service status      is it registered and running?\n"
                     "  autowright service install     register it to start at login\n"
@@ -1279,13 +1435,33 @@ def _add_service(top) -> None:
 def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     ap = Parser(
         prog="autowright", formatter_class=Help,
-        description="Autowright from the command line: the same automations, executions, "
-                    "secrets, agents, and settings the app shows, driven headlessly over the "
-                    "local backend. Authoring happens in a workdir — pull an automation into "
-                    "a directory, edit its spec, manifest, and step files with any editor, "
-                    "then push the directory back as a new version.",
-        epilog=_TOP_EXAMPLES if full else _DISABLED_NOTE)
-    top = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
+        description=(
+            "Autowright from the command line: the same automations, executions, secrets, "
+            "agents, and settings the app shows, driven headlessly over the local backend. "
+            "Authoring happens in a workdir — pull an automation into a directory, edit its "
+            "spec, manifest, and step files with any editor, then push the directory back as "
+            "a new version."
+            "\n\n"
+            "Every command talks to the Autowright backend running on this machine, so the "
+            "backend has to be up: `autowright status` says whether it is, and the `service` "
+            "group starts it. That group is the exception — it is the one that works with "
+            "everything down."
+            "\n\n"
+            "Read verbs take --json, which prints the backend's own JSON instead of the human "
+            "columns, so scripts and agents never have to parse prose."
+            if full else
+            # The disabled shape registers only `service`, so it must not promise
+            # a surface that isn't there.
+            "Autowright from the command line. This release registers only the service "
+            "group — the background service that keeps your automations firing when the app "
+            "isn't open."),
+        # §20: a parser holding subcommands ends at its listing — no epilog above
+        # a listing the reader hasn't reached yet.
+        epilog=None if full else _DISABLED_NOTE)
+    top = ap.add_subparsers(dest="cmd", required=False, metavar="COMMAND")
+    # §20 bare invocation: `autowright` alone prints this help and exits 0,
+    # rather than answering the question "what is this?" with a usage stub.
+    ap.set_defaults(fn=_help_fn(ap), client=False)
 
     if not full:
         _add_service(top)
@@ -1295,14 +1471,22 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
          json_flag=True,
          description="Print the backend's version and how many automations, executions, "
                      "agents, and secrets it holds. The quickest way to confirm the CLI can "
-                     "reach a running Autowright before doing anything else.")
+                     "reach a running Autowright before doing anything else."
+                     "\n\n"
+                     "It doubles as a health check in scripts: with no backend reachable it "
+                     "exits 1 with a message pointing at the `service` group, rather than "
+                     "printing counts.")
     _sub(top, "instructions", cmd_instructions,
          "print the framework instructions step code must follow", json_flag=True,
          description="Print the framework instructions verbatim — the contract step code is "
                      "written against: the step SDK, the imports steps may use, and the "
                      "policy sections the validators enforce. Read this before writing step "
-                     "files by hand; it is the same text the app gives its drafting agents. "
-                     "--json prints the framework and build instruction files together.")
+                     "files by hand."
+                     "\n\n"
+                     "It is the same text the app gives its own drafting agents, and it ships "
+                     "with the app rather than with your automations, so re-read it after an "
+                     "update instead of working from a saved copy. --json prints the "
+                     "framework and build instruction files together.")
 
     # ---- automation
     ag = _sub(top, "automation", None, "create, inspect, edit, and execute automations",
@@ -1310,27 +1494,50 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                           "workdir — a plain directory holding spec.md (the spec as "
                           "markdown), manifest.yaml (name, description, triggers, params, "
                           "packages, steps), and one NN-name.py file per step. Pull one out, "
-                          "edit the files, push them back.").add_subparsers(
-        dest="verb", required=True, metavar="VERB")
+                          "edit the files, push them back."
+                          "\n\n"
+                          "Wherever a verb takes an automation, name it by " + _REF_FORMS +
+                          ". Saving never overwrites: push and create add a version, and the "
+                          "old ones stay in the history where `restore` can bring them "
+                          "back.").add_subparsers(dest="verb", required=False, metavar="VERB")
     _sub(ag, "list", cmd_automation_list, "list every automation on this machine",
          json_flag=True,
          description="One row per automation: its name, how it is triggered, the status of "
                      "its last execution, and its short id. A row carrying a `needs fixing` "
                      "marker has something stopping it from executing — `automation show` "
-                     "spells out what.")
+                     "spells out what."
+                     "\n\n"
+                     "The trigger column reads (off) when every one of an automation's "
+                     "triggers is switched off, so it will only execute when you ask it to. "
+                     "The short id in brackets is a real reference: pass it to any verb that "
+                     "takes an automation.")
     p = _sub(ag, "show", cmd_automation_show,
              "print one automation in full: spec, steps, triggers, params", json_flag=True,
              description="One automation's whole record: what it does, every step, its "
                          "triggers, its parameters and their current values, the agents and "
                          "secrets it is allowed to use, its memory snapshots, and anything "
-                         "that needs fixing before it can execute.")
+                         "that needs fixing before it can execute."
+                         "\n\n"
+                         "This is the read-only view. To change what an automation does, "
+                         "`automation pull` it into a directory and push the edited files "
+                         "back; to change a parameter value or a trigger without a new "
+                         "version, use `param set` or the `trigger` verbs.")
     _ref(p)
     p = _sub(ag, "pull", cmd_automation_pull, "copy an automation into a directory to edit",
              description="Write an automation's current version into a directory as editable "
                          "files: spec.md, manifest.yaml, one NN-name.py per step, plus "
                          "instructions.md and notes.md when the version has them. Edit them "
-                         "with anything, then `automation push` the directory back. Parameter "
-                         "values are not written — they are yours, not part of a version.",
+                         "with anything, then `automation push` the directory back."
+                         "\n\n"
+                         "Parameter values are deliberately not written. A version describes "
+                         "what an automation does; the values it does it with are operational "
+                         "state you own, so they never round-trip through a version. Read and "
+                         "change them with the `param` verbs instead."
+                         "\n\n"
+                         "A pull is a copy, not a lock: the automation can still execute, and "
+                         "can still be edited in the app, while you have the files open. "
+                         "Pushing saves your files as the next version whatever happened "
+                         "meanwhile, so pull again if you have been away a while.",
              epilog="Examples:\n"
                     "  autowright automation pull \"daily report\"            into ./daily report\n"
                     "  autowright automation pull \"daily report\" ./report   into ./report")
@@ -1344,8 +1551,20 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                          "first: spec shape, parameter kinds and defaults, one step file per "
                          "declared step in order, Python that parses, only allowed imports, "
                          "timeout and trigger rules. Problems print one per line and nothing "
-                         "is saved. Grants only ever grow here — revoking one is done on the "
-                         "automation's edit page in the app.",
+                         "is saved, so you can fix the files and push again."
+                         "\n\n"
+                         "Grants only ever grow here. If the edited steps use an agent or a "
+                         "secret the automation isn't allowed yet, the save is refused and "
+                         "the exact --grant flags to add are printed; passing them widens "
+                         "what it may use. Nothing is ever revoked by a push — that is done "
+                         "on the automation's edit page in the app."
+                         "\n\n"
+                         "The manifest's schedules replace the stored ones, matched on the "
+                         "expression and timezone so an untouched manifest round-trips "
+                         "unchanged. Message and app-start triggers, and anything you added "
+                         "with `trigger add`, survive a push untouched. Packages the saved "
+                         "version declares are installed afterwards, and an install that "
+                         "fails warns without failing the save.",
              epilog="Examples:\n"
                     "  autowright automation push report ./report\n"
                     "  autowright automation push report ./report --note \"retry on 429\"\n"
@@ -1357,10 +1576,21 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     _grant_flags(p)
     p = _sub(ag, "create", cmd_automation_create, "create a new automation from a directory",
              description="Validate a workdir and create a new automation from it, as version "
-                         "1. The same checks `automation push` runs apply. Nothing is granted "
-                         "implicitly: if the steps use an agent or a secret, grant it with "
-                         "--grant-agent / --grant-secret, or the save is refused and the exact "
-                         "flags to add are printed.",
+                         "1. The same checks `automation push` runs apply, and the same "
+                         "nothing-is-written-on-failure rule."
+                         "\n\n"
+                         "Nothing is granted implicitly. If the steps use an agent or a "
+                         "secret, grant it with --grant-agent / --grant-secret, or the save "
+                         "is refused and the exact flags to add are printed. A step that "
+                         "calls an agent without naming one runs on the first enabled agent, "
+                         "so it still needs at least one --grant-agent. Granting something "
+                         "the steps don't use yet is allowed."
+                         "\n\n"
+                         "The name comes from --name, then the manifest, then the directory's "
+                         "own name; a name already taken gets a number appended rather than "
+                         "colliding. The new automation's triggers arrive from the manifest "
+                         "switched on, so check them with `trigger list` if you are not ready "
+                         "for it to execute on its own.",
              epilog="Examples:\n"
                     "  autowright automation create ./report\n"
                     "  autowright automation create ./report --name \"Daily report\"\n"
@@ -1374,25 +1604,44 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                    help="which configured agent is recorded as the author, by agent name")
     _grant_flags(p)
     p = _sub(ag, "delete", cmd_automation_delete, "delete an automation and everything it has",
-             description="Delete an automation, every version of it, its memory, and its "
-                         "whole execution history. This cannot be undone, so it needs --yes. "
-                         "To keep a copy first, `automation export` it.")
+             description="Delete an automation, every version of it, its memory, its memory "
+                         "snapshots, and its whole execution history, including the result "
+                         "files those executions produced. This cannot be undone, so it needs "
+                         "--yes."
+                         "\n\n"
+                         "To keep a copy first, `automation export` it to a file — that "
+                         "carries the automation itself, though not its history. If it is "
+                         "executing when you delete it, the execution is stopped first, which "
+                         "is why this command can take a moment to return.")
     _ref(p)
     p.add_argument("--yes", action="store_true",
                    help="required: confirms you mean to delete all of it")
     p = _sub(ag, "restore", cmd_automation_restore, "bring an old version back to the top",
              description="Copy an old version back to the top of the history as a new "
-                         "version. Nothing is overwritten or lost — the history only ever "
-                         "grows, so restoring is itself undoable. `automation show` lists the "
-                         "versions you can name.")
+                         "version, making it the one that executes from now on."
+                         "\n\n"
+                         "Nothing is overwritten or lost: the version you were on stays in "
+                         "the history, so a restore is itself undoable by restoring back. "
+                         "`automation show` lists the versions you can name. Parameter "
+                         "values, triggers, and memory are not part of a version and are left "
+                         "exactly as they are.")
     _ref(p)
     p.add_argument("version", metavar="vN", help='the version to bring back, like "v3"')
     p = _sub(ag, "execute", cmd_automation_execute, "execute an automation right now",
              description="Execute an automation now, as if a trigger had fired, and print the "
-                         "new execution's id. It runs in the background: add --follow to "
-                         "watch the logs instead and have the exit code report the outcome "
-                         "(0 succeeded, 2 anything else). By default the current version runs "
-                         "under the grants it already has.",
+                         "new execution's id. It runs in the background, so the command "
+                         "returns immediately; `execution tail` picks up the logs later."
+                         "\n\n"
+                         "With --follow the logs stream here until it finishes and the exit "
+                         "code reports the outcome: 0 if it succeeded, 2 if it ended any "
+                         "other way. That is what scripts should branch on. Ctrl-C stops "
+                         "watching without stopping the execution."
+                         "\n\n"
+                         "The current version runs, under the agents and secrets the "
+                         "automation is already allowed — executing never widens that. "
+                         "--version runs an older version or the unsaved draft this once, "
+                         "changing nothing about the automation. If it is already executing, "
+                         "the start is refused unless you pass --queue.",
              epilog="Examples:\n"
                     "  autowright automation execute report\n"
                     "  autowright automation execute report --follow\n"
@@ -1413,9 +1662,16 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p = _sub(ag, "export", cmd_automation_export, "write an automation to a shareable file",
              description="Write an automation to a portable .autowright file: its current "
                          "version, spec, steps, triggers, and parameter definitions, ready to "
-                         "import on another machine. Your parameter values ride along unless "
-                         "you pass --no-values. Secret values are never exported — only the "
-                         "names, so the other machine can match its own.",
+                         "import on another machine or to keep as a backup."
+                         "\n\n"
+                         "Secret values are never exported. Only the names travel, so the "
+                         "machine importing it matches them against its own secrets and tells "
+                         "you what it could not find. The same goes for agents."
+                         "\n\n"
+                         "Your parameter values do travel, so that an export works on "
+                         "arrival — pass --no-values when the file is going to someone else "
+                         "and the values are yours alone. Execution history and memory are "
+                         "never included.",
              epilog="Examples:\n"
                     "  autowright automation export report\n"
                     "  autowright automation export report ~/Desktop/report.autowright\n"
@@ -1427,10 +1683,21 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("--no-values", action="store_true",
                    help="export the parameter definitions without your values")
     p = _sub(ag, "import", cmd_automation_import, "import an automation from a file or link",
-             description="Import an automation someone exported. The agents and secrets it "
-                         "names are matched against what this machine has; anything unmatched "
-                         "is listed for you to fix in the app. Its triggers arrive switched "
-                         "off, so nothing starts executing until you turn them on.",
+             description="Import an automation someone exported, from a file on disk or "
+                         "straight from a link. Typing the command is taken as your go-ahead, "
+                         "so it imports without asking to confirm."
+                         "\n\n"
+                         "The agents and secrets the archive names are matched against what "
+                         "this machine has, by name. Matches are printed, and anything "
+                         "unmatched is listed for you to fix in the app before the automation "
+                         "can execute. A name already in use here gets a number appended "
+                         "rather than replacing what you have, and an automation built on a "
+                         "different operating system says so, because its steps may need "
+                         "rewriting."
+                         "\n\n"
+                         "Its triggers arrive switched off, so nothing starts executing until "
+                         "you turn them on with `trigger on`. Packages it declares are "
+                         "installed afterwards.",
              epilog="Examples:\n"
                     "  autowright automation import ./report.autowright\n"
                     "  autowright automation import https://example.com/report.autowright\n"
@@ -1444,17 +1711,24 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                           "execute — an address to send to, how many items to fetch. The "
                           "automation's version defines them; the values are yours, so they "
                           "stay put across new versions and never travel in an "
-                          "export.").add_subparsers(dest="verb2", required=True,
+                          "export.").add_subparsers(dest="verb2", required=False,
                                                     metavar="VERB")
     p = _sub(pg, "list", cmd_param_list, "list the parameters and their current values",
              json_flag=True,
              description="One row per parameter: its name, its kind, and the value in effect "
-                         "right now.")
+                         "right now."
+                         "\n\n"
+                         "A parameter with no value of its own shows the default its version "
+                         "declared. The kind column is what `param set` parses against.")
     _ref(p)
     p = _sub(pg, "set", cmd_param_set, "set one or more parameter values",
-             description="Set parameter values. Each value is read according to that "
-                         "parameter's kind, and a value that doesn't fit its kind is refused, "
-                         "naming the form it wanted. `param list` shows the kinds.",
+             description="Set parameter values. They take effect on the next execution, "
+                         "including one a trigger starts, and stay set across new versions."
+                         "\n\n"
+                         "Each value is read according to that parameter's kind, listed "
+                         "below. A name no parameter has, or a value that doesn't fit its "
+                         "kind, is refused naming the form it wanted, and nothing in the "
+                         "command is applied.",
              epilog="Examples:\n"
                     "  autowright automation param set report RECIPIENT=me@example.com\n"
                     "  autowright automation param set report RETRIES=3 VERBOSE=on\n"
@@ -1476,19 +1750,31 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                           "one-off time, every app launch, or an incoming Discord or iMessage "
                           "message. An automation with no triggers executes only when you ask "
                           "it to. The verbs below take the 1-based numbers `trigger list` "
-                          "prints.").add_subparsers(dest="verb2", required=True,
+                          "prints.").add_subparsers(dest="verb2", required=False,
                                                     metavar="VERB")
     p = _sub(tg, "list", cmd_trigger_list, "list the triggers, numbered", json_flag=True,
              description="Every trigger this automation has, numbered, in plain words, with "
-                         "(off) on any that are switched off. Those numbers are what "
-                         "`trigger on`, `trigger off`, and `trigger remove` take.")
+                         "(off) on any that are switched off."
+                         "\n\n"
+                         "Those numbers are what `trigger on`, `trigger off`, and `trigger "
+                         "remove` take, and they renumber when one is removed, so list again "
+                         "between edits. An automation with no triggers executes only when "
+                         "you ask it to.")
     _ref(p)
     p = _sub(tg, "add", cmd_trigger_add, "add a trigger",
              description="Add a trigger. With no flags, the argument is a cron expression and "
                          "you get a repeating schedule. --at makes it happen once at a given "
                          "time, --app-start every time the app launches, and --discord / "
-                         "--imessage make an incoming message start it. New triggers arrive "
-                         "switched on.",
+                         "--imessage make an incoming message start it."
+                         "\n\n"
+                         "New triggers arrive switched on, so an automation can start "
+                         "executing as soon as this returns. Schedules and one-off times run "
+                         "in this machine's timezone unless --timezone says otherwise, and a "
+                         "one-off time in the past is refused."
+                         "\n\n"
+                         "A trigger added here belongs to you, not to the automation's "
+                         "version: pushing a new version leaves it alone, where a schedule "
+                         "written into the manifest is replaced by what the manifest says.",
              epilog="Examples:\n"
                     "  autowright automation trigger add report \"0 8 * * *\"\n"
                     "      every day at 08:00\n"
@@ -1506,7 +1792,7 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                     "--pattern status\n"
                     "      when that number texts something containing \"status\"")
     _ref(p)
-    p.add_argument("expression", nargs="?", metavar="CRON",
+    p.add_argument("expression", nargs="?", metavar="cron",
                    help='a cron expression for a repeating schedule, like "0 8 * * *" for '
                         "every day at 08:00 (leave it out when using one of the flags below)")
     p.add_argument("--at", metavar="TIME",
@@ -1534,22 +1820,34 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                         'like "Europe/Berlin" (default: this machine\'s timezone)')
     p = _sub(tg, "on", cmd_trigger_toggle, "switch a trigger back on",
              description="Switch a trigger back on, so it starts firing again. The trigger "
-                         "itself is unchanged — this is the reverse of `trigger off`.")
+                         "itself is unchanged — this is the exact reverse of `trigger off`."
+                         "\n\n"
+                         "A schedule that came due while it was switched off does not fire "
+                         "retroactively; the next matching time is the next one it fires.")
     _ref(p)
     p.add_argument("index", metavar="N",
                    help="which trigger, by the number `trigger list` prints")
     p.set_defaults(fn_enabled=True)
     p = _sub(tg, "off", cmd_trigger_toggle, "switch a trigger off without removing it",
              description="Stop a trigger from firing, keeping it in the list so you can "
-                         "switch it back on later with `trigger on`.")
+                         "switch it back on later with `trigger on`."
+                         "\n\n"
+                         "This is the safe way to pause an automation you are editing, or one "
+                         "that is failing: it stays exactly as it is, and you can still "
+                         "execute it by hand while it is off. Switching every trigger off is "
+                         "what puts (off) beside it in `automation list`.")
     _ref(p)
     p.add_argument("index", metavar="N",
                    help="which trigger, by the number `trigger list` prints")
     p.set_defaults(fn_enabled=False)
     p = _sub(tg, "remove", cmd_trigger_remove, "delete a trigger",
              description="Remove a trigger from the automation for good. To stop it "
-                         "temporarily instead, use `trigger off`. Note that the remaining "
-                         "triggers renumber, so check `trigger list` before removing another.")
+                         "temporarily instead, use `trigger off`."
+                         "\n\n"
+                         "The remaining triggers renumber immediately, so run `trigger list` "
+                         "again before removing another. Removing a schedule the automation's "
+                         "manifest declares only lasts until the next push, which puts the "
+                         "manifest's schedules back.")
     _ref(p)
     p.add_argument("index", metavar="N",
                    help="which trigger, by the number `trigger list` prints")
@@ -1559,21 +1857,30 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                           "executions — where it got to last time, what it has already seen. "
                           "The steps write it; these verbs let you read it and wipe it. It is "
                           "never sent to an AI agent while an automation is being "
-                          "written.").add_subparsers(dest="verb2", required=True,
+                          "written.").add_subparsers(dest="verb2", required=False,
                                                      metavar="VERB")
     p = _sub(mg, "show", cmd_memory_show, "list the memory files, or print one of them",
              json_flag=True,
              description="With no file, list what is in the automation's memory: each file's "
                          "path, size, and when it last changed. With a file, print that "
-                         "file's text. Read-only either way, and safe to run mid-execution.")
+                         "file's text."
+                         "\n\n"
+                         "Read-only either way, and safe to run while the automation is "
+                         "executing — a read never catches a half-written file. A file that "
+                         "isn't text is not printed; the message points at where it lives on "
+                         "disk instead.")
     _ref(p)
     p.add_argument("file", nargs="?",
                    help="which file to print, by the path `memory show` lists (default: list "
                         "the files instead of printing one)")
     p = _sub(mg, "clear", cmd_memory_clear, "empty an automation's memory",
              description="Delete everything in the automation's memory, so its next execution "
-                         "starts with nothing remembered. A snapshot is taken first "
-                         "automatically, so `snapshot restore` can bring it back.")
+                         "starts with nothing remembered — a fresh start for one that has got "
+                         "itself into a bad state."
+                         "\n\n"
+                         "A snapshot is taken first automatically whenever there was anything "
+                         "to clear, so `snapshot list` and `snapshot restore` can bring it "
+                         "back. Expect the automation to redo work it had already done.")
     _ref(p)
 
     sg = _sub(ag, "snapshot", None, "save and restore copies of an automation's memory",
@@ -1581,28 +1888,39 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                           "moment. Take one before anything risky; restore it to put the "
                           "memory back the way it was. Restoring snapshots the current memory "
                           "first, so it is itself undoable.").add_subparsers(
-        dest="verb2", required=True, metavar="VERB")
+        dest="verb2", required=False, metavar="VERB")
     p = _sub(sg, "list", cmd_snapshot_list, "list the memory snapshots", json_flag=True,
              description="Every snapshot of this automation's memory: short id, when it was "
-                         "taken, why, which version was current, its size, and its label. "
+                         "taken, why, which version was current, its size, and its label."
+                         "\n\n"
                          "Those short ids are what `snapshot restore` and `snapshot delete` "
-                         "take.")
+                         "take. The reason column says whether you asked for it or the app "
+                         "took it on your behalf before clearing or restoring.")
     _ref(p)
     p = _sub(sg, "create", cmd_snapshot_create, "snapshot the memory as it is now",
              description="Copy the automation's memory as it stands right now, so you can put "
-                         "it back later. Give it a --name if you want to recognize it in the "
-                         "list.")
+                         "it back later. Worth doing before a version that changes how the "
+                         "automation uses its memory."
+                         "\n\n"
+                         "Give it a --name to recognize it in the list; without one it is "
+                         "identified by its id and the time it was taken.")
     _ref(p)
     p.add_argument("--name", metavar="TEXT",
                    help="a label to recognize this snapshot by later")
     p = _sub(sg, "restore", cmd_snapshot_restore, "put the memory back to a snapshot",
-             description="Replace the automation's memory with a snapshot's contents. The "
-                         "memory as it is now is snapshotted first, so this is undoable too.")
+             description="Replace the automation's memory with a snapshot's contents, putting "
+                         "it back the way it was when the snapshot was taken."
+                         "\n\n"
+                         "The memory as it is now is snapshotted first, so this is undoable "
+                         "too. Nothing else about the automation changes: the version, its "
+                         "triggers, and its parameter values are all left alone.")
     _ref(p)
     p.add_argument("snapshot", help="which snapshot, by the short id `snapshot list` prints")
     p = _sub(sg, "delete", cmd_snapshot_delete, "delete a memory snapshot",
-             description="Delete one snapshot for good. The automation's current memory is "
-                         "untouched — this only removes the saved copy.")
+             description="Delete one snapshot for good."
+                         "\n\n"
+                         "The automation's current memory is untouched — this only removes "
+                         "the saved copy, and the other snapshots stay where they are.")
     _ref(p)
     p.add_argument("snapshot", help="which snapshot, by the short id `snapshot list` prints")
 
@@ -1613,12 +1931,19 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                           "what ran, watch what is running, and step in while it does. The "
                           "ones that act on a single execution take its id, or default to the "
                           "most recent execution when you leave it "
-                          "out.").add_subparsers(dest="verb", required=True, metavar="VERB")
+                          "out.").add_subparsers(dest="verb", required=False, metavar="VERB")
     p = _sub(eg, "list", cmd_execution_list, "list recent executions, newest first",
              json_flag=True,
              description="Recent executions, newest first: when each started, which "
                          "automation and version ran, how it ended, how long it took, what "
-                         "started it, and its short id.",
+                         "started it, and its short id."
+                         "\n\n"
+                         "Every automation's executions are mixed together unless you narrow "
+                         "with --automation. The short ids are real references: pass one to "
+                         "`execution show`, `tail`, `retry`, or `result`."
+                         "\n\n"
+                         "How far back this reaches depends on your retention setting — see "
+                         "`settings show`, keys days and keepForever.",
              epilog="Examples:\n"
                     "  autowright execution list\n"
                     "  autowright execution list -n 50\n"
@@ -1627,7 +1952,8 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("-n", type=int, default=20, metavar="COUNT",
                    help="how many to print (default: 20)")
     p.add_argument("--automation", metavar="AUTOMATION",
-                   help="only executions of one automation, by " + _REF_FORMS)
+                   help="only executions of one automation, named as anywhere else: its "
+                        "name, a unique part of its name, its id, or an id prefix")
     p.add_argument("--status", metavar="STATUS",
                    choices=["queued", "executing", "succeeded", "failed",
                             "cancelled", "skipped", "interrupted"],
@@ -1638,43 +1964,76 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
              description="One execution in detail: how it ended and how long it took, every "
                          "step with its own status and duration, the error if it failed, the "
                          "message that started it if a message did, and the files it "
-                         "produced.")
+                         "produced."
+                         "\n\n"
+                         "This is the record, not the log. For the log lines a step printed "
+                         "as it ran, use `execution tail`; for a file it produced, "
+                         "`execution result`. A Discord or iMessage trigger's message is "
+                         "shown with its sender and time, never the token behind it.")
     _exec_ref(p)
     p = _sub(eg, "tail", cmd_execution_tail, "follow an execution's logs as it runs",
-             description="Stream an execution's logs until it finishes. Exits 0 if it "
-                         "succeeded and 2 if it ended any other way, so a script can branch "
-                         "on the exit code without reading the output. An execution still "
-                         "waiting for a free slot is followed through to its real ending, not "
-                         "reported the moment it starts. Ctrl-C stops watching; it does not "
-                         "stop the execution.")
+             description="Stream an execution's logs until it finishes, then print how it "
+                         "ended. On one that has already finished it prints the whole log and "
+                         "returns, so it works as a log reader too."
+                         "\n\n"
+                         "It exits 0 if the execution succeeded and 2 if it ended any other "
+                         "way, so a script can branch on the exit code without reading the "
+                         "output. An execution still waiting for a free slot is followed "
+                         "through to its real ending, not reported the moment it starts."
+                         "\n\n"
+                         "Ctrl-C stops watching and exits 1. It does not stop the execution — "
+                         "`execution cancel` does that.")
     _exec_ref(p)
     p = _sub(eg, "cancel", cmd_execution_cancel, "stop an execution that is running",
-             description="Stop a running execution. The step it is on is killed and the steps "
-                         "after it never run. Steps that already finished keep their results. "
-                         "To skip past one stuck step and let the rest continue, use "
-                         "`execution skip` instead.")
+             description="Stop a running execution. The step it is on is killed, along with "
+                         "any process that step started, and the steps after it never run."
+                         "\n\n"
+                         "Steps that already finished keep their results, and the execution "
+                         "is recorded as cancelled so you can see later why it stopped short. "
+                         "To skip past one stuck step and let the rest of the automation "
+                         "continue, use `execution skip` instead. A cancel that arrives after "
+                         "the last step has finished changes nothing.")
     _exec_ref(p)
     p = _sub(eg, "retry", cmd_execution_retry, "run a failed execution's unfinished steps again",
              description="Pick a failed execution back up in place: the steps that already "
                          "succeeded keep their results and are not re-run, and everything "
-                         "from the failure onward runs again. This continues the same "
-                         "execution rather than starting a new one.")
+                         "from the failure onward runs again."
+                         "\n\n"
+                         "This continues the same execution rather than starting a new one, "
+                         "so its id and its history stay the same and the earlier attempts "
+                         "remain on the record. Use it after fixing whatever the step needed "
+                         "— a secret, a parameter value, something the machine was missing. "
+                         "To run the whole automation from the top instead, use `automation "
+                         "execute`."
+                         "\n\n"
+                         "With --follow the logs stream here and the exit code reports the "
+                         "outcome, exactly as `automation execute --follow` does.")
     _exec_ref(p)
     p.add_argument("-f", "--follow", action="store_true",
                    help="stream the logs until it finishes, then exit 0 if it succeeded and "
                         "2 if it did not")
     p = _sub(eg, "skip", cmd_execution_skip, "give up on the current step and move on",
              description="Abandon the step a running execution is stuck on and let it "
-                         "continue with the next one. The skipped step produces no result. If "
-                         "the step finishes on its own first, nothing is skipped.")
+                         "continue with the next one. Use it when one step is hanging on "
+                         "something that isn't coming and the rest is still worth running."
+                         "\n\n"
+                         "The skipped step produces no result, and any step after it that "
+                         "needed that result will likely fail. A step waiting to retry is "
+                         "skipped just the same. If the step finishes on its own before the "
+                         "skip lands, nothing is skipped and its result stands.")
     _exec_ref(p)
     p = _sub(eg, "result", cmd_execution_result,
              "list the files an execution produced, or print one",
              description="With no file name, list the files this execution produced, with "
-                         "their sizes. With a name, write that file to stdout unchanged — "
-                         "including binary files, so redirect to a file when it isn't text.",
+                         "their sizes. With a name, write that file to stdout."
+                         "\n\n"
+                         "The file goes out byte for byte, binary included, so redirect to a "
+                         "file for anything that isn't text. This is how you get an "
+                         "execution's output out of Autowright and into the rest of a shell "
+                         "pipeline.",
              epilog="Examples:\n"
-                    "  autowright execution result                       list the latest run's files\n"
+                    "  autowright execution result                       "
+                    "list the latest run's files\n"
                     "  autowright execution result a1b2c3d4              list that run's files\n"
                     "  autowright execution result a1b2c3d4 report.csv   print one\n"
                     "  autowright execution result a1b2c3d4 chart.png > chart.png")
@@ -1690,17 +2049,27 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                            f"Values live in your {store_name}, and an automation can only "
                            "read the ones it has been granted. A value is never printed, "
                            "logged, or passed on a command line — only the names "
-                           "are.").add_subparsers(dest="verb", required=True, metavar="VERB")
+                           "are.").add_subparsers(dest="verb", required=False, metavar="VERB")
     _sub(scg, "list", cmd_secret_list, "list the stored secret names", json_flag=True,
-         description="Every stored secret by name, with the automations allowed to use it. "
-                     "Values are never shown; a secret whose value has not been set yet is "
-                     "marked (not set).")
+         description="Every stored secret by name, with the automations allowed to use it."
+                     "\n\n"
+                     "Values are never shown, by this or any other command. A secret marked "
+                     "(not set) has a name and grants but no value behind it yet, which is "
+                     "what an automation imported from elsewhere leaves you to fill in. "
+                     "\"not used yet\" means no automation has been granted it.")
     p = _sub(scg, "set", cmd_secret_set, f"store or replace a secret in your {store_name}",
              description="Store a secret under this name, or replace the value if the name is "
-                         "already taken. The value never goes on the command line, where it "
-                         "would land in your shell history and be visible to every process on "
-                         "the machine: it is asked for without echoing, or read from stdin "
-                         "with --stdin.",
+                         "already taken."
+                         "\n\n"
+                         "The value never goes on the command line, where it would land in "
+                         "your shell history and be visible to every process on the machine. "
+                         "It is asked for without echoing, or read from standard input with "
+                         "--stdin for scripts and pipes."
+                         "\n\n"
+                         "Storing a secret does not let anything use it: an automation reads "
+                         "it only once it has been granted, with --grant-secret on "
+                         "`automation create` or `automation push`, or on the automation's "
+                         "edit page in the app.",
              epilog="Examples:\n"
                     "  autowright secret set MAIL_PASS                     asks for the value\n"
                     "  pbpaste | autowright secret set MAIL_PASS --stdin   from the clipboard\n"
@@ -1710,10 +2079,15 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                    help="read the value from standard input instead of asking for it, for "
                         "scripts and pipes")
     p = _sub(scg, "delete", cmd_secret_delete, "remove a stored secret",
-             description="Remove a secret and its value. Automations granted it keep the "
-                         f"grant but find nothing there. --all empties your {store_name} of "
-                         "every Autowright secret at once, which is not undoable and so needs "
-                         "--yes.",
+             description="Remove a secret and its value."
+                         "\n\n"
+                         "Automations granted it keep the grant but find nothing behind it, "
+                         "so a step that needs it will fail on its next execution. Nothing "
+                         "warns you first; check `secret list` for what uses it."
+                         "\n\n"
+                         f"--all removes every Autowright secret from your {store_name} at "
+                         "once. That is not undoable and so needs --yes; with `service stop` "
+                         "it is how you clear this machine down from a terminal.",
              epilog="Examples:\n"
                     "  autowright secret delete MAIL_PASS\n"
                     "  autowright secret delete --all --yes")
@@ -1729,28 +2103,45 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                            "write automations for you, and the ones your steps can call. "
                            "Adding, editing, and signing into them is done in the app; from "
                            "here you can see what is configured and whether it is ready to "
-                           "run.").add_subparsers(dest="verb", required=True, metavar="VERB")
+                           "run.").add_subparsers(dest="verb", required=False, metavar="VERB")
     _sub(agg, "list", cmd_agent_list, "list the configured agents", json_flag=True,
          description="Every configured agent: its name, which tool it drives, and which model "
-                     "it uses. The default agent is marked with a *.")
+                     "it uses."
+                     "\n\n"
+                     "The default agent is marked with a *; that is the one a step gets when "
+                     "it asks for an agent without naming one. \"default model\" means "
+                     "Autowright passes no model at all and the tool uses whatever it is set "
+                     "up with. These names are what --grant-agent and `agent check` take.")
     p = _sub(agg, "check", cmd_agent_check, "check whether an agent is ready to run",
-             description="Ask an agent whether it can actually run right now — its tool "
-                         "installed and reachable, and signed in where that is needed. Use it "
-                         "when an automation fails on its agent step.")
+             description="Ask an agent whether it can actually run right now: its tool "
+                         "installed and reachable, and signed in where that is needed."
+                         "\n\n"
+                         "This is the first thing to try when an automation fails on a step "
+                         "that uses an agent. It reports what it found as JSON. Fixing what "
+                         "it reports — installing the tool, signing in, choosing another "
+                         "model — is done in the app.")
     p.add_argument("agent", help="which agent, by the name `agent list` prints")
 
     stg = _sub(top, "settings", None, "read and change the app's settings",
                description="The same settings the app's Settings page shows, readable and "
                            "settable from here so a headless machine can be configured "
                            "without opening the app. Changes apply "
-                           "live.").add_subparsers(dest="verb", required=True, metavar="VERB")
+                           "live.").add_subparsers(dest="verb", required=False, metavar="VERB")
     _sub(stg, "show", cmd_settings_show, "print the current settings", json_flag=True,
-         description="Every setting and its current value, one per line — the keys "
-                     "`settings set` takes.")
+         description="Every setting and its current value, one per line."
+                     "\n\n"
+                     "These are the keys `settings set` takes, plus two it does not: dataSize "
+                     "is how much execution data is on disk, and appPath is where automations "
+                     "and settings live, which is fixed.")
     p = _sub(stg, "set", cmd_settings_set, "change one or more settings",
-             description="Change settings. Several can be set in one command, and an "
-                         "unrecognized key or a value that doesn't fit its setting is "
-                         "refused without changing anything else.",
+             description="Change settings. They apply immediately, with no restart, and the "
+                         "app picks them up whether or not it is open."
+                         "\n\n"
+                         "Several can be set in one command. An unrecognized key, or a value "
+                         "that doesn't fit its setting, is refused and the ordinary settings "
+                         "in that command are left unchanged. Booleans take on or off "
+                         "(true/false, 1/0, and yes/no work too); a typo is rejected rather "
+                         "than quietly read as off.",
              epilog="Examples:\n"
                     "  autowright settings set login=on\n"
                     "  autowright settings set days=30 keepForever=off\n"
@@ -1776,7 +2167,8 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                     "  dataPath=PATH                where execution data is stored; the old\n"
                     "                               directory is left where it is")
     p.add_argument("values", nargs="+", metavar="KEY=VALUE",
-                   help="one or more settings to change, from the list below")
+                   help="one or more settings to change, by the key names `settings show` "
+                        "prints")
 
     _add_service(top)
     return ap

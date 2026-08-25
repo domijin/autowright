@@ -47,6 +47,29 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   `param list`, `trigger list`, `memory show`, `snapshot list`, `execution list|show`,
   `secret list`, `agent list`, `settings show`) prints the raw API JSON instead of the human
   columns — the machine mode agents parse.
+- **Help text:** `--help` is the CLI's own documentation — the §17 skill's agent discovers the
+  surface by reading it, not by reading this spec. Every parser in the tree carries a
+  `description` (the prose `<command> --help` prints, distinct from the one-line `help` its
+  parent's command list shows), and every positional and option carries a `help` naming what it
+  accepts, with a `metavar` wherever the placeholder name isn't self-describing. Fixed
+  vocabularies are **enumerated in the help itself**, never referenced by § number:
+  `execution list --status` registers the §4.6 statuses as argparse `choices` (an unlisted value
+  is a usage error rather than a silently empty list — the §19 filter is an equality match, so
+  nothing outside the vocabulary could ever have matched), `settings set` lists its keys with
+  each one's value form, and `param set` lists the per-kind value forms. The reference forms
+  (id · id prefix · exact name · unique name substring) appear on every `<automation>` positional
+  from one shared helper, so the resolution rule above is discoverable at the point of use, and
+  every optional `<execution>` positional says that omitting it means the latest execution.
+  Commands whose input shape isn't obvious from the flags alone — `automation
+  pull|push|create|execute|export|import`, `param set`, `trigger add`, `execution list|result`,
+  `secret set|delete`, `settings set`, `service` — carry an `epilog` of concrete example command
+  lines, and the top-level `--help` epilog carries examples plus the exit-code table. Help prose
+  is written for whoever is at the terminal: no § references, and a flag's stated accepted values
+  are exactly the values the command parses. `Help` (an `argparse.HelpFormatter` subclass) wraps
+  descriptions the ordinary way while leaving those example blocks line-for-line as written —
+  argparse's own raw formatter is all-or-nothing and would leave the prose unwrapped too, and
+  `_fill_text` is the single hook both run through, so the `Examples:` opener every example
+  epilog carries is what tells them apart.
 - **Needs fixing parity (§4.1 `problems`):** `automation list`'s human rows carry a plain
   `needs fixing` marker, after the status column and immediately before the result chip,
   when an automation's `problems` list is non-empty, and

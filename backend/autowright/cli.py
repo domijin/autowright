@@ -1183,12 +1183,46 @@ class Parser(argparse.ArgumentParser):
         sys.exit(f"{self.prog}: {message}")
 
 
-def _sub(parent, name: str, fn, help: str, client: bool = True, json_flag: bool = False):
-    p = parent.add_parser(name, help=help)
+class Help(argparse.HelpFormatter):
+    """§20 help text: wrap descriptions like argparse's default formatter, but
+    leave an epilog's example block line-for-line as written. argparse's own
+    RawDescriptionHelpFormatter is all-or-nothing — it would leave the prose
+    unwrapped too — and `_fill_text` is the one hook both run through, so the
+    `Examples:` opener every example epilog carries is what tells them apart."""
+
+    def _fill_text(self, text: str, width: int, indent: str) -> str:
+        if text.startswith("Examples:"):
+            return "\n".join(indent + line for line in text.splitlines())
+        return super()._fill_text(text, width, indent)
+
+
+def _sub(parent, name: str, fn, help: str, client: bool = True, json_flag: bool = False,
+         description: str | None = None, epilog: str | None = None):
+    # §20 help text: `help` is the one-liner the parent's command list shows;
+    # `description` is the prose `<command> --help` prints, defaulting to it.
+    p = parent.add_parser(name, help=help, description=description or help, epilog=epilog,
+                          formatter_class=Help)
     p.set_defaults(fn=fn, client=client)
     if json_flag:
-        p.add_argument("--json", action="store_true", help="print the raw API JSON")
+        p.add_argument("--json", action="store_true",
+                       help="print the raw API JSON instead of the human columns")
     return p
+
+
+# §20 help text: the reference forms live on every positional that takes one,
+# from one helper — the resolution rule is discoverable at the point of use.
+_REF_FORMS = ("its name (case-insensitive), a unique part of its name, its id, or a unique "
+              "id prefix — every [abcd1234] form these commands print resolves back")
+_REF = "the automation: " + _REF_FORMS
+_EXEC_REF = "the execution, by id or id prefix (default: the most recent execution)"
+
+
+def _ref(p) -> None:
+    p.add_argument("automation", help=_REF)
+
+
+def _exec_ref(p) -> None:
+    p.add_argument("execution", nargs="?", help=_EXEC_REF)
 
 
 # §20: the full surface is on. False registers only `service` (the group the
@@ -1199,189 +1233,550 @@ CLI_ENABLED = True
 _DISABLED_NOTE = ("Automation commands are disabled in this release — "
                   "create, edit, and execute automations in the Autowright app.")
 
+_TOP_EXAMPLES = """Examples:
+  autowright status                                    is the backend up?
+  autowright automation list                           what is on this machine
+  autowright automation show "daily report"            one automation in full
+  autowright automation pull "daily report" ./report   get its files to edit
+  autowright automation push "daily report" ./report   save them as the next version
+  autowright automation execute "daily report" -f      execute it, watching the logs
+  autowright execution tail                            follow the latest execution
+
+Exit codes:
+  0  success
+  1  any error — no backend, HTTP error, validation, bad reference, bad usage, Ctrl-C
+  2  a followed execution finished in some status other than succeeded, and nothing
+     else ever exits 2, so a script can branch on it without reading the output"""
+
 
 def _grant_flags(p) -> None:
     """§20 grant model: the explicit, repeatable grant flags on create/push."""
     p.add_argument("--grant-agent", action="append", default=[], metavar="NAME",
-                   help="grant the automation use of this configured agent (repeatable)")
+                   help="let the automation's steps use this configured agent, by agent "
+                        "name (repeat the flag for several agents)")
     p.add_argument("--grant-secret", action="append", default=[], metavar="NAME",
-                   help="grant the automation this stored secret (repeatable)")
+                   help="let the automation's steps read this stored secret, by secret "
+                        "name (repeat the flag for several secrets)")
 
 
 def _add_service(top) -> None:
-    p = _sub(top, "service", cmd_service, "manage the launchd service (§3)", client=False)
-    p.add_argument("action", choices=["install", "uninstall", "status", "restart", "stop"])
+    p = _sub(top, "service", cmd_service, "start, stop, and register the background service",
+             client=False,
+             description="Control the background service that keeps Autowright running when "
+                         "the app isn't open — the thing that fires your schedules and "
+                         "watches for message triggers. This is the only group that works "
+                         "with the backend down, and the only one that needs no app running.",
+             epilog="Examples:\n"
+                    "  autowright service status      is it registered and running?\n"
+                    "  autowright service install     register it to start at login\n"
+                    "  autowright service restart     stop it and start it again\n"
+                    "  autowright service stop        stop it, leaving it registered\n"
+                    "  autowright service uninstall   unregister it entirely")
+    p.add_argument("action", choices=["install", "uninstall", "status", "restart", "stop"],
+                   help="what to do with the service")
 
 
 def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     ap = Parser(
-        prog="autowright", description="Autowright from the command line",
-        epilog=None if full else _DISABLED_NOTE)
-    top = ap.add_subparsers(dest="cmd", required=True)
+        prog="autowright", formatter_class=Help,
+        description="Autowright from the command line: the same automations, executions, "
+                    "secrets, agents, and settings the app shows, driven headlessly over the "
+                    "local backend. Authoring happens in a workdir — pull an automation into "
+                    "a directory, edit its spec, manifest, and step files with any editor, "
+                    "then push the directory back as a new version.",
+        epilog=_TOP_EXAMPLES if full else _DISABLED_NOTE)
+    top = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
 
     if not full:
         _add_service(top)
         return ap
 
-    _sub(top, "status", cmd_status, "backend health and entity counts", json_flag=True)
+    _sub(top, "status", cmd_status, "check the backend is up, with entity counts",
+         json_flag=True,
+         description="Print the backend's version and how many automations, executions, "
+                     "agents, and secrets it holds. The quickest way to confirm the CLI can "
+                     "reach a running Autowright before doing anything else.")
     _sub(top, "instructions", cmd_instructions,
-         "the framework instructions step code must follow (§8)", json_flag=True)
+         "print the framework instructions step code must follow", json_flag=True,
+         description="Print the framework instructions verbatim — the contract step code is "
+                     "written against: the step SDK, the imports steps may use, and the "
+                     "policy sections the validators enforce. Read this before writing step "
+                     "files by hand; it is the same text the app gives its drafting agents. "
+                     "--json prints the framework and build instruction files together.")
 
     # ---- automation
-    ag = _sub(top, "automation", None, "manage automations").add_subparsers(
-        dest="verb", required=True)
-    _sub(ag, "list", cmd_automation_list, "list automations", json_flag=True)
-    p = _sub(ag, "show", cmd_automation_show, "full record: spec, steps, triggers, params",
-             json_flag=True)
-    p.add_argument("automation")
-    p = _sub(ag, "pull", cmd_automation_pull,
-             "materialize into a workdir (spec.md, manifest.yaml, steps) for editing")
-    p.add_argument("automation")
-    p.add_argument("dir", nargs="?", help="target directory (default: the automation's name)")
-    p = _sub(ag, "push", cmd_automation_push, "validate a workdir and save it as the next version")
-    p.add_argument("automation")
-    p.add_argument("dir", help="workdir to validate and save")
-    p.add_argument("--note", help="version note for the history menu")
+    ag = _sub(top, "automation", None, "create, inspect, edit, and execute automations",
+              description="Everything about automations. The authoring verbs work on a "
+                          "workdir — a plain directory holding spec.md (the spec as "
+                          "markdown), manifest.yaml (name, description, triggers, params, "
+                          "packages, steps), and one NN-name.py file per step. Pull one out, "
+                          "edit the files, push them back.").add_subparsers(
+        dest="verb", required=True, metavar="VERB")
+    _sub(ag, "list", cmd_automation_list, "list every automation on this machine",
+         json_flag=True,
+         description="One row per automation: its name, how it is triggered, the status of "
+                     "its last execution, and its short id. A row carrying a `needs fixing` "
+                     "marker has something stopping it from executing — `automation show` "
+                     "spells out what.")
+    p = _sub(ag, "show", cmd_automation_show,
+             "print one automation in full: spec, steps, triggers, params", json_flag=True,
+             description="One automation's whole record: what it does, every step, its "
+                         "triggers, its parameters and their current values, the agents and "
+                         "secrets it is allowed to use, its memory snapshots, and anything "
+                         "that needs fixing before it can execute.")
+    _ref(p)
+    p = _sub(ag, "pull", cmd_automation_pull, "copy an automation into a directory to edit",
+             description="Write an automation's current version into a directory as editable "
+                         "files: spec.md, manifest.yaml, one NN-name.py per step, plus "
+                         "instructions.md and notes.md when the version has them. Edit them "
+                         "with anything, then `automation push` the directory back. Parameter "
+                         "values are not written — they are yours, not part of a version.",
+             epilog="Examples:\n"
+                    "  autowright automation pull \"daily report\"            into ./daily report\n"
+                    "  autowright automation pull \"daily report\" ./report   into ./report")
+    _ref(p)
+    p.add_argument("dir", nargs="?",
+                   help="directory to write into (default: a new directory named after the "
+                        "automation, in the current directory)")
+    p = _sub(ag, "push", cmd_automation_push, "save an edited directory as the next version",
+             description="Validate a workdir and save it as this automation's next version. "
+                         "The same checks the app runs when it builds an automation run "
+                         "first: spec shape, parameter kinds and defaults, one step file per "
+                         "declared step in order, Python that parses, only allowed imports, "
+                         "timeout and trigger rules. Problems print one per line and nothing "
+                         "is saved. Grants only ever grow here — revoking one is done on the "
+                         "automation's edit page in the app.",
+             epilog="Examples:\n"
+                    "  autowright automation push report ./report\n"
+                    "  autowright automation push report ./report --note \"retry on 429\"\n"
+                    "  autowright automation push report ./report --grant-secret MAIL_PASS")
+    _ref(p)
+    p.add_argument("dir", help="the workdir to validate and save")
+    p.add_argument("--note", metavar="TEXT",
+                   help="a short note describing this version, shown in the version history")
     _grant_flags(p)
-    p = _sub(ag, "create", cmd_automation_create, "validate a workdir and create a new automation")
-    p.add_argument("dir", help="workdir to validate and create from")
-    p.add_argument("--name", help="automation name (default: manifest name, then the dir name)")
-    p.add_argument("--agent", help="drafting agent, by name")
+    p = _sub(ag, "create", cmd_automation_create, "create a new automation from a directory",
+             description="Validate a workdir and create a new automation from it, as version "
+                         "1. The same checks `automation push` runs apply. Nothing is granted "
+                         "implicitly: if the steps use an agent or a secret, grant it with "
+                         "--grant-agent / --grant-secret, or the save is refused and the exact "
+                         "flags to add are printed.",
+             epilog="Examples:\n"
+                    "  autowright automation create ./report\n"
+                    "  autowright automation create ./report --name \"Daily report\"\n"
+                    "  autowright automation create ./report --grant-agent Coder "
+                    "--grant-secret MAIL_PASS")
+    p.add_argument("dir", help="the workdir to validate and create from")
+    p.add_argument("--name", metavar="TEXT",
+                   help="name the new automation (default: the manifest's name, then the "
+                        "directory's name)")
+    p.add_argument("--agent", metavar="NAME",
+                   help="which configured agent is recorded as the author, by agent name")
     _grant_flags(p)
-    p = _sub(ag, "delete", cmd_automation_delete, "delete an automation and its history")
-    p.add_argument("automation")
-    p.add_argument("--yes", action="store_true", help="confirm the deletion")
-    p = _sub(ag, "restore", cmd_automation_restore, "restore an old version as the next version")
-    p.add_argument("automation")
-    p.add_argument("version", help="vN")
-    p = _sub(ag, "execute", cmd_automation_execute, "execute an automation now")
-    p.add_argument("automation")
-    p.add_argument("-f", "--follow", action="store_true", help="stream logs until it finishes")
-    p.add_argument("--version", help='execute an old version or the draft once ("vN" | "draft")')
+    p = _sub(ag, "delete", cmd_automation_delete, "delete an automation and everything it has",
+             description="Delete an automation, every version of it, its memory, and its "
+                         "whole execution history. This cannot be undone, so it needs --yes. "
+                         "To keep a copy first, `automation export` it.")
+    _ref(p)
+    p.add_argument("--yes", action="store_true",
+                   help="required: confirms you mean to delete all of it")
+    p = _sub(ag, "restore", cmd_automation_restore, "bring an old version back to the top",
+             description="Copy an old version back to the top of the history as a new "
+                         "version. Nothing is overwritten or lost — the history only ever "
+                         "grows, so restoring is itself undoable. `automation show` lists the "
+                         "versions you can name.")
+    _ref(p)
+    p.add_argument("version", metavar="vN", help='the version to bring back, like "v3"')
+    p = _sub(ag, "execute", cmd_automation_execute, "execute an automation right now",
+             description="Execute an automation now, as if a trigger had fired, and print the "
+                         "new execution's id. It runs in the background: add --follow to "
+                         "watch the logs instead and have the exit code report the outcome "
+                         "(0 succeeded, 2 anything else). By default the current version runs "
+                         "under the grants it already has.",
+             epilog="Examples:\n"
+                    "  autowright automation execute report\n"
+                    "  autowright automation execute report --follow\n"
+                    "  autowright automation execute report --version v2\n"
+                    "  autowright automation execute report --version draft\n"
+                    "  autowright automation execute report --queue")
+    _ref(p)
+    p.add_argument("-f", "--follow", action="store_true",
+                   help="stream the logs until it finishes, then exit 0 if it succeeded and "
+                        "2 if it did not")
+    p.add_argument("--version", metavar="vN|draft",
+                   help='execute an old version or the unsaved draft this once, like "v2" or '
+                        '"draft" — the automation itself is unchanged, and the grants stay '
+                        'the ones it already has')
     p.add_argument("--queue", action="store_true",
-                   help="when every slot is busy, wait in the queue instead of failing")
-    p = _sub(ag, "export", cmd_automation_export, "export to a .autowright file")
-    p.add_argument("automation")
-    p.add_argument("path", nargs="?", help="output file (default: <name>.autowright)")
-    p.add_argument("--no-values", action="store_true", help="leave your parameter values out")
-    p = _sub(ag, "import", cmd_automation_import, "import a .autowright file or URL")
-    p.add_argument("path", metavar="path-or-url",
-                   help="a .autowright file, a direct https link to one, "
-                        "or a github.com repository/release page")
+                   help="if the automation is already busy, wait for a free slot instead of "
+                        "refusing to start")
+    p = _sub(ag, "export", cmd_automation_export, "write an automation to a shareable file",
+             description="Write an automation to a portable .autowright file: its current "
+                         "version, spec, steps, triggers, and parameter definitions, ready to "
+                         "import on another machine. Your parameter values ride along unless "
+                         "you pass --no-values. Secret values are never exported — only the "
+                         "names, so the other machine can match its own.",
+             epilog="Examples:\n"
+                    "  autowright automation export report\n"
+                    "  autowright automation export report ~/Desktop/report.autowright\n"
+                    "  autowright automation export report --no-values")
+    _ref(p)
+    p.add_argument("path", nargs="?",
+                   help="file to write (default: <automation name>.autowright, in the "
+                        "current directory)")
+    p.add_argument("--no-values", action="store_true",
+                   help="export the parameter definitions without your values")
+    p = _sub(ag, "import", cmd_automation_import, "import an automation from a file or link",
+             description="Import an automation someone exported. The agents and secrets it "
+                         "names are matched against what this machine has; anything unmatched "
+                         "is listed for you to fix in the app. Its triggers arrive switched "
+                         "off, so nothing starts executing until you turn them on.",
+             epilog="Examples:\n"
+                    "  autowright automation import ./report.autowright\n"
+                    "  autowright automation import https://example.com/report.autowright\n"
+                    "  autowright automation import https://github.com/someone/some-repo")
+    p.add_argument("path", metavar="file-or-link",
+                   help="a .autowright file on disk, a direct https link to one, or a "
+                        "github.com repository or release page holding one")
 
-    pg = _sub(ag, "param", None, "parameter values").add_subparsers(dest="verb2", required=True)
-    p = _sub(pg, "list", cmd_param_list, "list parameters and their values", json_flag=True)
-    p.add_argument("automation")
-    p = _sub(pg, "set", cmd_param_set, "set parameter values")
-    p.add_argument("automation")
-    p.add_argument("values", nargs="+", metavar="NAME=VALUE")
+    pg = _sub(ag, "param", None, "read and set an automation's parameter values",
+              description="Parameters are the values an automation's steps read when they "
+                          "execute — an address to send to, how many items to fetch. The "
+                          "automation's version defines them; the values are yours, so they "
+                          "stay put across new versions and never travel in an "
+                          "export.").add_subparsers(dest="verb2", required=True,
+                                                    metavar="VERB")
+    p = _sub(pg, "list", cmd_param_list, "list the parameters and their current values",
+             json_flag=True,
+             description="One row per parameter: its name, its kind, and the value in effect "
+                         "right now.")
+    _ref(p)
+    p = _sub(pg, "set", cmd_param_set, "set one or more parameter values",
+             description="Set parameter values. Each value is read according to that "
+                         "parameter's kind, and a value that doesn't fit its kind is refused, "
+                         "naming the form it wanted. `param list` shows the kinds.",
+             epilog="Examples:\n"
+                    "  autowright automation param set report RECIPIENT=me@example.com\n"
+                    "  autowright automation param set report RETRIES=3 VERBOSE=on\n"
+                    "  autowright automation param set report TAGS=urgent,daily\n"
+                    "  autowright automation param set report HEADERS='{\"X-Key\": \"abc\"}'\n"
+                    "\n"
+                    "What each kind accepts:\n"
+                    "  toggle   on | off | true | false\n"
+                    "  number   a whole number\n"
+                    "  text     the string as typed\n"
+                    "  list     comma-separated values, or a JSON array\n"
+                    "  kv       k=v,k=v pairs, or a JSON object")
+    _ref(p)
+    p.add_argument("values", nargs="+", metavar="NAME=VALUE",
+                   help="one or more parameter assignments, as printed by `param list`")
 
-    tg = _sub(ag, "trigger", None, "triggers").add_subparsers(dest="verb2", required=True)
-    p = _sub(tg, "list", cmd_trigger_list, "list triggers with their indexes", json_flag=True)
-    p.add_argument("automation")
-    p = _sub(tg, "add", cmd_trigger_add, "add a trigger")
-    p.add_argument("automation")
-    p.add_argument("expression", nargs="?", help='cron expression ("0 8 * * *")')
-    p.add_argument("--at", help='one-shot local ISO time ("2026-08-01T09:00")')
-    p.add_argument("--app-start", action="store_true", help="fire at every app launch")
-    p.add_argument("--discord", metavar="CHANNEL",
-                   help="fire on Discord messages in this channel id (needs --secret)")
+    tg = _sub(ag, "trigger", None, "list and edit what makes an automation execute",
+              description="Triggers are what start an automation on their own: a schedule, a "
+                          "one-off time, every app launch, or an incoming Discord or iMessage "
+                          "message. An automation with no triggers executes only when you ask "
+                          "it to. The verbs below take the 1-based numbers `trigger list` "
+                          "prints.").add_subparsers(dest="verb2", required=True,
+                                                    metavar="VERB")
+    p = _sub(tg, "list", cmd_trigger_list, "list the triggers, numbered", json_flag=True,
+             description="Every trigger this automation has, numbered, in plain words, with "
+                         "(off) on any that are switched off. Those numbers are what "
+                         "`trigger on`, `trigger off`, and `trigger remove` take.")
+    _ref(p)
+    p = _sub(tg, "add", cmd_trigger_add, "add a trigger",
+             description="Add a trigger. With no flags, the argument is a cron expression and "
+                         "you get a repeating schedule. --at makes it happen once at a given "
+                         "time, --app-start every time the app launches, and --discord / "
+                         "--imessage make an incoming message start it. New triggers arrive "
+                         "switched on.",
+             epilog="Examples:\n"
+                    "  autowright automation trigger add report \"0 8 * * *\"\n"
+                    "      every day at 08:00\n"
+                    "  autowright automation trigger add report \"0 8 * * 1-5\" "
+                    "--timezone Europe/Berlin\n"
+                    "      weekdays at 08:00 Berlin time\n"
+                    "  autowright automation trigger add report --at 2026-09-01T09:00\n"
+                    "      once, then never again\n"
+                    "  autowright automation trigger add report --app-start\n"
+                    "      every time Autowright launches\n"
+                    "  autowright automation trigger add report --discord 1234567890 "
+                    "--secret DISCORD_TOKEN --mention\n"
+                    "      when someone mentions the bot in that channel\n"
+                    "  autowright automation trigger add report --imessage +15551234567 "
+                    "--pattern status\n"
+                    "      when that number texts something containing \"status\"")
+    _ref(p)
+    p.add_argument("expression", nargs="?", metavar="CRON",
+                   help='a cron expression for a repeating schedule, like "0 8 * * *" for '
+                        "every day at 08:00 (leave it out when using one of the flags below)")
+    p.add_argument("--at", metavar="TIME",
+                   help='run once at this local time, then never again — "2026-09-01T09:00"')
+    p.add_argument("--app-start", action="store_true",
+                   help="run every time the Autowright app launches")
+    p.add_argument("--discord", metavar="CHANNEL_ID",
+                   help="run when a message arrives in this Discord channel, by numeric "
+                        "channel id (needs --secret)")
     p.add_argument("--secret", metavar="NAME",
-                   help="secret holding the Discord bot token (with --discord)")
+                   help="with --discord: the name of the stored secret holding the bot token")
     p.add_argument("--imessage", metavar="FROM",
-                   help="fire on iMessages from this sender — a phone in "
-                        "+15551234567 form or an email")
+                   help="run when this person sends an iMessage — a phone number in "
+                        "+15551234567 form, or an email address")
     p.add_argument("--pattern", metavar="TEXT",
-                   help="only messages containing this text "
-                        "(with --discord or --imessage)")
+                   help="with --discord or --imessage: only run when the message contains "
+                        "this text")
     p.add_argument("--mention", action="store_true",
-                   help="only Discord messages that mention the bot (with --discord)")
+                   help="with --discord: only run when the message mentions the bot")
     p.add_argument("--author", metavar="USER_ID", action="append",
-                   help="only Discord messages from these numeric user ids, like "
-                        "234567890123456789 (with --discord; repeat the flag or "
-                        "comma-separate for several senders)")
-    p.add_argument("--timezone", help="IANA zone for the cron/one-shot")
-    p = _sub(tg, "on", cmd_trigger_toggle, "enable a trigger by index")
-    p.add_argument("automation")
-    p.add_argument("index")
+                   help="with --discord: only run for these senders, by numeric user id like "
+                        "234567890123456789 (repeat the flag, or comma-separate several)")
+    p.add_argument("--timezone", metavar="ZONE",
+                   help='which timezone the schedule or one-off time is in, as an IANA zone '
+                        'like "Europe/Berlin" (default: this machine\'s timezone)')
+    p = _sub(tg, "on", cmd_trigger_toggle, "switch a trigger back on",
+             description="Switch a trigger back on, so it starts firing again. The trigger "
+                         "itself is unchanged — this is the reverse of `trigger off`.")
+    _ref(p)
+    p.add_argument("index", metavar="N",
+                   help="which trigger, by the number `trigger list` prints")
     p.set_defaults(fn_enabled=True)
-    p = _sub(tg, "off", cmd_trigger_toggle, "disable a trigger by index")
-    p.add_argument("automation")
-    p.add_argument("index")
+    p = _sub(tg, "off", cmd_trigger_toggle, "switch a trigger off without removing it",
+             description="Stop a trigger from firing, keeping it in the list so you can "
+                         "switch it back on later with `trigger on`.")
+    _ref(p)
+    p.add_argument("index", metavar="N",
+                   help="which trigger, by the number `trigger list` prints")
     p.set_defaults(fn_enabled=False)
-    p = _sub(tg, "remove", cmd_trigger_remove, "remove a trigger by index")
-    p.add_argument("automation")
-    p.add_argument("index")
+    p = _sub(tg, "remove", cmd_trigger_remove, "delete a trigger",
+             description="Remove a trigger from the automation for good. To stop it "
+                         "temporarily instead, use `trigger off`. Note that the remaining "
+                         "triggers renumber, so check `trigger list` before removing another.")
+    _ref(p)
+    p.add_argument("index", metavar="N",
+                   help="which trigger, by the number `trigger list` prints")
 
-    mg = _sub(ag, "memory", None, "per-automation memory").add_subparsers(
-        dest="verb2", required=True)
-    p = _sub(mg, "show", cmd_memory_show,
-             "list the memory files, or print one file's text", json_flag=True)
-    p.add_argument("automation")
-    p.add_argument("file", nargs="?", help="memory-relative file path to print")
-    p = _sub(mg, "clear", cmd_memory_clear, "clear the memory (snapshots first)")
-    p.add_argument("automation")
+    mg = _sub(ag, "memory", None, "read and clear what an automation remembers",
+              description="Each automation has its own folder of files that survive between "
+                          "executions — where it got to last time, what it has already seen. "
+                          "The steps write it; these verbs let you read it and wipe it. It is "
+                          "never sent to an AI agent while an automation is being "
+                          "written.").add_subparsers(dest="verb2", required=True,
+                                                     metavar="VERB")
+    p = _sub(mg, "show", cmd_memory_show, "list the memory files, or print one of them",
+             json_flag=True,
+             description="With no file, list what is in the automation's memory: each file's "
+                         "path, size, and when it last changed. With a file, print that "
+                         "file's text. Read-only either way, and safe to run mid-execution.")
+    _ref(p)
+    p.add_argument("file", nargs="?",
+                   help="which file to print, by the path `memory show` lists (default: list "
+                        "the files instead of printing one)")
+    p = _sub(mg, "clear", cmd_memory_clear, "empty an automation's memory",
+             description="Delete everything in the automation's memory, so its next execution "
+                         "starts with nothing remembered. A snapshot is taken first "
+                         "automatically, so `snapshot restore` can bring it back.")
+    _ref(p)
 
-    sg = _sub(ag, "snapshot", None, "memory snapshots").add_subparsers(dest="verb2", required=True)
-    p = _sub(sg, "list", cmd_snapshot_list, "list memory snapshots", json_flag=True)
-    p.add_argument("automation")
-    p = _sub(sg, "create", cmd_snapshot_create, "snapshot the memory now")
-    p.add_argument("automation")
-    p.add_argument("--name", help="snapshot label")
-    p = _sub(sg, "restore", cmd_snapshot_restore, "restore a snapshot by id prefix")
-    p.add_argument("automation")
-    p.add_argument("snapshot")
-    p = _sub(sg, "delete", cmd_snapshot_delete, "delete a snapshot by id prefix")
-    p.add_argument("automation")
-    p.add_argument("snapshot")
+    sg = _sub(ag, "snapshot", None, "save and restore copies of an automation's memory",
+              description="A snapshot is a copy of an automation's memory as it was at one "
+                          "moment. Take one before anything risky; restore it to put the "
+                          "memory back the way it was. Restoring snapshots the current memory "
+                          "first, so it is itself undoable.").add_subparsers(
+        dest="verb2", required=True, metavar="VERB")
+    p = _sub(sg, "list", cmd_snapshot_list, "list the memory snapshots", json_flag=True,
+             description="Every snapshot of this automation's memory: short id, when it was "
+                         "taken, why, which version was current, its size, and its label. "
+                         "Those short ids are what `snapshot restore` and `snapshot delete` "
+                         "take.")
+    _ref(p)
+    p = _sub(sg, "create", cmd_snapshot_create, "snapshot the memory as it is now",
+             description="Copy the automation's memory as it stands right now, so you can put "
+                         "it back later. Give it a --name if you want to recognize it in the "
+                         "list.")
+    _ref(p)
+    p.add_argument("--name", metavar="TEXT",
+                   help="a label to recognize this snapshot by later")
+    p = _sub(sg, "restore", cmd_snapshot_restore, "put the memory back to a snapshot",
+             description="Replace the automation's memory with a snapshot's contents. The "
+                         "memory as it is now is snapshotted first, so this is undoable too.")
+    _ref(p)
+    p.add_argument("snapshot", help="which snapshot, by the short id `snapshot list` prints")
+    p = _sub(sg, "delete", cmd_snapshot_delete, "delete a memory snapshot",
+             description="Delete one snapshot for good. The automation's current memory is "
+                         "untouched — this only removes the saved copy.")
+    _ref(p)
+    p.add_argument("snapshot", help="which snapshot, by the short id `snapshot list` prints")
 
     # ---- execution
-    eg = _sub(top, "execution", None, "inspect and control executions").add_subparsers(
-        dest="verb", required=True)
-    p = _sub(eg, "list", cmd_execution_list, "recent executions", json_flag=True)
-    p.add_argument("-n", type=int, default=20)
-    p.add_argument("--automation", help="only this automation's executions")
-    p.add_argument("--status", help="only this status (§4.6 vocabulary)")
-    p = _sub(eg, "show", cmd_execution_show, "steps, error, and result of one execution",
-             json_flag=True)
-    p.add_argument("execution", nargs="?", help="execution id prefix (default: latest)")
-    p = _sub(eg, "tail", cmd_execution_tail, "stream an execution's logs")
-    p.add_argument("execution", nargs="?", help="execution id prefix (default: latest)")
-    p = _sub(eg, "cancel", cmd_execution_cancel, "cancel a live execution")
-    p.add_argument("execution", nargs="?")
-    p = _sub(eg, "retry", cmd_execution_retry, "retry a failed execution in place")
-    p.add_argument("execution", nargs="?")
-    p.add_argument("-f", "--follow", action="store_true", help="stream logs until it finishes")
-    p = _sub(eg, "skip", cmd_execution_skip, "skip the currently executing step")
-    p.add_argument("execution", nargs="?")
+    eg = _sub(top, "execution", None, "watch and control individual executions",
+              description="An execution is one run of one automation — started by a trigger, "
+                          "by the app, or by `automation execute`. These verbs let you see "
+                          "what ran, watch what is running, and step in while it does. The "
+                          "ones that act on a single execution take its id, or default to the "
+                          "most recent execution when you leave it "
+                          "out.").add_subparsers(dest="verb", required=True, metavar="VERB")
+    p = _sub(eg, "list", cmd_execution_list, "list recent executions, newest first",
+             json_flag=True,
+             description="Recent executions, newest first: when each started, which "
+                         "automation and version ran, how it ended, how long it took, what "
+                         "started it, and its short id.",
+             epilog="Examples:\n"
+                    "  autowright execution list\n"
+                    "  autowright execution list -n 50\n"
+                    "  autowright execution list --automation report\n"
+                    "  autowright execution list --status failed")
+    p.add_argument("-n", type=int, default=20, metavar="COUNT",
+                   help="how many to print (default: 20)")
+    p.add_argument("--automation", metavar="AUTOMATION",
+                   help="only executions of one automation, by " + _REF_FORMS)
+    p.add_argument("--status", metavar="STATUS",
+                   choices=["queued", "executing", "succeeded", "failed",
+                            "cancelled", "skipped", "interrupted"],
+                   help="only executions in this state: queued (waiting for a free slot), "
+                        "executing, succeeded, failed, cancelled, skipped, or interrupted")
+    p = _sub(eg, "show", cmd_execution_show, "print one execution's steps, error, and result",
+             json_flag=True,
+             description="One execution in detail: how it ended and how long it took, every "
+                         "step with its own status and duration, the error if it failed, the "
+                         "message that started it if a message did, and the files it "
+                         "produced.")
+    _exec_ref(p)
+    p = _sub(eg, "tail", cmd_execution_tail, "follow an execution's logs as it runs",
+             description="Stream an execution's logs until it finishes. Exits 0 if it "
+                         "succeeded and 2 if it ended any other way, so a script can branch "
+                         "on the exit code without reading the output. An execution still "
+                         "waiting for a free slot is followed through to its real ending, not "
+                         "reported the moment it starts. Ctrl-C stops watching; it does not "
+                         "stop the execution.")
+    _exec_ref(p)
+    p = _sub(eg, "cancel", cmd_execution_cancel, "stop an execution that is running",
+             description="Stop a running execution. The step it is on is killed and the steps "
+                         "after it never run. Steps that already finished keep their results. "
+                         "To skip past one stuck step and let the rest continue, use "
+                         "`execution skip` instead.")
+    _exec_ref(p)
+    p = _sub(eg, "retry", cmd_execution_retry, "run a failed execution's unfinished steps again",
+             description="Pick a failed execution back up in place: the steps that already "
+                         "succeeded keep their results and are not re-run, and everything "
+                         "from the failure onward runs again. This continues the same "
+                         "execution rather than starting a new one.")
+    _exec_ref(p)
+    p.add_argument("-f", "--follow", action="store_true",
+                   help="stream the logs until it finishes, then exit 0 if it succeeded and "
+                        "2 if it did not")
+    p = _sub(eg, "skip", cmd_execution_skip, "give up on the current step and move on",
+             description="Abandon the step a running execution is stuck on and let it "
+                         "continue with the next one. The skipped step produces no result. If "
+                         "the step finishes on its own first, nothing is skipped.")
+    _exec_ref(p)
     p = _sub(eg, "result", cmd_execution_result,
-             "list result files, or print one to stdout")
-    p.add_argument("execution", nargs="?", help="execution id prefix (default: latest)")
-    p.add_argument("name", nargs="?", help="result file to print")
+             "list the files an execution produced, or print one",
+             description="With no file name, list the files this execution produced, with "
+                         "their sizes. With a name, write that file to stdout unchanged — "
+                         "including binary files, so redirect to a file when it isn't text.",
+             epilog="Examples:\n"
+                    "  autowright execution result                       list the latest run's files\n"
+                    "  autowright execution result a1b2c3d4              list that run's files\n"
+                    "  autowright execution result a1b2c3d4 report.csv   print one\n"
+                    "  autowright execution result a1b2c3d4 chart.png > chart.png")
+    _exec_ref(p)
+    p.add_argument("name", nargs="?",
+                   help="which file to print, by the name `execution result` lists (default: "
+                        "list the files instead of printing one)")
 
     # ---- secret / agent / settings / service
-    scg = _sub(top, "secret", None, "manage secrets").add_subparsers(dest="verb", required=True)
-    _sub(scg, "list", cmd_secret_list, "list secrets", json_flag=True)
-    p = _sub(scg, "set", cmd_secret_set, f"store a secret in your {paths.secret_store_name()}")
-    p.add_argument("name")
+    store_name = paths.secret_store_name()
+    scg = _sub(top, "secret", None, "store the passwords and keys your automations use",
+               description="Secrets are the passwords, tokens, and API keys automations need. "
+                           f"Values live in your {store_name}, and an automation can only "
+                           "read the ones it has been granted. A value is never printed, "
+                           "logged, or passed on a command line — only the names "
+                           "are.").add_subparsers(dest="verb", required=True, metavar="VERB")
+    _sub(scg, "list", cmd_secret_list, "list the stored secret names", json_flag=True,
+         description="Every stored secret by name, with the automations allowed to use it. "
+                     "Values are never shown; a secret whose value has not been set yet is "
+                     "marked (not set).")
+    p = _sub(scg, "set", cmd_secret_set, f"store or replace a secret in your {store_name}",
+             description="Store a secret under this name, or replace the value if the name is "
+                         "already taken. The value never goes on the command line, where it "
+                         "would land in your shell history and be visible to every process on "
+                         "the machine: it is asked for without echoing, or read from stdin "
+                         "with --stdin.",
+             epilog="Examples:\n"
+                    "  autowright secret set MAIL_PASS                     asks for the value\n"
+                    "  pbpaste | autowright secret set MAIL_PASS --stdin   from the clipboard\n"
+                    "  autowright secret set MAIL_PASS --stdin < key.txt   from a file")
+    p.add_argument("name", help="the name steps refer to this secret by, like MAIL_PASS")
     p.add_argument("--stdin", action="store_true",
-                   help="read the value from stdin instead of prompting")
-    p = _sub(scg, "delete", cmd_secret_delete, "remove a secret")
-    p.add_argument("name", nargs="?")
+                   help="read the value from standard input instead of asking for it, for "
+                        "scripts and pipes")
+    p = _sub(scg, "delete", cmd_secret_delete, "remove a stored secret",
+             description="Remove a secret and its value. Automations granted it keep the "
+                         f"grant but find nothing there. --all empties your {store_name} of "
+                         "every Autowright secret at once, which is not undoable and so needs "
+                         "--yes.",
+             epilog="Examples:\n"
+                    "  autowright secret delete MAIL_PASS\n"
+                    "  autowright secret delete --all --yes")
+    p.add_argument("name", nargs="?", help="which secret, by name (leave out with --all)")
     p.add_argument("--all", action="store_true",
-                   help="delete every stored secret (needs --yes, takes no name)")
-    p.add_argument("--yes", action="store_true", help="confirm the deletion")
+                   help="delete every stored secret instead of one — takes no name, and "
+                        "needs --yes")
+    p.add_argument("--yes", action="store_true",
+                   help="required with --all: confirms you mean to delete all of them")
 
-    agg = _sub(top, "agent", None, "configured AI agents").add_subparsers(
-        dest="verb", required=True)
-    _sub(agg, "list", cmd_agent_list, "list agents", json_flag=True)
-    p = _sub(agg, "check", cmd_agent_check, "readiness check, by agent name")
-    p.add_argument("agent")
+    agg = _sub(top, "agent", None, "inspect the AI agents configured in the app",
+               description="Agents are the AI coding tools Autowright drives — the ones that "
+                           "write automations for you, and the ones your steps can call. "
+                           "Adding, editing, and signing into them is done in the app; from "
+                           "here you can see what is configured and whether it is ready to "
+                           "run.").add_subparsers(dest="verb", required=True, metavar="VERB")
+    _sub(agg, "list", cmd_agent_list, "list the configured agents", json_flag=True,
+         description="Every configured agent: its name, which tool it drives, and which model "
+                     "it uses. The default agent is marked with a *.")
+    p = _sub(agg, "check", cmd_agent_check, "check whether an agent is ready to run",
+             description="Ask an agent whether it can actually run right now — its tool "
+                         "installed and reachable, and signed in where that is needed. Use it "
+                         "when an automation fails on its agent step.")
+    p.add_argument("agent", help="which agent, by the name `agent list` prints")
 
-    stg = _sub(top, "settings", None, "app settings").add_subparsers(dest="verb", required=True)
-    _sub(stg, "show", cmd_settings_show, "current settings", json_flag=True)
-    p = _sub(stg, "set", cmd_settings_set, "change settings")
-    p.add_argument("values", nargs="+", metavar="KEY=VALUE")
+    stg = _sub(top, "settings", None, "read and change the app's settings",
+               description="The same settings the app's Settings page shows, readable and "
+                           "settable from here so a headless machine can be configured "
+                           "without opening the app. Changes apply "
+                           "live.").add_subparsers(dest="verb", required=True, metavar="VERB")
+    _sub(stg, "show", cmd_settings_show, "print the current settings", json_flag=True,
+         description="Every setting and its current value, one per line — the keys "
+                     "`settings set` takes.")
+    p = _sub(stg, "set", cmd_settings_set, "change one or more settings",
+             description="Change settings. Several can be set in one command, and an "
+                         "unrecognized key or a value that doesn't fit its setting is "
+                         "refused without changing anything else.",
+             epilog="Examples:\n"
+                    "  autowright settings set login=on\n"
+                    "  autowright settings set days=30 keepForever=off\n"
+                    "  autowright settings set notifications=all\n"
+                    "  autowright settings set dataPath=/Volumes/Work/autowright\n"
+                    "\n"
+                    "Settings and what they take:\n"
+                    "  login=on|off                 start Autowright when you log in\n"
+                    "  menuBarIcon=on|off           show the menu bar icon\n"
+                    "  keepAwake=on|off             stop this machine sleeping, so schedules\n"
+                    "                               keep firing (the display can still sleep)\n"
+                    "  automaticUpdateCheck=on|off  check once a day for a newer version\n"
+                    "  notifications=attention|all  notify only when something needs you, or\n"
+                    "                               after every execution\n"
+                    "  days=N                       how long to keep execution history, in\n"
+                    "                               days (at least 1, default 90)\n"
+                    "  keepForever=on|off           keep execution history forever, ignoring\n"
+                    "                               days\n"
+                    "  developerMode=on|off         log every backend and AI request,\n"
+                    "                               prompts included, to the backend log\n"
+                    "  cliEnabled=on|off            whether you want this `autowright`\n"
+                    "                               command available\n"
+                    "  dataPath=PATH                where execution data is stored; the old\n"
+                    "                               directory is left where it is")
+    p.add_argument("values", nargs="+", metavar="KEY=VALUE",
+                   help="one or more settings to change, from the list below")
 
     _add_service(top)
     return ap

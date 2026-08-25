@@ -902,6 +902,48 @@ def test_shipped_cli_exposes_the_full_surface():
     assert ap.parse_args(["secret", "list"]).client is True
 
 
+def test_every_command_documents_itself():
+    """§20 help text: every parser in the tree carries a description (the prose
+    `<command> --help` prints), and every positional and option carries help
+    naming what it accepts — `--help` is the CLI's own documentation, so a new
+    command must not ship bare."""
+    import argparse
+
+    from autowright import cli
+
+    no_description, no_help = [], []
+
+    def walk(p, path):
+        if not p.description:
+            no_description.append(path)
+        for a in p._actions:
+            if isinstance(a, argparse._SubParsersAction):
+                for name, sub in a.choices.items():
+                    walk(sub, f"{path} {name}")
+            elif not isinstance(a, argparse._HelpAction) and not a.help:
+                no_help.append(f"{path} <{a.dest}>")
+
+    walk(cli.build_parser(full=True), "autowright")
+    assert not no_description, f"commands with no description: {no_description}"
+    assert not no_help, f"arguments with no help: {no_help}"
+
+
+def test_example_epilogs_keep_their_line_breaks():
+    """§20 help text: the Help formatter wraps prose but leaves an `Examples:`
+    epilog line-for-line, so the example commands stay one per line."""
+    import contextlib
+
+    from autowright import cli
+
+    out = io.StringIO()
+    with pytest.raises(SystemExit), contextlib.redirect_stdout(out):
+        cli.build_parser(full=True).parse_args(["automation", "trigger", "add", "--help"])
+    text = out.getvalue()
+    assert '  autowright automation trigger add report "0 8 * * *"\n' in text
+    # the description above it is still wrapped, not left as one long line
+    assert max(len(line) for line in text.splitlines()) < 200
+
+
 def test_disabled_parser_shape_exposes_only_service():
     """The CLI_ENABLED=False shape stays testable: only `service` registers."""
     import contextlib

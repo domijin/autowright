@@ -217,15 +217,20 @@ export function ChatPanel({
   // §11 Esc-to-cancel: a keyboard shortcut for the composer's Cancel while a §8
   // job is in flight — never the draft test's Cancel — yielding to surfaces
   // that own Esc while open (the modal stack, the §9.3 developer log overlay).
+  // Latest-ref pattern: cancelJob closes over per-render callbacks, and deps
+  // on them would tear down and re-add the document listener on every 1 Hz
+  // duration tick for the job's whole run.
+  const cancelJobRef = useRef(cancelJob)
+  cancelJobRef.current = cancelJob
   useEffect(() => {
     if (!anyJobBusy) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || anyModalOpen() || devlogOverlayOpen()) return
-      cancelJob()
+      cancelJobRef.current()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [anyJobBusy, rev.chatBusy, rev.syncBusy, cancelChat, cancelSync])
+  }, [anyJobBusy])
 
   // Chat-input auto-grow (ask-box pattern). Runs when the text changes and once
   // when the textarea attaches (it mounts after `rev` loads and again whenever a
@@ -621,7 +626,14 @@ export function ChatPanel({
               const evs = rev.genEvents
               const detail = rev.genDetail === 'Thinking…' ? null : rev.genDetail
               const last = evs.length ? evs[evs.length - 1] : null
-              const hist = detail && last && detail.startsWith(last.text) ? evs.slice(0, -1) : evs
+              // detail extends the last event (same message, growing count):
+              // the detail bullet replaces it and inherits its ticking stamp.
+              // A detail that is a DIFFERENT activity (a tool event landed
+              // after the document stream's throttled line) renders unstamped
+              // instead — the last event keeps the tick, so the block shows
+              // exactly one ticking stamp (§11).
+              const extendsLast = !!(detail && last && detail.startsWith(last.text))
+              const hist = extendsLast ? evs.slice(0, -1) : evs
               // §11 live durations: a line with a successor carries its settled
               // span; the newest line ticks its own elapsed instead (whole seconds)
               const bulletDuration = (i: number): string | undefined => {
@@ -657,7 +669,7 @@ export function ChatPanel({
                   ))}
                   {detail && (
                     <OpBullet text={detail} color="var(--text-muted)"
-                      duration={liveSince != null ? waitedLabel(Math.max(0, (nowSeconds - liveSince) * 1000)) : undefined} />
+                      duration={extendsLast && liveSince != null ? waitedLabel(Math.max(0, (nowSeconds - liveSince) * 1000)) : undefined} />
                   )}
                 </>
               )
@@ -676,8 +688,11 @@ export function ChatPanel({
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
             placeholder={testLive ? 'Wait for the test to finish.'
               : viewingOld ? 'Back to the draft to edit or ask.'
-                : isCreateEmpty ? 'Describe the job — one sentence is enough.'
-                  : awaitingAnswer ? 'Answer here…'
+                // §11: a pending "Question for you" wins over the whole
+                // describe/change rule — a first-turn question (no spec
+                // written yet) still reads "Answer here…"
+                : awaitingAnswer ? 'Answer here…'
+                  : isCreateEmpty ? 'Describe the job — one sentence is enough.'
                     : 'Change something, or ask a question…'}
             style={{
               width: '100%', color: 'var(--text)', font: "400 12.5px/1.5 var(--sans)", padding: '8px 12px',

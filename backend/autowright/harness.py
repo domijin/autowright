@@ -269,32 +269,34 @@ def invoke(agent: dict, prompt: str, timeout: int | None = None,
 # DETERMINISTIC failure — authentication/sign-in trouble or a wrong model
 # name — is never retried: a retry can't fix a bad credential or a missing
 # model, so drafting surfaces the error immediately instead of costing a
-# second multi-minute call. Case-insensitive substrings, matched against the
-# stderr tail (the decisive last lines; banners never reach it). Sources:
+# second multi-minute call. Case-insensitive, matched against the stderr
+# tail (the decisive last lines; banners never reach it). Word-bounded where
+# a bare substring would misfire — "4013 bytes" must not read as a 401, and
+# suppressing the one §8 retry on a transient line is the inverse of the
+# policy's intent. Sources:
 # Claude Code "Invalid API key · Please run /login", Codex "401 Unauthorized"
 # / "You must be logged in", Gemini/OpenCode auth and model-not-found lines.
-_DETERMINISTIC_STDERR = (
-    "not logged in",
-    "login",
-    "logged out",
-    "unauthorized",
-    "401",
-    "403",
-    "authentication",
-    "invalid api key",
-    "api key",
-    "model not found",
-    "model_not_found",
-    "unknown model",
-    "no such model",
-)
+_DETERMINISTIC_STDERR = tuple(re.compile(p, re.I) for p in (
+    r"not logged in",
+    r"\blogin\b",
+    r"logged out",
+    r"unauthorized",
+    r"\b401\b",
+    r"\b403\b",
+    r"authentication",
+    r"invalid api key",
+    r"api key",
+    r"model not found",
+    r"model_not_found",
+    r"unknown model",
+    r"no such model",
+))
 
 
 def _deterministic_failure(stderr_tail: str) -> bool:
     """True when the stderr tail matches an obvious auth / model-not-found
     pattern — the §8 non-retryable classification."""
-    low = stderr_tail.lower()
-    return any(pat in low for pat in _DETERMINISTIC_STDERR)
+    return any(pat.search(stderr_tail) for pat in _DETERMINISTIC_STDERR)
 
 
 # §8 envelope shape constants — canonical here (the recombiner below needs
@@ -513,9 +515,12 @@ class GeminiHandler(Handler):
                 *gemini_prompt_argv]
 
     def line(self, line: str, sink: ProgressSink) -> None:
-        # Plain text mode: stdout is the reply as it prints (usually all at
-        # the end) — forward it as prose so an early-printing reply streams.
-        sink.text(line)
+        # Plain text mode (§8): the reply is raw stdout, and progress comes
+        # entirely from the scratch watcher's `file` events — stdout lines
+        # are bare activity (idle reset only), never `text` events, so CLI
+        # banners and tool chatter can't become "Writing the answer" labels
+        # or the captured plan.
+        sink.activity()
 
 
 class OpenCodeHandler(Handler):
@@ -610,7 +615,13 @@ class _ScratchWatcher:
     def stop(self) -> None:
         self._stop_event.set()
         self._thread.join(timeout=5)
-        self._poll()  # final sweep — after the join, so never concurrent
+        if not self._thread.is_alive():
+            # Final sweep — only after a successful join, so never concurrent
+            # with the poll thread. A timed-out join (a _read stalled on a
+            # huge or network-backed file) skips it: the worst case is a lost
+            # last-interval `file` feed event — documents() re-reads from
+            # disk, so the recombined envelope is complete either way.
+            self._poll()
 
     def _run(self) -> None:
         while not self._stop_event.wait(_SCRATCH_POLL_S):
@@ -872,8 +883,15 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     watchdog = threading.Thread(target=_watch, daemon=True)
     watchdog.start()
     err_parts: list[str] = []
-    drain = threading.Thread(target=lambda: err_parts.append(proc.stderr.read() or ""),
-                             daemon=True)
+
+    def _drain_stderr() -> None:
+        try:
+            err_parts.append(proc.stderr.read() or "")  # type: ignore[union-attr]
+        except (OSError, ValueError):
+            # The cleanup below closed our read end mid-read — normal end.
+            pass
+
+    drain = threading.Thread(target=_drain_stderr, daemon=True)
     drain.start()
     raw_parts: list[str] = []
 
@@ -944,6 +962,16 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
             out = _recombine(out, scratch_watcher.documents())
         return out
     finally:
+        # Both pipes close on EVERY path — same hygiene as the engine's step
+        # process. The last Popen is retained on the draft job (proc_holder)
+        # for its whole ack lifetime, so without this two fds leak per held
+        # job on the long-lived backend.
+        for pipe in (proc.stdout, proc.stderr):
+            try:
+                if pipe is not None:
+                    pipe.close()
+            except (OSError, ValueError):
+                pass
         if scratch is not None:
             shutil.rmtree(scratch, ignore_errors=True)
 

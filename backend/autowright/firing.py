@@ -244,4 +244,10 @@ def _waited_s(h: dict) -> float:
     q = h.get("queued_at")
     if not q:
         return 0.0
-    return (datetime.now(timezone.utc) - datetime.fromisoformat(q)).total_seconds()
+    try:
+        queued = datetime.fromisoformat(q)
+    except ValueError:
+        # A damaged stored timestamp reads as just-queued rather than
+        # propagating out of drain_queue and wedging this queue forever.
+        return 0.0
+    return (datetime.now(timezone.utc) - queued).total_seconds()

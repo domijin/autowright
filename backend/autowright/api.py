@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from . import __version__, harness, imessage, installer, keychain, models, paths, platform
@@ -22,7 +23,8 @@ from .drafting import draft_jobs
 from .engine import Engine, kill_orphan_group
 from .events import OVERFLOW, hub
 from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger, queue_manual
-from .storage import StoreUnwritableError, _kind_ok, is_test, iter_file_stats, new_id, size_label, store
+from .storage import (LiveExecutionError, StoreUnwritableError, _kind_ok, is_test,
+                      iter_file_stats, new_id, size_label, store)
 from . import testexec
 
 log = logging.getLogger("autowright.api")
@@ -49,10 +51,21 @@ def auth(cred: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> None:
 # ever executes on a signal-driven stop. The lifespan below is the one place
 # shutdown code reliably runs.
 _shutdown_callbacks: list = []
+_startup_callbacks: list = []
 
 
 def register_shutdown(callback) -> None:
     _shutdown_callbacks.append(callback)
+
+
+def register_startup(callback) -> None:
+    """Run at lifespan startup, AFTER the stale-execution repair — main()
+    registers the scheduler/listener starts here. Starting them before the
+    repair opened a window where a tick could drain a DB-restored `queued`
+    header (header-only: no `steps`/`redacted_secrets` until exec_full
+    inflation → KeyError in update_execution) and where stale `executing`
+    rows still held `_live` slots against admission."""
+    _startup_callbacks.append(callback)
 
 
 @asynccontextmanager
@@ -61,6 +74,8 @@ async def _lifespan(_: FastAPI):
     _clear_import_spool()  # §5.2: spool files a crashed process left behind
     harness.clear_scratch()  # §5/§8: scratch dirs a crashed process left behind
     _repair_stale_executing()
+    for callback in _startup_callbacks:
+        callback()
     hub.publish("automation.changed")
     yield
     # §3: live step groups die with this backend — the successor's startup
@@ -507,7 +522,11 @@ def clear_queue(automation_id: str) -> dict:
     Running executions are untouched — an empty queue answers 0, not 404."""
     a = _auto_or_404(automation_id)
     n = 0
-    for h in store.queued_execs(automation_id):
+    # Snapshot under the lock — queued_execs walks store.execs, and an
+    # unlocked walk races a scheduler-tick insert (dict-changed-size 500).
+    with store.lock:
+        heads = list(store.queued_execs(automation_id))
+    for h in heads:
         if engine.cancel(h["id"]):
             n += 1
     if n:
@@ -564,8 +583,11 @@ def delete_auto(automation_id: str) -> dict:
     # lands (tests never join _live, so the loop above misses them).
     live += _cancel_live_draft_work(automation_id)
     # §6: waiting firings go with it — their sender is told rather than left
-    # waiting on an automation that no longer exists.
-    for h in store.queued_execs(automation_id):
+    # waiting on an automation that no longer exists. Snapshot under the lock
+    # (an unlocked store.execs walk races a scheduler-tick insert).
+    with store.lock:
+        queued = list(store.queued_execs(automation_id))
+    for h in queued:
         engine.cancel(h["id"])
     # §19: a cancelled step gets a SIGTERM grace window (§7) — wait for the
     # engine threads to actually finish before the rmtree, or a step writing
@@ -908,7 +930,11 @@ def _land_import(data: bytes) -> dict:
 
 @app.post("/automations/import", dependencies=[Depends(auth)])
 async def import_auto(request: Request) -> dict:
-    return _land_import(await _archive_body(request))
+    # Threadpool, not the loop: landing an archive decompresses up to 256 MB
+    # and writes a whole version folder — inline it would stall every other
+    # request and the §19 WebSocket for the duration.
+    data = await _archive_body(request)
+    return await run_in_threadpool(_land_import, data)
 
 
 # §5.2 preview tokens: the validated archive is parked between the preview and
@@ -920,10 +946,15 @@ _IMPORT_TTL = 15 * 60
 _IMPORT_SLOTS = 4
 _IMPORT_GONE = "the import preview expired — fetch it again"
 _import_parked: dict[str, tuple[float, Path]] = {}
+# Parked-state lock: previews run on the event loop while url/confirm run on
+# the threadpool, so the sweep/evict/insert read-modify-write in _park_archive
+# and the pops genuinely race without it.
+_import_lock = threading.Lock()
 
 
 def _drop_parked(token: str) -> None:
-    """Forget one parked archive and delete its spool file."""
+    """Forget one parked archive and delete its spool file. Caller holds
+    _import_lock."""
     slot = _import_parked.pop(token, None)
     if slot is not None:
         slot[1].unlink(missing_ok=True)
@@ -953,10 +984,6 @@ def _clear_import_spool() -> None:
 
 def _park_archive(data: bytes) -> str:
     now = time.time()
-    for k in [k for k, (t, _) in _import_parked.items() if now - t > _IMPORT_TTL]:
-        _drop_parked(k)
-    while len(_import_parked) >= _IMPORT_SLOTS:
-        _drop_parked(min(_import_parked, key=lambda k: _import_parked[k][0]))
     token = pysecrets.token_hex(16)
     d = paths.import_spool_dir()
     p = d / f"{token}.autowright"
@@ -967,18 +994,28 @@ def _park_archive(data: bytes) -> str:
         p.unlink(missing_ok=True)  # a half-written spool file never survives
         raise HTTPException(
             507, f"couldn't hold the archive for review: {e.strerror or e}") from e
-    _import_parked[token] = (now, p)
+    with _import_lock:
+        for k in [k for k, (t, _) in _import_parked.items() if now - t > _IMPORT_TTL]:
+            _drop_parked(k)
+        while len(_import_parked) >= _IMPORT_SLOTS:
+            _drop_parked(min(_import_parked, key=lambda k: _import_parked[k][0]))
+        _import_parked[token] = (now, p)
     return token
 
 
 @app.post("/automations/import/preview", dependencies=[Depends(auth)])
 async def import_preview(request: Request) -> dict:
     data = await _archive_body(request)
-    try:
-        preview = transfer.preview_archive(store, data)
-    except transfer.TransferError as e:
-        raise HTTPException(422, str(e)) from e
-    return {"token": _park_archive(data), "preview": preview}
+
+    def _preview() -> dict:
+        try:
+            preview = transfer.preview_archive(store, data)
+        except transfer.TransferError as e:
+            raise HTTPException(422, str(e)) from e
+        return {"token": _park_archive(data), "preview": preview}
+
+    # Threadpool, not the loop — same rule as the direct import above.
+    return await run_in_threadpool(_preview)
 
 
 @app.post("/automations/import/url", dependencies=[Depends(auth)])
@@ -998,7 +1035,8 @@ def import_url(body: models.ImportUrl) -> dict:
 
 @app.post("/automations/import/confirm", dependencies=[Depends(auth)])
 def import_confirm(body: models.ImportConfirm) -> dict:
-    slot = _import_parked.pop(body.token, None)
+    with _import_lock:
+        slot = _import_parked.pop(body.token, None)
     if slot is None:
         raise HTTPException(404, _IMPORT_GONE)
     parked_at, path = slot
@@ -1229,7 +1267,11 @@ def get_memory_file(automation_id: str, name: str) -> dict:
         raise HTTPException(422, f"not a memory-relative file path: {name!r}")
     if not p.is_file():
         raise HTTPException(404, "no such memory file")
-    data = p.read_bytes()
+    try:
+        data = p.read_bytes()
+    except OSError as e:
+        # A step deleted it between the check and the read — 404, not 500.
+        raise HTTPException(404, "no such memory file") from e
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -1242,28 +1284,48 @@ def get_memory_file(automation_id: str, name: str) -> dict:
 def clear_memory(automation_id: str) -> dict:
     # §9.2 MEMORY card: "Clear memory" — next execution starts fresh.
     a = _auto_or_404(automation_id)
-    # §19: same guard (and the same lock span) as manual snapshot and restore —
-    # a mid-execution clear could delete files a step is reading right now.
-    with store.lock:
-        if a.get("_live"):
-            raise HTTPException(409, "an execution is in progress")
-        store.snapshot_memory(a, "pre-clear")  # §6.3 — silently skipped when memory is empty or the toggle is off
-        store.clear_memory(a)
+    # §19: same guard as manual snapshot and restore — a mid-execution clear
+    # could delete files a step is reading right now. The snapshot copy
+    # stages OUTSIDE store.lock (stage_snapshot's rule: a memory dir can be
+    # gigabytes and every request queues behind the lock); the commit
+    # re-checks `_live` so a copy that raced an execution never lands.
+    with store.memory_ops:
+        with store.lock:
+            if a.get("_live"):
+                raise HTTPException(409, "an execution is in progress")
+        staged = store.stage_snapshot(a, "pre-clear")  # §6.3 — None when memory is empty or the toggle is off
+        with store.lock:
+            if a.get("_live"):
+                if staged is not None:
+                    store.discard_snapshot(staged[0])
+                raise HTTPException(409, "an execution is in progress")
+            if staged is not None:
+                store.commit_snapshot(a, staged, "pre-clear")
+            store.clear_memory(a)
     _publish_auto_changed(a)
     return {"ok": True}
 
 
 @app.post("/automations/{automation_id}/memory/snapshots", dependencies=[Depends(auth)])
 def create_snapshot(automation_id: str, body: models.SnapshotCreate | None = None) -> dict:
-    # §6.3 manual snapshot — 409 while live, 422 when memory is empty.
+    # §6.3 manual snapshot — 409 while live, 422 when memory is empty. The
+    # copy stages OUTSIDE store.lock (a memory dir can be gigabytes); the
+    # commit re-checks `_live`, so a copy that raced a trigger into
+    # half-written memory is discarded, never committed.
     a = _auto_or_404(automation_id)
-    # One lock span for check + copy: engine.start flips `_live` under
-    # store.lock, so this can't race a trigger into copying half-written memory.
-    with store.lock:
-        if a.get("_live"):
-            raise HTTPException(409, "an execution is in progress")
-        meta = store.snapshot_memory(a, "manual",
-                                     name=((body.name if body else None) or "").strip() or None)
+    with store.memory_ops:
+        with store.lock:
+            if a.get("_live"):
+                raise HTTPException(409, "an execution is in progress")
+        staged = store.stage_snapshot(a, "manual")
+        if staged is None:
+            raise HTTPException(422, "memory is empty")
+        with store.lock:
+            if a.get("_live"):
+                store.discard_snapshot(staged[0])
+                raise HTTPException(409, "an execution is in progress")
+            meta = store.commit_snapshot(a, staged, "manual",
+                                         name=((body.name if body else None) or "").strip() or None)
     if meta is None:
         raise HTTPException(422, "memory is empty")
     _publish_auto_changed(a)
@@ -1283,12 +1345,17 @@ def rename_snapshot(automation_id: str, snapshot_id: str, body: models.SnapshotR
 @app.post("/automations/{automation_id}/memory/snapshots/{snapshot_id}/restore", dependencies=[Depends(auth)])
 def restore_snapshot(automation_id: str, snapshot_id: str) -> dict:
     a = _auto_or_404(automation_id)
-    # Same lock span as create_snapshot: no execution may start mid-restore.
-    with store.lock:
-        if a.get("_live"):
-            raise HTTPException(409, "an execution is in progress")
-        if store.restore_snapshot(a, snapshot_id) is None:
-            raise HTTPException(404, "snapshot not found")
+    # Same guard as create_snapshot; the copies stage outside store.lock and
+    # restore_snapshot itself re-checks `_live` at its commit.
+    with store.memory_ops:
+        with store.lock:
+            if a.get("_live"):
+                raise HTTPException(409, "an execution is in progress")
+        try:
+            if store.restore_snapshot(a, snapshot_id) is None:
+                raise HTTPException(404, "snapshot not found")
+        except LiveExecutionError:
+            raise HTTPException(409, "an execution is in progress") from None
     _publish_auto_changed(a)
     return {"ok": True}
 
@@ -1447,6 +1514,10 @@ def get_exec_logs(execution_id: str, step: int | None = None, attempt: int | Non
     `tail` keeps only the last N lines of the selected log (same shape)."""
     if execution_id not in store.execs:
         raise HTTPException(404, "execution not found")
+    if (step is None) != (attempt is None):
+        # §19: the pair travels together — half a selector would silently
+        # resolve to attempt 1 and read as the wrong file.
+        raise HTTPException(422, "step and attempt go together — send both or neither")
     lines = store.read_log(execution_id, step, attempt, tail=tail)
     return {"lines": [{"time": l.get("time", ""), "kind": l.get("kind", "out"),
                        "sequence": l.get("sequence", 0), "text": l.get("text", "")} for l in lines]}
@@ -1571,14 +1642,17 @@ def patch_agent(agent_id: str, patch: models.AgentPatch) -> dict:
             raise HTTPException(422, "local-model mode needs a model")
         if mode == "custom" and not model:
             raise HTTPException(422, "custom-model mode needs a model")
-        if body.get("default"):
-            store.default_agent_id = agent_id  # §4.7: single pointer
         # §4.7 uniqueness — checked only when the merged result would CHANGE
         # the effective grant name (name, else harness): unrelated-field
         # patches of pre-existing on-disk duplicates keep working.
         merged = {**ag, **{k: body[k] for k in ("name", "harness") if k in body}}
         if harness.grant_name(merged).lower() != harness.grant_name(ag).lower():
             _check_grant_name_free(merged, exclude_id=agent_id)
+        # After the last 422 above — a refused patch must not have already
+        # flipped the in-memory default pointer (unsaved, unpublished, and
+        # silently divergent from what clients show).
+        if body.get("default"):
+            store.default_agent_id = agent_id  # §4.7: single pointer
         if "harness" in body:
             ag["harness"] = body["harness"]
         for k in ("name", "model", "mode", "description"):
@@ -1997,6 +2071,15 @@ def set_data_path(body: models.DataPath) -> dict:
         raise HTTPException(422, "path required")
     new_root = Path(raw).expanduser()
     target = new_root if new_root.name == "executions" else new_root / "executions"
+    # Refuse before creating anything: a 409'd request must not leave a stray
+    # executions/ dir inside the folder the user picked. The swap below
+    # re-checks both under the lock; this pre-check just keeps the error
+    # path write-free.
+    with store.lock:
+        if any(h["status"] == "executing" for h in store.execs.values()):
+            raise HTTPException(409, "an execution is in progress — try again when it finishes")
+        if any(h["status"] == "queued" for h in store.execs.values()):
+            raise HTTPException(409, "a queued execution is waiting — try again when the queue is empty")
     try:
         target.mkdir(parents=True, exist_ok=True)
     except OSError as e:

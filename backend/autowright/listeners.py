@@ -241,7 +241,19 @@ class _Conn(threading.Thread):
 
         backoff = 1.0
         while not self._stop.is_set():
-            token = keychain.get_secret(self.secret)  # §4.8: Keychain keyed by id
+            try:
+                token = keychain.get_secret(self.secret)  # §4.8: Keychain keyed by id
+            except Exception as e:  # noqa: BLE001
+                # A locked/unavailable OS secret store (routine on a launchd
+                # start before first unlock) must park-and-retry, not escape
+                # the loop and kill this listener until a restart.
+                log.warning("couldn't read secret %s from the OS secret store: %s",
+                            self.secret[:8], e)
+                self.mgr.set_status(self.secret, "error",
+                                    f"couldn't read secret {_secret_label(self.secret)} "
+                                    "from the OS secret store yet — retrying")
+                self._stop.wait(BACKOFF_MAX)
+                continue
             if not token:
                 self.mgr.set_status(self.secret, "error",
                                     f"secret {_secret_label(self.secret)} has no value yet — "

@@ -257,10 +257,11 @@ class AgentPatch(BaseModel):
 
 
 class CheckHarness(BaseModel):
-    """POST /agents/check-harness (§19)."""
+    """POST /agents/check-harness (§19) — mode constrained like AgentAdd's,
+    so an unknown mode answers 422 instead of silently reading as default."""
 
     harness: StrictStr
-    mode: StrictStr = "default"
+    mode: Literal["default", "ollama", "custom"] = "default"
     model: StrictStr | None = None
 
 

@@ -499,7 +499,14 @@ export function PopMenu({ show, style, children }: {
   show: boolean; style?: React.CSSProperties; children: React.ReactNode
 }) {
   const [mounted, setMounted] = useState(show)
-  useEffect(() => { if (show) setMounted(true) }, [show])
+  useEffect(() => {
+    if (show) { setMounted(true); return }
+    // Unmount even if animationend never fires (same fallback as Modal and
+    // BlockingOverlay): an interrupted exit would otherwise leave an
+    // invisible zIndex-60 node parked over the surface, swallowing clicks.
+    const t = setTimeout(() => setMounted(false), 200)
+    return () => clearTimeout(t)
+  }, [show])
   if (!mounted) return null
   return (
     <div

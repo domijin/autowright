@@ -37,7 +37,13 @@ class EventHub:
         loop = self._loop
         if loop is None:
             return
-        loop.call_soon_threadsafe(self._fanout, msg)
+        try:
+            loop.call_soon_threadsafe(self._fanout, msg)
+        except RuntimeError:
+            # Loop already closed (shutdown racing a live engine/listener
+            # thread). Nobody is listening; a publish must never raise into
+            # a worker's finalizer.
+            pass
 
     def _fanout(self, msg: dict) -> None:
         with self._lock:

@@ -32,7 +32,10 @@ const RESET_STAGE_LABEL: Record<string, string> = {
 }
 
 export default function SettingsPage() {
-  const { settings, showToast } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this page on
+  // every store write anywhere — every toast, every log line of every execution.
+  const settings = useStore((s) => s.settings)
+  const showToast = useStore((s) => s.showToast)
   // §9 per-OS copy rule: machine noun, reveal label, and the §4.9 PATH block.
   const copy = usePlatformCopy()
   // §4.9/§2 gating: both rows render only while this OS can honor them — the
@@ -71,7 +74,8 @@ export default function SettingsPage() {
   // §3 reset-progress pushes drive the overlay's stage line. Ignored while the
   // overlay is down — no stray push may raise it (only confirming does).
   useEffect(() => {
-    window.autowright?.onResetProgress?.((s) => setResetStage((cur) => (cur ? s : cur)))
+    const off = window.autowright?.onResetProgress?.((s) => setResetStage((cur) => (cur ? s : cur)))
+    return () => off?.()
   }, [])
 
   // §4.9: fires §3 cli-install — a silent write into ~/.local/bin, no dialog;
@@ -325,13 +329,16 @@ export default function SettingsPage() {
               </div>
               <button
                 className="ad-btn-soft"
-                onClick={() => { void window.autowright?.revealPath(settings.appPath ?? '~/Library/Application Support/Autowright') }}
+                // §19 always serializes appPath; no hardcoded per-OS path may
+                // stand in for it (§9 per-OS copy rule) — absent, the reveal
+                // is a no-op and the box shows nothing.
+                onClick={() => { if (settings.appPath) void window.autowright?.revealPath(settings.appPath) }}
                 style={{ flex: 'none' }}
               >
                 {copy.reveal}
               </button>
             </div>
-            <div style={pathBox}>{settings.appPath ?? '~/Library/Application Support/Autowright'}</div>
+            <div style={pathBox}>{settings.appPath ?? ''}</div>
           </div>
           <div style={{ padding: '15px 20px' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>

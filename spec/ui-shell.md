@@ -187,7 +187,9 @@ animates 58 px → 212 px (200 ms — `var(--t-enter)` — pure CSS on the `.ad-
 pane, which never reflows: the layout reserves a constant 58 px spacer, so the content pane
 always spans the rest of the window. Inner sidebar content keeps a fixed 212 px width with
 `overflow: hidden` on the panel, so nav rows never reflow or squish mid-animation — the
-wordmark ("Autowright"), row labels, and live count pills (Settings and About carry none) are
+wordmark ("Autowright"), row labels, and live count pills (Settings and About carry none;
+each pill counts exactly the rows its page lists — the Executions pill includes §4.5 test
+executions, since its page does) are
 revealed by the widening clip **plus** an opacity fade (`.ad-rail-reveal`, hidden at rest,
 shown on rail hover): the clip alone would leave the labels' first characters peeking past
 58 px. Icons are horizontally centered in the 58 px rail (rail

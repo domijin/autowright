@@ -25,7 +25,10 @@ export function SecretModal({ modal, onClose, onSaved }: {
   // §19: the POST/PUT response entity — carries the (possibly just-minted) §4.8 id
   onSaved?: (saved: SecretMeta) => void
 }) {
-  const { showToast, secrets } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this modal on
+  // every store write anywhere — every toast, every log line of every execution.
+  const showToast = useStore((s) => s.showToast)
+  const secrets = useStore((s) => s.secrets)
   // §9 per-OS copy rule: the secret-store name and machine noun.
   const copy = usePlatformCopy()
   const isAdd = modal.mode === 'add'

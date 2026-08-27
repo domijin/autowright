@@ -7,12 +7,16 @@ state never do. Import validates the whole archive first (`TransferError` →
 """
 from __future__ import annotations
 
+import ast
+import http.client
 import io
 import json
+import logging
 import re
 import urllib.error
 import urllib.request
 import zipfile
+import zlib
 from datetime import datetime
 from urllib.parse import urlsplit
 
@@ -287,9 +291,22 @@ def _check_sizes(z: zipfile.ZipFile) -> None:
         raise TransferError("the archive decompresses far beyond any real automation")
 
 
+def _read_member(z: zipfile.ZipFile, path: str) -> bytes:
+    """One archive member's bytes; every way a hostile or truncated zip can
+    fail the read (CRC mismatch, unknown compression method, encrypted
+    member, a decompressor error) is a §5.1 422, never a 500. KeyError
+    (missing member) stays the caller's to handle."""
+    try:
+        return z.read(path)
+    except KeyError:
+        raise
+    except (zipfile.BadZipFile, NotImplementedError, RuntimeError, OSError, zlib.error) as e:
+        raise TransferError(f"the archive's {path} can't be read: {e}") from None
+
+
 def _yaml_or_reject(z: zipfile.ZipFile, path: str, required: bool = True) -> dict:
     try:
-        raw = z.read(path)
+        raw = _read_member(z, path)
     except KeyError:
         if required:
             raise TransferError(f"the archive is missing {path}") from None
@@ -307,7 +324,7 @@ def _yaml_or_reject(z: zipfile.ZipFile, path: str, required: bool = True) -> dic
 
 def _text(z: zipfile.ZipFile, path: str, required: bool = True) -> str | None:
     try:
-        return z.read(path).decode("utf-8")
+        return _read_member(z, path).decode("utf-8")
     except KeyError:
         if required:
             raise TransferError(f"the archive is missing {path}") from None
@@ -444,20 +461,35 @@ def _validate(z: zipfile.ZipFile) -> dict:
             raise TransferError(f"duplicate step filename: {s['file']!r}")
         seen_files.add(s["file"])
         code = _text(z, f"automation/{s['file']}")
+        # §5.1: syntactically broken code answers 422 here — the app's own
+        # save endpoints would otherwise reject the user's first edit of code
+        # they never wrote. The §6.2 allowlist is deliberately not enforced
+        # (curated growth within a format version; the executor backstops).
+        try:
+            ast.parse(code or "")
+        except SyntaxError as e:
+            raise TransferError(f"step {s['file']!r} isn't valid Python "
+                                f"(line {e.lineno}): {e.msg}") from None
         entry = {"file": s["file"], "name": s["name"], "description": s.get("description", ""),
                  "code": code}
+        # A scalar where a list belongs (hand-written YAML `agents: 5`) must
+        # answer 422, not iterate into a TypeError 500.
+        for key in ("agents", "secrets", "packages"):
+            if s.get(key) is not None and not isinstance(s[key], list):
+                raise TransferError(f"step {s['file']!r} {key} must be a list")
+        # §5.1: agent grants travel as {ref, why?} entries — the §4.1 id
+        # form and the retired name form are rejected (local ids never
+        # travel); other malformed foreign entries are dropped, not
+        # imported. Checked whether or not the step is flagged `agent`, so
+        # a uuid/name-form list is never silently dropped.
+        if any(isinstance(g, dict) and ("id" in g or "name" in g)
+               for g in s.get("agents") or []):
+            raise TransferError(f"step {s['file']!r} lists agents by id or name - "
+                                "archives carry numbered references; re-export the "
+                                "automation with the current version")
         if s.get("agent"):
             entry["agent"] = True
             entry["why"] = s.get("why", "")
-            # §5.1: agent grants travel as {ref, why?} entries — the §4.1 id
-            # form and the retired name form are rejected (local ids never
-            # travel); other malformed foreign entries are dropped, not
-            # imported.
-            if any(isinstance(g, dict) and ("id" in g or "name" in g)
-                   for g in s.get("agents") or []):
-                raise TransferError(f"step {s['file']!r} lists agents by id or name - "
-                                    "archives carry numbered references; re-export the "
-                                    "automation with the current version")
             entry["agents"] = [
                 {"ref": r,
                  **({"why": str(g["why"]).strip()} if str(g.get("why") or "").strip() else {})}
@@ -507,6 +539,8 @@ def _validate(z: zipfile.ZipFile) -> dict:
         steps.append(entry)
 
     agents = _yaml_or_reject(z, "agents.yaml", required=False).get("agents") or []
+    if not isinstance(agents, list):
+        raise TransferError("agents.yaml agents must be a list")
     for g in agents:
         if not isinstance(g, dict) or (ref := _entry_ref(g)) is None:
             raise TransferError(f"invalid agent in the archive: {g!r} - every entry "
@@ -527,6 +561,8 @@ def _validate(z: zipfile.ZipFile) -> dict:
     if len(set(agent_refs)) != len(agent_refs):
         raise TransferError("duplicate agent refs in the archive - refs must be unique")
     secrets = _yaml_or_reject(z, "secrets.yaml", required=False).get("secrets") or []
+    if not isinstance(secrets, list):
+        raise TransferError("secrets.yaml secrets must be a list")
     for s in secrets:
         if not isinstance(s, dict) or (ref := _entry_ref(s)) is None:
             raise TransferError(f"invalid secret in the archive: {s!r} - every entry "
@@ -806,8 +842,14 @@ def import_automation(store: Store, data: bytes) -> tuple[dict, dict]:
     def _ready(rec: dict) -> bool:
         key = (rec.get("harness"), rec.get("mode", "default"), rec.get("model"))
         if key not in ready_memo:
-            ready_memo[key] = harness.check_ready(rec.get("harness"), rec.get("model"),
-                                                  rec.get("mode", "default"))
+            # The automation already landed — a raising readiness probe must
+            # degrade to "not ready" in the summary, never turn a completed
+            # import into a 500.
+            try:
+                ready_memo[key] = harness.check_ready(rec.get("harness"), rec.get("model"),
+                                                      rec.get("mode", "default"))
+            except Exception:  # noqa: BLE001
+                ready_memo[key] = False
         return ready_memo[key]
 
     secrets_matched = [{"name": e["name"], "matchedTo": rec["name"],
@@ -969,8 +1011,15 @@ def _land_archive(store: Store, arch: dict) -> tuple[dict, dict]:
                                 origin_os=arch["os"],
                                 unresolved_references=unresolved or None)
     if arch["param_values"]:
-        # Values are the one manifest field creation can't seed.
-        store.patch_automation(a, {"paramValues": arch["param_values"]})
+        # Values are the one manifest field creation can't seed. The
+        # automation already landed — a failing values write degrades to an
+        # import without them (the user re-enters values on the detail page)
+        # rather than answering 500 for an automation that exists.
+        try:
+            store.patch_automation(a, {"paramValues": arch["param_values"]})
+        except Exception:  # noqa: BLE001
+            logging.getLogger(__name__).exception(
+                "import of %r landed but its param values didn't apply", a.get("name"))
     return a, m
 
 
@@ -1001,8 +1050,12 @@ def _github_api(path: str):
             raise TransferError("GitHub rate-limited the lookup — try again in a "
                                 "few minutes, or paste the direct .autowright link") from None
         raise TransferError(f"GitHub answered {e.code} for {path}") from None
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
         raise TransferError(f"couldn't reach GitHub — {getattr(e, 'reason', e)}") from None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        # A captive portal / proxy answering HTML where the API's JSON belongs.
+        raise TransferError("GitHub's answer wasn't readable — check the network "
+                            "and try again") from None
 
 
 def _release_asset(release) -> str | None:
@@ -1066,6 +1119,8 @@ def fetch_archive(url: str) -> tuple[bytes, str]:
                 chunks.append(chunk)
     except urllib.error.HTTPError as e:
         raise TransferError(f"download failed — the server answered {e.code}") from None
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
+    except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as e:
+        # HTTPException covers a truncated chunked download (IncompleteRead),
+        # which is not an OSError.
         raise TransferError(f"download failed — {getattr(e, 'reason', e)}") from None
     return b"".join(chunks), resolved

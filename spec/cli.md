@@ -163,7 +163,13 @@ into a directory (dir defaults to the automation's name); `automation push <ref>
 create take the workdir as a required positional; only pull's is optional. Files:
 
 - `spec.md` — the spec as markdown (§4.1 blocks ↔ markdown via `specmd`).
-- `manifest.yaml` — the §8 call-2 manifest shape verbatim: `name`, `description`, `note`, `triggers`
+- `manifest.yaml` — the §8 call-2 manifest shape verbatim, plus the identity fields the §8
+  sync manifest never carries: `name` and `description` are written by pull and **applied
+  by push** — a changed `name` rides the version save (the §19 name patch; the §4.1
+  uniqueness 422 applies) and a changed `description` lands via the §19 PATCH right after
+  the save, so a manifest edit takes effect like any other workdir edit. An absent or
+  blank value leaves the stored one unchanged (clearing a description is the §19 PATCH's
+  affair, never push's). The remaining keys: `note`, `triggers`
   (the §8 rule-9 dialect — cron / imessage / discord / app_start entries; `pull` writes the
   stored crons only), `params` (full §4.2 definitions with
   defaults, **value fields stripped** — values are user-owned operational state, set via

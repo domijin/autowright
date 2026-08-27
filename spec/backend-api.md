@@ -424,7 +424,8 @@ remain plain dicts (§2).
   inline) ·
   `GET /executions/{id}/logs?step=&attempt=&tail=` → `{ lines: [{time, kind, sequence, text}] }` — both
   `step` and `attempt`
-  select that step attempt's file, neither selects `logs/execution.ndjson`, a missing file
+  select that step attempt's file, neither selects `logs/execution.ndjson`, one without the
+  other answers 422 (never a silent default), a missing file
   answers empty lines. `tail` (optional int ≥ 1; anything lower answers 422) keeps only the
   last `tail` lines of the selected log, same response shape - the §7 log views send it so a
   multi-thousand-line file never has to cross the wire whole ·

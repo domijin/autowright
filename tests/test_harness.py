@@ -949,6 +949,11 @@ def test_deterministic_failure_classification():
     assert _deterministic_failure("invalid api key") is True
     assert _deterministic_failure("segmentation fault") is False
     assert _deterministic_failure("connection reset by peer") is False
+    # word-bounded numerics — a byte count or an id must not read as an
+    # HTTP status and suppress the §8 one-retry policy
+    assert _deterministic_failure("sent 4013 bytes") is False
+    assert _deterministic_failure("request id 84032 failed") is False
+    assert _deterministic_failure("HTTP 403 Forbidden") is True
     assert _deterministic_failure("") is False
 
 
@@ -1083,7 +1088,10 @@ def test_invoke_non_claude_streams_raw_lines(monkeypatch, tmp_path, home):
     out = harness.invoke({"harness": "Gemini CLI"}, "question: hi?",
                          on_chunk=chunks.append)
     assert out == "line one\nline two\n"
-    assert chunks == ["line one\n", "line two\n"]
+    # §8: Gemini stdout lines are bare activity, never text events — banners
+    # and tool chatter must not become "Writing the answer" labels or the
+    # captured plan; progress comes entirely from the scratch watcher.
+    assert chunks == []
 
 
 def test_invoke_on_chunk_error_reaps_the_child(monkeypatch, tmp_path, home):
@@ -1091,18 +1099,21 @@ def test_invoke_on_chunk_error_reaps_the_child(monkeypatch, tmp_path, home):
     # the group dies and the original error surfaces promptly.
     from autowright import harness
 
+    # OpenCode: its JSON text events reach on_chunk (Gemini no longer emits
+    # text events — §8 — so it can't drive this path).
     script = fake_cli(tmp_path,
-                       "import time\nprint('first', flush=True)\ntime.sleep(60)\n",
-                       name="gemini")
+                       "import time\n"
+                       "print('{\"type\":\"text\",\"part\":{\"text\":\"first\"}}', flush=True)\n"
+                       "time.sleep(60)\n",
+                       name="opencode")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
-    _gemini_signed_in(monkeypatch)
 
     def bad_chunk(text):
         raise RuntimeError("renderer went away")
 
     t0 = time.monotonic()
     with pytest.raises(RuntimeError, match="renderer went away"):
-        harness.invoke({"harness": "Gemini CLI"}, "question: hi?",
+        harness.invoke({"harness": "OpenCode"}, "question: hi?",
                        on_chunk=bad_chunk)
     assert time.monotonic() - t0 < 10  # the child never got to sleep out 60 s
 

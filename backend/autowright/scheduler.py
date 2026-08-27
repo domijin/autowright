@@ -76,12 +76,19 @@ class Scheduler:
         now_utc = self._utc_clock()
         with self.store.lock:
             autos = list(self.store.autos.values())
+            # One O(all executions) pass per tick, not one per automation:
+            # drain_queue walks store.execs in full, so with nothing queued
+            # (the overwhelmingly common tick) the per-automation drain below
+            # is skipped outright.
+            queued_autos = {h.get("automation_id")
+                            for h in self.store.execs.values()
+                            if h.get("status") == "queued"}
         # Collected before the per-automation work, so a raising automation can
         # never cost another one its baselines in the prune below.
         live_keys = {(a["id"], t["id"]) for a in autos for t in list(a["triggers"])}
         for a in autos:
             try:
-                self._tick_automation(a, now, now_utc)
+                self._tick_automation(a, now, now_utc, drain=a["id"] in queued_autos)
             except Exception:  # noqa: BLE001
                 # §6: one automation's firing must never silence every
                 # automation after it in the list - same rule as the tick loop.
@@ -90,18 +97,32 @@ class Scheduler:
         self._baseline = {k: v for k, v in self._baseline.items() if k in live_keys}
         self._baseline_utc = {k: v for k, v in self._baseline_utc.items() if k in live_keys}
         self._warned_rewind &= live_keys
+        # Both hourly sweeps advance their timestamp first (a failing sweep
+        # retries next hour, never hot-loops) and are guarded so neither can
+        # abort the tick or the other sweep.
         if (now - self._last_retention).total_seconds() > 3600:
             self._last_retention = now
-            removed = self.store.retention_cleanup()
-            if removed:
-                hub.publish("automation.changed")
+            try:
+                removed = self.store.retention_cleanup()
+                if removed:
+                    hub.publish("automation.changed")
+            except Exception:  # noqa: BLE001
+                log.exception("retention sweep failed")
         if (now - self._last_overdue).total_seconds() > 3600:
             self._last_overdue = now
-            self._overdue_sweep(autos, now)
+            try:
+                self._overdue_sweep(autos, now)
+            except Exception:  # noqa: BLE001
+                log.exception("overdue sweep failed")
 
-    def _tick_automation(self, a: dict, now: datetime, now_utc: datetime) -> None:
+    def _tick_automation(self, a: dict, now: datetime, now_utc: datetime,
+                         drain: bool = True) -> None:
         """One automation's share of a tick - its own unit of failure (§6): the
-        caller logs and moves on, so a broken automation can't stop the rest."""
+        caller logs and moves on, so a broken automation can't stop the rest.
+        `drain=False` skips the queue drain (the caller saw nothing queued for
+        this automation at tick start; anything queued mid-tick is picked up
+        by the finish-time drain or the next tick — the same one-tick
+        granularity the safety net always had)."""
         due: list[tuple[datetime, dict]] = []
         for t in list(a["triggers"]):  # consume_trigger below mutates the list
             key = (a["id"], t["id"])
@@ -165,13 +186,19 @@ class Scheduler:
         # §6: drain here as well as on every execution finish — a raised
         # maxParallel, or a finish whose drain lost a race, is picked up
         # within a tick rather than waiting for the next firing.
-        drain_queue(self.store, self.engine, a["id"])
+        if drain:
+            drain_queue(self.store, self.engine, a["id"])
 
     def _fire(self, a: dict, t: dict) -> None:
         # The tick evaluated a snapshot taken outside the lock - a PATCH landing
         # mid-tick may have removed or disabled this trigger, and an occurrence
         # the API already confirmed off must not fire from the stale dict.
         with self.store.lock:
+            # A DELETE landing mid-tick removed the automation and its tree —
+            # firing against the stale snapshot would create a spurious record
+            # (and the engine would re-create a ghost directory).
+            if self.store.autos.get(a["id"]) is not a:
+                return
             cur = next((x for x in a["triggers"] if x["id"] == t["id"]), None)
             if cur is None or not cur["enabled"]:
                 return
@@ -192,7 +219,15 @@ class Scheduler:
         self._overdue_notified &= live_ids
         for a in autos:
             aid = a["id"]
-            if self.store.overdue(a, now):
+            # Per-automation unit of failure, same rule as _tick_automation:
+            # one automation's damaged triggers must not silence the sweep
+            # for every automation after it.
+            try:
+                is_overdue = self.store.overdue(a, now)
+            except Exception:  # noqa: BLE001
+                log.exception("overdue check failed for automation %r", a.get("name"))
+                continue
+            if is_overdue:
                 self._overdue_streak[aid] = self._overdue_streak.get(aid, 0) + 1
                 if self._overdue_streak[aid] >= 2 and aid not in self._overdue_notified:
                     self._overdue_notified.add(aid)

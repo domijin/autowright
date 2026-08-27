@@ -1,4 +1,5 @@
-"""Secret values (§4.8): macOS login Keychain via `keyring`.
+"""Secret values (§4.8): the OS secret store via `keyring` — macOS login
+Keychain, Windows Credential Manager, or the Linux Secret Service (§2).
 
 The keyring account string is the secret's §4.8 id — the one reference
 identity — so metadata edits never touch the Keychain and no rename path

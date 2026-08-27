@@ -36,8 +36,9 @@ function Sidebar() {
   const page = useStore((s) => s.page)
   const go = useStore((s) => s.go)
   const nAutos = useStore((s) => s.automations.length)
-  // §11 test executions never appear in the Executions list — don't count them
-  const nExecs = useStore((s) => s.executions.filter((e) => !e.test).length)
+  // §9: the pill counts exactly what the Executions page lists — §4.5 test
+  // executions included (§7: the list shows them), so pill and page agree.
+  const nExecs = useStore((s) => s.executions.length)
   const nAgents = useStore((s) => s.agents.length)
   const nSecrets = useStore((s) => s.secrets.length)
   // §9 "Update available" nav row: appears above About while an update is
@@ -226,7 +227,11 @@ export default function App() {
   // login:true registers here).
   useEffect(() => {
     if (login === undefined && menuBarIcon === undefined) return
-    void window.autowright?.applySettings({ login, menuBarIcon, automaticUpdateCheck })
+    // The IPC handler applies shell effects unguarded (a tray-asset or
+    // login-item failure throws through the invoke) — catch it so a failed
+    // push surfaces as a toast instead of an unhandled rejection.
+    window.autowright?.applySettings({ login, menuBarIcon, automaticUpdateCheck })
+      ?.catch(() => useStore.getState().showToast('Some settings could not be applied'))
   }, [login, menuBarIcon, automaticUpdateCheck])
 
   if (connected === null || connected === false) {

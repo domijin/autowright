@@ -210,9 +210,20 @@ def read_workdir(d: Path) -> dict[str, str]:
     if not d.is_dir():
         sys.exit(f"{d} is not a directory")
     files = {}
-    for f in sorted(d.iterdir()):
+    try:
+        entries = sorted(d.iterdir())
+    except OSError as e:
+        # §20 exit-code rule: a directory the command can't read is a message
+        # on stderr, never a traceback.
+        sys.exit(f"can't read {d}: {e.strerror or e}")
+    for f in entries:
         if f.name in WORKDIR_META or STEP_FILE_RE.match(f.name):
-            files[f.name] = f.read_text(encoding="utf-8")
+            try:
+                files[f.name] = f.read_text(encoding="utf-8")
+            except OSError as e:
+                sys.exit(f"can't read {f}: {e.strerror or e}")
+            except UnicodeDecodeError:
+                sys.exit(f"can't read {f}: not UTF-8 text")
     return files
 
 
@@ -290,11 +301,19 @@ def _manifest_step(s: dict) -> dict:
 
 def write_workdir(d: Path, auto: dict) -> list[str]:
     """§20 pull: materialize an automation's current version into a workdir.
-    Returns the written filenames."""
+    Returns the written filenames. Any file it can't write is a message on
+    stderr (§20 exit-code rule), never a traceback."""
     import yaml
 
     from . import specmd
 
+    try:
+        return _write_workdir(d, auto, yaml, specmd)
+    except OSError as e:
+        sys.exit(f"can't write to {d}: {e.strerror or e}")
+
+
+def _write_workdir(d: Path, auto: dict, yaml, specmd) -> list[str]:
     d.mkdir(parents=True, exist_ok=True)
     written = ["spec.md", "manifest.yaml"]
     (d / "spec.md").write_text(specmd.blocks_to_md(auto.get("spec") or []), encoding="utf-8")
@@ -555,8 +574,16 @@ def cmd_automation_push(c: Client, args) -> None:
                                            stored_agents=full.get("stepAgents") or [],
                                            stored_secrets=full.get("allowedSecrets") or [])
     body = {"draft": draft, "stepAgents": step_agents, "allowedSecrets": allowed_secrets}
+    # §20: the workdir manifest's identity fields apply on push — a changed
+    # name rides the version save (§19 name patch), a changed description
+    # lands via the §19 PATCH after it; absent/blank values change nothing.
+    if draft.get("name"):
+        body["name"] = draft["name"]
     r = c.req("POST", f"/automations/{a['id']}/versions", body)
-    print(f"saved {full['name']!r} as v{r['version']}")
+    description = draft.get("description")
+    if description and description != (full.get("description") or ""):
+        c.req("PATCH", f"/automations/{a['id']}", {"description": description})
+    print(f"saved {draft.get('name') or full['name']!r} as v{r['version']}")
     ensure_packages(c, draft.get("packages") or [])
 
 
@@ -1019,8 +1046,16 @@ def cmd_execution_result(c: Client, args) -> None:
         for f in (full.get("result") or {}).get("files") or []:
             print(f"{f['name']} ({f['size']})")
         return
-    data = c.req_raw("GET", f"/executions/{e['id']}/result/{args.name}")
-    sys.stdout.buffer.write(data)
+    from urllib.parse import quote
+
+    # Encoded like memory show's path — a result file named with a space or
+    # `#` (steps name these freely) must survive the request line.
+    data = c.req_raw("GET", f"/executions/{e['id']}/result/{quote(args.name)}")
+    try:
+        sys.stdout.buffer.write(data)
+    except BrokenPipeError:
+        # Piped into `head` and the reader closed early — a normal end.
+        sys.exit(0)
 
 
 # ---------------------------------------------------------------- secret/agent
@@ -2177,7 +2212,13 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     c = Client() if args.client else None
-    args.fn(c, args)
+    try:
+        args.fn(c, args)
+    except KeyboardInterrupt:
+        # §20/§3 guidance style: Ctrl-C anywhere (a slow delete, a hung
+        # request) is a quiet exit 1, never a traceback. The follow loop's
+        # own handler still exits with the execution's code first.
+        sys.exit(1)
 
 
 if __name__ == "__main__":

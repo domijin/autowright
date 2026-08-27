@@ -38,11 +38,13 @@ declare global {
       resetAll(): Promise<{ ok: true } | { busy: true } | { error: string }>
       // §3 reset-progress stage tokens ('secrets' | 'service' | 'data' |
       // 'quit') for the §4.9 reset progress overlay's stage line.
-      onResetProgress(cb: (stage: string) => void): void
-      onUpdateProgress(cb: (percent: number | null) => void): void
+      // Each on* returns an unsubscribe for effect cleanup (void-typed
+      // stubs in tests are fine — callers optional-chain the return).
+      onResetProgress(cb: (stage: string) => void): (() => void) | void
+      onUpdateProgress(cb: (percent: number | null) => void): (() => void) | void
       updateAvailable(): Promise<string | null>
-      onUpdateAvailable(cb: (version: string | null) => void): void
-      onOpenTarget(cb: (hash: string) => void): void
+      onUpdateAvailable(cb: (version: string | null) => void): (() => void) | void
+      onOpenTarget(cb: (hash: string) => void): (() => void) | void
     }
   }
 }

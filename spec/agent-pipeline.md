@@ -793,16 +793,24 @@ applies to these flags as each CLI lands there):
   (idle reset only) - the scratch watcher below is the single source of `file` events,
   so a document written via a shell command still reports and nothing double-reports.
 - **Gemini CLI** - stays on plain text output: the reply is raw stdout, and progress
-  comes entirely from `file` events via the scratch watcher. (Its `-o stream-json` mode
-  exists as of 0.51.0 but is unadopted until it can be verified against a signed-in
+  comes entirely from `file` events via the scratch watcher - stdout lines are bare
+  activity (idle reset only), never `text` events, so CLI banners and tool chatter can
+  never become `Writing the answer` labels or the captured plan. (Its `-o stream-json`
+  mode exists as of 0.51.0 but is unadopted until it can be verified against a signed-in
   install; a follow-up.) Drafting calls add `--approval-mode yolo` so the file-write
-  tools the OUTPUT section relies on auto-approve non-interactively - its tools were
-  already all-on in every mode (§6 documented limitation); runtime calls stay bare.
+  tools the OUTPUT section relies on auto-approve non-interactively. `yolo`
+  auto-approves every tool, shell included - broader than the file writes the OUTPUT
+  delivery needs; accepted for drafting calls because §6 already documents the drafting
+  agent as unsandboxed on this harness, and narrowing the flag waits on the signed-in
+  verification this mode still owes. Runtime calls stay bare.
 - **OpenCode** - `opencode run --format json` (JSONL events on stdout): `text` events'
   part text becomes a `text` event each (the **reply is every text part joined in
   order**, falling back to raw stdout when none arrived), `tool_use` events become
-  `tool` events carrying the tool name and its input (`write`'s `filePath`, `bash`'s
-  `command`); `step_start`/`step_finish` and every other parsed line are bare activity.
+  `tool` events carrying the tool name and its input (`bash`'s `command`) - except
+  `write` and `edit`, which count as bare activity: the scratch watcher is the single
+  source of `file` events, so a write tool event would double-report the same document
+  (the same rule as Codex's `file_change` items);
+  `step_start`/`step_finish` and every other parsed line are bare activity.
   File writes need no extra flag (verified: `run` writes without `--auto`).
 
 **File-writing delivery** (Codex, Gemini CLI, OpenCode - every harness whose one-shot mode
@@ -812,8 +820,12 @@ on these harnesses runs with its cwd set to a fresh per-call **scratch directory
 prompt gains one final **OUTPUT** section - the only per-harness prompt difference -
 directing the agent to WRITE each response document the TASK names as a real file in its
 current working directory (exact file names, no subdirectories) instead of printing
-`===FILE:` blocks, to keep its prose answer on stdout, and - when blocked - to still print
-the blocker envelope to stdout, never as a file. Codex's sandbox escalates to
+`===FILE:` blocks, to keep its prose answer on stdout, when blocked to still print
+the blocker envelope to stdout, never as a file, and - on a repair round - to write
+**every** file again, the corrected and the unchanged ones alike: each round runs in a
+fresh scratch dir, so only the files written that round exist, and a round that rewrote
+only the failed file would lose the manifest and the other steps and fail validation on
+their absence. Codex's sandbox escalates to
 `--sandbox workspace-write` for these calls only, confining writes to the scratch cwd
 (runtime stays `read-only`; Gemini and OpenCode have no sandbox flag to escalate - §6).
 A poll-based **scratch watcher** (0.3 s) turns each response document that lands into a
@@ -837,7 +849,10 @@ printed). The scratch dir is created per call, removed when the call ends on eve
 The drafting job derives `detail` from these events - for Claude Code by scanning the
 accumulated `text` stream for the envelope's `===FILE:` markers, for the file-writing
 harnesses from the `file` events directly - and the labels read the same either way:
-`Thinking…` before the first marker or document; the chat call's per-document
+`Thinking…` before the first marker or document - and never again after one: on a
+file-writing harness, stdout prose resuming after a document landed keeps the last
+document label rather than regressing the live line to the waiting placeholder
+mid-build; the chat call's per-document
 messages (the chat-call section above - `Writing the spec · N lines` and kin);
 `Writing the manifest — name, triggers, parameters, step list` and then
 `Writing step i of n — NN-name.py · N lines` during the sync call (`i of n` comes from the
@@ -850,7 +865,9 @@ agent is writing its blocker envelope, not an answer); on a
 repair round, `The response didn't validate — asking for a corrected one…` and then the same
 messages prefixed with the round's try label - `Second try — ` on the first repair round,
 `Third try — `, `Fourth try — `, … on later ones - with the message's first letter lowercased
-(`Second try — writing the spec · 3 lines`); during the package installs (inside the
+(`Second try — writing the spec · 3 lines`); the `Thinking…` placeholder itself is
+never prefixed - it is the waiting placeholder, not one of the messages, and the §11
+filter that keeps it out of the thread matches it exactly; during the package installs (inside the
 "Syncing the workflow" stage), `Installing <pip spec>…` per
 package (the §6.2 ensure's progress hook). On a file-writing harness the chat call's
 stage flip and `plan` capture (the chat-call section above) fire on the first `file`
@@ -865,13 +882,19 @@ that reports no events simply yields no `detail` - the coarse stage labels remai
 Beside the mutable `detail` line the job carries `events` — an append-only activity feed of
 discrete milestones, each entry `{time, text, stage}` (`time` epoch seconds; `stage` the job's
 stage label at append time, so the §11 thread can group the feed by stage), capped to the newest 200.
-Appended: every marker change from the streams above (the `detail` message without its
+Appended: each distinct marker/document message the **first** time its shape appears in
+a round (the `detail` message without its
 ` · N lines` count — never the throttled line-count growth, and never the initial
 `Thinking…`, which is a waiting placeholder rather than a sub-task; the chat call's
 `Writing the answer` **is** appended like any other shape change — a sub-task line once
 shown must survive the move to the next sub-task as feed history (in-place updates are
 for line-count growth only), so the answer/plan prose leaves its tracking line even
-though the answer entry itself is the persistent record of the text), every `tool` event a
+though the answer entry itself is the persistent record of the text; a shape
+**re-entered** later in the same round — stdout prose resuming after a document landed,
+a document growing after later prose, routine on the file-writing harnesses where the
+two channels interleave — updates `detail` but never re-appends its feed line, so the
+feed can't ping-pong duplicate milestones and the §11 per-event durations stay whole;
+repair rounds' try prefixes keep their lines distinct across rounds), every `tool` event a
 handler reports (web reads → `Reading <url>…`, web searches → `Searching the web for
 “<query>”…` - except a search whose query is itself an http(s) URL, which reads as
 `Reading <url>…` too: Codex reports page fetches as `web_search` items - a shell

@@ -7,7 +7,12 @@ import { BtnPrimary, EmptyState, Eyebrow, LoadingRow, MiniBadge, P, PageTitle, d
 
 
 function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) {
-  const { automations, go, showToast, runAgentCheck } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this card on
+  // every store write anywhere — every toast, every log line of every execution.
+  const automations = useStore((s) => s.automations)
+  const go = useStore((s) => s.go)
+  const showToast = useStore((s) => s.showToast)
+  const runAgentCheck = useStore((s) => s.runAgentCheck)
   const checking = check === 'checking' || check === undefined
   const connecting = check === 'connecting'
   const ready = check === 'ready'
@@ -129,7 +134,11 @@ function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) 
 }
 
 export default function AgentsPage() {
-  const { agents, agentChecks, go } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this page on
+  // every store write anywhere — every toast, every log line of every execution.
+  const agents = useStore((s) => s.agents)
+  const agentChecks = useStore((s) => s.agentChecks)
+  const go = useStore((s) => s.go)
 
   // §12 session cache: only agents with no cached status get checked, with a
   // small stagger. The cache entry is claimed synchronously (StrictMode

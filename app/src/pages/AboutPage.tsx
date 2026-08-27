@@ -59,7 +59,12 @@ const DOCS = {
 type DocKey = keyof typeof DOCS
 
 export default function AboutPage() {
-  const { version, settings, showToast, updateAvailable } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this page on
+  // every store write anywhere — every toast, every log line of every execution.
+  const version = useStore((s) => s.version)
+  const settings = useStore((s) => s.settings)
+  const showToast = useStore((s) => s.showToast)
+  const updateAvailable = useStore((s) => s.updateAvailable)
   // §9 per-OS copy rule: the machine noun the APP and LEGAL lines name.
   const copy = usePlatformCopy()
   // §9.4 pre-armed: a known update (§3 update-available — an automatic check,
@@ -102,9 +107,10 @@ export default function AboutPage() {
   // The main process streams the zip itself (§3) and pushes percent over
   // update-progress events; the bar holds 100% while Squirrel stages the zip.
   useEffect(() => {
-    window.autowright?.onUpdateProgress?.((percent) => {
+    const off = window.autowright?.onUpdateProgress?.((percent) => {
       setUpd((u) => (u.state === 'downloading' ? { ...u, percent } : u))
     })
+    return () => off?.()
   }, [])
 
   // A §3 automatic check can land while this page is open — arm the row unless

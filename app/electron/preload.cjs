@@ -41,28 +41,27 @@ contextBridge.exposeInMainWorld('autowright', {
   resetAll: () => ipcRenderer.invoke('reset-all'),
   // §3 reset-progress stage tokens for the §4.9 reset progress overlay.
   // Re-registering replaces the previous listener, like onUpdateProgress.
-  onResetProgress: (cb) => {
-    ipcRenderer.removeAllListeners('reset-progress')
-    ipcRenderer.on('reset-progress', (_e, stage) => cb(stage))
-  },
+  // Each on* below returns an unsubscribe so an unmounting page can drop its
+  // listener instead of leaving a dead setter closure registered.
+  onResetProgress: (cb) => _push('reset-progress', cb),
   // Download percent (null = size unknown). Re-registering replaces the
   // previous listener — the About page re-subscribes on every mount.
-  onUpdateProgress: (cb) => {
-    ipcRenderer.removeAllListeners('update-progress')
-    ipcRenderer.on('update-progress', (_e, pct) => cb(pct))
-  },
+  onUpdateProgress: (cb) => _push('update-progress', cb),
   // §3 update-available: known newer version (or null) + push on later finds.
   updateAvailable: () => ipcRenderer.invoke('update-available'),
-  onUpdateAvailable: (cb) => {
-    ipcRenderer.removeAllListeners('update-available')
-    ipcRenderer.on('update-available', (_e, version) => cb(version))
-  },
+  onUpdateAvailable: (cb) => _push('update-available', cb),
   // Deep-link target ('/app?automation=<id>') pushed by main when the window already
   // exists — a reload would drop the WS and all renderer state. Re-registering
   // replaces the previous listener, like the two above: under §15's renderer
   // dev server a re-evaluated module would otherwise stack subscribers.
-  onOpenTarget: (cb) => {
-    ipcRenderer.removeAllListeners('open-target')
-    ipcRenderer.on('open-target', (_e, hash) => cb(hash))
-  },
+  onOpenTarget: (cb) => _push('open-target', cb),
 })
+
+// One push-channel subscription at a time (replace on re-register), returning
+// an unsubscribe for effect cleanup.
+function _push(channel, cb) {
+  ipcRenderer.removeAllListeners(channel)
+  const listener = (_e, value) => cb(value)
+  ipcRenderer.on(channel, listener)
+  return () => ipcRenderer.removeListener(channel, listener)
+}

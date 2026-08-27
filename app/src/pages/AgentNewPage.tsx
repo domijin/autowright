@@ -77,7 +77,15 @@ const HARNESS_ID: Record<string, HarnessId> = {
 }
 
 export default function AgentNewPage() {
-  const { go, showToast, ollamaPull, runAgentCheck, agents, agentEditId, agentChecks } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this page on
+  // every store write anywhere — every toast, every log line of every execution.
+  const go = useStore((s) => s.go)
+  const showToast = useStore((s) => s.showToast)
+  const ollamaPull = useStore((s) => s.ollamaPull)
+  const runAgentCheck = useStore((s) => s.runAgentCheck)
+  const agents = useStore((s) => s.agents)
+  const agentEditId = useStore((s) => s.agentEditId)
+  const agentChecks = useStore((s) => s.agentChecks)
   // §9 per-OS copy rule: the machine noun this page's install copy names.
   const copy = usePlatformCopy()
   // Edit mode is addressed by nav state (§12): agentEditId names the agent, so

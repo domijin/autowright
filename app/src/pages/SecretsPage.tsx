@@ -13,7 +13,10 @@ const MASK = '••••••••••••'
 type ModalState = SecretModalState | null
 
 export default function SecretsPage() {
-  const { secrets, showToast } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this page on
+  // every store write anywhere — every toast, every log line of every execution.
+  const secrets = useStore((s) => s.secrets)
+  const showToast = useStore((s) => s.showToast)
   // §9 per-OS copy rule: the secret-store name and machine noun.
   const copy = usePlatformCopy()
   const [modal, setModal] = useState<ModalState>(null)

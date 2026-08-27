@@ -8,8 +8,10 @@ from datetime import datetime, timezone
 
 
 def now_iso() -> str:
-    """§5 canonical stored timestamp: UTC, offset, microseconds."""
-    return datetime.now(timezone.utc).isoformat()
+    """§5 canonical stored timestamp: UTC, offset, microseconds. timespec
+    pins the fraction even when microsecond == 0 — isoformat() would omit
+    it and break the stated fixed-width invariant ~one time in a million."""
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 def parse_local(iso: str) -> datetime:

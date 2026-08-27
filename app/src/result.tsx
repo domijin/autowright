@@ -85,10 +85,13 @@ function ViewCard({ title, kind, meta, mono = true, defaultOpen = true, children
 
 // ---------- markdown (§4.5 shared renderer) ----------
 
-export function Markdown({ text, small }: { text: string; small?: boolean }) {
+export const Markdown = React.memo(function Markdown({ text, small }: { text: string; small?: boolean }) {
   // GFM via react-markdown + remark-gfm; output is React elements (never
   // injected HTML). Styling lives in tokens.css under .ad-md; `small` is the
   // §4.5 compact variant for the chat thread (.ad-md-sm).
+  // Memoized: the chat thread re-renders once a second while a job runs (the
+  // live-duration tick) — without memo every settled entry re-parses its
+  // markdown on each tick.
   return (
     <div className={small ? 'ad-md ad-md-sm' : 'ad-md'}>
       <ReactMarkdown
@@ -102,7 +105,7 @@ export function Markdown({ text, small }: { text: string; small?: boolean }) {
       </ReactMarkdown>
     </div>
   )
-}
+})
 
 // Spec cards (create flow + automation page): SpecBlock[] → markdown, rendered
 // by the same shared component as every other markdown surface.

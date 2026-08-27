@@ -612,6 +612,11 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     return last === label ? null : last.textContent
   }
   const bullet = (text: string) => screen.getByText(`• ${text}`)
+  // §11 one ticking stamp: every stamped line in a block is a bullet label
+  // whose row carries a second child — count them to prove only one line ticks.
+  const stampedBullets = (block: Element) =>
+    [...block.querySelectorAll('span')]
+      .filter((s) => (s.textContent ?? '').startsWith('•') && stampBeside(s as HTMLElement) !== null)
   // one chat job walking the deciding phase into the documents phase, with
   // §8 stamps for both stages and the settle
   const STAMPED_EVENTS = [
@@ -744,6 +749,60 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     }
   })
 
+  it('a detail that is a different activity renders unstamped — one ticking stamp (§11)', async () => {
+    const T0 = 1_700_000_000
+    vi.useFakeTimers()
+    vi.setSystemTime(T0 * 1000)
+    try {
+      ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'j1', status: 'building', stage: 'Working on the request',
+        // a tool event landed after the document stream's throttled line: the
+        // detail is a DIFFERENT message, not an extension of the last event
+        detail: 'Writing step 1 of 3 — 01-a.py · 20 lines',
+        error: null, mode: 'chat', draft: null,
+        events: [{ time: T0 - 3.4, text: 'Running a command — ls…', stage: 'Working on the request' }],
+        // a sub-second leading gap drops the canned waiting line
+        stageTimes: [{ stage: 'Working on the request', time: T0 - 4 }],
+      })
+      render(<CreateFlow />)
+      send('Check the docs')
+      await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+      // the last event keeps the tick…
+      expect(stampBeside(bullet('Running a command — ls…'))).toBe('3s')
+      // …and the detail line renders bare beneath it
+      expect(stampBeside(bullet('Writing step 1 of 3 — 01-a.py · 20 lines'))).toBeNull()
+      expect(stampedBullets(screen.getByTestId('chat-progress')).length).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a detail extending the last event replaces it and inherits the tick (§11)', async () => {
+    const T0 = 1_700_000_000
+    vi.useFakeTimers()
+    vi.setSystemTime(T0 * 1000)
+    try {
+      ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'j1', status: 'building', stage: 'Working on the request',
+        // the same message, growing line count — the detail extends the event
+        detail: 'Running a command — ls… · 20 lines',
+        error: null, mode: 'chat', draft: null,
+        events: [{ time: T0 - 3.4, text: 'Running a command — ls…', stage: 'Working on the request' }],
+        stageTimes: [{ stage: 'Working on the request', time: T0 - 4 }],
+      })
+      render(<CreateFlow />)
+      send('Check the docs')
+      await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+      // the event never shows twice — the detail bullet took its place…
+      expect(screen.queryByText('• Running a command — ls…')).toBeNull()
+      // …carrying the event's ticking stamp, still the block's only one
+      expect(stampBeside(bullet('Running a command — ls… · 20 lines'))).toBe('3s')
+      expect(stampedBullets(screen.getByTestId('chat-progress')).length).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a stored activity entry renders its stamps; a pre-field one renders bare (§21.4)', async () => {
     ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ chat: [
       { id: 'd1', kind: 'activity', title: 'Updating the documents…', outcome: 'done',
@@ -838,6 +897,24 @@ describe('CreateFlow chat response application (§11)', () => {
     fireEvent.click(screen.getByText('Send'))
     await waitFor(() => expect(screen.getByText('Got it — watching Downloads.')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getByPlaceholderText('Change something, or ask a question…')).toBeTruthy()
+  })
+
+  it('a first-turn question wins the composer prompt over the fresh-create invite (§11)', async () => {
+    // a fresh create: no spec and no steps yet, so the composer would otherwise
+    // keep the describe invite
+    storeMod.useStore.setState({ createFrom: 'app' })
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(done({
+      answer: 'Which folder should I watch?', answerKind: 'question',
+    }))
+    render(<CreateFlow />)
+    fireEvent.change(screen.getByPlaceholderText('Describe the job — one sentence is enough.'),
+      { target: { value: 'Watch a folder' } })
+    fireEvent.click(screen.getByText('Send'))
+    await waitFor(() => expect(screen.getByText('Which folder should I watch?')).toBeTruthy(), { timeout: 3000 })
+    expect(screen.getByText('Question for you')).toBeTruthy()
+    // §11: the pending question wins over the whole describe/change rule
+    expect(screen.getByPlaceholderText('Answer here…')).toBeTruthy()
+    expect(screen.queryByPlaceholderText('Describe the job — one sentence is enough.')).toBeNull()
   })
 
   it('a reply merely ending with ? stays From your AI — no answerKind, no question header (§11)', async () => {

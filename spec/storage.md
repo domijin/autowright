@@ -607,6 +607,12 @@ answers 422 and writes nothing):
   `infinite_retries` — an archive can't land a step no drafting call could produce. Step
   filenames obey the §8 `NN-name.py` rule in listed order (`01-…`, `02-…`), like every other
   ingest path — otherwise the app's own save endpoints would 422 on a version import created.
+  Step code must parse as Python (`ast.parse`) — a syntactically broken step answers 422
+  naming the step, for the same reason: the app's own save endpoints would reject the
+  user's first edit of code they never wrote. The §6.2 import allowlist is deliberately
+  **not** enforced at import — the curated list can grow within one format version, so an
+  archive exported by a newer app must keep importing on an older one; the §6.1 executor's
+  runtime allowlist check still backstops execution (exit 4).
 - The automation lands as **v1** of a brand-new automation (note "Imported") — version history
   is local editing history and never travels. A name another automation already holds dedupes
   per §4.1 (case-insensitive; smallest free "Name n" suffix) - import never fails on a name

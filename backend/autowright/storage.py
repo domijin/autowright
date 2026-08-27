@@ -82,6 +82,10 @@ def lenient_local(s: Any) -> datetime | None:
 
 # §4.4: prefix of the staged draft-memory seed copy (engine.py) - swept at load.
 DRAFT_MEM_STAGE_PREFIX = ".ad-tmp-memory-"
+# §6.3 restore_snapshot staged-swap names (no trailing dash — distinct from
+# the prefixes above), shared by the swap itself and the load-time repair.
+MEMORY_SWAP_TMP = ".ad-tmp-memory"
+MEMORY_SWAP_OLD = ".ad-old-memory"
 
 # §6 concurrency settings (§4.1). One run at a time and skip-on-busy are the
 # defaults — parallel runs and queueing are opt-in per automation (§9.2 card,
@@ -222,9 +226,19 @@ class StoreUnwritableError(RuntimeError):
         self.path = path
 
 
+class LiveExecutionError(RuntimeError):
+    """§6.3: an execution started while a memory operation was staging its
+    copy outside store.lock — the operation is abandoned, nothing landed."""
+
+
 class Store:
     def __init__(self) -> None:
         self.lock = threading.RLock()
+        # §6.3: serializes the memory operations (manual snapshot, clear,
+        # restore) against each other — their copies stage outside self.lock,
+        # and restore's fixed swap-dir names would collide if two ran at
+        # once. Never acquired while holding self.lock.
+        self.memory_ops = threading.Lock()
         # §5 read-only degradation: paths of top-level files that existed but
         # failed to load this session — save_* refuses to rewrite them.
         self._unreadable: set[str] = set()
@@ -296,7 +310,15 @@ class Store:
                                      "description": s.get("description") or "",
                                      "set": bool(s.get("set", True))})
             self.autos = {}
-            for d in sorted(paths.automations_dir().iterdir()) if paths.automations_dir().exists() else []:
+            try:
+                auto_dirs = sorted(paths.automations_dir().iterdir()) \
+                    if paths.automations_dir().exists() else []
+            except OSError as e:
+                # §5: an unreadable automations/ (permissions) never bricks
+                # startup into a launchd KeepAlive crash loop.
+                log.error("can't list %s (%s) — loading no automations", paths.automations_dir(), e)
+                auto_dirs = []
+            for d in auto_dirs:
                 if not d.is_dir() or not (d / "automation.yaml").exists():
                     continue
                 try:
@@ -455,6 +477,7 @@ class Store:
                 list((d / "draft").glob(f"{DRAFT_MEM_STAGE_PREFIX}*")):
             shutil.rmtree(stale, ignore_errors=True)
         self._recover_draft_swap(d / "draft")  # §5: repair a half-finished save_draft swap
+        self._recover_memory_swap(d)  # §6.3: repair a half-finished restore_snapshot swap
         if (d / "draft" / "automation" / "automation.yaml").exists():
             a["draft"] = self._load_version_folder(d / "draft" / "automation")
         if not a["versions"]:
@@ -498,6 +521,12 @@ class Store:
             except Exception:  # noqa: BLE001
                 return False
 
+        def _elapsed(t: dict) -> bool:
+            try:
+                return triggerlib.time_elapsed(t)
+            except Exception:  # noqa: BLE001
+                return False
+
         out = []
         for t in raw:
             if (isinstance(t, dict) and t.get("kind") == "app_start"
@@ -524,11 +553,14 @@ class Store:
                             # (never healed, §4.1 falls back to the run baseline).
                             **({triggerlib.ENABLED_AT: t[triggerlib.ENABLED_AT]}
                                if isinstance(t.get(triggerlib.ENABLED_AT), str) else {})})
-            elif isinstance(t, dict) and t.get("kind") == "time":
+            elif isinstance(t, dict) and t.get("kind") == "time" and _elapsed(t):
                 # A past one-shot found on disk was missed while the backend was
                 # down — consumed (§4.3), never loaded.
                 continue
             else:
+                # Includes an invalid-but-unelapsed time trigger (e.g. a bad
+                # timezone on a future `at`) — the user must be able to find
+                # out why their one-shot vanished.
                 log.warning("dropping malformed trigger %r", t)
         return out
 
@@ -874,6 +906,24 @@ class Store:
         if not dd.exists() and old.exists():
             old.rename(dd)
         for stale in (old, new):
+            if stale.exists():
+                shutil.rmtree(stale, ignore_errors=True)
+
+    @staticmethod
+    def _recover_memory_swap(d: Path) -> None:
+        """§6.3 crash recovery for the restore_snapshot staged swap, the exact
+        twin of _recover_draft_swap: a restore died between the two renames —
+        memory/ was renamed aside and the staged copy never took its place, so
+        the aside dir is the sole surviving copy. Without this load-time
+        repair, the next execution would recreate memory/ and a later restore
+        would then rmtree the aside dir — silently destroying the pre-crash
+        memory. Leftover temps from any other crash point are stale and go."""
+        mem = d / "memory"
+        old = d / MEMORY_SWAP_OLD
+        tmp = d / MEMORY_SWAP_TMP
+        if not mem.exists() and old.exists():
+            old.rename(mem)
+        for stale in (old, tmp):
             if stale.exists():
                 shutil.rmtree(stale, ignore_errors=True)
 
@@ -1319,7 +1369,11 @@ class Store:
     def log_file(self, execution_id: str, name: str) -> Path:
         return self.exec_dir(execution_id) / "logs" / name
 
-    def append_log_line(self, execution_id: str, name: str, line: dict) -> None:
+    def append_log_line(self, execution_id: str, name: str, line: dict) -> bool:
+        """True when a line landed (the truncation marker included) — the
+        engine publishes to the WS hub only then, so a runaway step past the
+        cap can't queue unbounded loop callbacks streaming lines the stored
+        log doesn't hold."""
         p = self.log_file(execution_id, name)
         key = (execution_id, name)
         count = self._log_counts.get(key)
@@ -1334,7 +1388,7 @@ class Store:
                 count = 0
         if count > self.MAX_LOG_LINES:
             self._log_counts[key] = count
-            return  # already truncated — the marker is the file's last line
+            return False  # already truncated — the marker is the file's last line
         if count == self.MAX_LOG_LINES:
             line = {"timestamp": timefmt.now_iso(), "kind": "sys",
                     "sequence": line.get("sequence", count + 1),
@@ -1344,6 +1398,7 @@ class Store:
         with open(p, "a", encoding="utf-8") as f:
             f.write(json.dumps(line, ensure_ascii=False) + "\n")
         self._log_counts[key] = count + 1
+        return True
 
     def read_log(self, execution_id: str, step_idx: int | None = None,
                  attempt: int | None = None, tail: int | None = None) -> list[dict]:
@@ -1596,7 +1651,9 @@ class Store:
     def stage_snapshot(self, a: dict, reason: str) -> tuple[Path, int, int] | None:
         """§6.3 stage: copy `memory/` into a temp sibling of the automation dir,
         **outside** store.lock - a memory dir can be gigabytes, and every API
-        request queues behind the lock while a copytree runs. None when there
+        request queues behind the lock while a copytree runs (callers must NOT
+        wrap this call in store.lock — the lock is an RLock, so a wrapped call
+        silently runs the copy under it). None when there
         is nothing to snapshot (empty memory, or the automatic reason toggled
         off, §6.3 memory_snapshots), so no call site needs its own check.
         `commit_snapshot` renames the staged dir into place; `discard_snapshot`
@@ -1683,15 +1740,22 @@ class Store:
             return True
 
     def restore_snapshot(self, a: dict, sid: str) -> dict | None:
-        """§6.3 restore: pre-restore snapshot of current memory, then replace it."""
+        """§6.3 restore: pre-restore snapshot of current memory, then replace
+        it. The gigabyte-scale copies (the pre-restore stage and the restore's
+        own staged copy) run OUTSIDE store.lock — the same rule as
+        stage_snapshot's docstring; every API request would queue behind the
+        lock for the whole copytree otherwise. The commit re-checks `_live`
+        under the lock and raises LiveExecutionError instead of landing a
+        copy that raced an execution; the caller serializes concurrent memory
+        operations on `memory_ops` (the fixed swap-dir names collide)."""
         with self.lock:
             meta = self.get_snapshot(a, sid)
             src = self.snapshots_dir(a) / sid / "memory"
             if not meta or not src.exists():
                 return None
             mem = self.auto_dir(a) / "memory"
-            tmp = mem.parent / ".ad-tmp-memory"
-            old = mem.parent / ".ad-old-memory"
+            tmp = mem.parent / MEMORY_SWAP_TMP
+            old = mem.parent / MEMORY_SWAP_OLD
             # Crash recovery (§6.3): a previous restore died inside the swap —
             # memory/ was renamed aside but the staged copy never took its
             # place. The aside dir is the sole surviving copy; put it back
@@ -1702,14 +1766,28 @@ class Store:
                 shutil.rmtree(tmp)
             if old.exists():
                 shutil.rmtree(old)
-            # `keep=sid`: the prune inside must never delete the snapshot being
-            # restored — §6.3 says restore is repeatable.
-            self.snapshot_memory(a, "pre-restore", keep=sid)
+        # `keep=sid` below: the prune must never delete the snapshot being
+        # restored — §6.3 says restore is repeatable.
+        pre = self.stage_snapshot(a, "pre-restore")
+        try:
             # Stage first, swap by rename (§5 disk-first): no point in the
             # sequence leaves zero surviving copies — with the pre-restore
             # toggle off there is no snapshot to recover from, so rmtree'ing
             # memory/ before the staged copy lands would be a data-loss window.
             shutil.copytree(src, tmp)
+        except BaseException:
+            if pre is not None:
+                self.discard_snapshot(pre[0])
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
+        with self.lock:
+            if a.get("_live"):
+                if pre is not None:
+                    self.discard_snapshot(pre[0])
+                shutil.rmtree(tmp, ignore_errors=True)
+                raise LiveExecutionError("an execution is in progress")
+            if pre is not None:
+                self.commit_snapshot(a, pre, "pre-restore", keep=sid)
             if mem.exists():
                 mem.rename(old)
             tmp.rename(mem)
@@ -1825,16 +1903,32 @@ class Store:
         return {"status": t["status"], "when": when, "executionId": t.get("execution_id")}
 
     def latest_result_json(self, a: dict) -> dict | None:
-        hs = [h for h in self.execs.values()
-              if h["automation_id"] == a["id"] and h["status"] != "executing" and not is_test(h)]
-        for h in sorted(hs, key=lambda x: x["started_at"] or "", reverse=True):
+        hs = sorted((h for h in self.execs.values()
+                     if h["automation_id"] == a["id"] and h["status"] != "executing"
+                     and not is_test(h)),
+                    key=lambda x: x["started_at"] or "", reverse=True)
+        # Memoized per automation (in-memory `_` key, never persisted): the
+        # walk below costs one result-dir listing per no-result execution,
+        # and /state pays it per automation under store.lock. Terminal
+        # executions' result dirs never change, so the answer is stable until
+        # the newest terminal record (or the record count — retention can
+        # delete the result-carrying one) changes. A user hand-deleting
+        # result files on disk shows stale until the next finish — accepted.
+        key = (hs[0]["id"] if hs else None, len(hs))
+        memo = a.get("_latest_result")
+        if memo is not None and memo[0] == key:
+            return memo[1]
+        result = None
+        for h in hs:
             r = self.result_json(h)
             if r:
                 dt = lenient_local(h["started_at"])
-                return {**r, "executionId": h["id"],
-                        # §5 lenient: a damaged started_at drops the label, never 500s.
-                        "when": f"from {timefmt.started_label(dt)}" if dt else ""}
-        return None
+                result = {**r, "executionId": h["id"],
+                          # §5 lenient: a damaged started_at drops the label, never 500s.
+                          "when": f"from {timefmt.started_label(dt)}" if dt else ""}
+                break
+        a["_latest_result"] = (key, result)
+        return result
 
     def overdue(self, a: dict, now: datetime | None = None) -> bool:
         """§4.1 overdue, shared by problems_json and the §6 scheduler sweep:

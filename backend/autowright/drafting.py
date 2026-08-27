@@ -62,6 +62,66 @@ def split_answer_kind(prose: str) -> tuple[str, str | None]:
 BLOCKED_MARK_RE = harness.BLOCKED_MARK_RE
 END_MARK_RE = re.compile(r"^===END===[ \t]*$", re.M)
 
+
+# One process-wide lock for job event appends: appends touch one small list
+# and never nest inside another lock, so contention across jobs is nil.
+_EVENTS_LOCK = threading.Lock()
+
+
+class _StreamScanner:
+    """Incremental ===FILE:/===BLOCKED=== scanner for the §8 progress
+    callbacks — O(chunk) per chunk, not O(accumulated text). Re-scanning the
+    whole stream on every chunk went quadratic: measured ~26 s of CPU across
+    a 240 KB Claude Code response, burned on the harness stdout read-loop
+    thread, which stops draining the child's pipe and slows the whole call.
+    Only a line-sized overlap window is re-scanned, so a marker split across
+    chunk boundaries is still found. A match ending at the text's current
+    end (no newline yet) is provisional: it is re-verified on the next feed
+    and replaced or dropped as its line grows. Blocked detection is
+    line-anchored (BLOCKED_MARK_RE), matching the recombiner — a quoted
+    mid-line marker no longer mislabels the stream."""
+
+    _OVERLAP = 1024  # > any marker line (===FILE: <name>=== + whitespace)
+
+    def __init__(self) -> None:
+        self.text = ""
+        self.marks: list[tuple[str, int, int]] = []  # (name, start, end)
+        self.blocked_at = -1
+        self._blocked_end = -1
+
+    def feed(self, chunk: str) -> None:
+        prev = len(self.text)
+        self.text += chunk
+        # Re-verify provisional matches that touched the old end-of-text.
+        if self.marks and self.marks[-1][2] >= prev:
+            _, s, _ = self.marks[-1]
+            m = FILE_MARK_RE.match(self.text, s)
+            if m:
+                self.marks[-1] = (m.group(1).strip(), s, m.end())
+            else:
+                self.marks.pop()
+        if self.blocked_at >= 0 and self._blocked_end >= prev:
+            m = BLOCKED_MARK_RE.match(self.text, self.blocked_at)
+            if m:
+                self._blocked_end = m.end()
+            else:
+                # The provisional blocked line grew into something else. An
+                # even earlier genuine blocked line (fake-then-real) is not
+                # re-found — label-only cosmetics; the settle parser decides
+                # the real outcome.
+                self.blocked_at = self._blocked_end = -1
+        start = max(0, prev - self._OVERLAP)
+        start = self.text.rfind("\n", 0, start) + 1  # align ^ to a line start
+        region = self.text[start:]
+        for m in FILE_MARK_RE.finditer(region):
+            s = start + m.start()
+            if not self.marks or s > self.marks[-1][1]:
+                self.marks.append((m.group(1).strip(), s, start + m.end()))
+        for m in BLOCKED_MARK_RE.finditer(region):
+            s = start + m.start()
+            if s > self.blocked_at:
+                self.blocked_at, self._blocked_end = s, start + m.end()
+
 # §8 file-writing delivery: the OUTPUT section appended to every drafting
 # prompt on a file-writing harness (harness.writes_files) — the ONE
 # per-harness difference in a prompt. The agent writes its response
@@ -78,7 +138,9 @@ Delivery override for this environment — this changes HOW you return files, no
 - Write each file as soon as it is ready, one after another — do not batch them at the end.
 - If you are blocked, write NO files and print the blocker envelope
   (===BLOCKED=== … ===END===) to stdout exactly as the instructions specify.
-- When asked to resend corrected files, write the corrected files the same way."""
+- When asked to resend corrected files, write EVERY file again the same way — the
+  corrected ones and the unchanged ones alike. Each attempt starts with an empty working
+  directory, so only the files you write this time exist; a file you skip is lost."""
 FENCE_OPEN_RE = re.compile(r"^```[\w+.-]*$")
 
 # §8 prompt texts live as markdown next to the code so they can be read and
@@ -1860,23 +1922,43 @@ class DraftJobs:
         throttles to one update per second, detail-only. The two callbacks
         come from different threads (read loop vs scratch watcher) — one
         lock keeps the shared state coherent."""
-        state = {"text": "", "shape": None, "last": 0.0, "total": None,
-                 "documents": {}, "lock": threading.Lock()}
+        state = {"scanner": _StreamScanner(), "shape": None, "last": 0.0,
+                 "total": None, "documents": {}, "seen": set(),
+                 "lock": threading.Lock()}
 
         def show(shape: str, label: str, detail: str) -> None:
-            if prefix:
+            # §8: the waiting placeholder never returns once a real label
+            # showed — stdout prose resuming after a document landed must not
+            # regress the live line mid-build. It is also never try-prefixed
+            # (it isn't a message; the §11 filter matches it exactly).
+            if shape == "Thinking…" and state["shape"] not in (None, "Thinking…"):
+                return
+            if prefix and shape != "Thinking…":
                 label = prefix + label[0].lower() + label[1:]
                 detail = prefix + detail[0].lower() + detail[1:]
             now = time.monotonic()
             if shape != state["shape"]:
                 state["shape"] = shape
                 state["last"] = now
-                if shape != "Thinking…":
+                # §8: each shape's milestone lands once per round — a shape
+                # re-entered later (the two channels interleave on the
+                # file-writing harnesses) updates detail only, so the feed
+                # can't ping-pong duplicates and durations stay whole.
+                if shape != "Thinking…" and shape not in state["seen"]:
+                    state["seen"].add(shape)
                     self._append_event(job, label)
                 self._detail(job, detail)
             elif now - state["last"] >= 1.0:
                 state["last"] = now
                 self._detail(job, detail)
+
+        def should_show(shape: str) -> bool:
+            """Cheap pre-filter mirroring show()'s display conditions, so the
+            heavy label/line-count derivation runs at most once per second."""
+            if shape == "Thinking…" and state["shape"] not in (None, "Thinking…"):
+                return False
+            return (shape != state["shape"]
+                    or time.monotonic() - state["last"] >= 1.0)
 
         def label_detail(fname: str, lines: int) -> tuple[str, str]:
             """The §8 sync-call label for one response document, shared by
@@ -1898,11 +1980,10 @@ class DraftJobs:
             if job["_cancel"] or job["status"] != "building":
                 return
             with state["lock"]:
-                state["text"] += chunk
-                text = state["text"]
-                marks = list(FILE_MARK_RE.finditer(text))
-                blocked_at = text.rfind("===BLOCKED===")
-                if blocked_at > (marks[-1].end() if marks else -1):
+                sc = state["scanner"]
+                sc.feed(chunk)
+                marks = sc.marks
+                if sc.blocked_at > (marks[-1][2] if marks else -1):
                     # §8: the agent is writing its blocker envelope — say so
                     # (count-less) instead of mislabeling the stream
                     show("blocked", "Describing a blocker", "Describing a blocker")
@@ -1910,11 +1991,12 @@ class DraftJobs:
                 if not marks:
                     show("Thinking…", "Thinking…", "Thinking…")
                     return
-                m = marks[-1]
-                fname = m.group(1).strip()
-                self._steps_total(state, text, marks)
+                fname, _, end = marks[-1]
+                if not should_show(fname):
+                    return
+                self._steps_total(state, sc.text, marks)
                 lines = (0 if fname == "manifest.yaml"
-                         else len(text[m.end():].strip("\n").splitlines()))
+                         else len(sc.text[end:].strip("\n").splitlines()))
                 label, detail = label_detail(fname, lines)
                 show(fname, label, detail)
 
@@ -1957,26 +2039,42 @@ class DraftJobs:
         growth throttles to one update per second, detail-only. The two
         callbacks come from different threads (read loop vs scratch
         watcher) — one lock keeps the shared state coherent."""
-        state = {"text": "", "shape": None, "last": 0.0,
-                 "lock": threading.Lock()}
+        state = {"scanner": _StreamScanner(), "shape": None, "last": 0.0,
+                 "has_text": False, "seen": set(), "lock": threading.Lock()}
 
         def show(shape: str, label: str, detail: str) -> None:
-            if prefix:
+            # §8: the waiting placeholder never returns once a real label
+            # showed, and is never try-prefixed (see _progress_cb's show).
+            if shape == "Thinking…" and state["shape"] not in (None, "Thinking…"):
+                return
+            if prefix and shape != "Thinking…":
                 label = prefix + label[0].lower() + label[1:]
                 detail = prefix + detail[0].lower() + detail[1:]
             now = time.monotonic()
             if shape != state["shape"]:
                 state["shape"] = shape
                 state["last"] = now
-                # §8: a sub-task line once shown persists — every shape change
-                # is a milestone, "Writing the answer" included; only the
-                # `Thinking…` placeholder stays detail-only.
-                if shape != "Thinking…":
+                # §8: a sub-task line once shown persists — each shape's
+                # milestone lands once per round ("Writing the answer"
+                # included); a re-entered shape updates detail only, so the
+                # interleaved channels of a file-writing harness can't
+                # ping-pong duplicate milestones. `Thinking…` stays
+                # detail-only.
+                if shape != "Thinking…" and shape not in state["seen"]:
+                    state["seen"].add(shape)
                     self._append_event(job, label)
                 self._detail(job, detail)
             elif now - state["last"] >= 1.0:
                 state["last"] = now
                 self._detail(job, detail)
+
+        def should_show(shape: str) -> bool:
+            """Cheap pre-filter mirroring show()'s display conditions (see
+            _progress_cb's twin)."""
+            if shape == "Thinking…" and state["shape"] not in (None, "Thinking…"):
+                return False
+            return (shape != state["shape"]
+                    or time.monotonic() - state["last"] >= 1.0)
 
         def flip_stage(fname: str) -> None:
             """§8 stage flip — checked against the job, not the round's local
@@ -1989,7 +2087,7 @@ class DraftJobs:
             if (fname not in self._REWRITE_MARKS
                     or job["stage"] != "Working on the request"):
                 return
-            text = state["text"]
+            text = state["scanner"].text
             first = FILE_MARK_RE.search(text)
             plan, _ = split_answer_kind((text[: first.start()] if first
                                          else text).strip())
@@ -2011,23 +2109,27 @@ class DraftJobs:
             if job["_cancel"] or job["status"] != "building":
                 return
             with state["lock"]:
-                state["text"] += chunk
-                text = state["text"]
-                marks = list(FILE_MARK_RE.finditer(text))
-                blocked_at = text.rfind("===BLOCKED===")
-                if blocked_at > (marks[-1].end() if marks else -1):
+                sc = state["scanner"]
+                sc.feed(chunk)
+                marks = sc.marks
+                state["has_text"] = state["has_text"] or bool(chunk.strip())
+                if sc.blocked_at > (marks[-1][2] if marks else -1):
                     # §8: the blocker envelope is not an answer — label it as
                     # what it is (count-less). Never flips the stage: a
                     # blocker turn lives entirely in the deciding phase.
                     show("blocked", "Describing a blocker", "Describing a blocker")
                 elif marks:
-                    fname = marks[-1].group(1).strip()
+                    fname, _, end = marks[-1]
                     flip_stage(fname)
-                    lines = len(text[marks[-1].end():].strip("\n").splitlines())
+                    if not should_show(fname):
+                        return
+                    lines = len(sc.text[end:].strip("\n").splitlines())
                     label, detail = document_label(fname, lines)
                     show(fname, label, detail)
-                elif text.strip():
-                    lines = len(text.strip().splitlines())
+                elif state["has_text"]:
+                    if not should_show("answer"):
+                        return
+                    lines = len(sc.text.strip().splitlines())
                     show("answer", "Writing the answer",
                          f"Writing the answer · {lines} line{'s' if lines != 1 else ''}")
                 else:
@@ -2045,14 +2147,15 @@ class DraftJobs:
         return cb, file_cb
 
     @staticmethod
-    def _steps_total(state: dict, text: str, marks: list) -> int | None:
+    def _steps_total(state: dict, text: str, marks: list[tuple[str, int, int]]) -> int | None:
         """Step count from the streamed manifest block, once a later marker
-        proves the block is complete. Parsed once, cached; None until then."""
+        proves the block is complete. Parsed once, cached; None until then.
+        `marks` are the scanner's (name, start, end) tuples."""
         if state["total"] is None:
-            for i, m in enumerate(marks[:-1]):  # only closed blocks
-                if m.group(1).strip() == "manifest.yaml":
+            for i, (name, _start, end) in enumerate(marks[:-1]):  # only closed blocks
+                if name == "manifest.yaml":
                     try:
-                        manifest = yaml.safe_load(text[m.end():marks[i + 1].start()])
+                        manifest = yaml.safe_load(text[end:marks[i + 1][1]])
                         steps = manifest.get("steps") if isinstance(manifest, dict) else None
                         state["total"] = len(steps) if isinstance(steps, list) and steps else None
                     except yaml.YAMLError:
@@ -2093,13 +2196,17 @@ class DraftJobs:
 
     @staticmethod
     def _append_event(job: dict, text: str) -> None:
-        ev = job["events"]
-        # §8: stage-stamped so the §11 thread can group the feed by stage
-        ev.append({"time": time.time(), "text": text, "stage": job.get("stage")})
-        # §8: capped at the newest 200 — a chatty stream must not grow the
-        # job (and every poll response) for the call's whole lifetime.
-        if len(ev) > 200:
-            del ev[: len(ev) - 200]
+        # Serialized: the tool callback appends from the stdout read-loop
+        # thread while the progress callbacks append from the scratch-watcher
+        # thread — an unlocked append+trim pair can lose entries at the cap.
+        with _EVENTS_LOCK:
+            ev = job["events"]
+            # §8: stage-stamped so the §11 thread can group the feed by stage
+            ev.append({"time": time.time(), "text": text, "stage": job.get("stage")})
+            # §8: capped at the newest 200 — a chatty stream must not grow the
+            # job (and every poll response) for the call's whole lifetime.
+            if len(ev) > 200:
+                del ev[: len(ev) - 200]
 
     def _tool_cb(self, job: dict):
         """§8 activity feed: one event per streamed {name, input} tool use —

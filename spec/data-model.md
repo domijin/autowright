@@ -974,6 +974,12 @@ cliEnabled: bool (default true) — whether the user wants the `autowright` comm
   files on disk stay the truth about what's actually installed — this key only records the
   user's choice (stored backend-side like every setting, §20 CLI parity included)
 dataPath (default ~/Library/Application Support/Autowright/executions), dataSize
+imessageAutomation: granted | denied | unknown — hidden stored value, no settings row and no
+  default entry (absent reads as unknown): the §19 remembered macOS Automation-permission
+  state (Apple Events control of Messages). macOS offers no prompt-free read, so the backend
+  keeps the result of its most recent Messages send / §19 automation probe, updated whenever
+  the observed state changes (best-effort — an unwritable store logs and keeps the value in
+  memory only, per the §5 read-only degradation).
 appPath — derived, serialization-only: the fixed automations-and-settings root
   (~/Library/Application Support/Autowright) — backs the ON THIS MAC card's
   "Automations & settings" Show in Finder button (below)

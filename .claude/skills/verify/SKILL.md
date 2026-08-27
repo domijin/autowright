@@ -41,6 +41,11 @@ description: Build, launch, and drive Autowright (Electron + Python backend) to 
   before). The real service can also touch real shims (heal/remove per the real `cliEnabled`),
   which can yank `~/.local/bin/autowright` out from under a verify run.
 
+- **Driving Electron with the stored `login: true` registers REAL login items** pointing at
+  the dev `app/node_modules/electron/dist/Electron.app` (the §4.9 apply-settings push runs on
+  boot regardless of `AUTOWRIGHT_HOME`). After a verify session, check System Settings login
+  items (`osascript -e 'tell application "System Events" to get the name of every login
+  item'`) and remove any Electron/dev entries the run added (observed 2026-08-27: two).
 - **Onboarding only shows when the backend has zero automations AND `ad-onboarded` is absent
   from localStorage** (`store.ts` boot). Non-empty home → straight to app. Use an empty home on
   a second port.

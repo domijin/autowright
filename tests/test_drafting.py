@@ -812,8 +812,10 @@ def test_progress_sync_notes_and_blocker_labels():
     # the optional notes.md AFTER the envelope wins the label back
     cb("===END===\n===FILE: notes.md===\n- kept learning\n")
     assert job["detail"].startswith("Updating the notes")
+    # §8: a shape re-entered in the same round updates detail only — the
+    # feed never ping-pongs duplicate milestones.
     assert [e["text"] for e in job["events"]] == [
-        "Updating the notes", "Describing a blocker", "Updating the notes"]
+        "Updating the notes", "Describing a blocker"]
 
 
 def test_chat_blocker_stream_label_never_flips():
@@ -828,6 +830,92 @@ def test_chat_blocker_stream_label_never_flips():
     cb("===BLOCKED===\nblockers:\n  - reason: impossible\n")
     assert job["detail"] == "Describing a blocker"
     assert job["stage"] == "Working on the request"
+
+
+def test_chat_interleaved_channels_never_pingpong():
+    # §8: on a file-writing harness the two channels interleave (stdout prose
+    # on the read loop, documents on the scratch watcher) — each shape's
+    # milestone lands once per round, a re-entered shape updates detail only.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "c5", "status": "building", "stage": "Working on the request",
+           "detail": None, "events": [], "stageTimes": [], "_cancel": False}
+    cb, file_cb = jobs._chat_cb(job)
+    cb("some prose\n")
+    assert job["detail"] == "Writing the answer · 1 line"
+    file_cb("spec.md", "line\n")
+    assert job["detail"] == "Writing the spec · 1 line"
+    cb("more prose\n")
+    assert job["detail"] == "Writing the answer · 2 lines"
+    file_cb("spec.md", "line\nline2\n")
+    assert job["detail"] == "Writing the spec · 2 lines"
+    # each milestone exactly once, in first-shown order — no duplicates
+    assert [e["text"] for e in job["events"]] == [
+        "Writing the answer", "Writing the spec"]
+
+
+def test_sync_never_regresses_to_thinking_after_document():
+    # §8: the waiting placeholder never returns once a real label showed —
+    # stray stdout prose after a document landed must not regress the line.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "j5", "status": "building", "stage": "Generating the steps",
+           "detail": None, "events": [], "_cancel": False}
+    cb, file_cb = jobs._progress_cb(job)
+    file_cb("manifest.yaml", "steps: []\n")
+    assert job["detail"].startswith("Writing the manifest")
+    cb("stray stdout prose\n")
+    assert job["detail"].startswith("Writing the manifest")
+
+
+def test_thinking_placeholder_never_prefixed():
+    # §8: Thinking… isn't a message — the repair-round prefix never touches
+    # it, and it never appends a feed milestone.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "j6", "status": "building", "stage": "Generating the steps",
+           "detail": None, "events": [], "_cancel": False}
+    cb, _ = jobs._progress_cb(job, prefix="Second try — ")
+    cb("no markers yet")
+    assert job["detail"] == "Thinking…"
+    assert job["events"] == []
+
+
+def test_stream_scanner_split_marker():
+    # §8 incremental scanner: a marker split across chunk boundaries is still
+    # found (the overlap window), and a provisional match ending at the text's
+    # current end is re-verified on the next feed — dropped when its line grows
+    # into something that is no longer a marker.
+    from autowright.drafting import _StreamScanner
+
+    scanner = _StreamScanner()
+    scanner.feed("===FILE: ma")
+    scanner.feed("nifest.yaml===\ncontent\n")
+    assert [name for name, _s, _e in scanner.marks] == ["manifest.yaml"]
+
+    grown = _StreamScanner()
+    grown.feed("===FILE: a===")
+    assert [name for name, _s, _e in grown.marks] == ["a"]  # provisional
+    grown.feed("x\n")
+    assert grown.marks == []
+
+
+def test_blocked_label_is_line_anchored():
+    # §8: blocked detection is line-anchored (it matches the recombiner) — a
+    # quoted mid-line marker never mislabels the stream.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "j7", "status": "building", "stage": "Generating the steps",
+           "detail": None, "events": [], "_cancel": False}
+    cb, _ = jobs._progress_cb(job)
+    cb("quoting ===BLOCKED=== inline\n")
+    assert job["detail"] == "Thinking…"
+    cb("===BLOCKED===\n")
+    assert job["detail"] == "Describing a blocker"
 
 
 FAST_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"

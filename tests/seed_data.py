@@ -128,7 +128,7 @@ def seed(store: Store) -> None:
     manga = store.create_automation(
         _mk_ver("Checks the manga you follow every morning and tells you when new chapters are out.",
                 manga_params, manga_steps, manga_spec, instr=manga_instr, note="Created"),
-        "Track manga chapters", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 8 * * *"}])
+        "Track manga chapters", agent_id, triggers=[{"id": new_id(), "kind": "cron", "source": "spec", "enabled": True, "expression": "0 8 * * *"}])
     # older versions v2 (v1 base), then current becomes v3
     v2_spec = [b for b in manga_spec if not (b["kind"] == "h2" and b["text"].startswith("Change"))
                and b["text"] != "Added display names so long titles stay readable in the table."]
@@ -208,7 +208,7 @@ def seed(store: Store) -> None:
     backup = store.create_automation(
         _mk_ver("Copies changed files from Projects to the backup drive every night.",
                 backup_params, backup_steps, backup_spec[:2]),
-        "Nightly folder backup", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 2 * * *"}])
+        "Nightly folder backup", agent_id, triggers=[{"id": new_id(), "kind": "cron", "source": "spec", "enabled": True, "expression": "0 2 * * *"}])
     store.save_new_version(backup, _mk_ver(backup["description"], backup_params, backup_steps,
                                            backup_spec, note="Copies are now verified with checksums."))
     store.patch_automation(backup, {"allowedSecrets": [VAULT_DRIVE_KEY_ID]})
@@ -261,7 +261,7 @@ def seed(store: Store) -> None:
     report = store.create_automation(
         _mk_ver("Gathers the week's numbers and emails the summary every Monday morning.",
                 report_params, report_steps, report_spec[:2]),
-        "Weekly report email", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 9 * * 1"}])
+        "Weekly report email", agent_id, triggers=[{"id": new_id(), "kind": "cron", "source": "spec", "enabled": True, "expression": "0 9 * * 1"}])
     for note in ["Summary capped at roughly 200 words.",
                  "Added week-over-week comparison to the summary.",
                  "Send to the team alias instead of individual addresses.",
@@ -303,7 +303,7 @@ def seed(store: Store) -> None:
                 shots_steps,
                 [{"kind": "h1", "text": "Clean screenshots folder"},
                  {"kind": "p", "text": "Every Sunday night, files desktop screenshots into monthly folders."}]),
-        "Clean screenshots folder", agent_id, triggers=[{"id": new_id(), "kind": "cron", "enabled": True, "expression": "0 21 * * 0"}])
+        "Clean screenshots folder", agent_id, triggers=[{"id": new_id(), "kind": "cron", "source": "spec", "enabled": True, "expression": "0 21 * * 0"}])
 
     # ---------- executions (12, every terminal status incl. skipped) ----------
     manga_result = {"status": "changes", "chip": "2 new chapters"}

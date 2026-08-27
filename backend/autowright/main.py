@@ -196,9 +196,16 @@ def main() -> None:
 
     threading.Thread(target=_guard, name="backend-json-guard", daemon=True).start()
     scheduler = Scheduler(store, api.engine)
-    scheduler.start()
     listeners = Listeners(store, api.engine)  # §6 message-trigger listener manager
-    listeners.start()
+
+    # Started from the api lifespan, after _repair_stale_executing — a tick
+    # before the repair could act on DB-restored header-only records (see
+    # api.register_startup). stop() before a never-run start() is safe.
+    def startup() -> None:
+        scheduler.start()
+        listeners.start()
+
+    api.register_startup(startup)
 
     # §3: all shutdown work runs from the api lifespan — uvicorn re-raises the
     # captured SIGTERM once run() returns, so the `finally` below never

@@ -538,6 +538,9 @@ export const useStore = create<Model>((set, get) => ({
         // forever. Schedule exactly one fresh GET: it returns the terminal
         // body, which lands through the ordinary path below.
         if (!get().executionFull[executionId] && !executionRefetched.has(executionId)) {
+          // Bounded: ids whose retry also dropped would otherwise sit here for
+          // the process lifetime. Clearing merely re-arms one benign retry.
+          if (executionRefetched.size > 1000) executionRefetched.clear()
           executionRefetched.add(executionId)
           setTimeout(() => { void get().loadExecution(executionId) }, 0)
         }

@@ -204,7 +204,7 @@ def kill_orphan_group(pgid: int) -> None:
 
 def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
                      holder: dict, timeout_s: float | None,
-                     on_reply=None) -> int:
+                     on_reply=None, step_i: int | None = None) -> int:
     """One step as a §6.1 executor subprocess — shared by real executions and
     §11 tests. Streams control lines: `log(k, text)` gets every log line,
     `result` collects §4.5 result ops, `holder` gets error/notify/result_touched,
@@ -259,9 +259,10 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
     # after the caller's loop-top check but before this Popen existed killed
     # nothing — with no_timeout the freshly spawned step would then run
     # unbounded while the record shows "executing". Re-check now that the
-    # proc is visible (a pending skip always targets the current step: the
-    # engine pops the flag after every step).
-    if state.get("cancel") or state.get("skip") is not None:
+    # proc is visible. Index-compared like every other skip check: a stale
+    # flag armed in the previous step's teardown window (after its pop,
+    # before `_cur` cleared) must not kill THIS step and report it failed.
+    if state.get("cancel") or (state.get("skip") is not None and state.get("skip") == step_i):
         _hard_kill()
 
     def _on_timeout() -> None:
@@ -394,14 +395,16 @@ class Engine:
         the worker thread, before step 1, because a memory dir can be gigabytes
         and no copytree may run under store.lock."""
         with self.store.lock:
-            if self.at_capacity(auto):
-                raise RuntimeError("already executing")
             # §4.5: the record stores (kind, version) — the §19 label is parsed
-            # here at the boundary and never kept.
+            # here at the boundary and never kept. Resolution runs BEFORE the
+            # capacity check: §19 says an unresolvable label answers 404
+            # either way, and the queued path already resolves first.
             kind, version = self._parse_version_label(auto, version_label)
             ver = self._resolve_version(auto, kind, version)
             if ver is None:
                 raise LookupError(f"version {version_label or f'v{version}'} not found")
+            if self.at_capacity(auto):
+                raise RuntimeError("already executing")
             pre_snapshot = self._needs_pre_version(auto, kind, version)
             # `sha` snapshots each step's script (§4.5) so a Draft retry can
             # detect a re-saved draft whose code changed under the same names.
@@ -698,12 +701,15 @@ class Engine:
         # implicit in the filename. The serialized/UI shape adds the derived
         # local clock label `time` (read_log for files, here for the live event).
         line = {"timestamp": timefmt.now_iso(), "kind": kind, "sequence": seqs[name], "text": text}
-        self.store.append_log_line(h["id"], name, line)
-        hub.publish("execution.log", executionId=h["id"], automationId=h["automation_id"],
-                    stepIndex=cur["i"] if cur else None,
-                    attempt=cur["number"] if cur else None,
-                    line={"time": datetime.now().strftime("%H:%M:%S"), "kind": kind,
-                          "sequence": line["sequence"], "text": text})
+        # Publish only lines the store accepted — past the §5 cap the live
+        # pane must match the stored log, and a runaway step must not keep
+        # queuing loop callbacks for lines that exist nowhere.
+        if self.store.append_log_line(h["id"], name, line):
+            hub.publish("execution.log", executionId=h["id"], automationId=h["automation_id"],
+                        stepIndex=cur["i"] if cur else None,
+                        attempt=cur["number"] if cur else None,
+                        line={"time": datetime.now().strftime("%H:%M:%S"), "kind": kind,
+                              "sequence": line["sequence"], "text": text})
 
     def _prune_attempts(self, h: dict, step: dict, i: int) -> None:
         """§4.5: keep the newest MAX_ATTEMPTS attempts — an infiniteRetries step
@@ -1127,7 +1133,7 @@ class Engine:
         return run_step_process(script, ctx, state,
                                 lambda k, text: self._log(h, k, text, redactions),
                                 result, notify_holder, step_timeout_for(s),
-                                on_reply=on_reply)
+                                on_reply=on_reply, step_i=step_index - 1)
 
     def _notify_end(self, auto: dict, ver: dict, h: dict, result: dict | None,
                     notify_text: str | None) -> None:

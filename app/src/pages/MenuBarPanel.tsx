@@ -7,7 +7,11 @@ import { badgeOf, Eyebrow, PULSE, ScrollArea } from '../ui'
 const dotColor = (s: string) => badgeOf(s).c
 
 export default function MenuBarPanel() {
-  const { automations, version, showToast } = useStore()
+  // Per-field selectors (UI-GUIDE): a bare useStore() re-renders this panel on
+  // every store write anywhere — every toast, every log line of every execution.
+  const automations = useStore((s) => s.automations)
+  const version = useStore((s) => s.version)
+  const showToast = useStore((s) => s.showToast)
   const ref = useRef<HTMLDivElement>(null)
 
   // §13: the count matches the tray dot — failed or §4.1 overdue only.

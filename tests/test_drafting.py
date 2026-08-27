@@ -2867,3 +2867,37 @@ def test_tool_event_shell_label():
     cb({"name": "Shell", "input": {"command": "ls -la"}})
     assert job["detail"] == "Running a command — ls -la…"
     assert [e["text"] for e in job["events"]] == ["Running a command — ls -la…"]
+
+
+def test_tool_event_multiline_command_collapses_to_one_line():
+    # §8: feed entries are single lines — a heredoc command's newlines must
+    # not spray one bullet per line into the settled feed.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "t3", "status": "building", "stage": "Syncing the workflow",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._tool_cb(job)
+    cb({"name": "Shell",
+        "input": {"command": "/bin/zsh -lc \"python3 - <<'PY'\nimport ast\nfrom pathlib import Path\nPY\""}})
+    assert len(job["events"]) == 1
+    assert "\n" not in job["events"][0]["text"]
+    assert job["events"][0]["text"].startswith(
+        "Running a command — /bin/zsh -lc \"python3 - <<'PY' import ast")
+
+
+def test_tool_event_url_query_reads_as_a_read():
+    # §8: Codex reports page fetches as web_search items — a query that is
+    # itself an http(s) URL labels as a read, not a search.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "t4", "status": "building", "stage": "Working on the request",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._tool_cb(job)
+    cb({"name": "WebSearch", "input": {"query": "https://news.ycombinator.com/"}})
+    cb({"name": "WebSearch", "input": {"query": "hacker news front page html"}})
+    assert [e["text"] for e in job["events"]] == [
+        "Reading https://news.ycombinator.com/…",
+        "Searching the web for “hacker news front page html”…",
+    ]

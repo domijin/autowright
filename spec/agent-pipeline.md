@@ -873,8 +873,12 @@ shown must survive the move to the next sub-task as feed history (in-place updat
 for line-count growth only), so the answer/plan prose leaves its tracking line even
 though the answer entry itself is the persistent record of the text), every `tool` event a
 handler reports (web reads → `Reading <url>…`, web searches → `Searching the web for
-“<query>”…`, a shell command → `Running a command — <command>…`, anything else →
-`Using <name>…` - inputs clipped; which harness reports which tools follows the Live
+“<query>”…` - except a search whose query is itself an http(s) URL, which reads as
+`Reading <url>…` too: Codex reports page fetches as `web_search` items - a shell
+command → `Running a command — <command>…`, anything else →
+`Using <name>…`; inputs are clipped AND collapsed to a single line - a multiline heredoc
+command must not spray one feed bullet per line; which harness reports which tools
+follows the Live
 progress table: Claude Code its stream-json `tool_use` blocks, Codex its
 `command_execution`/`web_search` items, OpenCode its `tool_use` parts, Gemini CLI none),
 the retry / repair / diagnosis notices, and each `Installing <pip spec>…` line. Every

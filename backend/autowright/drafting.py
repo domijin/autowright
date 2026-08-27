@@ -2090,16 +2090,25 @@ class DraftJobs:
         `Running a command — <command>…` / `Using <name>…` (handlers
         normalize their tool names to WebFetch / WebSearch / Shell where
         known)."""
+        def one_line(value) -> str:
+            # §8: feed entries are single lines — a multiline heredoc command
+            # must not spray one bullet per line into the settled feed.
+            return " ".join(str(value or "").split())[:120]
+
         def cb(tool: dict) -> None:
             if job["_cancel"] or job["status"] != "building":
                 return
             name = tool.get("name") or ""
             inp = tool.get("input") if isinstance(tool.get("input"), dict) else {}
-            url = str(inp.get("url") or "")[:120]
-            query = str(inp.get("query") or "")[:120]
-            command = str(inp.get("command") or "")[:120]
+            url = one_line(inp.get("url"))
+            query = one_line(inp.get("query"))
+            command = one_line(inp.get("command"))
             if name == "WebFetch" and url:
                 text = f"Reading {url}…"
+            elif name == "WebSearch" and query.startswith(("http://", "https://")):
+                # §8: Codex reports page fetches as web_search items — a URL
+                # query is a read, not a search.
+                text = f"Reading {query}…"
             elif name == "WebSearch" and query:
                 text = f"Searching the web for “{query}”…"
             elif name == "Shell" and command:

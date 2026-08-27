@@ -165,6 +165,13 @@ def harness_workspace(provider_id: str) -> Path:
     return app_support() / "harness" / provider_id / "workspace"
 
 
+def harness_scratch(provider_id: str) -> Path:
+    """§5/§8: parent of the per-call scratch dirs a file-writing drafting call
+    uses as its cwd — the agent writes its response documents there and the §8
+    watcher collects them. Sibling of `harness_workspace`."""
+    return app_support() / "harness" / provider_id / "scratch"
+
+
 def logs_dir() -> Path:
     env = os.environ.get("AUTOWRIGHT_HOME")
     if env:

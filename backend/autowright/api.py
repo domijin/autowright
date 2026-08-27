@@ -59,6 +59,7 @@ def register_shutdown(callback) -> None:
 async def _lifespan(_: FastAPI):
     hub.bind_loop(asyncio.get_running_loop())
     _clear_import_spool()  # §5.2: spool files a crashed process left behind
+    harness.clear_scratch()  # §5/§8: scratch dirs a crashed process left behind
     _repair_stale_executing()
     hub.publish("automation.changed")
     yield

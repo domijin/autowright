@@ -10,14 +10,18 @@ actions, or a blocker) — and the **sync call** builds the steps, parameters, a
 from the spec. There is no separate create pipeline and no create job mode: the first
 message of a fresh draft is an ordinary chat call (the **new-automation rule** below) whose
 `sync: true` action chains the first steps build. Both call shapes carry the same two
-instruction files, invoke the chosen agent harness headless through a per-harness adapter
-(`claude -p`, `gemini -p`, `codex exec`, `opencode run` — with `--model ollama/<model>` for a
+instruction files, invoke the chosen agent harness headless through a per-harness handler
+(`claude -p`, `gemini -p`, `codex exec --json`, `opencode run --format json` - with
+`--model ollama/<model>` for a
 local-model agent), and
-parse one text response each. Drafting invocations run **web-enabled** — each harness's
+parse one text response each. Each handler also translates what its CLI can observably
+report while the call runs into one typed progress-event stream (Live progress below);
+the one per-harness difference in a *prompt* is the OUTPUT delivery section of the
+file-writing harnesses (same section). Drafting invocations run **web-enabled** — each harness's
 web-read tools are turned on (the §6 per-harness flag list) so the agent fetches the pages the
 request names and grounds the spec, selectors, and notes in the real DOM; runtime `agent.ask`
-calls stay fully tool-locked (§6). Everything below is otherwise harness-independent; adapters
-only translate "send prompt, receive text." **Prompt delivery is per-OS:** on POSIX the
+calls stay fully tool-locked (§6). Everything below is otherwise harness-independent;
+handlers translate "send prompt, receive text" plus the progress events. **Prompt delivery is per-OS:** on POSIX the
 prompt rides as the command's last argv element (unchanged); on Windows the whole command
 line is capped at 32,767 characters — smaller than any real drafting prompt (a minimal
 build prompt already measures ~38 K) — so the adapter omits the argv prompt and pipes it to
@@ -739,14 +743,20 @@ omission marker between); the §5 app-log framing always logs it whole. While th
 repair round then fixed — also writes one §5 build-failure record under
 `<logs>/build-failures/` (rounds' validation errors + raw responses, diagnosis blockers,
 the prompt) when the call settles, so failures can later feed instruction improvements. Per-call timeout
-is an **idle window**, 5 minutes of stdout silence by default (§15 `AUTOWRIGHT_AGENT_TIMEOUT_S`):
-every stdout line the harness streams resets the window, so a call that keeps producing output
-keeps running, while a harness that buffers its whole output gets no resets and the window
-degrades to the old fixed timeout. On top of the window sits a **total wall-clock hard cap**,
+is an **idle window**, 5 minutes without observed progress by default (§15
+`AUTOWRIGHT_AGENT_TIMEOUT_S`): every progress signal resets the window - a stdout line, a
+parsed handler event, or a scratch document appearing or growing (Live progress below) - so
+a call that keeps observably working keeps running, while a harness that reports nothing
+gets no resets and the window degrades to a fixed timeout. On top of the window sits a
+**total wall-clock hard cap**,
 30 minutes by default (§15 `AUTOWRIGHT_AGENT_HARD_CAP_S`), so even a call that never stops
 streaming still ends. Both kills raise the same retryable timeout error; cancelling
 the job (Start over, or an edit that supersedes an in-flight steps call, §11) kills the harness
-process. The job's `stage` tracks the pipeline through **one unified stage set** — the
+process. One pre-flight guards the known interactive trap: a signed-out Gemini CLI does not
+exit with an auth error - it prints a browser sign-in prompt to stdout and blocks on it
+forever (no trailing newline, so even line-reading never sees it) - so the Gemini handler
+checks the §19 signed-in rule before spawning and raises a **non-retryable** "not signed
+in" harness error immediately instead of burning the idle window twice. The job's `stage` tracks the pipeline through **one unified stage set** — the
 §11 three-phase turn model: "Working on the request" (deciding/research) → "Updating the
 documents" (writing spec/instructions/notes) → "Syncing the workflow" (the steps call plus
 any package installs). Each job kind enters at the phase where its real work starts and
@@ -759,30 +769,98 @@ invocation's full prompt and raw response are logged to the app log as a §5 BEG
 block (never to execution logs) for debugging.
 
 **Live progress.** A drafting call can run for minutes, so the job also carries a `detail`
-line — a finer live-progress message under the coarse `stage` — derived from the harness's
-**streamed** partial response. Every adapter streams: Claude Code runs with `--output-format
-stream-json --include-partial-messages --verbose` (text deltas as they generate; the returned
-text still comes from the terminal `result` event, falling back to the joined deltas), and the
-other CLIs are read line-by-line from stdout as they print.
-The drafting job scans the accumulated partial text for the envelope's `===FILE:` markers and
-sets `detail` accordingly: `Thinking…` before the first marker; the chat call's per-marker
-messages (the chat-call section above — `Writing the spec · N lines` and kin);
+line - a finer live-progress message under the coarse `stage` - plus the `events` feed
+below, both fed by the per-harness handler's **typed progress events**. Each handler turns
+what its CLI can observably report into three event kinds - `text` (response prose, partial
+or per completed message), `tool` (a tool use: name + input), and `file` (a response
+document landing in the call's scratch dir - file-writing delivery below) - and every event
+also resets the idle window (Failure policy above). Per harness, all verified against the
+real CLIs (codex-cli 0.144.6, opencode 1.18.4; the §8 Windows stdin note's re-verify rule
+applies to these flags as each CLI lands there):
+
+- **Claude Code** - `--output-format stream-json --include-partial-messages --verbose`:
+  true text deltas as they generate become `text` events (the returned reply still comes
+  from the terminal `result` event, falling back to the joined deltas); `assistant`
+  events' `tool_use` blocks become `tool` events. No file-writing delivery - Claude
+  streams the envelope itself.
+- **Codex** - `codex exec --json` (JSONL events on stdout) plus `--ephemeral` (one-shot
+  calls stay off disk - the same intent as Claude Code's `--no-session-persistence`):
+  `item.completed` `agent_message` items become `text` events (a turn can carry several -
+  preamble messages then the final one; the **reply is the last agent message**, falling
+  back to raw stdout when none arrived), `command_execution` items become
+  `tool` events carrying the command, `web_search` items `tool` events carrying the
+  query; `file_change` items and every other parsed JSONL line count as bare activity
+  (idle reset only) - the scratch watcher below is the single source of `file` events,
+  so a document written via a shell command still reports and nothing double-reports.
+- **Gemini CLI** - stays on plain text output: the reply is raw stdout, and progress
+  comes entirely from `file` events via the scratch watcher. (Its `-o stream-json` mode
+  exists as of 0.51.0 but is unadopted until it can be verified against a signed-in
+  install; a follow-up.) Drafting calls add `--approval-mode yolo` so the file-write
+  tools the OUTPUT section relies on auto-approve non-interactively - its tools were
+  already all-on in every mode (§6 documented limitation); runtime calls stay bare.
+- **OpenCode** - `opencode run --format json` (JSONL events on stdout): `text` events'
+  part text becomes a `text` event each (the **reply is every text part joined in
+  order**, falling back to raw stdout when none arrived), `tool_use` events become
+  `tool` events carrying the tool name and its input (`write`'s `filePath`, `bash`'s
+  `command`); `step_start`/`step_finish` and every other parsed line are bare activity.
+  File writes need no extra flag (verified: `run` writes without `--auto`).
+
+**File-writing delivery** (Codex, Gemini CLI, OpenCode - every harness whose one-shot mode
+cannot stream text deltas; never Claude Code, never runtime `agent.ask`): a drafting call
+on these harnesses runs with its cwd set to a fresh per-call **scratch directory**
+(`harness/<provider>/scratch/<call-id>/`, §5) instead of the empty workspace, and the
+prompt gains one final **OUTPUT** section - the only per-harness prompt difference -
+directing the agent to WRITE each response document the TASK names as a real file in its
+current working directory (exact file names, no subdirectories) instead of printing
+`===FILE:` blocks, to keep its prose answer on stdout, and - when blocked - to still print
+the blocker envelope to stdout, never as a file. Codex's sandbox escalates to
+`--sandbox workspace-write` for these calls only, confining writes to the scratch cwd
+(runtime stays `read-only`; Gemini and OpenCode have no sandbox flag to escalate - §6).
+A poll-based **scratch watcher** (0.3 s) turns each response document that lands into a
+`file` event carrying the file name and its current content, re-fires as the file grows,
+and orders documents by first appearance; a final sweep after the child exits catches a
+document written in the last poll interval. Only §8 response-document names count -
+`spec.md`, `instructions.md`, `notes.md`, `manifest.yaml`, `actions.yaml`, and
+`NN-name.py` step files - as flat regular files (never directories or symlinks), so
+residue an agent leaves behind (`__pycache__`, helper scripts) is ignored. The call's
+reply is then **recombined** into the ordinary envelope so validation, repair, logging,
+and the §5 audit framing all see one canonical text: a line-anchored `===BLOCKED===` on
+stdout wins outright (the stdout text is the reply, scratch ignored - blockers ride
+stdout by contract); otherwise the stdout prose (clipped at the first `===FILE:` marker
+when the agent redundantly printed blocks too) followed by one `===FILE: <name>===` block
+per collected document in first-seen order, closed with `===END===`; an empty scratch dir
+falls back to the stdout text as the reply unchanged (an answer-only chat reply, or an
+agent that ignored the OUTPUT section - the envelope parser then sees whatever it
+printed). The scratch dir is created per call, removed when the call ends on every path
+(success, failure, cancel), and startup sweeps any scratch dirs a crash left behind (§5).
+
+The drafting job derives `detail` from these events - for Claude Code by scanning the
+accumulated `text` stream for the envelope's `===FILE:` markers, for the file-writing
+harnesses from the `file` events directly - and the labels read the same either way:
+`Thinking…` before the first marker or document; the chat call's per-document
+messages (the chat-call section above - `Writing the spec · N lines` and kin);
 `Writing the manifest — name, triggers, parameters, step list` and then
 `Writing step i of n — NN-name.py · N lines` during the sync call (`i of n` comes from the
-already-streamed manifest block once it parses as yaml; without it, just the file name), and
+manifest - the streamed block once it parses as yaml, or the manifest document's content
+once a later document proves it complete; without it, just the file name), and
 `Updating the notes · N lines` for a sync-call `notes.md` block (same label as the chat call's,
 so the fact reads the same in every phase); a streamed `===BLOCKED===` past the last file
-marker shows `Describing a blocker` (count-less, both call shapes — the
+marker shows `Describing a blocker` (count-less, both call shapes - the
 agent is writing its blocker envelope, not an answer); on a
 repair round, `The response didn't validate — asking for a corrected one…` and then the same
-messages prefixed with the round's try label — `Second try — ` on the first repair round,
-`Third try — `, `Fourth try — `, … on later ones — with the message's first letter lowercased
+messages prefixed with the round's try label - `Second try — ` on the first repair round,
+`Third try — `, `Fourth try — `, … on later ones - with the message's first letter lowercased
 (`Second try — writing the spec · 3 lines`); during the package installs (inside the
 "Syncing the workflow" stage), `Installing <pip spec>…` per
-package (the §6.2 ensure's progress hook). Line-count updates throttle to one update per
-second; marker changes update immediately. `detail` rides the job (§19 `GET /drafts`, beside
+package (the §6.2 ensure's progress hook). On a file-writing harness the chat call's
+stage flip and `plan` capture (the chat-call section above) fire on the first `file`
+event naming a rewrite document (`spec.md`, `instructions.md`, `notes.md`): the stdout
+prose accumulated at that moment is the accompanying answer, the same rule as the
+streamed-marker form. Line-count updates throttle to one update per
+second; marker and document changes update immediately. `detail` rides the job (§19
+`GET /drafts`, beside
 `stage`) and resets at each stage boundary. A harness
-that buffers its whole output simply yields no `detail` — the coarse stage labels remain.
+that reports no events simply yields no `detail` - the coarse stage labels remain.
 
 Beside the mutable `detail` line the job carries `events` — an append-only activity feed of
 discrete milestones, each entry `{time, text, stage}` (`time` epoch seconds; `stage` the job's
@@ -793,9 +871,12 @@ Appended: every marker change from the streams above (the `detail` message witho
 `Writing the answer` **is** appended like any other shape change — a sub-task line once
 shown must survive the move to the next sub-task as feed history (in-place updates are
 for line-count growth only), so the answer/plan prose leaves its tracking line even
-though the answer entry itself is the persistent record of the text), every tool use on a Claude Code agent (the stream-json `assistant` messages'
-`tool_use` blocks → `Reading <url>…` for WebFetch, `Searching the web for “<query>”…` for
-WebSearch, `Using <name>…` otherwise — clipped inputs; other harnesses report no tool use),
+though the answer entry itself is the persistent record of the text), every `tool` event a
+handler reports (web reads → `Reading <url>…`, web searches → `Searching the web for
+“<query>”…`, a shell command → `Running a command — <command>…`, anything else →
+`Using <name>…` - inputs clipped; which harness reports which tools follows the Live
+progress table: Claude Code its stream-json `tool_use` blocks, Codex its
+`command_execution`/`web_search` items, OpenCode its `tool_use` parts, Gemini CLI none),
 the retry / repair / diagnosis notices, and each `Installing <pip spec>…` line. Every
 appended event also becomes the current `detail` (marker-change events set the full
 counted message), so `detail` is always the newest activity; stage changes append nothing —

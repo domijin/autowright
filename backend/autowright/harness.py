@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -56,9 +57,10 @@ class HarnessError(Exception):
 
 def agent_timeout() -> int:
     """§8/§15: per-invocation agent-call idle window in seconds — the call is
-    killed after this long with no stdout output; every streamed line resets
-    it. Read per call (like AUTOWRIGHT_STEP_TIMEOUT) so a running backend
-    picks up changes."""
+    killed after this long with no observed progress; every stdout line,
+    parsed handler event, and scratch-document change resets it. Read per
+    call (like AUTOWRIGHT_STEP_TIMEOUT) so a running backend picks up
+    changes."""
     try:
         return int(float(os.environ.get("AUTOWRIGHT_AGENT_TIMEOUT_S") or 300))
     except ValueError:
@@ -208,22 +210,30 @@ def probe_tools() -> list[dict]:
 
 def invoke(agent: dict, prompt: str, timeout: int | None = None,
            proc_holder: dict | None = None, on_chunk=None,
-           should_abort=None, web: bool = False, on_tool=None) -> str:
+           should_abort=None, web: bool = False, on_tool=None,
+           on_file=None) -> str:
     """Invoke the harness once with `prompt`, return its text reply.
 
     web=True enables the harness's web-read tools (§6 drafting calls only);
     the default keeps every tool disabled — runtime agent.ask calls must
-    never pass it.
+    never pass it. On a §8 file-writing harness web=True also switches the
+    call to file-writing delivery (scratch cwd + watcher; the caller adds
+    the matching OUTPUT prompt section) and the reply is the recombined
+    envelope.
     proc_holder, when given, receives {'proc': Popen} so a caller can cancel.
     should_abort, when given, is re-checked right after the spawn lands in
     proc_holder: a cancel racing the spawn (set after the caller's own check,
     before the Popen existed) would otherwise kill nothing and the call would
     run to its full timeout.
-    on_chunk, when given, receives each partial-text chunk as the harness
-    streams its response (§8 live progress); chunks joined ≙ the reply.
-    on_tool, when given, receives each {name, input} tool use the harness
-    reports as it streams (§8 activity events; Claude Code only — the other
-    CLIs don't report tool use in a parseable form).
+    on_chunk, when given, receives each response-prose `text` event as the
+    handler reports it (§8 live progress): Claude Code true deltas, Codex
+    per completed agent message, OpenCode per text part, Gemini CLI raw
+    stdout lines.
+    on_tool, when given, receives each {name, input} `tool` event (§8
+    activity feed) — names normalized to WebFetch / WebSearch / Shell where
+    the handler knows them.
+    on_file, when given, receives (name, content) each time a response
+    document lands or grows in a file-writing call's scratch dir (§8).
     Every request is framed in app.log (§5): BEGIN header + prompt on send,
     response (or error) + END footer when the request ends.
     """
@@ -243,7 +253,7 @@ def invoke(agent: dict, prompt: str, timeout: int | None = None,
     t0 = time.monotonic()
     try:
         out = _invoke(harness, agent, prompt, timeout, proc_holder, on_chunk,
-                      should_abort, web, on_tool)
+                      should_abort, web, on_tool, on_file)
     except Exception as e:  # noqa: BLE001 — log, close the frame, re-raise
         _app_log(f"request failed: {e}\n>>>>> END {_stamp()} {req_id} <<<<<\n")
         reqlog.write_agent(ts, harness or "?", model, prompt, None, str(e),
@@ -287,6 +297,399 @@ def _deterministic_failure(stderr_tail: str) -> bool:
     return any(pat in low for pat in _DETERMINISTIC_STDERR)
 
 
+# §8 envelope shape constants — canonical here (the recombiner below needs
+# them and drafting imports harness, never the reverse); drafting aliases them.
+FILE_MARK_RE = re.compile(r"^===FILE: (.+?)===\s*$", re.M)
+BLOCKED_MARK_RE = re.compile(r"^===BLOCKED===\s*$", re.M)
+STEP_FILE_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.py$")
+
+# §8 file-writing delivery: the response-document names the scratch watcher
+# accepts — exactly the envelope's file names, flat regular files only, so
+# build residue an agent leaves behind (__pycache__, helper scripts) never
+# reaches the feed or the recombined reply.
+_DOCUMENT_NAMES = ("spec.md", "instructions.md", "notes.md",
+                   "manifest.yaml", "actions.yaml")
+_SCRATCH_POLL_S = 0.3
+
+
+def _is_document_name(name: str) -> bool:
+    return name in _DOCUMENT_NAMES or bool(STEP_FILE_RE.match(name))
+
+
+class ProgressSink:
+    """§8 typed progress events from a per-harness handler to the caller.
+
+    `text` is response prose (a Claude delta, a Codex agent message, an
+    OpenCode text part); `tool` a tool use ({name, input} with the handler's
+    names normalized to WebFetch / WebSearch / Shell where known); `file` a
+    response document landing or growing in the call's scratch dir (name +
+    current content). Every event also reports activity, which resets the §8
+    idle window — the point of the sink for events that carry no callback."""
+
+    def __init__(self, on_chunk=None, on_tool=None, on_file=None,
+                 on_activity=None):
+        self._on_chunk = on_chunk
+        self._on_tool = on_tool
+        self._on_file = on_file
+        self._on_activity = on_activity
+
+    def activity(self) -> None:
+        if self._on_activity:
+            self._on_activity()
+
+    def text(self, chunk: str) -> None:
+        self.activity()
+        if chunk and self._on_chunk:
+            self._on_chunk(chunk)
+
+    def tool(self, name: str, tool_input: dict) -> None:
+        self.activity()
+        if self._on_tool:
+            self._on_tool({"name": name, "input": tool_input})
+
+    def file(self, name: str, content: str) -> None:
+        self.activity()
+        if self._on_file:
+            self._on_file(name, content)
+
+
+class Handler:
+    """§8 per-harness handler, one instance per call: builds the command,
+    parses stdout into ProgressSink events, and extracts the final reply.
+    `writes_files` marks the harnesses whose one-shot mode can't stream text
+    deltas — their drafting calls use the §8 file-writing delivery (OUTPUT
+    prompt section + scratch watcher) instead."""
+
+    binname: str
+    writes_files = False
+
+    def __init__(self, agent: dict, web: bool):
+        self.agent = agent
+        self.web = web
+        self.model = agent.get("model")
+        self.local = agent.get("mode", "default") == "ollama" and bool(self.model)
+
+    def model_args(self) -> list[str]:
+        return ["--model", self.model] if self.model else []
+
+    def preflight(self) -> None:
+        """Raise HarnessError before the spawn for a condition the call could
+        never recover from (only Gemini needs one — see there)."""
+
+    def command(self, prompt: str, pipe_prompt: bool, writing: bool) -> list[str]:
+        raise NotImplementedError
+
+    def env(self, env: dict) -> dict:
+        return env
+
+    def line(self, line: str, sink: ProgressSink) -> None:
+        """One stdout line → sink events. The read loop already resets the
+        idle window per line; handlers only translate content."""
+
+    def reply(self, raw: str) -> str:
+        """The final reply once the child exited 0; `raw` is full stdout."""
+        return raw
+
+
+class ClaudeCodeHandler(Handler):
+    binname = "claude"
+
+    def __init__(self, agent: dict, web: bool):
+        super().__init__(agent, web)
+        self._deltas: list[str] = []
+        self._final: str | None = None
+
+    def command(self, prompt: str, pipe_prompt: bool, writing: bool) -> list[str]:
+        prompt_argv = [] if pipe_prompt else ["--", prompt]
+        return ["claude", "-p", *self.model_args(),
+                "--tools", "WebFetch,WebSearch" if self.web else "",
+                "--strict-mcp-config",
+                "--no-session-persistence", "--output-format", "stream-json",
+                "--include-partial-messages", "--verbose", *prompt_argv]
+
+    def env(self, env: dict) -> dict:
+        if self.local:
+            # §6: Claude Code local mode — point the CLI at Ollama's
+            # Anthropic-compatible API. Bearer auth via ANTHROPIC_AUTH_TOKEN:
+            # Ollama's /v1/messages does not reliably accept x-api-key, so an
+            # inherited ANTHROPIC_API_KEY must not win the auth pick.
+            env["ANTHROPIC_BASE_URL"] = OLLAMA_URL
+            env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
+            env.pop("ANTHROPIC_API_KEY", None)
+        return env
+
+    def line(self, line: str, sink: ProgressSink) -> None:
+        chunk, result, tools = _claude_stream_line(line)
+        if result is not None:
+            self._final = result
+        if chunk:
+            self._deltas.append(chunk)
+            sink.text(chunk)
+        for tool in tools:
+            sink.tool(tool["name"], tool["input"])
+
+    def reply(self, raw: str) -> str:
+        # The result event is authoritative; joined deltas cover a CLI that
+        # streamed but never sent one; raw stdout covers non-stream output.
+        return self._final if self._final is not None else ("".join(self._deltas) or raw)
+
+
+class CodexHandler(Handler):
+    binname = "codex"
+    writes_files = True
+
+    def __init__(self, agent: dict, web: bool):
+        super().__init__(agent, web)
+        self._messages: list[str] = []
+
+    def command(self, prompt: str, pipe_prompt: bool, writing: bool) -> list[str]:
+        prompt_argv = [] if pipe_prompt else ["--", prompt]
+        codex_local_args = ["--oss", "--local-provider", "ollama"] if self.local else []
+        # --json: JSONL events on stdout (the §8 progress stream; verified
+        # against codex-cli 0.144.6). --ephemeral keeps the one-shot call off
+        # disk — the same intent as Claude Code's --no-session-persistence.
+        # A file-writing drafting call escalates the sandbox to
+        # workspace-write, confined to the per-call scratch cwd (§6/§8);
+        # every other call keeps read-only. --search must precede `exec`
+        # (exec rejects it) — same placement rule as the local-model flags.
+        return ["codex", *(["--search"] if self.web else []), *codex_local_args,
+                "exec", "--json", "--ephemeral", *self.model_args(),
+                "--sandbox", "workspace-write" if writing else "read-only",
+                "--skip-git-repo-check", *prompt_argv]
+
+    def line(self, line: str, sink: ProgressSink) -> None:
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(obj, dict):
+            return
+        item = obj.get("item") if isinstance(obj.get("item"), dict) else {}
+        etype = obj.get("type")
+        itype = item.get("type")
+        if etype == "item.completed" and itype == "agent_message":
+            text = str(item.get("text") or "")
+            if text:
+                # A turn can carry several agent messages — preamble prose,
+                # then the final one; reply() takes the last. The sink gets a
+                # paragraph break so accumulated prose keeps message
+                # boundaries (chunks joined feed the §8 plan capture).
+                self._messages.append(text)
+                sink.text(text + "\n\n")
+        elif etype == "item.started" and itype == "command_execution":
+            sink.tool("Shell", {"command": str(item.get("command") or "")})
+        elif etype == "item.completed" and itype == "web_search":
+            sink.tool("WebSearch", {"query": str(item.get("query") or "")})
+        # file_change items and every other parsed line: bare activity — the
+        # scratch watcher is the single source of `file` events, so a document
+        # written via a shell command still reports and nothing double-reports.
+
+    def reply(self, raw: str) -> str:
+        return self._messages[-1] if self._messages else raw
+
+
+class GeminiHandler(Handler):
+    binname = "gemini"
+    writes_files = True
+
+    def preflight(self) -> None:
+        # §8 failure policy: a signed-out Gemini CLI doesn't exit with an auth
+        # error — it prints a browser sign-in prompt to stdout and blocks on
+        # it forever (no trailing newline, so line reads never even see it).
+        # Fail fast and non-retryably instead of burning the idle window twice.
+        if signed_in("gemini") is not True:
+            raise HarnessError(
+                "Gemini CLI is not signed in — sign in from the Agents page, "
+                "then try again")
+
+    def command(self, prompt: str, pipe_prompt: bool, writing: bool) -> list[str]:
+        gemini_prompt_argv = [] if pipe_prompt else ["-p", prompt]
+        # §8: a file-writing drafting call needs the file-write tools to
+        # auto-approve non-interactively (the default mode blocks on an
+        # approval prompt); its tools were already all-on in every mode (§6),
+        # so this widens nothing the app relied on. Runtime calls stay bare.
+        approval_args = ["--approval-mode", "yolo"] if writing else []
+        return ["gemini", *self.model_args(), *approval_args,
+                *gemini_prompt_argv]
+
+    def line(self, line: str, sink: ProgressSink) -> None:
+        # Plain text mode: stdout is the reply as it prints (usually all at
+        # the end) — forward it as prose so an early-printing reply streams.
+        sink.text(line)
+
+
+class OpenCodeHandler(Handler):
+    binname = "opencode"
+    writes_files = True
+
+    # OpenCode tool names → the normalized names drafting labels (§8).
+    _TOOL_NAMES = {"bash": "Shell", "webfetch": "WebFetch",
+                   "websearch": "WebSearch", "web_search": "WebSearch"}
+
+    def __init__(self, agent: dict, web: bool):
+        super().__init__(agent, web)
+        self._texts: list[str] = []
+
+    def model_args(self) -> list[str]:
+        if not self.model:
+            return []
+        return ["--model", f"ollama/{self.model}" if self.local else self.model]
+
+    def command(self, prompt: str, pipe_prompt: bool, writing: bool) -> list[str]:
+        prompt_argv = [] if pipe_prompt else ["--", prompt]
+        # --format json: JSONL events on stdout (the §8 progress stream;
+        # verified against opencode 1.18.4 — file writes need no extra flag).
+        return ["opencode", "run", "--format", "json", *self.model_args(),
+                *prompt_argv]
+
+    def line(self, line: str, sink: ProgressSink) -> None:
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            return
+        if not isinstance(obj, dict):
+            return
+        part = obj.get("part") if isinstance(obj.get("part"), dict) else {}
+        etype = obj.get("type")
+        if etype == "text":
+            text = str(part.get("text") or "")
+            if text:
+                # Paragraph break for the same reason as Codex's messages —
+                # reply() joins self._texts itself.
+                self._texts.append(text)
+                sink.text(text + "\n\n")
+        elif etype == "tool_use":
+            name = str(part.get("tool") or "")
+            state = part.get("state") if isinstance(part.get("state"), dict) else {}
+            tool_input = state.get("input") if isinstance(state.get("input"), dict) else {}
+            if name in ("write", "edit"):
+                # The scratch watcher owns file reporting — a write tool event
+                # would double-report the same document.
+                sink.activity()
+            else:
+                sink.tool(self._TOOL_NAMES.get(name, name or "a tool"), tool_input)
+        # step_start / step_finish and every other parsed line: bare activity
+        # (the read loop's per-line idle reset already covers it).
+
+    def reply(self, raw: str) -> str:
+        return "\n\n".join(self._texts) if self._texts else raw
+
+
+HANDLERS: dict[str, type[Handler]] = {
+    "Claude Code": ClaudeCodeHandler,
+    "Codex": CodexHandler,
+    "Gemini CLI": GeminiHandler,
+    "OpenCode": OpenCodeHandler,
+}
+
+
+def writes_files(harness_name: str) -> bool:
+    """§8: whether this harness's drafting calls use file-writing delivery
+    (the OUTPUT prompt section + scratch watcher)."""
+    cls = HANDLERS.get(harness_name)
+    return bool(cls and cls.writes_files)
+
+
+class _ScratchWatcher:
+    """§8 scratch watcher: polls the call's scratch dir every 0.3 s, emits a
+    `file` event when a response document lands or grows (name + current
+    content), and keeps first-seen order for the recombined envelope. A final
+    `stop()` sweep catches a document written in the last poll interval."""
+
+    def __init__(self, scratch: Path, sink: ProgressSink):
+        self._scratch = scratch
+        self._sink = sink
+        self._order: list[str] = []
+        self._sizes: dict[str, int] = {}
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._thread.join(timeout=5)
+        self._poll()  # final sweep — after the join, so never concurrent
+
+    def _run(self) -> None:
+        while not self._stop_event.wait(_SCRATCH_POLL_S):
+            self._poll()
+
+    def _read(self, name: str) -> str:
+        try:
+            return (self._scratch / name).read_text(encoding="utf-8",
+                                                    errors="replace")
+        except OSError:
+            return ""
+
+    def _poll(self) -> None:
+        try:
+            entries = list(os.scandir(self._scratch))
+        except OSError:
+            return
+        for entry in sorted(entries, key=lambda e: e.name):
+            if not _is_document_name(entry.name):
+                continue
+            try:
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                size = entry.stat(follow_symlinks=False).st_size
+            except OSError:
+                continue
+            if self._sizes.get(entry.name) == size:
+                continue
+            self._sizes[entry.name] = size
+            if entry.name not in self._order:
+                self._order.append(entry.name)
+            self._sink.file(entry.name, self._read(entry.name))
+
+    def documents(self) -> list[tuple[str, str]]:
+        """(name, content) in first-seen order — call after stop()."""
+        return [(name, self._read(name)) for name in self._order
+                if (self._scratch / name).is_file()]
+
+
+def _recombine(stdout_text: str, documents: list[tuple[str, str]]) -> str:
+    """§8 file-writing delivery: stdout prose + collected documents → the
+    ordinary envelope, so validation, repair, logging, and the §5 audit
+    framing all see one canonical text.
+
+    A line-anchored ===BLOCKED=== on stdout wins outright — blockers ride
+    stdout by contract (a fenced quote of the marker alongside written files
+    would mispick here; the drafting parser then fails it and a repair round
+    corrects — accepted, the shape-aware parse lives in drafting). An empty
+    scratch falls back to stdout unchanged (an answer-only chat reply, or an
+    agent that ignored the OUTPUT section and printed the envelope)."""
+    if BLOCKED_MARK_RE.search(stdout_text):
+        return stdout_text
+    if not documents:
+        return stdout_text
+    marker = FILE_MARK_RE.search(stdout_text)
+    prose = (stdout_text[:marker.start()] if marker else stdout_text).strip()
+    parts = [prose] if prose else []
+    for name, content in documents:
+        body = content.rstrip("\n")
+        parts.append(f"===FILE: {name}===\n{body}\n")
+    parts.append("===END===")
+    return "\n".join(parts)
+
+
+def _make_scratch(provider_id: str) -> Path:
+    d = paths.harness_scratch(provider_id) / str(uuid.uuid4())
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def clear_scratch() -> None:
+    """§5 startup sweep: remove whole scratch/ trees a crashed backend left
+    behind (a live call's dir is removed by its own finally instead)."""
+    for provider_id, _name in PROVIDERS:
+        d = paths.harness_scratch(provider_id)
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
+
+
 def _claude_stream_line(line: str) -> tuple[str | None, str | None, list[dict]]:
     """One `--output-format stream-json` stdout line → (text_chunk, final_result,
     tool_uses).
@@ -321,114 +724,68 @@ def _claude_stream_line(line: str) -> tuple[str | None, str | None, list[dict]]:
 
 def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
             proc_holder: dict | None, on_chunk=None, should_abort=None,
-            web: bool = False, on_tool=None) -> str:
+            web: bool = False, on_tool=None, on_file=None) -> str:
     # §4.7/§6: a local-model agent (mode ollama — Claude Code, Codex, or
     # OpenCode) drives the one local Ollama server through that harness's own
     # supported mechanism: OpenCode rides `--model ollama/<model>` after the
     # §19 opencode.json provider sync; Codex rides its official
     # `--oss --local-provider ollama` top-level flags; Claude Code rides its
     # custom-endpoint env vars against Ollama's Anthropic-compatible API
-    # (env built below, at spawn). A custom-model agent passes the user-typed
+    # (the handler's env()). A custom-model agent passes the user-typed
     # string verbatim as `--model` (the same flag on all four CLIs), never
     # validated by the app.
-    mode = agent.get("mode", "default")
-    model = agent.get("model")
-    local = mode == "ollama" and bool(model)
-    if harness == "OpenCode" and local:
-        sync_opencode_ollama(model)
-    model_args: list[str] = []
-    if model:
-        model_args = ["--model",
-                      f"ollama/{model}" if local and harness == "OpenCode" else model]
-    codex_local_args = ["--oss", "--local-provider", "ollama"] if local else []
-    # §8 prompt delivery is per-OS. POSIX: the prompt rides as the command's
-    # last argv element. Windows: the whole command line is capped at 32,767
-    # characters — smaller than any real drafting prompt (a minimal build
-    # prompt already measures ~38 K), so every spawn would die with
-    # `[WinError 206] The filename or extension is too long`. There the
-    # adapter omits the argv prompt and pipes it to the child's stdin instead
-    # (every §8 CLI has a non-interactive piped-stdin mode).
-    pipe_prompt = paths.current_os() == "windows"
-    # The `--` separator only exists to protect the positional prompt, so it
-    # goes with it. Gemini's prompt rides `-p`, no positional.
-    prompt_argv = [] if pipe_prompt else ["--", prompt]
-    gemini_prompt_argv = [] if pipe_prompt else ["-p", prompt]
-    # §6: runtime calls are query-only — invoke each harness with the
-    # strongest flags it offers to disable tools/shell/file access beyond the
-    # model API. §6 drafting calls pass web=True: the harness's web-read
-    # tools are enabled (and nothing else) so the agent can fetch the pages
-    # the request names and write selectors from the real DOM.
-    cmd_map = {
-        # --tools "" disables every built-in tool; web=True allows exactly
-        # WebFetch/WebSearch instead. --strict-mcp-config with no
-        # --mcp-config loads zero MCP servers; --no-session-persistence keeps
-        # the one-shot call off disk. stream-json + --include-partial-messages
-        # streams text deltas for §8 live progress (stream-json in print mode
-        # requires --verbose). (Flags verified against claude --help.)
-        # `--` before the positional prompt: a runtime agent.ask prompt can
-        # legitimately start with "-" (an LLM-written bullet list) and must
-        # not parse as a flag. Gemini's prompt rides -p, no positional.
-        # Windows form (§8): the same flags with no positional prompt — the
-        # CLI reads it from the piped stdin (verified live at ~40 K chars).
-        "Claude Code": ["claude", "-p", *model_args,
-                        "--tools", "WebFetch,WebSearch" if web else "",
-                        "--strict-mcp-config",
-                        "--no-session-persistence", "--output-format", "stream-json",
-                        "--include-partial-messages", "--verbose", *prompt_argv],
-        # Gemini CLI has no documented flag that disables its built-in tools
-        # for a one-shot -p call (only sandbox/approval modes) — left bare;
-        # its web tools are therefore available in every mode (§6 documented
-        # limitation for runtime, the intended behavior for drafting).
-        # Windows form (§8): drop `-p <prompt>` entirely — piped stdin runs
-        # the CLI non-interactively.
-        "Gemini CLI": ["gemini", *model_args, *gemini_prompt_argv],
-        # Codex: read-only sandbox blocks writes/shell side effects;
-        # --skip-git-repo-check lets exec work outside a git repo (workspace).
-        # web=True adds --search — the native web_search tool. Top-level
-        # flag: `codex exec --search` is rejected, `codex --search exec` OK —
-        # same placement rule for the §6 local-model flags
-        # `--oss --local-provider ollama`.
-        "Codex": ["codex", *(["--search"] if web else []), *codex_local_args,
-                  "exec", *model_args,
-                  "--sandbox", "read-only", "--skip-git-repo-check",
-                  *prompt_argv],
-        # OpenCode has no documented flag that disables tool use for
-        # `opencode run` — left bare; same runtime limitation / drafting
-        # intent as Gemini.
-        # Windows forms (§8): `codex exec` / `opencode run` with no prompt
-        # argument read it from stdin.
-        "OpenCode": ["opencode", "run", *model_args, *prompt_argv],
-    }
-    cmd = cmd_map.get(harness)
-    if not cmd:
+    handler_cls = HANDLERS.get(harness or "")
+    if not handler_cls:
         raise HarnessError(f"unknown harness: {harness}")
+    handler = handler_cls(agent, web)
+    if harness == "OpenCode" and handler.local:
+        sync_opencode_ollama(handler.model)
+    handler.preflight()
+    # §8 file-writing delivery: only drafting calls (web=True) on a harness
+    # that can't stream text deltas — runtime agent.ask never writes files
+    # and Codex stays in its read-only sandbox there.
+    writing = web and handler.writes_files
+    # §8 prompt delivery is per-OS. POSIX: the prompt rides as the command's
+    # last argv element (behind `--`, so an LLM-written prompt starting with
+    # "-" never parses as a flag; Gemini's rides `-p`). Windows: the whole
+    # command line is capped at 32,767 characters — smaller than any real
+    # drafting prompt (a minimal build prompt already measures ~38 K), so
+    # every spawn would die with `[WinError 206]`. There the handler omits
+    # the argv prompt and pipes it to the child's stdin instead (every §8
+    # CLI has a non-interactive piped-stdin mode).
+    pipe_prompt = paths.current_os() == "windows"
+    cmd = handler.command(prompt, pipe_prompt, writing)
     binpath = resolve_bin(cmd[0])
     if binpath is None:
         raise HarnessError(f"{cmd[0]} is not installed on this {paths.machine_noun()}")
     cmd[0] = binpath
-    env = spawn_env(binpath)
-    if harness == "Claude Code" and local:
-        # §6: Claude Code local mode — point the CLI at Ollama's
-        # Anthropic-compatible API. Bearer auth via ANTHROPIC_AUTH_TOKEN:
-        # Ollama's /v1/messages does not reliably accept x-api-key, so an
-        # inherited ANTHROPIC_API_KEY must not win the auth pick.
-        env["ANTHROPIC_BASE_URL"] = OLLAMA_URL
-        env["ANTHROPIC_AUTH_TOKEN"] = "ollama"
-        env.pop("ANTHROPIC_API_KEY", None)
+    env = handler.env(spawn_env(binpath))
+    # §5/§8: a file-writing call runs in its own per-call scratch dir — the
+    # documents the agent writes land where the watcher owns them; everything
+    # else keeps the provider's empty workspace (same TCC argument, §6).
+    scratch = _make_scratch(HARNESS_ID[harness]) if writing else None
+    cwd = str(scratch) if scratch else _neutral_cwd(HARNESS_ID[harness])
     # Own session, like engine steps (§2 platform session policy):
     # timeout/cancel must reach helper processes the CLI spawns — killing
     # only the direct child can leave a helper holding the stdout pipe open
     # (read loop never sees EOF, the §8 idle window silently never fires).
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            # §8 per-OS prompt delivery: a pipe on Windows (the
-                            # prompt goes down it), /dev/null everywhere else
-                            # (the prompt is already in argv).
-                            stdin=subprocess.PIPE if pipe_prompt else subprocess.DEVNULL,
-                            # §2 pipe-encoding contract: never the locale codec.
-                            # The stdin text write below inherits it too.
-                            encoding="utf-8", errors="replace",
-                            env=env, cwd=_neutral_cwd(HARNESS_ID[harness]),
-                            **platform.current().processes.session_kwargs())
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                # §8 per-OS prompt delivery: a pipe on Windows
+                                # (the prompt goes down it), /dev/null everywhere
+                                # else (the prompt is already in argv).
+                                stdin=subprocess.PIPE if pipe_prompt else subprocess.DEVNULL,
+                                # §2 pipe-encoding contract: never the locale
+                                # codec. The stdin text write below inherits it.
+                                encoding="utf-8", errors="replace",
+                                env=env, cwd=cwd,
+                                **platform.current().processes.session_kwargs())
+    except BaseException:
+        # The main cleanup finally starts after the spawn — a failing spawn
+        # must not leak the scratch dir until the next startup sweep.
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
+        raise
     if proc_holder is not None:
         proc_holder["proc"] = proc
 
@@ -512,72 +869,83 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
             # sleeps again.
             done.wait(min(idle_deadline[0], hard_deadline) - now)
 
-    watcher = threading.Thread(target=_watch, daemon=True)
-    watcher.start()
+    watchdog = threading.Thread(target=_watch, daemon=True)
+    watchdog.start()
     err_parts: list[str] = []
     drain = threading.Thread(target=lambda: err_parts.append(proc.stderr.read() or ""),
                              daemon=True)
     drain.start()
     raw_parts: list[str] = []
-    deltas: list[str] = []
-    final: str | None = None
+
+    def _reset_idle() -> None:
+        idle_deadline[0] = time.monotonic() + timeout
+
+    # §8 progress sink: handler events → the caller's callbacks. Every event
+    # resets the idle window — the scratch watcher's file events are the only
+    # progress channel for a harness whose stdout stays silent mid-call.
+    sink = ProgressSink(on_chunk=on_chunk, on_tool=on_tool, on_file=on_file,
+                        on_activity=_reset_idle)
+    scratch_watcher: _ScratchWatcher | None = None
     try:
+        if scratch is not None:
+            scratch_watcher = _ScratchWatcher(scratch, sink)
+            scratch_watcher.start()
         try:
-            for line in proc.stdout:
-                idle_deadline[0] = time.monotonic() + timeout
-                raw_parts.append(line)
-                if harness == "Claude Code":
-                    chunk, result, tools = _claude_stream_line(line)
-                    if result is not None:
-                        final = result
-                    if chunk:
-                        deltas.append(chunk)
-                        if on_chunk:
-                            on_chunk(chunk)
-                    if on_tool:
-                        for tool in tools:
-                            on_tool(tool)
-                elif on_chunk:
-                    on_chunk(line)
-        except ValueError:
-            # The timeout kill closed our read end — anything else is real.
-            if not timed_out.is_set():
-                raise
-        proc.wait()
-    except BaseException:
-        # A raising on_chunk (or any read error) must not orphan the child —
-        # the timer gets cancelled below, so nothing else would ever reap it.
-        kill_group(proc)
-        proc.wait()
-        raise
-    finally:
-        done.set()
-        # Closed on EVERY path (the writer normally got here first, and the
-        # call is idempotent), so no handle is left open on a long-lived
-        # backend — mirrors the engine's step-process pipe hygiene.
-        _close_stdin()
-    drain.join(timeout=5)
-    if timed_out.is_set() and proc.returncode != 0:
-        # returncode guard: a watchdog firing in the instant after a successful
-        # exit must not discard a complete valid reply.
-        if hard_capped.is_set():
-            raise HarnessError(f"{harness} timed out after {hard_cap}s total",
+            try:
+                for line in proc.stdout:
+                    _reset_idle()
+                    raw_parts.append(line)
+                    handler.line(line, sink)
+            except ValueError:
+                # The timeout kill closed our read end — anything else is real.
+                if not timed_out.is_set():
+                    raise
+            proc.wait()
+        except BaseException:
+            # A raising callback (or any read error) must not orphan the
+            # child — the timer gets cancelled below, so nothing else would
+            # ever reap it.
+            kill_group(proc)
+            proc.wait()
+            raise
+        finally:
+            done.set()
+            # Closed on EVERY path (the writer normally got here first, and
+            # the call is idempotent), so no handle is left open on a
+            # long-lived backend — mirrors the engine's step-process pipe
+            # hygiene.
+            _close_stdin()
+            if scratch_watcher is not None:
+                # §8: the final sweep — a document written in the last poll
+                # interval still reaches the feed and the recombined reply.
+                scratch_watcher.stop()
+        drain.join(timeout=5)
+        if timed_out.is_set() and proc.returncode != 0:
+            # returncode guard: a watchdog firing in the instant after a
+            # successful exit must not discard a complete valid reply.
+            if hard_capped.is_set():
+                raise HarnessError(f"{harness} timed out after {hard_cap}s total",
+                                   retryable=True)
+            raise HarnessError(f"{harness} timed out after {timeout}s without output",
                                retryable=True)
-        raise HarnessError(f"{harness} timed out after {timeout}s without output",
-                           retryable=True)
-    raw = "".join(raw_parts)
-    if proc.returncode != 0:
-        err = (err_parts[0] if err_parts else "") or raw
-        # The TAIL of stderr, not the head: CLIs print banners first and the
-        # decisive ERROR line last (verified with Codex).
-        tail = "\n".join(err.strip().splitlines()[-3:])
-        raise HarnessError(f"{harness} failed: {tail[-400:]}",
-                           retryable=not _deterministic_failure(tail))
-    if harness == "Claude Code":
-        # The result event is authoritative; joined deltas cover a CLI that
-        # streamed but never sent one; raw stdout covers non-stream output.
-        return final if final is not None else ("".join(deltas) or raw)
-    return raw
+        raw = "".join(raw_parts)
+        if proc.returncode != 0:
+            err = (err_parts[0] if err_parts else "") or raw
+            # The TAIL of stderr, not the head: CLIs print banners first and
+            # the decisive ERROR line last (verified with Codex).
+            tail = "\n".join(err.strip().splitlines()[-3:])
+            raise HarnessError(f"{harness} failed: {tail[-400:]}",
+                               retryable=not _deterministic_failure(tail))
+        out = handler.reply(raw)
+        if scratch_watcher is not None:
+            # §8: recombine stdout prose + collected documents into the
+            # ordinary envelope — validation and the audit trail see one
+            # canonical text.
+            out = _recombine(out, scratch_watcher.documents())
+        return out
+    finally:
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
 
 
 _OPENCODE_CONFIG = os.path.expanduser("~/.config/opencode/opencode.json")

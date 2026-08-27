@@ -691,7 +691,8 @@ def test_build_failure_record_on_repaired_round(home, devmode, monkeypatch):
     calls = {"n": 0}
 
     def fake_invoke(agent, prompt, timeout=300, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         calls["n"] += 1
         # round 1: an envelope-shaped response with no ===END=== — invalid
         # (§8: plain prose would be an answer, never invalid)
@@ -721,7 +722,8 @@ def test_build_failure_record_on_double_failure(home, devmode, monkeypatch):
     calls = {"n": 0}
 
     def fake_invoke(agent, prompt, timeout=300, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         calls["n"] += 1
         if calls["n"] <= 2:
             # envelope-shaped, truncated — invalid twice (prose would be an answer)
@@ -761,7 +763,7 @@ def test_progress_detail_from_streamed_markers():
     jobs = DraftJobs()
     job = {"id": "j1", "status": "building", "stage": "Generating the steps",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._progress_cb(job)
+    cb, _ = jobs._progress_cb(job)
     cb("let me plan this")
     assert job["detail"] == "Thinking…"
     cb("\n===FILE: manifest.yaml===\nname: T\ndesc: d\nsteps:\n"
@@ -787,7 +789,7 @@ def test_progress_detail_repair_prefix():
     jobs = DraftJobs()
     job = {"id": "j2", "status": "building", "stage": "Updating the documents",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._progress_cb(job, prefix="Second try — ")
+    cb, _ = jobs._progress_cb(job, prefix="Second try — ")
     cb("===FILE: 01-a.py===\nx = 1\ny = 2\nz = 3\n")
     assert job["detail"] == "Second try — writing 01-a.py · 3 lines"
     assert [e["text"] for e in job["events"]] == ["Second try — writing 01-a.py"]
@@ -802,7 +804,7 @@ def test_progress_sync_notes_and_blocker_labels():
     jobs = DraftJobs()
     job = {"id": "j4", "status": "building", "stage": "Syncing the workflow",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._progress_cb(job)
+    cb, _ = jobs._progress_cb(job)
     cb("===FILE: notes.md===\n- learned a thing\n- and another\n")
     assert job["detail"] == "Updating the notes · 2 lines"
     cb("===BLOCKED===\nblockers:\n  - reason: r\n")
@@ -822,7 +824,7 @@ def test_chat_blocker_stream_label_never_flips():
     jobs = DraftJobs()
     job = {"id": "c3", "status": "building", "stage": "Working on the request",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._chat_cb(job)
+    cb, _ = jobs._chat_cb(job)
     cb("===BLOCKED===\nblockers:\n  - reason: impossible\n")
     assert job["detail"] == "Describing a blocker"
     assert job["stage"] == "Working on the request"
@@ -1934,7 +1936,8 @@ def test_transient_harness_error_retried_once(monkeypatch):
     calls = []
 
     def fake_invoke(agent, prompt, timeout=None, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         calls.append(prompt)
         if len(calls) == 1:
             raise harness.HarnessError("Claude Code timed out after 300s", retryable=True)
@@ -1957,7 +1960,8 @@ def test_second_transient_failure_fails_the_job(monkeypatch):
     calls = []
 
     def fake_invoke(agent, prompt, timeout=None, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         calls.append(prompt)
         raise harness.HarnessError("Claude Code failed: boom", retryable=True)
 
@@ -1977,7 +1981,8 @@ def test_non_retryable_harness_error_fails_immediately(monkeypatch):
     calls = []
 
     def fake_invoke(agent, prompt, timeout=None, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         calls.append(prompt)
         raise harness.HarnessError("claude is not installed on this Mac")
 
@@ -1998,7 +2003,8 @@ def test_double_invalid_response_diagnoses_to_blocked(monkeypatch):
     calls = []
 
     def fake_invoke(agent, prompt, timeout=None, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         calls.append(prompt)
         if "Diagnose why this automation could not be built" in prompt:
             return DIAGNOSED_BLOCKERS
@@ -2025,7 +2031,8 @@ def test_diagnosis_failure_falls_back_to_deterministic_blocker(monkeypatch):
     from autowright.drafting import DraftJobs
 
     def fake_invoke(agent, prompt, timeout=None, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         return INVALID_STEPS
 
     monkeypatch.setattr(harness, "invoke", fake_invoke)
@@ -2046,7 +2053,8 @@ def test_agent_refusal_blockers_are_not_diagnosed(monkeypatch):
     from autowright.drafting import DraftJobs
 
     def fake_invoke(agent, prompt, timeout=None, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         return DIAGNOSED_BLOCKERS
 
     monkeypatch.setattr(harness, "invoke", fake_invoke)
@@ -2080,7 +2088,7 @@ def test_chat_progress_detail_labels():
     jobs = DraftJobs()
     job = {"id": "c1", "status": "building", "stage": "Working on the request",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._chat_cb(job)
+    cb, _ = jobs._chat_cb(job)
     cb("")
     assert job["detail"] == "Thinking…"
     cb("Working on it\nsecond line")
@@ -2121,7 +2129,7 @@ def test_chat_flip_captures_plan():
     jobs = DraftJobs()
     job = {"id": "p1", "status": "building", "stage": "Working on the request",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._chat_cb(job)
+    cb, _ = jobs._chat_cb(job)
     cb("Here is the plan.\n\n")
     assert "plan" not in job  # prose alone never flips, so no plan yet
     cb("===FILE: spec.md===\n# T\n")
@@ -2137,7 +2145,7 @@ def test_chat_flip_without_prose_sets_no_plan():
     jobs = DraftJobs()
     job = {"id": "p2", "status": "building", "stage": "Working on the request",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._chat_cb(job)
+    cb, _ = jobs._chat_cb(job)
     cb("===FILE: spec.md===\n# T\n")
     assert job["stage"] == "Updating the documents"
     assert "plan" not in job
@@ -2150,7 +2158,7 @@ def test_chat_progress_detail_repair_prefix():
     jobs = DraftJobs()
     job = {"id": "c2", "status": "building", "stage": "Working on the request",
            "detail": None, "events": [], "_cancel": False}
-    cb = jobs._chat_cb(job, prefix="Second try — ")
+    cb, _ = jobs._chat_cb(job, prefix="Second try — ")
     cb("===FILE: spec.md===\n# T\n")
     assert job["detail"] == "Second try — writing the spec · 1 line"
     assert [e["text"] for e in job["events"]] == ["Second try — writing the spec"]
@@ -2198,7 +2206,8 @@ def test_chat_blocker_on_second_try_records_blocked(home, devmode, monkeypatch):
     calls = {"n": 0}
 
     def fake_invoke(agent, prompt, timeout=300, proc_holder=None, on_chunk=None,
-                    should_abort=None, web=False, on_tool=None):
+                    should_abort=None, web=False, on_tool=None,
+                    on_file=None):
         calls["n"] += 1
         if calls["n"] == 1:
             # envelope-shaped, no ===END=== — invalid (prose would be an answer)
@@ -2752,3 +2761,109 @@ def test_prompts_carry_the_imported_references_section():
               build_steps_prompt("# T\n\nBody.", {"spec": "# T"}, GRANTS)):
         seg = p.split("=== IMPORTED REFERENCES THAT NEED FIXING ===")[1].split("\n\n=== ")[0]
         assert seg.rstrip().endswith("\nnone")
+
+
+# ---------- §8 file-writing delivery (Codex / Gemini CLI / OpenCode) ----------
+
+def test_file_output_block_rides_every_file_writing_prompt(home, monkeypatch):
+    # §8: a harness whose one-shot mode can't stream deltas gets the OUTPUT
+    # delivery section appended to every drafting prompt — the repair round's
+    # included, since it is appended at call time. Claude Code, which streams
+    # the envelope itself, never gets it.
+    from autowright import drafting, harness
+    from autowright.drafting import DraftJobs
+
+    prompts = []
+
+    def fake_invoke(agent, prompt, **kw):
+        prompts.append(prompt)
+        # round 1: envelope-shaped but truncated — invalid, so a repair round runs
+        return ("===FILE: spec.md===\n# Hello\n\ntruncated" if len(prompts) == 1
+                else GOOD_SPEC)
+
+    monkeypatch.setattr(harness, "invoke", fake_invoke)
+    j = _run_job(DraftJobs(), "chat", {"harness": "Codex"}, "tweak it",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "done", j
+    assert len(prompts) == 2
+    assert all(p.endswith(drafting.FILE_OUTPUT_BLOCK) for p in prompts)
+
+    prompts.clear()
+    j = _run_job(DraftJobs(), "chat", {"harness": "Claude Code"}, "tweak it",
+                 {"spec": "# T\n\nbody"}, GRANTS)
+    assert j["status"] == "done", j
+    assert len(prompts) == 2
+    assert not any(drafting.FILE_OUTPUT_BLOCK in p for p in prompts)
+
+
+def test_progress_detail_from_scratch_documents():
+    # §8: on a file-writing harness the sync call's `detail` comes from `file`
+    # events instead of streamed markers, and the labels read the same — with
+    # `i of n` from the manifest document once a later document proves it
+    # complete.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "f1", "status": "building", "stage": "Syncing the workflow",
+           "detail": None, "events": [], "_cancel": False}
+    _, file_cb = jobs._progress_cb(job)
+    file_cb("manifest.yaml",
+            "note: n\nsteps:\n"
+            "  - { file: 01-fetch.py, name: A, description: a }\n"
+            "  - { file: 02-send.py, name: B, description: b }\n")
+    assert job["detail"] == "Writing the manifest — name, triggers, parameters, step list"
+    file_cb("01-fetch.py", "x = 1\ny = 2\n")
+    assert job["detail"] == "Writing step 1 of 2 — 01-fetch.py · 2 lines"
+    file_cb("02-send.py", "z = 3\n")
+    assert job["detail"] == "Writing step 2 of 2 — 02-send.py · 1 line"
+    file_cb("notes.md", "- learned a thing\n")
+    assert job["detail"] == "Updating the notes · 1 line"
+    # §8 activity feed: one count-less milestone per document
+    assert [e["text"] for e in job["events"]] == [
+        "Writing the manifest — name, triggers, parameters, step list",
+        "Writing step 1 of 2 — 01-fetch.py",
+        "Writing step 2 of 2 — 02-send.py",
+        "Updating the notes",
+    ]
+
+
+def test_chat_progress_from_scratch_documents_flips_the_stage():
+    # §8: on a file-writing harness the chat call's stage flip and `plan`
+    # capture fire on the first `file` event naming a rewrite document — the
+    # stdout prose accumulated by then is the accompanying answer, the same
+    # rule as the streamed-marker form.
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "f2", "status": "building", "stage": "Working on the request",
+           "detail": None, "events": [], "_cancel": False}
+    cb, file_cb = jobs._chat_cb(job)
+    cb("Here is the plan.\n\n")
+    assert job["stage"] == "Working on the request"  # prose alone never flips
+    file_cb("spec.md", "# T\n\n- bullet\n")
+    assert job["stage"] == "Updating the documents"
+    assert job["plan"] == "Here is the plan."
+    assert job["detail"] == "Writing the spec · 3 lines"
+    file_cb("actions.yaml", "sync: true\ntest: true\n")
+    assert job["detail"] == "Recording the changes — name, description, triggers"
+    assert [e["text"] for e in job["events"]] == [
+        "Writing the answer", "Writing the spec",
+        "Recording the changes — name, description, triggers"]
+    # a flipped job never flips back, and its captured plan is never rewritten
+    file_cb("notes.md", "- a\n- b\n")
+    assert job["stage"] == "Updating the documents"
+    assert job["plan"] == "Here is the plan."
+
+
+def test_tool_event_shell_label():
+    # §8 activity feed: a shell command reads as itself (the Codex and OpenCode
+    # handlers normalize their command tools to `Shell`).
+    from autowright.drafting import DraftJobs
+
+    jobs = DraftJobs()
+    job = {"id": "t2", "status": "building", "stage": "Syncing the workflow",
+           "detail": None, "events": [], "_cancel": False}
+    cb = jobs._tool_cb(job)
+    cb({"name": "Shell", "input": {"command": "ls -la"}})
+    assert job["detail"] == "Running a command — ls -la…"
+    assert [e["text"] for e in job["events"]] == ["Running a command — ls -la…"]

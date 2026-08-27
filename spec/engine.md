@@ -227,9 +227,12 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   enabled…"), never a silent hand-off to an agent the step didn't list. The engine invokes the harness one-shot and
   non-interactive with the strongest tool-disabling flags each harness supports: Claude Code
   `claude -p --tools "" --strict-mcp-config --no-session-persistence`, Codex
-  `codex exec --sandbox read-only --skip-git-repo-check`; Gemini CLI and OpenCode expose no
-  tool-disable flag for one-shot invocations and are
-  invoked bare (documented limitation; a custom-model agent — mode `custom`, §4.7 — adds
+  `codex exec --json --ephemeral --sandbox read-only --skip-git-repo-check` (`--json` is the
+  §8 handler's event stream, `--ephemeral` the off-disk parity with Claude's
+  `--no-session-persistence`); Gemini CLI exposes no
+  tool-disable flag for one-shot invocations and is invoked bare; OpenCode likewise, invoked
+  `opencode run --format json` (the §8 event stream; no tool-disable flag either -
+  documented limitation for both; a custom-model agent - mode `custom`, §4.7 - adds
   `--model <model>` to the harness command, the same flag on all four CLIs). A local-model
   agent (mode `ollama`, §4.7) rides each harness's own supported local mechanism, all against
   the same Ollama server (`AUTOWRIGHT_OLLAMA_URL`, default `http://localhost:11434`):
@@ -244,8 +247,13 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   local-model mechanism (§4.7). Every harness CLI child
   (drafting and runtime alike)
   runs with its cwd set to its provider's own `harness/<provider-id>/workspace/` directory
-  under Application Support (§5) — created on demand, kept empty by the app: CLI
-  startup project scans stay inside that empty folder and never enter TCC-protected locations
+  under Application Support (§5) — created on demand, kept empty by the app — except a §8
+  file-writing drafting call, whose cwd is its own per-call
+  `harness/<provider-id>/scratch/<call-id>/` directory (§5/§8) so the documents it writes
+  land somewhere the watcher owns; same Application Support location, so the TCC argument
+  holds unchanged: CLI
+  startup project scans stay inside that empty (or app-owned scratch) folder and never enter
+  TCC-protected locations
   (Photos, Music, Desktop, …), so macOS shows no permission prompts attributed to the backend.
   Secret values never enter a prompt: the engine
   redaction-scans the assembled prompt and fails the step (before sending) if any secret value
@@ -261,10 +269,18 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   selectors and parse logic from the real DOM instead of guessing. Per harness: Claude Code
   swaps `--tools ""` for `--tools "WebFetch,WebSearch"` (everything else — `--strict-mcp-config`,
   `--no-session-persistence`, the streaming flags — unchanged); Codex adds `--search` before
-  the subcommand — `codex --search exec` (its native `web_search` tool; the read-only sandbox
-  stays; `exec` itself rejects the flag); Gemini CLI and OpenCode are already
-  invoked bare and need no flag. Web-read is the only added capability — still no shell, no
-  file writes, no MCP. Draft-time fetches ride the harness's own HTTP client, so the web
+  the subcommand — `codex --search exec` (its native `web_search` tool; `exec` itself
+  rejects the flag) and, being a §8 file-writing harness, swaps the runtime's
+  `--sandbox read-only` for `--sandbox workspace-write` so it can write the response
+  documents into its per-call scratch cwd - writes stay confined to that workspace, and the
+  runtime lock below is untouched; Gemini CLI adds `--approval-mode yolo` (its file-write
+  tools must auto-approve for the §8 OUTPUT delivery - non-interactively its default mode
+  would block on an approval prompt; its tools were already all-on in every mode, so this
+  widens nothing the app relied on); OpenCode needs no extra flag (`run` writes without
+  one - verified live). For Claude Code web-read is the only added capability — still no
+  shell, no file writes, no MCP; for the three file-writing harnesses, drafting-time file
+  writes into the app-owned scratch dir are the §8 progress channel and the deliberate,
+  bounded widening here. Draft-time fetches ride the harness's own HTTP client, so the web
   policies above (robots.txt, UA, per-site spacing) do not apply to them, and fetched page
   content lives inside the harness loop rather than the logged prompt — both deliberate,
   accepted trade-offs. The escalation is real and bounded: page text read at drafting time can

@@ -41,8 +41,11 @@ from .storage import AGENT_REF_RE, SECRET_REF_RE
 log = logging.getLogger("autowright.drafting")
 
 PARAM_KINDS = {"toggle", "list", "kv", "number", "text"}
-STEP_FILE_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.py$")
-FILE_MARK_RE = re.compile(r"^===FILE: (.+?)===\s*$", re.M)
+# §8 envelope shape constants — canonical in harness.py (its recombiner and
+# scratch watcher need them, and harness never imports drafting); aliased
+# here for the parsers and progress scanners below.
+STEP_FILE_RE = harness.STEP_FILE_RE
+FILE_MARK_RE = harness.FILE_MARK_RE
 # §8 chat-call question type: a leading ===QUESTION=== line declares the
 # answer prose a question to the user (stripped; rides the payload as
 # answerKind). Anywhere else in the text it is ordinary prose.
@@ -56,8 +59,26 @@ def split_answer_kind(prose: str) -> tuple[str, str | None]:
     if m:
         return prose[m.end():].strip(), "question"
     return prose, None
-BLOCKED_MARK_RE = re.compile(r"^===BLOCKED===\s*$", re.M)
+BLOCKED_MARK_RE = harness.BLOCKED_MARK_RE
 END_MARK_RE = re.compile(r"^===END===[ \t]*$", re.M)
+
+# §8 file-writing delivery: the OUTPUT section appended to every drafting
+# prompt on a file-writing harness (harness.writes_files) — the ONE
+# per-harness difference in a prompt. The agent writes its response
+# documents as real files in its cwd (the per-call scratch dir) so the
+# scratch watcher can report them live; prose and blockers stay on stdout.
+FILE_OUTPUT_BLOCK = """\
+=== OUTPUT ===
+Delivery override for this environment — this changes HOW you return files, nothing else:
+- WRITE every file the TASK asks you to return as a real file in your current working
+  directory, using the exact file name the TASK names (for example spec.md, manifest.yaml,
+  01-fetch.py). Flat files only — no subdirectories.
+- Do NOT print ===FILE: blocks or ===END=== to stdout. Print only your prose there (the
+  answer or plan that would accompany the files).
+- Write each file as soon as it is ready, one after another — do not batch them at the end.
+- If you are blocked, write NO files and print the blocker envelope
+  (===BLOCKED=== … ===END===) to stdout exactly as the instructions specify.
+- When asked to resend corrected files, write the corrected files the same way."""
 FENCE_OPEN_RE = re.compile(r"^```[\w+.-]*$")
 
 # §8 prompt texts live as markdown next to the code so they can be read and
@@ -1564,7 +1585,8 @@ class DraftJobs:
         pnames = [str(p.get("name")) for p in (current or {}).get("params") or []
                   if p.get("name")]
         tcount = len((current or {}).get("triggers") or [])
-        raw = self._invoke(job, agent, prompt, on_chunk=self._chat_cb(job))
+        on_chunk, on_file = self._chat_cb(job)
+        raw = self._invoke(job, agent, prompt, on_chunk=on_chunk, on_file=on_file)
         outcome, payload, kept, answer, failed = self._chat_classify(raw, pnames, tcount)
         rounds: list[dict] = []
         for i in range(1, repair_rounds() + 1):
@@ -1573,8 +1595,9 @@ class DraftJobs:
             rounds.append({"errors": payload, "response": raw})
             repair = self._chat_repair_prompt(prompt, raw, payload, kept, failed)
             self._event(job, "The response didn't validate — asking for a corrected one…")
+            on_chunk, on_file = self._chat_cb(job, prefix=try_prefix(i))
             raw = self._invoke(job, agent, repair,
-                               on_chunk=self._chat_cb(job, prefix=try_prefix(i)))
+                               on_chunk=on_chunk, on_file=on_file)
             outcome, payload, kept, answer, failed = self._chat_classify(
                 raw, pnames, tcount, kept, answer)
         if outcome == "invalid":
@@ -1692,7 +1715,8 @@ class DraftJobs:
         if job["_cancel"]:
             raise Cancelled()
 
-    def _invoke(self, job: dict, agent: dict, prompt: str, on_chunk=None) -> str:
+    def _invoke(self, job: dict, agent: dict, prompt: str, on_chunk=None,
+                on_file=None) -> str:
         """harness.invoke with the job's proc/cancel wiring and the §8 one-retry
         policy: a transient failure (timeout, nonzero exit that looks transient)
         is retried once after a short pause; a second failure — or a
@@ -1702,11 +1726,17 @@ class DraftJobs:
         harness call starts after a cancel and no cancelled call's output is
         ever used (a kill-induced nonzero exit after a cancel surfaces as
         Cancelled, never as a failure). Drafting calls run web-enabled (§6
-        web-read tools); runtime agent.ask calls never do."""
+        web-read tools); runtime agent.ask calls never do. On a §8
+        file-writing harness the prompt gains the OUTPUT delivery section —
+        appended here, at call time, so repair and diagnosis rounds carry it
+        too."""
         self._check_cancel(job)
+        if harness.writes_files(agent.get("harness") or ""):
+            prompt = prompt + "\n\n" + FILE_OUTPUT_BLOCK
         try:
             out = harness.invoke(agent, prompt, proc_holder=job["_proc"],
                                  on_chunk=on_chunk, on_tool=self._tool_cb(job),
+                                 on_file=on_file,
                                  should_abort=lambda: job["_cancel"],
                                  web=True)
         except harness.HarnessError as e:
@@ -1719,6 +1749,7 @@ class DraftJobs:
             self._check_cancel(job)
             out = harness.invoke(agent, prompt, proc_holder=job["_proc"],
                                  on_chunk=on_chunk, on_tool=self._tool_cb(job),
+                                 on_file=on_file,
                                  should_abort=lambda: job["_cancel"],
                                  web=True)
         self._check_cancel(job)
@@ -1738,7 +1769,8 @@ class DraftJobs:
         (checked before every spawn there): a cancel between calls never lets a
         fresh full-timeout harness call start. `call` names the pipeline call
         ("steps") for the §5 build-failure record."""
-        raw = self._invoke(job, agent, prompt, on_chunk=self._progress_cb(job))
+        on_chunk, on_file = self._progress_cb(job)
+        raw = self._invoke(job, agent, prompt, on_chunk=on_chunk, on_file=on_file)
         result, errors, blockers, notes = self._parse_validate(raw, validator)
         rounds: list[dict] = []
         for i in range(1, repair_rounds() + 1):
@@ -1749,8 +1781,9 @@ class DraftJobs:
                       + "\n\n=== VALIDATION ERRORS — fix these and resend the full envelope ===\n- "
                       + "\n- ".join(errors))
             self._event(job, "The response didn't validate — asking for a corrected one…")
+            on_chunk, on_file = self._progress_cb(job, prefix=try_prefix(i))
             raw = self._invoke(job, agent, repair,
-                               on_chunk=self._progress_cb(job, prefix=try_prefix(i)))
+                               on_chunk=on_chunk, on_file=on_file)
             result, errors, blockers, notes = self._parse_validate(raw, validator)
         if errors:
             diag = self._diagnose(job, agent, prompt, raw, errors,
@@ -1808,48 +1841,19 @@ class DraftJobs:
         return blockers
 
     def _progress_cb(self, job: dict, prefix: str = ""):
-        """§8 live progress: accumulate the streamed response and derive the
-        job's `detail` line from its ===FILE: markers. Marker changes update
-        immediately and append a count-less `events` milestone (`Thinking…`
-        never does); line-count growth throttles to one update per second,
-        detail-only."""
-        state = {"text": "", "shape": None, "last": 0.0, "total": None}
+        """§8 live progress (sync call): returns (on_chunk, on_file) sharing
+        one state — the streamed-text scanner derives `detail` from ===FILE:
+        markers (Claude Code), the document handler from scratch `file`
+        events (file-writing harnesses) — so the labels read the same either
+        way. Shape changes update immediately and append a count-less
+        `events` milestone (`Thinking…` never does); line-count growth
+        throttles to one update per second, detail-only. The two callbacks
+        come from different threads (read loop vs scratch watcher) — one
+        lock keeps the shared state coherent."""
+        state = {"text": "", "shape": None, "last": 0.0, "total": None,
+                 "documents": {}, "lock": threading.Lock()}
 
-        def cb(chunk: str) -> None:
-            if job["_cancel"] or job["status"] != "building":
-                return
-            state["text"] += chunk
-            text = state["text"]
-            marks = list(FILE_MARK_RE.finditer(text))
-            blocked_at = text.rfind("===BLOCKED===")
-            if blocked_at > (marks[-1].end() if marks else -1):
-                # §8: the agent is writing its blocker envelope — say so
-                # (count-less) instead of mislabeling the stream
-                shape = "blocked"
-                label = detail = "Describing a blocker"
-            elif not marks:
-                shape = label = detail = "Thinking…"
-            else:
-                m = marks[-1]
-                fname = m.group(1).strip()
-                shape = fname
-                if fname == "manifest.yaml":
-                    label = detail = "Writing the manifest — name, triggers, parameters, step list"
-                else:
-                    lines = len(text[m.end():].strip("\n").splitlines())
-                    count = f" · {lines} line{'s' if lines != 1 else ''}" if lines else ""
-                    if fname == "notes.md":
-                        # §8: the sync call's notes block reads like the chat call's
-                        label = "Updating the notes"
-                        detail = label + count
-                        shape = fname
-                    else:
-                        total = self._steps_total(state, text, marks)
-                        sm = STEP_FILE_RE.match(fname)
-                        name = (f"step {int(sm.group(1))} of {total} — {fname}"
-                                if sm and total else fname)
-                        label = f"Writing {name}"
-                        detail = label + count
+        def show(shape: str, label: str, detail: str) -> None:
             if prefix:
                 label = prefix + label[0].lower() + label[1:]
                 detail = prefix + detail[0].lower() + detail[1:]
@@ -1864,7 +1868,62 @@ class DraftJobs:
                 state["last"] = now
                 self._detail(job, detail)
 
-        return cb
+        def label_detail(fname: str, lines: int) -> tuple[str, str]:
+            """The §8 sync-call label for one response document, shared by
+            both channels."""
+            if fname == "manifest.yaml":
+                label = "Writing the manifest — name, triggers, parameters, step list"
+                return label, label
+            count = f" · {lines} line{'s' if lines != 1 else ''}" if lines else ""
+            if fname == "notes.md":
+                # §8: the sync call's notes block reads like the chat call's
+                return "Updating the notes", "Updating the notes" + count
+            total = state["total"]
+            sm = STEP_FILE_RE.match(fname)
+            name = (f"step {int(sm.group(1))} of {total} — {fname}"
+                    if sm and total else fname)
+            return f"Writing {name}", f"Writing {name}" + count
+
+        def cb(chunk: str) -> None:
+            if job["_cancel"] or job["status"] != "building":
+                return
+            with state["lock"]:
+                state["text"] += chunk
+                text = state["text"]
+                marks = list(FILE_MARK_RE.finditer(text))
+                blocked_at = text.rfind("===BLOCKED===")
+                if blocked_at > (marks[-1].end() if marks else -1):
+                    # §8: the agent is writing its blocker envelope — say so
+                    # (count-less) instead of mislabeling the stream
+                    show("blocked", "Describing a blocker", "Describing a blocker")
+                    return
+                if not marks:
+                    show("Thinking…", "Thinking…", "Thinking…")
+                    return
+                m = marks[-1]
+                fname = m.group(1).strip()
+                self._steps_total(state, text, marks)
+                lines = (0 if fname == "manifest.yaml"
+                         else len(text[m.end():].strip("\n").splitlines()))
+                label, detail = label_detail(fname, lines)
+                show(fname, label, detail)
+
+        def file_cb(name: str, content: str) -> None:
+            if job["_cancel"] or job["status"] != "building":
+                return
+            with state["lock"]:
+                state["documents"][name] = content
+                # §8: `i of n` comes from the manifest document once a later
+                # document proves it complete (mirrors the streamed rule of
+                # parsing only closed blocks).
+                if (state["total"] is None and name != "manifest.yaml"
+                        and "manifest.yaml" in state["documents"]):
+                    self._manifest_total(state, state["documents"]["manifest.yaml"])
+                lines = len(content.strip("\n").splitlines())
+                label, detail = label_detail(name, lines)
+                show(name, label, detail)
+
+        return cb, file_cb
 
     # §8 chat-call streamed-marker labels — one per allowed block name.
     _CHAT_LABELS = {"spec.md": "Writing the spec",
@@ -1878,60 +1937,20 @@ class DraftJobs:
     _REWRITE_MARKS = frozenset({"spec.md", "instructions.md", "notes.md"})
 
     def _chat_cb(self, job: dict, prefix: str = ""):
-        """§8 chat-call live progress: `Thinking…` until text arrives, then a
-        per-marker label (`Writing the spec · N lines`, `Updating the notes ·
-        N lines`, …) once a ===FILE: marker has streamed, else `Writing the
+        """§8 chat-call live progress: returns (on_chunk, on_file) sharing one
+        state. `Thinking…` until text arrives, then a per-document label
+        (`Writing the spec · N lines`, `Updating the notes · N lines`, …)
+        once a ===FILE: marker has streamed (Claude Code) or a scratch
+        document has landed (file-writing harnesses), else `Writing the
         answer · N lines` — shape changes update immediately and append a
         count-less `events` milestone (`Thinking…` never does), line-count
-        growth throttles to one update per second, detail-only."""
-        state = {"text": "", "shape": None, "last": 0.0}
+        growth throttles to one update per second, detail-only. The two
+        callbacks come from different threads (read loop vs scratch
+        watcher) — one lock keeps the shared state coherent."""
+        state = {"text": "", "shape": None, "last": 0.0,
+                 "lock": threading.Lock()}
 
-        def cb(chunk: str) -> None:
-            if job["_cancel"] or job["status"] != "building":
-                return
-            state["text"] += chunk
-            text = state["text"]
-            marks = list(FILE_MARK_RE.finditer(text))
-            blocked_at = text.rfind("===BLOCKED===")
-            if blocked_at > (marks[-1].end() if marks else -1):
-                # §8: the blocker envelope is not an answer — label it as what
-                # it is (count-less). Never flips the stage: a blocker turn
-                # lives entirely in the deciding phase.
-                shape = "blocked"
-                label = detail = "Describing a blocker"
-            elif marks:
-                fname = marks[-1].group(1).strip()
-                # §8 stage flip — checked against the job, not the round's local
-                # state, so a repair round that first streams a rewrite marker
-                # still flips, and a flipped job never flips back.
-                if (fname in self._REWRITE_MARKS
-                        and job["stage"] == "Working on the request"):
-                    # §8: the prose before the first marker is the accompanying
-                    # answer and is complete once a marker streams — ride it on
-                    # the job as `plan` (§19) so the §11 thread can land "The
-                    # plan" while the documents phase is still running.
-                    plan, _ = split_answer_kind(text[: marks[0].start()].strip())
-                    if plan:
-                        # New-key insert from the streaming thread — under the
-                        # lock, like _settle's, so get()'s items() iteration
-                        # never sees the dict resize mid-copy.
-                        with self._lock:
-                            job["plan"] = plan
-                    self._stage(job, "Updating the documents")
-                shape = fname
-                label = self._CHAT_LABELS.get(fname, f"Writing {fname}")
-                if fname == "actions.yaml":
-                    detail = label
-                else:
-                    lines = len(text[marks[-1].end():].strip("\n").splitlines())
-                    detail = f"{label} · {lines} line{'s' if lines != 1 else ''}"
-            elif text.strip():
-                shape = "answer"
-                label = "Writing the answer"
-                lines = len(text.strip().splitlines())
-                detail = f"{label} · {lines} line{'s' if lines != 1 else ''}"
-            else:
-                shape = label = detail = "Thinking…"
+        def show(shape: str, label: str, detail: str) -> None:
             if prefix:
                 label = prefix + label[0].lower() + label[1:]
                 detail = prefix + detail[0].lower() + detail[1:]
@@ -1949,7 +1968,71 @@ class DraftJobs:
                 state["last"] = now
                 self._detail(job, detail)
 
-        return cb
+        def flip_stage(fname: str) -> None:
+            """§8 stage flip — checked against the job, not the round's local
+            state, so a repair round that first streams a rewrite marker
+            still flips, and a flipped job never flips back. The prose
+            accumulated so far (before the first marker, or the whole stdout
+            prose on a file-writing harness) is the accompanying answer —
+            ride it on the job as `plan` (§19) so the §11 thread can land
+            "The plan" while the documents phase is still running."""
+            if (fname not in self._REWRITE_MARKS
+                    or job["stage"] != "Working on the request"):
+                return
+            text = state["text"]
+            first = FILE_MARK_RE.search(text)
+            plan, _ = split_answer_kind((text[: first.start()] if first
+                                         else text).strip())
+            if plan:
+                # New-key insert from a streaming thread — under the lock,
+                # like _settle's, so get()'s items() iteration never sees
+                # the dict resize mid-copy.
+                with self._lock:
+                    job["plan"] = plan
+            self._stage(job, "Updating the documents")
+
+        def document_label(fname: str, lines: int) -> tuple[str, str]:
+            label = self._CHAT_LABELS.get(fname, f"Writing {fname}")
+            if fname == "actions.yaml":
+                return label, label
+            return label, f"{label} · {lines} line{'s' if lines != 1 else ''}"
+
+        def cb(chunk: str) -> None:
+            if job["_cancel"] or job["status"] != "building":
+                return
+            with state["lock"]:
+                state["text"] += chunk
+                text = state["text"]
+                marks = list(FILE_MARK_RE.finditer(text))
+                blocked_at = text.rfind("===BLOCKED===")
+                if blocked_at > (marks[-1].end() if marks else -1):
+                    # §8: the blocker envelope is not an answer — label it as
+                    # what it is (count-less). Never flips the stage: a
+                    # blocker turn lives entirely in the deciding phase.
+                    show("blocked", "Describing a blocker", "Describing a blocker")
+                elif marks:
+                    fname = marks[-1].group(1).strip()
+                    flip_stage(fname)
+                    lines = len(text[marks[-1].end():].strip("\n").splitlines())
+                    label, detail = document_label(fname, lines)
+                    show(fname, label, detail)
+                elif text.strip():
+                    lines = len(text.strip().splitlines())
+                    show("answer", "Writing the answer",
+                         f"Writing the answer · {lines} line{'s' if lines != 1 else ''}")
+                else:
+                    show("Thinking…", "Thinking…", "Thinking…")
+
+        def file_cb(name: str, content: str) -> None:
+            if job["_cancel"] or job["status"] != "building":
+                return
+            with state["lock"]:
+                flip_stage(name)
+                lines = len(content.strip("\n").splitlines())
+                label, detail = document_label(name, lines)
+                show(name, label, detail)
+
+        return cb, file_cb
 
     @staticmethod
     def _steps_total(state: dict, text: str, marks: list) -> int | None:
@@ -1966,6 +2049,18 @@ class DraftJobs:
                         pass
                     break
         return state["total"]
+
+    @staticmethod
+    def _manifest_total(state: dict, content: str) -> None:
+        """§8 file-writing form of `_steps_total`: step count from the
+        manifest document's content (the caller gates on a later document
+        proving it complete)."""
+        try:
+            manifest = yaml.safe_load(content)
+        except yaml.YAMLError:
+            return
+        steps = manifest.get("steps") if isinstance(manifest, dict) else None
+        state["total"] = len(steps) if isinstance(steps, list) and steps else None
 
     def _stage(self, job: dict, label: str) -> None:
         job["stage"] = label
@@ -1991,7 +2086,10 @@ class DraftJobs:
 
     def _tool_cb(self, job: dict):
         """§8 activity feed: one event per streamed {name, input} tool use —
-        `Reading <url>…` / `Searching the web for “<query>”…` / `Using <name>…`."""
+        `Reading <url>…` / `Searching the web for “<query>”…` /
+        `Running a command — <command>…` / `Using <name>…` (handlers
+        normalize their tool names to WebFetch / WebSearch / Shell where
+        known)."""
         def cb(tool: dict) -> None:
             if job["_cancel"] or job["status"] != "building":
                 return
@@ -1999,10 +2097,13 @@ class DraftJobs:
             inp = tool.get("input") if isinstance(tool.get("input"), dict) else {}
             url = str(inp.get("url") or "")[:120]
             query = str(inp.get("query") or "")[:120]
+            command = str(inp.get("command") or "")[:120]
             if name == "WebFetch" and url:
                 text = f"Reading {url}…"
             elif name == "WebSearch" and query:
                 text = f"Searching the web for “{query}”…"
+            elif name == "Shell" and command:
+                text = f"Running a command — {command}…"
             else:
                 text = f"Using {name}…" if name else "Using a tool…"
             self._event(job, text)

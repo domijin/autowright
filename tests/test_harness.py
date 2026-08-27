@@ -106,6 +106,15 @@ def _captured_invoke(monkeypatch, agent, web=False):
     return _captured_invoke_full(monkeypatch, agent, web=web)["cmd"]
 
 
+def _gemini_signed_in(monkeypatch):
+    """§8: the Gemini handler's pre-flight refuses to spawn a signed-out CLI
+    (it would block forever on the browser sign-in prompt) — every Gemini
+    spawn test has to look signed in first."""
+    from autowright import harness
+
+    monkeypatch.setattr(harness, "signed_in", lambda pid: True)
+
+
 def test_claude_invoked_with_no_tools_flags(monkeypatch):
     cap = _captured_invoke_full(monkeypatch, {"harness": "Claude Code"})
     cmd = cap["cmd"]
@@ -241,6 +250,7 @@ def test_custom_model_invoked_with_verbatim_model_flag(monkeypatch):
 
     synced = []
     monkeypatch.setattr(harness, "sync_opencode_ollama", synced.append)
+    _gemini_signed_in(monkeypatch)
     for name, model in (("Claude Code", "claude-opus-4-8"),
                         ("Gemini CLI", "gemini-2.5-pro"),
                         ("Codex", "gpt-5-codex"),
@@ -277,11 +287,15 @@ def test_sync_opencode_ollama_merges_config(monkeypatch, tmp_path):
 
 
 def test_codex_invoked_with_read_only_sandbox(monkeypatch):
+    # §6/§8: a runtime call (web=False) never writes files — the sandbox stays
+    # read-only. The JSONL progress stream and --ephemeral ride every call.
     cap = _captured_invoke_full(monkeypatch, {"harness": "Codex"})
     cmd = cap["cmd"]
     assert cmd[:2] == ["/usr/local/bin/codex", "exec"]
     i = cmd.index("--sandbox")
     assert cmd[i + 1] == "read-only"
+    ex = cmd.index("exec")
+    assert cmd.index("--json") > ex and cmd.index("--ephemeral") > ex
     assert "--skip-git-repo-check" in cmd
     _assert_prompt_delivered(cmd, cap["proc"])
 
@@ -300,11 +314,15 @@ def test_web_enabled_claude_allows_only_web_read_tools(monkeypatch):
 
 def test_web_enabled_codex_adds_top_level_search_flag(monkeypatch):
     # §6: --search must precede the subcommand — `codex exec --search` is
-    # rejected by the CLI. The read-only sandbox stays.
+    # rejected by the CLI. §8: web=True is a file-writing drafting call, so the
+    # sandbox escalates to workspace-write (confined to the per-call scratch
+    # cwd); the JSONL progress stream and the one-shot flag ride `exec`.
     cmd = _captured_invoke(monkeypatch, {"harness": "Codex"}, web=True)
     assert cmd[:3] == ["/usr/local/bin/codex", "--search", "exec"]
     i = cmd.index("--sandbox")
-    assert cmd[i + 1] == "read-only"
+    assert cmd[i + 1] == "workspace-write"
+    ex = cmd.index("exec")
+    assert cmd.index("--json") > ex and cmd.index("--ephemeral") > ex
     assert "--skip-git-repo-check" in cmd
 
 
@@ -318,6 +336,7 @@ def test_prompt_delivery_follows_the_per_os_rule(monkeypatch):
     from autowright import harness
 
     long_prompt = "question: " + ("x" * 40_000)
+    _gemini_signed_in(monkeypatch)
     for name, head in (("Claude Code", "claude"), ("Gemini CLI", "gemini"),
                        ("Codex", "codex"), ("OpenCode", "opencode")):
         monkeypatch.setattr(harness, "resolve_bin", lambda n: f"/usr/local/bin/{n}")
@@ -348,12 +367,23 @@ def test_prompt_delivery_follows_the_per_os_rule(monkeypatch):
             assert proc.stdin_text == ""
 
 
-def test_web_flag_leaves_gemini_and_opencode_unchanged(monkeypatch):
+def test_web_flag_adds_gemini_yolo_and_leaves_opencode_unchanged(monkeypatch):
     # Bare invocations already carry their built-in web tools; web=True must
-    # not sprout a stray flag.
-    for name in ("Gemini CLI", "OpenCode"):
-        assert _captured_invoke(monkeypatch, {"harness": name}, web=True) == \
-            _captured_invoke(monkeypatch, {"harness": name})
+    # not sprout a stray web flag. §8: the one difference it does make is
+    # Gemini's `--approval-mode yolo` — a file-writing drafting call needs the
+    # write tools to auto-approve non-interactively; runtime calls stay bare.
+    _gemini_signed_in(monkeypatch)
+    assert _captured_invoke(monkeypatch, {"harness": "OpenCode"}, web=True) == \
+        _captured_invoke(monkeypatch, {"harness": "OpenCode"})
+
+    web = _captured_invoke(monkeypatch, {"harness": "Gemini CLI"}, web=True)
+    bare = _captured_invoke(monkeypatch, {"harness": "Gemini CLI"})
+    assert "--approval-mode" not in bare
+    i = web.index("--approval-mode")
+    assert web[i + 1] == "yolo"
+    assert [a for j, a in enumerate(web) if j not in (i, i + 1)] == bare
+    if not PIPES_PROMPT:
+        assert i < web.index("-p")  # the flags precede the prompt argv
 
 
 def test_detect_reports_all_four_with_sign_in_state(monkeypatch):
@@ -1048,6 +1078,7 @@ def test_invoke_non_claude_streams_raw_lines(monkeypatch, tmp_path, home):
     script = fake_cli(tmp_path, "print('line one')\nprint('line two')\n",
                        name="gemini")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    _gemini_signed_in(monkeypatch)
     chunks = []
     out = harness.invoke({"harness": "Gemini CLI"}, "question: hi?",
                          on_chunk=chunks.append)
@@ -1064,6 +1095,7 @@ def test_invoke_on_chunk_error_reaps_the_child(monkeypatch, tmp_path, home):
                        "import time\nprint('first', flush=True)\ntime.sleep(60)\n",
                        name="gemini")
     monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    _gemini_signed_in(monkeypatch)
 
     def bad_chunk(text):
         raise RuntimeError("renderer went away")
@@ -1135,3 +1167,351 @@ def test_ollama_bin_prefers_path_resolution(monkeypatch, tmp_path):
     fake.chmod(0o755)
     monkeypatch.setattr(harness, "resolve_bin", lambda b: str(fake))
     assert harness.ollama_bin() == str(fake)  # PATH hit wins; no bundle probe
+
+
+# ---------- §8 per-harness handlers (Live progress) ----------
+
+class _Events:
+    """Capturing ProgressSink: records the typed §8 events a handler or the
+    scratch watcher reports, in order."""
+
+    def __init__(self):
+        from autowright import harness
+
+        self.text = []
+        self.tools = []
+        self.files = []
+        self.activity = 0
+        self.sink = harness.ProgressSink(
+            on_chunk=self.text.append,
+            on_tool=self.tools.append,
+            on_file=lambda name, content: self.files.append((name, content)),
+            on_activity=self._bump)
+
+    def _bump(self):
+        self.activity += 1
+
+
+def test_claude_handler_result_wins_over_deltas():
+    # §8: the terminal result event is authoritative; the joined deltas cover a
+    # CLI that streamed but never sent one, and raw stdout covers neither.
+    from autowright import harness
+
+    h = harness.ClaudeCodeHandler({"harness": "Claude Code"}, False)
+    ev = _Events()
+    h.line(json.dumps({"type": "stream_event",
+                       "event": {"type": "content_block_delta",
+                                 "delta": {"type": "text_delta", "text": "hi "}}}),
+           ev.sink)
+    h.line(json.dumps({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "WebSearch", "input": {"query": "q"}}]}}),
+        ev.sink)
+    assert ev.text == ["hi "]
+    assert ev.tools == [{"name": "WebSearch", "input": {"query": "q"}}]
+    assert h.reply("raw stdout") == "hi "  # no result event yet — the deltas
+    h.line(json.dumps({"type": "result", "result": "the full reply"}), ev.sink)
+    assert h.reply("raw stdout") == "the full reply"
+    # a CLI that streamed nothing at all falls back to its raw stdout
+    fresh = harness.ClaudeCodeHandler({"harness": "Claude Code"}, False)
+    assert fresh.reply("raw stdout") == "raw stdout"
+
+
+def test_codex_handler_parses_jsonl_events():
+    # §8 Live progress: `codex exec --json` — each completed agent message is a
+    # text event (paragraph-separated so accumulated prose keeps its message
+    # boundaries) and the LAST one is the reply; command executions and web
+    # searches become tool events under the normalized names.
+    from autowright import harness
+
+    h = harness.CodexHandler({"harness": "Codex"}, True)
+    ev = _Events()
+    h.line(json.dumps({"type": "item.completed",
+                       "item": {"type": "agent_message", "text": "first pass"}}),
+           ev.sink)
+    h.line(json.dumps({"type": "item.started",
+                       "item": {"type": "command_execution", "command": "ls -la"}}),
+           ev.sink)
+    h.line(json.dumps({"type": "item.completed",
+                       "item": {"type": "web_search", "query": "manga rss"}}),
+           ev.sink)
+    h.line(json.dumps({"type": "item.completed",
+                       "item": {"type": "agent_message", "text": "the final word"}}),
+           ev.sink)
+    assert ev.text == ["first pass\n\n", "the final word\n\n"]
+    assert ev.tools == [{"name": "Shell", "input": {"command": "ls -la"}},
+                        {"name": "WebSearch", "input": {"query": "manga rss"}}]
+    assert h.reply("raw stdout") == "the final word"
+
+
+def test_codex_handler_ignores_unknown_lines_and_falls_back_to_raw():
+    # Garbage and unmodeled events are bare activity — never an event, never a
+    # raise; with no agent message at all the reply is raw stdout.
+    from autowright import harness
+
+    h = harness.CodexHandler({"harness": "Codex"}, False)
+    ev = _Events()
+    for line in ("not json\n", "[1, 2]\n", "\n",
+                 json.dumps({"type": "item.completed",
+                             "item": {"type": "file_change"}}),
+                 json.dumps({"type": "turn.started"})):
+        h.line(line, ev.sink)
+    assert ev.text == [] and ev.tools == [] and ev.files == []
+    assert h.reply("plain stdout") == "plain stdout"
+
+
+def test_opencode_handler_parses_jsonl_events():
+    # §8 Live progress: `opencode run --format json` — each text part is a text
+    # event and the reply is every part joined in order; tool uses become tool
+    # events under the normalized names.
+    from autowright import harness
+
+    h = harness.OpenCodeHandler({"harness": "OpenCode"}, True)
+    ev = _Events()
+    h.line(json.dumps({"type": "text", "part": {"text": "planning"}}), ev.sink)
+    h.line(json.dumps({"type": "tool_use",
+                       "part": {"tool": "bash",
+                                "state": {"input": {"command": "ls -la"}}}}),
+           ev.sink)
+    h.line(json.dumps({"type": "tool_use",
+                       "part": {"tool": "webfetch",
+                                "state": {"input": {"url": "https://x"}}}}),
+           ev.sink)
+    h.line(json.dumps({"type": "text", "part": {"text": "done"}}), ev.sink)
+    assert ev.text == ["planning\n\n", "done\n\n"]
+    assert ev.tools == [{"name": "Shell", "input": {"command": "ls -la"}},
+                        {"name": "WebFetch", "input": {"url": "https://x"}}]
+    assert h.reply("raw stdout") == "planning\n\ndone"
+
+
+def test_opencode_handler_file_tools_are_silent_and_reply_falls_back_to_raw():
+    # §8: the scratch watcher is the single source of `file` events, so the
+    # write/edit tools report as bare activity — never a second tool event.
+    from autowright import harness
+
+    h = harness.OpenCodeHandler({"harness": "OpenCode"}, True)
+    ev = _Events()
+    for tool in ("write", "edit"):
+        h.line(json.dumps({"type": "tool_use",
+                           "part": {"tool": tool,
+                                    "state": {"input": {"filePath": "spec.md"}}}}),
+               ev.sink)
+    assert ev.tools == [] and ev.files == []
+    assert ev.activity == 2  # …but a write is still observed progress
+    h.line("garbage {", ev.sink)
+    assert h.reply("plain stdout") == "plain stdout"  # no text parts arrived
+
+
+# ---------- §8 file-writing delivery: the scratch watcher ----------
+
+def test_scratch_watcher_reports_documents_in_first_seen_order(tmp_path):
+    # §8: each response document that lands becomes a `file` event carrying its
+    # current content, growth re-fires with the new content, and the collected
+    # documents keep first-seen order (not the poll's alphabetical one).
+    from autowright import harness
+
+    ev = _Events()
+    watcher = harness._ScratchWatcher(tmp_path, ev.sink)
+    (tmp_path / "manifest.yaml").write_text("steps: []\n", encoding="utf-8")
+    watcher._poll()
+    (tmp_path / "01-fetch.py").write_text("x = 1\n", encoding="utf-8")
+    watcher._poll()
+    watcher._poll()  # nothing changed — no repeat event
+    (tmp_path / "manifest.yaml").write_text("steps: []\nnote: n\n", encoding="utf-8")
+    watcher._poll()
+    assert ev.files == [("manifest.yaml", "steps: []\n"),
+                        ("01-fetch.py", "x = 1\n"),
+                        ("manifest.yaml", "steps: []\nnote: n\n")]
+    assert watcher.documents() == [("manifest.yaml", "steps: []\nnote: n\n"),
+                                   ("01-fetch.py", "x = 1\n")]
+
+
+def test_scratch_watcher_ignores_everything_but_response_documents(tmp_path):
+    # §8: only the envelope's own file names count, as flat regular files — so
+    # build residue (__pycache__, helper scripts), a directory wearing a
+    # document name, and a symlink are all ignored.
+    from autowright import harness
+
+    ev = _Events()
+    watcher = harness._ScratchWatcher(tmp_path, ev.sink)
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "helper.py").write_text("pass\n", encoding="utf-8")
+    (tmp_path / "spec.md").mkdir()  # a directory wearing a document name
+    real = tmp_path / "elsewhere.md"
+    real.write_text("# real\n", encoding="utf-8")
+    if os.name != "nt":  # symlinks need extra privileges on Windows
+        (tmp_path / "notes.md").symlink_to(real)
+    for name in ("instructions.md", "actions.yaml", "manifest.yaml", "02-send.py"):
+        (tmp_path / name).write_text(f"{name}\n", encoding="utf-8")
+    watcher._poll()
+    assert [n for n, _ in ev.files] == ["02-send.py", "actions.yaml",
+                                        "instructions.md", "manifest.yaml"]
+    assert [n for n, _ in watcher.documents()] == ["02-send.py", "actions.yaml",
+                                                   "instructions.md", "manifest.yaml"]
+
+
+def test_scratch_watcher_stop_does_a_final_sweep(tmp_path):
+    # §8: a document written in the last poll interval still reaches the feed —
+    # stop() sweeps once more after the polling thread has joined.
+    from autowright import harness
+
+    ev = _Events()
+    watcher = harness._ScratchWatcher(tmp_path, ev.sink)
+    watcher.start()
+    (tmp_path / "spec.md").write_text("# T\n", encoding="utf-8")
+    watcher.stop()
+    assert ev.files == [("spec.md", "# T\n")]
+    assert watcher.documents() == [("spec.md", "# T\n")]
+
+
+# ---------- §8 file-writing delivery: recombining the envelope ----------
+
+def test_recombine_builds_the_ordinary_envelope():
+    # §8: stdout prose + the collected documents become the envelope that
+    # validation, repair, and the §5 audit trail already speak — one block per
+    # document in first-seen order, closed once at the end.
+    from autowright import drafting, harness
+
+    out = harness._recombine("Here is the plan.\n",
+                             [("manifest.yaml", "steps: []\n"),
+                              ("01-fetch.py", "x = 1\n")])
+    assert out == ("Here is the plan.\n"
+                   "===FILE: manifest.yaml===\nsteps: []\n\n"
+                   "===FILE: 01-fetch.py===\nx = 1\n\n"
+                   "===END===")
+    # …and the drafting parser reads back exactly the documents that were written
+    assert drafting.parse_envelope(out) == {"manifest.yaml": "steps: []\n",
+                                            "01-fetch.py": "x = 1\n"}
+
+
+def test_recombine_lets_a_blocked_stdout_win():
+    # §8: blockers ride stdout by contract — a line-anchored ===BLOCKED=== is
+    # the reply as printed, whatever landed in the scratch dir.
+    from autowright import harness
+
+    stdout = "===BLOCKED===\nblockers:\n  - reason: r\n    fix: f\n===END===\n"
+    assert harness._recombine(stdout, [("spec.md", "# T\n")]) == stdout
+
+
+def test_recombine_without_documents_returns_stdout_unchanged():
+    # §8: an empty scratch dir is an answer-only reply (or an agent that
+    # ignored the OUTPUT section and printed the envelope itself).
+    from autowright import harness
+
+    assert harness._recombine("just an answer\n", []) == "just an answer\n"
+
+
+def test_recombine_clips_stdout_blocks_the_agent_also_printed():
+    # §8: the files win — stdout is kept only up to its first ===FILE: marker,
+    # so a redundantly printed (and possibly stale) copy is dropped.
+    from autowright import harness
+
+    stdout = "Here is the plan.\n\n===FILE: spec.md===\n# stale\n===END===\n"
+    out = harness._recombine(stdout, [("spec.md", "# fresh\n")])
+    assert out == "Here is the plan.\n===FILE: spec.md===\n# fresh\n\n===END==="
+    assert "# stale" not in out
+
+
+# ---------- §8 file-writing delivery: the scratch dir's lifecycle ----------
+
+def test_file_writing_call_runs_in_a_scratch_dir_and_removes_it(monkeypatch, tmp_path, home):
+    # §8: a web=True call on a file-writing harness runs in a fresh per-call
+    # scratch dir, the documents written there stream as `file` events and land
+    # in the recombined reply, and the dir is gone once the call ends.
+    from autowright import harness, paths
+
+    script = fake_cli(tmp_path,
+                       "import os\n"
+                       "open('spec.md', 'w', encoding='utf-8').write('# Written\\n')\n"
+                       "print(os.getcwd())\n",
+                       name="codex")
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    files = []
+    out = harness.invoke({"harness": "Codex"}, PROMPT, web=True,
+                         on_file=lambda name, content: files.append((name, content)))
+    scratch_dir = Path(out.splitlines()[0])
+    # the child's cwd was <app support>/harness/codex/scratch/<call id>
+    assert scratch_dir.parent.name == "scratch"
+    assert scratch_dir.parent.parent.name == "codex"
+    assert "===FILE: spec.md===\n# Written\n" in out
+    assert out.endswith("===END===")
+    assert files and all(name == "spec.md" for name, _ in files)
+    assert files[-1] == ("spec.md", "# Written\n")
+    assert not scratch_dir.exists()  # removed when the call ended
+    assert list(paths.harness_scratch("codex").iterdir()) == []
+
+
+def test_scratch_dir_is_removed_when_the_call_fails(monkeypatch, tmp_path, home):
+    # §8: the scratch dir goes on EVERY path — a nonzero exit leaves nothing
+    # behind for the startup sweep to find.
+    from autowright import harness, paths
+
+    script = fake_cli(tmp_path,
+                       "import sys\n"
+                       "open('spec.md', 'w', encoding='utf-8').write('# partial\\n')\n"
+                       "print('ERROR: boom', file=sys.stderr)\n"
+                       "sys.exit(3)\n",
+                       name="opencode")
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    with pytest.raises(harness.HarnessError, match="boom"):
+        harness.invoke({"harness": "OpenCode"}, PROMPT, web=True)
+    assert list(paths.harness_scratch("opencode").iterdir()) == []
+
+
+def test_runtime_call_writes_no_scratch_and_keeps_the_read_only_sandbox(
+        monkeypatch, tmp_path, home):
+    # §8: file-writing delivery is for drafting calls only — a runtime
+    # agent.ask call (web=False) keeps the provider's empty workspace as its
+    # cwd, creates no scratch dir, and Codex stays in its read-only sandbox.
+    from autowright import harness, paths
+
+    script = fake_cli(tmp_path, "import os\nprint(os.getcwd())\n", name="codex")
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: str(script))
+    real_popen = harness.subprocess.Popen
+    captured = {}
+
+    def spy_popen(cmd, **kw):
+        captured["cmd"] = cmd
+        return real_popen(cmd, **kw)
+
+    monkeypatch.setattr(harness.subprocess, "Popen", spy_popen)
+    out = harness.invoke({"harness": "Codex"}, PROMPT)
+    assert Path(out.strip()).name == "workspace"
+    i = captured["cmd"].index("--sandbox")
+    assert captured["cmd"][i + 1] == "read-only"
+    assert not paths.harness_scratch("codex").exists()
+
+
+def test_clear_scratch_removes_leftover_trees_only(home):
+    # §5 startup sweep: whole per-provider scratch/ trees a crashed backend left
+    # behind go; the providers' workspace dirs are untouched.
+    from autowright import harness, paths
+
+    for pid in ("codex", "gemini"):
+        leftover = paths.harness_scratch(pid) / "abandoned-call"
+        leftover.mkdir(parents=True)
+        (leftover / "spec.md").write_text("# half written\n", encoding="utf-8")
+        paths.harness_workspace(pid).mkdir(parents=True, exist_ok=True)
+    harness.clear_scratch()
+    for pid in ("codex", "gemini"):
+        assert not paths.harness_scratch(pid).exists()
+        assert paths.harness_workspace(pid).is_dir()
+
+
+def test_gemini_preflight_refuses_a_signed_out_cli(monkeypatch, home):
+    # §8 failure policy: a signed-out Gemini CLI blocks forever on its browser
+    # sign-in prompt, so the pre-flight fails the call non-retryably BEFORE any
+    # spawn — in every mode, drafting and runtime alike.
+    from autowright import harness, paths
+
+    monkeypatch.setattr(harness, "resolve_bin", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(harness, "signed_in", lambda pid: False)
+    spawned = []
+    monkeypatch.setattr(harness.subprocess, "Popen",
+                        lambda *a, **kw: spawned.append(a) or None)
+    for web in (False, True):
+        with pytest.raises(harness.HarnessError) as ei:
+            harness.invoke({"harness": "Gemini CLI"}, PROMPT, web=web)
+        assert "not signed in" in str(ei.value)
+        assert ei.value.retryable is False
+    assert spawned == []
+    assert not paths.harness_scratch("gemini").exists()

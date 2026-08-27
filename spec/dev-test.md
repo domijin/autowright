@@ -35,8 +35,8 @@ Backend env knobs (configuration only):
 - `AUTOWRIGHT_STEP_TIMEOUT` — the **default** per-step timeout in seconds (default 900); a
   step's own `timeout`/`no_timeout` (§4.1, §6) always wins over it.
 - `AUTOWRIGHT_AGENT_TIMEOUT_S` — per-invocation agent-call **idle window** in seconds (default
-  300): the call is killed after this long with no stdout output; every streamed line resets
-  the window (§8)
+  300): the call is killed after this long with no observed progress; every stdout line,
+  parsed handler event, and scratch-document change resets the window (§8)
 - `AUTOWRIGHT_AGENT_HARD_CAP_S` — per-invocation agent-call **total wall-clock cap** in seconds
   (default 1800); ends a call that streams forever (§8)
   for every §8 harness call (drafting, chat, build diagnosis).

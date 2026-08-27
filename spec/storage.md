@@ -66,6 +66,11 @@ harness/                       # per-provider workspaces for provider CLI childr
     workspace/                 #   cwd for that provider's children (invocations, installs,
                                #   probes, login helpers) — created on demand, kept empty by
                                #   the app; keeps startup scans out of TCC-protected folders
+    scratch/                   #   §8 file-writing drafting calls only (codex · gemini ·
+      <call-id>/               #   opencode): one dir per call, the child's cwd — the agent
+                               #   writes its response documents here and the §8 watcher
+                               #   collects them. Removed when the call ends on every path;
+                               #   backend startup sweeps whole scratch/ dirs a crash left
 draft/                         # THE pending create-mode draft (§4.4) — a single slot: created
                                # (with an empty memory/) the moment the create flow opens.
                                # Settling deletes the draft contents but never chat.jsonl —

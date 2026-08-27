@@ -19,3 +19,24 @@
 - Never create commits (or push) on your own. Leave finished work
   uncommitted in the working tree, and only commit/push when he explicitly asks in that
   conversation.
+
+## Model delegation
+
+The main session runs on the top-tier model; delegate execution-heavy work to the Opus 5
+subagents defined in `.claude/agents/` and keep judgment in the main loop.
+
+- Delegate to Opus 5:
+  - `scout` for codebase/spec exploration and multi-file reads; keep only the conclusion in
+    the main context.
+  - `mechanic` for mechanical edits once the approach is fully decided: renames, repetitive
+    multi-file changes, fixture updates, tests written to an already-settled design.
+  - `runner` to execute pytest/vitest/e2e suites and summarize failures.
+  - `verifier` for the whole verify drive loop (build, launch, drive, screenshot, launchd
+    cleanup). It returns a report plus screenshot paths.
+- Keep in the main session (never delegate): spec authoring and design decisions,
+  architecture, non-obvious debugging, compatibility migrations (§21), final review of every
+  subagent result, and the visual sign-off on UI changes: after `verifier` returns, the main
+  session reads the key screenshots itself before reporting.
+- The pattern: the main session decides and judges, Opus executes and reports. If a subagent
+  reports a mismatch or ambiguity, resolve it in the main session; don't have the subagent
+  improvise.

@@ -520,8 +520,8 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
   vN." / "Changes saved — no new version." / "Draft discarded." / "Created as v1.") that
   splits the thread into history and the current draft session. The marker is the one
   system chip with a description bullet: beneath its title it renders the derived (never
-  persisted) explainer "The messages above are from that draft — your AI starts fresh
-  and no longer reads them." — the reader learns in place that the history above belongs
+  persisted) explainer "The messages above are from that draft — your AI no longer
+  reads them." — the reader learns in place that the history above belongs
   to a saved or discarded draft. It is also the one chip with chrome: the fixed gaps
   around it and — once the next session's first entry lands — the divider rule beneath
   its group (entry-kind list and thread-spacing rule above) make the split between

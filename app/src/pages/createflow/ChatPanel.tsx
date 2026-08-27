@@ -541,7 +541,7 @@ export function ChatPanel({
               <OpBullet
                 size={11.5}
                 color="var(--text-faint)"
-                text="The messages above are from that draft — your AI starts fresh and no longer reads them."
+                text="The messages above are from that draft — your AI no longer reads them."
               />
             )}
             {e.boundary && i < rev.chat.length - 1 && (

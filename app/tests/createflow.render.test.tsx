@@ -1633,7 +1633,7 @@ describe('CreateFlow boundary markers + history-inert thread (§4.4/§11)', () =
     await screen.findByText('Draft saved as v2.')
     // §11: the marker is the one system chip with a description bullet — the
     // derived history explainer
-    screen.getByText(/The messages above are from that draft — your AI starts fresh/)
+    screen.getByText(/The messages above are from that draft — your AI no longer reads them/)
     // §11: no divider while the marker is the thread's last entry — the rule
     // only sits between a settled conversation and the next one
     expect(screen.queryByTestId('chat-boundary-divider')).toBeNull()

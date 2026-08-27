@@ -382,7 +382,9 @@ remain plain dicts (§2).
   `current.instructions` gets the §8 default build instructions substituted into the
   prompt context (belt-and-braces — the editor normally seeds and sends them); clients track progress by polling
   `GET /drafts/{jobId}` → state (`status`, `stage`, live §8 `detail` line, the §8 `events`
-  activity feed — each entry stage-stamped, §8; on a chat job that flipped stages, `plan` —
+  activity feed — each entry stage-stamped, §8 — plus the §8 stage-timing stamps:
+  `stageTimes` (one `{stage, time}` per stage entered) and `endedTime` (epoch seconds,
+  `null` while building), backing the §11 per-step durations; on a chat job that flipped stages, `plan` —
   the §8 pre-marker prose, set at the flip so the §11 thread lands "The plan" mid-job) +
   validated §8 draft payload; a `blocked` job's state is
   `blocked` and it carries the §8 `blockers` list — each entry `{ reason, fix, details?,

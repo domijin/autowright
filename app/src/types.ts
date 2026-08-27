@@ -118,6 +118,12 @@ export interface ChatEntry {
   diagnosed?: boolean   // §8 build-diagnosis blockers — build-failure wording
   dismissed?: boolean   // §11: collapsed to a one-line summary
   resolved?: string[]   // §11 "Previously resolved" list stamped at creation
+  // activity: the §11 per-step durations, derived from the §8 stage-timing
+  // stamps at settle — the stage's total span, and one duration per `text`
+  // line (parallel by index, null where no stamp bounds the event); pre-field
+  // entries carry neither and render without stamps (§21.4)
+  durationMs?: number
+  eventDurationsMs?: (number | null)[]
   at?: string
 }
 
@@ -467,6 +473,10 @@ export interface DraftJob {
   // §8 activity feed, append-only, capped to the newest 200 — backs the §11
   // footer feed's dim history lines
   events: DraftEvent[]
+  // §8 stage timing: one stamp per stage entered (epoch seconds) plus the
+  // settle stamp — the §11 per-step durations derive from these client-side
+  stageTimes?: { stage: string; time: number }[]
+  endedTime?: number | null
   error: string | null
   errorDetail?: string[]
   // §8 chat flip: the prose streamed before the first rewrite marker — set the

@@ -239,8 +239,12 @@ export interface Rev {
   genStage: string | null
   // §8 live progress: the job's finer in-flight line under the stage
   genDetail: string | null
-  // §8 activity feed: the newest event texts (thread progress entry's dim history)
-  genEvents: string[]
+  // §8 activity feed: the newest events (thread progress entry's dim history),
+  // each with its §8 epoch stamp so the live block can show per-step durations
+  genEvents: { text: string; time?: number }[]
+  // §8 stage timing: when the live stage began (epoch seconds) — the title
+  // row's ticking elapsed; null before the first poll carries stamps
+  genStageStartedAt: number | null
   // §11 "Previously resolved": the session's applied resolutions, stamped onto
   // new blockers entries so a fix that didn't take stays visible.
   resolved: string[]
@@ -267,7 +271,8 @@ const revDefaults = {
   chat: [] as ChatEntry[],
   syncBusy: false, chatBusy: false,
   pkgBusy: false, genStage: null as string | null, genDetail: null as string | null,
-  genEvents: [] as string[],
+  genEvents: [] as { text: string; time?: number }[],
+  genStageStartedAt: null as number | null,
   resolved: [] as string[],
   lastTest: null as DraftTest | null,
   viewing: 'draft' as Rev['viewing'],

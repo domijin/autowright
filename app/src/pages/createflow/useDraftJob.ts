@@ -104,6 +104,10 @@ export function useDraftJob(d: DraftJobDeps) {
     const noteStage = (s: string | null | undefined) => {
       if (s && !seenStages.includes(s)) seenStages.push(s)
     }
+    // §8 stage timing: the newest payload's stamps, read by settleStages —
+    // a stage's end is the next stage's stamp, or the settle stamp for the last.
+    let lastStageTimes: { stage: string; time: number }[] = []
+    let lastEndedTime: number | null = null
     // Builds (and marks settled) one activity entry per given stage, each
     // carrying its own stage-stamped slice of the feed; only the last stage of
     // a terminal batch takes the job's outcome — earlier stages finished fine.
@@ -111,20 +115,37 @@ export function useDraftJob(d: DraftJobDeps) {
     // removed, even when its feed is empty (a bare title + check is the
     // record that the phase ran).
     const settleStages = (
-      evs: { text: string; stage?: string }[],
+      evs: { text: string; stage?: string; time?: number }[],
       stages: string[], outcome: 'done' | 'blocked' | 'failed' | null,
     ) => stages.map((s, i) => {
       settledStages.add(s)
       // §8 stamps every event; a stampless one (older payloads) belongs to
       // the batch's first stage rather than vanishing
-      const text = evs.filter((e) => e.stage === s || (!e.stage && i === 0))
-        .map((e) => e.text).join('\n')
+      const sevs = evs.filter((e) => e.stage === s || (!e.stage && i === 0))
+      const text = sevs.map((e) => e.text).join('\n')
+      // §11 per-step durations, frozen from the §8 stage-timing stamps: an
+      // event's span runs to the next milestone (next event in the stage,
+      // else the stage's end), the stage's total to that same end; a payload
+      // without stamps yields no duration keys at all (§4.4 pre-field shape).
+      const si = lastStageTimes.findIndex((t) => t.stage === s)
+      const start = si >= 0 ? lastStageTimes[si].time : null
+      const end = si >= 0 && si + 1 < lastStageTimes.length
+        ? lastStageTimes[si + 1].time : lastEndedTime
+      const evDurations = sevs.map((e, k) => {
+        const next = k + 1 < sevs.length ? sevs[k + 1].time : end
+        return e.time != null && next != null
+          ? Math.max(0, Math.round((next - e.time) * 1000)) : null
+      })
       return newEntry({
         kind: 'activity', title: stageDisplayTitle(s),
         // §11: a stage whose stream left no milestones still says what the
         // phase does — a settled block is never a bare title
         text: text || stageDoingBullet(s),
         outcome: outcome && i === stages.length - 1 ? outcome : 'done',
+        ...(start != null && end != null
+          ? { durationMs: Math.max(0, Math.round((end - start) * 1000)) } : {}),
+        // §11: the canned bullet of an empty feed never carries a stamp
+        ...(text && evDurations.some((d) => d != null) ? { eventDurationsMs: evDurations } : {}),
       })
     })
     // Staleness guard: a slow in-flight tick may resolve after this job was
@@ -152,6 +173,8 @@ export function useDraftJob(d: DraftJobDeps) {
           if (j.mode !== 'sync') noteStage('Working on the request')
           evs.forEach((e) => noteStage(e.stage))
           noteStage(j.stage)
+          lastStageTimes = j.stageTimes ?? []
+          lastEndedTime = j.endedTime ?? null
           const evKey = evs.length ? `${evs.length}:${evs[evs.length - 1].text}` : ''
           if (j.status === 'building' && (j.stage !== lastStage || (j.detail ?? null) !== lastDetail || evKey !== lastEvKey)) {
             lastStage = j.stage
@@ -162,9 +185,15 @@ export function useDraftJob(d: DraftJobDeps) {
             // progress entry restarts with only the current stage's events.
             const finished = settleStages(evs,
               seenStages.filter((s) => s !== j.stage && !settledStages.has(s)), null)
-            const texts = evs.filter((e) => !e.stage || e.stage === j.stage).map((e) => e.text)
+            const live = evs.filter((e) => !e.stage || e.stage === j.stage)
+              .map((e) => ({ text: e.text, time: e.time }))
+            // §11 live durations: the title row's elapsed ticks from the
+            // current stage's §8 stamp
+            const startedAt = [...lastStageTimes].reverse()
+              .find((t) => t.stage === j.stage)?.time ?? null
             setRev((r) => (r ? {
-              ...r, genStage: j.stage, genDetail: lastDetail, genEvents: texts,
+              ...r, genStage: j.stage, genDetail: lastDetail, genEvents: live,
+              genStageStartedAt: startedAt,
               ...(finished.length ? { chat: [...r.chat, ...finished] } : {}),
             } : r))
           }
@@ -539,7 +568,7 @@ export function useDraftJob(d: DraftJobDeps) {
       // §4.4 thread lifetime: the thread no longer rides the draft, so sending
       // alone doesn't touch it — a pure Q&A keeps no draft. The response
       // handler marks touched when it actually changes the draft.
-      chatBusy: true, genStage: null, genDetail: null, genEvents: [],
+      chatBusy: true, genStage: null, genDetail: null, genEvents: [], genStageStartedAt: null,
     }))
     try {
       await startJob({
@@ -656,7 +685,7 @@ export function useDraftJob(d: DraftJobDeps) {
     up({
       specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false, // discard unsaved edits
       notesDraft: null, notesEdit: false,
-      syncBusy: true, genStage: null, genDetail: null, genEvents: [], touched: true,
+      syncBusy: true, genStage: null, genDetail: null, genEvents: [], genStageStartedAt: null, touched: true,
       // §11 draft undo: a repair amend replaces the spec outside the undo flow
       ...(specOverride ? { spec: specOverride, dirty: true, undo: null } : {}),
     })
@@ -700,12 +729,12 @@ export function useDraftJob(d: DraftJobDeps) {
       if (!isEdit && rev.spec.length === 0 && rev.steps.length === 0) firstRequestRef.current = request
       const planEntry = [...afterUser].reverse()
         .find((e) => e.kind === 'answer' && e.title === 'The plan')
-      setRev((r) => r && ({ ...r, chatBusy: true, genStage: null, genDetail: null, genEvents: [] }))
+      setRev((r) => r && ({ ...r, chatBusy: true, genStage: null, genDetail: null, genEvents: [], genStageStartedAt: null }))
       startPoll(ref.jobId, makeChatHandlers({ request, hadSnap: false, planEntryId: planEntry?.id ?? null }),
         { preSettled })
     } else {
       dirtyBeforeSync.current = rev.dirty
-      setRev((r) => r && ({ ...r, syncBusy: true, genStage: null, genDetail: null, genEvents: [] }))
+      setRev((r) => r && ({ ...r, syncBusy: true, genStage: null, genDetail: null, genEvents: [], genStageStartedAt: null }))
       startPoll(ref.jobId, makeSyncHandlers(), { preSettled })
     }
   }

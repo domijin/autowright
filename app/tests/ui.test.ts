@@ -5,7 +5,7 @@ import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   nextIn, paramSummary, validUrl, badgeOf, resultChipColors, P, PyCode,
-  executingToast, stepTimeoutLabel, waitedLabel, dispModel, agName, logColor,
+  executingToast, stepTimeoutLabel, waitedLabel, durationLabel, dispModel, agName, logColor,
 } from '../src/ui'
 import type { ParamDef, Step } from '../src/types'
 
@@ -157,6 +157,18 @@ describe('waitedLabel (§7 WAITING FOR column)', () => {
     expect(waitedLabel(59_400)).toBe('59s')
     expect(waitedLabel(59_600)).toBe('1m 0s')  // rounds up across the boundary
     expect(waitedLabel(-5_000)).toBe('0s')
+  })
+})
+
+describe('durationLabel (§11 per-step durations)', () => {
+  it('tenths of a second under a minute, "Xm Xs" from 60s up', () => {
+    expect(durationLabel(400)).toBe('0.4s')
+    expect(durationLabel(1_400)).toBe('1.4s')
+    expect(durationLabel(60_000)).toBe('1m 0s')  // the boundary
+    expect(durationLabel(133_000)).toBe('2m 13s')
+  })
+  it('clamps negatives to 0.0s', () => {
+    expect(durationLabel(-5_000)).toBe('0.0s')
   })
 })
 

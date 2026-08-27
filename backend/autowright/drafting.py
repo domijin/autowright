@@ -1348,7 +1348,13 @@ class DraftJobs:
         # the draft-settle endpoints cancel the container's building jobs and
         # lets the §11 re-attach find the owner's job again.
         job = {"id": job_id, "status": "building", "stage": stage, "detail": None,
-               "events": [], "error": None, "draft": None, "mode": mode,
+               "events": [],
+               # §8 stage timing: one stamp per stage entered plus the settle
+               # stamp — the §11 thread derives every per-step duration from
+               # these, the backend computes none.
+               "stageTimes": [{"stage": stage, "time": time.time()}],
+               "endedTime": None,
+               "error": None, "draft": None, "mode": mode,
                "_cancel": False, "_proc": {}, "_owner": owner_id}
         if mode == "chat":
             # §19 `sentTriggers`: echo the resolved trigger list the §8
@@ -1389,8 +1395,10 @@ class DraftJobs:
             # errorDetail, …) and iterating the live dict outside it can raise
             # "dictionary changed size during iteration" mid-poll.
             out = {k: v for k, v in j.items() if not k.startswith("_")}
-            # The job thread appends to `events` while this serializes — copy.
+            # The job thread appends to `events` and `stageTimes` while this
+            # serializes — copy both.
             out["events"] = list(j["events"])
+            out["stageTimes"] = list(j["stageTimes"])
         return out
 
     def cancel(self, job_id: str) -> bool:
@@ -1402,6 +1410,7 @@ class DraftJobs:
                 return False
             j["_cancel"] = True
             j["status"] = "cancelled"
+            j["endedTime"] = time.time()  # §8 stage timing: bounds the last stage
         self._publish(j)
         proc = j["_proc"].get("proc")
         if proc and proc.poll() is None:
@@ -1500,6 +1509,7 @@ class DraftJobs:
             if job["status"] != "building":
                 return False
             job["status"] = status
+            job["endedTime"] = time.time()  # §8 stage timing: bounds the last stage
             job.update(fields)
         # §19 draftjob.changed: a held outcome upserts the clients' snapshot
         # (the §9.1 "finished" note) — published outside the lock.
@@ -2065,6 +2075,13 @@ class DraftJobs:
     def _stage(self, job: dict, label: str) -> None:
         job["stage"] = label
         job["detail"] = None
+        # §8 stage timing: the new stage's stamp also bounds the previous one.
+        # Exactly one stamp per stage — re-asserting the current label (a sync
+        # job's pipeline re-sets its only stage) must not append a duplicate
+        # that would zero the stage's span.
+        times = job["stageTimes"]
+        if not times or times[-1]["stage"] != label:
+            times.append({"stage": label, "time": time.time()})
 
     def _detail(self, job: dict, text: str) -> None:
         job["detail"] = text

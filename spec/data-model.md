@@ -557,7 +557,7 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   own, decoupled from the draft's lifetime (thread lifetime below).
   Persisted thread entries: `{ id: uuid, kind: user | answer | activity | rewrite |
   blockers | system
-  | error, text?, title?, icon?, outcome?, boundary?, blockers?, source?, diagnosed?, dismissed?, resolved?, at }` —
+  | error, text?, title?, icon?, outcome?, boundary?, blockers?, source?, diagnosed?, dismissed?, resolved?, durationMs?, eventDurationsMs?, at }` —
   `icon` an optional Font Awesome class stamped at creation, driving the §11 block
   glyph on system and answer entries (`title` doubles as the §11 answer header on
   answer entries); entries without them fall back per §11 —
@@ -565,7 +565,11 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   message, `answer` the agent's markdown reply, `activity` a settled §8 job's record
   (`title` = its final stage label, text = one event per line, `outcome` = the job's
   settled status — done | blocked | failed — driving the §11 outcome glyph; an entry
-  persisted before the field existed has none and renders as done; §11),
+  persisted before the field existed has none and renders as done; `durationMs` = the
+  stage's total span and `eventDurationsMs` = one duration per `text` line, parallel by
+  index with `null` where no stamp bounds the event — both derived by the editor from
+  the §8 stage-timing stamps at settle; entries persisted before the duration fields
+  existed carry neither and render without durations — additive, §21.4; §11),
   `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list —
   each blocker `{ reason, fix, details?, kind? }`, `kind` only ever the literal
   `user-action` (§8 blocker response) —

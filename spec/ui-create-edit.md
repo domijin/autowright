@@ -45,7 +45,9 @@ applies unchanged; the chat pane never collapses.
     `• `-prefixed bullets (bullet glyph then a 2-space gap before the text) running
     the pane's full width **flush left with the glyph —
     never indented under the title** (the activity-feed flush rule, now for every
-    operation block). The feed sits flush beneath the header row — no extra gap
+    operation block). A header row or bullet may close with a right-aligned duration
+    stamp — the per-step durations under the activity entry kind below; no other
+    trailing decoration exists. The feed sits flush beneath the header row — no extra gap
     below the title, only the lines' own line-height. An `activity` block's header
     row (and the transient progress entry's — the same layout live) carries a small
     **3 px top padding**, so an action block's title stands slightly off whatever
@@ -116,7 +118,19 @@ applies unchanged; the chat pane never collapses.
     leads with a green check. The entry's §4.4 `outcome` field carries the status; an
     entry persisted before the field existed renders as done, and a terminal job payload
     carrying no stage at all (belt-and-braces — the backend always sets one) settles as
-    one entry with the job's live stage label and the whole feed. Excluded from the
+    one entry with the job's live stage label and the whole feed. **Per-step durations:**
+    the header row closes with the stage's total duration and each feed bullet with its
+    event's duration — right-aligned quiet mono stamps in the §7 execution-step style
+    (10.5 px), formatted like the §7 duration labels ("0.4s" / "1.4s" / "2m 13s") — the
+    §4.4 `durationMs` / `eventDurationsMs` values the editor derives from the §8
+    stage-timing stamps at the moment the stage settles: the frozen forms of the ticking
+    stamps the live entry showed (whole seconds settling into the precise label — live
+    durations under the thread progress entry below), so no stamp appears or disappears
+    at settle. A line whose
+    duration is unknown (`null` — e.g. a stage-stampless event from an older payload), an
+    entry persisted before the duration fields existed, and the canned description bullet
+    of an empty feed all render without a stamp — the layout is otherwise unchanged.
+    Excluded from the
     agent's §8 CONVERSATION context (operational noise, §8).
   - **rewrite** — a "Spec updated." receipt, rendered exactly like a system chip: faint
     `fa-file-pen` glyph beside the chip text "Spec updated." in the system-chip role
@@ -404,7 +418,17 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
   event (same message, growing ` · N lines` count) that event shows only as the live line,
   never twice; before the job has produced any event or `detail` at all, the stage's
   canned description bullet (the per-stage map under the activity entry kind) holds the
-  feed's place — a live block never renders as a bare title either.
+  feed's place — a live block never renders as a bare title either. **Live durations:**
+  the stage label's row closes with the stage's elapsed time, and every feed line above
+  the newest carries its event's settled duration (the span to the next milestone — §8
+  stage timing) as the same right-aligned mono stamp the activity entry uses (entry kinds
+  above); the newest line — the live `detail` line when present, else the newest event —
+  ticks its own elapsed instead, and the canned placeholder bullet carries no stamp. The
+  ticking values advance client-side once per second from the §19 `stageTimes` and event
+  stamps and read whole seconds (the §7 WAITING FOR treatment — the 700 ms poll is never
+  the tick source, and tenths would only flicker); at settle they freeze in place as the
+  activity entry's persisted durations in the precise label ("12s" settles as "12.3s") —
+  the stamp itself never appears or disappears.
   The feed and detail lines render as the operation-block bullets
   (`• `-prefixed, 2-space gap after the glyph) and run the pane's full width, flush left with the
   spinner — only the stage label sits beside the spinner, the lines below are not

@@ -786,6 +786,43 @@ def test_save_chat_keeps_activity_title(store):
     assert m["boundary"] is True and m["icon"] == "fa-flag-checkered"
 
 
+def test_save_chat_keeps_activity_durations(store):
+    """§4.4 per-step durations: an activity entry's `durationMs` and
+    `eventDurationsMs` (nulls included — a line no stamp bounds) survive
+    save_chat's key filter and the chat.jsonl round trip."""
+    store.save_chat(None, [{"id": "c1", "kind": "activity", "at": "t",
+                            "title": "Updating the documents…", "outcome": "done",
+                            "text": "Writing the answer\nWriting the spec\nWriting the notes",
+                            "durationMs": 4200,
+                            "eventDurationsMs": [1400, None, 2200]}])
+    from autowright.storage import Store
+    (e,) = Store.chat_json(store.chat_dir(None))
+    assert e["durationMs"] == 4200
+    assert e["eventDurationsMs"] == [1400, None, 2200]
+
+
+def test_activity_chat_entry_without_durations_round_trips(store):
+    """§21.4 (2026-08-26) fixture: the duration keys are additive - an activity
+    entry written to chat.jsonl before they existed loads intact, renders
+    without stamps (no keys to invent), and re-saves keyless."""
+    import json as jsonlib
+
+    from autowright.storage import Store
+
+    old = {"id": "c1", "kind": "activity", "title": "Syncing the workflow…",
+           "outcome": "done", "text": "Writing 01-check.py…", "at": "t"}
+    container = store.chat_dir(None)
+    container.mkdir(parents=True, exist_ok=True)
+    (container / "chat.jsonl").write_text(jsonlib.dumps(old) + "\n", encoding="utf-8")
+
+    loaded = Store.chat_json(container)
+    assert loaded == [old]
+    assert "durationMs" not in loaded[0] and "eventDurationsMs" not in loaded[0]
+    # re-saving invents no duration keys - no data rewrite exists
+    store.save_chat(None, loaded)
+    assert Store.chat_json(container) == [old]
+
+
 def test_default_agent_pointer_self_heals_on_load(home):
     """§4.7: a dangling or absent `default_agent` in agents.yaml falls back to
     the first agent at load; save_agents round-trips the pointer."""

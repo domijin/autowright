@@ -914,7 +914,8 @@ class Store:
     # ---------- §11 chat thread (§4.4 thread lifetime; §5 chat.jsonl at the
     # container root — it outlives the draft) ----------
     _CHAT_KEYS = ("id", "kind", "text", "title", "icon", "outcome", "boundary",
-                  "blockers", "source", "diagnosed", "dismissed", "resolved", "at")
+                  "blockers", "source", "diagnosed", "dismissed", "resolved",
+                  "durationMs", "eventDurationsMs", "at")
 
     def chat_dir(self, a: dict | None) -> Path:
         """§4.4/§5: where the owner's chat.jsonl lives — the automation's

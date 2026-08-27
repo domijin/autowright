@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePlatformCopy } from '../../platformCopy'
 import type { Agent, ChatEntry } from '../../types'
-import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, usePopover } from '../../ui'
+import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, durationLabel, usePopover, waitedLabel } from '../../ui'
 import { devlogOverlayOpen } from '../../devlog'
 import { Markdown } from '../../result'
 import { type Rev, answerHeader, jobStageTitle, stageDoingBullet } from './model'
@@ -35,16 +35,33 @@ function GlyphBox({ children }: { children: React.ReactNode }) {
 /** §11 operation-block bullet — `• `-prefixed description line running the
     pane's full width, flush left with the glyph (never indented under the
     title). `ellipsis` keeps activity-feed lines single-line. */
-function OpBullet({ text, ellipsis, size, color }: {
+function OpBullet({ text, ellipsis, size, color, duration }: {
   text: string; ellipsis?: boolean; size?: number; color?: string
+  // §11 per-step duration stamp — right-aligned quiet mono, the §7
+  // execution-step style, so the two step lists read alike
+  duration?: string
 }) {
   return (
     <div style={{
+      display: 'flex', alignItems: 'baseline', gap: 8,
       font: `400 ${size ?? 11}px/1.5 var(--sans)`, color: color ?? 'var(--text-faint)',
-      ...(ellipsis ? { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' } : { overflowWrap: 'break-word' as const }),
     }}>
-      •&nbsp; {text}
+      <span style={{
+        flex: 1, minWidth: 0,
+        ...(ellipsis ? { whiteSpace: 'nowrap' as const, overflow: 'hidden', textOverflow: 'ellipsis' } : { overflowWrap: 'break-word' as const }),
+      }}>
+        •&nbsp; {text}
+      </span>
+      {duration && <DurationStamp label={duration} />}
     </div>
+  )
+}
+
+/** §11 per-step duration stamp on a block header row — same style as the
+    bullets' (the §7 execution-step mono). */
+function DurationStamp({ label }: { label: string }) {
+  return (
+    <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', flex: 'none' }}>{label}</span>
   )
 }
 
@@ -179,6 +196,17 @@ export function ChatPanel({
     if (!el || !anyJobBusy) return
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 60) el.scrollTop = el.scrollHeight
   }, [anyJobBusy, rev.genDetail, rev.genEvents])
+  // §11 live durations: the progress entry's elapsed stamps tick client-side
+  // once per second from the §8 stage-timing stamps — the 700 ms poll is
+  // never the tick source.
+  const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000)
+  useEffect(() => {
+    if (!anyJobBusy) return
+    setNowSeconds(Date.now() / 1000)
+    const tick = setInterval(() => setNowSeconds(Date.now() / 1000), 1000)
+    return () => clearInterval(tick)
+  }, [anyJobBusy])
+
   // §11 Clear chat: confirm step before the thread is emptied.
   const [confirmClear, setConfirmClear] = useState(false)
 
@@ -370,7 +398,11 @@ export function ChatPanel({
             // shift): green check done, amber check blocked, red X failed (a
             // pre-outcome-field entry renders as done), the stage label kept,
             // and the full event feed beneath, flush left with the glyph
-            const lines = (e.text ?? '').split('\n').filter(Boolean)
+            // §4.4 eventDurationsMs is parallel to the raw text lines — pair
+            // before the empty-line filter so the indexes stay aligned
+            const lines = (e.text ?? '').split('\n')
+              .map((t, i) => ({ text: t, durationMs: e.eventDurationsMs?.[i] }))
+              .filter((l) => l.text)
             const failed = e.outcome === 'failed'
             const glyphColor = failed ? 'var(--red)' : e.outcome === 'blocked' ? 'var(--amber)' : 'var(--green)'
             return (
@@ -381,10 +413,12 @@ export function ChatPanel({
                       <i className={`fa-solid ${failed ? 'fa-xmark' : 'fa-check'}`} style={{ fontSize: 11, color: glyphColor }} />
                     </GlyphBox>
                     <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>{e.title}</div>
+                    {e.durationMs != null && <DurationStamp label={durationLabel(e.durationMs)} />}
                   </div>
                 )}
-                {lines.map((t, i) => (
-                  <OpBullet key={`${i}-${t}`} text={t} ellipsis />
+                {lines.map((l, i) => (
+                  <OpBullet key={`${i}-${l.text}`} text={l.text} ellipsis
+                    duration={l.durationMs != null ? durationLabel(l.durationMs) : undefined} />
                 ))}
               </div>
             )
@@ -582,6 +616,11 @@ export function ChatPanel({
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
                 {jobStageTitle(rev)}
               </div>
+              {/* §11 live durations: the stage's elapsed ticks whole seconds,
+                  freezing into the settled entry's precise total */}
+              {rev.genStageStartedAt != null && (
+                <DurationStamp label={waitedLabel(Math.max(0, (nowSeconds - rev.genStageStartedAt) * 1000))} />
+              )}
             </div>
             {(() => {
               // §11 activity feed: the full dim event history over the live
@@ -591,17 +630,30 @@ export function ChatPanel({
               // shows twice.
               const evs = rev.genEvents
               const last = evs.length ? evs[evs.length - 1] : null
-              const hist = rev.genDetail && last && rev.genDetail.startsWith(last) ? evs.slice(0, -1) : evs
+              const hist = rev.genDetail && last && rev.genDetail.startsWith(last.text) ? evs.slice(0, -1) : evs
+              // §11 live durations: a line with a successor carries its settled
+              // span; the newest line ticks its own elapsed instead (whole
+              // seconds, like the title row's)
+              const bulletDuration = (i: number): string | undefined => {
+                const t = hist[i].time
+                if (t == null) return undefined
+                const next = i + 1 < evs.length ? evs[i + 1].time : null
+                if (next != null) return durationLabel(Math.max(0, (next - t) * 1000))
+                return waitedLabel(Math.max(0, (nowSeconds - t) * 1000))
+              }
+              const liveSince = last?.time ?? rev.genStageStartedAt
               return (
                 <>
-                  {hist.map((t, i) => (
-                    <OpBullet key={`${i}-${t}`} text={t} ellipsis />
+                  {hist.map((e, i) => (
+                    <OpBullet key={`${i}-${e.text}`} text={e.text} ellipsis duration={bulletDuration(i)} />
                   ))}
                   {rev.genDetail && (
-                    <OpBullet text={rev.genDetail} color="var(--text-muted)" />
+                    <OpBullet text={rev.genDetail} color="var(--text-muted)"
+                      duration={liveSince != null ? waitedLabel(Math.max(0, (nowSeconds - liveSince) * 1000)) : undefined} />
                   )}
                   {/* §11: never an empty section — before the stream produces
-                      any feed, the stage's canned description holds its place */}
+                      any feed, the stage's canned description holds its place
+                      (and carries no duration stamp) */}
                   {!rev.genDetail && hist.length === 0 && (
                     <OpBullet text={stageDoingBullet(jobStageTitle(rev))} color="var(--text-muted)" />
                   )}

@@ -1557,6 +1557,55 @@ def test_draft_jobs_chat_start_echoes_sent_triggers(monkeypatch):
     assert "sentTriggers" not in jobs.get(jid2)
 
 
+def test_draft_jobs_stage_timing_stamps(monkeypatch):
+    # §8 stage timing: `stageTimes` is seeded with the entry stage and gains a
+    # stamp per stage change; `endedTime` is None until the terminal transition
+    # stamps it. The §11 per-step durations derive from these — the backend
+    # computes no duration itself.
+    from autowright import drafting as d
+
+    jobs = d.DraftJobs()
+    monkeypatch.setattr(d.threading.Thread, "start", lambda self: None)
+    jid = jobs.start("sync", {"harness": "claude"}, None, None, {}, owner_id=None)
+    job = jobs.jobs[jid]
+    payload = jobs.get(jid)
+    assert [t["stage"] for t in payload["stageTimes"]] == ["Syncing the workflow"]
+    started = payload["stageTimes"][0]["time"]
+    assert started > 0
+    assert payload["endedTime"] is None
+    # the payload's list is a copy — the job thread keeps appending to its own
+    assert payload["stageTimes"] is not job["stageTimes"]
+
+    # §8: exactly one stamp per stage — re-asserting the label the job is
+    # already in (a sync job's pipeline re-sets its only stage) appends
+    # nothing, so a stage's span is never zeroed by a duplicate
+    jobs._stage(job, "Syncing the workflow")
+    assert [t["stage"] for t in jobs.get(jid)["stageTimes"]] == ["Syncing the workflow"]
+
+    # a stage change appends the new stage's stamp, which bounds the previous one
+    jobs._stage(job, "Updating the documents")
+    assert [t["stage"] for t in jobs.get(jid)["stageTimes"]] == [
+        "Syncing the workflow", "Updating the documents"]
+    assert jobs.get(jid)["stageTimes"][1]["time"] >= started
+
+    # the terminal transition bounds the last stage
+    assert jobs._settle(job, "done", draft={"steps": []}) is True
+    assert jobs.get(jid)["endedTime"] >= started
+
+
+def test_draft_jobs_cancel_stamps_ended_time(monkeypatch):
+    # §8 stage timing: a cancel is a terminal path too — it bounds the last
+    # stage, so the §11 thread's settled entries still carry durations.
+    from autowright import drafting as d
+
+    jobs = d.DraftJobs()
+    monkeypatch.setattr(d.threading.Thread, "start", lambda self: None)
+    jid = jobs.start("chat", {"harness": "claude"}, "hi", None, {}, owner_id=None)
+    assert jobs.get(jid)["endedTime"] is None
+    assert jobs.cancel(jid) is True
+    assert jobs.get(jid)["endedTime"] >= jobs.get(jid)["stageTimes"][0]["time"]
+
+
 def test_draft_jobs_kill_all_building_kills_harness_group():
     # §3 shutdown: building jobs cancel and their harness session groups die
     # outright (SIGKILL, no grace window); terminal jobs stay untouched.
@@ -2087,7 +2136,7 @@ def test_chat_progress_detail_labels():
 
     jobs = DraftJobs()
     job = {"id": "c1", "status": "building", "stage": "Working on the request",
-           "detail": None, "events": [], "_cancel": False}
+           "detail": None, "events": [], "stageTimes": [], "_cancel": False}
     cb, _ = jobs._chat_cb(job)
     cb("")
     assert job["detail"] == "Thinking…"
@@ -2128,7 +2177,7 @@ def test_chat_flip_captures_plan():
 
     jobs = DraftJobs()
     job = {"id": "p1", "status": "building", "stage": "Working on the request",
-           "detail": None, "events": [], "_cancel": False}
+           "detail": None, "events": [], "stageTimes": [], "_cancel": False}
     cb, _ = jobs._chat_cb(job)
     cb("Here is the plan.\n\n")
     assert "plan" not in job  # prose alone never flips, so no plan yet
@@ -2144,7 +2193,7 @@ def test_chat_flip_without_prose_sets_no_plan():
 
     jobs = DraftJobs()
     job = {"id": "p2", "status": "building", "stage": "Working on the request",
-           "detail": None, "events": [], "_cancel": False}
+           "detail": None, "events": [], "stageTimes": [], "_cancel": False}
     cb, _ = jobs._chat_cb(job)
     cb("===FILE: spec.md===\n# T\n")
     assert job["stage"] == "Updating the documents"
@@ -2157,7 +2206,7 @@ def test_chat_progress_detail_repair_prefix():
 
     jobs = DraftJobs()
     job = {"id": "c2", "status": "building", "stage": "Working on the request",
-           "detail": None, "events": [], "_cancel": False}
+           "detail": None, "events": [], "stageTimes": [], "_cancel": False}
     cb, _ = jobs._chat_cb(job, prefix="Second try — ")
     cb("===FILE: spec.md===\n# T\n")
     assert job["detail"] == "Second try — writing the spec · 1 line"
@@ -2836,7 +2885,7 @@ def test_chat_progress_from_scratch_documents_flips_the_stage():
 
     jobs = DraftJobs()
     job = {"id": "f2", "status": "building", "stage": "Working on the request",
-           "detail": None, "events": [], "_cancel": False}
+           "detail": None, "events": [], "stageTimes": [], "_cancel": False}
     cb, file_cb = jobs._chat_cb(job)
     cb("Here is the plan.\n\n")
     assert job["stage"] == "Working on the request"  # prose alone never flips

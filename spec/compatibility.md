@@ -68,6 +68,16 @@ Interaction with existing rules:
 Newest first. One entry per compatibility decision: what changed, the migration, the first
 version that writes the new shape, and the oldest shape still read.
 
+- **2026-08-26 - `durationMs` / `eventDurationsMs` added to the §4.4 activity chat
+  entry.** The settled activity entry in `chat.jsonl` gains two optional keys: the
+  stage's total duration and a per-`text`-line duration array (parallel by index, `null`
+  where no stamp bounds the event), both derived by the editor from the §8 stage-timing
+  stamps at settle (§11 per-step durations). Additive: an absent key is the old shape and
+  renders without duration stamps - no data rewrite exists; recognition is structural
+  (absent keys), the same pattern as the entry's `outcome`/`icon` fields. Loading stays
+  §5 lenient for malformed entries. First version writing the new shape: the next release
+  after 2026-08-26; oldest shape still read: v0.6.0 (keys absent). Fixture test:
+  `tests/test_storage.py::test_activity_chat_entry_without_durations_round_trips`.
 - **2026-08-24 - `unresolved_references` added to automation.yaml.** The §5.1
   match-or-flag import stores the archive references it could not match as a top-level
   `unresolved_references` map (`{id: {kind, name, description}}`, §4.1) on the imported

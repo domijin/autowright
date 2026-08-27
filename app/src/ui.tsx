@@ -41,6 +41,14 @@ export function waitedLabel(ms: number): string {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
+/** §11 per-step duration stamp — the backend `timefmt.dur_label` shape
+ * ("0.4s" / "1.4s" / "2m 13s"), so the thread's step durations read like the
+ * §7 execution steps' backend-formatted ones. */
+export function durationLabel(ms: number): string {
+  const s = Math.max(0, ms) / 1000
+  return s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s`
+}
+
 /** Uppercase mono chip — the one badge geometry. Status `Badge` maps onto it;
  * use directly for ad-hoc labels (Draft, OFF, Ready, NOT SET…). */
 export function MiniBadge({ children, c, bg, style }: {

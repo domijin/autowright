@@ -887,6 +887,22 @@ counted message), so `detail` is always the newest activity; stage changes appen
 the stage label is its own field. `events` rides the job beside `stage`/`detail` (§19) and
 backs the §11 thread progress entry's activity feed.
 
+**Stage timing.** The job also carries `stageTimes` — an append-only list of
+`{stage, time}` stamps (`time` epoch seconds), one per stage the job entered: seeded with
+the entry stage when the job is created and appended on every stage change, with
+**exactly one stamp per stage** — re-asserting the label the job is already in (a sync
+job's pipeline re-sets its only stage) appends nothing, so a stage's span is never
+zeroed by a duplicate — and
+`endedTime`, the epoch stamp set when the job leaves `building` on any path (done,
+blocked, failed, cancelled), `null` until then. Both ride the job beside `events` (§19)
+and back the §11 per-step durations, which the client derives — the backend computes no
+duration. The semantics: an event's duration runs from its `time` to the moment the next
+milestone began — the next event in the same stage, else the stage's end (the next
+`stageTimes` entry's `time`, or `endedTime` for the job's last stage) — and a stage's
+total runs from its own `stageTimes` entry to that same end. The gap between a stage
+starting and its first event (the `Thinking…` window, which is never an event) is
+attributed to no bullet; it shows only in the stage total.
+
 **Failed-run analysis is a chat message.** There is no separate issue-analysis call:
 the chat call's RECENT EXECUTIONS section already carries a failed run's error and log tails, so
 "why did it fail" and "fix it" are ordinary chat jobs — the §11 "Analyze failure"

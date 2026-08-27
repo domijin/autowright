@@ -5,7 +5,7 @@
 // (happy-dom) in edit mode with the store seeded and the api module mocked;
 // payload assertions read the exact POST /drafts bodies.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Agent, Automation, SecretMeta } from '../src/types'
 
 vi.mock('../src/api', () => ({
@@ -641,15 +641,18 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     // §11: a block's title row is a pure label — the bullets carry the time
     expect(stampBeside(screen.getByText('Working on the request…'))).toBeNull()
     expect(stampBeside(screen.getByText('Updating the documents…'))).toBeNull()
-    // §11: the deciding phase's material leading gap settles as its first
-    // timed bullet — the live Thinking… line frozen in place
-    const thinking = bullet('Thinking…')
-    expect(stampBeside(thinking)).toBe('1.6s')
-    expect(thinking.compareDocumentPosition(bullet('Writing the answer'))
+    // §11 one identity: the deciding phase's material leading gap settles as
+    // its first timed bullet — the stage's canned description, the exact
+    // waiting line the live block ticked, frozen in place
+    const lead = bullet('Choosing what to do')
+    expect(stampBeside(lead)).toBe('1.6s')
+    expect(lead.compareDocumentPosition(bullet('Writing the answer'))
       & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // …while the documents phase's sub-second gap leaves the stage clean —
-    // one Thinking… line in the whole thread
-    expect(screen.getAllByText('• Thinking…').length).toBe(1)
+    // …while the documents phase's sub-second gap leaves the stage clean — its
+    // own canned line never lands, and the label Thinking… renders nowhere
+    expect(screen.getAllByText('• Choosing what to do').length).toBe(1)
+    expect(screen.queryByText('• Writing the documents')).toBeNull()
+    expect(screen.getByTestId('chat-thread').textContent).not.toContain('Thinking…')
     // step spans: each event runs to the next milestone in its own stage, the
     // stage's last event to that stage's end
     expect(stampBeside(bullet('Writing the answer'))).toBe('1.4s')
@@ -657,7 +660,7 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     expect(stampBeside(bullet('Writing the notes'))).toBe('3.4s')
   })
 
-  it('a payload without §8 stamps settles with unbounded last steps and no Thinking… line', async () => {
+  it('a payload without §8 stamps settles with unbounded last steps and no leading line', async () => {
     // an older backend sends events but neither stageTimes nor endedTime
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(settled({}))
     render(<CreateFlow />)
@@ -666,8 +669,11 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     // a title row is never stamped, with or without stamps to draw on
     expect(stampBeside(screen.getByText('Working on the request…'))).toBeNull()
     expect(stampBeside(screen.getByText('Updating the documents…'))).toBeNull()
-    // no stage start to measure a leading gap against — no Thinking… line
-    expect(screen.queryByText('• Thinking…')).toBeNull()
+    // no stage start to measure a leading gap against — no canned leading
+    // line on either stage, so each block opens on its first real event
+    expect(screen.queryByText('• Choosing what to do')).toBeNull()
+    expect(screen.queryByText('• Writing the documents')).toBeNull()
+    expect(screen.getByTestId('chat-thread').textContent).not.toContain('Thinking…')
     // an event still bounded by the next event in its stage keeps its span…
     expect(stampBeside(bullet('Writing the spec'))).toBe('2.4s')
     // …while a stage's last event has no next milestone to run to
@@ -689,6 +695,53 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     expect(stampBeside(screen.getByText('Working on the request…'))).toBeNull()
     // …and the canned description, the stage's only action, takes its whole span
     expect(stampBeside(bullet('Choosing what to do'))).toBe('1.5s')
+  })
+
+  it('the live waiting line has one identity: the canned bullet ticks, then freezes (§11)', async () => {
+    // a pinned wall clock makes the ticking stamps exact — the 700 ms poll and
+    // the once-a-second tick both run on the fake timers
+    const T0 = 1_700_000_000
+    vi.useFakeTimers()
+    vi.setSystemTime(T0 * 1000)
+    try {
+      const building = (over: Record<string, unknown>) => ({
+        id: 'j1', status: 'building', stage: 'Working on the request', detail: null,
+        error: null, mode: 'chat', draft: null, events: [],
+        // the stage opened two seconds before the clock was pinned
+        stageTimes: [{ stage: 'Working on the request', time: T0 - 2 }], ...over,
+      })
+      ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(building({}))
+      render(<CreateFlow />)
+      send('Check the docs')
+      await act(async () => { await vi.advanceTimersByTimeAsync(700) })
+      // no events, no detail: the stage's canned description holds the feed's
+      // place, ticking whole seconds from the §8 stage stamp
+      expect(stampBeside(bullet('Choosing what to do'))).toBe('2s')
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(stampBeside(bullet('Choosing what to do'))).toBe('3s')
+      // the backend's Thinking… detail never renders — the canned line
+      // subsumes it, so the waiting line is never relabeled mid-tick
+      ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>)
+        .mockResolvedValue(building({ detail: 'Thinking…' }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      expect(screen.getByTestId('chat-thread').textContent).not.toContain('Thinking…')
+      expect(stampBeside(bullet('Choosing what to do'))).toBe('4s')
+      // the first milestone lands 1.6s after the stage start: the canned line
+      // freezes in place above it, carrying that gap as a settled span, and
+      // the newest line takes over the one ticking stamp
+      ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(building({
+        events: [{ time: T0 - 0.4, text: 'Writing the answer', stage: 'Working on the request' }],
+      }))
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+      const lead = bullet('Choosing what to do')
+      expect(stampBeside(lead)).toBe('1.6s')
+      expect(lead.compareDocumentPosition(bullet('Writing the answer'))
+        & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      // 3.4s elapsed at the fourth tick (T0 + 3s, the event stamped T0 − 0.4s)
+      expect(stampBeside(bullet('Writing the answer'))).toBe('3s')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('a stored activity entry renders its stamps; a pre-field one renders bare (§21.4)', async () => {

@@ -126,11 +126,14 @@ applies unchanged; the chat pane never collapses.
     stage-timing stamps at the moment the stage settles: the frozen forms of the ticking
     stamps the live entry showed (whole seconds settling into the precise label — live
     durations under the thread progress entry below), so no stamp appears or disappears
-    at settle. The stage's time is fully accounted by its bullets: a stage whose first
+    at settle. The stage's time is fully accounted by its bullets, and the waiting line
+    keeps its one identity — the stage's canned description bullet, exactly the line the
+    live block ticked (the waiting-line rule under the thread progress entry below),
+    never relabeled at settle: a stage whose first
     milestone landed a material beat after the stage began (≥ 1 s — a flip-entered stage
-    starts on its first milestone and stays clean) settles the live `Thinking…` line as
-    its first timed bullet carrying that leading gap, and the canned description bullet
-    of an empty feed carries the stage's whole span — it is the stage's only action. A
+    starts on its first milestone and stays clean) settles that canned bullet as
+    its first timed line carrying the leading gap, and for an empty feed the same canned
+    bullet stands alone carrying the stage's whole span — it is the stage's only action. A
     line whose duration is unknown (`null` — e.g. a stage-stampless event from an older
     payload) and an entry persisted before the field existed render without a stamp —
     the layout is otherwise unchanged.
@@ -420,14 +423,22 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
   each single-line with an ellipsis; the §8 per-job event cap bounds the list) above the
   live §8 `detail` line; when `detail` extends the newest
   event (same message, growing ` · N lines` count) that event shows only as the live line,
-  never twice; before the job has produced any event or `detail` at all, the stage's
-  canned description bullet (the per-stage map under the activity entry kind) holds the
-  feed's place — a live block never renders as a bare title either. **Live durations:**
+  never twice. **The waiting line has one identity:** from the moment the stage starts
+  until its first milestone, the stage's canned description bullet (the per-stage map
+  under the activity entry kind) holds the feed's place, ticking its elapsed from the
+  stage's start — a live block never renders as a bare title, and the backend's leading
+  `Thinking…` `detail` (§8) never renders in the thread: the canned line subsumes it, so
+  the waiting line is never relabeled mid-tick. When the first milestone lands, the
+  canned line **freezes in place** as the feed's first bullet carrying the leading gap
+  when the gap was material (≥ 1 s), or leaves the feed on a sub-second gap — the one
+  sub-second exception to lines settling in place, matching the settled shape (a
+  flip-entered stage never shows it at all: its first event arrives with the stage).
+  **Live durations:**
   every feed line above the newest carries its event's settled duration (the span to the
   next milestone — §8 stage timing) as a right-aligned mono stamp (the same style the
   settled activity entry uses, entry kinds above); the newest line — the live `detail`
-  line when present, else the newest event, else the canned placeholder bullet (ticking
-  from the stage's start) — ticks its own elapsed instead, so the live block always
+  line when present, else the newest event, else the ticking waiting line above — ticks
+  its own elapsed instead, so the live block always
   shows exactly one ticking stamp. The stage title row beside the spinner is never
   stamped — the newest line's tick is the stage's pulse, and a title stamp would only
   double it. The

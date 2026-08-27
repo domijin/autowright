@@ -615,13 +615,15 @@ export function ChatPanel({
               // detail line (the backend caps events per job), as flush-left
               // operation-block bullets; the newest event hides when detail
               // extends it (same message, growing line count) so it never
-              // shows twice.
+              // shows twice. The backend's `Thinking…` detail never renders —
+              // the canned waiting line below subsumes it, so the waiting
+              // line is never relabeled mid-tick.
               const evs = rev.genEvents
+              const detail = rev.genDetail === 'Thinking…' ? null : rev.genDetail
               const last = evs.length ? evs[evs.length - 1] : null
-              const hist = rev.genDetail && last && rev.genDetail.startsWith(last.text) ? evs.slice(0, -1) : evs
+              const hist = detail && last && detail.startsWith(last.text) ? evs.slice(0, -1) : evs
               // §11 live durations: a line with a successor carries its settled
-              // span; the newest line ticks its own elapsed instead (whole
-              // seconds, like the title row's)
+              // span; the newest line ticks its own elapsed instead (whole seconds)
               const bulletDuration = (i: number): string | undefined => {
                 const t = hist[i].time
                 if (t == null) return undefined
@@ -630,23 +632,32 @@ export function ChatPanel({
                 return waitedLabel(Math.max(0, (nowSeconds - t) * 1000))
               }
               const liveSince = last?.time ?? rev.genStageStartedAt
+              // §11 waiting line, one identity: the stage's canned description
+              // bullet ticks from the stage's start until the first milestone,
+              // then freezes in place as the feed's first bullet when the gap
+              // was material (≥ 1 s) — a sub-second gap drops it, matching the
+              // settled shape. A live block never renders as a bare title.
+              const start = rev.genStageStartedAt
+              const firstTime = evs[0]?.time
+              const gapMs = start != null && firstTime != null
+                ? Math.max(0, Math.round((firstTime - start) * 1000)) : null
+              const waiting = evs.length === 0 && !detail
+              const showLead = waiting || (gapMs != null && gapMs >= 1000)
               return (
                 <>
+                  {showLead && (
+                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} ellipsis
+                      color={waiting ? 'var(--text-muted)' : undefined}
+                      duration={waiting
+                        ? (start != null ? waitedLabel(Math.max(0, (nowSeconds - start) * 1000)) : undefined)
+                        : durationLabel(gapMs!)} />
+                  )}
                   {hist.map((e, i) => (
                     <OpBullet key={`${i}-${e.text}`} text={e.text} ellipsis duration={bulletDuration(i)} />
                   ))}
-                  {rev.genDetail && (
-                    <OpBullet text={rev.genDetail} color="var(--text-muted)"
+                  {detail && (
+                    <OpBullet text={detail} color="var(--text-muted)"
                       duration={liveSince != null ? waitedLabel(Math.max(0, (nowSeconds - liveSince) * 1000)) : undefined} />
-                  )}
-                  {/* §11: never an empty section — before the stream produces
-                      any feed, the stage's canned description holds its place,
-                      ticking from the stage's start so the live block always
-                      shows exactly one ticking stamp */}
-                  {!rev.genDetail && hist.length === 0 && (
-                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} color="var(--text-muted)"
-                      duration={rev.genStageStartedAt != null
-                        ? waitedLabel(Math.max(0, (nowSeconds - rev.genStageStartedAt) * 1000)) : undefined} />
                   )}
                 </>
               )

@@ -137,14 +137,15 @@ export function useDraftJob(d: DraftJobDeps) {
           ? Math.max(0, Math.round((next - e.time) * 1000)) : null
       })
       // §11: a material pre-first-milestone gap (≥ 1 s — a flip-entered stage
-      // starts on its first milestone and stays clean) settles the live
-      // Thinking… line as the stage's first timed bullet, so the stage's time
-      // is fully accounted by its bullets (no title stamp exists).
+      // starts on its first milestone and stays clean) settles the stage's
+      // canned description bullet — the exact waiting line the live block
+      // ticked, never relabeled — as the first timed line, so the stage's
+      // time is fully accounted by its bullets (no title stamp exists).
       const firstTime = sevs[0]?.time
       if (start != null && firstTime != null) {
         const gap = Math.round((firstTime - start) * 1000)
         if (gap >= 1000) {
-          lines = ['Thinking…', ...lines]
+          lines = [stageDoingBullet(s), ...lines]
           durations = [gap, ...durations]
         }
       }

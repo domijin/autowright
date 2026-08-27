@@ -901,8 +901,9 @@ milestone began — the next event in the same stage, else the stage's end (the 
 `stageTimes` entry's `time`, or `endedTime` for the job's last stage) — and a stage's
 total runs from its own `stageTimes` entry to that same end. The gap between a stage
 starting and its first event (the `Thinking…` window, which is never a feed event)
-belongs to no event; when material, §11 settles it as the stage's leading `Thinking…`
-line.
+belongs to no event; when material, §11 settles it as the stage's leading
+canned-description line (§11 renders that line in the `Thinking…` detail's place
+throughout — the thread never shows the label `Thinking…`).
 
 **Failed-run analysis is a chat message.** There is no separate issue-analysis call:
 the chat call's RECENT EXECUTIONS section already carries a failed run's error and log tails, so

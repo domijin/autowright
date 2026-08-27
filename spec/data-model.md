@@ -569,9 +569,9 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   persisted before the field existed has none and renders as done; `eventDurationsMs` =
   one duration per `text` line, parallel by index with `null` where no stamp bounds the
   line, derived by the editor from the §8 stage-timing stamps at settle — the lines are
-  the stage's settled feed: a leading `Thinking…` line when the stage's pre-first-
+  the stage's settled feed: a leading canned-description line when the stage's pre-first-
   milestone gap was material, then one line per event, or an empty feed's canned
-  description line carrying the stage's whole span (§11); entries persisted before the
+  description line alone carrying the stage's whole span (§11); entries persisted before the
   field existed carry none and render without durations — additive, §21.4; §11),
   `rewrite` a spec-updated event (text = one-line summary), `blockers` a §8 blocker list —
   each blocker `{ reason, fix, details?, kind? }`, `kind` only ever the literal

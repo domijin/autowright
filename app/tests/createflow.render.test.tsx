@@ -605,8 +605,8 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     fireEvent.click(screen.getByText('Send'))
   }
   // §11: the duration stamp sits beside its label in the same row — the
-  // bullet's flex div, or the block header's title row. A step or stage
-  // carrying no duration ends the row at the label itself.
+  // bullet's flex div. A bullet carrying no duration, and every block header's
+  // title row (never stamped), end the row at the label itself.
   const stampBeside = (label: HTMLElement) => {
     const last = label.parentElement!.lastElementChild as HTMLElement
     return last === label ? null : last.textContent
@@ -625,10 +625,12 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     events: STAMPED_EVENTS, ...over,
   })
 
-  it('a settled job stamps every stage total and step span from the §8 stamps', async () => {
+  it('a settled job stamps every step span from the §8 stamps, never a title row', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(settled({
       stageTimes: [
-        { stage: 'Working on the request', time: 1000 },
+        // the deciding phase opened a beat before its first milestone (1.6s),
+        // the documents phase landed one right away (0.4s)
+        { stage: 'Working on the request', time: 999 },
         { stage: 'Updating the documents', time: 1002 },
       ],
       endedTime: 1008.2,
@@ -636,10 +638,18 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     render(<CreateFlow />)
     send('Check the docs')
     await waitFor(() => expect(screen.getByText('Looked into it.')).toBeTruthy(), { timeout: 3000 })
-    // stage totals: the deciding phase runs to the next stage's stamp, the
-    // documents phase (the job's last) to the settle stamp
-    expect(stampBeside(screen.getByText('Working on the request…'))).toBe('2.0s')
-    expect(stampBeside(screen.getByText('Updating the documents…'))).toBe('6.2s')
+    // §11: a block's title row is a pure label — the bullets carry the time
+    expect(stampBeside(screen.getByText('Working on the request…'))).toBeNull()
+    expect(stampBeside(screen.getByText('Updating the documents…'))).toBeNull()
+    // §11: the deciding phase's material leading gap settles as its first
+    // timed bullet — the live Thinking… line frozen in place
+    const thinking = bullet('Thinking…')
+    expect(stampBeside(thinking)).toBe('1.6s')
+    expect(thinking.compareDocumentPosition(bullet('Writing the answer'))
+      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // …while the documents phase's sub-second gap leaves the stage clean —
+    // one Thinking… line in the whole thread
+    expect(screen.getAllByText('• Thinking…').length).toBe(1)
     // step spans: each event runs to the next milestone in its own stage, the
     // stage's last event to that stage's end
     expect(stampBeside(bullet('Writing the answer'))).toBe('1.4s')
@@ -647,15 +657,17 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     expect(stampBeside(bullet('Writing the notes'))).toBe('3.4s')
   })
 
-  it('a payload without §8 stamps settles with no totals and unbounded last steps', async () => {
+  it('a payload without §8 stamps settles with unbounded last steps and no Thinking… line', async () => {
     // an older backend sends events but neither stageTimes nor endedTime
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue(settled({}))
     render(<CreateFlow />)
     send('Check the docs')
     await waitFor(() => expect(screen.getByText('Looked into it.')).toBeTruthy(), { timeout: 3000 })
-    // nothing bounds a stage — no totals on either header
+    // a title row is never stamped, with or without stamps to draw on
     expect(stampBeside(screen.getByText('Working on the request…'))).toBeNull()
     expect(stampBeside(screen.getByText('Updating the documents…'))).toBeNull()
+    // no stage start to measure a leading gap against — no Thinking… line
+    expect(screen.queryByText('• Thinking…')).toBeNull()
     // an event still bounded by the next event in its stage keeps its span…
     expect(stampBeside(bullet('Writing the spec'))).toBe('2.4s')
     // …while a stage's last event has no next milestone to run to
@@ -663,7 +675,7 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     expect(stampBeside(bullet('Writing the notes'))).toBeNull()
   })
 
-  it('an empty-feed stage settles with the canned bullet and no step stamp', async () => {
+  it('an empty-feed stage settles with the canned bullet carrying the stage span', async () => {
     ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'j1', status: 'done', stage: 'Working on the request', detail: null,
       error: null, mode: 'chat', draft: { answer: 'All good.' }, events: [],
@@ -673,28 +685,29 @@ describe('CreateFlow per-step durations (§8 stage timing / §11)', () => {
     render(<CreateFlow />)
     send('Anything to improve?')
     await waitFor(() => expect(screen.getByText('All good.')).toBeTruthy(), { timeout: 3000 })
-    // the stage total still stamps the header…
-    expect(stampBeside(screen.getByText('Working on the request…'))).toBe('1.5s')
-    // …but the canned description is not a step — it never carries a stamp
-    expect(stampBeside(bullet('Choosing what to do'))).toBeNull()
+    // the title row stays a pure label…
+    expect(stampBeside(screen.getByText('Working on the request…'))).toBeNull()
+    // …and the canned description, the stage's only action, takes its whole span
+    expect(stampBeside(bullet('Choosing what to do'))).toBe('1.5s')
   })
 
   it('a stored activity entry renders its stamps; a pre-field one renders bare (§21.4)', async () => {
     ;(mockedApi.getChat as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ chat: [
       { id: 'd1', kind: 'activity', title: 'Updating the documents…', outcome: 'done',
         text: 'Writing the answer\nWriting the spec\nWriting the notes',
-        durationMs: 6200, eventDurationsMs: [1400, null, 3400] },
+        eventDurationsMs: [1400, null, 3400] },
       { id: 'd2', kind: 'activity', title: 'Syncing the workflow…', outcome: 'done',
         text: 'Writing the manifest' },
     ] })
     render(<CreateFlow />)
     await screen.findByText('Syncing the workflow…')
-    expect(stampBeside(screen.getByText('Updating the documents…'))).toBe('6.2s')
+    // §11: a stored entry's title row is a pure label too
+    expect(stampBeside(screen.getByText('Updating the documents…'))).toBeNull()
     expect(stampBeside(bullet('Writing the answer'))).toBe('1.4s')
     // §4.4: a null element is a line no stamp bounded — that line stays bare
     expect(stampBeside(bullet('Writing the spec'))).toBeNull()
     expect(stampBeside(bullet('Writing the notes'))).toBe('3.4s')
-    // §21.4 pre-field entry: neither key, so no stamp anywhere on it
+    // §21.4 pre-field entry: no key at all, so no stamp anywhere on it
     expect(stampBeside(screen.getByText('Syncing the workflow…'))).toBeNull()
     expect(stampBeside(bullet('Writing the manifest'))).toBeNull()
   })

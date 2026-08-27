@@ -119,10 +119,9 @@ export interface ChatEntry {
   dismissed?: boolean   // §11: collapsed to a one-line summary
   resolved?: string[]   // §11 "Previously resolved" list stamped at creation
   // activity: the §11 per-step durations, derived from the §8 stage-timing
-  // stamps at settle — the stage's total span, and one duration per `text`
-  // line (parallel by index, null where no stamp bounds the event); pre-field
-  // entries carry neither and render without stamps (§21.4)
-  durationMs?: number
+  // stamps at settle — one duration per `text` line, parallel by index (null
+  // where no stamp bounds the line); pre-field entries carry none and render
+  // without stamps (§21.4)
   eventDurationsMs?: (number | null)[]
   at?: string
 }

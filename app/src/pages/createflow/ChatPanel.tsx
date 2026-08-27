@@ -52,16 +52,10 @@ function OpBullet({ text, ellipsis, size, color, duration }: {
       }}>
         •&nbsp; {text}
       </span>
-      {duration && <DurationStamp label={duration} />}
+      {duration && (
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', flex: 'none' }}>{duration}</span>
+      )}
     </div>
-  )
-}
-
-/** §11 per-step duration stamp on a block header row — same style as the
-    bullets' (the §7 execution-step mono). */
-function DurationStamp({ label }: { label: string }) {
-  return (
-    <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', flex: 'none' }}>{label}</span>
   )
 }
 
@@ -413,7 +407,6 @@ export function ChatPanel({
                       <i className={`fa-solid ${failed ? 'fa-xmark' : 'fa-check'}`} style={{ fontSize: 11, color: glyphColor }} />
                     </GlyphBox>
                     <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>{e.title}</div>
-                    {e.durationMs != null && <DurationStamp label={durationLabel(e.durationMs)} />}
                   </div>
                 )}
                 {lines.map((l, i) => (
@@ -616,11 +609,6 @@ export function ChatPanel({
               <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--sans)", color: 'var(--text-muted)' }}>
                 {jobStageTitle(rev)}
               </div>
-              {/* §11 live durations: the stage's elapsed ticks whole seconds,
-                  freezing into the settled entry's precise total */}
-              {rev.genStageStartedAt != null && (
-                <DurationStamp label={waitedLabel(Math.max(0, (nowSeconds - rev.genStageStartedAt) * 1000))} />
-              )}
             </div>
             {(() => {
               // §11 activity feed: the full dim event history over the live
@@ -652,10 +640,13 @@ export function ChatPanel({
                       duration={liveSince != null ? waitedLabel(Math.max(0, (nowSeconds - liveSince) * 1000)) : undefined} />
                   )}
                   {/* §11: never an empty section — before the stream produces
-                      any feed, the stage's canned description holds its place
-                      (and carries no duration stamp) */}
+                      any feed, the stage's canned description holds its place,
+                      ticking from the stage's start so the live block always
+                      shows exactly one ticking stamp */}
                   {!rev.genDetail && hist.length === 0 && (
-                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} color="var(--text-muted)" />
+                    <OpBullet text={stageDoingBullet(jobStageTitle(rev))} color="var(--text-muted)"
+                      duration={rev.genStageStartedAt != null
+                        ? waitedLabel(Math.max(0, (nowSeconds - rev.genStageStartedAt) * 1000)) : undefined} />
                   )}
                 </>
               )

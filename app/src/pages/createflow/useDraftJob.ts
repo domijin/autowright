@@ -122,30 +122,45 @@ export function useDraftJob(d: DraftJobDeps) {
       // §8 stamps every event; a stampless one (older payloads) belongs to
       // the batch's first stage rather than vanishing
       const sevs = evs.filter((e) => e.stage === s || (!e.stage && i === 0))
-      const text = sevs.map((e) => e.text).join('\n')
       // §11 per-step durations, frozen from the §8 stage-timing stamps: an
       // event's span runs to the next milestone (next event in the stage,
-      // else the stage's end), the stage's total to that same end; a payload
-      // without stamps yields no duration keys at all (§4.4 pre-field shape).
+      // else the stage's end); a payload without stamps yields no duration
+      // key at all (§4.4 pre-field shape).
       const si = lastStageTimes.findIndex((t) => t.stage === s)
       const start = si >= 0 ? lastStageTimes[si].time : null
       const end = si >= 0 && si + 1 < lastStageTimes.length
         ? lastStageTimes[si + 1].time : lastEndedTime
-      const evDurations = sevs.map((e, k) => {
+      let lines = sevs.map((e) => e.text)
+      let durations = sevs.map((e, k) => {
         const next = k + 1 < sevs.length ? sevs[k + 1].time : end
         return e.time != null && next != null
           ? Math.max(0, Math.round((next - e.time) * 1000)) : null
       })
+      // §11: a material pre-first-milestone gap (≥ 1 s — a flip-entered stage
+      // starts on its first milestone and stays clean) settles the live
+      // Thinking… line as the stage's first timed bullet, so the stage's time
+      // is fully accounted by its bullets (no title stamp exists).
+      const firstTime = sevs[0]?.time
+      if (start != null && firstTime != null) {
+        const gap = Math.round((firstTime - start) * 1000)
+        if (gap >= 1000) {
+          lines = ['Thinking…', ...lines]
+          durations = [gap, ...durations]
+        }
+      }
+      // §11: a stage whose stream left no milestones still says what the
+      // phase does — a settled block is never a bare title — and its canned
+      // bullet, the stage's only action, carries the stage's whole span.
+      if (!lines.length) {
+        lines = [stageDoingBullet(s)]
+        durations = [start != null && end != null
+          ? Math.max(0, Math.round((end - start) * 1000)) : null]
+      }
       return newEntry({
         kind: 'activity', title: stageDisplayTitle(s),
-        // §11: a stage whose stream left no milestones still says what the
-        // phase does — a settled block is never a bare title
-        text: text || stageDoingBullet(s),
+        text: lines.join('\n'),
         outcome: outcome && i === stages.length - 1 ? outcome : 'done',
-        ...(start != null && end != null
-          ? { durationMs: Math.max(0, Math.round((end - start) * 1000)) } : {}),
-        // §11: the canned bullet of an empty feed never carries a stamp
-        ...(text && evDurations.some((d) => d != null) ? { eventDurationsMs: evDurations } : {}),
+        ...(durations.some((d) => d != null) ? { eventDurationsMs: durations } : {}),
       })
     })
     // Staleness guard: a slow in-flight tick may resolve after this job was

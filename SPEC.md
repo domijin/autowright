@@ -174,7 +174,8 @@ boot, so both ends agree regardless of the OS locale (macOS-only helpers like
 osascript/launchctl may keep the platform default, which is UTF-8 there). The shell
 half mirrors this: `win32.cjs` carries the Windows-correct values (flat `python\python.exe`
 bundled-interpreter layout, the §3 `.cmd` shim, PATH read from the process environment —
-Windows GUI apps inherit the full user PATH, no login-shell probe — native window frame,
+Windows GUI apps inherit the full user PATH, no login-shell probe — the §9 hidden-title-bar
+chrome with a native `titleBarOverlay` colored `--bg-titlebar`,
 and the §3 electron-updater NSIS update feed); `linux.cjs` carries the Linux values (XDG
 roots, `python/bin/python3`
 bundled-interpreter layout, the POSIX shim and login-shell PATH probe shared with macOS,

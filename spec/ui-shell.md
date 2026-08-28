@@ -7,18 +7,25 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
 One 100 vh dark window. Window chrome is per-OS (§2 shell platform layer,
 `mainWindowChrome()`): macOS uses hidden-title-bar traffic lights (positions below);
 Windows uses `titleBarStyle: 'hidden'` with a native `titleBarOverlay` — the OS draws
-minimize/maximize/close at the top-right over the app's own background (`color` =
-`--bg-content` `#0d1118` — the top-right corner the overlay covers belongs to the content
-pane, so matching `--bg-content` (not `--bg-window`) makes the button strip invisible
-against it; `symbolColor` = the §14 `--text-2` hex, `height` 40 so the overlay
-spans exactly the content drag strip; no macOS-style frameless custom buttons, and the
-overlay region needs no `no-drag` handling — the OS owns it). The app-shell root behind the
+minimize/maximize/close at the top-right — **plus a renderer-painted title bar**: the
+fixed full-width top strip (below) is, on Windows only, a visible 40 px bar spanning the
+entire window top (above sidebar and content), background §14 `--bg-titlebar` `#141820`
+with a 1 px `--hairline` bottom border. The overlay's `color` = `--bg-titlebar` `#141820`
+so the OS button cluster blends into that bar instead of reading as a floating block
+hugging the buttons (the pre-bar design matched the overlay to `--bg-content` and painted
+no bar at all); `symbolColor` = the §14 `--text-2` hex, `height` 40 so the overlay
+spans exactly the title bar (the bar's hairline sits at y 40–41, below the overlay, so
+the border runs unbroken under the buttons too — under the global `border-box` reset that
+means CSS height 41, not 40: a 40px box puts its border at y 39–40 where the OS overlay
+paints over it and the hairline visibly stops under the button cluster; no macOS-style frameless custom buttons,
+and the overlay region needs no `no-drag` handling — the OS owns it). The app-shell root behind the
 floating rail is per-OS too: macOS paints `--bg-window`, so the rail's gutter corners (the
 58 px column above the rail's top 46 and below its 12 px bottom gap) read as window chrome
 around the traffic lights; every other OS paints `--bg-content` — the gate is
 `platformOs === 'macos'` on the §9 store token, never a sniff — so the gutter corners and
-the content pane read as one uniform surface (on Windows the `titleBarOverlay` joins that
-surface too; there are no lights at the left to justify a darker corner on either OS).
+the content pane read as one uniform surface below the title bar (there are no lights at
+the left to justify a darker corner on either OS; on Windows the `titleBarOverlay` sits on
+the `--bg-titlebar` bar, not on this surface).
 Linux uses the native window frame for v1 (`mainWindowChrome()` returns `{}` — no custom
 title bar, no overlay; the OS draws its own bar above the 100 vh dark client area): with
 the OS drawing its own bar, nothing justifies a darker gutter, so the two-tone macOS
@@ -31,13 +38,20 @@ bar, which carries the Cmd shortcuts; Windows keeps the hidden default menu, who
 (reload, DevTools, zoom, fullscreen, quit) go with it on Linux; text-editing shortcuts
 (Ctrl+C/V/X/A) are Chromium-native and unaffected, and the §9 right-click context menu is
 independent of the application menu.
-The boot splash is not the app shell and keeps `--bg-window` on every OS; onboarding paints
+The boot splash is not the app shell and keeps `--bg-window` on every OS (on Windows the
+overlay therefore shows briefly as a `--bg-titlebar` block over the splash — knowingly
+accepted, as the pre-bar `--bg-content` mismatch was); onboarding paints
 the flat `--bg-content` page background on every OS — one background color, no accent glow —
-so it matches the content pane (and the Windows `titleBarOverlay`).
+so it matches the content pane. On Windows onboarding's top drag header carries the same
+title-bar treatment as the shell (height 40, `--bg-titlebar`, `--hairline` bottom border,
+zero vertical padding with centered content) so the overlay blends there too; on macOS the
+header keeps its transparent `13px 28px`-padded row.
 On the frameless platforms (macOS, Windows) the window drags from its top
 edge, Apple
-Music-style: a fixed 18 px full-width drag strip spans the whole window top (above sidebar and
-content, z-index 100), and the content pane always carries its own 40 px sticky drag strip —
+Music-style: a fixed full-width drag strip spans the whole window top (above sidebar and
+content, z-index 100) — invisible and 18 px tall on macOS (the traffic-light gutter is the
+chrome there), the visible 40 px `--bg-titlebar` title bar described above on Windows —
+and the content pane always carries its own 40 px sticky drag strip —
 every surface — so page content sits at a constant vertical offset. On Linux **neither shell
 strip renders** (gated on the §9 store `platformOs` token, never a sniff): the native title
 bar owns window dragging, so the strips were pure dead padding — with them gone, page content
@@ -46,7 +60,8 @@ ends), and a leftover drag strip would sit over the now-risen content and swallo
 clicks (the trap below). Both shell strips are pure
 OS drag surfaces: they carry `pointer-events: none`, so DOM clicks pass through to whatever
 renders beneath them (drag-region collection ignores pointer-events, so window dragging still
-works); they must never hold children. Interactive controls inside drag regions stay clickable
+works); they must never hold children — the Windows title bar paints a background but is
+still childless (any future bar content would need its own `no-drag` handling). Interactive controls inside drag regions stay clickable
 (`no-drag` on buttons/links/inputs). Real OS clicks on a button swallowed by a drag region start
 a window drag; synthetic/Playwright clicks bypass drag regions entirely and won't catch that
 mistake.
@@ -166,7 +181,8 @@ shell) with square left corners and a 12 px
 radius on the right corners (`0 12px 12px 0`), `--bg-sidebar` background and a hairline border.
 Its top edge (46 px) sits **below** the traffic lights — the lights are pinned at
 `trafficLightPosition: { x: 14, y: 14 }` (`titleBarStyle: 'hidden'`, one fixed position in
-every window state) and end around y ≈ 28, so panel and lights never overlap. Collapsed
+every window state) and end around y ≈ 28, so panel and lights never overlap — and on
+Windows below the 40 px title bar plus its 1 px hairline (46 > 41). Collapsed
 (default, no hover) the rail is 58 px wide and shows icons only: logo at top, nav icons
 (Automations, Executions, Agents, Secrets, Settings), and the About icon pinned at the bottom
 below a flexible spacer — About is meta, not a working surface. While the store holds §9.4

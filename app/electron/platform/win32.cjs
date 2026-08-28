@@ -30,14 +30,15 @@ function bundledPythonPath(resourcesPath) {
 // §9 window chrome: hidden title bar with a native `titleBarOverlay` — the OS
 // draws minimize/maximize/close at the top-right over the app's own background,
 // so the §14 look survives without hand-rolled frameless buttons. `color` is
-// `--bg-content` (the top-right corner belongs to the content pane, so this is
-// what makes the strip invisible), `symbolColor` the §14 `--text-2` hex, and
-// `height` matches the content drag strip exactly. No trafficLightPosition
-// anywhere: that option is macOS-only and lives in darwin.cjs.
+// `--bg-titlebar` (the renderer paints a full-width 40px title bar in that
+// shade, so the button cluster blends into the bar), `symbolColor` the §14
+// `--text-2` hex, and `height` matches the renderer's title bar exactly. No
+// trafficLightPosition anywhere: that option is macOS-only and lives in
+// darwin.cjs.
 function mainWindowChrome() {
   return {
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#0d1118', symbolColor: '#c8ccd4', height: 40 },
+    titleBarOverlay: { color: '#141820', symbolColor: '#c8ccd4', height: 40 },
   }
 }
 

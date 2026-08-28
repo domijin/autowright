@@ -250,8 +250,18 @@ export default function App() {
     <div style={{ height: '100vh', display: 'flex', background: platformOs === 'macos' ? 'var(--bg-window)' : 'var(--bg-content)' }}>
       {/* §9: shell drag strips are frameless-chrome only — on Linux the native
           title bar owns dragging, and a leftover strip would sit over the
-          risen content and swallow real OS clicks. */}
-      {platformOs !== 'linux' && <div className="ad-drag" style={{ position: 'fixed', top: 0, left: 0, right: 0, height: 18, zIndex: 100, pointerEvents: 'none' }} />}
+          risen content and swallow real OS clicks. On Windows this strip is the
+          visible full-width title bar (--bg-titlebar, matching the
+          titleBarOverlay color); macOS keeps the invisible 18px strip — the
+          traffic-light gutter is the chrome there. Childless either way. */}
+      {platformOs !== 'linux' && <div className="ad-drag" style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, pointerEvents: 'none',
+        ...(platformOs === 'macos'
+          ? { height: 18 }
+          // 41, not 40: border-box would pull the hairline up under the 40px
+          // titleBarOverlay, visibly breaking it below the button cluster (§9).
+          : { height: 41, background: 'var(--bg-titlebar)', borderBottom: '1px solid var(--hairline)' }),
+      }} />}
       {/* §9: layout reserves a constant 58px for the rail; the fixed panel inside
           Sidebar overlays the content pane when hover-expanded — content never reflows. */}
       <div style={{ width: 58, flex: 'none' }}>

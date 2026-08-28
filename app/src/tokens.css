@@ -13,6 +13,7 @@
   --bg-window: oklch(0.16 0.016 262);
   --bg-content: oklch(0.175 0.016 262);
   --bg-sidebar: oklch(0.155 0.016 262);
+  --bg-titlebar: oklch(0.21 0.016 262);
   --bg-card: oklch(0.23 0.016 262);
   --bg-card-sel: oklch(0.243 0.016 262);
   --bg-inset: oklch(0.17 0.016 262);

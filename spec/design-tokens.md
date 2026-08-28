@@ -16,7 +16,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   Tokens are declared as `oklch()` in `tokens.css`; the hexes below are the sRGB equivalents
   for mirrors that need literals (landing page, `result.tsx`, Electron `backgroundColor`).
 - Backgrounds (oklch L at chroma 0.016 hue 262): window 0.16 `#090d14` (`--bg-window`),
-  content 0.175 `#0d1118`, sidebar 0.155 `#090c13`, cards 0.23 `#191d25` (`--bg-card`;
+  content 0.175 `#0d1118`, sidebar 0.155 `#090c13`, title bar 0.21 `#141820`
+  (`--bg-titlebar` — the §9 Windows-only full-width top bar; also the Windows
+  `titleBarOverlay` `color`, so the OS button cluster blends into the bar),
+  cards 0.23 `#191d25` (`--bg-card`;
   selectable/hovered cards 0.243 `#1c2028` `--bg-card-sel`), inset/result wells 0.17
   `#0c0f16` (`--bg-inset`), popover menus 0.26 `#20242c` (`--bg-menu`), toast 0.285
   `#262a32` (`--bg-toast`), code wells 0.14 `#060910` (`--bg-code`). Card-vs-content

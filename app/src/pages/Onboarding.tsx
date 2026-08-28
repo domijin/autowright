@@ -535,7 +535,16 @@ export default function Onboarding() {
       height: '100vh', display: 'flex', flexDirection: 'column',
       background: 'var(--bg-content)',
     }}>
-      <div className="ad-drag" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18, padding: '13px 28px', flex: 'none' }}>
+      {/* §9: on Windows this header doubles as the shell's title bar — same
+          --bg-titlebar/hairline treatment and 40px height as the app shell,
+          so the OS titleBarOverlay cluster blends into it. */}
+      <div className="ad-drag" style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18, flex: 'none',
+        ...(platformOs === 'windows'
+          // 41 = 40px bar + the hairline below the titleBarOverlay (§9).
+          ? { height: 41, padding: '0 28px', background: 'var(--bg-titlebar)', borderBottom: '1px solid var(--hairline)' }
+          : { padding: '13px 28px' }),
+      }}>
         {/* §10: with prior data step 1 is the only screen — no counter. */}
         {!pre && (
           <div style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)' }}>

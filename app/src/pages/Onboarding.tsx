@@ -536,7 +536,7 @@ export default function Onboarding() {
       background: 'var(--bg-content)',
     }}>
       {/* §9: on Windows this header doubles as the shell's title bar — same
-          --bg-titlebar/hairline treatment and 40px height as the app shell,
+          --bg-titlebar/hairline treatment and height as the app shell's bar,
           so the OS titleBarOverlay cluster blends into it. */}
       <div className="ad-drag" style={{
         display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 18, flex: 'none',

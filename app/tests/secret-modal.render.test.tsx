@@ -28,7 +28,7 @@ describe('§12 SecretModal value states', () => {
   it('set secret: kept row, no textarea and no Show until Replace value', () => {
     render(<SecretModal modal={edit(true)} onClose={() => {}} />)
     expect(screen.getByText('••••••••••••')).toBeTruthy()
-    expect(screen.getByText('Current value kept')).toBeTruthy()
+    expect(screen.getByText('Current value is kept secret')).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: '' })).toBeTruthy() // description input only
     expect(screen.queryByPlaceholderText(/Paste the new value/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Show' })).toBeNull()
@@ -38,12 +38,12 @@ describe('§12 SecretModal value states', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Replace value' }))
     const ta = screen.getByPlaceholderText('Paste the new value, or leave blank to keep the current one')
     expect(screen.getByRole('button', { name: 'Show' })).toBeTruthy()
-    expect(screen.queryByText('Current value kept')).toBeNull()
+    expect(screen.queryByText('Current value is kept secret')).toBeNull()
 
     // Keep current value returns to the kept row and discards the draft.
     fireEvent.change(ta, { target: { value: 'typed' } })
     fireEvent.click(screen.getByRole('button', { name: 'Keep current value' }))
-    expect(screen.getByText('Current value kept')).toBeTruthy()
+    expect(screen.getByText('Current value is kept secret')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Replace value' }))
     expect((screen.getByPlaceholderText(/Paste the new value/) as HTMLTextAreaElement).value).toBe('')
   })
@@ -59,7 +59,7 @@ describe('§12 SecretModal value states', () => {
     expect(screen.getByText('NOT SET')).toBeTruthy()
     expect(screen.getByPlaceholderText('Paste the password or API key')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Show' })).toBeTruthy()
-    expect(screen.queryByText('Current value kept')).toBeNull()
+    expect(screen.queryByText('Current value is kept secret')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Replace value' })).toBeNull()
     expect(screen.getByText(/This secret has no value yet/)).toBeTruthy()
   })
@@ -68,6 +68,6 @@ describe('§12 SecretModal value states', () => {
     render(<SecretModal modal={{ mode: 'add' }} onClose={() => {}} />)
     expect(screen.getByPlaceholderText(/Paste the password or API key — or leave blank/)).toBeTruthy()
     expect(screen.queryByText('NOT SET')).toBeNull()
-    expect(screen.queryByText('Current value kept')).toBeNull()
+    expect(screen.queryByText('Current value is kept secret')).toBeNull()
   })
 })

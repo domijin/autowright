@@ -1279,7 +1279,7 @@ Show is toggled; Enter inserts a newline, Cmd/Ctrl+Enter saves, Escape closes. *
 secret that has a value (`set: true`) never opens on an empty value field**: the API never
 returns the stored value (§4.8), and an empty masked textarea with a Show/Hide toggle reads as
 "your secret is empty". Instead the VALUE section renders a read-only *kept* row (same chip
-style as the read-only name: a mono mask `••••••••••••`, the faint note "Current value kept",
+style as the read-only name: a mono mask `••••••••••••`, the faint note "Current value is kept secret",
 and a text button "Replace value" at the right); no textarea and no Show/Hide exist in this
 state, and Save changes with the row untouched is a description-only update (§4.8 blank value
 keeps the stored one). Pressing Replace value swaps the row for the textarea (focused,

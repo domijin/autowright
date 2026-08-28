@@ -186,7 +186,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
                 border: '1px solid var(--hairline)', borderRadius: 7, padding: '9px 11px',
               }}>
                 <span style={{ font: `400 12px var(--mono)`, color: 'var(--text-muted)' }}>{MASK}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Current value kept</span>
+                <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Current value is kept secret</span>
                 <button
                   className="ad-btn-text small"
                   onClick={() => setReplacing(true)}

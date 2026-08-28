@@ -15,8 +15,13 @@ Download from [autowright.ai](https://autowright.ai) or the
 
 - **macOS** (Apple Silicon) - DMG, Developer-ID signed and notarized, or
   `brew install --cask hansololz/tap/autowright`
-- **Windows** (x64) - installer
-- **Linux** (x86_64) - AppImage
+- **Windows** (x64) - installer, **unstable**: early port, unsigned (expect a SmartScreen
+  warning), and not yet tested on a wide range of machines
+- **Linux** (x86_64) - AppImage, **unstable**: early port, lags behind the macOS release,
+  and known to fail on Ubuntu 24.04+ (AppArmor user-namespace restriction)
+
+macOS is the supported platform today; the Windows and Linux builds are provided for early
+testers and may break between releases.
 
 Or build from source - see §18 in [SPEC.md](SPEC.md).
 

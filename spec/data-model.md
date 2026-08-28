@@ -907,7 +907,8 @@ on the Secrets page and given to the drafting agent"), stored next to the name i
 (never in the Keychain) and carried into the §8 grants yaml so the drafting agent knows which
 secret to use. Values are arbitrary strings and may be multi-line (e.g. a PEM key). Values stored
 in macOS Keychain, masked at rest; the API never returns secret values — show/hide applies to the
-value being typed in the add/edit modal, not to stored values. `set` is a backend-maintained
+value being typed in the add/edit modal, not to stored values (so the §12 edit modal shows a
+set secret as a masked "kept" row with a Replace value action, never an empty value field). `set` is a backend-maintained
 boolean in `secrets.yaml`: creating a secret (§19 `POST /secrets`) with a blank value creates
 a **placeholder**
 (`set: false`) — the name and description exist, no Keychain entry does; the Secrets page and

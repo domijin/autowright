@@ -1275,8 +1275,23 @@ Below the name sits an optional
 single-line DESCRIPTION input (placeholder "What this secret is for — helps the drafting agent
 pick the right secret"), pre-filled when editing. The value field is a 3-row vertically
 resizable textarea (multi-line values allowed, §4.8) masked with `-webkit-text-security` unless
-Show is toggled; Enter inserts a newline, Cmd/Ctrl+Enter saves, Escape closes; when editing, a
-blank value keeps the stored one (§4.8) and the placeholder says so. A new secret saved with a
+Show is toggled; Enter inserts a newline, Cmd/Ctrl+Enter saves, Escape closes. **Editing a
+secret that has a value (`set: true`) never opens on an empty value field**: the API never
+returns the stored value (§4.8), and an empty masked textarea with a Show/Hide toggle reads as
+"your secret is empty". Instead the VALUE section renders a read-only *kept* row (same chip
+style as the read-only name: a mono mask `••••••••••••`, the faint note "Current value kept",
+and a text button "Replace value" at the right); no textarea and no Show/Hide exist in this
+state, and Save changes with the row untouched is a description-only update (§4.8 blank value
+keeps the stored one). Pressing Replace value swaps the row for the textarea (focused,
+placeholder "Paste the new value, or leave blank to keep the current one", Show/Hide as
+usual) with a "Keep current value" text button under it that returns to the kept row and
+discards anything typed. The intro copy in this state: "The stored value stays as it is
+unless you replace it. A new value is used from the next execution onward." Editing a §4.8
+**placeholder** (`set: false`) shows the textarea directly, because there an empty field is
+the truth: the VALUE eyebrow carries the amber NOT SET tag, the placeholder reads "Paste the
+password or API key", and the intro copy reads "This secret has no value yet. Automations
+that need it fail until you add one." (a blank save still just updates the description).
+A new secret saved with a
 blank value becomes a §4.8 placeholder (the add modal's value placeholder reads "Paste the
 password or API key — or leave blank to add the value later"; the success toast is then
 "Saved — add the value before an automation needs it."). The edit modal is titled

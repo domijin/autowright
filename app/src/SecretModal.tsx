@@ -6,7 +6,7 @@ import { api } from './api'
 import { usePlatformCopy } from './platformCopy'
 import { useStore } from './store'
 import type { SecretMeta } from './types'
-import { BtnGhost, BtnPrimary, Eyebrow, Modal } from './ui'
+import { BtnGhost, BtnPrimary, Eyebrow, MiniBadge, Modal } from './ui'
 
 const NAME_RE = /^[A-Z][A-Z0-9_]*$/
 
@@ -17,7 +17,10 @@ const inputStyle: React.CSSProperties = {
 
 export type SecretModalState =
   | { mode: 'add' }
-  | { mode: 'edit'; id: string; name: string; description: string; usedBy: { id: string; name: string }[] }
+  | { mode: 'edit'; id: string; name: string; description: string; set: boolean; usedBy: { id: string; name: string }[] }
+
+// §12: the list's mask, reused for the edit modal's kept-value row.
+const MASK = '••••••••••••'
 
 export function SecretModal({ modal, onClose, onSaved }: {
   modal: SecretModalState
@@ -36,6 +39,12 @@ export function SecretModal({ modal, onClose, onSaved }: {
   const [description, setDesc] = useState(isAdd ? '' : modal.description)
   const [value, setValue] = useState('')
   const [show, setShow] = useState(false)
+  // §12: a set secret's stored value can't be shown (§4.8: the API never
+  // returns it), so the edit modal opens on a masked "kept" row rather than an
+  // empty textarea, and the textarea only appears once Replace value is pressed.
+  const hasStoredValue = modal.mode === 'edit' && modal.set
+  const [replacing, setReplacing] = useState(false)
+  const showTextarea = !hasStoredValue || replacing
 
   return (
     <Modal onClose={onClose} width={460} cardStyle={{ padding: '22px 24px' }}>
@@ -83,7 +92,9 @@ export function SecretModal({ modal, onClose, onSaved }: {
             <p style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 18px' }}>
               {isAdd
                 ? 'A password or API key your automations use — the value itself never appears in a script or a log.'
-                : 'A new value is used from the next execution onward — leave the value blank to keep the current one.'}
+                : hasStoredValue
+                  ? 'The stored value stays as it is unless you replace it. A new value is used from the next execution onward.'
+                  : 'This secret has no value yet. Automations that need it fail until you add one.'}
             </p>
             <Eyebrow style={{ margin: '0 0 6px' }}>NAME</Eyebrow>
             {isAdd ? (
@@ -124,32 +135,67 @@ export function SecretModal({ modal, onClose, onSaved }: {
               placeholder="What this secret is for — helps the drafting agent pick the right secret"
               style={inputStyle}
             />
-            <Eyebrow style={{ margin: '16px 0 6px' }}>VALUE</Eyebrow>
-            <div style={{ position: 'relative' }}>
-              <textarea
-                className="ad-input"
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                onKeyDown={onValueKeyDown}
-                autoFocus={!isAdd}
-                spellCheck={false}
-                rows={3}
-                placeholder={isAdd
-                  ? 'Paste the password or API key — or leave blank to add the value later'
-                  : 'Leave blank to keep the current value'}
-                style={{
-                  ...inputStyle, padding: '9px 62px 9px 11px', resize: 'vertical', minHeight: 60,
-                  WebkitTextSecurity: show ? 'none' : 'disc',
-                } as React.CSSProperties}
-              />
-              <button
-                className="ad-btn-text small"
-                onClick={() => setShow(!show)}
-                style={{ position: 'absolute', right: 9, top: 11, borderRadius: 6 }}
-              >
-                {show ? 'Hide' : 'Show'}
-              </button>
-            </div>
+            <Eyebrow style={{ margin: '16px 0 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              VALUE
+              {!isAdd && !hasStoredValue && (
+                <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>
+              )}
+            </Eyebrow>
+            {showTextarea ? (
+              <>
+                <div style={{ position: 'relative' }}>
+                  <textarea
+                    className="ad-input"
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    onKeyDown={onValueKeyDown}
+                    autoFocus={!isAdd}
+                    spellCheck={false}
+                    rows={3}
+                    placeholder={isAdd
+                      ? 'Paste the password or API key — or leave blank to add the value later'
+                      : hasStoredValue
+                        ? 'Paste the new value, or leave blank to keep the current one'
+                        : 'Paste the password or API key'}
+                    style={{
+                      ...inputStyle, padding: '9px 62px 9px 11px', resize: 'vertical', minHeight: 60,
+                      WebkitTextSecurity: show ? 'none' : 'disc',
+                    } as React.CSSProperties}
+                  />
+                  <button
+                    className="ad-btn-text small"
+                    onClick={() => setShow(!show)}
+                    style={{ position: 'absolute', right: 9, top: 11, borderRadius: 6 }}
+                  >
+                    {show ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {hasStoredValue && (
+                  <button
+                    className="ad-btn-text small dim"
+                    onClick={() => { setReplacing(false); setValue(''); setShow(false) }}
+                    style={{ marginTop: 8 }}
+                  >
+                    Keep current value
+                  </button>
+                )}
+              </>
+            ) : (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-inset)',
+                border: '1px solid var(--hairline)', borderRadius: 7, padding: '9px 11px',
+              }}>
+                <span style={{ font: `400 12px var(--mono)`, color: 'var(--text-muted)' }}>{MASK}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Current value kept</span>
+                <button
+                  className="ad-btn-text small"
+                  onClick={() => setReplacing(true)}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  Replace value
+                </button>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 22 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-faint)', marginRight: 'auto' }}>
                 <i className="fa-solid fa-lock" style={{ fontSize: 10 }} />

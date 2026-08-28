@@ -40,12 +40,13 @@ selectors, done via `app/e2e/harness.ts` `COPY`). Each remaining item moves into
   serving the old feed.
 - **`managedInstall` answers false on both** (`win32.cjs:122-124`, `linux.cjs:153-156`);
   the probe may later detect a distro-package / winget-style managed install.
-- **Release messaging still says macOS-only.** `README.md:50`, `:64` ("Currently macOS
-  (Apple Silicon) only"), and `docs/index.html` (buttons "Download for macOS", "Windows &
-  Linux coming soon" copy, page JS reads only the `darwin-arm64` entry of
-  `downloads.json`) — even though `downloads.json` already carries a `win32-x86_64` 0.6.0
-  entry. Update README + download page together when Windows (and later Linux) artifacts
-  are advertised.
+- **Release messaging: Windows and Linux are deliberately not advertised yet.** The
+  README (2026-08-28) lists both builds but labels them **unstable** (early testers only;
+  Windows unsigned / SmartScreen, Linux lagging and failing on Ubuntu 24.04+); the
+  download page (`docs/index.html`) still says "Download for macOS" / "Windows & Linux
+  coming soon" and its JS reads only the `darwin-arm64` entry of `downloads.json` — kept
+  that way on purpose until the ports are stable. When they are, drop the README
+  "unstable" wording and update the download page (per-OS buttons + copy) together.
 
 ## Windows
 

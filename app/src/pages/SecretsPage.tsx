@@ -96,7 +96,7 @@ export default function SecretsPage() {
             <div style={{ display: 'flex', gap: 4, justifySelf: 'end', alignItems: 'center' }}>
               <button
                 className="ad-btn-icon"
-                onClick={() => setModal({ mode: 'edit', id: s.id, name: s.name, description: s.description, usedBy: s.usedBy })}
+                onClick={() => setModal({ mode: 'edit', id: s.id, name: s.name, description: s.description, set: s.set, usedBy: s.usedBy })}
                 title="Edit"
                 aria-label="Edit secret"
               >

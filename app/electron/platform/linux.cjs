@@ -114,12 +114,15 @@ function autostartText() {
     `Exec=${exec}`, AUTOSTART_MARKER, ''].join('\n')
 }
 
-function applyLoginItem(_app, enabled) {
+function applyLoginItem(app, enabled) {
   const p = autostartPath()
   let current = null
   try { current = fs.readFileSync(p, 'utf-8') } catch { /* absent */ }
   try {
     if (enabled) {
+      // Dev-harness guard (§4.9, all OSes): an unpackaged run's Exec line
+      // would point at the bare Electron dev binary, not Autowright.
+      if (!app.isPackaged) return
       if (current !== null && !current.includes(AUTOSTART_MARKER)) return // foreign
       const wanted = autostartText()
       if (current !== wanted) {

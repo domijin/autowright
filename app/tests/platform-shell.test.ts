@@ -318,16 +318,37 @@ describe('§13/§17 the per-OS tray assets and their generator agree', () => {
 })
 
 describe('§4.9 login item is per-OS (applyLoginItem)', () => {
-  it('macOS/Windows write the Electron login item only when the OS view differs', () => {
+  it('macOS/Windows: packaged runs register on OS-view drift, assert off unconditionally', () => {
+    for (const mod of [darwin, win32]) {
+      const calls: unknown[] = []
+      let osView = true
+      const app = {
+        isPackaged: true,
+        getLoginItemSettings: () => ({ openAtLogin: osView }),
+        setLoginItemSettings: (v: unknown) => calls.push(v),
+      }
+      mod.applyLoginItem(app, true) // already registered: no write
+      expect(calls).toEqual([])
+      // Off never trusts the OS reading (stale, or scoped to another copy):
+      // it is asserted on every reconcile, even when the OS already says off.
+      osView = false
+      mod.applyLoginItem(app, false)
+      mod.applyLoginItem(app, false)
+      expect(calls).toEqual([{ openAtLogin: false }, { openAtLogin: false }])
+    }
+  })
+
+  it('macOS/Windows: unpackaged (dev) runs never register but still assert removal', () => {
     for (const mod of [darwin, win32]) {
       const calls: unknown[] = []
       const app = {
-        getLoginItemSettings: () => ({ openAtLogin: true }),
+        isPackaged: false,
+        getLoginItemSettings: () => ({ openAtLogin: false }),
         setLoginItemSettings: (v: unknown) => calls.push(v),
       }
-      mod.applyLoginItem(app, true) // already registered — no write
+      mod.applyLoginItem(app, true) // would enroll the bare Electron binary
       expect(calls).toEqual([])
-      mod.applyLoginItem(app, false)
+      mod.applyLoginItem(app, false) // dev off cleans up a stale dev registration
       expect(calls).toEqual([{ openAtLogin: false }])
     }
   })
@@ -337,24 +358,33 @@ describe('§4.9 login item is per-OS (applyLoginItem)', () => {
     const prevXdg = process.env.XDG_CONFIG_HOME
     process.env.XDG_CONFIG_HOME = dir
     const entry = join(dir, 'autostart', 'ai.autowright.app.desktop')
+    const packaged = { isPackaged: true }
+    const dev = { isPackaged: false }
     try {
       // Enable writes the entry: marker-owned, Exec quoted at this binary.
-      linux.applyLoginItem(null, true)
+      linux.applyLoginItem(packaged, true)
       const text = readFileSync(entry, 'utf-8')
       expect(text).toContain('[Desktop Entry]')
       expect(text).toContain('X-Autowright-Login-Item=true')
       expect(text).toContain(`Exec="${process.execPath}"`)
       // Idempotent: a second enable leaves the same bytes.
-      linux.applyLoginItem(null, true)
+      linux.applyLoginItem(packaged, true)
       expect(readFileSync(entry, 'utf-8')).toBe(text)
       // Disable deletes the ours-marker entry…
-      linux.applyLoginItem(null, false)
+      linux.applyLoginItem(packaged, false)
+      expect(existsSync(entry)).toBe(false)
+      // Unpackaged (dev) enable never writes: the Exec line would point at
+      // the bare Electron binary. Dev disable still cleans up a stale entry.
+      linux.applyLoginItem(dev, true)
+      expect(existsSync(entry)).toBe(false)
+      linux.applyLoginItem(packaged, true)
+      linux.applyLoginItem(dev, false)
       expect(existsSync(entry)).toBe(false)
       // …but a foreign file (no marker) is never touched, either direction.
       writeFileSync(entry, '[Desktop Entry]\nName=SomethingElse\n')
-      linux.applyLoginItem(null, true)
+      linux.applyLoginItem(packaged, true)
       expect(readFileSync(entry, 'utf-8')).toBe('[Desktop Entry]\nName=SomethingElse\n')
-      linux.applyLoginItem(null, false)
+      linux.applyLoginItem(packaged, false)
       expect(existsSync(entry)).toBe(true)
     } finally {
       if (prevXdg === undefined) delete process.env.XDG_CONFIG_HOME

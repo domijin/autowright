@@ -87,11 +87,17 @@ function readLoginShellPath() {
 
 // ---- §4.9 login item --------------------------------------------------------
 
-// §4.9 login reconcile: the OS login item via Electron — idempotent, only
-// written when the OS view differs.
+// §4.9 login reconcile: the OS login item via Electron. Registration is only
+// valid from a packaged run: an unpackaged (dev-harness) run would enroll the
+// bare Electron dev binary as the login item, not Autowright. Off is asserted
+// unconditionally, never guarded by the OS reading (which can be stale or
+// describe a different copy), so any run with the toggle off clears a stale
+// registration for its own binary; on writes only when the OS view differs.
 function applyLoginItem(app, enabled) {
-  if (app.getLoginItemSettings().openAtLogin !== enabled) {
-    app.setLoginItemSettings({ openAtLogin: enabled })
+  if (!enabled) {
+    app.setLoginItemSettings({ openAtLogin: false })
+  } else if (app.isPackaged && !app.getLoginItemSettings().openAtLogin) {
+    app.setLoginItemSettings({ openAtLogin: true })
   }
 }
 

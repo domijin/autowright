@@ -940,7 +940,13 @@ menuBarIcon: bool       — "Show in the menu bar" ("The quickest way to execute
   login item via Electron, on Linux a marker-carrying `.desktop` file reconciled in
   `~/.config/autostart/` (written on enable — rewritten when its Exec line drifts, e.g. a
   moved AppImage — deleted on disable; same never-touch-foreign-files ownership rules as
-  the §3 CLI shim) — the default true registers on first launch; `menuBarIcon` creates or
+  the §3 CLI shim) — the default true registers on first launch. Two reconcile rules on
+  every OS: an unpackaged (dev-harness) run never registers, because the OS would enroll
+  the bare Electron dev binary as the login item rather than Autowright; and off is
+  asserted unconditionally on every reconcile, never guarded by the OS's own reading
+  (which can be stale or describe a different copy), so any run with the toggle off,
+  packaged or not, clears a stale registration for its own binary. On still writes only
+  when the OS view differs. `menuBarIcon` creates or
   destroys the tray icon live (no restart; hiding it also hides an open §13 panel).
 keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac from sleeping so
   schedules and message triggers keep firing. The display can still sleep.") — while on, the

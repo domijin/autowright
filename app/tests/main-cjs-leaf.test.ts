@@ -328,6 +328,9 @@ function loadMain(): MainStub {
       isReady: () => false,
       quit() { quits += 1 },
       whenReady: () => new Promise(() => {}),
+      // §4.9 dev-harness guard: registration happens only from a packaged
+      // run, so the leaf harness models one.
+      isPackaged: true,
       getLoginItemSettings: () => ({ openAtLogin: false }),
       setAppUserModelId: (id: string) => { aumids.push(id) },
       setLoginItemSettings(s: { openAtLogin: boolean }) { loginItem.push(s.openAtLogin) },

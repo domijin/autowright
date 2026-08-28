@@ -53,8 +53,10 @@ function Sidebar() {
     agents: nAgents,
     secrets: nSecrets,
   }
-  // §9 floating rail: fixed panel below the traffic lights (top 46 > lights' ~28 bottom);
-  // on Linux the native title bar leaves nothing to clear, so top 12 mirrors the bottom
+  // §9 floating rail: fixed panel below the per-OS chrome — macOS top 46 (below the
+  // traffic lights' ~28 bottom), Windows top 53 (the title bar's 41px extent + the same
+  // 12px gap as the bottom), Linux top 12 (native title bar leaves nothing to clear) —
+  // so the gap above always mirrors the 12px bottom
   // gap. Square left corners against the window edge, 12px radius on the right. Inner
   // content keeps a fixed 212px width — the .ad-rail hover expansion reveals labels by clip.
   return (
@@ -64,7 +66,7 @@ function Sidebar() {
       style={{
         // z 50: above page content, below every modal backdrop (z 60+) so an
         // open modal dims and blocks the rail too (§9).
-        position: 'fixed', left: 0, top: platformOs === 'linux' ? 12 : 46, bottom: 12, zIndex: 50,
+        position: 'fixed', left: 0, top: platformOs === 'linux' ? 12 : platformOs === 'windows' ? 53 : 46, bottom: 12, zIndex: 50,
         display: 'flex', flexDirection: 'column',
       }}
     >

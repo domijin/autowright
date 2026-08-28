@@ -6,6 +6,7 @@
 // drafting-agent picker and Clear chat.
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePlatformCopy } from '../../platformCopy'
+import { useStore } from '../../store'
 import type { Agent, ChatEntry } from '../../types'
 import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, durationLabel, usePopover, waitedLabel } from '../../ui'
 import { devlogOverlayOpen } from '../../devlog'
@@ -175,6 +176,10 @@ export function ChatPanel({
 }: ChatPanelProps) {
   // §9 per-OS copy rule: the machine noun the create empty state names.
   const copy = usePlatformCopy()
+  // §11 per-OS top offset, matching the §9 rail: 53 below the Windows title
+  // bar (41px extent + 12px gap, mirroring the bottom gap), 46 elsewhere.
+  const platformOs = useStore((s) => s.platformOs)
+  const panelTop = platformOs === 'windows' ? 53 : 46
   // §11 thread auto-scroll: newest at the bottom, scrolled on new content and
   // when the transient progress entry appears (a job starts).
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
@@ -306,8 +311,8 @@ export function ChatPanel({
   return (
     <div style={{
       width: 'clamp(340px, 26vw, 420px)', flex: 'none', alignSelf: 'flex-start',
-      position: 'sticky', top: 46, marginTop: 6, marginLeft: 12,
-      height: 'calc(100vh - 58px)',
+      position: 'sticky', top: panelTop, marginTop: 6, marginLeft: 12,
+      height: `calc(100vh - ${panelTop + 12}px)`,
       background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12,
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>

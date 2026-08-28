@@ -172,17 +172,20 @@ subsystem and are gated off by `capabilities.imessage` anyway; "this PC" there w
 incoherent.
 
 The sidebar is a **hover-expanding floating rail** anchored to the left window edge: a panel
-(`position: fixed`, `left: 0, top: 46, bottom: 12` — on Linux `top: 12`, matching the bottom
-gap: no traffic lights and no shell drag strips leave nothing for 46 px to clear, and the
-symmetric gap is what makes the rail read as evenly floated under a native title bar —
+(`position: fixed`, `left: 0, bottom: 12`, per-OS top — macOS `top: 46` (clearing the
+traffic lights), Windows `top: 53` (the title bar's 41 px painted extent + the same 12 px
+gap as the bottom, so the rail floats evenly below the bar), Linux `top: 12` (no lights and
+no shell bar leave nothing to clear): on every OS the gap between the rail and whatever
+chrome sits above it matches the 12 px bottom gap, which is what makes the rail read as
+evenly floated —
 z 50 — above all page content but below
 every modal backdrop (z 60+), so an open modal dims and blocks the rail like the rest of the
 shell) with square left corners and a 12 px
 radius on the right corners (`0 12px 12px 0`), `--bg-sidebar` background and a hairline border.
-Its top edge (46 px) sits **below** the traffic lights — the lights are pinned at
+On macOS its top edge (46 px) sits **below** the traffic lights — the lights are pinned at
 `trafficLightPosition: { x: 14, y: 14 }` (`titleBarStyle: 'hidden'`, one fixed position in
-every window state) and end around y ≈ 28, so panel and lights never overlap — and on
-Windows below the 40 px title bar plus its 1 px hairline (46 > 41). Collapsed
+every window state) and end around y ≈ 28, so panel and lights never overlap; on
+Windows its top edge (53 px) clears the 41 px title bar by the same 12 px as the bottom gap. Collapsed
 (default, no hover) the rail is 58 px wide and shows icons only: logo at top, nav icons
 (Automations, Executions, Agents, Secrets, Settings), and the About icon pinned at the bottom
 below a flexible spacer — About is meta, not a working surface. While the store holds §9.4

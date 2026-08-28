@@ -12,11 +12,14 @@ yet — add one here first. Creating and editing automations needs an AI."
 save**: there is no separate Ask screen and no building screen. A **floating chat panel**
 sits at the left edge of the content area, matching the §9 nav rail's panel language and
 vertical rhythm: `clamp(340px, 26vw, 420px)` wide (420 px on wide windows, shrinking with
-the window so the review grid's two columns keep room on small ones), top edge at 46 px and
+the window so the review grid's two columns keep room on small ones), top edge matching the
+§9 rail's per-OS offset on the frameless platforms (46 px on macOS, 53 px on Windows — 12 px
+below the §9 title bar's 41 px extent, matching the rail) and
 bottom edge 12 px above the window
 bottom (sticky — it never scrolls with the review pane), 12 px radius on all four corners,
 card background with a 1 px `--border-card` border, own scroll, and a 12 px gap on its left
-from the rail's 58 px reserve (the 46 px top clears the traffic lights, so the panel needs no
+from the rail's 58 px reserve (the top offset clears the traffic lights / the Windows title
+bar, so the panel needs no
 header padding and no `no-drag` handling — it starts below the §9 drag strips, like the
 rail). The review
 pane's content background shows around the panel. Beside it the **review pane** holds the

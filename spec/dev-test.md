@@ -607,7 +607,7 @@ Dev workflow:
     4755, dev.sh heals it (`sudo chown root:root` + `sudo chmod 4755` — the script is
     run by hand in a terminal, so the sudo prompt is fine); a fresh `npm ci` unpack
     re-triggers the heal. The sandbox itself stays on — never `--no-sandbox` (dev/release
-    parity). The packaged AppImage faces the same restriction — open item, `LINUX.md`.
+    parity). The packaged AppImage faces the same restriction — open item, `spec/ports.md`.
 - **`./scripts/build-clean.sh`** — resets the repo to a pre-build state so the next
   `build.sh`/`dev.sh` rebuilds from scratch. First stops anything running **from this repo**
   (deleting `.venv` under the live launchd KeepAlive service would otherwise break):

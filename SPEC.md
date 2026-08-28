@@ -182,8 +182,8 @@ native window frame — no custom title bar or vibrancy for v1 — colored tray 
 work-area-anchored panel placement on any screen edge, the §4.9 login setting honored via
 an XDG-autostart `.desktop` file, and the §3 electron-updater AppImage update feed);
 `fallback.cjs` keeps the degraded build for any other platform.
-What remains of the Linux port (the download-page and release-messaging surface) is
-audited in the `LINUX.md` worksheet until it ships into this spec. Clients gate features on the §19
+What remains open of the Windows and Linux ports is
+audited in the `spec/ports.md` worksheet until it ships into this spec. Clients gate features on the §19
 `/health` `os` + `capabilities` fields — never by sniffing the platform at a call site.
 Behavior on macOS is identical to the pre-layer code; the layer exists so a port fills in
 per-OS modules instead of hunting call sites.
@@ -203,7 +203,10 @@ migrate-on-load migration so data written by released versions keeps loading (§
 ## 17. Repository structure
 
 - `SPEC.md` + `spec/` — the spec: `SPEC.md` is the index (holds §1, §2, §17 and the section map);
-  `spec/*.md` hold every other section, grouped by domain.
+  `spec/*.md` hold every other section, grouped by domain. One exception:
+  `spec/ports.md` is a temporary worksheet, not a numbered section — the still-open
+  Windows/Linux port items (working notes, not spec); each item moves into its
+  §-section as it ships, and the file is deleted when empty.
 - `backend/` — Python package `autowright`: storage, engine (+`executor.py` step SDK,
   `imports_check.py` shared §6.2 import allowlist), `scheduler.py` (the trigger tick loop
   only), `firing.py` (the §6 queue/firing operations, moved out of the scheduler:
@@ -489,9 +492,6 @@ migrate-on-load migration so data written by released versions keeps loading (§
   development). Not part of the app build and not used by anything in the repo — the real backend
   package is `backend/`; never install `autowright` from PyPI. Uploaded by the developer via
   `scripts/pip-release.sh` (§18).
-- `LINUX.md` - temporary Linux-port worksheet: the audited port surface (what is done, what
-  remains, in what order) for building on Linux x86-64. Working notes, not spec - each item
-  moves into the §-sections as it ships, and the file is deleted when the port lands.
 - `VERSION` — single source of truth for the app version (one line, semver). Synced into
   `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
   `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to

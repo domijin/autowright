@@ -103,15 +103,18 @@ function autostartPath() {
   return path.join(cfg, 'autostart', 'ai.autowright.app.desktop')
 }
 
-function autostartText() {
+function autostartExec() {
   // A packaged AppImage relaunches through the AppImage itself (the mount
   // point's binary is gone after exit); dev launches use the electron binary.
   const target = process.env.APPIMAGE || process.execPath
   // Desktop-entry Exec quoting: backslash and quote escaped, % is a
   // field-code introducer.
-  const exec = `"${target.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`
+  return `"${target.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`
+}
+
+function autostartText() {
   return ['[Desktop Entry]', 'Type=Application', 'Name=Autowright',
-    `Exec=${exec}`, AUTOSTART_MARKER, ''].join('\n')
+    `Exec=${autostartExec()}`, AUTOSTART_MARKER, ''].join('\n')
 }
 
 function applyLoginItem(app, enabled) {
@@ -119,10 +122,20 @@ function applyLoginItem(app, enabled) {
   let current = null
   try { current = fs.readFileSync(p, 'utf-8') } catch { /* absent */ }
   try {
+    if (!app.isPackaged) {
+      // §4.9: the file's name is shared by every copy of the app, so a dev
+      // run must not touch the installed app's registration in either
+      // direction — a dev off would delete it, and the dev-harness guard (an
+      // unpackaged run's Exec line would point at the bare Electron dev
+      // binary) could never write it back. A dev run's whole reconcile is
+      // self-cleanup: remove a marker-carrying file only when its Exec line
+      // references this very binary (a pre-guard dev leftover), whatever the
+      // toggle says — the dev binary must never autostart.
+      if (current !== null && current.includes(AUTOSTART_MARKER)
+        && current.includes(`Exec=${autostartExec()}`)) fs.unlinkSync(p)
+      return
+    }
     if (enabled) {
-      // Dev-harness guard (§4.9, all OSes): an unpackaged run's Exec line
-      // would point at the bare Electron dev binary, not Autowright.
-      if (!app.isPackaged) return
       if (current !== null && !current.includes(AUTOSTART_MARKER)) return // foreign
       const wanted = autostartText()
       if (current !== wanted) {

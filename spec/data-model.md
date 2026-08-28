@@ -940,13 +940,28 @@ menuBarIcon: bool       — "Show in the menu bar" ("The quickest way to execute
   login item via Electron, on Linux a marker-carrying `.desktop` file reconciled in
   `~/.config/autostart/` (written on enable — rewritten when its Exec line drifts, e.g. a
   moved AppImage — deleted on disable; same never-touch-foreign-files ownership rules as
-  the §3 CLI shim) — the default true registers on first launch. Two reconcile rules on
-  every OS: an unpackaged (dev-harness) run never registers, because the OS would enroll
-  the bare Electron dev binary as the login item rather than Autowright; and off is
-  asserted unconditionally on every reconcile, never guarded by the OS's own reading
-  (which can be stale or describe a different copy), so any run with the toggle off,
-  packaged or not, clears a stale registration for its own binary. On still writes only
-  when the OS view differs. `menuBarIcon` creates or
+  the §3 CLI shim) — the default true registers on first launch. Reconcile rules, per OS
+  by how the OS names the registration. Everywhere: an unpackaged (dev-harness) run never
+  registers, because the OS would enroll the bare Electron dev binary as the login item
+  rather than Autowright; and a packaged run asserts off unconditionally on every
+  reconcile, never guarded by the OS's own reading (which can be stale), while on writes
+  only when the OS view differs. On macOS the registration is named per-binary, so a dev
+  run also asserts off — that can only ever clear a stale registration for its own
+  binary. On Windows and Linux the registration lives under one shared Autowright-owned
+  name (the HKCU Run value named by the §3 AUMID `ai.autowright.app`; the
+  `ai.autowright.app.desktop` autostart file), so there a dev run must not touch the
+  canonical registration in either direction — a dev off would delete the installed
+  app's registration, the dev guard could never write it back, and the toggle would read
+  on while nothing launches. A dev run's whole reconcile is self-cleanup: on Linux it
+  deletes the marker-carrying autostart file only when its Exec line references the
+  running dev binary (a pre-guard dev leftover); on Windows it runs only the legacy
+  sweep. Windows legacy sweep (every run, packaged or dev, once per process, best-effort
+  via reg.exe): builds before the AUMID let Electron name the Run value
+  `electron.app.<name>` — slots nothing reconciles anymore, so a leftover keeps
+  launching the app with the toggle off. The sweep deletes `electron.app.Autowright`
+  outright (it can only ever be Autowright's own stale slot) and `electron.app.Electron`
+  only when its command references the running binary (the generic name may belong to
+  another app's dev shell). `menuBarIcon` creates or
   destroys the tray icon live (no restart; hiding it also hides an open §13 panel).
 keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac from sleeping so
   schedules and message triggers keep firing. The display can still sleep.") — while on, the

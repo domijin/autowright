@@ -65,17 +65,18 @@ describe('main.cjs CLI-leaf invariant (§2)', () => {
     }
   })
 
-  it('spawns only the service managers, the login shell, and the backend python', () => {
+  it('spawns only the service managers, the login shell, the registry, and the backend python', () => {
     // Every child-process call site across main.cjs + platform modules:
-    // execFile('launchctl'|'systemctl'|shell|py, …). `shell` is the §3
+    // execFile('launchctl'|'systemctl'|'reg'|shell|py, …). `shell` is the §3
     // login-shell PATH probe (printf $PATH, nothing else); 'launchctl' /
-    // 'systemctl' are the §2 serviceDiagnostics captures. The pre-0.6.1 mac
+    // 'systemctl' are the §2 serviceDiagnostics captures; 'reg' is the §4.9
+    // Windows legacy login-item sweep. The pre-0.6.1 mac
     // update flow's hdiutil/ditto helpers are gone — electron-updater
     // downloads the zip directly (§3). `spawn` is not used at all (the word
     // may appear in comments only).
     const calls = [...union.matchAll(/(?<![.\w])(?:execFile|spawn|exec)\(\s*([^,)]+)/g)].map((m) => m[1].trim())
     for (const first of calls) {
-      expect(["'launchctl'", "'systemctl'", 'shell', 'py']).toContain(first)
+      expect(["'launchctl'", "'systemctl'", "'reg'", 'shell', 'py']).toContain(first)
     }
     expect(calls.length).toBeGreaterThanOrEqual(3)
     expect(union).not.toContain("'hdiutil'")
@@ -599,6 +600,7 @@ const platMod = realRequire(join(PLATFORM_DIR, 'index.cjs')) as {
   capabilities: { trayPanel: boolean, loginItem: boolean, dockIcon: boolean, updates: boolean, appMenu: boolean }
   UPDATER: string | null
   updateFeedUrl: (arch: string) => string | null
+  applyLoginItem: (app: { isPackaged: boolean }, enabled: boolean, exec?: unknown) => void
 }
 const caps = platMod.capabilities
 // §3: every platform with a feed drives electron-updater against the generic
@@ -648,6 +650,13 @@ describe('main.cjs platform capability wiring (§2/§9)', () => {
         rmSync(dir, { recursive: true, force: true })
       }
       return
+    }
+    if (process.platform === 'win32') {
+      // §4.9 win32 legacy sweep runs once per process through reg.exe — trip
+      // its memo with a noop exec so the leaf run never touches the real
+      // registry. platMod is win32.cjs here, the same module instance
+      // main.cjs's own require resolves.
+      platMod.applyLoginItem({ isPackaged: false }, true, () => {})
     }
     const m = loadMain()
     m.invoke('apply-settings', { login: true })

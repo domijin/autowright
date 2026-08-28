@@ -135,7 +135,10 @@ describe('§9 ensure-backend failure copy is per-OS', () => {
     // pinned to one another's shape.
     const fallback = require('../electron/platform/fallback.cjs')
     const keys = Object.keys(darwin).sort()
-    expect(Object.keys(win32).sort()).toEqual(keys)
+    // win32 carries one extra export on top of the shared surface: the §4.9
+    // legacy Run-value sweep, a Windows-only helper main.cjs never calls
+    // (applyLoginItem drives it) that the §4.9 tests exercise directly.
+    expect(Object.keys(win32).sort()).toEqual([...keys, 'sweepLegacyLoginItems'].sort())
     expect(Object.keys(linux).sort()).toEqual(keys)
     expect(Object.keys(fallback).sort()).toEqual(keys)
   })
@@ -327,30 +330,89 @@ describe('§4.9 login item is per-OS (applyLoginItem)', () => {
         getLoginItemSettings: () => ({ openAtLogin: osView }),
         setLoginItemSettings: (v: unknown) => calls.push(v),
       }
-      mod.applyLoginItem(app, true) // already registered: no write
+      // The third argument is win32's exec seam: every call in this suite
+      // stubs it so the §4.9 legacy sweep never reaches the real reg.exe
+      // (darwin ignores the extra argument).
+      mod.applyLoginItem(app, true, () => {}) // already registered: no write
       expect(calls).toEqual([])
       // Off never trusts the OS reading (stale, or scoped to another copy):
       // it is asserted on every reconcile, even when the OS already says off.
       osView = false
-      mod.applyLoginItem(app, false)
-      mod.applyLoginItem(app, false)
+      mod.applyLoginItem(app, false, () => {})
+      mod.applyLoginItem(app, false, () => {})
       expect(calls).toEqual([{ openAtLogin: false }, { openAtLogin: false }])
     }
   })
 
-  it('macOS/Windows: unpackaged (dev) runs never register but still assert removal', () => {
-    for (const mod of [darwin, win32]) {
-      const calls: unknown[] = []
-      const app = {
-        isPackaged: false,
-        getLoginItemSettings: () => ({ openAtLogin: false }),
-        setLoginItemSettings: (v: unknown) => calls.push(v),
-      }
-      mod.applyLoginItem(app, true) // would enroll the bare Electron binary
-      expect(calls).toEqual([])
-      mod.applyLoginItem(app, false) // dev off cleans up a stale dev registration
-      expect(calls).toEqual([{ openAtLogin: false }])
+  it('macOS: unpackaged (dev) runs never register but still assert removal', () => {
+    const calls: unknown[] = []
+    const app = {
+      isPackaged: false,
+      getLoginItemSettings: () => ({ openAtLogin: false }),
+      setLoginItemSettings: (v: unknown) => calls.push(v),
     }
+    darwin.applyLoginItem(app, true) // would enroll the bare Electron binary
+    expect(calls).toEqual([])
+    // macOS names the registration per-binary, so a dev off can only ever
+    // clear this dev binary's own stale registration — never the installed
+    // app's.
+    darwin.applyLoginItem(app, false)
+    expect(calls).toEqual([{ openAtLogin: false }])
+  })
+
+  it('Windows: unpackaged (dev) runs never touch the login item in either direction', () => {
+    const calls: unknown[] = []
+    const app = {
+      isPackaged: false,
+      getLoginItemSettings: () => ({ openAtLogin: false }),
+      setLoginItemSettings: (v: unknown) => calls.push(v),
+    }
+    // The Run value is named by the shared AUMID, not by this binary, so a
+    // dev off would delete the installed app's registration and the dev
+    // guard could never write it back: a dev run asks the OS nothing.
+    win32.applyLoginItem(app, true, () => {})
+    expect(calls).toEqual([])
+    win32.applyLoginItem(app, false, () => {})
+    expect(calls).toEqual([])
+  })
+
+  it('Windows sweeps the pre-AUMID electron.app.* Run values (§4.9 legacy sweep)', () => {
+    const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+    // Drives sweepLegacyLoginItems with a recording fake exec: the query's
+    // callback is held so each case can answer it differently.
+    function sweep(): { calls: [string, string[]][], answer: (err: Error | null, stdout?: string) => void } {
+      const calls: [string, string[]][] = []
+      let query: ((err: Error | null, stdout?: string) => void) | null = null
+      win32.sweepLegacyLoginItems((cmd: string, args: string[],
+        cb: (err: Error | null, stdout?: string) => void) => {
+        calls.push([cmd, args])
+        if (args[0] === 'query') query = cb
+      })
+      return { calls, answer: (err, stdout) => query?.(err, stdout) }
+    }
+
+    // Autowright's own stale slot goes unconditionally; the generic dev-shell
+    // name is only queried until its command is known.
+    const own = sweep()
+    expect(own.calls).toEqual([
+      ['reg', ['delete', RUN_KEY, '/v', 'electron.app.Autowright', '/f']],
+      ['reg', ['query', RUN_KEY, '/v', 'electron.app.Electron']],
+    ])
+    // A command naming this very binary is ours — matched case-insensitively,
+    // because reg.exe echoes whatever casing the value was written with.
+    own.answer(null, `electron.app.Electron  REG_SZ  "${process.execPath.toUpperCase()}"`)
+    expect(own.calls[2]).toEqual(
+      ['reg', ['delete', RUN_KEY, '/v', 'electron.app.Electron', '/f']])
+
+    // Another app's dev shell owns the generic name: never deleted.
+    const foreign = sweep()
+    foreign.answer(null, 'electron.app.Electron  REG_SZ  "C:\\Elsewhere\\electron.exe"')
+    expect(foreign.calls).toHaveLength(2)
+
+    // No such value (or reg.exe failed): nothing to delete either.
+    const missing = sweep()
+    missing.answer(new Error('not found'))
+    expect(missing.calls).toHaveLength(2)
   })
 
   it('Linux reconciles a marker-carrying XDG autostart .desktop file', () => {
@@ -374,11 +436,32 @@ describe('§4.9 login item is per-OS (applyLoginItem)', () => {
       linux.applyLoginItem(packaged, false)
       expect(existsSync(entry)).toBe(false)
       // Unpackaged (dev) enable never writes: the Exec line would point at
-      // the bare Electron binary. Dev disable still cleans up a stale entry.
+      // the bare Electron binary.
       linux.applyLoginItem(dev, true)
       expect(existsSync(entry)).toBe(false)
+      // A dev run's whole reconcile is self-cleanup: a marker-carrying entry
+      // whose Exec line names this very binary is a pre-guard dev leftover,
+      // and it goes whatever the toggle says — the dev binary must never
+      // autostart. (The packaged enable above writes Exec at process.execPath,
+      // so the entry it leaves is self-pointing for the dev stub too.)
       linux.applyLoginItem(packaged, true)
       linux.applyLoginItem(dev, false)
+      expect(existsSync(entry)).toBe(false)
+      linux.applyLoginItem(packaged, true)
+      linux.applyLoginItem(dev, true)
+      expect(existsSync(entry)).toBe(false)
+      // A marker-carrying entry pointing somewhere else is the *installed*
+      // app's registration — the file name is shared by every copy — so a dev
+      // run leaves it alone in both directions…
+      const installed = ['[Desktop Entry]', 'Type=Application', 'Name=Autowright',
+        'Exec="/opt/Autowright.AppImage"', 'X-Autowright-Login-Item=true', ''].join('\n')
+      writeFileSync(entry, installed)
+      linux.applyLoginItem(dev, false)
+      expect(readFileSync(entry, 'utf-8')).toBe(installed)
+      linux.applyLoginItem(dev, true)
+      expect(readFileSync(entry, 'utf-8')).toBe(installed)
+      // …while a packaged disable still deletes it: the marker is ours.
+      linux.applyLoginItem(packaged, false)
       expect(existsSync(entry)).toBe(false)
       // …but a foreign file (no marker) is never touched, either direction.
       writeFileSync(entry, '[Desktop Entry]\nName=SomethingElse\n')

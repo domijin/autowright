@@ -7,6 +7,7 @@
 // placeholder behind a false capability flag. Never imports
 // `electron` (takes app/window objects as arguments) so the §15 source
 // guards and stub loaders keep working.
+const { execFile } = require('child_process')
 const os = require('os')
 const path = require('path')
 
@@ -92,16 +93,41 @@ function readLoginShellPath() {
 
 // ---- §4.9 login item --------------------------------------------------------
 
-// §4.9 login reconcile: the OS login item via Electron. Registration is only
-// valid from a packaged run: an unpackaged (dev-harness) run would enroll the
-// bare Electron dev binary as the login item, not Autowright. Off is asserted
-// unconditionally, never guarded by the OS reading (which can be stale or
-// describe a different copy), so any run with the toggle off clears a stale
-// registration for its own binary; on writes only when the OS view differs.
-function applyLoginItem(app, enabled) {
+// §4.9 login reconcile: the OS login item via Electron — an HKCU Run value
+// named by the §3 AUMID, one shared name for every copy of the app.
+const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+
+// §4.9 legacy sweep: builds before the AUMID let Electron name the Run value
+// electron.app.<name> — slots nothing reconciles anymore, so a leftover keeps
+// launching the app with the toggle off. electron.app.Autowright can only
+// ever be Autowright's own stale slot and is deleted outright (absent is
+// fine); electron.app.Electron is the generic dev-shell name and may belong
+// to another app, so it goes only when its command references this very
+// binary. Best-effort: reg.exe failures are reconciled again next run.
+function sweepLegacyLoginItems(exec) {
+  exec('reg', ['delete', RUN_KEY, '/v', 'electron.app.Autowright', '/f'], () => {})
+  exec('reg', ['query', RUN_KEY, '/v', 'electron.app.Electron'], (err, stdout) => {
+    if (err || typeof stdout !== 'string') return
+    if (stdout.toLowerCase().includes(process.execPath.toLowerCase())) {
+      exec('reg', ['delete', RUN_KEY, '/v', 'electron.app.Electron', '/f'], () => {})
+    }
+  })
+}
+
+let legacySwept = false
+// Because the Run value's name is the shared AUMID — not this binary — only a
+// packaged run may touch it: a dev off would delete the installed app's
+// registration, and the dev-harness guard (an unpackaged run's registration
+// would enroll the bare Electron dev binary) could never write it back. A dev
+// run's whole reconcile is the legacy sweep. Packaged: off is asserted
+// unconditionally, never guarded by the OS reading (which can be stale); on
+// writes only when the OS view differs.
+function applyLoginItem(app, enabled, exec = execFile) {
+  if (!legacySwept) { legacySwept = true; sweepLegacyLoginItems(exec) }
+  if (!app.isPackaged) return
   if (!enabled) {
     app.setLoginItemSettings({ openAtLogin: false })
-  } else if (app.isPackaged && !app.getLoginItemSettings().openAtLogin) {
+  } else if (!app.getLoginItemSettings().openAtLogin) {
     app.setLoginItemSettings({ openAtLogin: true })
   }
 }
@@ -173,6 +199,7 @@ module.exports = {
   shimText,
   readLoginShellPath,
   applyLoginItem,
+  sweepLegacyLoginItems,
   UPDATER,
   APP_USER_MODEL_ID,
   updateFeedUrl,

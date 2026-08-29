@@ -1,6 +1,6 @@
 // §11 BUILD & TEST panel — the top card of the right column, merging the
-// workflow's sync state (build zone, states 1–2) and the draft test (test
-// zone, states 3–5) into one build→test surface. Owns the test-setup state
+// workflow's sync state (build zone, state 1) and the draft test (test
+// zone, states 2–4) into one build→test surface. Owns the test-setup state
 // (the disclosure toggle, the test-only param values, the trigger-message
 // mock), the §8 pendingSync/pendingTest action chaining, and the run-settled
 // thread entries. Quiet when fine, loud only when blocking.
@@ -329,63 +329,66 @@ export function BuildTestPanel({
     }
   }, [testExec?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // §11: a sync in flight or armed is never a panel state — while one runs
+  // (however started) or a chat-armed pending sync waits to fire, the
+  // workflow counts as in sync for the panel: no build zone, the test zone
+  // with its controls disabled per the inputs lock. The sync's live surface
+  // is the thread progress entry alone, so the first turn's chat → chained
+  // sync → done never moves the panel. A failed / blocked / cancelled sync
+  // leaves the workflow out of sync and the build zone renders then.
+  const buildZone = outOfSync && !rev.syncBusy && !rev.pendingSync
+
   return (
     <div ref={rootRef} style={cardStyle}>
       <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
         <Eyebrow>BUILD &amp; TEST</Eyebrow>
       </div>
-      {/* build zone — states 1–2 only (sync in flight, out of
-          sync); an in-sync workflow shows no indicator at all */}
-      {(rev.syncBusy || outOfSync) && (
+      {/* build zone — state 1 only (out of sync, no sync running or armed);
+          an in-sync workflow shows no indicator at all */}
+      {buildZone && (
       <div style={{ padding: '12px 20px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* the indicator sits in an 18px box matching the title's line-height,
               so it stays centered on the first line even when the text wraps */}
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
             <span style={{ height: 18, display: 'flex', alignItems: 'center', flex: 'none' }}>
-              {/* §11: never a spinner here (the live surface is the chat
-                  footer's action block) and never green — a faint dot
-                  marks a job, amber marks out of sync */}
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: rev.syncBusy ? 'var(--text-faint)' : 'var(--amber)' }} />
+              {/* §11: never a spinner here (the live surface is the thread
+                  progress entry) and never green — amber marks out of sync */}
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)' }} />
             </span>
             <span style={{
               minWidth: 0,
               font: "500 12.5px/18px var(--sans)",
-              color: rev.syncBusy ? 'var(--text-muted)' : 'var(--text)',
+              color: 'var(--text)',
             }}>
-              {rev.syncBusy
-                ? 'Syncing the workflow…'
-                : (rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
-                  : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
-                    : 'The workflow is out of sync — steps use a secret that isn’t allowed.')}
+              {rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
+                : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
+                  : 'The workflow is out of sync — steps use a secret that isn’t allowed.'}
             </span>
           </div>
-          {!rev.syncBusy && outOfSync && (
-            <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', margin: '2px 0 0 16px' }}>
-              {rev.dirty ? 'Sync the steps to the new spec, then review them. Saving is locked until you do — nothing ships unreviewed.'
-                : agentGap ? 'Re-enable the agent, or sync the steps so they only call agents available here. Saving is locked until you do.'
-                  : 'Re-allow the secret, or sync the steps so they only use secrets allowed here. Saving is locked until you do.'}
-            </div>
-          )}
+          <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', margin: '2px 0 0 16px' }}>
+            {rev.dirty ? 'Sync the steps to the new spec, then review them. Saving is locked until you do — nothing ships unreviewed.'
+              : agentGap ? 'Re-enable the agent, or sync the steps so they only call agents available here. Saving is locked until you do.'
+                : 'Re-allow the secret, or sync the steps so they only use secrets allowed here. Saving is locked until you do.'}
+          </div>
         </div>
-        {/* §11: no Cancel here — a running sync is cancelled from the
-            chat footer's action block; the button just disables */}
-        {/* §11 state 1: while the sync runs the control drops to the faint
-            disabled text button — accent-primary Sync now is out-of-sync only */}
+        {/* §11: the one accent-primary button — Sync now; disabled per Dirty
+            gating (another job in flight, an old version, a live test), never
+            hidden. Its own sync hides the whole zone (above). */}
         <button
-          className={!rev.syncBusy && outOfSync ? 'ad-btn-primary' : 'ad-btn-text dim'} data-testid="sync-steps"
+          className="ad-btn-primary" data-testid="sync-steps"
           disabled={syncDisabled}
           onClick={runSync}
-          style={!rev.syncBusy && outOfSync ? { flex: 'none', whiteSpace: 'nowrap' } : panelBtnStyle}
+          style={{ flex: 'none', whiteSpace: 'nowrap' }}
         >
-          {!rev.syncBusy && outOfSync ? 'Sync now' : 'Sync spec'}
+          Sync now
         </button>
       </div>
       )}
-      {/* §11 test zone, states 1–2 (sync in flight, out of sync): the test
-          button disabled beside the sync-first hint — but a still-executing
-          test keeps its Cancel */}
-      {(rev.syncBusy || outOfSync) && (
+      {/* §11 test zone, state 1 (out of sync): the test button disabled
+          beside the sync-first hint — but a still-executing test keeps its
+          Cancel */}
+      {buildZone && (
         <div style={{ padding: '12px 20px 14px', borderTop: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 12 }}>
           {testLive ? (
             <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
@@ -401,11 +404,11 @@ export function BuildTestPanel({
           </span>
         </div>
       )}
-      {/* test zone — in-sync states only. One hairline opens the zone;
-          the Test draft disclosure on the action row
-          expands the test-setup section (Run test, then param editors and
-          trigger message) as sub-blocks over dim dividers. */}
-      {!rev.syncBusy && !outOfSync && (
+      {/* test zone — in-sync states (2–4), and any sync in flight or armed.
+          One hairline opens the zone; the Test draft disclosure on the
+          action row expands the test-setup section (Run test, then param
+          editors and trigger message) as sub-blocks over dim dividers. */}
+      {!buildZone && (
         <>
           {/* §11: no build zone in sync — the header hairline opens the
               single test zone directly */}
@@ -445,7 +448,7 @@ export function BuildTestPanel({
                       </div>
                     )}
                     <div style={{ ...panelRowStyle, marginTop: 8 }}>
-                      {/* §11 state 4: Sync spec, then the Test draft
+                      {/* §11 state 3: Sync spec, then the Test draft
                           setup toggle — Run test and View execution live in the
                           expanded setup section; only a live test keeps
                           View execution on the action row (the setup is hidden) */}

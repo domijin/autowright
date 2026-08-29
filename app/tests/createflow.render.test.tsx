@@ -1406,17 +1406,23 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect(screen.getAllByText('Cancel').length).toBe(1) // the composer's
   })
 
-  it('sync job: thread and panel share the sync line; spinner in the thread, Cancel in the composer', () => {
+  it('sync job: the sync line lives in the thread and the Save hint, never the panel; spinner in the thread, Cancel in the composer', () => {
     render(<CreateFlow />)
+    const panel = cardOf(screen.getByText('BUILD & TEST'))
+    const before = panel.textContent
     fireEvent.click(screen.getByText('Sync spec'))
-    // the same live line renders in the thread, as the panel's status text,
-    // and as the Save hint (one unified stage vocabulary; no agent · model
-    // attribution — the composer's picker names the agent)
-    expect(screen.getAllByText('Syncing the workflow…').length).toBe(3)
+    // the same live line renders in the thread and as the Save hint (one
+    // unified stage vocabulary; no agent · model attribution — the composer's
+    // picker names the agent) — and nowhere in the panel: §11 a sync in
+    // flight is never a panel state
+    expect(screen.getAllByText('Syncing the workflow…').length).toBe(2)
+    expect(within(panel).queryByText('Syncing the workflow…')).toBeNull()
+    // the panel keeps its in-sync test zone byte for byte — it never moves
+    expect(panel.textContent).toBe(before)
+    expect(within(panel).getByText(/In sync with the spec\./)).toBeTruthy()
     // §11: never an empty section — the live entry shows the stage's canned
     // description bullet until the stream produces a feed
     expect(screen.getByText('• Building the steps from the spec')).toBeTruthy()
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
     expect(spinnersIn(document.body).length).toBe(1)
     expect(spinnersIn(screen.getByTestId('chat-thread')).length).toBe(1)
     expect(spinnersIn(panel).length).toBe(0)
@@ -1424,6 +1430,30 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect(screen.getAllByText('Cancel').length).toBe(1)
     // the panel's sync button disables instead of turning into a cancel
     expect((within(panel).getByText('Sync spec').closest('button')!).disabled).toBe(true)
+  })
+
+  it('Sync now: its own sync hides the build zone at the click — the test zone shows, disabled (§11)', () => {
+    storeMod.useStore.setState({
+      automations: [{
+        ...AUTO,
+        steps: [{ file: '01-a.py', name: 'Judge', description: '', code: 'log("a")', agent: true, why: 'w', agents: [{ id: 'g2' }] }],
+      } as unknown as Automation],
+    })
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByText('qwen3:8b')) // open a grant gap → out of sync
+    const panel = cardOf(screen.getByText('BUILD & TEST'))
+    expect(within(panel).getByText('Sync now')).toBeTruthy()
+    fireEvent.click(screen.getByText('Sync now'))
+    // the build zone is gone: no amber reason line, no Sync now, no hint;
+    // the in-sync test zone takes its place with its controls locked
+    expect(within(panel).queryByText('Sync now')).toBeNull()
+    expect(within(panel).queryByText(/out of sync/)).toBeNull()
+    expect(within(panel).queryByText(/Sync first/)).toBeNull()
+    expect(within(panel).queryByText('Syncing the workflow…')).toBeNull()
+    expect((within(panel).getByText('Sync spec').closest('button')!).disabled).toBe(true)
+    expect((within(panel).getByText('Test draft').closest('button')!).disabled).toBe(true)
+    // the live surface is the thread progress entry (plus the Save hint)
+    expect(screen.getAllByText('Syncing the workflow…').length).toBe(2)
   })
 
   it('first turn: the unified stage walk — request → documents → chained sync, installs as bullets', async () => {
@@ -1452,6 +1482,14 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     await waitFor(() => expect(screen.getByText('• Installing requests…')).toBeTruthy(), { timeout: 5000 })
     expect(screen.getAllByText('Syncing the workflow…').length).toBeGreaterThan(0)
     expect(screen.queryByText('Installing the packages…')).toBeNull()
+    // §11: the chained sync never moves the Build & test panel — no build
+    // zone (the rewrite dirtied the draft, but the armed/running sync counts
+    // as in sync for the panel), the sync line only in the thread + Save hint
+    const panel = cardOf(screen.getByText('BUILD & TEST'))
+    expect(within(panel).queryByText('Sync now')).toBeNull()
+    expect(within(panel).queryByText(/out of sync/)).toBeNull()
+    expect(within(panel).queryByText('Syncing the workflow…')).toBeNull()
+    expect(within(panel).getByText(/In sync with the spec\./)).toBeTruthy()
   })
 
   it('Esc cancels a chat job like the composer Cancel and returns the prompt to the input', () => {

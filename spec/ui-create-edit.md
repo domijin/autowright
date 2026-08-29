@@ -638,7 +638,11 @@ job and no separate drafting state — while the first turn runs:
   surface: the §8 stage labels with the activity feed beneath (recent §8 `events` as dim
   history over the live `detail` line), so a minutes-long call never looks stuck and web
   reads / retries stay visible. No detail (a non-streaming harness) leaves just the
-  stage label.
+  stage label. The Build & test panel never moves during the first turn: the chat job,
+  the chained sync it arms, and the sync's landing all leave it in its single test zone
+  (a sync in flight or armed is never a panel state — Build & test panel below), so the
+  right column's spacing holds from send to done and "Syncing the workflow…" is read in
+  the thread, never in the panel.
 - **Failures** — a `failed` job means a harness error or crash (§8: a validation
   double-failure never ends `failed` — it settles `blocked` with diagnosed blockers, handled
   under Blockers below). A failed chat job renders in the thread as a red-tinted error
@@ -686,7 +690,8 @@ from the turn action row's pill styling) — a quiet **Dismiss** plus, by source
   gated). It writes each blocker into the
   in-editor spec under a `## Constraints & resolutions` section (created on first use,
   extended after), one bullet per blocker — "`reason` — `fix`" — then runs a §8 `sync`
-  against the amended spec and the Build & test panel re-enters "Syncing the workflow". The
+  against the amended spec and the thread progress entry re-enters "Syncing the workflow"
+  (the panel keeps its test zone — a sync is never a panel state). The
   resolutions live in the spec document itself, so they survive later edits and syncs and
   version like any spec text. If the rebuild blocks again the new entry carries a muted
   "Previously resolved" list of this session's earlier resolutions, so a fix that didn't
@@ -1202,8 +1207,8 @@ editors enter with
   and test — a chat message can request the sync and the test through the §8 actions — so
   the panel stays a status surface with one-click escape hatches and shouts only when
   saving is genuinely blocked. Concretely: the panel has **no green state** — an in-sync
-  workflow shows no indicator dot at all (the dot is amber while out of sync, faint while
-  a job runs, absent otherwise — never a spinner, and never green: a status that asks
+  workflow shows no indicator dot at all (the dot is amber while out of sync, absent
+  otherwise — never a spinner, never faint, and never green: a status that asks
   nothing must not draw the eye), and at most one accent-primary button ever renders:
   **Sync now** while out of sync. Every other panel button is a compact borderless **text
   button** (the card-header treatment above — never a bordered or filled box): the state's
@@ -1213,44 +1218,54 @@ editors enter with
   so testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
   space runs out — a panel button is never clipped.
   **Layout.** The header row holds only the `BUILD & TEST` eyebrow, never a button. In
-  states 1–2 (sync in flight, out of sync) a **build zone** renders below it:
-  the indicator dot + status line, the explainer line beneath it indented to the status
-  text's left edge, and the sync control right-aligned at the zone's top — accent-primary
-  **Sync now** while out of sync, a faint disabled text button while syncing;
-  disabled per Dirty gating (including while its own sync
-  runs — cancelling lives in the composer's Cancel button), never hidden — with the **test
-  zone** under a hairline. In the in-sync states (3–5) the build zone disappears and the
+  state 1 (out of sync) a **build zone** renders below it:
+  the amber dot + status line, the explainer line beneath it indented to the status
+  text's left edge, and the accent-primary **Sync now** right-aligned at the zone's top —
+  disabled per Dirty gating, never hidden — with the **test
+  zone** under a hairline. In the in-sync states (2–4) there is no build zone and the
   panel is a **single test zone** under the header hairline; sync access stays as a faint
   **Sync spec** text button riding the test zone's action row (the same §8 `sync`
   call on demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
   test zone owns every test control — the test button never sits in the header: the test
   button with its hint / outcome / progress and their action rows, laid out per state
-  below. Both zones share the card's 20 px side padding. (There is no drafting state —
-  during a chat job the panel keeps its current state with its controls disabled per the
-  inputs lock, and the live surface is the thread progress entry.) States, first match wins:
-  1. **Sync in flight** — static line "Syncing the workflow…"
-     over a faint dot; the live `detail` line lives in the thread progress entry and the
-     **Cancel** in the composer (cancel semantics under Dirty gating above).
-  2. **Out of sync** — build zone: amber dot, the reason line and saving-is-locked
+  below. Both zones share the card's 20 px side padding. **A job in flight is never a
+  panel state** — neither a chat job nor a sync: the panel has no drafting state and no
+  syncing state. During a chat job it keeps its current state with its controls disabled
+  per the inputs lock; **while a sync runs or is armed** (a §8 `sync` job in flight
+  however started — Sync now, Sync spec, a repair-block apply, a chat-armed pending sync —
+  or a pending sync waiting to fire) the workflow **counts as in sync for the panel**:
+  the build zone does not render and the panel shows the in-sync test zone (states 2–4,
+  by the test's own state) with its controls disabled per the inputs lock. The sync's
+  live surface is the thread progress entry alone — its "Syncing the workflow…" title,
+  the live `detail` line, and the event feed — with the **Cancel** in the composer
+  (cancel semantics under Dirty gating above). So a sync started from the in-sync test
+  zone (Sync spec, or the first turn's chained sync) never moves the panel at all, and
+  one started by Sync now trades the build zone for the test zone at the click, not at
+  the landing. When the sync fails, blocks, or is cancelled the workflow is out of sync
+  again and the build zone renders then. States, first match wins:
+  1. **Out of sync** (and no sync running or armed) — build zone: amber dot, the reason
+     line and saving-is-locked
      explainer (Dirty gating above), primary **Sync now**; the test zone shows the test
      button disabled beside the muted hint "Sync first — a test executes the steps as
      generated from the spec." — a test always runs steps that match the spec, never stale
      ones. Exception: while a test is still executing, its Cancel button renders in place
      of the disabled test button — a live test is never left uncancellable.
-  3. **In sync, test executing** — the live status line, progress bar, and the action row
+  2. **In sync, test executing** — the live status line, progress bar, and the action row
      Cancel + the disabled faint **Sync spec** (below) + View execution; the test-setup
      section stays hidden while the test executes.
-  4. **In sync, test settled** — the outcome line over the action row faint **Sync
+  3. **In sync, test settled** — the outcome line over the action row faint **Sync
      spec** / **Test draft** and, on failure, **Analyze failure**, which sends
      the canned analyze chat message (below). Test draft is the same setup toggle as
-     state 5 — reopening shows the values the last test used — and **View execution** lives
+     state 4 — reopening shows the values the last test used — and **View execution** lives
      only inside the setup section's run row, not on the action row.
-  5. **In sync, never tested** — one action row: the faint **Sync spec** directly
+  4. **In sync, never tested** — one action row: the faint **Sync spec** directly
      beside the muted **Test draft** setup toggle — always side by side, nothing
      between them — with the plain-words status-and-side-effects line — "In sync with
      the spec. A test executes the real steps on this Mac — emails send, files move;
-     memory is a scratch copy." — wrapping below the buttons when space runs out.
-  The test-setup section (below) renders only in the in-sync states (3–5) and never
+     memory is a scratch copy." — wrapping below the buttons when space runs out (the
+     line keeps its wording while a sync runs — the panel is quiet; the thread says
+     what is happening).
+  The test-setup section (below) renders only in the in-sync states (2–4) and never
   while a test is executing. **Run test** is additionally gated on steps existing and no
   §8 job being in flight (inputs-lock above); the setup toggle disables under the same
   inputs-lock. Both also disable while an old version is viewed (like the sync

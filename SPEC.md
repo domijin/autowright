@@ -457,7 +457,9 @@ migrate-on-load migration so data written by released versions keeps loading (§
   row (mark, brand linking home, GitHub pill), and footer verbatim, with no demo, reveal
   animation, or JSON-LD. Body: a single `<article>` - "Legal" eyebrow, `<h1>` "Terms of
   service", a mono "Last updated" line, then the `TERMS.md` sections as `<h2>` + prose,
-  readable-width (`max-width` 40em) and left-aligned. The prose is `TERMS.md` verbatim,
+  left-aligned. The page's `.wrap` is narrower than the landing page's (`max-width` 680 px
+  against 980) and the header, article, and footer all fill it edge to edge, so the prose
+  runs the full width of the column with nothing hanging off to the right. The prose is `TERMS.md` verbatim,
   paragraph for paragraph; the only substitutions are the Markdown file references,
   which become links (`LICENSE` and `PRIVACY.md` to their repo-root copies on GitHub) and
   the issues URL, which becomes a link. `TERMS.md` stays the canonical copy: any edit to

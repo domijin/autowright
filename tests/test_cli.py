@@ -1028,13 +1028,16 @@ def test_command_listing_names_the_level_below_without_expanding_it(monkeypatch)
     assert "add <automation> [<cron>]" in _help_for("automation", "trigger")
 
 
-def test_example_epilogs_keep_their_line_breaks():
+def test_example_epilogs_keep_their_line_breaks(monkeypatch):
     """§20 help text: the Help formatter wraps prose but leaves an `Examples:`
     epilog line-for-line, so the example commands stay one per line."""
     import contextlib
 
     from autowright import cli
 
+    # argparse wraps to the live terminal width; pin it like the sibling
+    # help-text tests so a wide terminal can't turn the wrap check flaky.
+    monkeypatch.setenv("COLUMNS", "100")
     out = io.StringIO()
     with pytest.raises(SystemExit), contextlib.redirect_stdout(out):
         cli.build_parser(full=True).parse_args(["automation", "trigger", "add", "--help"])

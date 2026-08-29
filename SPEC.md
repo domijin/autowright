@@ -432,7 +432,7 @@ migrate-on-load migration so data written by released versions keeps loading (§
   menu bar, versions, memory + snapshots, execution history; the page does not yet advertise
   `.autowright` sharing) ·
   supported-agent badges (Claude Code, Gemini CLI, Codex, OpenCode + local Ollama) · a
-  question-and-answer section ("Common questions", six items in the two-column card grid the
+  question-and-answer section ("Q&A", six items in the two-column card grid the
   promise cards use, each a `<h3>` question over an answer paragraph). Its purpose is
   twofold: answer what a first-time visitor actually asks, and give the page indexable prose
   that names the product and its domain nouns - what Autowright is, where automations run,

@@ -1,9 +1,9 @@
-version: 0.6.0
+version: 0.8.0
 files:
-  - url: https://github.com/hansololz/autowright/releases/download/v0.6.0/Autowright-0.6.0-linux-x86_64.AppImage
-    sha512: 5rj1kuFgLc1qqRlSvt/sJCIF7vVNrcWx0wxLNStpGVvd8tN+T6i0pJ6uci3x3JYULYLD91sbTBvkvCpueUddEQ==
-    size: 282013417
-    blockMapSize: 294653
-path: https://github.com/hansololz/autowright/releases/download/v0.6.0/Autowright-0.6.0-linux-x86_64.AppImage
-sha512: 5rj1kuFgLc1qqRlSvt/sJCIF7vVNrcWx0wxLNStpGVvd8tN+T6i0pJ6uci3x3JYULYLD91sbTBvkvCpueUddEQ==
-releaseDate: '2026-08-23T07:09:30.172Z'
+  - url: https://github.com/hansololz/autowright/releases/download/v0.8.0/Autowright-0.8.0-linux-x86_64.AppImage
+    sha512: sZDtQtuyJf9F32SC5uF8xabK731OttARfJY9/Ed5bqGtRGpjwTw80tcyD+xlRKM7PE+8YMZIX+xDHcK/2Fwg6g==
+    size: 282111361
+    blockMapSize: 294293
+path: https://github.com/hansololz/autowright/releases/download/v0.8.0/Autowright-0.8.0-linux-x86_64.AppImage
+sha512: sZDtQtuyJf9F32SC5uF8xabK731OttARfJY9/Ed5bqGtRGpjwTw80tcyD+xlRKM7PE+8YMZIX+xDHcK/2Fwg6g==
+releaseDate: '2026-08-29T05:23:57.815Z'

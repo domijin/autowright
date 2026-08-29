@@ -40,13 +40,15 @@ selectors, done via `app/e2e/harness.ts` `COPY`). Each remaining item moves into
   serving the old feed.
 - **`managedInstall` answers false on both** (`win32.cjs:122-124`, `linux.cjs:153-156`);
   the probe may later detect a distro-package / winget-style managed install.
-- **Release messaging: Windows and Linux are deliberately not advertised yet.** The
-  README (2026-08-28) lists both builds but labels them **unstable** (early testers only;
-  Windows unsigned / SmartScreen, Linux lagging and failing on Ubuntu 24.04+); the
-  download page (`docs/index.html`) still says "Download for macOS" / "Windows & Linux
-  coming soon" and its JS reads only the `darwin-arm64` entry of `downloads.json` — kept
-  that way on purpose until the ports are stable. When they are, drop the README
-  "unstable" wording and update the download page (per-OS buttons + copy) together.
+- **Release messaging: Windows is advertised as experimental; Linux is not advertised
+  yet.** The README (2026-08-28) lists both builds but labels them **unstable** (early
+  testers only; Windows unsigned / SmartScreen, Linux lagging and failing on Ubuntu
+  24.04+). The download page (`docs/index.html`, §17) carries a second, ghost-style
+  "Download for Windows" button tagged `experimental` (2026-08-28) that reads the
+  `win32-x86_64` entry of `downloads.json`, and says "Windows experimental · Linux coming
+  soon"; Linux gets no button until its port is stable. When Windows is stable, drop the
+  README "unstable" wording and the page's `experimental` tag together; when Linux is,
+  add its button + copy the same way.
 
 ## Windows
 

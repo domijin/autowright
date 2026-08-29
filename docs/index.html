@@ -138,7 +138,7 @@
       "name": "What does Autowright need to run?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "An Apple Silicon Mac on macOS 12 Monterey or later; Windows and Linux support is planned. Install the signed DMG from the latest GitHub release."
+        "text": "An Apple Silicon Mac on macOS 12 Monterey or later. Install the signed DMG from the latest GitHub release. A Windows x64 installer ships too, as an experimental unsigned build: expect a SmartScreen warning. Linux support is planned."
       }
     }
   ]
@@ -212,6 +212,11 @@
   .btn.primary:hover{background:var(--accent-hover)}
   .btn.ghost{border:1px solid rgba(255,255,255,.11); color:var(--muted)}
   .btn.ghost:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+  .btn .tag{
+    margin-left:9px; padding:2px 6px; border-radius:4px;
+    font-family:var(--mono); font-size:10px; font-weight:500; letter-spacing:.06em; text-transform:uppercase;
+    background:var(--accent); color:#000;
+  }
   .platform{margin-top:14px; font-family:var(--mono); font-size:11px; color:var(--faint)}
 
   /* demo window */
@@ -456,10 +461,11 @@
     <h1>Say what you want done.<br><span class="dim">Your Mac keeps doing it.</span></h1>
     <p class="sub">Describe a recurring task in one sentence: watch a site for changes, back up a folder, track a price. Autowright uses the AI agent you already have to write it as readable Python, then runs it on your schedule, on your Mac, only after you approve.</p>
     <div class="ctas">
-      <a class="btn primary" data-download href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
+      <a class="btn primary" data-download="darwin-arm64" href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
+      <a class="btn ghost" data-download="win32-x86_64" href="https://github.com/hansololz/autowright/releases/latest" title="Early Windows build: unsigned, so SmartScreen will warn before it runs.">Download for Windows<span class="tag">experimental</span></a>
       <a class="btn ghost" href="https://github.com/hansololz/autowright">View source</a>
     </div>
-    <div class="platform">MIT licensed · Windows &amp; Linux coming soon</div>
+    <div class="platform">MIT licensed · Windows experimental · Linux coming soon</div>
   </section>
 
   <section class="demo">
@@ -613,7 +619,7 @@
       </div>
       <div class="qa">
         <h3>What does Autowright need to run?</h3>
-        <p>An Apple Silicon Mac on macOS 12 Monterey or later; Windows and Linux support is planned. Install the signed DMG from the <a href="https://github.com/hansololz/autowright/releases/latest">latest GitHub release</a>.</p>
+        <p>An Apple Silicon Mac on macOS 12 Monterey or later. Install the signed DMG from the <a href="https://github.com/hansololz/autowright/releases/latest">latest GitHub release</a>. A Windows x64 installer ships too, as an experimental unsigned build: expect a SmartScreen warning. Linux support is planned.</p>
       </div>
     </div>
   </section>
@@ -621,9 +627,10 @@
   <section class="closing reveal">
     <h2>Describe your first job.</h2>
     <div class="ctas">
-      <a class="btn primary" data-download href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
+      <a class="btn primary" data-download="darwin-arm64" href="https://github.com/hansololz/autowright/releases/latest">Download for macOS</a>
+      <a class="btn ghost" data-download="win32-x86_64" href="https://github.com/hansololz/autowright/releases/latest" title="Early Windows build: unsigned, so SmartScreen will warn before it runs.">Download for Windows<span class="tag">experimental</span></a>
     </div>
-    <div class="platform">Free · open source · Windows &amp; Linux coming soon</div>
+    <div class="platform">Free · open source · Windows experimental · Linux coming soon</div>
   </section>
 
   <footer>
@@ -852,16 +859,19 @@
 })();
 </script>
 <script>
-// download buttons - point at the latest versioned DMG via the same-origin
-// downloads.json index (rewritten by each OS's release leg);
-// the static href (the releases page) stays as the no-JS / fetch-failure fallback
+// download buttons - each points at its OS's latest versioned installer via the
+// same-origin downloads.json index (rewritten by each OS's release leg); the anchor's
+// data-download value names its index entry (darwin-arm64 = DMG, win32-x86_64 = exe).
+// The static href (the releases page) stays as the no-JS / fetch-failure fallback.
 fetch("downloads.json")
   .then((r) => (r.ok ? r.json() : Promise.reject()))
   .then((index) => {
-    const entry = index["darwin-arm64"];
-    if (!entry || !/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/.test(entry.version)) return;
-    if (!/^https:\/\/github\.com\/hansololz\/autowright\/releases\/download\//.test(entry.url)) return;
-    document.querySelectorAll("a[data-download]").forEach((a) => { a.href = entry.url; });
+    document.querySelectorAll("a[data-download]").forEach((a) => {
+      const entry = index[a.dataset.download];
+      if (!entry || !/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/.test(entry.version)) return;
+      if (!/^https:\/\/github\.com\/hansololz\/autowright\/releases\/download\//.test(entry.url)) return;
+      a.href = entry.url;
+    });
   })
   .catch(() => {});
 </script>

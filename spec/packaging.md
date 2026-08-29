@@ -721,8 +721,8 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   `release/win32-x86_64/latest.yml` and the `win32-x86_64` entry in
   `docs/downloads.json`); `release.sh` stays bash/BSD-sed and runs on
   macOS. A release that ships both platforms is two script runs against one tag/version.
-  The `docs/index.html` download CTA is mac-only until Windows artifacts exist; then it
-  gains a Windows download path.
+  The `docs/index.html` download CTA (§17) offers the Windows installer as a second,
+  `experimental`-tagged button that reads the `win32-x86_64` entry of `docs/downloads.json`.
 
 **Linux packaging & updates (decided — AppImage + electron-builder + electron-updater).**
 The Linux distributable is a

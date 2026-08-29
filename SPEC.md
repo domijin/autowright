@@ -375,15 +375,23 @@ migrate-on-load migration so data written by released versions keeps loading (§
   structure, in order: header
   (mark + wordmark + GitHub link) · hero (an accent eyebrow that leads with the product
   name - "Autowright · open source · runs locally", so the brand appears as page text above
-  the fold, not only in the wordmark - headline, one-paragraph pitch, "Download for
-  macOS" → a direct download of the latest versioned DMG: on load, page JS fetches the
-  same-origin `downloads.json` distributable index (relative URL, so it also works
-  when the page is served from a sub-path in local previews) and rewrites the download
-  anchors' `href` to the `darwin-arm64` entry's `url` — the released DMG's
-  `github.com/…/releases/download/…` URL, so
-  the click downloads the DMG with the version in its filename; the static fallback
-  `href` (no JS, fetch failure) is the repo's latest-release GitHub page,
-  "View source") · an animated app-window demo
+  the fold, not only in the wordmark - headline, one-paragraph pitch, two download
+  buttons: "Download for macOS" (primary, accent) and "Download for Windows" (ghost
+  style, its label followed by an inline mono uppercase `experimental` tag, black text
+  on a solid accent fill - the
+  Windows port is the README's "unstable" early build: unsigned, so SmartScreen warns;
+  the anchor's `title` says so in one sentence). Each is a direct download of that
+  OS's latest versioned installer: on load, page JS fetches the same-origin
+  `downloads.json` distributable index (relative URL, so it also works when the page
+  is served from a sub-path in local previews) and rewrites each download anchor's
+  `href` to the `url` of the index entry named by the anchor's `data-download` value
+  (`darwin-arm64` → the DMG, `win32-x86_64` → the NSIS `.exe`) — the released
+  artifact's `github.com/…/releases/download/…` URL, so the click downloads the
+  installer with the version in its filename; an anchor whose entry is missing or
+  malformed is left alone. The static fallback `href` (no JS, fetch failure) is the
+  repo's latest-release GitHub page. Then "View source" (ghost), and under the buttons
+  a mono platform line "MIT licensed · Windows experimental · Linux coming soon" (Linux
+  gets no button until its port is stable, per `spec/ports.md`)) · an animated app-window demo
   that mirrors the §11 chat thread (46 px icon rail with the §9 nav icon set —
   bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
   page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
@@ -441,9 +449,12 @@ migrate-on-load migration so data written by released versions keeps loading (§
   which agents it drives, what it costs, how it differs from cron and from a chat agent
   running tasks itself, and which macOS versions it needs. Answers restate facts already
   spec'd elsewhere (§1 promises, §5 triggers, §6 execution, §13 agents) and must stay true to
-  them; each is two or three sentences and names "Autowright" rather than "it" · closing
-  download CTA (same feed-driven direct-DMG link as the hero — both anchors carry
-  `data-download`; the JSON-LD `downloadUrl` stays the static latest-release page URL) ·
+  them; each is two or three sentences and names "Autowright" rather than "it"; the
+  requirements answer also states that the Windows build is experimental and unsigned
+  and that Linux is planned · closing
+  download CTA (the same two feed-driven direct-download buttons as the hero — every
+  download anchor carries `data-download` naming its index entry; the JSON-LD
+  `downloadUrl` stays the static latest-release page URL) and the same platform line ·
   footer (GitHub, Privacy, Terms, MIT - Privacy and Terms link to the site's own
   `/privacy` and `/terms` pages). All repo links point to
   `hansololz/autowright`. The page never uses the em dash character (—) anywhere -
@@ -501,8 +512,9 @@ migrate-on-load migration so data written by released versions keeps loading (§
   OS's released installer download URL. Each entry is rewritten only by its own OS's
   release leg (alongside that leg's §3 update feed in the repo-root §17 `release/` — the
   feeds themselves are not part of this site), so every entry names the newest release
-  that actually carries that OS's artifact. The page consumes only `darwin-arm64` while
-  the download CTA is mac-only (§3).
+  that actually carries that OS's artifact. The page consumes `darwin-arm64` and
+  `win32-x86_64` (the experimental Windows button); `linux-x86_64` is served but not
+  yet consumed - Linux stays "coming soon" until that port is stable (`spec/ports.md`).
 - `release/` — the §3 per-OS update feeds, one directory per OS:
   `darwin-<arch>/latest-mac.yml` (electron-updater, rewritten by `scripts/release.sh`;
   beside it `darwin-<arch>/feed.json`, the legacy Squirrel.Mac feed 0.6.0 installs read,

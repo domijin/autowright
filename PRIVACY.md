@@ -34,12 +34,17 @@ drafting also stays entirely on your Mac.
   never checks in the background — only when you press the button. Downloading
   an update — always started by you — also fetches it from GitHub. Those
   servers see your IP address, as with any web request.
-- **Installing an AI, a model, or a Python library** — only when you ask during
-  setup, or when an automation you save declares a library it needs. AI agents
-  and models download from the provider's official source (npm, Ollama, or the
-  vendor's installer). Python libraries download from PyPI (pypi.org) through
-  pip, only the packages named in that automation's manifest, and only when one
-  is missing or you press Update on its Packages card.
+- **Installing an AI tool, a model, or a Python library** — only when you ask
+  during setup, or when an automation you save declares a library it needs.
+  AI tools (Claude Code, Codex, Gemini CLI, OpenCode, and the Ollama app)
+  download from each vendor's official source: the vendor's own installer
+  script, npm for Gemini CLI, or ollama.com for the Ollama app. Local models
+  download through Ollama from its model library (ollama.com). Python libraries
+  download from PyPI (pypi.org) through pip as prebuilt wheels only, never built
+  from source, into Autowright's own folder under Application Support; only the
+  packages named in that automation's manifest, and only when one is missing or
+  you press Update on its Packages card. Once installed, the Ollama app keeps
+  itself up to date on its own, under Ollama's policy.
 
 That is the complete list. Your automations' scripts can of course reach the
 network themselves — but only in the ways you reviewed and saved.

@@ -363,8 +363,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   of the §5 root-table drift guard — the shell half is `app/tests/platform-roots.test.ts`). `pytest.ini` at the repo root configures
   the suite. Renderer tests live under `app/` (above), not here.
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
-  single self-contained page + `terms.html` (the terms of service page, below) + `CNAME`
-  with the custom domain + `robots.txt` and `sitemap.xml` for search crawlers). Dark, matches the §14 visual
+  single self-contained page + the two legal pages `privacy.html` and `terms.html` (below)
+  + `CNAME` with the custom domain + `robots.txt` and `sitemap.xml` for search crawlers). Dark, matches the §14 visual
   language (IBM Plex Sans/Mono — no 700 weight, per §14 — brand orange accent `#f68b43`, and
   the §14 AW-monogram mark as both header mark and favicon, inlined from
   `app/electron/icon/icon.svg`). Audience: technically savvy users — copy is concise and
@@ -442,8 +442,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   them; each is two or three sentences and names "Autowright" rather than "it" · closing
   download CTA (same feed-driven direct-DMG link as the hero — both anchors carry
   `data-download`; the JSON-LD `downloadUrl` stays the static latest-release page URL) ·
-  footer (GitHub, Privacy, Terms, MIT - Privacy links to the repo-root `PRIVACY.md` on
-  GitHub; Terms links to the site's own `/terms` page). All repo links point to
+  footer (GitHub, Privacy, Terms, MIT - Privacy and Terms link to the site's own
+  `/privacy` and `/terms` pages). All repo links point to
   `hansololz/autowright`. The page never uses the em dash character (—) anywhere -
   copy, meta tags, demo strings, code comments; where an app string it mirrors
   carries one, the page substitutes a plain hyphen. Respects `prefers-reduced-motion`. Head metadata: canonical
@@ -451,23 +451,29 @@ migrate-on-load migration so data written by released versions keeps loading (§
   1200×630 social image (`docs/og.png`, AW mark + headline on the dark background) and an
   `og:image:alt` describing it, `docs/apple-touch-icon.png` (180 px full-bleed AW mark), and
   JSON-LD.
-  **`docs/terms.html`** - the terms of service as a web page at `https://autowright.ai/terms`
-  (GitHub Pages serves the extensionless path; the footer and sitemap use it). A second
-  self-contained page sharing the landing page's tokens, fonts, inlined AW mark, header
-  row (mark, brand linking home, GitHub pill), and footer verbatim, with no demo, reveal
-  animation, or JSON-LD. Body: a single `<article>` - "Legal" eyebrow, `<h1>` "Terms of
-  service", a mono "Last updated" line, then the `TERMS.md` sections as `<h2>` + prose,
-  left-aligned. The page's `.wrap` is narrower than the landing page's (`max-width` 680 px
-  against 980) and the header, article, and footer all fill it edge to edge, so the prose
-  runs the full width of the column with nothing hanging off to the right. The prose is `TERMS.md` verbatim,
-  paragraph for paragraph; the only substitutions are the Markdown file references,
-  which become links (`LICENSE` and `PRIVACY.md` to their repo-root copies on GitHub) and
-  the issues URL, which becomes a link. `TERMS.md` stays the canonical copy: any edit to
-  it is mirrored into `terms.html` in the same change, and the page never carries a
-  clause the file does not. Head metadata: its own `<title>` ("Terms of service -
-  Autowright") and description, canonical `https://autowright.ai/terms`, the same
-  `theme-color`, favicon, and `apple-touch-icon` as the landing page; indexable, no
-  Open Graph card (nothing to share). Never uses the em dash.
+  **Legal pages `docs/privacy.html` and `docs/terms.html`** - the privacy policy and the
+  terms of service as web pages at `https://autowright.ai/privacy` and
+  `https://autowright.ai/terms` (GitHub Pages serves the extensionless paths; the footers
+  and sitemap use them). Each is a self-contained page sharing the landing page's tokens,
+  fonts, inlined AW mark, header row (mark, brand linking home, GitHub pill), and footer
+  verbatim, with no demo, reveal animation, or JSON-LD; the two legal pages are identical
+  in markup and CSS apart from their content. Body: a single `<article>` - "Legal" eyebrow,
+  `<h1>` ("Privacy policy" / "Terms of service"), a mono "Last updated" line, then the
+  source file's sections as `<h2>` + prose, left-aligned. The page's `.wrap` is narrower
+  than the landing page's (`max-width` 680 px against 980) and the header, article, and
+  footer all fill it edge to edge, so the prose runs the full width of the column with
+  nothing hanging off to the right. The prose is the repo-root `PRIVACY.md` / `TERMS.md`
+  verbatim, paragraph for paragraph; the only substitutions are Markdown syntax rendered
+  as HTML (bold → `<strong>`, backticked paths → `<code>`), the Markdown file references,
+  which become links (`LICENSE` and `PRIVACY.md` to their repo-root copies on GitHub,
+  except that a reference to the other legal page links to that page), URLs, which become
+  links, and the em dash, which the page renders as a spaced hyphen (the same rule the
+  landing page applies to app strings). The Markdown files stay the canonical copies: any
+  edit to one is mirrored into its page in the same change, and a page never carries a
+  clause its file does not. Head metadata: its own `<title>` ("Privacy policy - Autowright"
+  / "Terms of service - Autowright") and description, canonical `https://autowright.ai/privacy`
+  / `/terms`, the same `theme-color`, favicon, and `apple-touch-icon` as the landing page;
+  indexable, no Open Graph card (nothing to share). Never uses the em dash.
   The `<title>` and `<meta name="description">` both lead with the product name and then say
   in plain words what the app is (an AI automation app for macOS that writes and schedules
   Python), because "Autowright" is a contested term - unrelated automotive businesses hold
@@ -481,8 +487,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   every profile that is unambiguously this project (the GitHub repo and owner, the PyPI
   project), which is what lets a search engine treat this Autowright as an entity separate
   from the businesses of the same name. `docs/robots.txt` allows every crawler and points at
-  `https://autowright.ai/sitemap.xml`; `docs/sitemap.xml` lists the canonical landing page
-  and `/terms` (`downloads.json` is a machine endpoint and stays out of it). Section elements that a
+  `https://autowright.ai/sitemap.xml`; `docs/sitemap.xml` lists the canonical landing page,
+  `/privacy`, and `/terms` (`downloads.json` is a machine endpoint and stays out of it). Section elements that a
   search engine may deep-link carry stable `id`s (`how`, `features`, `faq`). Sections below the demo fade up on first
   scroll-into-view (IntersectionObserver adding an `.in` class; entrance uses the app's
   §14 motion values — 360 ms `cubic-bezier(0.16,1,0.3,1)`). `::selection` is the accent at
@@ -529,10 +535,11 @@ migrate-on-load migration so data written by released versions keeps loading (§
   must reach a Windows checkout CRLF regardless of the clone's autocrlf setting.
 - `LICENSE` — MIT, copyright David Zhang (also `"license": "MIT"` in `app/package.json`).
 - `PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
-  page (raw import into the renderer bundle) and read by GitHub visitors in place.
+  page (raw import into the renderer bundle), read by GitHub visitors in place, and
+  mirrored verbatim into the `docs/privacy.html` web page (above).
 - `TERMS.md` — the terms of service, canonical copy, same mechanism as `PRIVACY.md`:
-  rendered in-app on the §9.4 About page and read by GitHub visitors in place, and
-  mirrored verbatim into the `docs/terms.html` web page (above). Written
+  rendered in-app on the §9.4 About page, read by GitHub visitors in place, and mirrored
+  verbatim into the `docs/terms.html` web page (above). Written
   OS-neutral ("this computer"). States only what is true of the app: no account or
   server, MIT no-warranty, automations are the user's responsibility (the engine is not a
   sandbox, per §6.2), third-party agents under their own terms, updates from GitHub.

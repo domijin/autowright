@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Terms of service - Autowright</title>
-<meta name="description" content="The terms of service for Autowright, the free, open source Mac automation app: no account or server, MIT no-warranty, and your automations are your responsibility.">
+<title>Privacy policy - Autowright</title>
+<meta name="description" content="The privacy policy for Autowright, the free, open source Mac automation app: it collects nothing, everything stays on your Mac, and every network connection it can make is listed with its off switch.">
 <meta name="theme-color" content="#090d14">
 <meta name="author" content="David Zhang">
 <meta name="robots" content="index, follow">
-<link rel="canonical" href="https://autowright.ai/terms">
+<link rel="canonical" href="https://autowright.ai/privacy">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -65,6 +65,7 @@
   article ul{margin-top:10px; padding-left:1.2em; display:flex; flex-direction:column; gap:10px}
   article li{padding-left:.2em}
   article li::marker{color:var(--faint)}
+  article code{font-family:var(--mono); font-size:.9em; color:var(--text)}
   article a{color:var(--text); text-decoration:underline; text-underline-offset:2px;
     text-decoration-color:rgba(255,255,255,.25); transition:text-decoration-color .15s}
   article a:hover{text-decoration-color:var(--text)}
@@ -110,35 +111,30 @@
 
   <article>
     <div class="eyebrow">Legal</div>
-    <h1>Terms of service</h1>
+    <h1>Privacy policy</h1>
     <div class="updated">Last updated: 2026-08-28</div>
 
-    <p class="lede">Autowright is free, open source software released under the MIT License (see <a href="https://github.com/hansololz/autowright/blob/main/LICENSE">LICENSE</a>). These terms explain what that means in practice when you install and use the app, and they never narrow what the license grants you.</p>
+    <p class="lede">Autowright collects nothing. There is no telemetry, no analytics, no crash reporting, no account, and no Autowright server. This page explains where your data lives and the few network connections the app can make - each one listed below, with its off switch.</p>
 
-    <h2>No account, no service</h2>
-    <p>There is no Autowright server, account, or subscription. The app, its background service, and every automation run entirely on your own computer. Nothing is operated for you, so there is nothing to sign up for and nothing that can be suspended or shut off remotely.</p>
-
-    <h2>No warranty</h2>
-    <p>Autowright is provided "as is", without warranty of any kind, express or implied, including fitness for a particular purpose. It is an early release under active development; features may change or break between versions.</p>
-
-    <h2>Your automations are your responsibility</h2>
+    <h2>Everything stays on your Mac</h2>
     <ul>
-      <li>Automation scripts are written by the AI agent you connect and executed only after you review and approve them. Those scripts can do anything your user account can do on this computer: read and write files, reach the network, and run other programs. The engine is not a sandbox.</li>
-      <li>Read every change before you accept and execute it. You are responsible for what your automations do, including what they send, delete, or purchase, and for making sure they comply with the law and with the terms of any website or service they access.</li>
-      <li>Secret values are stored in the operating system's secret store and injected only at run time, but a script you approve can still transmit a value it is given. Grant secrets to an automation only after reading what it does with them.</li>
+      <li><strong>Automations, versions, executions, settings</strong> are stored in <code>~/Library/Application Support/Autowright</code> (execution data location is changeable in Settings). Nothing is synced or uploaded.</li>
+      <li><strong>Secrets</strong> (passwords, API keys) are stored in the macOS Keychain. Secret values never appear in scripts, logs, or exported files, and are injected only at execution time.</li>
+      <li><strong>Memory and logs</strong> stay in the same local folders. You can open, snapshot, or delete all of it at any time.</li>
     </ul>
 
-    <h2>Third-party agents, models, and services</h2>
-    <p>Claude Code, Gemini CLI, Codex, OpenCode, Ollama, and any model or service they reach are provided by their respective vendors under their own terms and privacy policies, using your own accounts. Any cost they charge is yours. The same applies to any service an automation of yours talks to.</p>
+    <h2>The AI you connect is your choice</h2>
+    <p>When you create or edit an automation, Autowright sends the drafting context - your description, the automation's spec, build instructions, and related step code - to the AI agent <strong>you</strong> connected (Claude Code, Gemini CLI, Codex, or OpenCode). That data is handled under that provider's own terms and privacy policy, using your own account. If you use OpenCode with a local Ollama model, drafting also stays entirely on your Mac.</p>
 
-    <h2>Updates</h2>
-    <p>Update checks and downloads come from GitHub, as described in the <a href="/privacy">privacy policy</a>. You choose whether and when to install an update, and you can turn automatic checks off in the app.</p>
-
-    <h2>Limitation of liability</h2>
-    <p>To the fullest extent permitted by law, the author is not liable for any damage or loss arising from the use of Autowright or from anything your automations do, whether direct, indirect, incidental, or consequential.</p>
+    <h2>Network connections Autowright itself makes</h2>
+    <ul>
+      <li><strong>Check for updates</strong> - once a day by default: one request to GitHub (raw.githubusercontent.com, where the update feed lives) to read the latest version number, nothing more. Turn off "Check for updates automatically" on the About page and Autowright never checks in the background - only when you press the button. Downloading an update - always started by you - also fetches it from GitHub. Those servers see your IP address, as with any web request.</li>
+      <li><strong>Installing an AI, a model, or a Python library</strong> - only when you ask during setup, or when an automation you save declares a library it needs. AI agents and models download from the provider's official source (npm, Ollama, or the vendor's installer). Python libraries download from PyPI (pypi.org) through pip, only the packages named in that automation's manifest, and only when one is missing or you press Update on its Packages card.</li>
+    </ul>
+    <p>That is the complete list. Your automations' scripts can of course reach the network themselves - but only in the ways you reviewed and saved.</p>
 
     <h2>Changes</h2>
-    <p>These terms live at the root of the repository; any change to them is visible in the project's git history. Questions and reports go to <a href="https://github.com/hansololz/autowright/issues">github.com/hansololz/autowright/issues</a>.</p>
+    <p>This policy lives at the root of the repository; any change to it is visible in the project's git history.</p>
   </article>
 
   <footer>

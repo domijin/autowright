@@ -6,6 +6,11 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://autowright.ai/privacy</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
     <loc>https://autowright.ai/terms</loc>
     <changefreq>monthly</changefreq>
     <priority>0.3</priority>

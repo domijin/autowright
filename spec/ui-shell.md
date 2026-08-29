@@ -94,7 +94,8 @@ dock stays resident unconditionally; without one, residency requires a **live** 
 reference (the stored setting is never consulted — a tray that failed to create must not
 strand an invisible app). The
 shell consults its own `plat.capabilities` (§2 shell half — `trayPanel`, `loginItem`,
-`dockIcon`, `updates`, `appMenu`) before wiring each of those surfaces, so a platform module that
+`dockIcon`, `updates`, `appMenu`, `desktopEntry` — the §3 Linux launcher-entry reconcile)
+before wiring each of those surfaces, so a platform module that
 declares a capability false is simply never asked for its assets or handlers. The §3
 ensure-backend failure detail is per-OS too: the diagnostic line naming Gatekeeper is
 macOS copy from the darwin module; Windows shows a plain "the backend service failed to

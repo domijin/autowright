@@ -759,6 +759,51 @@ refuses, the package manager owns updates).
   `Utility`, and its own `publish` generic-provider entry — the Linux feed base URL,
   overriding the top-level win32 entry, so the `app-update.yml` electron-builder embeds
   in the AppImage points at the Linux feed and never the Windows one.
+- **Desktop integration (decided — the app installs its own launcher entry):** an AppImage
+  is a bare file; the desktop knows nothing about it until something registers it. The
+  AppImage *embeds* everything a registrar needs — electron-builder's desktop entry plus
+  the 1024 px mark as `.DirIcon` under `usr/share/icons/hicolor/` — so third-party
+  integrators (Gear Lever, AppImageLauncher, `appimaged`) show the mark on the file and
+  register it themselves. Nothing in the build can make a stock file manager show the
+  embedded icon on the `.AppImage` file itself (GNOME never looks inside), and a running
+  window gets the desktop's generic icon until a `.desktop` file the desktop can *see*
+  names the window's app-id. So the app registers itself: on every packaged Linux launch
+  `main.cjs` calls the §2 `applyDesktopEntry(app, iconPath)` seam (behind the
+  `desktopEntry` shell capability — true only in `linux.cjs`), which reconciles two
+  files under `$XDG_DATA_HOME` (default `~/.local/share`):
+  `applications/ai.autowright.app.desktop` and
+  `icons/hicolor/scalable/apps/ai.autowright.app.svg` (the §14 `icon.svg` source, copied
+  byte-for-byte from the package — `scalable/` is the one hicolor directory every theme
+  index lists, and the SVG *is* the full mark, rounded plate included). The entry is
+  `Type=Application`, `Name=Autowright`, `Comment=` the §3 electron-builder synopsis,
+  `Exec="<AppImage path>"` (the `$APPIMAGE` path the AppImage runtime exports, falling
+  back to `process.execPath` for an unpacked build; desktop-entry Exec quoting — `\`, `"`
+  escaped, `%` doubled), `TryExec=<the same path, unquoted>` (a deleted or moved AppImage
+  hides the entry from the launcher on its own — nothing stale ever shows),
+  `Icon=ai.autowright.app`, `StartupWMClass=ai.autowright.app`, `Categories=Utility;`,
+  `Terminal=false`, and the ownership marker `X-Autowright-Desktop-Entry=true`.
+  **Window association:** Electron derives the Wayland app-id and the X11 `WM_CLASS`
+  from `desktopName` in `app/package.json` (set to `ai.autowright.app.desktop`; without
+  it Electron would slug the product name to `autowright`), so the running window's
+  app-id equals the installed entry's basename — the match every desktop makes without
+  needing `StartupWMClass`, which is set anyway for the ones that index it. The same
+  `desktopName` feeds electron-builder (`linux.syncDesktopName: true`): the entry
+  *inside* the AppImage is named `ai.autowright.app.desktop` with
+  `StartupWMClass=ai.autowright.app` too, so a third-party integrator's copy associates
+  windows exactly like ours. **Reconcile rules** (the §4.9 autostart file's, minus the
+  toggle): an unpackaged run never writes (the Exec line would name the bare Electron
+  binary); a packaged run writes each file only when its bytes differ from the wanted
+  content (a moved AppImage rewrites Exec/TryExec on the next launch; an in-place §3
+  update keeps its path, so nothing changes), writes the icon before the entry (the
+  desktop's entry-changed event then finds the icon already there), and never touches an
+  entry without the marker — a user's own hand-written launcher wins. The app never
+  deletes either file: there is no setting behind them, `TryExec` handles a removed
+  AppImage, and §3 reset leaves them alone the same way it leaves the AppImage itself
+  (reset erases *data*; the launcher entry is part of the installed app). Failures are
+  best-effort — logged never, swallowed always, retried on the next launch — exactly
+  like the autostart reconcile. Result for a user: download → the file looks generic →
+  run it once → from then on Autowright has its icon in the dock, Alt-Tab and the app
+  grid, and launches from the grid like an installed app.
 - **Updater:** `electron-updater` again, in its AppImage flavor — `linux.cjs` names
   `UPDATER: 'appimage'` and main.cjs's shared electron-updater path (the win32 Updater
   bullet) constructs `AppImageUpdater` instead of `NsisUpdater` against the same generic

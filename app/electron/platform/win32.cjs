@@ -181,7 +181,10 @@ const SERVICE_START_FAILED_DETAIL =
 // No extra diagnostics to capture: the §3 service result lines already land in app.log.
 function serviceDiagnostics(_log) {}
 
-const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true }
+// §3 desktop integration is a Linux-only surface (the AppImage launcher entry).
+function applyDesktopEntry(_app, _iconPath) {}
+
+const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true, desktopEntry: false }
 
 module.exports = {
   OS_TOKEN,
@@ -200,6 +203,7 @@ module.exports = {
   shimText,
   readLoginShellPath,
   applyLoginItem,
+  applyDesktopEntry,
   sweepLegacyLoginItems,
   UPDATER,
   APP_USER_MODEL_ID,

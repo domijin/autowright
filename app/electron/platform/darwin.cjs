@@ -164,7 +164,10 @@ function serviceDiagnostics(log) {
     })
 }
 
-const capabilities = { trayPanel: true, loginItem: true, dockIcon: true, updates: true, appMenu: true }
+// §3 desktop integration is a Linux-only surface (the AppImage launcher entry).
+function applyDesktopEntry(_app, _iconPath) {}
+
+const capabilities = { trayPanel: true, loginItem: true, dockIcon: true, updates: true, appMenu: true, desktopEntry: false }
 
 module.exports = {
   OS_TOKEN,
@@ -183,6 +186,7 @@ module.exports = {
   shimText,
   readLoginShellPath,
   applyLoginItem,
+  applyDesktopEntry,
   UPDATER,
   APP_USER_MODEL_ID,
   updateFeedUrl,

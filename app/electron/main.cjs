@@ -1268,6 +1268,10 @@ app.whenReady().then(() => {
   // replace it with the AW mark (§14 checked-in icon assets; a no-op on
   // platforms without a dock).
   if (caps.dockIcon) plat.setDockIcon(app, path.join(__dirname, 'icon', 'icon.png'))
+  // §3 Linux desktop integration: a packaged launch reconciles the launcher
+  // entry + hicolor icon under ~/.local/share that give the AppImage's window
+  // its icon and an app-grid entry (§2 applyDesktopEntry; a no-op unpackaged).
+  if (caps.desktopEntry) plat.applyDesktopEntry(app, path.join(__dirname, 'icon', 'icon.svg'))
   // §9: a platform without an application menu (Linux — the native frame
   // would draw Electron's stock File/Edit/View/Window bar) has it suppressed
   // before any window exists; editing shortcuts are Chromium-native.

@@ -597,7 +597,7 @@ describe('main.cjs §9 never-paint-blank window guard', () => {
 // rather than one platform's answer.
 
 const platMod = realRequire(join(PLATFORM_DIR, 'index.cjs')) as {
-  capabilities: { trayPanel: boolean, loginItem: boolean, dockIcon: boolean, updates: boolean, appMenu: boolean }
+  capabilities: { trayPanel: boolean, loginItem: boolean, dockIcon: boolean, updates: boolean, appMenu: boolean, desktopEntry: boolean }
   UPDATER: string | null
   updateFeedUrl: (arch: string) => string | null
   applyLoginItem: (app: { isPackaged: boolean }, enabled: boolean, exec?: unknown) => void

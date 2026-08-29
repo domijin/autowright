@@ -148,6 +148,65 @@ function applyLoginItem(app, enabled) {
   } catch { /* best-effort — reconciled again on the next settings poll */ }
 }
 
+// ---- §3 desktop integration (launcher entry + icon) ------------------------
+
+// §3: an AppImage is a bare file — until a .desktop file the desktop can see
+// names the window's app-id, the running window wears the generic icon and
+// nothing lists the app in the launcher. On every packaged launch the shell
+// reconciles its own entry and icon under $XDG_DATA_HOME. Same ownership
+// rules as the autostart file above (marker-owned, foreign files untouched,
+// rewritten only when the bytes drift, dev runs never write), minus the
+// toggle: nothing deletes them — TryExec hides the entry once the AppImage is
+// gone. The basename matches `desktopName` in package.json, which is what
+// Electron hands Wayland as the app-id (and X11 as WM_CLASS), so the desktop
+// associates the window with this entry by name alone.
+const DESKTOP_ENTRY_ID = 'ai.autowright.app'
+const DESKTOP_ENTRY_MARKER = 'X-Autowright-Desktop-Entry=true'
+
+function dataHome() {
+  return process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share')
+}
+
+function desktopEntryPath() {
+  return path.join(dataHome(), 'applications', `${DESKTOP_ENTRY_ID}.desktop`)
+}
+
+function desktopIconPath() {
+  return path.join(dataHome(), 'icons', 'hicolor', 'scalable', 'apps', `${DESKTOP_ENTRY_ID}.svg`)
+}
+
+function desktopEntryText() {
+  // TryExec is a bare path (no Exec quoting — the whole value is the path);
+  // a path that is no longer executable hides the entry from the launcher.
+  const target = process.env.APPIMAGE || process.execPath
+  return ['[Desktop Entry]', 'Type=Application', 'Name=Autowright',
+    'Comment=Recurring personal automations',
+    `Exec=${autostartExec()}`, `TryExec=${target}`,
+    `Icon=${DESKTOP_ENTRY_ID}`, `StartupWMClass=${DESKTOP_ENTRY_ID}`,
+    'Categories=Utility;', 'Terminal=false', DESKTOP_ENTRY_MARKER, ''].join('\n')
+}
+
+function writeIfChanged(p, wanted) {
+  let current = null
+  try { current = fs.readFileSync(p) } catch { /* absent */ }
+  if (current !== null && current.equals(wanted)) return
+  fs.mkdirSync(path.dirname(p), { recursive: true })
+  fs.writeFileSync(p, wanted)
+}
+
+function applyDesktopEntry(app, iconPath) {
+  if (!app.isPackaged) return
+  try {
+    // Icon first: the desktop's entry-changed event then finds it in place.
+    writeIfChanged(desktopIconPath(), fs.readFileSync(iconPath))
+    const p = desktopEntryPath()
+    let current = null
+    try { current = fs.readFileSync(p, 'utf-8') } catch { /* absent */ }
+    if (current !== null && !current.includes(DESKTOP_ENTRY_MARKER)) return // foreign
+    writeIfChanged(p, Buffer.from(desktopEntryText()))
+  } catch { /* best-effort — reconciled again on the next launch */ }
+}
+
 // ---- §3 updates -------------------------------------------------------------
 
 // §3 Linux updates: electron-updater's AppImageUpdater against the generic
@@ -206,7 +265,7 @@ function serviceDiagnostics(log) {
 // §9: no application menu — the native frame would draw Electron's stock
 // File/Edit/View/Window bar, which nothing in the app uses, so the shell
 // suppresses it (editing shortcuts are Chromium-native and survive).
-const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: false }
+const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: false, desktopEntry: true }
 
 module.exports = {
   OS_TOKEN,
@@ -225,6 +284,7 @@ module.exports = {
   shimText,
   readLoginShellPath,
   applyLoginItem,
+  applyDesktopEntry,
   UPDATER,
   APP_USER_MODEL_ID,
   updateFeedUrl,

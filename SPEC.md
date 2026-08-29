@@ -181,7 +181,9 @@ roots, `python/bin/python3`
 bundled-interpreter layout, the POSIX shim and login-shell PATH probe shared with macOS,
 native window frame — no custom title bar or vibrancy for v1 — colored tray assets with
 work-area-anchored panel placement on any screen edge, the §4.9 login setting honored via
-an XDG-autostart `.desktop` file, and the §3 electron-updater AppImage update feed);
+an XDG-autostart `.desktop` file, the §3 launch-time desktop-integration reconcile — the
+`~/.local/share` launcher entry + hicolor icon that give the AppImage's window its icon
+and an app-grid entry — and the §3 electron-updater AppImage update feed);
 `fallback.cjs` keeps the degraded build for any other platform.
 What remains open of the Windows and Linux ports is
 audited in the `spec/ports.md` worksheet until it ships into this spec. Clients gate features on the §19

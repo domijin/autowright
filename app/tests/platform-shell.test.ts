@@ -3,7 +3,7 @@
 // (§13), tray assets (§13) and the ensure-backend failure copy (§9). The
 // modules never import `electron`, so every one of them loads on any OS and
 // each platform's shape is pinned here regardless of where the suite runs.
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -146,15 +146,19 @@ describe('§9 ensure-backend failure copy is per-OS', () => {
 
 describe('§9 capability flags', () => {
   it('macOS declares every shell surface; Windows has everything but a dock', () => {
-    expect(darwin.capabilities)
-      .toEqual({ trayPanel: true, loginItem: true, dockIcon: true, updates: true, appMenu: true })
-    expect(win32.capabilities)
-      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true })
+    expect(darwin.capabilities).toEqual({
+      trayPanel: true, loginItem: true, dockIcon: true, updates: true, appMenu: true, desktopEntry: false,
+    })
+    expect(win32.capabilities).toEqual({
+      trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true, desktopEntry: false,
+    })
     // §13: the Linux tray is best-effort (stock GNOME needs an extension) —
     // the flag stays true so the icon is attempted. §9: no application menu —
-    // the stock File/Edit/View/Window bar is suppressed.
-    expect(linux.capabilities)
-      .toEqual({ trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: false })
+    // the stock File/Edit/View/Window bar is suppressed. §3: the AppImage
+    // launcher entry is the one desktop-integration surface, Linux-only.
+    expect(linux.capabilities).toEqual({
+      trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: false, desktopEntry: true,
+    })
   })
 
   it('every module\'s updates flag and updateFeedUrl agree', () => {
@@ -224,7 +228,8 @@ describe('§3 update machinery is per-OS', () => {
 })
 
 describe('§3 Windows packaging config (electron-builder)', () => {
-  const build = (require('../package.json') as { build: unknown }).build as {
+  const pkg = require('../package.json') as { desktopName: string, build: unknown }
+  const build = pkg.build as {
     appId: string
     productName: string
     artifactName: string
@@ -235,10 +240,20 @@ describe('§3 Windows packaging config (electron-builder)', () => {
     win: { target: { target: string, arch: string[] }[], icon: string }
     linux: {
       target: { target: string, arch: string[] }[], artifactName: string,
-      icon: string, publish: { provider: string, url: string }[],
+      icon: string, publish: { provider: string, url: string }[], syncDesktopName: boolean,
     }
     nsis: Record<string, unknown>
   }
+
+  it('aligns the Linux app-id with the launcher entry the app installs (§3)', () => {
+    // Electron hands Wayland `desktopName` minus `.desktop` as the app-id (and
+    // X11 the same as WM_CLASS); the §3 reconcile installs an entry of that
+    // basename, and syncDesktopName makes the entry *inside* the AppImage
+    // match too — so every desktop associates the window by name alone.
+    expect(pkg.desktopName).toBe('ai.autowright.app.desktop')
+    expect(build.linux.syncDesktopName).toBe(true)
+    expect(build.appId).toBe('ai.autowright.app')
+  })
 
   it('targets Windows NSIS and Linux AppImage — never mac', () => {
     // prod.sh keeps @electron/packager; nothing here may declare a mac
@@ -474,5 +489,88 @@ describe('§4.9 login item is per-OS (applyLoginItem)', () => {
       else process.env.XDG_CONFIG_HOME = prevXdg
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('§3 Linux desktop integration (applyDesktopEntry)', () => {
+  const ICON = join(ELECTRON_DIR, 'icon', 'icon.svg')
+  const withDataHome = (fn: (dir: string) => void) => {
+    const dir = mkdtempSync(join(tmpdir(), 'autowright-desktop-'))
+    const prev = process.env.XDG_DATA_HOME
+    const prevAppImage = process.env.APPIMAGE
+    process.env.XDG_DATA_HOME = dir
+    delete process.env.APPIMAGE
+    try { fn(dir) } finally {
+      if (prev === undefined) delete process.env.XDG_DATA_HOME
+      else process.env.XDG_DATA_HOME = prev
+      if (prevAppImage !== undefined) process.env.APPIMAGE = prevAppImage
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  const packaged = { isPackaged: true }
+  const dev = { isPackaged: false }
+
+  it('installs a marker-owned launcher entry and the scalable icon under XDG_DATA_HOME', () => {
+    withDataHome((dir) => {
+      const entry = join(dir, 'applications', 'ai.autowright.app.desktop')
+      const icon = join(dir, 'icons', 'hicolor', 'scalable', 'apps', 'ai.autowright.app.svg')
+      linux.applyDesktopEntry(packaged, ICON)
+      const text = readFileSync(entry, 'utf-8')
+      // The basename equals package.json's desktopName minus the suffix — the
+      // app-id Electron hands Wayland — and the entry names it again for the
+      // desktops that index StartupWMClass instead.
+      expect(text).toContain('[Desktop Entry]')
+      expect(text).toContain('Type=Application')
+      expect(text).toContain('Name=Autowright')
+      expect(text).toContain(`Exec="${process.execPath}"`)
+      expect(text).toContain(`TryExec=${process.execPath}`)
+      expect(text).toContain('Icon=ai.autowright.app')
+      expect(text).toContain('StartupWMClass=ai.autowright.app')
+      expect(text).toContain('Categories=Utility;')
+      expect(text).toContain('X-Autowright-Desktop-Entry=true')
+      expect(readFileSync(icon)).toEqual(readFileSync(ICON))
+      // Idempotent: a second launch leaves both files' bytes and mtimes alone.
+      const before = [statSync(entry).mtimeMs, statSync(icon).mtimeMs]
+      linux.applyDesktopEntry(packaged, ICON)
+      expect([statSync(entry).mtimeMs, statSync(icon).mtimeMs]).toEqual(before)
+      expect(readFileSync(entry, 'utf-8')).toBe(text)
+    })
+  })
+
+  it('points Exec/TryExec at the AppImage and rewrites them when it moves', () => {
+    withDataHome((dir) => {
+      const entry = join(dir, 'applications', 'ai.autowright.app.desktop')
+      process.env.APPIMAGE = '/opt/Autowright 1.AppImage'
+      linux.applyDesktopEntry(packaged, ICON)
+      let text = readFileSync(entry, 'utf-8')
+      expect(text).toContain('Exec="/opt/Autowright 1.AppImage"')
+      expect(text).toContain('TryExec=/opt/Autowright 1.AppImage')
+      // Moved: the next launch rewrites the drifted lines (marker is ours).
+      process.env.APPIMAGE = '/home/u/Apps/Autowright.AppImage'
+      linux.applyDesktopEntry(packaged, ICON)
+      text = readFileSync(entry, 'utf-8')
+      expect(text).toContain('Exec="/home/u/Apps/Autowright.AppImage"')
+      expect(text).not.toContain('/opt/')
+    })
+  })
+
+  it('never writes unpackaged, never touches a foreign entry, never deletes', () => {
+    withDataHome((dir) => {
+      const entry = join(dir, 'applications', 'ai.autowright.app.desktop')
+      const icon = join(dir, 'icons', 'hicolor', 'scalable', 'apps', 'ai.autowright.app.svg')
+      // A dev run: the Exec line would name the bare Electron binary.
+      linux.applyDesktopEntry(dev, ICON)
+      expect(existsSync(entry)).toBe(false)
+      expect(existsSync(icon)).toBe(false)
+      // A user's own hand-written launcher (no marker) wins; the icon is
+      // still installed — it is ours by name and harmless beside theirs.
+      mkdirSync(join(dir, 'applications'), { recursive: true })
+      writeFileSync(entry, '[Desktop Entry]\nName=My Autowright\n')
+      linux.applyDesktopEntry(packaged, ICON)
+      expect(readFileSync(entry, 'utf-8')).toBe('[Desktop Entry]\nName=My Autowright\n')
+      expect(existsSync(icon)).toBe(true)
+      // A missing icon source is best-effort: nothing throws.
+      expect(() => linux.applyDesktopEntry(packaged, join(dir, 'nope.svg'))).not.toThrow()
+    })
   })
 })

@@ -24,6 +24,7 @@
     "remark-gfm": "^4.0.1",
     "zustand": "^5.0.14"
   },
+  "desktopName": "ai.autowright.app.desktop",
   "build": {
     "appId": "ai.autowright.app",
     "productName": "Autowright",
@@ -80,6 +81,7 @@
       ],
       "artifactName": "Autowright-${version}-linux-x86_64.${ext}",
       "icon": "electron/icon/icon.png",
+      "syncDesktopName": true,
       "category": "Utility",
       "synopsis": "Recurring personal automations",
       "publish": [

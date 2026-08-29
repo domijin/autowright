@@ -186,7 +186,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   panel rows' execute buttons (instead of a play glyph). Other checked-in assets in
   `app/electron/icon/`: `icon.png` (1024 px raster; dock icon set at startup via
   `app.dock.setIcon` in `app/electron/main.cjs` so dev sessions don't show the default
-  Electron icon) and `icon.icns` (the bundle icon §18 prod.sh packages with). Both are
+  Electron icon) and `icon.icns` (the bundle icon §18 prod.sh packages with). On Linux the
+  SVG itself is also the launcher icon: the §3 desktop-integration reconcile copies it to
+  `~/.local/share/icons/hicolor/scalable/apps/ai.autowright.app.svg`, so the mark must stay
+  a complete, self-contained icon (plate included) rather than a bare glyph. Both are
   derived from `icon.svg` by `scripts/gen_icon.cjs` (Electron render → `icon.png`,
   then sips + iconutil → `icon.icns`; run from `app/` as
   `./node_modules/.bin/electron ../scripts/gen_icon.cjs`) — rerun it whenever the SVG

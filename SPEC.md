@@ -442,7 +442,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   them; each is two or three sentences and names "Autowright" rather than "it" · closing
   download CTA (same feed-driven direct-DMG link as the hero — both anchors carry
   `data-download`; the JSON-LD `downloadUrl` stays the static latest-release page URL) ·
-  footer (GitHub, Privacy, MIT). All repo links point to
+  footer (GitHub, Privacy, Terms, MIT - Privacy and Terms link to the repo-root
+  `PRIVACY.md` and `TERMS.md` on GitHub). All repo links point to
   `hansololz/autowright`. The page never uses the em dash character (—) anywhere -
   copy, meta tags, demo strings, code comments; where an app string it mirrors
   carries one, the page substitutes a plain hyphen. Respects `prefers-reduced-motion`. Head metadata: canonical
@@ -512,3 +513,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
 - `LICENSE` — MIT, copyright David Zhang (also `"license": "MIT"` in `app/package.json`).
 - `PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
   page (raw import into the renderer bundle) and read by GitHub visitors in place.
+- `TERMS.md` — the terms of service, canonical copy, same mechanism as `PRIVACY.md`:
+  rendered in-app on the §9.4 About page and read by GitHub visitors in place. Written
+  OS-neutral ("this computer"). States only what is true of the app: no account or
+  server, MIT no-warranty, automations are the user's responsibility (the engine is not a
+  sandbox, per §6.2), third-party agents under their own terms, updates from GitHub.

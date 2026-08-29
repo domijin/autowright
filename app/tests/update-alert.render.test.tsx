@@ -198,3 +198,29 @@ describe('About updates row, brew-managed copy (§9.4)', () => {
     expect(screen.queryByText('Download update')).toBeNull()
   })
 })
+
+describe('About LEGAL document rows (§9.4)', () => {
+  // The row's View button is the one between the Terms title and the next row's title in DOM order.
+  const viewButtonAfter = (title: string, nextTitle: string) =>
+    screen.getAllByRole('button', { name: 'View' }).find((b) =>
+      screen.getByText(title).compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING
+      && !(screen.getByText(nextTitle).compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING))
+
+  it('Privacy policy opens the doc modal on the repo-root PRIVACY.md', async () => {
+    render(<AboutPage />)
+    fireEvent.click(viewButtonAfter('Privacy policy', 'Terms of service')!)
+    expect(await screen.findByRole('heading', { level: 2, name: 'Privacy policy' })).toBeTruthy()
+    expect(await screen.findByText('Everything stays on your Mac')).toBeTruthy()
+    expect(screen.queryByText("Couldn't load the document.")).toBeNull()
+  })
+
+  it('Terms of service row sits in LEGAL and opens the doc modal on the repo-root TERMS.md', async () => {
+    render(<AboutPage />)
+    expect(screen.getByText('No warranty, and your automations are your responsibility.')).toBeTruthy()
+    fireEvent.click(viewButtonAfter('Terms of service', 'Open-source libraries')!)
+    // Modal title, then the real TERMS.md body with its H1 stripped.
+    expect(await screen.findByRole('heading', { level: 2, name: 'Terms of service' })).toBeTruthy()
+    expect(await screen.findByText('No account, no service')).toBeTruthy()
+    expect(screen.queryByText("Couldn't load the document.")).toBeNull()
+  })
+})

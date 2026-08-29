@@ -801,7 +801,7 @@ sections with Settings' anatomy (mono eyebrow + card of rows) — **APP**,
 **UPDATES**, **LEGAL** — and new about-ish content (credits, support links)
 lands in one of these or a new eyebrow here, never on Settings.
 
-Document rows (Privacy policy, Open-source libraries) share one **doc modal**:
+Document rows (Privacy policy, Terms of service, Open-source libraries) share one **doc modal**:
 width 680, `h2` title, body caps at 62 vh and scrolls, content
 rendered through the shared §4.5 Markdown renderer, quiet Close in the footer.
 Each document loads through a dynamic `?raw` import so it stays out of the main
@@ -906,6 +906,10 @@ with a bordered **Retry** button that re-attempts the import.
   GitHub visitors and the app. The file opens with an `# Privacy policy` H1 for
   GitHub; the app strips the first H1 line before rendering (the modal title
   already says it).
+- **Terms of service** - sub-line "No warranty, and your automations are your
+  responsibility."; right-side "View" button opens the doc modal (title "Terms of
+  service") rendering the repo-root `TERMS.md` (§17) through the same raw import and
+  first-H1 strip as the privacy policy.
 - **Open-source libraries** — sub-line "Everything Autowright is built on, with
   each project's license."; right-side "View" button opens the doc modal (title
   "Open-source libraries") rendering

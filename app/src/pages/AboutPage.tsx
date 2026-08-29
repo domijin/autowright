@@ -51,6 +51,10 @@ const DOCS = {
     // Repo-root canonical copy; strip its H1 — the modal title already says it.
     load: () => import('../../../PRIVACY.md?raw').then((m) => m.default.replace(/^# .*\n/, '')),
   },
+  terms: {
+    title: 'Terms of service',
+    load: () => import('../../../TERMS.md?raw').then((m) => m.default.replace(/^# .*\n/, '')),
+  },
   libraries: {
     title: 'Open-source libraries',
     load: () => import('../acknowledgements.md?raw').then((m) => m.default),
@@ -283,6 +287,15 @@ export default function AboutPage() {
             <div style={rowSub}>What Autowright collects — nothing — and where your data lives.</div>
           </div>
           <button className="ad-btn-soft" onClick={() => openDoc('privacy')} style={{ flex: 'none' }}>
+            View
+          </button>
+        </div>
+        <div style={rowDivided}>
+          <div style={{ flex: 1 }}>
+            <div style={rowTitle}>Terms of service</div>
+            <div style={rowSub}>No warranty, and your automations are your responsibility.</div>
+          </div>
+          <button className="ad-btn-soft" onClick={() => openDoc('terms')} style={{ flex: 'none' }}>
             View
           </button>
         </div>

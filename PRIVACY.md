@@ -34,9 +34,12 @@ drafting also stays entirely on your Mac.
   never checks in the background — only when you press the button. Downloading
   an update — always started by you — also fetches it from GitHub. Those
   servers see your IP address, as with any web request.
-- **Installing an AI or a model** — only when you ask during setup: downloads
-  come from the provider's official source (npm, Ollama, or the vendor's
-  installer).
+- **Installing an AI, a model, or a Python library** — only when you ask during
+  setup, or when an automation you save declares a library it needs. AI agents
+  and models download from the provider's official source (npm, Ollama, or the
+  vendor's installer). Python libraries download from PyPI (pypi.org) through
+  pip, only the packages named in that automation's manifest, and only when one
+  is missing or you press Update on its Packages card.
 
 That is the complete list. Your automations' scripts can of course reach the
 network themselves — but only in the ways you reviewed and saved.
@@ -46,4 +49,4 @@ network themselves — but only in the ways you reviewed and saved.
 This policy lives at the root of the repository; any change to it is visible in
 the project's git history.
 
-_Last updated: 2026-08-22_
+_Last updated: 2026-08-28_

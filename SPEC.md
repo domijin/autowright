@@ -380,7 +380,14 @@ migrate-on-load migration so data written by released versions keeps loading (§
   style, its label followed by an inline mono uppercase `experimental` tag, black text
   on a solid accent fill - the
   Windows port is the README's "unstable" early build: unsigned, so SmartScreen warns;
-  the anchor's `title` says so in one sentence). Each is a direct download of that
+  the anchor's `title` says so in one sentence, and its `aria-label` is "Download for
+  Windows (experimental)". On Apple devices the Windows button collapses to an icon-only
+  ghost button: an inline `<head>` script adds the `apple` class to `<html>` before first
+  paint (so the full button never flashes) when the UA platform matches
+  Mac/iPhone/iPad/iPod, and CSS keyed off `html.apple` hides the label and tag and shows
+  the Font Awesome brands `windows` glyph (`#fa-windows` symbol, inlined like the other
+  icons); the `title`, `aria-label`, and platform line still carry the experimental
+  status. Elsewhere the full labelled button shows). Each is a direct download of that
   OS's latest versioned installer: on load, page JS fetches the same-origin
   `downloads.json` distributable index (relative URL, so it also works when the page
   is served from a sub-path in local previews) and rewrites each download anchor's

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms of service - Autowright</title>
+<meta name="description" content="The terms of service for Autowright, the free, open source Mac automation app: no account or server, MIT no-warranty, and your automations are your responsibility.">
+<meta name="theme-color" content="#090d14">
+<meta name="author" content="David Zhang">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://autowright.ai/terms">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='100 100 824 824'%3E%3Crect x='100' y='100' width='824' height='824' rx='185' fill='%23f68b43'/%3E%3Cg stroke='%2316100a' stroke-width='70' stroke-linecap='round' stroke-linejoin='round' fill='none'%3E%3Cpath d='M 240 690 L 350 360 L 460 690 L 570 360 L 680 690 L 790 360'/%3E%3Cpath d='M 277 580 L 423 580'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#090d14; --bg-content:#0d1118; --bg-card:#191d25; --bg-inset:#0c0f16;
+    /* §14 neutral text ramp, same four levels as the app's tokens.css */
+    --text:#e9ebef; --text-2:#c8ccd4; --muted:#9da3af; --faint:#828893;
+    --hairline:rgba(255,255,255,.06);
+    --accent:#f68b43; --accent:oklch(0.74 0.155 52);
+    --on-accent:#16100a;
+    --sans:'IBM Plex Sans',-apple-system,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{color-scheme:dark}
+  body{
+    background:var(--bg); color:var(--text); font-family:var(--sans);
+    -webkit-font-smoothing:antialiased; line-height:1.6; overflow-x:hidden;
+  }
+  a{color:inherit; text-decoration:none}
+  ::selection{background:rgba(246,139,67,.35)}
+  a:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:8px}
+  .wrap{max-width:980px; margin:0 auto; padding:0 28px}
+
+  /* AW mark */
+  .mark{width:30px; height:30px; flex:none; display:block}
+
+  /* header, same row as the landing page */
+  header{padding:22px 0}
+  .hrow{display:flex; align-items:center; gap:11px}
+  .home{display:flex; align-items:center; gap:11px}
+  .brand{font-weight:600; font-size:15.5px; letter-spacing:-.01em}
+  .hrow .gh{margin-left:auto; font-size:13px; color:var(--muted); border:1px solid rgba(255,255,255,.11);
+    border-radius:8px; padding:7px 14px; transition:border-color .15s, color .15s}
+  .hrow .gh:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+
+  /* document */
+  article{padding:54px 0 40px; max-width:40em}
+  .eyebrow{
+    font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.09em;
+    text-transform:uppercase; color:var(--accent); margin-bottom:18px;
+  }
+  h1{font-size:clamp(28px,4.5vw,40px); font-weight:600; letter-spacing:-.02em; line-height:1.15}
+  .updated{margin-top:12px; font-family:var(--mono); font-size:11px; color:var(--faint)}
+  article > p, article li{font-size:15px; color:var(--text-2)}
+  article > p{margin-top:16px}
+  article .lede{margin-top:26px}
+  h2{font-size:17px; font-weight:600; letter-spacing:-.015em; margin-top:40px; padding-top:22px;
+    border-top:1px solid var(--hairline)}
+  h2 + p{margin-top:10px}
+  article ul{margin-top:10px; padding-left:1.2em; display:flex; flex-direction:column; gap:10px}
+  article li{padding-left:.2em}
+  article li::marker{color:var(--faint)}
+  article a{color:var(--text); text-decoration:underline; text-underline-offset:2px;
+    text-decoration-color:rgba(255,255,255,.25); transition:text-decoration-color .15s}
+  article a:hover{text-decoration-color:var(--text)}
+
+  /* footer */
+  footer{
+    margin-top:40px; padding:28px 0 40px; border-top:1px solid var(--hairline);
+    display:flex; gap:20px; align-items:center; font-size:12.5px; color:var(--faint); flex-wrap:wrap;
+  }
+  footer a{color:var(--muted); transition:color .15s}
+  footer a:hover{color:var(--text)}
+  footer .spacer{margin-left:auto}
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.01ms !important; transition-duration:.01ms !important}
+  }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="aw" viewBox="100 100 824 824">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="#f68b43"/>
+      <g stroke="#16100a" stroke-width="70" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M 240 690 L 350 360 L 460 690 L 570 360 L 680 690 L 790 360"/>
+        <path d="M 277 580 L 423 580"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <div class="hrow">
+      <a class="home" href="/" aria-label="Autowright home">
+        <svg class="mark"><use href="#aw"/></svg>
+        <div class="brand">Autowright</div>
+      </a>
+      <a class="gh" href="https://github.com/hansololz/autowright">GitHub</a>
+    </div>
+  </header>
+
+  <article>
+    <div class="eyebrow">Legal</div>
+    <h1>Terms of service</h1>
+    <div class="updated">Last updated: 2026-08-28</div>
+
+    <p class="lede">Autowright is free, open source software released under the MIT License (see <a href="https://github.com/hansololz/autowright/blob/main/LICENSE">LICENSE</a>). These terms explain what that means in practice when you install and use the app, and they never narrow what the license grants you.</p>
+
+    <h2>No account, no service</h2>
+    <p>There is no Autowright server, account, or subscription. The app, its background service, and every automation run entirely on your own computer. Nothing is operated for you, so there is nothing to sign up for and nothing that can be suspended or shut off remotely.</p>
+
+    <h2>No warranty</h2>
+    <p>Autowright is provided "as is", without warranty of any kind, express or implied, including fitness for a particular purpose. It is an early release under active development; features may change or break between versions.</p>
+
+    <h2>Your automations are your responsibility</h2>
+    <ul>
+      <li>Automation scripts are written by the AI agent you connect and executed only after you review and approve them. Those scripts can do anything your user account can do on this computer: read and write files, reach the network, and run other programs. The engine is not a sandbox.</li>
+      <li>Read every change before you accept and execute it. You are responsible for what your automations do, including what they send, delete, or purchase, and for making sure they comply with the law and with the terms of any website or service they access.</li>
+      <li>Secret values are stored in the operating system's secret store and injected only at run time, but a script you approve can still transmit a value it is given. Grant secrets to an automation only after reading what it does with them.</li>
+    </ul>
+
+    <h2>Third-party agents, models, and services</h2>
+    <p>Claude Code, Gemini CLI, Codex, OpenCode, Ollama, and any model or service they reach are provided by their respective vendors under their own terms and privacy policies, using your own accounts. Any cost they charge is yours. The same applies to any service an automation of yours talks to.</p>
+
+    <h2>Updates</h2>
+    <p>Update checks and downloads come from GitHub, as described in the <a href="https://github.com/hansololz/autowright/blob/main/PRIVACY.md">privacy policy</a>. You choose whether and when to install an update, and you can turn automatic checks off in the app.</p>
+
+    <h2>Limitation of liability</h2>
+    <p>To the fullest extent permitted by law, the author is not liable for any damage or loss arising from the use of Autowright or from anything your automations do, whether direct, indirect, incidental, or consequential.</p>
+
+    <h2>Changes</h2>
+    <p>These terms live at the root of the repository; any change to them is visible in the project's git history. Questions and reports go to <a href="https://github.com/hansololz/autowright/issues">github.com/hansololz/autowright/issues</a>.</p>
+  </article>
+
+  <footer>
+    <span>© David Zhang · MIT</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/hansololz/autowright">GitHub</a>
+    <a href="https://github.com/hansololz/autowright/blob/main/PRIVACY.md">Privacy</a>
+    <a href="/terms">Terms</a>
+  </footer>
+</div>
+
+</body>
+</html>

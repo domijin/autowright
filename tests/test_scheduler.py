@@ -1173,3 +1173,76 @@ def test_run_if_missed_off_cron_never_flags_overdue(store):
     off = [{**on[0], "runIfMissed": False}]
     assert triggerlib.is_overdue(on, base, now) is True
     assert triggerlib.is_overdue(off, base, now) is False
+
+
+def test_run_if_missed_off_disabled_trigger_never_drops(store, monkeypatch):
+    """§6: the enabled gate runs before the opt-out check, so a trigger that is
+    off writes no drop record; its occurrences simply never fire, and
+    re-enabling resumes normal firing with no late catch-up."""
+    from datetime import datetime
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 10, 30))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "OffOptOut", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": False, "expression": "0 * * * *",
+         "source": "user", "runIfMissed": False}])
+    # §4.3 stamp_enabled only adds `enabledAt`; an entry created off stays off.
+    assert a["triggers"][0]["enabled"] is False
+    sched._tick()  # baseline 10:30
+    clock.now = datetime(2026, 7, 10, 13, 31)  # 11:00, 12:00, 13:00 passed while off
+    sched._tick()
+    assert fires == [] and _drop_records(store, a["id"]) == []
+    assert sched._baseline[(a["id"], "t1")] == clock.now
+    a["triggers"][0]["enabled"] = True
+    clock.now = datetime(2026, 7, 10, 13, 45)
+    sched._tick()
+    assert fires == [] and _drop_records(store, a["id"]) == []  # no late catch-up
+    clock.now = datetime(2026, 7, 10, 14, 0, 5)
+    sched._tick()
+    assert len(fires) == 1  # normal firing resumes after re-enable
+
+
+def test_run_if_missed_drop_records_are_per_automation(store, monkeypatch):
+    """§6: two automations slept through in the same tick each get their own
+    single drop record; the one-record rule is per automation, not global."""
+    from datetime import datetime
+    from autowright.scheduler import DROP_NOTE
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 10, 40))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "DropA", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 * * * *",
+         "source": "user", "runIfMissed": False}])
+    b = store.create_automation(make_version(), "DropB", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "30 * * * *",
+         "source": "user", "runIfMissed": False}])
+    sched._tick()
+    clock.now = datetime(2026, 7, 10, 13, 41)
+    sched._tick()
+    assert fires == []
+    for auto in (a, b):
+        recs = _drop_records(store, auto["id"])
+        assert len(recs) == 1
+        assert recs[0]["note"] == DROP_NOTE
+        assert recs[0]["trigger"] == "cron"
+
+
+def test_record_drop_bails_for_automation_deleted_mid_tick(store):
+    """§6: the tick evaluates a snapshot taken outside the lock, so a DELETE
+    landing mid-tick can leave _record_drop holding a stale dict; the identity
+    guard writes no record for a gone automation."""
+    from datetime import datetime
+    from conftest import make_version
+
+    engine, sched = _mk_clocked(store, _Clock(datetime(2026, 7, 10, 10, 30)))
+    a = store.create_automation(make_version(), "GoneMidTick", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 * * * *",
+         "source": "user", "runIfMissed": False}])
+    t = a["triggers"][0]
+    store.delete_automation(a)
+    sched._record_drop(a, t)  # the mid-tick race, called directly
+    assert _drop_records(store, a["id"]) == [] and store.execs == {}

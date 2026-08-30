@@ -240,6 +240,10 @@ everything finer-grained belongs to the unit/integration tiers:
   the old session's thread
 - adding a config-only agent; adding a placeholder secret, then editing and deleting it;
   adding a cron trigger, seeing its humanized chip, and toggling it off
+- the §4.3 catch-up opt-out journey: a cron added with "Catch up if missed" unchecked
+  flips the sleep note to "that time is skipped", shows the NO CATCH-UP row badge, and
+  stores `runIfMissed: false`; re-checking it through the edit swap clears the badge and
+  stores explicit true (§19 serialization)
 - an execution whose step writes a result file, rendered in the execution page's result view;
   the read-only "Show workspace in Finder" button is present (never clicked — it would open a
   real Finder window)

@@ -68,6 +68,17 @@ Interaction with existing rules:
 Newest first. One entry per compatibility decision: what changed, the migration, the first
 version that writes the new shape, and the oldest shape still read.
 
+- **2026-08-30 - `runIfMissed` added to cron/time triggers in automation.yaml.** A §4.3
+  cron or one-shot trigger gains one optional key, `runIfMissed`, written only when false
+  (the user opted the trigger out of the §6 wake catch-up). Additive: an absent key is the
+  old shape and reads as true - today's behavior, unchanged - so no data rewrite exists;
+  recognition is structural (absent key), the same pattern as `timezone`. Loading stays §5
+  lenient (a non-boolean value on disk drops the trigger like any malformed entry). The
+  §5.1 archive and the §20 manifest carry the same additive `run_if_missed: false` key
+  (archives are outside the §21 promise; noted for completeness). First version writing
+  the new shape: the next release after 2026-08-30; oldest shape still read: v0.6.0 (key
+  absent). Fixture test: `tests/test_storage.py::test_trigger_without_run_if_missed_loads_true`.
+
 - **2026-08-26 - `eventDurationsMs` added to the §4.4 activity chat entry.** The settled
   activity entry in `chat.jsonl` gains one optional key: a per-`text`-line duration array
   (parallel by index, `null` where no stamp bounds the line), derived by the editor from

@@ -302,6 +302,21 @@ describe('applyTriggerOps (§8 chat trigger ops)', () => {
     expect(chips).toEqual(['Cron trigger 1 updated.'])
   })
 
+  it('edit keeps the §4.3 runIfMissed opt-out the dialect cannot set', () => {
+    const { triggers } = applyTriggerOps(
+      [cron({ id: 'c1', expression: '0 8 * * *', source: 'spec', runIfMissed: false })],
+      [{ op: 'edit', index: 1, trigger: cron({ expression: '30 8 * * *', source: 'user' }) }])
+    expect(triggers).toEqual([{
+      kind: 'cron', expression: '30 8 * * *', source: 'user', id: 'c1', enabled: true,
+      runIfMissed: false,
+    }])
+    // the choice belongs to cron/time: an edit into another kind drops it
+    const swapped = applyTriggerOps(
+      [cron({ id: 'c1', expression: '0 8 * * *', source: 'spec', runIfMissed: false })],
+      [{ op: 'edit', index: 1, trigger: { kind: 'discord', channel: '9', secret: 'S', enabled: true } }])
+    expect(swapped.triggers[0]).not.toHaveProperty('runIfMissed')
+  })
+
   it('enable flips on/off; remove deletes; ops run in order over the evolving list', () => {
     const { triggers, chips } = applyTriggerOps(base, [
       { op: 'enable', index: 1, enabled: false },
@@ -453,6 +468,21 @@ describe('stripTrigger (§4.4 draft-only trigger shape)', () => {
     } as Trigger)).toEqual({ id: 't2', enabled: true, kind: 'time', at: '2026-08-09T09:00:00' })
     expect(stripTrigger({ id: 't3', enabled: false, kind: 'app_start', label: 'L', short: 'S' } as Trigger))
       .toEqual({ id: 't3', enabled: false, kind: 'app_start' })
+  })
+  it('§4.3 runIfMissed rides a draft only when false: true is the absent default', () => {
+    const stored = {
+      id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', source: 'user',
+      label: 'L', short: 'S',
+    }
+    expect(stripTrigger({ ...stored, runIfMissed: false } as Trigger))
+      .toEqual({ id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', source: 'user', runIfMissed: false })
+    expect(stripTrigger({ ...stored, runIfMissed: true } as Trigger))
+      .toEqual({ id: 't1', enabled: true, kind: 'cron', expression: '0 8 * * *', source: 'user' })
+    expect(stripTrigger({ ...stored, runIfMissed: true } as Trigger)).not.toHaveProperty('runIfMissed')
+    expect(stripTrigger({
+      id: 't2', enabled: true, kind: 'time', at: '2026-08-09T09:00:00', runIfMissed: false,
+      label: 'L', short: 'S',
+    } as Trigger)).toEqual({ id: 't2', enabled: true, kind: 'time', at: '2026-08-09T09:00:00', runIfMissed: false })
   })
   it('optional keys are omitted entirely when absent — no undefined-valued fields', () => {
     // draft entries have no id yet; a cron without a timezone stays timezone-free
@@ -706,6 +736,15 @@ describe('sameTriggerList — the §11/§19 re-attach trigger guard', () => {
       [{ kind: 'discord', channel: '1', secret: 's1', enabled: true }],
       [{ kind: 'discord', channel: '2', secret: 's1', enabled: true }],
     )).toBe(false)
+  })
+  it('§4.3 runIfMissed false and the absent default are different lists', async () => {
+    const { sameTriggerList } = await import('../src/pages/createflow/model')
+    expect(sameTriggerList([cron('0 8 * * *')], [cron('0 8 * * *', { runIfMissed: false })])).toBe(false)
+    expect(sameTriggerList([cron('0 8 * * *', { runIfMissed: true })], [cron('0 8 * * *')])).toBe(true)
+    expect(sameTriggerList(
+      [cron('0 8 * * *', { runIfMissed: false })],
+      [cron('0 8 * * *', { runIfMissed: false })],
+    )).toBe(true)
   })
   it('non-arrays compare as empty lists (a missing echo only drops ops, never misapplies)', async () => {
     const { sameTriggerList } = await import('../src/pages/createflow/model')

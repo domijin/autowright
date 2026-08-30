@@ -1594,3 +1594,64 @@ def test_automation_yaml_without_unresolved_references_loads(store, home):
     # a later top-level write keeps the key absent - no data rewrite exists
     s2.patch_automation(b, {"name": "Pre-change renamed"})
     assert "unresolved_references" not in load_yaml(top_file)
+
+
+def test_trigger_without_run_if_missed_loads_true(store, home):
+    """§21.4 (2026-08-30) fixture: `runIfMissed` is additive - a cron written
+    before the key existed loads without it, serializes as true, and stays
+    keyless through later top-level writes."""
+    from autowright.storage import Store, load_yaml
+
+    trig = {"id": "t-1", "kind": "cron", "enabled": True, "expression": "0 8 * * *",
+            "source": "user"}
+    a = store.create_automation(make_version(), "Pre-field", None, triggers=[trig])
+    top_file = store.auto_dir(a) / "automation.yaml"
+    assert "runIfMissed" not in load_yaml(top_file)["triggers"][0]  # the pre-change shape
+
+    s2 = Store()
+    s2.load_all()
+    b = s2.autos[a["id"]]
+    assert "runIfMissed" not in b["triggers"][0]
+    assert s2.trigger_json(b["triggers"][0])["runIfMissed"] is True
+    # a later top-level write keeps the key absent - no data rewrite exists
+    s2.patch_automation(b, {"name": "Pre-field renamed"})
+    assert "runIfMissed" not in load_yaml(top_file)["triggers"][0]
+
+
+def test_trigger_run_if_missed_false_round_trips(store, home, caplog):
+    """§4.3: `runIfMissed` loads only when the stored value is exactly false -
+    a true on disk reads as the absent default - and `trigger_json` serializes
+    it explicitly either way. A non-boolean is malformed trigger data: the
+    trigger drops with a warning (§5 lenient load), never the automation."""
+    import logging
+
+    from autowright.storage import Store, load_yaml, save_yaml
+
+    trig = {"id": "t-1", "kind": "cron", "enabled": True, "expression": "0 8 * * *",
+            "source": "user", "runIfMissed": False}
+    a = store.create_automation(make_version(), "No catch-up", None, triggers=[trig])
+    top_file = store.auto_dir(a) / "automation.yaml"
+
+    s2 = Store()
+    s2.load_all()
+    loaded = s2.autos[a["id"]]["triggers"][0]
+    assert loaded["runIfMissed"] is False
+    assert s2.trigger_json(loaded)["runIfMissed"] is False
+
+    def _rewrite(value):
+        top = load_yaml(top_file)
+        top["triggers"][0]["runIfMissed"] = value
+        save_yaml(top_file, top)
+
+    _rewrite(True)  # stored only when false: a true on disk loads keyless
+    s3 = Store()
+    s3.load_all()
+    assert "runIfMissed" not in s3.autos[a["id"]]["triggers"][0]
+    assert s3.trigger_json(s3.autos[a["id"]]["triggers"][0])["runIfMissed"] is True
+
+    _rewrite("no")
+    with caplog.at_level(logging.WARNING, logger="autowright.storage"):
+        s4 = Store()
+        s4.load_all()
+    assert s4.autos[a["id"]]["triggers"] == []
+    assert any("malformed trigger" in rec.message for rec in caplog.records)

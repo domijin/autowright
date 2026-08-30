@@ -259,15 +259,18 @@ this rule.
 
 **Trigger semantics on push** — the §4.3 trigger merge, performed client-side exactly
 like the editor: the manifest's cron entries are matched against the stored list on
-(`expression`, `timezone`) — matches keep their `id`, `enabled` state, and `source`, new
+(`expression`, `timezone`) — matches keep their `id`, `enabled` state, and `source`, and
+take the manifest entry's `run_if_missed` (absent = true, §4.3), new
 entries arrive enabled with `source: spec`, stored
 **spec-sourced** crons the manifest no longer lists are dropped (`source: user` crons
 always survive, §4.3); the manifest's `discord`/`imessage`/
 `app_start` entries add only when no stored trigger matches their §4.3 identity fields; and
 stored non-cron triggers always survive untouched. `pull` writes the stored crons into the
-manifest, so an untouched manifest round-trips the schedule unchanged. Between pushes, `trigger add` (cron by default,
+manifest (`cron`, `timezone` when set, `run_if_missed: false` when off), so an untouched
+manifest round-trips the schedule unchanged. Between pushes, `trigger add` (cron by default,
 `--at` for a §4.3 one-shot — both take `--timezone <zone>`, an IANA zone, stored on the
-entry — `--app-start`, `--discord <channel> --secret <name>
+entry, and `--no-run-if-missed`, storing §4.3 `runIfMissed: false`; the flag with any other
+trigger kind exits 1 - `--app-start`, `--discord <channel> --secret <name>
 [--pattern <text>] [--mention] [--author <user-id>[,<user-id>…]]…` for a §4.3 discord
 trigger (`--secret` takes the secret's **name** — the human surface, like the grant
 flags — and the CLI maps it to the stored secret's §4.8 id, which is what the trigger
@@ -275,7 +278,9 @@ stores; an unknown name exits 1 with the candidate list) (`--author` repeats and
 the trigger's one `author` list), or `--imessage <from>
 [--pattern <text>]` for a §4.3 imessage trigger), `trigger on|off <n>`, and
 `trigger remove <n>`
-edit the stored list directly (1-based indexes as printed by `trigger list`) via the §19
+edit the stored list directly (1-based indexes as printed by `trigger list`, which appends
+" (no catch-up)" to a row whose `runIfMissed` is false, after the " (off)" marker when both
+apply) via the §19
 PATCH; a cron minted by `trigger add` lands `source: user` (§4.3 — user-minted crons
 survive later syncs and pushes).
 

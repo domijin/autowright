@@ -468,6 +468,74 @@ def test_workdir_params_round_trip_without_values(tmp_path):
     assert manifest["triggers"] == [{"cron": "0 8 * * *", "timezone": "Asia/Tokyo"}]
 
 
+def test_workdir_run_if_missed_round_trip(tmp_path):
+    """§20/§4.3: an opted-out cron pulls as `run_if_missed: false`, the key is
+    lifted out of the §8 dialect before validation and stamped back onto the
+    drafted cron, and the merge keeps it on the matched stored entry. A cron
+    that never opted out pulls without the key at all."""
+    import yaml
+
+    from autowright import cli
+
+    auto = {**FULL_AUTO,
+            "triggers": [{**FULL_AUTO["triggers"][0], "runIfMissed": False},
+                         FULL_AUTO["triggers"][1]]}
+    d = tmp_path / "wd"
+    cli.write_workdir(d, auto)
+    manifest = yaml.safe_load((d / "manifest.yaml").read_text())
+    assert manifest["triggers"] == [{"cron": "0 8 * * *", "timezone": "Asia/Tokyo",
+                                     "run_if_missed": False}]
+
+    draft = cli.validate_workdir(_WorkdirClient(auto), d)
+    drafted = next(t for t in draft["triggers"] if t["kind"] == "cron")
+    assert drafted["runIfMissed"] is False
+    merged = next(t for t in cli.merge_draft_triggers(auto["triggers"], draft["triggers"])
+                  if t["kind"] == "cron")
+    assert merged["id"] == "t1" and merged["runIfMissed"] is False
+
+    # the default cron pulls in the pre-field shape: no key written
+    d2 = tmp_path / "wd2"
+    cli.write_workdir(d2, FULL_AUTO)
+    assert "run_if_missed" not in yaml.safe_load((d2 / "manifest.yaml").read_text())["triggers"][0]
+
+
+def test_lift_run_if_missed_strips_the_key_and_reports_misuse():
+    """§20: `run_if_missed` is lifted out of the manifest's cron entries before
+    the §8 rule-9 validator sees them - keyed by (expression, timezone) - and a
+    manifest without the key passes through untouched."""
+    import yaml
+
+    from autowright import cli
+
+    def files(triggers):
+        return {"manifest.yaml": yaml.safe_dump(
+            {"triggers": triggers, "steps": [{"file": "01-x.py", "name": "X"}]},
+            sort_keys=False), "01-x.py": "print('x')\n"}
+
+    plain = files([{"cron": "0 8 * * *"}])
+    assert cli._lift_run_if_missed(plain) == (plain, set(), [])
+
+    lifted, opted_out, errors = cli._lift_run_if_missed(files([
+        {"cron": "0 8 * * *", "run_if_missed": False},
+        {"cron": "0 9 * * *", "timezone": "Asia/Tokyo", "run_if_missed": False},
+        {"cron": "0 10 * * *", "run_if_missed": True},
+        {"cron": "0 11 * * *"}]))
+    assert errors == []
+    assert opted_out == {("0 8 * * *", None), ("0 9 * * *", "Asia/Tokyo")}
+    manifest = yaml.safe_load(lifted["manifest.yaml"])
+    assert all("run_if_missed" not in t for t in manifest["triggers"])
+    assert [t["cron"] for t in manifest["triggers"]] == [
+        "0 8 * * *", "0 9 * * *", "0 10 * * *", "0 11 * * *"]
+    assert lifted["01-x.py"] == "print('x')\n"
+
+    _, opted_out, errors = cli._lift_run_if_missed(files([
+        {"cron": "0 8 * * *", "run_if_missed": "no"},
+        {"app_start": True, "run_if_missed": False}]))
+    assert errors == ["triggers: run_if_missed must be true or false",
+                      "triggers: run_if_missed applies to cron entries only"]
+    assert opted_out == set()
+
+
 def test_validate_workdir_prints_errors_and_exits(tmp_path, capsys):
     from autowright import cli
 
@@ -614,6 +682,29 @@ def test_merge_draft_triggers_message_entries_additive():
     assert merged[0]["enabled"] is False  # matched entry keeps its enabled state
 
 
+def test_merge_draft_triggers_takes_the_manifest_run_if_missed():
+    """§20: the manifest entry decides `run_if_missed` on a matched cron - a
+    drafted opt-out lands on a stored default, and a drafted entry without the
+    key clears a stored opt-out (absent = true), while id/enabled/source stay."""
+    from autowright import cli
+
+    stored = [{"id": "t1", "kind": "cron", "expression": "0 8 * * *", "enabled": False,
+               "source": "spec"}]
+    drafted = [{"kind": "cron", "expression": "0 8 * * *", "enabled": True,
+                "source": "spec", "runIfMissed": False}]
+    merged = cli.merge_draft_triggers(stored, drafted)
+    assert merged == [{"id": "t1", "kind": "cron", "expression": "0 8 * * *",
+                       "enabled": False, "source": "spec", "runIfMissed": False}]
+    # the other direction: the manifest dropped the key, so the opt-out goes
+    merged = cli.merge_draft_triggers(
+        [{**stored[0], "runIfMissed": False}],
+        [{"kind": "cron", "expression": "0 8 * * *", "enabled": True, "source": "spec"}])
+    assert merged == [dict(stored[0])]
+    # a user cron survives the same way: matched once, with the drafted choice
+    merged = cli.merge_draft_triggers([{**stored[0], "source": "user"}], drafted)
+    assert merged == [{**stored[0], "source": "user", "runIfMissed": False}]
+
+
 def test_trigger_add_discord():
     from types import SimpleNamespace
 
@@ -662,6 +753,45 @@ def test_trigger_add_imessage():
     assert (method, path) == ("PATCH", f"/automations/{FULL_AUTO['id']}")
     assert body["triggers"][-1] == {"kind": "imessage", "from": "+15551234567",
                                     "pattern": "deploy", "enabled": True}
+
+
+def test_trigger_add_no_run_if_missed():
+    """§20 --no-run-if-missed: the §4.3 opt-out rides a cron or an --at
+    one-shot only; every other kind exits before anything is sent, and an args
+    object without the flag adds no key at all."""
+    from types import SimpleNamespace
+
+    from autowright import cli
+
+    def args(**over):
+        return SimpleNamespace(**{"automation": "Daily Report", "discord": None,
+                                  "secret": None, "pattern": None, "mention": False,
+                                  "author": None, "imessage": None, "app_start": False,
+                                  "at": None, "expression": None, "timezone": None,
+                                  **over})
+
+    c = _WorkdirClient()
+    cli.cmd_trigger_add(c, args(expression="0 8 * * *", no_run_if_missed=True))
+    assert c.posted[-1][2]["triggers"][-1] == {
+        "kind": "cron", "expression": "0 8 * * *", "enabled": True, "source": "user",
+        "runIfMissed": False}
+    cli.cmd_trigger_add(c, args(at="2999-01-01T09:00", no_run_if_missed=True))
+    assert c.posted[-1][2]["triggers"][-1] == {
+        "kind": "time", "at": "2999-01-01T09:00", "enabled": True, "runIfMissed": False}
+    # the flag off, and an args object that never carries it, both add no key
+    cli.cmd_trigger_add(c, args(expression="0 8 * * *", no_run_if_missed=False))
+    assert "runIfMissed" not in c.posted[-1][2]["triggers"][-1]
+    cli.cmd_trigger_add(c, args(expression="0 8 * * *"))
+    assert "runIfMissed" not in c.posted[-1][2]["triggers"][-1]
+
+    # cron/time only: every other kind exits with guidance, nothing sent
+    sent_before = len(c.posted)
+    for over in (dict(app_start=True),
+                 dict(discord="123", secret="API_TOKEN"),
+                 dict(imessage="+15551234567")):
+        with pytest.raises(SystemExit, match="--no-run-if-missed applies"):
+            cli.cmd_trigger_add(c, args(no_run_if_missed=True, **over))
+    assert len(c.posted) == sent_before
 
 
 # ---------------------------------------------------------------- param parsing
@@ -1573,6 +1703,26 @@ def test_cmd_trigger_remove_by_index(capsys):
     body = c.calls[-1][2]
     assert [t["kind"] for t in body["triggers"]] == ["app_start"]
     assert "removed trigger 1 (Daily 8:00 (Tokyo))" in capsys.readouterr().out
+
+
+def test_trigger_marks_off_then_no_catch_up(capsys):
+    """§20 list/show suffixes: " (off)" first, then " (no catch-up)" for a
+    §4.3 runIfMissed opt-out - the true default marks nothing."""
+    from autowright import cli
+
+    assert cli._trigger_marks({"enabled": True}) == ""
+    assert cli._trigger_marks({"enabled": True, "runIfMissed": True}) == ""
+    assert cli._trigger_marks({"enabled": False}) == " (off)"
+    assert cli._trigger_marks({"enabled": True, "runIfMissed": False}) == " (no catch-up)"
+    assert cli._trigger_marks({"enabled": False, "runIfMissed": False}) == " (off) (no catch-up)"
+
+    auto = {**FULL_AUTO,
+            "triggers": [{**FULL_AUTO["triggers"][0], "runIfMissed": False},
+                         FULL_AUTO["triggers"][1]]}
+    _run(_RouteClient(_auto_gets(auto)), "automation", "trigger", "list", "Daily Report")
+    out = capsys.readouterr().out
+    assert "1. Daily at 8:00 (Tokyo) (off) (no catch-up)" in out
+    assert "2. On app start\n" in out
 
 
 SNAPS = [{"id": "s1111111-a", "when": "today 10:00", "reason": "manual", "version": "v2",

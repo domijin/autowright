@@ -330,7 +330,7 @@ function SecretPick({ secrets, selected, onPick }: {
 // caller adds id/off. A flat field bag exists only inside the editor's state.
 export type TriggerDraft = TriggerKindFields
 type TriggerFieldBag = {
-  kind?: AddableKind; expression?: string; at?: string; timezone?: string
+  kind?: AddableKind; expression?: string; at?: string; timezone?: string; runIfMissed?: boolean
   channel?: string; secret?: string; pattern?: string; mention?: boolean; author?: string[]
   from?: string
 }
@@ -360,6 +360,8 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       : ['', '', '00'],
   )
   const [timezone, setTz] = useState(init.timezone ?? '') // '' → local time, no timezone stored (§4.3)
+  // §4.3 runIfMissed: checked by default for a new trigger, the stored value on an edit swap
+  const [runIfMissed, setRunIfMissed] = useState(initial ? init.runIfMissed !== false : true)
   const [channel, setChannel] = useState(init.channel ?? '')
   const [secret, setSecret] = useState(init.secret ?? '')
   const [pattern, setPattern] = useState(init.pattern ?? '')
@@ -573,6 +575,21 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       ) : null}
       {(kind === 'cron' || kind === 'time') && <TzPick timezone={timezone} onPick={setTz} />}
       {(kind === 'cron' || kind === 'time') && (
+        // §9.2 "Catch up if missed": the §4.3 runIfMissed field (§6 wake catch-up)
+        <div style={{ marginTop: 8 }}>
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, alignSelf: 'flex-start',
+            color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
+          }}>
+            <input type="checkbox" checked={runIfMissed} onChange={(e) => setRunIfMissed(e.target.checked)} />
+            Catch up if missed
+          </label>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 3, marginLeft: 20 }}>
+            If this {copy.machine} sleeps through the scheduled time, execute once when it wakes.
+          </div>
+        </div>
+      )}
+      {(kind === 'cron' || kind === 'time') && (
         // §9.2 / §3 sleep disclaimer: a schedule can only fire on an awake machine
         <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 8 }}>
           Fires only while this {copy.machine} is awake. {copy.sleepNote}
@@ -601,7 +618,12 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
                 }
               // §4.3 provenance: a hand-set cron is user-sourced — it
               // survives later syncs' cron-subset replace
-              : { ...(kind === 'cron' ? { kind, expression: expression.trim(), source: 'user' as const } : { kind, at }), ...(timezone ? { timezone } : {}) })
+              : {
+                  ...(kind === 'cron' ? { kind, expression: expression.trim(), source: 'user' as const } : { kind, at }),
+                  ...(timezone ? { timezone } : {}),
+                  // §4.3: carried only when off; absent reads as true everywhere
+                  ...(runIfMissed ? {} : { runIfMissed: false }),
+                })
           }}
           disabled={!canAdd}
           style={{ flex: 'none' }}

@@ -184,7 +184,10 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
         for t in a["triggers"]:
             if t["kind"] == "cron":
                 triggers.append({"kind": "cron", "expression": t["expression"],
-                                 **({"timezone": t["timezone"]} if t.get("timezone") else {})})
+                                 **({"timezone": t["timezone"]} if t.get("timezone") else {}),
+                                 # §4.3: additive, written only when the cron opted out
+                                 **({"run_if_missed": False}
+                                    if t.get(triggerlib.RUN_IF_MISSED) is False else {})})
             elif t["kind"] == "app_start":
                 triggers.append({"kind": "app_start"})
             elif t["kind"] == "discord":
@@ -397,7 +400,9 @@ def _validate(z: zipfile.ZipFile) -> dict:
                        "pattern": t.get("pattern")}
                  if t["kind"] == "imessage"
                  else {"kind": t["kind"], "expression": t.get("expression"),
-                       "timezone": t.get("timezone"), "source": "spec"})
+                       "timezone": t.get("timezone"), "source": "spec",
+                       **({triggerlib.RUN_IF_MISSED: t["run_if_missed"]}
+                          if "run_if_missed" in t else {})})
         if err := triggerlib.validate_trigger(probe):
             raise TransferError(f"invalid trigger in the archive: {err}")
         # §5.1: archives carry no cron `source` — import stamps `spec` (the
@@ -407,6 +412,8 @@ def _validate(z: zipfile.ZipFile) -> dict:
                          **({"expression": t["expression"], "source": "spec"}
                             if t["kind"] == "cron" else {}),
                          **({"timezone": t["timezone"]} if t.get("timezone") and t["kind"] == "cron" else {}),
+                         **({triggerlib.RUN_IF_MISSED: False}
+                            if t["kind"] == "cron" and t.get("run_if_missed") is False else {}),
                          **({"channel": t["channel"].strip(), "secret": t["secret"].strip(),
                              **({"pattern": t["pattern"].strip()} if t.get("pattern") else {}),
                              **({"mention": True} if t.get("mention") else {}),

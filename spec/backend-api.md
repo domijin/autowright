@@ -65,6 +65,7 @@ remain plain dicts (§2).
   whole; entries keep their `id`, new entries get one assigned;
   cron/time/app_start/discord/imessage
   kinds — a reserved kind (pubsub), an invalid cron expression, an unknown `timezone`, a
+  non-boolean `runIfMissed` (§4.3; ignored on kinds other than cron/time), a
   past `time`, a `time` whose `at` carries a UTC offset (the zone belongs in `timezone`; naive
   local ISO only), a second `app_start`, or a discord/imessage entry failing the §4.3 field
   rules

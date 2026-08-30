@@ -493,7 +493,8 @@ Sections top to bottom:
 - **TRIGGERS** card — one row per trigger (kind icon — fa-clock for
   cron, fa-calendar-day for time, fa-rocket for app start, fa-brands fa-discord for discord,
   fa-comment for imessage;
-  §4.3 `label`; a fa-pen **edit** button — every kind except app start, which has nothing to
+  §4.3 `label`, followed by a muted **NO CATCH-UP** tag (the §9.1 OFF-tag treatment) when
+  the trigger's §4.3 `runIfMissed` is false; a fa-pen **edit** button — every kind except app start, which has nothing to
   edit; per-row on/off toggle;
   remove × — removing confirms first (`ConfirmModal`: "Remove this trigger?" /
   "`<label>` is removed from this automation. Its settings are gone — add it again to get
@@ -532,8 +533,11 @@ Sections top to bottom:
   with preview "Hours go 0–23, minutes and seconds 0–59"; a complete pair in the past
   reddens date and group, and the preview shows the §19 `/triggers/preview` error verbatim —
   the copy comes from the backend: "the time must be in the future";
-  either state blocks Add. Both the cron and One time forms end with the timezone picker
-  and, under it, a muted note line (the §3 sleep disclaimer, same muted-hint style as the
+  either state blocks Add. Both the cron and One time forms end with the timezone picker,
+  then a **"Catch up if missed"** checkbox (the §4.3 `runIfMissed` field; checked by
+  default for a new trigger, the stored value on an edit swap) with the muted hint "If
+  this `<machine>` sleeps through the scheduled time, execute once when it wakes." and,
+  under it, a muted note line (the §3 sleep disclaimer, same muted-hint style as the
   Discord sender-filter note): "Fires only while this Mac is awake. `<§9 sleepNote>`" —
   the machine noun and the sleepNote sentence follow the §9 per-OS table. App start shows no
   input — just the preview line "On app start — executes when you launch the app", and its

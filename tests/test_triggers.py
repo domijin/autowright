@@ -478,3 +478,37 @@ def test_is_overdue_ignores_unscheduled_kinds():
               "secret": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34"},
              {"id": "d", "kind": "imessage", "enabled": True, "from": "x@y.z"}]
     assert not is_overdue(trigs, base, far)
+
+
+def test_run_if_missed_validation_and_normalization():
+    """§4.3 `runIfMissed`: cron/time only: a non-boolean is a validation
+    error, the opt-out stores only when false (true is the absent pre-field
+    shape, §21), and every other kind ignores the key."""
+    from autowright.triggers import RUN_IF_MISSED_ERROR, run_if_missed
+
+    future = (datetime.now() + timedelta(days=1)).isoformat(timespec="minutes")
+    cron = {"kind": "cron", "expression": "0 8 * * *", "source": "user"}
+    once = {"kind": "time", "at": future}
+    for base in (cron, once):
+        assert validate_trigger({**base, "runIfMissed": False}) is None
+        assert validate_trigger({**base, "runIfMissed": True}) is None
+        assert validate_trigger({**base, "runIfMissed": "no"}) == RUN_IF_MISSED_ERROR
+        assert validate_trigger({**base, "runIfMissed": None}) == RUN_IF_MISSED_ERROR
+
+    norm, err = normalize_triggers([{**cron, "runIfMissed": False},
+                                    {**once, "runIfMissed": False},
+                                    {**cron, "runIfMissed": True},
+                                    dict(once)])
+    assert err is None
+    # stored only when false: true is never written, and reads back as true
+    assert [t.get("runIfMissed", "absent") for t in norm] == [False, False, "absent", "absent"]
+    assert [run_if_missed(t) for t in norm] == [False, False, True, True]
+
+    # every other kind ignores the key: never validated, never stored
+    assert validate_trigger({"kind": "app_start", "runIfMissed": "no"}) is None
+    norm, err = normalize_triggers([
+        {"kind": "app_start", "runIfMissed": False},
+        {"kind": "discord", "channel": "42",
+         "secret": "9b2f4e12-8c3d-4f6a-9e01-2b7c5d8a1f34", "runIfMissed": False}])
+    assert err is None
+    assert all("runIfMissed" not in t for t in norm)

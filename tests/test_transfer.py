@@ -239,6 +239,27 @@ def test_export_without_values(store):
     assert "param_values" not in yaml.safe_load(z.read("manifest.yaml"))
 
 
+def test_export_writes_run_if_missed_only_for_an_opted_out_cron(store):
+    """§5.1/§4.3: the §6 wake catch-up opt-out travels as the cron entry's
+    `run_if_missed: false` - written only when the stored cron opted out, so a
+    default cron's manifest entry keeps the pre-field shape."""
+    ver = {"description": "", "params": [], "packages": [],
+           "steps": [{"name": "Only", "description": "", "code": "print('x')\n"}],
+           "spec": [{"kind": "h1", "text": "T"}], "instructions": ""}
+    a = store.create_automation(
+        ver, name="Sleepy", agent_id=None,
+        triggers=[{"id": new_id(), "kind": "cron", "enabled": True,
+                   "expression": "0 8 * * *", "timezone": "America/New_York",
+                   "runIfMissed": False},
+                  {"id": new_id(), "kind": "cron", "enabled": True,
+                   "expression": "0 9 * * *"}])
+    z = zipfile.ZipFile(io.BytesIO(transfer.export_automation(store, a)))
+    assert yaml.safe_load(z.read("manifest.yaml"))["triggers"] == [
+        {"kind": "cron", "expression": "0 8 * * *", "timezone": "America/New_York",
+         "run_if_missed": False},
+        {"kind": "cron", "expression": "0 9 * * *"}]
+
+
 def test_export_rejects_dangling_reference_but_allows_odd_agent_names(store):
     """§5.1: an id no stored record holds must be repaired before the
     automation can travel (there is no record to carry it). A name with quotes
@@ -993,6 +1014,23 @@ def test_duplicate_app_start_and_invalid_triggers_rejected(store):
         transfer.import_automation(store, _archive(
             secrets=[_sec("1", "BOT_TOKEN")],
             triggers=[{"kind": "discord", "channel": "42", "secret": "BOT_TOKEN"}]))
+    assert len(store.autos) == before
+
+
+def test_import_lands_run_if_missed_from_the_manifest(store):
+    """§5.1/§4.3: a manifest cron with `run_if_missed: false` lands the stored
+    opt-out; without the key the imported cron takes the true default, and a
+    non-boolean is a rejected archive."""
+    a, _ = transfer.import_automation(store, _archive(triggers=[
+        {"kind": "cron", "expression": "0 8 * * *", "run_if_missed": False},
+        {"kind": "cron", "expression": "0 9 * * *"}]))
+    assert [t.get("runIfMissed", "absent") for t in a["triggers"]] == [False, "absent"]
+    before = len(store.autos)
+    with pytest.raises(transfer.TransferError,
+                       match="invalid trigger in the archive: run if missed must be "
+                             "true or false"):
+        transfer.import_automation(store, _archive(triggers=[
+            {"kind": "cron", "expression": "0 8 * * *", "run_if_missed": "no"}]))
     assert len(store.autos) == before
 
 

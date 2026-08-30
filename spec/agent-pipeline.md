@@ -309,7 +309,7 @@ test_values: { url: "…" }   # §19 paramValues for that test only (param name 
 param_values: { url: "…" }  # stage stored values (§4.2 — applied when the user saves)
 triggers:                   # stage trigger edits (§4.3 — applied when the user saves)
   - add: { cron: "0 9 * * *" }        # a rule-9 dialect entry; `time` allowed here
-  - edit: { index: 1, cron: "30 8 * * *" }   # replace entry 1's fields (id + enabled kept)
+  - edit: { index: 1, cron: "30 8 * * *" }   # replace entry 1's fields (id, enabled, runIfMissed kept)
   - enable: { index: 2, enabled: false }     # flip an entry on/off
   - remove: { index: 3 }                     # delete an entry
 concurrency: { max_parallel: 2, max_queued: 5 }  # stage §4.1 concurrency (applied when the user saves)

@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import { api } from '../../api'
 import type { Automation, DraftTrigger, Trigger } from '../../types'
-import { ConfirmModal, Eyebrow, Toggle } from '../../ui'
+import { ConfirmModal, Eyebrow, MiniBadge, Toggle } from '../../ui'
 import { AddTrigger, kindIcon, TriggerEditor } from './TriggerEditor'
 import { runAction } from './model'
 
@@ -75,6 +75,10 @@ export function TriggersCard({ auto, statusText }: { auto: Automation; statusTex
                 >
                   {t.label}
                 </span>
+                {/* §9.2: the §4.3 runIfMissed opt-out, visible without opening the editor */}
+                {(t.kind === 'cron' || t.kind === 'time') && t.runIfMissed === false && (
+                  <MiniBadge c="var(--gray)" bg="var(--gray-bg)">NO CATCH-UP</MiniBadge>
+                )}
                 {t.kind !== 'app_start' && (
                   <button
                     className="ad-btn-icon"

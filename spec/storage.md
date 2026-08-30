@@ -113,6 +113,8 @@ automations/<uuid>/
                                # thereafter),
                                # current_version (pointer: current = versions/v<N>/),
                                # triggers [{id, kind, enabled, enabledAt?,
+                               #            runIfMissed? (cron/time, written only
+                               #            when false; absent = true, §4.3),
                                #            expression | at | channel+secret…}]
                                # (§4.3 stored fields per kind; never the derived
                                # label/short/connection), agent_id,
@@ -488,7 +490,9 @@ manifest.yaml                # format_version: 2 (import rejects any other with 
                              #   — never a rejection),
                              # agent: the drafting agent's REF - the agents.yaml entry the
                              #   imported agent_id resolves through (absent when none),
-                             # triggers: [{kind, expression? | timezone? | channel+secret… | from…}] —
+                             # triggers: [{kind, expression? | timezone? | run_if_missed? | channel+secret… | from…}] —
+                             #   (`run_if_missed: false` only when a cron opted out, §4.3;
+                             #   absent = true)
                              #   cron, app_start, discord, and imessage (§4.3 stored
                              #   fields; the token itself never travels, and a discord
                              #   entry's `secret` is the secrets.yaml REF - export

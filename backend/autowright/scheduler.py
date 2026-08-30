@@ -8,18 +8,23 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from . import triggers as triggerlib
+from . import timefmt, triggers as triggerlib
 from .engine import Engine
 from .events import hub
-from .firing import drain_queue, fire_trigger
+from .firing import drain_queue, finish_never_ran, fire_trigger
 from .storage import Store
 
 log = logging.getLogger("autowright.scheduler")
 
 TICK_S = float(os.environ.get("AUTOWRIGHT_TICK_S", "15"))  # §15 knob, config only
+# §6 run-if-missed grace window: an occurrence older than this when the tick
+# notices it was slept through, not merely seen a tick late. Derived from the
+# tick period; no knob of its own (§15).
+GRACE_S = max(60.0, 4 * TICK_S)
+DROP_NOTE = "missed while this Mac was asleep (run if missed is off for this trigger)"
 
 
 class Scheduler:
@@ -124,6 +129,7 @@ class Scheduler:
         by the finish-time drain or the next tick — the same one-tick
         granularity the safety net always had)."""
         due: list[tuple[datetime, dict]] = []
+        dropped: list[dict] = []  # §6 runIfMissed-off triggers whose span was slept through
         for t in list(a["triggers"]):  # consume_trigger below mutates the list
             key = (a["id"], t["id"])
             if key not in self._baseline:
@@ -166,6 +172,19 @@ class Scheduler:
             if occ and occ <= now:
                 # §6: at most one catch-up per wake — swallow every older occurrence.
                 self._set_baseline(key, now, now_utc)
+                if not triggerlib.run_if_missed(t):
+                    # §6 opt-out: fire only when an occurrence landed within
+                    # the grace window; anything older was slept through and
+                    # is dropped, never fired late.
+                    fresh = triggerlib.trigger_next(t, after=now - timedelta(seconds=GRACE_S))
+                    if fresh is None or fresh > now:
+                        dropped.append(t)
+                        if t["kind"] == "time":
+                            # §4.3 spent rule: a dropped one-shot is consumed unfired.
+                            self.store.consume_trigger(a, t["id"])
+                            self._publish_changed(a)
+                        continue
+                    occ = fresh
                 due.append((occ, t))
             elif occ is None and triggerlib.time_elapsed(t, now):
                 # §4.3: the one-shot's moment passed before the baseline
@@ -183,11 +202,29 @@ class Scheduler:
                     consumed = True
             if consumed:
                 self._publish_changed(a)
+        elif dropped:
+            # §6 drop record: nothing fired for this automation in this tick,
+            # so the drop is the only trace the user gets (for a one-shot, the
+            # trigger itself is gone): one skipped record, naming the first
+            # dropped trigger's kind. A catch-up by another trigger in the same
+            # tick covers the drop silently (the one-per-wake rule).
+            self._record_drop(a, dropped[0])
         # §6: drain here as well as on every execution finish — a raised
         # maxParallel, or a finish whose drain lost a race, is picked up
         # within a tick rather than waiting for the next firing.
         if drain:
             drain_queue(self.store, self.engine, a["id"])
+
+    def _record_drop(self, a: dict, t: dict) -> None:
+        with self.store.lock:
+            if self.store.autos.get(a["id"]) is not a:
+                return  # deleted mid-tick, no record for a gone automation
+            try:
+                h = self.store.create_execution(a, "version", a["current_version"], t["kind"],
+                                                steps=[], status="skipped", note=DROP_NOTE)
+                finish_never_ran(self.store, h, DROP_NOTE, finished_at=timefmt.now_iso())
+            except Exception:  # noqa: BLE001
+                log.exception("recording a dropped occurrence on %r failed", a.get("name"))
 
     def _fire(self, a: dict, t: dict) -> None:
         # The tick evaluated a snapshot taken outside the lock - a PATCH landing

@@ -393,8 +393,9 @@ export function holdsDraftEdits(r: Rev, a: Automation): boolean {
 export function stripTrigger(t: Trigger | DraftTrigger): DraftTrigger {
   const base = { ...(t.id ? { id: t.id } : {}), enabled: t.enabled }
   switch (t.kind) {
-    case 'cron': return { ...base, kind: 'cron', expression: t.expression, ...(t.timezone ? { timezone: t.timezone } : {}), source: t.source }
-    case 'time': return { ...base, kind: 'time', at: t.at, ...(t.timezone ? { timezone: t.timezone } : {}) }
+    // §4.3 runIfMissed rides a draft only when false (absent = true)
+    case 'cron': return { ...base, kind: 'cron', expression: t.expression, ...(t.timezone ? { timezone: t.timezone } : {}), ...(t.runIfMissed === false ? { runIfMissed: false } : {}), source: t.source }
+    case 'time': return { ...base, kind: 'time', at: t.at, ...(t.timezone ? { timezone: t.timezone } : {}), ...(t.runIfMissed === false ? { runIfMissed: false } : {}) }
     case 'app_start': return { ...base, kind: 'app_start' }
     case 'discord': return {
       ...base, kind: 'discord', channel: t.channel, secret: t.secret,
@@ -513,6 +514,7 @@ export function sameTriggerList(a: unknown, b: unknown): boolean {
     t.id ?? null, t.kind ?? null, t.expression ?? null, t.at ?? null,
     t.timezone ?? null, t.from ?? null, t.channel ?? null, t.secret ?? null,
     t.pattern ?? null, t.mention ?? null, t.author ?? null, t.enabled !== false,
+    t.runIfMissed !== false,
   ])
   return xs.length === ys.length
     && xs.every((t, i) => key(t as Record<string, unknown>) === key(ys[i] as Record<string, unknown>))
@@ -562,7 +564,14 @@ export function applyTriggerOps(triggers: DraftTrigger[], ops: TriggerOp[]): { t
     const target = handles[op.index - 1]
     if (!target) continue // removed by an earlier op — nothing to touch
     if (op.op === 'edit') {
-      const edited = { ...op.trigger, ...(target.id ? { id: target.id } : {}), enabled: target.enabled }
+      // §8: an edit keeps id, enabled, and the §4.3 runIfMissed choice; the
+      // dialect cannot set it, so the user's opt-out survives a schedule change
+      const keptOptOut = (target.kind === 'cron' || target.kind === 'time') && target.runIfMissed === false
+        && (op.trigger.kind === 'cron' || op.trigger.kind === 'time')
+      const edited = {
+        ...op.trigger, ...(target.id ? { id: target.id } : {}), enabled: target.enabled,
+        ...(keptOptOut ? { runIfMissed: false } : {}),
+      } as DraftTrigger
       list = list.map((t) => (t === target ? edited : t))
       handles[op.index - 1] = edited
       chips.push(`${triggerNoun(edited.kind)} ${op.index} updated.`)

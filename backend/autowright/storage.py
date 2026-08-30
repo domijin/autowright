@@ -572,6 +572,10 @@ class Store:
                                 **({"pattern": t["pattern"]} if t.get("pattern") else {})}
                                if t["kind"] == "imessage" else {}),
                             **({"timezone": t["timezone"]} if t.get("timezone") and t["kind"] in ("cron", "time") else {}),
+                            # §4.3 `runIfMissed`: stored only when false; an
+                            # absent key is the pre-field shape and reads true (§21).
+                            **({triggerlib.RUN_IF_MISSED: False}
+                               if t["kind"] in ("cron", "time") and t.get(triggerlib.RUN_IF_MISSED) is False else {}),
                             # §4.3 enable stamp — loaded as stored; a trigger
                             # written before the field existed stays without it
                             # (never healed, §4.1 falls back to the run baseline).
@@ -1183,6 +1187,10 @@ class Store:
     def trigger_json(self, t: dict) -> dict:
         label, short = triggerlib.trigger_display(t)
         out = {**t, "label": label, "short": short}
+        if t["kind"] in ("cron", "time"):
+            # §4.3: serialized explicitly on every cron/time trigger, so no
+            # client ever guesses the default (stored only when false).
+            out[triggerlib.RUN_IF_MISSED] = triggerlib.run_if_missed(t)
         if t["kind"] == "discord":
             # §4.3 `connection` — the listener manager's state for the trigger's
             # token secret (keyed by the secret's §4.8 id); derived at

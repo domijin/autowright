@@ -203,7 +203,11 @@ problems: [{ kind, label }] — derived at serialization, never stored: the "wou
     Two missed moments, not one, is the grace:
     a single occurrence legitimately skipped (§6 busy-skip, a restart at the wrong
     minute) never flags. Cron triggers only — one-shots are consumed by the §4.3 spent
-    rule, and app-start/message triggers have no schedule; disabled triggers never count.
+    rule, and app-start/message triggers have no schedule; disabled triggers never count,
+    and neither does a cron with `runIfMissed: false` (§4.3): a sleeping Mac is the one
+    way an awake-and-running scheduler misses a moment, and that trigger opted out of
+    chasing exactly those, so its misses are chosen, not a problem - the §6 drop record
+    already shows each one.
     This is the one failure class nothing else surfaces: a silently dead automation
     (backend down at every scheduled moment, a wedged execution starving every firing)
     produces no record, no failed status, and no notification — this kind, the §13 tray
@@ -305,8 +309,8 @@ the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-d
 
 - **Crons replace the spec-sourced cron subset**: a drafted cron matching a stored one
   (either source) on (`expression`, `timezone`)
-  keeps that trigger's `id`, `enabled` state, and `source`; other drafted crons arrive
-  enabled with fresh ids and `source: spec`; **`source: spec`** crons the draft no longer
+  keeps that trigger's `id`, `enabled` state, `source`, and `runIfMissed`; other drafted
+  crons arrive enabled with fresh ids, `source: spec`, and the default `runIfMissed`; **`source: spec`** crons the draft no longer
   derives are dropped, while **`source: user`** crons always survive — a schedule the user
   set by hand (detail page, chat op, CLI) is never silently removed by a sync.
 - **Message and app-start entries are additive**: a drafted `discord`/`imessage`/`app_start`
@@ -328,8 +332,8 @@ strings `label` and `short`. The backend assigns `id` to entries that arrive wit
 
 | kind | fields | fires | label / short |
 |---|---|---|---|
-| `cron` | `expression`: 5-field cron expression · optional `timezone` · `source`: `"spec"` \| `"user"` (provenance, above; required) | at every match | humanized when simple (below), else the raw expression in mono |
-| `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `timezone` | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
+| `cron` | `expression`: 5-field cron expression · optional `timezone` · optional `runIfMissed`: bool, default true (below) · `source`: `"spec"` \| `"user"` (provenance, above; required) | at every match | humanized when simple (below), else the raw expression in mono |
+| `time` | `at`: wall-clock ISO timestamp ("2026-07-20T15:00"), seconds allowed ("2026-07-20T15:00:15") · optional `timezone` · optional `runIfMissed`: bool, default true (below) | once, then the trigger is consumed | "Once at Jul 20, 3:00 PM" / "Once Jul 20 15:00"; non-zero seconds append to the time in both strings: "Once at Jul 20, 3:00:15 PM" / "Once Jul 20 15:00:15" |
 | `app_start` | — | at every desktop-app launch (§6 firing path) | "On app start" / "App start" |
 | `discord` | `channel`: Discord channel id (ASCII digits) · `secret`: id of the §4.8 secret holding the bot token (a secret uuid) · optional `pattern`: text filter · optional `mention`: bool · optional `author`: sender filter, a list of Discord user ids (ASCII digits) | at every matching Discord message (rules below) | "Discord · `<channel>`" (+ " · “`<pattern>`”" when set) / "Discord" |
 | `imessage` | `from`: sender handle (E.164 phone or email) · optional `pattern`: text filter | at every matching iMessage on this Mac (rules below) | "iMessage · `<from>`" (+ " · “`<pattern>`”" when set) / "iMessage" |
@@ -357,6 +361,24 @@ rejected at the API (422), never stored. When `timezone` is set, both display st
 zone's city — the last `/` segment of the IANA name, `_` → space — in parentheses:
 "Daily at 8:00 (Tokyo)" / "Daily 8:00 (Tokyo)"; the raw-expression fallback and one-shot
 labels get the same suffix.
+
+**Run if missed (`runIfMissed`)** - optional bool on `cron` and `time` triggers, **default
+true**. It decides what happens when the scheduler notices an occurrence late because the
+Mac slept through it (the §6 missed-executions rule; the backend was alive but suspended):
+true → the occurrence fires once on wake, exactly the §6 one-catch-up-per-wake behavior;
+false → the slept-through span is dropped, nothing fires, and the trigger simply waits for
+its next occurrence. The field covers sleep only: a backend that was not running when the
+moment passed never catches up whatever the value (§6 - no startup catch-up queue), and a
+past one-shot found on disk at load is consumed unfired either way. Storage: written to
+`automation.yaml` only when false - an absent key reads as true, so every trigger stored
+before the field existed keeps today's behavior (§21). The API serializes it explicitly on
+every cron/time trigger (`runIfMissed: true | false`) and accepts it on the same two kinds;
+a non-boolean value answers 422, and on any other kind it is ignored and never stored,
+exactly like `timezone`. The §4.3 trigger merge carries it like `enabled` (a matched cron
+keeps it; a freshly derived cron gets the default), the §8 `triggers` `edit` op keeps it
+like `id` and `enabled` (the rule-9 dialect cannot set it - it is the user's operational
+choice, set on the §9.2 editor or the §20 CLI), and it rides the §5.1 archive and the §20
+manifest as `run_if_missed: false` (absent = true).
 
 `pubsub` is a reserved kind only: the API rejects writing it with 422; the UI does not
 surface it. Nothing else about it is specified yet.
@@ -473,7 +495,8 @@ one-shot can never block a create, version save, or trigger PATCH. (A client-fab
 therefore still cannot store a past time: the entry stores nothing at all.) An id the
 automation does store revalidates leniently and survives the save.
 The trigger is consumed — removed from the list — when it fires, and equally when its moment is
-skipped (backend down when it passed, or superseded mid-execution, §6). It never lingers spent.
+skipped (backend down when it passed, superseded mid-execution, or dropped by `runIfMissed:
+false` after a sleep, §6). It never lingers spent.
 
 **App-start semantics** (`app_start`): fires when the desktop app launches — the Electron
 process starting (§6 firing path), not a window reopening from the tray. No fields, no `timezone`.

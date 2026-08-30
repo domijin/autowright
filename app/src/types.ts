@@ -130,8 +130,10 @@ export interface ChatEntry {
 // fields, so the compiler enforces the pairing the backend validates with 422.
 // pubsub is a reserved kind the API refuses to store ("coming soon").
 export type TriggerKindFields =
-  | { kind: 'cron'; expression: string; timezone?: string; source: 'spec' | 'user' } // §4.3 provenance: required
-  | { kind: 'time'; at: string; timezone?: string }         // one-shot wall-clock ISO timestamp
+  // §4.3 runIfMissed: the §6 wake catch-up opt-out; the backend serializes it
+  // explicitly on every cron/time trigger; a draft carries it only when false
+  | { kind: 'cron'; expression: string; timezone?: string; runIfMissed?: boolean; source: 'spec' | 'user' } // §4.3 provenance: required
+  | { kind: 'time'; at: string; timezone?: string; runIfMissed?: boolean }         // one-shot wall-clock ISO timestamp
   | { kind: 'app_start' }
   // §4.3: `secret` is the token secret's §4.8 id — displays resolve it to the live name
   | { kind: 'discord'; channel: string; secret: string; pattern?: string; mention?: boolean; author?: string[] }

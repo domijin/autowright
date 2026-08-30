@@ -1013,3 +1013,163 @@ def test_overdue_sweep_notifies_after_two_consecutive_sweeps(store, monkeypatch)
     assert len(posted) == 1
     assert a["id"] not in sched._overdue_streak
     assert a["id"] not in sched._overdue_notified
+
+
+# ---------- §6 runIfMissed: the wake catch-up opt-out (§4.3) ----------
+
+def _drop_records(store, automation_id):
+    return [h for h in store.execs.values()
+            if h["automation_id"] == automation_id and h["status"] == "skipped"]
+
+
+def test_run_if_missed_off_drops_slept_through_cron(store, monkeypatch):
+    """§6: a cron with runIfMissed false never fires late: the slept-through
+    span is dropped, the baseline advances to now, one skipped record with the
+    drop note is written, and the next natural occurrence fires normally."""
+    from datetime import datetime
+    from autowright.scheduler import DROP_NOTE
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 10, 30))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "NoCatchup", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 * * * *",
+         "source": "user", "runIfMissed": False}])
+    sched._tick()  # baseline 10:30
+    clock.now = datetime(2026, 7, 10, 13, 31)  # slept through 11:00, 12:00, 13:00
+    sched._tick()
+    assert fires == []  # nothing fired late
+    assert sched._baseline[(a["id"], "t1")] == clock.now
+    recs = _drop_records(store, a["id"])
+    assert len(recs) == 1
+    assert recs[0]["note"] == DROP_NOTE
+    assert recs[0]["trigger"] == "cron"
+    assert recs[0]["duration_ms"] == 0
+    sched._tick()
+    assert fires == [] and len(_drop_records(store, a["id"])) == 1  # no re-drop
+    clock.now = datetime(2026, 7, 10, 14, 0, 5)  # the next occurrence, seen 5 s late
+    sched._tick()
+    assert len(fires) == 1  # normal firing resumes
+
+
+def test_run_if_missed_off_still_fires_within_grace(store, monkeypatch):
+    """§6 grace window: an occurrence noticed a tick or two late is not a
+    miss, it fires; only a span older than the grace window is dropped."""
+    from datetime import datetime, timedelta
+    from autowright import scheduler as sched_mod
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 8, 59, 50))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "Grace", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 9 * * *",
+         "source": "user", "runIfMissed": False}])
+    sched._tick()
+    clock.now = datetime(2026, 7, 10, 9, 0, 40)  # 40 s late: inside the 60 s grace
+    sched._tick()
+    assert len(fires) == 1
+    assert _drop_records(store, a["id"]) == []
+    # a wake just past the grace window drops instead
+    clock.now = datetime(2026, 7, 11, 9, 0) + timedelta(seconds=sched_mod.GRACE_S + 5)
+    sched._tick()
+    assert len(fires) == 1
+    assert len(_drop_records(store, a["id"])) == 1
+
+
+def test_run_if_missed_off_wake_with_fresh_occurrence_fires_once(store, monkeypatch):
+    """§6: waking seconds after a fresh occurrence with older ones slept
+    through fires exactly once (the fresh one) and writes no drop record."""
+    from datetime import datetime
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 8, 30))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "FreshWake", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 * * * *",
+         "source": "user", "runIfMissed": False}])
+    sched._tick()
+    clock.now = datetime(2026, 7, 10, 12, 0, 10)  # slept through 9, 10, 11; 12:00 is fresh
+    sched._tick()
+    assert len(fires) == 1
+    assert _drop_records(store, a["id"]) == []
+    assert sched._baseline[(a["id"], "t1")] == clock.now
+
+
+def test_run_if_missed_off_one_shot_consumed_unfired_with_record(store, monkeypatch):
+    """§4.3/§6: a slept-through one-shot with runIfMissed false is consumed
+    unfired, leaving the skipped drop record as its only trace."""
+    from datetime import datetime
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 9, 0))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "ShotDrop", None, triggers=[
+        {"id": "tt", "kind": "time", "enabled": True, "at": "2026-07-10T10:00",
+         "runIfMissed": False}])
+    sched._tick()
+    clock.now = datetime(2026, 7, 10, 14, 0)
+    sched._tick()
+    assert fires == []
+    assert a["triggers"] == []  # consumed
+    recs = _drop_records(store, a["id"])
+    assert len(recs) == 1 and recs[0]["trigger"] == "time"
+
+
+def test_run_if_missed_default_true_keeps_catch_up(store, monkeypatch):
+    """§4.3 default: a trigger without the field (the pre-field shape) and one
+    with runIfMissed true both keep the §6 one-catch-up-per-wake behavior."""
+    from datetime import datetime
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 10, 30))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "Default", None, triggers=[
+        {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 * * * *", "source": "user"},
+        {"id": "t2", "kind": "cron", "enabled": True, "expression": "30 * * * *", "source": "user",
+         "runIfMissed": True}])
+    sched._tick()
+    clock.now = datetime(2026, 7, 10, 13, 31)
+    sched._tick()
+    assert len(fires) == 1  # one catch-up for the automation
+    assert _drop_records(store, a["id"]) == []
+
+
+def test_run_if_missed_drop_is_silent_when_another_trigger_catches_up(store, monkeypatch):
+    """§6: when a runIfMissed-true trigger of the same automation catches up
+    in the same tick, the opted-out trigger's drop writes no record; the
+    execution covers it and the one-per-wake rule holds."""
+    from datetime import datetime
+    from conftest import make_version
+
+    clock = _Clock(datetime(2026, 7, 10, 10, 30))
+    engine, sched = _mk_clocked(store, clock)
+    fires = _record_fires(monkeypatch)
+    a = store.create_automation(make_version(), "Mixed", None, triggers=[
+        {"id": "keep", "kind": "cron", "enabled": True, "expression": "0 * * * *", "source": "user"},
+        {"id": "drop", "kind": "cron", "enabled": True, "expression": "15 * * * *", "source": "user",
+         "runIfMissed": False}])
+    sched._tick()
+    clock.now = datetime(2026, 7, 10, 13, 31)
+    sched._tick()
+    assert fires == [(a["id"], "keep")]
+    assert _drop_records(store, a["id"]) == []
+    assert sched._baseline[(a["id"], "drop")] == clock.now
+
+
+def test_run_if_missed_off_cron_never_flags_overdue(store):
+    """§4.1: a cron that opted out of the wake catch-up never makes the
+    automation overdue; its misses are chosen, not a problem."""
+    from datetime import datetime
+    from autowright import triggers as triggerlib
+
+    base = datetime(2026, 7, 10, 8, 0)
+    now = datetime(2026, 7, 12, 8, 0)  # two daily occurrences passed unrun
+    on = [{"kind": "cron", "enabled": True, "expression": "0 9 * * *", "source": "user"}]
+    off = [{**on[0], "runIfMissed": False}]
+    assert triggerlib.is_overdue(on, base, now) is True
+    assert triggerlib.is_overdue(off, base, now) is False

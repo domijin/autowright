@@ -1215,6 +1215,42 @@ def test_patch_automation_triggers_422(client):
     assert store.autos[a["id"]]["triggers"] == []  # nothing stored
 
 
+def test_patch_automation_trigger_run_if_missed(client):
+    """§4.3: the §6 wake catch-up opt-out rides the trigger PATCH: serialized
+    explicitly on every cron/time trigger so no client guesses the default, a
+    422 when it isn't a boolean, and never carried onto a message trigger."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Catchy", "mock")
+    r = client.patch(f"/automations/{a['id']}", json={
+        "triggers": [{"kind": "cron", "expression": "0 8 * * *", "enabled": True,
+                      "source": "user", "runIfMissed": False}]})
+    assert r.status_code == 200
+    assert r.json()["triggers"][0]["runIfMissed"] is False
+
+    # the default is serialized too: as true, from the absent stored key
+    r = client.patch(f"/automations/{a['id']}", json={
+        "triggers": [{"kind": "cron", "expression": "0 8 * * *", "enabled": True,
+                      "source": "user"}]})
+    assert r.json()["triggers"][0]["runIfMissed"] is True
+    assert "runIfMissed" not in store.autos[a["id"]]["triggers"][0]
+
+    # a non-boolean is refused: the stored list is untouched
+    r = client.patch(f"/automations/{a['id']}", json={
+        "triggers": [{"kind": "cron", "expression": "0 9 * * *", "enabled": True,
+                      "source": "user", "runIfMissed": "no"}]})
+    assert r.status_code == 422
+    assert store.autos[a["id"]]["triggers"][0]["expression"] == "0 8 * * *"
+
+    # §4.3: cron/time only: a discord trigger drops the key entirely
+    sid = client.post("/secrets", json={"name": "BOT_TOKEN", "value": "v"}).json()["id"]
+    r = client.patch(f"/automations/{a['id']}", json={
+        "triggers": [{"kind": "discord", "channel": "42", "secret": sid,
+                      "enabled": True, "runIfMissed": False}]})
+    assert r.status_code == 200
+    assert "runIfMissed" not in r.json()["triggers"][0]
+
+
 def test_save_version_and_restore(client):
     from autowright.storage import store
 

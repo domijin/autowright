@@ -252,8 +252,16 @@ def validate_workdir(c: Client, d: Path) -> dict:
     else:
         errors.append("spec.md is missing")
     step_files = {n: t for n, t in files.items() if n not in ("spec.md", "instructions.md", "notes.md")}
+    # §20: the manifest's cron entries may carry `run_if_missed` (§4.3), a key
+    # the §8 rule-9 dialect does not know; lifted out before validation and
+    # stamped back onto the drafted crons by (expression, timezone).
+    step_files, opted_out, errs = _lift_run_if_missed(step_files)
+    errors += errs
     draft, errs = drafting.validate_steps(step_files, _all_grants(c))
     errors += errs
+    for t in draft.get("triggers") or []:
+        if t["kind"] == "cron" and (t["expression"], t.get("timezone")) in opted_out:
+            t["runIfMissed"] = False
     if errors:
         print(f"{d} doesn't validate:", file=sys.stderr)
         for e in errors:
@@ -275,6 +283,39 @@ def validate_workdir(c: Client, d: Path) -> dict:
     if "notes.md" in files:
         draft["notes"] = files["notes.md"].strip()
     return draft
+
+
+def _lift_run_if_missed(step_files: dict[str, str]) -> tuple[dict[str, str], set, list[str]]:
+    """Strip `run_if_missed` from the manifest's cron entries, returning the
+    files to validate, the (expression, timezone) keys that opted out, and any
+    errors (a non-boolean value). A manifest without the key passes through
+    byte-for-byte."""
+    import yaml
+
+    text = step_files.get("manifest.yaml")
+    if not text:
+        return step_files, set(), []
+    try:
+        manifest = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return step_files, set(), []  # the drafting validator reports the parse error
+    entries = manifest.get("triggers") if isinstance(manifest, dict) else None
+    if not isinstance(entries, list) or not any(
+            isinstance(t, dict) and "run_if_missed" in t for t in entries):
+        return step_files, set(), []
+    opted_out: set = set()
+    errors: list[str] = []
+    for t in entries:
+        if not isinstance(t, dict) or "run_if_missed" not in t:
+            continue
+        v = t.pop("run_if_missed")
+        if "cron" not in t:
+            errors.append("triggers: run_if_missed applies to cron entries only")
+        elif not isinstance(v, bool):
+            errors.append("triggers: run_if_missed must be true or false")
+        elif v is False:
+            opted_out.add((str(t["cron"]).strip(), str(t["timezone"]) if t.get("timezone") else None))
+    return {**step_files, "manifest.yaml": yaml.safe_dump(manifest, sort_keys=False)}, opted_out, errors
 
 
 def _manifest_step(s: dict) -> dict:
@@ -318,7 +359,9 @@ def _write_workdir(d: Path, auto: dict, yaml, specmd) -> list[str]:
     written = ["spec.md", "manifest.yaml"]
     (d / "spec.md").write_text(specmd.blocks_to_md(auto.get("spec") or []), encoding="utf-8")
     manifest: dict = {"name": auto["name"], "description": auto.get("description", "")}
-    crons = [{"cron": t["expression"], **({"timezone": t["timezone"]} if t.get("timezone") else {})}
+    crons = [{"cron": t["expression"], **({"timezone": t["timezone"]} if t.get("timezone") else {}),
+              # §4.3 `run_if_missed`: written only when the cron opted out (absent = true)
+              **({"run_if_missed": False} if t.get("runIfMissed") is False else {})}
              for t in auto.get("triggers") or [] if t["kind"] == "cron"]
     if crons:
         manifest["triggers"] = crons
@@ -346,7 +389,8 @@ def _write_workdir(d: Path, auto: dict, yaml, specmd) -> list[str]:
 def merge_draft_triggers(stored: list[dict], drafted: list[dict]) -> list[dict]:
     """§4.3 trigger merge, client-side like the editor: drafted crons replace
     the spec-sourced cron subset ((expression, timezone) matches keep id, enabled
-    state, and source, new entries arrive enabled with source: spec, unmatched
+    state, and source and take the manifest entry's run_if_missed, new entries
+    arrive enabled with source: spec, unmatched
     spec-sourced stored crons drop — `source: user` crons always survive);
     drafted message/app-start
     entries add only when no stored trigger matches their identity fields;
@@ -373,8 +417,16 @@ def merge_draft_triggers(stored: list[dict], drafted: list[dict]) -> list[dict]:
                          and t["expression"] == d["expression"] and t.get("timezone") == d.get("timezone")), None)
             if kept is None:
                 out.append(d)
-            elif kept not in out:  # a matched user cron already survived above
-                out.append(kept)
+            else:
+                # §20: the manifest entry decides run_if_missed (absent = true).
+                merged = {k: v for k, v in kept.items() if k != "runIfMissed"}
+                if d.get("runIfMissed") is False:
+                    merged["runIfMissed"] = False
+                i = next((i for i, x in enumerate(out) if x is kept), None)
+                if i is None:
+                    out.append(merged)
+                else:  # a matched user cron already survived above
+                    out[i] = merged
         elif d["kind"] != "time" and not any(same_non_cron(t, d) for t in stored):
             out.append(d)
     return out
@@ -530,7 +582,7 @@ def cmd_automation_show(c: Client, args) -> None:
         for p in full["problems"]:
             print(f"  {p['label']}")
     for i, t in enumerate(full.get("triggers") or [], 1):
-        print(f"trigger {i}: {t['label']}" + (" (off)" if not t["enabled"] else ""))
+        print(f"trigger {i}: {t['label']}" + _trigger_marks(t))
     for p in full.get("params") or []:
         print(f"param {p['name']} ({p['kind']}): {_param_value(p)!r}")
     # §4.1: step secrets entries carry ids — resolve to names for display
@@ -805,7 +857,13 @@ def cmd_trigger_list(c: Client, args) -> None:
     if not triggers:
         print("no triggers — executes only via `automation execute` or the menu bar")
     for i, t in enumerate(triggers, 1):
-        print(f"{i}. {t['label']}" + (" (off)" if not t["enabled"] else ""))
+        print(f"{i}. {t['label']}" + _trigger_marks(t))
+
+
+def _trigger_marks(t: dict) -> str:
+    """§20 list/show suffixes: " (off)" then " (no catch-up)" (§4.3 runIfMissed off)."""
+    return ((" (off)" if not t["enabled"] else "")
+            + (" (no catch-up)" if t.get("runIfMissed") is False else ""))
 
 
 def _stored_triggers(c: Client, automation_id: str) -> list[dict]:
@@ -861,6 +919,10 @@ def cmd_trigger_add(c: Client, args) -> None:
                  "an iMessage trigger")
     if args.timezone:
         entry["timezone"] = args.timezone
+    if getattr(args, "no_run_if_missed", False):
+        if entry["kind"] not in ("cron", "time"):
+            sys.exit("--no-run-if-missed applies to a cron schedule or --at one-shot only")
+        entry["runIfMissed"] = False  # §4.3: stored only when false
     triggers = _stored_triggers(c, a["id"]) + [entry]
     r = c.req("PATCH", f"/automations/{a['id']}", {"triggers": triggers})
     print(f"added — now: {r['triggerChip']}")
@@ -1853,6 +1915,10 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
     p.add_argument("--timezone", metavar="ZONE",
                    help='which timezone the schedule or one-off time is in, as an IANA zone '
                         'like "Europe/Berlin" (default: this machine\'s timezone)')
+    p.add_argument("--no-run-if-missed", action="store_true",
+                   help="with a cron schedule or --at: if this machine sleeps through the "
+                        "scheduled time, skip it instead of running once on wake "
+                        "(default: run once on wake)")
     p = _sub(tg, "on", cmd_trigger_toggle, "switch a trigger back on",
              description="Switch a trigger back on, so it starts firing again. The trigger "
                          "itself is unchanged — this is the exact reverse of `trigger off`."

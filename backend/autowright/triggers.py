@@ -217,6 +217,16 @@ def normalize_authors(raw: list) -> list[str]:
     return sorted({str(a).strip() for a in raw})
 
 
+RUN_IF_MISSED = "runIfMissed"  # §4.3: cron/time only, stored only when false
+RUN_IF_MISSED_ERROR = "run if missed must be true or false"
+
+
+def run_if_missed(t: dict) -> bool:
+    """§4.3 `runIfMissed` as the scheduler reads it: absent = true (every
+    trigger stored before the field existed keeps the §6 wake catch-up)."""
+    return t.get(RUN_IF_MISSED, True) is not False
+
+
 def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
     """§19 PATCH rule: error message, or None when the trigger is storable.
     `allow_past` skips the future check for one-shots — an EXISTING stored
@@ -272,6 +282,8 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
         # §4.3 provenance: required — every ingest path stamps it.
         if t.get("source") not in ("spec", "user"):
             return 'a cron trigger\'s source must be "spec" or "user"'
+        if RUN_IF_MISSED in t and not isinstance(t[RUN_IF_MISSED], bool):
+            return RUN_IF_MISSED_ERROR
         if err := timezone_error(t.get("timezone")):
             return err
         try:
@@ -280,6 +292,8 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             return str(e)
         return None
     if kind == "time":
+        if RUN_IF_MISSED in t and not isinstance(t[RUN_IF_MISSED], bool):
+            return RUN_IF_MISSED_ERROR
         if err := timezone_error(t.get("timezone")):
             return err
         try:
@@ -347,6 +361,10 @@ def normalize_triggers(raw: list,
         # any other kind, so keeping it here would survive only until restart.
         if t["kind"] in ("cron", "time") and t.get("timezone"):
             n["timezone"] = t["timezone"]
+        # §4.3 `runIfMissed`: cron/time only, stored only when false (absent =
+        # true, the pre-field shape, §21); ignored on every other kind.
+        if t["kind"] in ("cron", "time") and t.get(RUN_IF_MISSED) is False:
+            n[RUN_IF_MISSED] = False
         out.append(n)
     return out, None
 
@@ -512,6 +530,11 @@ def is_overdue(triggers: list[dict], baseline: datetime, now: datetime | None = 
     now = now or datetime.now()
     for t in triggers:
         if t.get("kind") != "cron" or not t.get("enabled"):
+            continue
+        if not run_if_missed(t):
+            # §4.1: a cron that opted out of the §6 wake catch-up chose its
+            # misses: a sleeping Mac is the one way a live scheduler misses a
+            # moment, and the §6 drop record already shows each one.
             continue
         since = enabled_since(t)  # None for a trigger stored without the stamp
         first = trigger_next(t, after=max(baseline, since) if since else baseline)

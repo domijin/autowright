@@ -333,6 +333,18 @@ describe('applyEvent — automation.changed row patching (§19)', () => {
     expect(got.params).toEqual([{ name: 'p', kind: 'text', value: 'v' }])
   })
 
+  it('refresh applies the /state version (a version-synced backend reaches About)', async () => {
+    const state = vi.mocked(apiMod.api.state)
+    state.mockClear()
+    store.useStore.setState({ version: '0.7.0' })
+    state.mockResolvedValueOnce({
+      version: '0.8.0', automations: [], executions: [], agents: [], secrets: [],
+      settings: {}, pendingDraft: null,
+    } as never)
+    await store.useStore.getState().refresh()
+    expect(store.useStore.getState().version).toBe('0.8.0')
+  })
+
   it('automation: null removes the deleted row', () => {
     store.useStore.setState({ automations: [auto('a1'), auto('a2')] })
     store.useStore.getState().applyEvent({ event: 'automation.changed', automationId: 'a1', automation: null })

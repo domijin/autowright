@@ -712,6 +712,6 @@ already neutralize. The provider config and
   mid-edit, and collapses the page height so the scroll position jumps to the top. A bare
   `automation.changed` (no `automationId`) means "many may have changed" (data-path switch,
   startup repair): clients fall back to re-`GET /state`, applying its list rows with the
-  same merge. Clients also re-`GET /state` on reconnect. The handler streams from a hub queue while concurrently watching the socket for
+  same merge. Clients also re-`GET /state` on reconnect, and that refresh applies the snapshot's `version` alongside the data fields — after the §3 launch-time version-sync restarts the backend onto the new bundle, this reconnect refresh is what carries the new running version to the §9.4 About page (without it the page shows the pre-update number until the app is relaunched). The handler streams from a hub queue while concurrently watching the socket for
   the client's disconnect, so a dropped client ends the handler immediately — an idle open
   socket never leaves uvicorn's graceful shutdown waiting.

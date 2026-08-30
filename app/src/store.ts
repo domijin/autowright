@@ -320,7 +320,9 @@ export const useStore = create<Model>((set, get) => ({
         // fresher (or will be); applying this one would roll state backwards.
         if (n !== refreshSeq) return
         if (mut !== eventSeq && attempt < 3) continue
-        set({ automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft, draftJobs: s.draftJobs ?? [] })
+        // §19 reconnect rule: version rides along — after a §3 version-sync restarts
+        // the backend, this refresh is what updates the §9.4 About page's number.
+        set({ version: s.version, automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft, draftJobs: s.draftJobs ?? [] })
         updateTrayAlert(s.automations)
         return
       }

@@ -139,8 +139,14 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
     expect(screen.getByText('2 of 2 enabled')).toBeTruthy()
     expect(screen.getByText('2 of 2 allowed')).toBeTruthy()
 
+    // §9/§11: each grant row is a role="checkbox" button around the §14 CheckBox glyph
+    const agentRow = screen.getByText('Fast local').closest('[role="checkbox"]') as HTMLElement
+    expect(agentRow.getAttribute('aria-checked')).toBe('true')
+    expect(agentRow.querySelector('.ad-check[data-on]')).toBeTruthy()
     fireEvent.click(screen.getByText('Fast local'))     // uncheck agent g2
     expect(screen.getByText('1 of 2 enabled')).toBeTruthy()
+    expect(agentRow.getAttribute('aria-checked')).toBe('false')
+    expect(agentRow.querySelector('.ad-check[data-on]')).toBeNull()
     fireEvent.click(screen.getByText('CRM_API_KEY'))    // disallow the secret
     expect(screen.getByText('1 of 2 allowed')).toBeTruthy()
 

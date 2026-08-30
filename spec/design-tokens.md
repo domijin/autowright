@@ -132,6 +132,25 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   (13 px, 7 px 14 px, hairline left divider between segments, `--bg-active` wash +
   `--text` on the active segment via `aria-pressed`, `--t-hover` transition) — the
   Executions All / Succeeded / Failed control; never hand-rolled from `.ad-btn-text`.
+  **Checkbox** — one look everywhere, owned by a single `tokens.css` rule; there is no
+  other checkbox rendering in the app (never the browser's native box, never a per-page
+  glyph). Geometry: 15×15 px, radius 4, `1px solid var(--border-hover)` on a transparent
+  ground; hover (unchecked only) lifts the border to `--text-muted`; checked fills
+  `--accent` with an `--accent` border and a 9 px `--on-accent` tick (a CSS-mask check
+  glyph, the same shape in every instance); background and border-color transition at
+  `--t-hover` `--ease-enter`. The rule targets two forms that render pixel-identically:
+  (1) every native `input[type='checkbox']`, restyled through `appearance: none` so it stays
+  a real input — labels, `checked`, keyboard, and the global focus ring all work natively —
+  used wherever the checkbox is its own click target, always wrapped in a `<label>` (the
+  §9.2 trigger editor's mention and "Catch up if missed" boxes; the read-only `.ad-md` task-list
+  boxes, which add `pointer-events: none` and a 6 px right margin and sit inline at
+  `vertical-align: -3px`); and (2) the `.ad-check` span, the shared `CheckBox` glyph in
+  `ui.tsx`, for rows where the whole row is the button (the §11 agent-enablement and
+  secret-allowance rows): `data-on` marks the checked state, the hosting row carries
+  `role="checkbox"` + `aria-checked` (§9), and the row's `.ad-hover-row` hover drives the
+  glyph's hover border. Native checkboxes get no per-site class or inline sizing — the
+  global rule is the styling. `Toggle` is a different control (a switch for settings-style
+  on/off rows, §9) and never stands in for a checkbox.
   `.ad-focus-inset` flips the global focus ring inside the element (outline-offset −2 px)
   for controls clipped by an `overflow: hidden` card (§9 focus convention). Every pickable
   control (harness cards, model/radio rows, kind chips, attempt pills, tabs) carries a

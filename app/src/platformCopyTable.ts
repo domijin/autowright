@@ -39,6 +39,9 @@ export interface PlatformCopy {
   // §4.9 keepAwake row: the §3 sleep disclaimer sentence — what the idle-sleep
   // assertion cannot do (a closed-lid laptop runs nothing until it wakes).
   sleepNote: string
+  // §9.2 trigger editor: the same disclaimer as the tail of the sleep-through
+  // note under "Catch up if missed" (§4.3 runIfMissed), phrased to follow it.
+  sleepMissNote: string
 }
 
 const MACOS: PlatformCopy = {
@@ -53,6 +56,7 @@ const MACOS: PlatformCopy = {
   terminalNoun: 'the Terminal',
   menuBar: 'menu bar',
   sleepNote: 'Works best on an always-on Mac like a Mac mini or Mac Studio. A MacBook that is asleep would not trigger the automation.',
+  sleepMissNote: 'This is not an issue on Mac mini or Mac Studio, but a MacBook that is asleep will not fire on schedule.',
 }
 
 const WINDOWS: PlatformCopy = {
@@ -69,6 +73,7 @@ const WINDOWS: PlatformCopy = {
   terminalNoun: 'a terminal',
   menuBar: 'tray',
   sleepNote: 'Works best on an always-on desktop PC. A laptop that is asleep would not trigger the automation.',
+  sleepMissNote: 'This is not an issue on an always-on desktop PC, but a laptop that is asleep will not fire on schedule.',
 }
 
 const LINUX: PlatformCopy = {
@@ -86,6 +91,7 @@ const LINUX: PlatformCopy = {
   terminalNoun: 'a terminal',
   menuBar: 'tray',
   sleepNote: 'Works best on an always-on desktop PC. A laptop that is asleep would not trigger the automation.',
+  sleepMissNote: 'This is not an issue on an always-on desktop PC, but a laptop that is asleep will not fire on schedule.',
 }
 
 /** §9 per-OS copy for a §5.1 platform token — the pure form, for module-level

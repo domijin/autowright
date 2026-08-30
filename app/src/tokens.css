@@ -124,6 +124,26 @@ body {
 .ad-input:focus-visible, .ad-input :focus-visible { outline: none; }
 
 input, textarea, select, button { font: inherit; color: inherit; }
+/* §14 checkbox: the one checkbox look. Native inputs (§9.2 trigger editor, .ad-md task lists)
+   are restyled in place via appearance:none so they stay real inputs; the .ad-check span is the
+   same glyph for rows that are themselves the button (§11 grant rows, data-on = checked). */
+input[type='checkbox'], .ad-check {
+  appearance: none; -webkit-appearance: none; margin: 0; flex: none; box-sizing: border-box;
+  width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--border-hover);
+  background: transparent; display: inline-flex; align-items: center; justify-content: center;
+  vertical-align: -3px; cursor: pointer;
+  transition: background var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter);
+}
+input[type='checkbox']:not(:checked):not(:disabled):hover,
+.ad-hover-row:hover .ad-check:not([data-on]) { border-color: var(--text-muted); }
+input[type='checkbox']:checked, .ad-check[data-on] { background: var(--accent); border-color: var(--accent); }
+input[type='checkbox']::after, .ad-check::after {
+  content: ''; width: 9px; height: 9px; background: var(--on-accent); opacity: 0;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.4 4.9 9 9.8 3.4' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.2 6.4 4.9 9 9.8 3.4' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+input[type='checkbox']:checked::after, .ad-check[data-on]::after { opacity: 1; }
+input[type='checkbox']:disabled { cursor: default; }
 button { cursor: pointer; background: none; border: none; user-select: none; }
 button:disabled { cursor: default; }
 a { color: var(--accent); text-decoration: none; }
@@ -505,7 +525,7 @@ textarea:disabled, input:disabled { opacity: .45; }
 .ad-md li > ul, .ad-md li > ol { margin-top: 6px; }
 .ad-md li.task-list-item { padding-left: 0; }
 .ad-md li.task-list-item::before { content: none; }
-.ad-md input[type='checkbox'] { accent-color: var(--accent); margin-right: 5px; pointer-events: none; }
+.ad-md input[type='checkbox'] { margin-right: 6px; pointer-events: none; }  /* the §14 checkbox, read-only */
 .ad-md blockquote { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid rgba(255, 255, 255, .12); padding-left: 12px; }
 .ad-md blockquote p { color: var(--text-muted); }
 .ad-md hr { border: none; border-top: 1px solid var(--hairline); margin: 4px 0; }

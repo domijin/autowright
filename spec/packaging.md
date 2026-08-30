@@ -609,7 +609,9 @@ the update bullets below).
     (a Mac mini or Mac Studio), and a MacBook that is asleep would not trigger the
     automation (on wake the §6 missed-executions rule fires one catch-up). The sentence appears on the
     §4.9 keepAwake row (per-OS via the §9 `sleepNote` entry), under the §9.2 trigger
-    editor's Cron and One time forms (prefixed "Fires only while this Mac is awake."), in
+    editor's Cron and One time forms (as the tail of the "Catch up if missed" note, per-OS
+    via the §9 `sleepMissNote` entry: "This is not an issue on Mac mini or Mac Studio, but
+    a MacBook that is asleep will not fire on schedule."), in
     the §20 `settings set` help's `keepAwake` line, in the README's scheduling feature bullet, and in the §17
     website FAQ's "What does Autowright need to run?" answer (HTML and JSON-LD mirror
     alike). No surface claims the Mac will wake itself for a schedule.

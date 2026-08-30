@@ -153,7 +153,11 @@ unchanged; the file-manager noun inside longer phrases is `file manager`) ·
 "Execute now and the tray still work") · the §4.9 keepAwake row's sleep disclaimer
 (`sleepNote`) "Works best on an always-on Mac like a Mac mini or Mac Studio. A MacBook
 that is asleep would not trigger the automation." → "Works best on an always-on desktop
-PC. A laptop that is asleep would not trigger the automation." on both · model-facing instruction text naming the OS
+PC. A laptop that is asleep would not trigger the automation." on both · the §9.2 trigger
+editor's sleep-through note tail (`sleepMissNote`) "This is not an issue on Mac mini or
+Mac Studio, but a MacBook that is asleep will not fire on schedule." → "That is not an
+issue on an always-on desktop PC, but a laptop that is asleep will not fire on schedule."
+on both · model-facing instruction text naming the OS
 itself (`macOS`) → the §4.1 os display name via a `{{OS}}` placeholder beside `{{MACHINE}}`
 ("a macOS app" reads "a Windows app" / "a Linux app" there) · the §4.9 COMMAND LINE
 card's install location `~/.local/bin` → `%LOCALAPPDATA%\Autowright\bin` (the §3 per-OS
@@ -252,7 +256,10 @@ animation animates `transform` and would knock the toast off-center while it pla
   Everything else stays a real `<button>` — no other `div onClick`.
 - Icon-only buttons always carry an `aria-label` (the `title` tooltip stays for sighted
   users). `Toggle` renders `role="switch"` + `aria-checked`; radio groups (`RadioRing`
-  rows) render `role="radio"`/`aria-checked` inside a `role="radiogroup"`; a segmented
+  rows) render `role="radio"`/`aria-checked` inside a `role="radiogroup"`; checkboxes are
+  either real `<input type="checkbox">` elements inside a `<label>` or, where the whole row
+  is the button (§11 grant rows built from the §14 `CheckBox` glyph), a `role="checkbox"` +
+  `aria-checked` row; a segmented
   filter's buttons carry `aria-pressed`.
 - The `Modal` shell's card renders `role="dialog"` + `aria-modal="true"`;
   `ConfirmModal` upgrades it to `role="alertdialog"` labelled by its title. This also
@@ -534,12 +541,15 @@ Sections top to bottom:
   reddens date and group, and the preview shows the §19 `/triggers/preview` error verbatim —
   the copy comes from the backend: "the time must be in the future";
   either state blocks Add. Both the cron and One time forms end with the timezone picker,
-  then a **"Catch up if missed"** checkbox (the §4.3 `runIfMissed` field; checked by
-  default for a new trigger, the stored value on an edit swap) with the muted hint "If
-  this `<machine>` sleeps through the scheduled time, execute once when it wakes." and,
-  under it, a muted note line (the §3 sleep disclaimer, same muted-hint style as the
-  Discord sender-filter note): "Fires only while this Mac is awake. `<§9 sleepNote>`" —
-  the machine noun and the sleepNote sentence follow the §9 per-OS table. App start shows no
+  then a **"Catch up if missed"** checkbox (the §14 checkbox, a native input in a `<label>`
+  that hugs its content like the Discord mention box; the §4.3 `runIfMissed` field; checked by
+  default for a new trigger, the stored value on an edit swap) and, under it, one muted
+  note line flush with the form's left edge (the §3 sleep disclaimer, same muted-hint style
+  as the Discord sender-filter note) whose first sentence follows the checkbox: checked →
+  "If this `<machine>` sleeps through a scheduled time, the automation executes once when
+  it wakes. `<§9 sleepMissNote>`"; unchecked → "If this `<machine>` sleeps through a
+  scheduled time, that time is skipped. `<§9 sleepMissNote>`" - the machine noun and the
+  sleepMissNote sentence follow the §9 per-OS table. App start shows no
   input — just the preview line "On app start — executes when you launch the app", and its
   picker chip renders disabled (title "Already added") while the list holds one. A discord or
   imessage
@@ -592,9 +602,10 @@ Sections top to bottom:
   234567890123456789 — right-click their name → Copy User ID (needs Developer Mode, enabled
   in step 8)."), and an
   "Only when the bot
-  is mentioned" checkbox (§4.3 `mention`) — checked by default, so a fresh trigger fires only
-  on @-mentions unless the user unticks it; the label hugs its content (`align-self:
-  flex-start`) so the click target doesn't span the editor's full width; preview line "On Discord message in `<channel>`";
+  is mentioned" checkbox (the §14 checkbox, a native input in a `<label>`; §4.3 `mention`) — checked by default, so a fresh trigger fires only
+  on @-mentions unless the user unticks it; the label hugs its content (`width: fit-content`
+  — not `align-self`, which is inert outside a flex parent) so the click target doesn't span
+  the editor's full width; preview line "On Discord message in `<channel>`";
   Add stays disabled until the channel is digits, a secret is chosen, and the sender filter
   is empty or a comma-separated list of digit ids. The
   **iMessage editor**: while iMessage is the selected kind, a **setup guide** disclosure sits
@@ -966,8 +977,8 @@ closing restores nothing because nothing changed. Contents, top to bottom:
 - Both fields carry the app's standard text-field dimensions (`.ad-input` +
   `padding: 11px 14px`) and share one text style — 13 px / weight 400 / line-height 1.5 —
   so title and body read identically.
-- **Include environment info** — toggle (the shared §14 Toggle — the app has no checkbox
-  control), default on, with the rendered info block visible below it (mono, muted) so the
+- **Include environment info** — toggle (the shared §14 Toggle: this row is a settings-style
+  switch, not a §14 checkbox), default on, with the rendered info block visible below it (mono, muted) so the
   user sees exactly what would be included. Block lines — exactly two: app version (store
   `version` from `GET /state`, falling back to the Electron bundle version riding on the
   `platform-info` answer — the line never shows a bare "v") · OS name + release + arch

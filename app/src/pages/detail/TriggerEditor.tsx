@@ -545,7 +545,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             Copy User ID (needs Developer Mode, enabled in step 8).
           </div>
           <label style={{
-            display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, alignSelf: 'flex-start',
+            display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, width: 'fit-content',
             color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
           }}>
             <input type="checkbox" checked={mention} onChange={(e) => setMention(e.target.checked)} />
@@ -576,23 +576,20 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       {(kind === 'cron' || kind === 'time') && <TzPick timezone={timezone} onPick={setTz} />}
       {(kind === 'cron' || kind === 'time') && (
         // §9.2 "Catch up if missed": the §4.3 runIfMissed field (§6 wake catch-up)
-        <div style={{ marginTop: 8 }}>
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, alignSelf: 'flex-start',
-            color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
-          }}>
-            <input type="checkbox" checked={runIfMissed} onChange={(e) => setRunIfMissed(e.target.checked)} />
-            Catch up if missed
-          </label>
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 3, marginLeft: 20 }}>
-            If this {copy.machine} sleeps through the scheduled time, execute once when it wakes.
-          </div>
-        </div>
+        <label style={{
+          display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, width: 'fit-content',
+          color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none', marginTop: 8,
+        }}>
+          <input type="checkbox" checked={runIfMissed} onChange={(e) => setRunIfMissed(e.target.checked)} />
+          Catch up if missed
+        </label>
       )}
       {(kind === 'cron' || kind === 'time') && (
-        // §9.2 / §3 sleep disclaimer: a schedule can only fire on an awake machine
-        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 8 }}>
-          Fires only while this {copy.machine} is awake. {copy.sleepNote}
+        // §9.2 / §3 sleep disclaimer, one note: the first sentence follows the checkbox
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 6 }}>
+          If this {copy.machine} sleeps through a scheduled time,{' '}
+          {runIfMissed ? 'the automation executes once when it wakes.' : 'that time is skipped.'}
+          {' '}{copy.sleepMissNote}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>

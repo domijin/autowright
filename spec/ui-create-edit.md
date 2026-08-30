@@ -1123,7 +1123,8 @@ editors enter with
   step N.") - except an id carried by §4.1 `unresolvedReferences`, which warns with the
   imported name instead ("Step N calls `<NAME>` from the imported file, which has no
   match on this Mac - pick an agent or ask your AI to fix it."). All three derivations compare ids, never names — a rename changes nothing here. Per-automation
-  agent enablement list with "X of Y enabled"; agents called by steps — including
+  agent enablement list with "X of Y enabled" — one row per agent (name + model sub-line),
+  the whole row a `role="checkbox"` button leading with the §14 `CheckBox` glyph; agents called by steps — including
   named-but-disabled ones — show a "called by step N" note. Agents created anywhere else
   (Agents page) arrive unchecked in edit mode — stored grants never widen silently, same rule
   as secrets. The agents card is collapsible,
@@ -1139,7 +1140,8 @@ editors enter with
   missing id carried by §4.1 `unresolvedReferences` warns with the imported name
   ("`<NAME>` came from the imported file and has no match on this Mac - pick one of your
   secrets or ask your AI to fix it.") instead of the short id. The
-  card's checkboxes toggle secret **ids** in `allowedSecrets` (§4.1); all matching is by id. A used-but-not-allowed
+  card's checkboxes (one `role="checkbox"` row per secret, the §14 `CheckBox` glyph then the
+  mono name — the same row anatomy as the Agents card) toggle secret **ids** in `allowedSecrets` (§4.1); all matching is by id. A used-but-not-allowed
   secret is a grant gap (Dirty gating above): it locks saving until the secret is re-allowed or a
   sync rewrites the steps. A missing-from-Keychain secret only warns — adding the value through the
   fix row also allows it. "X of Y allowed". **Default state: on a new automation (create mode)

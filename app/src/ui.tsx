@@ -434,6 +434,12 @@ export function Toggle({ on, onChange, disabled, title }: {
   )
 }
 
+/** The §14 checkbox glyph for rows that are themselves the button (`role="checkbox"` +
+ *  `aria-checked` on the row); standalone checkboxes are native inputs styled by the same rule. */
+export function CheckBox({ on }: { on: boolean }) {
+  return <span className="ad-check" data-on={on || undefined} aria-hidden="true" />
+}
+
 export function RadioRing({ selected, size = 16 }: { selected: boolean; size?: number }) {
   return (
     <span style={{

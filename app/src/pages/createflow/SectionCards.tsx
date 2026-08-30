@@ -9,7 +9,7 @@ import { SecretModal } from '../../SecretModal'
 import { useTriggerPreview } from '../../triggers'
 import { StepList } from '../../steps'
 import type { Agent, SecretMeta, UnresolvedRefs } from '../../types'
-import { Caret, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
+import { Caret, CheckBox, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
 import { Markdown, SpecMarkdown } from '../../result'
 import { type AgentRef, type Rev, type SecretRef, applyTestValues, instrToMd, instructionCache, shortId, specToText, stepList, textToSpec } from './model'
 
@@ -102,19 +102,6 @@ function CardMarkdown({ children }: { children: React.ReactNode }) {
       {/* 18px side padding + matching negative margin so Markdown's full-bleed tables (-18px) fit */}
       <div style={{ padding: '0 18px', margin: '0 -18px' }}>{children}</div>
     </ScrollArea>
-  )
-}
-
-function CheckBox({ on }: { on: boolean }) {
-  return (
-    <span style={{
-      width: 15, height: 15, borderRadius: 4, flex: 'none', display: 'inline-flex',
-      alignItems: 'center', justifyContent: 'center',
-      background: on ? 'var(--accent)' : 'transparent',
-      border: `1px solid ${on ? 'var(--accent)' : 'var(--border-hover)'}`,
-    }}>
-      {on && <i className="fa-solid fa-check" style={{ fontSize: 9, color: 'var(--on-accent)' }} />}
-    </span>
   )
 }
 
@@ -405,6 +392,8 @@ export function LeftColumn({
                       showToast(`${agName(g)} is now available to steps — Sync spec if the steps should be rewritten to use it.`, 3600)
                     }
                   }}
+                  role="checkbox"
+                  aria-checked={on}
                   className="ad-btn-bare ad-focus-inset ad-hover-row"
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
                 >
@@ -469,6 +458,8 @@ export function LeftColumn({
                       up({ allowedSecrets: [...rev.allowedSecrets, s.id], ...(isEdit ? { touched: true } : {}) })
                     }
                   }}
+                  role="checkbox"
+                  aria-checked={on}
                   className="ad-btn-bare ad-focus-inset ad-hover-row"
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
                 >

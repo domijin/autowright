@@ -96,11 +96,17 @@ describe('§9.2 NO CATCH-UP badge', () => {
 })
 
 describe('§9.2 "Catch up if missed" checkbox', () => {
-  it('a new trigger starts checked, with the sleep-through hint', () => {
+  it('a new trigger starts checked, and the one sleep note follows the checkbox', () => {
     render(editor())
-    expect((screen.getByLabelText('Catch up if missed') as HTMLInputElement).checked).toBe(true)
-    expect(screen.getByText(/sleeps through the scheduled time, execute once when it wakes/))
+    const box = screen.getByLabelText('Catch up if missed') as HTMLInputElement
+    expect(box.checked).toBe(true)
+    // §9.2: a single note - the state sentence, then the §9 sleepMissNote tail
+    expect(screen.getByText(/^If this .* sleeps through a scheduled time, the automation executes once when it wakes\. This is not an issue on .*, but .* will not fire on schedule\.$/))
       .toBeTruthy()
+    fireEvent.click(box)
+    expect(screen.getByText(/^If this .* sleeps through a scheduled time, that time is skipped\. This is not an issue on/))
+      .toBeTruthy()
+    expect(screen.queryByText(/executes once when it wakes/)).toBeNull()
   })
 
   it('editing a stored trigger shows its choice: unchecked only for the opt-out', () => {

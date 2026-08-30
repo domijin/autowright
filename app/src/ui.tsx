@@ -608,6 +608,22 @@ export function stepTimeoutTitle(s: Step): string {
     : `This step is stopped if it runs longer than ${stepTimeoutLabel(s)}`
 }
 
+// §9.2 retry-tag label: "1 retry" / "<n> retries", "infinite retries" for
+// infiniteRetries steps; null when the step sets neither (the 0 default), so
+// no tag renders.
+export function stepRetriesLabel(s: Step): string | null {
+  if (s.infiniteRetries) return 'infinite retries'
+  const n = s.retries ?? 0
+  if (n <= 0) return null
+  return n === 1 ? '1 retry' : `${n} retries`
+}
+
+export function stepRetriesTitle(s: Step): string {
+  if (s.infiniteRetries) return 'If this step fails it runs again until it succeeds, or you cancel or skip it'
+  const n = s.retries ?? 0
+  return `If this step fails it runs again, up to ${n} more ${n === 1 ? 'time' : 'times'}`
+}
+
 /** Display label for an agent's model — a null model means the harness's own
  *  configured default (§4.7). */
 export function dispModel(ag: { model: string | null }): string {

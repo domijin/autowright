@@ -5,7 +5,7 @@ import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   nextIn, paramSummary, validUrl, badgeOf, resultChipColors, P, PyCode,
-  executingToast, stepTimeoutLabel, waitedLabel, durationLabel, dispModel, agName, logColor,
+  executingToast, stepTimeoutLabel, stepRetriesLabel, stepRetriesTitle, waitedLabel, durationLabel, dispModel, agName, logColor,
 } from '../src/ui'
 import type { ParamDef, Step } from '../src/types'
 
@@ -144,6 +144,26 @@ describe('stepTimeoutLabel (§9.2 clock tag)', () => {
   })
   it('absent timeout falls back to the 900s engine default', () => {
     expect(stepTimeoutLabel(s())).toBe('15m')
+  })
+})
+
+describe('stepRetriesLabel / stepRetriesTitle (§9.2 retry tag)', () => {
+  const s = (over: Partial<Step> = {}): Step => ({ name: 's', description: '', code: '', ...over } as Step)
+
+  it('absent or zero budget → no tag', () => {
+    expect(stepRetriesLabel(s())).toBeNull()
+    expect(stepRetriesLabel(s({ retries: 0 }))).toBeNull()
+  })
+  it('finite budget pluralizes', () => {
+    expect(stepRetriesLabel(s({ retries: 1 }))).toBe('1 retry')
+    expect(stepRetriesLabel(s({ retries: 5 }))).toBe('5 retries')
+    expect(stepRetriesTitle(s({ retries: 1 }))).toBe('If this step fails it runs again, up to 1 more time')
+    expect(stepRetriesTitle(s({ retries: 5 }))).toBe('If this step fails it runs again, up to 5 more times')
+  })
+  it('infiniteRetries wins', () => {
+    expect(stepRetriesLabel(s({ infiniteRetries: true }))).toBe('infinite retries')
+    expect(stepRetriesTitle(s({ infiniteRetries: true })))
+      .toBe('If this step fails it runs again until it succeeds, or you cancel or skip it')
   })
 })
 

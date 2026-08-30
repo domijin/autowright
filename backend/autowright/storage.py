@@ -72,6 +72,30 @@ def lenient_int(v: Any) -> int:
         return 0
 
 
+def step_json(s: dict) -> dict:
+    """The ONE §4.1 API serialization of an internal (snake_case) step — used
+    by versions, drafts, the pending slot, and the §19 draft-job result, so a
+    client never sees the §5/§8 `no_timeout` / `infinite_retries` spelling."""
+    out = {"name": s.get("name", ""), "description": s.get("description", ""), "code": s.get("code", ""), "file": s.get("file")}
+    if s.get("secrets"):
+        out["secrets"] = list(s["secrets"])
+    if s.get("packages"):
+        out["packages"] = list(s["packages"])
+    if s.get("agent"):
+        out["agent"] = True
+        out["agents"] = list(s.get("agents") or [])
+        out["why"] = s.get("why", "")
+    if s.get("timeout"):
+        out["timeout"] = lenient_int(s["timeout"])
+    if s.get("no_timeout"):
+        out["noTimeout"] = True
+    if s.get("retries"):
+        out["retries"] = lenient_int(s["retries"])
+    if s.get("infinite_retries"):
+        out["infiniteRetries"] = True
+    return out
+
+
 def lenient_local(s: Any) -> datetime | None:
     """§5 lenient serialization: a damaged stored timestamp reads as None -
     callers drop the display label instead of 500ing every /state."""
@@ -1834,24 +1858,7 @@ class Store:
 
     def step_json(self, s: dict) -> dict:
         """One step-serialization for versions, drafts, and the pending slot."""
-        out = {"name": s.get("name", ""), "description": s.get("description", ""), "code": s.get("code", ""), "file": s.get("file")}
-        if s.get("secrets"):
-            out["secrets"] = list(s["secrets"])
-        if s.get("packages"):
-            out["packages"] = list(s["packages"])
-        if s.get("agent"):
-            out["agent"] = True
-            out["agents"] = list(s.get("agents") or [])
-            out["why"] = s.get("why", "")
-        if s.get("timeout"):
-            out["timeout"] = lenient_int(s["timeout"])
-        if s.get("no_timeout"):
-            out["noTimeout"] = True
-        if s.get("retries"):
-            out["retries"] = lenient_int(s["retries"])
-        if s.get("infinite_retries"):
-            out["infiniteRetries"] = True
-        return out
+        return step_json(s)
 
     def draft_json(self, a: dict | None) -> dict | None:
         """§19: the ONE draft serializer behind /draft/{owner} — one container

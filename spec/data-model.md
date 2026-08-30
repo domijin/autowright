@@ -133,7 +133,8 @@ steps: [{ name, file, description, code, agent?, why?, agents?, secrets?, packag
   fails the step, and there is no automatic execution-level retry (§6). Like the timeout
   pair, both are written by the drafting agent per the §8 retry rule. On disk and in the §8
   manifest the keys are spelled `no_timeout`, `infinite_retries` (§5 yaml is snake_case); the
-  API serialization is `noTimeout`, `infiniteRetries`
+  API serialization is `noTimeout`, `infiniteRetries` in every payload that carries steps,
+  the §19 draft-job result included
 spec: block list [{ kind: h1|h2|p|li, text }] — the human-readable spec. The §5 spec.md
   conversion parses `#`/`##`/`- ` prefixes into h1/h2/li and merges other consecutive
   lines into one `p` - except numbered-list lines (`1. `-style), which each keep their own

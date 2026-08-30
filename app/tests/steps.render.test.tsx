@@ -217,6 +217,29 @@ describe('StepList (shared)', () => {
     expect(tag.closest('span')?.getAttribute('aria-label'))
       .toBe('This step calls the Cloud writer AI agent — writes the final summary')
   })
+
+  it('both variants: the §9.2 retry tag shows a set budget after the clock tag and hides at zero', () => {
+    const steps = [step({ retries: 5 }), step({ name: 'Forever', infiniteRetries: true }), step({ name: 'Plain' })]
+    for (const variant of ['detail', 'editor'] as const) {
+      cleanup()
+      render(variant === 'detail'
+        ? <StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} fallbackAgent="Cloud writer" />
+        : <StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />)
+      const five = screen.getByText('5 retries')
+      expect(five.closest('span')?.getAttribute('aria-label'))
+        .toBe('If this step fails it runs again, up to 5 more times')
+      expect(five.closest('span')?.querySelector('.fa-rotate-right')).toBeTruthy()
+      expect(screen.getByText('infinite retries').closest('span')?.getAttribute('aria-label'))
+        .toBe('If this step fails it runs again until it succeeds, or you cancel or skip it')
+      // one clock tag per step, retry tags only where a budget is set
+      expect(screen.getAllByText('15m')).toHaveLength(3)
+      expect(screen.queryAllByText(/retr/)).toHaveLength(2)
+      // order: the retry tag follows the clock tag within the same row
+      const row = five.closest('button')!
+      const labels = Array.from(row.querySelectorAll('span[aria-label]')).map((e) => e.textContent)
+      expect(labels.indexOf('15m')).toBeLessThan(labels.indexOf('5 retries'))
+    }
+  })
 })
 
 describe('stepSecretTags', () => {

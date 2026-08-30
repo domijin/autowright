@@ -1884,6 +1884,38 @@ def test_package_ensure_failure_is_nonfatal(monkeypatch):
     assert [s["file"] for s in j["draft"]["steps"]] == ["01-a.py", "02-b.py"]
 
 
+def test_sync_job_result_steps_use_api_spelling(monkeypatch):
+    # §19: a settled sync's draft.steps cross the API boundary in the §4.1
+    # camelCase serialization — the editor renders them without a reload, so
+    # the §9.2 "no limit" / "infinite retries" tags must see noTimeout /
+    # infiniteRetries, never the manifest's snake_case.
+    import time
+
+    from autowright import harness
+    from autowright.drafting import DraftJobs
+
+    flagged = (GOOD_STEPS
+               .replace("name: A, description: d }",
+                        "name: A, description: d, retries: 3, timeout: 45 }")
+               .replace("agent: true, why: needs judgment }",
+                        "agent: true, why: needs judgment, no_timeout: true, infinite_retries: true }"))
+    monkeypatch.setattr(harness, "invoke", lambda agent, prompt, **kw: flagged)
+    jobs = DraftJobs()
+    job_id = jobs.start("sync", {"harness": "Claude Code"}, None,
+                        {"spec": "# T\n\nBody."}, GRANTS)
+    for _ in range(100):
+        j = jobs.get(job_id)
+        if j["status"] in ("done", "failed", "blocked"):
+            break
+        time.sleep(0.05)
+    assert j["status"] == "done", j
+    a, b = j["draft"]["steps"]
+    assert a["retries"] == 3 and a["timeout"] == 45
+    assert b["noTimeout"] is True and b["infiniteRetries"] is True
+    for s in (a, b):
+        assert "no_timeout" not in s and "infinite_retries" not in s
+
+
 def test_validate_steps_package_blocks_and_number_min():
     # pip name with a version specifier → regex reject
     bad_pip = GOOD_STEPS.replace(

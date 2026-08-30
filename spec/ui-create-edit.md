@@ -1100,7 +1100,8 @@ editors enter with
   check has reported one (else without the version clause) and `why` the step entry's §4.1
   per-use note, falling back to the package declaration's §6.2 general `why` (no why at
   all — old data — drops the clause) — and every step
-  shows the §9.2 clock-icon time-limit tag (same labels and tooltips). Which agents a step calls is decided by
+  shows the §9.2 clock-icon time-limit tag and, when its §4.1 retry budget is set, the §9.2
+  rotate-icon retry tag (same labels, tooltips, and hide-at-zero rule). Which agents a step calls is decided by
   the drafting agent per the §8 selection rule — changing it happens through the spec or
   build instructions plus sync (or the agent-enablement card), not per step. Step rows expand the same way as §9.2 — whole-row click, caret-only right-edge
   affordance with the "View script" / "Hide script" tooltip, no text label, and independent

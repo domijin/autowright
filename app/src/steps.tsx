@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react'
 import { usePlatformCopy } from './platformCopy'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from './types'
-import { Caret, Collapse, MiniBadge, PyCode, Tag, Toggle, agName, dispModel, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
+import { Caret, Collapse, MiniBadge, PyCode, Tag, Toggle, agName, dispModel, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
 
 // §4.1/§6.1 code-reference scan: literal quoted uuid subscripts only.
 const SECRET_REF_RE = /\bsecrets\[\s*["']([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']\s*\]/g
@@ -175,6 +175,15 @@ function StepRow(props: StepRowProps) {
               >
                 {stepTimeoutLabel(step)}
               </Tag>
+              {stepRetriesLabel(step) && (
+                <Tag
+                  title={stepRetriesTitle(step)}
+                  icon="fa-rotate-right" c="var(--text-muted)"
+                  style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
+                >
+                  {stepRetriesLabel(step)}
+                </Tag>
+              )}
             </div>
             <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{step.description}</div>
           </div>
@@ -265,6 +274,15 @@ function StepRow(props: StepRowProps) {
             >
               {stepTimeoutLabel(step)}
             </Tag>
+            {stepRetriesLabel(step) && (
+              <Tag
+                icon="fa-rotate-right"
+                title={stepRetriesTitle(step)}
+                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
+              >
+                {stepRetriesLabel(step)}
+              </Tag>
+            )}
           </div>
           <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>{step.description}</div>
         </div>

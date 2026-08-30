@@ -36,7 +36,7 @@ from . import harness, packages as pkglib, paths, reqlog, triggers as triggerlib
 from .events import hub
 from .imports_check import ALLOWED_IMPORTS, disallowed_imports
 from .specmd import blocks_to_md, md_to_blocks
-from .storage import AGENT_REF_RE, SECRET_REF_RE
+from .storage import AGENT_REF_RE, SECRET_REF_RE, step_json
 
 log = logging.getLogger("autowright.drafting")
 
@@ -1635,6 +1635,11 @@ class DraftJobs:
                 draft["packages"],
                 on_progress=lambda spec: self._event(job, f"Installing {spec}…"))
 
+        # §19: the job payload is an API payload — its steps leave the
+        # manifest's snake_case (`no_timeout` / `infinite_retries`) here, in the
+        # same §4.1 serialization `/draft/{owner}` uses, so the editor applies
+        # a settled sync's steps unchanged.
+        draft["steps"] = [step_json(s) for s in draft.get("steps") or []]
         self._settle(job, "done", draft=draft)
 
     def _chat_call(self, job: dict, agent: dict, user_text: str | None,

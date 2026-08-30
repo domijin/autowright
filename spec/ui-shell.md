@@ -739,7 +739,13 @@ Sections top to bottom:
   ("60s", "15m", "1h" — hours when divisible by 3600, else minutes when divisible by 60, else
   seconds), the 900 s default ("15m") when the step sets none, "no limit" for `noTimeout`
   steps. Tooltip: "This step is stopped if it runs longer than `<label>`" / no-limit: "No time
-  limit — this step runs until it finishes or you cancel or skip it." Agents and
+  limit — this step runs until it finishes or you cancel or skip it." A step whose §4.1
+  retry budget is set carries one rotate-icon tag right after the clock tag: `retries`
+  humanized ("1 retry", "`<n>` retries"), "infinite retries" for `infiniteRetries` steps; a
+  step with neither (the 0 default) shows no retry tag, so a budget is visible before it is
+  ever used, not only as §7 attempt pills after a failure. Tooltip: "If this step fails it
+  runs again, up to `<n>` more time(s)" ("1 more time" in the singular) / infinite: "If this
+  step fails it runs again until it succeeds, or you cancel or skip it." Agents and
   secrets are changed on the edit page.
 - **SPEC panel** — collapsible (expand/collapse header toggle), expanded by default; the automation's spec blocks rendered through the shared §4.5 Markdown renderer, footer: "The AI regenerates the steps from this
   document when you edit it. Every change mints a new version — older ones live in the Version

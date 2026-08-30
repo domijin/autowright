@@ -386,7 +386,10 @@ remain plain dicts (§2).
   `stageTimes` (one `{stage, time}` per stage entered) and `endedTime` (epoch seconds,
   `null` while building), backing the §11 per-step durations; on a chat job that flipped stages, `plan` —
   the §8 pre-marker prose, set at the flip so the §11 thread lands "The plan" mid-job) +
-  validated §8 draft payload; a `blocked` job's state is
+  validated §8 draft payload, its `draft.steps` in the §4.1 API serialization
+  (`noTimeout` / `infiniteRetries`, the same `step_json` shape as `GET /draft/{owner}`;
+  the §8 manifest's snake_case never reaches a client, so the §11 editor applies a settled
+  sync's steps unchanged and the §9.2 clock / retry tags read them directly); a `blocked` job's state is
   `blocked` and it carries the §8 `blockers` list — each entry `{ reason, fix, details?,
   kind? }`, `kind` only ever `user-action` (§8) — plus `blockedAt: steps | chat` (`steps`
   on a sync call; a blocker response's optional `notes.md` — §8 — rides the payload as

@@ -150,7 +150,10 @@ becomes "— unlock your keyring and try again" (the Secret Service store does l
 unchanged; the file-manager noun inside longer phrases is `file manager`) ·
 `menu bar` → `tray`
 (the §13 surface's name on both — "starts quietly in the tray", "Show in the tray",
-"Execute now and the tray still work") · model-facing instruction text naming the OS
+"Execute now and the tray still work") · the §4.9 keepAwake row's sleep disclaimer
+(`sleepNote`) "Works best on an always-on Mac like a Mac mini or Mac Studio. A MacBook
+that is asleep would not trigger the automation." → "Works best on an always-on desktop
+PC. A laptop that is asleep would not trigger the automation." on both · model-facing instruction text naming the OS
 itself (`macOS`) → the §4.1 os display name via a `{{OS}}` placeholder beside `{{MACHINE}}`
 ("a macOS app" reads "a Windows app" / "a Linux app" there) · the §4.9 COMMAND LINE
 card's install location `~/.local/bin` → `%LOCALAPPDATA%\Autowright\bin` (the §3 per-OS
@@ -529,7 +532,10 @@ Sections top to bottom:
   with preview "Hours go 0–23, minutes and seconds 0–59"; a complete pair in the past
   reddens date and group, and the preview shows the §19 `/triggers/preview` error verbatim —
   the copy comes from the backend: "the time must be in the future";
-  either state blocks Add. App start shows no
+  either state blocks Add. Both the cron and One time forms end with the timezone picker
+  and, under it, a muted note line (the §3 sleep disclaimer, same muted-hint style as the
+  Discord sender-filter note): "Fires only while this Mac is awake. `<§9 sleepNote>`" —
+  the machine noun and the sleepNote sentence follow the §9 per-OS table. App start shows no
   input — just the preview line "On app start — executes when you launch the app", and its
   picker chip renders disabled (title "Already added") while the list holds one. A discord or
   imessage

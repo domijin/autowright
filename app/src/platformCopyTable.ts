@@ -36,6 +36,9 @@ export interface PlatformCopy {
   // Windows. Interpolated into the sentences that name it ("starts quietly in
   // the …", "Show in the …", "Execute now and the … still work").
   menuBar: string
+  // §4.9 keepAwake row: the §3 sleep disclaimer sentence — what the idle-sleep
+  // assertion cannot do (a closed-lid laptop runs nothing until it wakes).
+  sleepNote: string
 }
 
 const MACOS: PlatformCopy = {
@@ -49,6 +52,7 @@ const MACOS: PlatformCopy = {
   cliBinDir: '~/.local/bin',
   terminalNoun: 'the Terminal',
   menuBar: 'menu bar',
+  sleepNote: 'Works best on an always-on Mac like a Mac mini or Mac Studio. A MacBook that is asleep would not trigger the automation.',
 }
 
 const WINDOWS: PlatformCopy = {
@@ -64,6 +68,7 @@ const WINDOWS: PlatformCopy = {
   cliBinDir: '%LOCALAPPDATA%\\Autowright\\bin',
   terminalNoun: 'a terminal',
   menuBar: 'tray',
+  sleepNote: 'Works best on an always-on desktop PC. A laptop that is asleep would not trigger the automation.',
 }
 
 const LINUX: PlatformCopy = {
@@ -80,6 +85,7 @@ const LINUX: PlatformCopy = {
   cliBinDir: '~/.local/bin',
   terminalNoun: 'a terminal',
   menuBar: 'tray',
+  sleepNote: 'Works best on an always-on desktop PC. A laptop that is asleep would not trigger the automation.',
 }
 
 /** §9 per-OS copy for a §5.1 platform token — the pure form, for module-level

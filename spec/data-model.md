@@ -966,8 +966,11 @@ menuBarIcon: bool       — "Show in the menu bar" ("The quickest way to execute
   another app's dev shell). `menuBarIcon` creates or
   destroys the tray icon live (no restart; hiding it also hides an open §13 panel).
 keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac from sleeping so
-  schedules and message triggers keep firing. The display can still sleep.") — while on, the
-  backend holds a permanent idle-sleep power assertion (§3 sleep bullet); applied live on
+  schedules and message triggers keep firing. The display can still sleep. Works best on an
+  always-on Mac like a Mac mini or Mac Studio. A MacBook that is asleep would not trigger
+  the automation.") — while on, the backend holds a permanent idle-sleep power assertion (§3 sleep
+  bullet); the trailing sleep disclaimer is the §9 table's per-OS `sleepNote` sentence, the
+  one honest line about what the assertion cannot do (forced sleep, §3); applied live on
   settings change, no restart. Row sits in the GENERAL card below "Show in the menu bar".
   The row renders only while the §9 store's `capabilities.keepAwake` is true (§2 gating):
   the setting itself stays stored and CLI-visible everywhere, but the card never promises an

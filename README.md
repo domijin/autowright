@@ -33,7 +33,8 @@ Or build from source - see §18 in [SPEC.md](SPEC.md).
   a local Ollama model for fully offline drafting.
 - **Real scheduling** - cron with per-trigger timezones, one-shot triggers, run-on-app-start,
   and manual "Execute now". Runs even with the app closed (background service), with a
-  missed-run policy for sleep and downtime.
+  missed-run policy for sleep and downtime. Works best on an always-on Mac like a Mac mini
+  or Mac Studio. A MacBook that is asleep would not trigger automations.
 - **Versioned automations** - every approved edit is a new version; drafts run in isolation
   before you promote them.
 - **Persistent memory with snapshots** - automations keep state between runs, with automatic

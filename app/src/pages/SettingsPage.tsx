@@ -242,7 +242,7 @@ export default function SettingsPage() {
             }}>
               <div style={{ flex: 1 }}>
                 <div style={rowTitle}>Keep this {copy.machine} awake</div>
-                <div style={rowSub}>Prevents this {copy.machine} from sleeping so schedules and message triggers keep firing. The display can still sleep.</div>
+                <div style={rowSub}>Prevents this {copy.machine} from sleeping so schedules and message triggers keep firing. The display can still sleep. {copy.sleepNote}</div>
               </div>
               <Toggle on={settings.keepAwake} onChange={(v) => patch({ keepAwake: v })} />
             </div>

@@ -604,6 +604,15 @@ the update bullets below).
     logging out of the OS session still stops the service (and on macOS locks the Keychain,
     headless bullets below); for an unattended machine, stay logged in (screen lock is fine)
     or enable auto-login.
+  - **Sleep disclaimer:** because the assertions stop idle sleep only, the app says so
+    wherever it promises background firing: the app works best on an always-on desktop
+    (a Mac mini or Mac Studio), and a MacBook that is asleep would not trigger the
+    automation (on wake the §6 missed-executions rule fires one catch-up). The sentence appears on the
+    §4.9 keepAwake row (per-OS via the §9 `sleepNote` entry), under the §9.2 trigger
+    editor's Cron and One time forms (prefixed "Fires only while this Mac is awake."), in
+    the §20 `settings set` help's `keepAwake` line, in the README's scheduling feature bullet, and in the §17
+    website FAQ's "What does Autowright need to run?" answer (HTML and JSON-LD mirror
+    alike). No surface claims the Mac will wake itself for a schedule.
 
   Per-OS mechanisms. **macOS** (`awake.py`, delegated to by `platform/darwin.py`): each
   assertion is its own `caffeinate -i -w <backend pid>` subprocess — the `-w` ties it to the

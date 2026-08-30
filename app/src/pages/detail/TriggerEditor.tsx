@@ -572,6 +572,12 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
         </div>
       ) : null}
       {(kind === 'cron' || kind === 'time') && <TzPick timezone={timezone} onPick={setTz} />}
+      {(kind === 'cron' || kind === 'time') && (
+        // §9.2 / §3 sleep disclaimer: a schedule can only fire on an awake machine
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 8 }}>
+          Fires only while this {copy.machine} is awake. {copy.sleepNote}
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 9 }}>
         <span style={{
           flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11,

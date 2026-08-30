@@ -536,7 +536,9 @@ Sections top to bottom:
   minutes/seconds 0–59; from empty the first press lands on `00`); Backspace in an empty
   segment jumps back; a lone digit zero-pads on blur ("9" → "09"); pasting a full time into
   any segment distributes the digit pairs across it and the following segments. The three
-  segments and the date combine into the stored `at`. An out-of-range time reddens the group
+  segments and the date combine into the stored `at`. Every trigger field box — the cron-expression input,
+the native date input, the time group, and the Discord/iMessage text inputs — shares
+one fixed 30 px height, so fields sitting side by side align exactly. An out-of-range time reddens the group
   with preview "Hours go 0–23, minutes and seconds 0–59"; a complete pair in the past
   reddens date and group, and the preview shows the §19 `/triggers/preview` error verbatim —
   the copy comes from the backend: "the time must be in the future";

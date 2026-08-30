@@ -18,6 +18,9 @@ const pickChipStyle = (active: boolean): React.CSSProperties => ({
   transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter)',
 })
 
+// §9.2: every trigger field box shares one fixed height so side-by-side fields align
+const fieldStyle: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 12, height: 30, padding: '0 10px' }
+
 const TZ_LIST: string[] = Intl.supportedValuesOf('timeZone')
 
 type AddableKind = 'cron' | 'time' | 'app_start' | 'discord' | 'imessage'
@@ -177,8 +180,8 @@ function TimeParts({ parts, invalid, onChange }: {
     <div
       className={`ad-input${invalid ? ' invalid' : ''}`}
       style={{
-        display: 'flex', alignItems: 'baseline', padding: '7px 9px',
-        fontFamily: 'var(--mono)', fontSize: 12, cursor: 'text',
+        display: 'flex', alignItems: 'center', ...fieldStyle,
+        padding: '0 9px', cursor: 'text',
       }}
     >
       {parts.map((p, i) => (
@@ -481,7 +484,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
           onChange={(e) => setExpr(e.target.value)}
           placeholder="0 8 * * *   (minute hour day month weekday, Sun = 0)"
           spellCheck={false}
-          style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
+          style={{ width: '100%', ...fieldStyle }}
         />
       ) : kind === 'time' ? (
         <div style={{ display: 'flex', gap: 8 }}>
@@ -490,7 +493,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            style={{ fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px', colorScheme: 'dark' }}
+            style={{ ...fieldStyle, colorScheme: 'dark' }}
           />
           <TimeParts
             parts={tparts}
@@ -506,7 +509,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             onChange={(e) => setChannel(e.target.value.trim())}
             placeholder="Channel id (numbers — right-click the channel → Copy Channel ID)"
             spellCheck={false}
-            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
+            style={{ width: '100%', ...fieldStyle }}
           />
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <SecretPick secrets={secrets} selected={secret} onPick={setSecret} />
@@ -529,7 +532,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             placeholder="Message filter — only messages containing… (optional)"
             title="Fires only when the message contains this text — case-insensitive, plain substring"
             spellCheck={false}
-            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
+            style={{ width: '100%', ...fieldStyle }}
           />
           <input
             className={`ad-input${author && !authorOk ? ' invalid' : ''}`}
@@ -537,7 +540,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             onChange={(e) => setAuthor(e.target.value)}
             placeholder="Sender filter — only messages from these user ids (optional)"
             spellCheck={false}
-            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
+            style={{ width: '100%', ...fieldStyle }}
           />
           <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: -2 }}>
             Fires only on messages from these Discord users — comma-separate several ids.
@@ -560,7 +563,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             onChange={(e) => setFrom(e.target.value)}
             placeholder="Sender — +15551234567 or an email"
             spellCheck={false}
-            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
+            style={{ width: '100%', ...fieldStyle }}
           />
           <input
             className="ad-input"
@@ -569,7 +572,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             placeholder="Message filter — only messages containing… (optional)"
             title="Fires only when the message contains this text — case-insensitive, plain substring"
             spellCheck={false}
-            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px' }}
+            style={{ width: '100%', ...fieldStyle }}
           />
         </div>
       ) : null}

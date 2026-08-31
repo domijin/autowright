@@ -82,12 +82,12 @@ def test_imessage_trigger_fires_and_replies(backend_factory, tmp_path):
             return (t.get("connection") or {}).get("state") == "connected"
 
         wait_for(connected, 30, "imessage watcher to connect")
-        assert c.get("/executions").json() == []  # history row didn't fire
+        assert c.get("/executions").json()["executions"] == []  # history row didn't fire
 
         _add_msg(db, 2, "fresh message, please run")
 
         def fired():
-            ex = c.get("/executions").json()
+            ex = c.get("/executions").json()["executions"]
             return ex[0] if ex else None
 
         e = wait_for(fired, 30, "message firing to reach an execution")

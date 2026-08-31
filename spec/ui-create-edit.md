@@ -446,7 +446,7 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
   stamped — the newest line's tick is the stage's pulse, and a title stamp would only
   double it. The
   ticking values advance client-side once per second from the §19 `stageTimes` and event
-  stamps and read whole seconds (the §7 WAITING FOR treatment — the 700 ms poll is never
+  stamps and read whole seconds (the §7 QUEUED FOR treatment — the 700 ms poll is never
   the tick source, and tenths would only flicker); at settle they freeze into the
   activity entry's persisted durations in the precise label ("12s" settles as "12.3s").
   The feed and detail lines render as the operation-block bullets

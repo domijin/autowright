@@ -276,26 +276,37 @@ the redundant pair (a mocked sender still appears between: "Test · Dave"). Test
 the record's draft-scoped lifetime (§11 keep-latest): starting the next test replaces the
 previous row, and a settling draft removes its rows. Three sections, top to bottom —
 active work, then what it is holding up, then history: **Running** (`executing` rows, newest
-start first), **Waiting** (§6 firing-queue `queued` rows, oldest wait first — the drain order,
-so the next one to run reads top), **Finished** (most recently ended first, by §4.5 `endedMs`;
-start time stands in for records that never got an end, e.g. interrupted rows — end-time sort
-is what lets a finishing execution slide from the top section to the top of the finished one).
-Running and Waiting each render only when they hold rows, and a promoted firing moves itself
-from Waiting to Running with no refetch. Queued rows get their own section rather than sitting
+start first), **Queued** (§6 firing-queue `queued` rows, oldest wait first — the drain order,
+so the next one to run reads top), **Finished** (newest start first, by §4.5 `startedMs`, id
+ascending on ties: the one canonical order the §19 `/state` window, the `GET /executions`
+keyset, and the §5 `(started_at DESC, id)` index all share, which is what lets paged fetches
+line up seamlessly with the live window. `endedMs` plays no part in ordering, so a finishing
+execution slides down into the position its start time earns, not automatically to the top of
+Finished; a long run lands below everything that started after it, matching how Running
+itself is ordered).
+Running and Queued each render only when they hold rows, and a promoted firing moves itself
+from Queued to Running with no refetch. Queued rows get their own section rather than sitting
 in Running because their columns differ and because "waiting on a slot" is a different question
-from "running now" — but not their own tab: the state is transient (`AUTOWRIGHT_QUEUE_TTL_S`,
-§15, caps a wait at 120s by default), usually empty, and a tab would hide it behind a click
-while competing with the filter control for the same header slot. With nothing live or waiting
+from "running now". With nothing live or queued
 the page stays a single unlabeled table; as soon as either section exists, every rendered
-section gets a small mono label (RUNNING / WAITING / FINISHED) and an empty Finished section
+section gets a small mono label (RUNNING / QUEUED / FINISHED) and an empty Finished section
 shows the filter's empty-state card. That card's title: "No `<filter>` executions" ("No
-succeeded executions" / "No failed executions") under a filter; on All, "No finished
+succeeded executions", "No running executions" - the filter name lowercased) under a
+filter; on All, "No finished
 executions yet" when sections are labelled, else "No executions yet". Body: "Executions
 matching this filter will appear here." under a filter; on All, "Finished executions will
 appear here." when labelled, else "Execute an automation — every execution will appear
-right here." The All / Succeeded / Failed filter applies to finished
-rows only — running and waiting rows stay visible under every filter. The Waiting table swaps
-the last two columns for **WAITING FOR** (elapsed since §4.5 `queuedMs`, ticking every second)
+right here." The status filter is the page title's segmented control: **All · Running ·
+Queued · Succeeded · Failed · Cancelled · Skipped · Interrupted** - single-select, in the
+sections' own order. The three-section stack belongs to **All** alone; every other segment
+shows exactly one table with no sections stacked above it (and no mono section label - a
+single table needs none). A terminal segment shows that status's finished rows. **Running**
+shows just the `executing` rows (normal columns) and **Queued** just the `queued` rows (its
+own columns, below); segment labels are the section names, never the raw §4.6 words
+("Running", not "executing"). Both live segments read entirely from the §19 window - every
+live row always rides it - so neither ever fetches, pages, or renders the Show-more
+control. The Queued table swaps
+the last two columns for **QUEUED FOR** (elapsed since §4.5 `queuedMs`, ticking every second)
 and **QUEUED AT**; a queued row has no duration and has not started, so showing either would be
 a lie. Each row shows the automation name with
 the short execution id (mono, first 8 characters — the same short form the detail page's
@@ -306,16 +317,31 @@ second line beneath it, status badge, a trigger column combining trigger and ver
 text — skipped/cancelled notes appear on the detail page's RECENT EXECUTIONS rows and on the
 execution page.
 
-**Finished cap.** The Finished section renders at most **200 rows** at a time. Retention (§5)
-defaults to 90 days and `keepForever` turns cleanup off entirely, so finished history has no
-upper bound, and §19 `GET /state` hands the renderer every header; painting thousands of grid
-rows would cost the page its responsiveness for history nobody scrolls to. When the active
-filter matched more rows than the cap shows, one quiet text control sits under the finished
-table: "Show more (N hidden)", N being the withheld count, thousands-separated
-("Show more (1,240 hidden)"). Each click raises the cap by another 200, and the control stops
-rendering once every matching row is on screen. The cap is view state only, held by the page
-component: it resets to 200 when the page unmounts, it is never stored or synced, and changing
-the filter leaves it where the user put it. Running and Waiting are never capped. Both are
-naturally small (`AUTOWRIGHT_QUEUE_TTL_S`, §15, caps a wait at 120 s by default) and both are
-the live rows the page exists to surface.
+**Finished paging.** Retention (§5) defaults to 90 days and `keepForever` turns cleanup off
+entirely, so finished history has no upper bound; it moves in pages of **200 rows** and never
+rides into the renderer whole. §19 `GET /state` ships a **window**, not the full list: every
+`queued` and `executing` header, the 200 newest finished headers, and `executionsTotal` (the
+count of every header the backend holds, §4.5 test rows included - the §9 sidebar pill's
+number). The page derives Running, Queued, and the first Finished page from that window, so
+it opens with no fetch of its own. Deeper history and the terminal filters come from §19
+`GET /executions` (the Running and Queued segments never fetch - the window is already
+complete for live rows): picking a terminal filter fetches that status's newest page
+(`?status=<status>&limit=200`; while the fetch is in flight the section shows the window's
+matching rows), and one quiet text control under the finished table, **"Show more (N
+hidden)"**, fetches the next page with the keyset cursor - `beforeStartedMs`/`beforeId` from
+the last rendered finished row, `status=finished` when the filter is All. N is the withheld
+count, thousands-separated ("Show more (1,240 hidden)"): the filter's server `total` (on All,
+`executionsTotal` minus the live rows) minus the finished rows on screen, and the control
+stops rendering when nothing is withheld. A failed page fetch surfaces the standard error
+toast and leaves the control in place. Fetched rows are headers, exactly like the window's,
+and merge with the window by id (window wins - it is fresher), sorted in the canonical order,
+so a run finishing mid-scroll still lands at the top via its §19 event while the fetched tail
+stays put. Fetched pages are view state only, held by the page component: they reset when the
+page unmounts and whenever the filter changes (each filter change starts from its own fresh
+first page), and are never stored or synced. Running and Queued are never capped or paged.
+Both are naturally small (`AUTOWRIGHT_QUEUE_TTL_S`, §15, caps a wait at 120 s by default) and
+both are the live rows the page exists to surface. The pill's `executionsTotal` is kept in
+step by the §19 execution events (a header id the store has never seen counts as one more)
+and trued up by every `/state` refresh; a §5 retention sweep announces nothing, so the count
+can run slightly stale between refreshes, never wrong by more than the swept rows.
 

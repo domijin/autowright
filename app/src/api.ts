@@ -115,6 +115,22 @@ export const api = {
   // §7 skip: index must be the currently executing step (409 otherwise)
   skipStep: (executionId: string, index: number) =>
     req('POST', `/executions/${executionId}/skip-step`, { index }),
+  // §19 executions query — §7 paging: status filter (a §4.6 status or
+  // 'finished' = any terminal one), keyset cursor, envelope with the match
+  // total (what sizes "Show more (N hidden)").
+  listExecutions: (opts: {
+    automation?: string; status?: string; limit?: number
+    before?: { startedMs: number; id: string }
+  } = {}) => {
+    const q = [
+      ...(opts.automation !== undefined ? [`automation=${encodeURIComponent(opts.automation)}`] : []),
+      ...(opts.status !== undefined ? [`status=${opts.status}`] : []),
+      ...(opts.limit !== undefined ? [`limit=${opts.limit}`] : []),
+      ...(opts.before ? [`beforeStartedMs=${opts.before.startedMs}`, `beforeId=${opts.before.id}`] : []),
+    ]
+    return req<{ executions: import('./types').Execution[]; total: number }>(
+      'GET', `/executions${q.length ? `?${q.join('&')}` : ''}`)
+  },
   getExecution: (executionId: string) => req<import('./types').Execution>('GET', `/executions/${executionId}`),
   // §19 lazy logs: both params → that step attempt's file; neither → the execution log.
   // `tail` caps the response at the last N lines of that log (§7: the pane is

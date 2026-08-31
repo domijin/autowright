@@ -22,6 +22,7 @@ vi.mock('../src/api', () => ({
     state: vi.fn(() => Promise.reject(new Error('offline'))),
     getAutomation: vi.fn(() => Promise.reject(new Error('offline'))),
     triggersPreview: vi.fn(async () => ({ triggers: [] })),
+    listExecutions: vi.fn(async () => ({ executions: [], total: 0 })),
     detectAgents: vi.fn(async () => []),
     ollamaStatus: vi.fn(async () => ({ ready: false, installed: false, models: [] })),
     checkHarness: vi.fn(async () => ({ status: 'ready' })),

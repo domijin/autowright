@@ -129,7 +129,9 @@ def find_automation(c: Client, ref: str) -> dict:
 
 
 def find_execution(c: Client, ref: str | None) -> dict:
-    execs = c.req("GET", "/executions")
+    # §19/§20: no limit — reference resolution reads the uncapped list, so
+    # every short id the CLI ever printed resolves back (§20 reference rule).
+    execs = c.req("GET", "/executions")["executions"]
     if not ref:
         if execs:
             return execs[0]
@@ -1022,16 +1024,18 @@ def cmd_snapshot_delete(c: Client, args) -> None:
 # ---------------------------------------------------------------- execution
 
 def cmd_execution_list(c: Client, args) -> None:
-    q = []
+    # §20: -n rides to the server as the §19 limit — only the printed rows
+    # cross the wire.
+    q = [f"limit={args.n}"]
     if args.automation:
         q.append(f"automation={find_automation(c, args.automation)['id']}")
     if args.status:
         q.append(f"status={args.status}")
-    execs = c.req("GET", "/executions" + ("?" + "&".join(q) if q else ""))
+    data = c.req("GET", "/executions?" + "&".join(q))
     if args.json:
-        _pjson(execs[: args.n])
+        _pjson(data)
         return
-    for e in execs[: args.n]:
+    for e in data["executions"]:
         print(f"{e['started']:<22} {e['automationName']:<30} {e['versionLabel']:<6} {e['status']:<11} "
               f"{e['duration']:<8} {e['trigger']:<9} [{e['id'][:8]}]")
 
@@ -2057,9 +2061,10 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                         "name, a unique part of its name, its id, or an id prefix")
     p.add_argument("--status", metavar="STATUS",
                    choices=["queued", "executing", "succeeded", "failed",
-                            "cancelled", "skipped", "interrupted"],
+                            "cancelled", "skipped", "interrupted", "finished"],
                    help="only executions in this state: queued (waiting for a free slot), "
-                        "executing, succeeded, failed, cancelled, skipped, or interrupted")
+                        "executing, succeeded, failed, cancelled, skipped, interrupted, "
+                        "or finished (any of the last five)")
     p = _sub(eg, "show", cmd_execution_show, "print one execution's steps, error, and result",
              json_flag=True,
              description="One execution in detail: how it ended and how long it took, every "

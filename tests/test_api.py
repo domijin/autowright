@@ -14,7 +14,10 @@ def test_auth_required(client):
 
 def test_state_shape(client):
     r = client.get("/state").json()
-    assert set(r) >= {"automations", "executions", "agents", "secrets", "settings", "version"}
+    assert set(r) >= {"automations", "executions", "executionsTotal", "agents", "secrets",
+                      "settings", "version"}
+    # §7: executions is a window, executionsTotal counts every header
+    assert r["executionsTotal"] == len(r["executions"])
 
 
 def test_instructions_endpoint(client):
@@ -1144,7 +1147,7 @@ def test_app_started_fires_enabled_app_start_triggers(client, monkeypatch):
     launch_id = f"launch-{uuid.uuid4()}"
     assert client.post("/app-started", json={"launchId": launch_id}).json() == {"fired": 1}
     _until(events, "execution.finished")
-    execs = client.get("/executions").json()
+    execs = client.get("/executions").json()["executions"]
     assert [e["trigger"] for e in execs if e["automationId"] == a["id"]] == ["App start"]
     assert [e for e in execs if e["automationId"] == b["id"]] == []
     # §4.3 derived display: app_start contributes no nextAt
@@ -3457,6 +3460,126 @@ def test_chat_assembles_pkg_state_section(client):
     assert "=== PACKAGES" in logged
     assert "left-pad-nope" in logged
     assert "status: missing" in logged
+
+
+# ---------- §19 GET /executions: envelope, filters, keyset paging ----------
+
+def _exec_at(auto, minute, status="succeeded"):
+    """One execution with a pinned §4.5 started_at, so the §7 canonical order
+    is deterministic instead of clock-resolution luck. Same minute twice → a
+    real startedMs tie for the id tiebreak."""
+    from autowright.storage import store
+
+    h = store.create_execution(auto, "version", 1, "manual", [], status=status)
+    h["started_at"] = f"2026-07-29T08:{minute:02d}:00.000000+00:00"
+    store.update_execution(h)
+    return h
+
+
+def test_executions_envelope_and_canonical_order(client):
+    """§19 GET /executions answers `{executions, total}` — never a bare list —
+    with rows in the §7 canonical order: startedMs desc, id asc on ties."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Ordered", "mock")
+    oldest = _exec_at(a, 1)
+    tie_a, tie_b = sorted((_exec_at(a, 5), _exec_at(a, 5)), key=lambda h: h["id"])
+    newest = _exec_at(a, 9)
+
+    body = client.get("/executions").json()
+    assert set(body) == {"executions", "total"}
+    assert [e["id"] for e in body["executions"]] == [newest["id"], tie_a["id"],
+                                                     tie_b["id"], oldest["id"]]
+    assert body["total"] == 4
+
+
+def test_executions_unknown_status_is_422(client):
+    """§19: an unknown status names the vocabulary, never an empty list."""
+    r = client.get("/executions", params={"status": "bogus"})
+    assert r.status_code == 422
+    assert "finished" in r.json()["detail"] and "succeeded" in r.json()["detail"]
+
+
+def test_executions_finished_filter_excludes_live_rows(client):
+    """§19: `finished` matches every terminal §4.6 status — queued and
+    executing rows stay out; a single status still filters to just itself."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Mixed", "mock")
+    done = _exec_at(a, 1)
+    failed = _exec_at(a, 2, status="failed")
+    _exec_at(a, 3, status="queued")
+    _exec_at(a, 4, status="executing")
+
+    body = client.get("/executions", params={"status": "finished"}).json()
+    assert [e["id"] for e in body["executions"]] == [failed["id"], done["id"]]
+    assert body["total"] == 2
+
+    only_failed = client.get("/executions", params={"status": "failed"}).json()
+    assert [e["id"] for e in only_failed["executions"]] == [failed["id"]]
+    assert only_failed["total"] == 1
+
+
+def test_executions_limit_caps_rows_not_total(client):
+    """§19: `total` counts every match regardless of `limit` — it is what
+    sizes the §7 "Show more (N hidden)" control. limit below 1 → 422."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Capped", "mock")
+    _exec_at(a, 1)
+    _exec_at(a, 2)
+    newest = _exec_at(a, 3)
+
+    body = client.get("/executions", params={"limit": 1}).json()
+    assert [e["id"] for e in body["executions"]] == [newest["id"]]
+    assert body["total"] == 3
+    assert client.get("/executions", params={"limit": 0}).status_code == 422
+
+
+def test_executions_keyset_cursor_pages_without_gaps(client):
+    """§19: beforeStartedMs + beforeId select rows strictly after that position
+    in sort order — consecutive pages neither overlap nor skip. One without
+    the other is ambiguous → 422, never a silent default."""
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "Paged", "mock")
+    for minute in range(1, 5):
+        _exec_at(a, minute)
+    everything = client.get("/executions", params={"status": "finished"}).json()["executions"]
+    assert len(everything) == 4
+
+    page1 = client.get("/executions", params={"status": "finished", "limit": 2}).json()
+    assert [e["id"] for e in page1["executions"]] == [e["id"] for e in everything[:2]]
+    assert page1["total"] == 4
+
+    last = page1["executions"][-1]
+    page2 = client.get("/executions", params={
+        "status": "finished", "limit": 2,
+        "beforeStartedMs": last["startedMs"], "beforeId": last["id"]}).json()
+    assert page2["total"] == 4          # the cursor never shrinks the count
+    assert [e["id"] for e in page1["executions"] + page2["executions"]] == \
+        [e["id"] for e in everything]
+
+    for half in ({"beforeStartedMs": last["startedMs"]}, {"beforeId": last["id"]}):
+        assert client.get("/executions", params=half).status_code == 422
+
+
+def test_state_executions_window_and_total(client, monkeypatch):
+    """§19 GET /state ships a §7 window: every live header plus the newest
+    finished page, with executionsTotal counting every header the backend
+    holds — the §9 sidebar pill's number."""
+    from autowright import api
+    from autowright.storage import store
+
+    monkeypatch.setattr(api, "EXECUTIONS_PAGE_LIMIT", 2)
+    a = store.create_automation(make_version(), "Windowed", "mock")
+    finished = [_exec_at(a, minute) for minute in range(1, 5)]
+    running = _exec_at(a, 9, status="executing")
+
+    body = client.get("/state").json()
+    assert [e["id"] for e in body["executions"]] == [
+        running["id"], finished[3]["id"], finished[2]["id"]]
+    assert body["executionsTotal"] == 5
 
 
 # ---------- §19 retry / skip-step endpoints ----------

@@ -100,7 +100,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   skip. A queued firing is a **real execution record** with status `queued` (§4.6) carrying its
   §4.5 `triggerPayload` (a manual entry carries none) — it appears in Executions immediately
   (admission publishes the §19
-  `execution.queued` event, so the §7 Waiting section and the §9.2 "N waiting" line update live),
+  `execution.queued` event, so the §7 Queued section and the §9.2 "N waiting" line update live),
   is addressable by
   `POST /executions/{id}/cancel` (§19), and is removed by retention like any other record.
   `queued` records never count as the automation's latest execution (§4.1 `lastStatus`

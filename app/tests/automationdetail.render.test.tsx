@@ -14,6 +14,7 @@ vi.mock('../src/api', () => ({
     state: vi.fn(() => Promise.reject(new Error('offline'))),
     getAutomation: vi.fn(() => Promise.reject(new Error('offline'))),
     triggersPreview: vi.fn(async () => ({ triggers: [] })),
+    listExecutions: vi.fn(async () => ({ executions: [], total: 0 })),
     executeNow: vi.fn(async () => ({ executionId: 'e-new', queued: false })),
   },
 }))

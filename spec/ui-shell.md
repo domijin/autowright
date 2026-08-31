@@ -215,8 +215,10 @@ pane, which never reflows: the layout reserves a constant 58 px spacer, so the c
 always spans the rest of the window. Inner sidebar content keeps a fixed 212 px width with
 `overflow: hidden` on the panel, so nav rows never reflow or squish mid-animation — the
 wordmark ("Autowright"), row labels, and live count pills (Settings and About carry none;
-each pill counts exactly the rows its page lists — the Executions pill includes §4.5 test
-executions, since its page does) are
+each pill counts exactly the rows its page lists — for Automations, Agents, and Secrets that
+is the store list's length, while the Executions pill reads §19 `executionsTotal`, since its
+page lists every execution across its §7 pages, §4.5 test executions included, and the store
+holds only the §7 window) are
 revealed by the widening clip **plus** an opacity fade (`.ad-rail-reveal`, hidden at rest,
 shown on rail hover): the clip alone would leave the labels' first characters peeking past
 58 px. Icons are horizontally centered in the 58 px rail (rail
@@ -679,10 +681,10 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   Each sender is told." — the running execution is not affected, which the copy says).
   The waiting line and the memory caution enter with `.ad-anim-item` when they appear.
   N counts the automation's `queued` execution records (§4.6) held client-side — the same
-  source the §7 Waiting section lists, never a separate count carried on the automation.
+  source the §7 Queued section lists, never a separate count carried on the automation.
   One source is what makes the number right: a promoted entry becomes `executing` on its own
   record the moment §19 `execution.started` arrives, so a running execution can never still be
-  counted as waiting, and the line can never disagree with the Waiting list.
+  counted as waiting, and the line can never disagree with the Queued list.
   Raising `maxParallel` above 1 on an automation whose current version has a step referencing
   memory shows a persistent amber caution under the row, naming those steps: "`<step>` writes
   to memory. Parallel executions share one memory directory (§6), so two runs updating the same
@@ -693,7 +695,12 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   first 8 chars in faint mono — same short id the Executions page rows show — then
   trigger·version — a message-triggered row puts the §4.5 `triggerSender` between them,
   "Discord · Dave · v3" — time, duration, note text when present), linking to execution
-  pages.
+  pages. The rows' source - shared with the failure notice's latest-execution lookup above -
+  is a per-automation §19 query (`GET /executions?automation=<id>&limit=200`) fetched when
+  the page opens, merged by id with the store's §7 window (window wins) so §19 events keep
+  the rows live: the window alone may hold none of an automation's rows once 200 newer
+  executions of other automations have finished. A failed fetch degrades to the window's
+  rows alone - the next execution event or page re-open recovers.
 - **MEMORY** card — mono size/updated info line; "Show in Finder", "Snapshot" and "Clear
   memory" buttons. Clear swaps the button row to an inline confirm: "Next execution starts
   fresh, like the first time. Current memory is snapshotted first." (pre-clear toggle off:

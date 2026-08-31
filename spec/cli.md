@@ -53,9 +53,12 @@ invoke the CLI** (§3) — the app installs the CLI shim but never executes it.
   parent's command list shows), and every positional and option carries a `help` naming what it
   accepts, with a `metavar` wherever the placeholder name isn't self-describing. Fixed
   vocabularies are **enumerated in the help itself**, never referenced by § number:
-  `execution list --status` registers the §4.6 statuses as argparse `choices` (an unlisted value
+  `execution list --status` registers the §4.6 statuses plus the §19 `finished` group value
+  (any terminal status) as argparse `choices` (an unlisted value
   is a usage error rather than a silently empty list — the §19 filter is an equality match, so
-  nothing outside the vocabulary could ever have matched), `settings set` lists its keys with
+  nothing outside the vocabulary could ever have matched; `-n` rides to the server as the §19
+  `limit`, so only the printed rows cross the wire, while reference resolution still reads
+  the uncapped list — §19), `settings set` lists its keys with
   each one's value form, and `param set` lists the per-kind value forms. Every `<automation>`
   positional carries the compact reference forms from one shared helper (name · part of a name ·
   id · id prefix), and the full rule — case-insensitivity, and that every `[abcd1234]` the CLI

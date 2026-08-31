@@ -36,7 +36,11 @@ remain plain dicts (§2).
   true on macOS —
   and is the one surface clients gate platform features on (never by sniffing the platform
   at a call site)
-- `GET /state` → boot snapshot: automations (full), execution headers, agents, secrets (the
+- `GET /state` → boot snapshot: automations (full), executions (the §7 window, not the full
+  list: every `queued`/`executing` header plus the 200 newest finished headers, in the §7
+  canonical order - `startedMs` desc, id asc on ties), `executionsTotal` (count of every
+  execution header the backend holds, §4.5 test rows included - backs the §9 sidebar pill;
+  deeper history pages in via `GET /executions` below), agents, secrets (the
   `GET /secrets` entries — id, name, description, set, usedBy; never values), settings, app
   version, `pendingDraft` (`{ name, updatedAt } | null` — the §4.4
   slot's identity summary; backs the §9.1 Resume draft button), and `draftJobs`
@@ -422,8 +426,21 @@ remain plain dicts (§2).
   rendered from (the §4.3 entries, exactly as sourced for the prompt), so a re-attach
   apply can prove the base list that `triggers` ops index is still the one the agent saw
   (§11 — on any difference the ops are dropped, never applied to a changed list).
-- `GET /executions?automation=&status=` (headers only — no steps; rows carry the §4.5
-  `triggerSender`) · `GET /executions/{id}` (steps
+- `GET /executions?automation=&status=&limit=&beforeStartedMs=&beforeId=` →
+  `{ executions, total }` (headers only — no steps; rows carry the §4.5 `triggerSender`),
+  sorted in the §7 canonical order: `startedMs` desc, id asc on ties, the §5
+  `(started_at DESC, id)` index order. `automation` filters to one automation id (exact).
+  `status` filters to one §4.6 execution status, or the literal `finished`, which matches
+  every terminal status (everything but `queued`/`executing`); an unknown value answers 422
+  naming the vocabulary, never an empty list. `limit` (optional int ≥ 1; anything lower
+  answers 422) caps the returned rows; omitted means every match - §20 reference resolution
+  reads the uncapped list, while the §7 page always sends 200. `total` counts every match
+  regardless of `limit` and cursor - it is what sizes "Show more (N hidden)".
+  `beforeStartedMs` + `beforeId` are the §7 keyset cursor: only rows strictly after that
+  `(startedMs, id)` position in sort order, so a page stays stable while new executions land
+  above it; one without the other answers 422 (never a silent default - the same rule as the
+  log route's step/attempt pair) ·
+  `GET /executions/{id}` (steps
   with attempts + params + error + result + `triggerPayload` (§4.5) — logs are lazy, never
   inline) ·
   `GET /executions/{id}/logs?step=&attempt=&tail=` → `{ lines: [{time, kind, sequence, text}] }` — both

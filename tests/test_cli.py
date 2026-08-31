@@ -918,7 +918,7 @@ class _ExecListClient:
 
     def req(self, method, path, body=None):
         assert (method, path) == ("GET", "/executions")
-        return self.execs
+        return {"executions": self.execs, "total": len(self.execs)}
 
 
 EXECS = [{"id": "e1111111-a", "automationName": "Daily Report", "status": "succeeded",
@@ -1812,17 +1812,23 @@ FULL_EXEC = {
 
 
 def test_cmd_execution_list_filters_and_limit(capsys):
+    """§20: -n rides to the server as the §19 limit (first in the query
+    string) — the envelope's rows print as they come, with no client slice."""
     execs = [dict(FULL_EXEC, id=f"e{i}") for i in range(3)]
-    gets = _auto_gets(**{f"/executions?automation={AUTO_ID}&status=failed": execs})
+    # the server applies the cap: 2 of the 3 matching rows, total unchanged
+    gets = _auto_gets(**{f"/executions?limit=2&automation={AUTO_ID}&status=failed":
+                         {"executions": execs[:2], "total": 3}})
     _run(_RouteClient(gets), "execution", "list", "-n", "2",
          "--automation", "Daily Report", "--status", "failed")
     out = capsys.readouterr().out.splitlines()
-    assert len(out) == 2  # -n cap applied
+    assert len(out) == 2  # exactly the envelope's rows
     assert "Daily Report" in out[0] and "[e0]" in out[0]
+    assert "[e1]" in out[1]
 
 
 def test_cmd_execution_show_prints_trigger_message_error_and_result(capsys):
-    gets = {"/executions": [FULL_EXEC], f"/executions/{FULL_EXEC['id']}": FULL_EXEC}
+    gets = {"/executions": {"executions": [FULL_EXEC], "total": 1},
+            f"/executions/{FULL_EXEC['id']}": FULL_EXEC}
     _run(_RouteClient(gets), "execution", "show")  # no ref → latest
     out = capsys.readouterr().out
     assert "Daily Report v2 — failed in 3s (Discord, 2026-07-29 08:00)" in out
@@ -1839,7 +1845,7 @@ def test_cmd_execution_show_payload_fallbacks(capsys):
     e = dict(FULL_EXEC, triggerPayload={
         "kind": "imessage", "sender": "+15551234567", "messageId": "g1",
         "chat": "iMessage;-;+15551234567", "at": "08:00", "text": "hi"})
-    gets = {"/executions": [e], f"/executions/{e['id']}": e}
+    gets = {"/executions": {"executions": [e], "total": 1}, f"/executions/{e['id']}": e}
     _run(_RouteClient(gets), "execution", "show")
     out = capsys.readouterr().out
     assert "trigger message: +15551234567 · 08:00" in out and "  hi" in out
@@ -1847,7 +1853,7 @@ def test_cmd_execution_show_payload_fallbacks(capsys):
     # Discord with no cached names falls back to the raw channel id
     e = dict(FULL_EXEC, triggerPayload=dict(
         FULL_EXEC["triggerPayload"], channelName=None, guildName=None))
-    gets = {"/executions": [e], f"/executions/{e['id']}": e}
+    gets = {"/executions": {"executions": [e], "total": 1}, f"/executions/{e['id']}": e}
     _run(_RouteClient(gets), "execution", "show")
     assert "trigger message: dave · 42 · 08:00" in capsys.readouterr().out
 
@@ -1869,7 +1875,7 @@ def test_cmd_execution_tail_follows_and_exits_by_status(monkeypatch, capsys):
 
         def req(self, method, path, body=None, timeout=30):
             if path == "/executions":
-                return [FULL_EXEC]
+                return {"executions": [FULL_EXEC], "total": 1}
             if path == f"/executions/{FULL_EXEC['id']}":
                 self.polls += 1
                 # one live poll first, so the loop really iterates
@@ -1892,7 +1898,7 @@ def test_cmd_execution_tail_follows_and_exits_by_status(monkeypatch, capsys):
 
 
 def test_cmd_execution_cancel_and_retry(capsys):
-    gets = {"/executions": [FULL_EXEC]}
+    gets = {"/executions": {"executions": [FULL_EXEC], "total": 1}}
     c = _RouteClient(gets)
     _run(c, "execution", "cancel", "e12")
     assert c.calls == [("POST", f"/executions/{FULL_EXEC['id']}/cancel", None)]
@@ -1907,24 +1913,28 @@ def test_cmd_execution_cancel_and_retry(capsys):
 def test_cmd_execution_skip_targets_first_executing_step(capsys):
     running = dict(FULL_EXEC, steps=[{"name": "A", "status": "succeeded"},
                                      {"name": "B", "status": "executing"}])
-    gets = {"/executions": [running], f"/executions/{running['id']}": running}
+    gets = {"/executions": {"executions": [running], "total": 1},
+            f"/executions/{running['id']}": running}
     c = _RouteClient(gets)
     _run(c, "execution", "skip")
     assert c.calls == [("POST", f"/executions/{running['id']}/skip-step", {"index": 1})]
     assert "skipping step 2" in capsys.readouterr().out
 
-    gets = {"/executions": [FULL_EXEC], f"/executions/{FULL_EXEC['id']}": FULL_EXEC}
+    gets = {"/executions": {"executions": [FULL_EXEC], "total": 1},
+            f"/executions/{FULL_EXEC['id']}": FULL_EXEC}
     with pytest.raises(SystemExit) as ei:
         _run(_RouteClient(gets), "execution", "skip")
     assert "no step is executing" in str(ei.value.code)
 
 
 def test_cmd_execution_result_lists_then_streams(capsysbinary):
-    gets = {"/executions": [FULL_EXEC], f"/executions/{FULL_EXEC['id']}": FULL_EXEC}
+    gets = {"/executions": {"executions": [FULL_EXEC], "total": 1},
+            f"/executions/{FULL_EXEC['id']}": FULL_EXEC}
     _run(_RouteClient(gets), "execution", "result")
     assert b"report.md (2 KB)" in capsysbinary.readouterr().out
 
-    c = _RouteClient({"/executions": [FULL_EXEC]}, raw=b"\x00binary bytes")
+    c = _RouteClient({"/executions": {"executions": [FULL_EXEC], "total": 1}},
+                     raw=b"\x00binary bytes")
     _run(c, "execution", "result", "e12", "report.md")
     assert c.calls == [("GET", f"/executions/{FULL_EXEC['id']}/result/report.md", None)]
     assert capsysbinary.readouterr().out == b"\x00binary bytes"

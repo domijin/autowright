@@ -20,7 +20,7 @@ def test_time_trigger_fires_and_is_consumed(backend, client):
     assert r.status_code == 200, r.text
 
     def fired():
-        rows = client.get("/executions").json()
+        rows = client.get("/executions").json()["executions"]
         return next((e for e in rows
                      if e["automationId"] == a["id"] and e["trigger"] == "Once"), None)
 

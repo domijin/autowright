@@ -522,7 +522,12 @@ export interface Health {
 export interface StateSnapshot {
   version: string
   automations: Automation[]
+  // §7/§19 window, not the full list: every queued/executing header plus the
+  // 200 newest finished ones — deeper history pages in via GET /executions.
   executions: Execution[]
+  // §19: count of every execution header the backend holds (test rows
+  // included) — the §9 sidebar pill's number.
+  executionsTotal: number
   agents: Agent[]
   secrets: SecretMeta[]
   settings: Settings

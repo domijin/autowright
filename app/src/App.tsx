@@ -36,9 +36,10 @@ function Sidebar() {
   const page = useStore((s) => s.page)
   const go = useStore((s) => s.go)
   const nAutos = useStore((s) => s.automations.length)
-  // §9: the pill counts exactly what the Executions page lists — §4.5 test
-  // executions included (§7: the list shows them), so pill and page agree.
-  const nExecs = useStore((s) => s.executions.length)
+  // §9: the pill counts exactly what the Executions page lists across its §7
+  // pages — the served total (test executions included), not the store window,
+  // which holds only live rows plus the newest finished page.
+  const nExecs = useStore((s) => s.executionsTotal)
   const nAgents = useStore((s) => s.agents.length)
   const nSecrets = useStore((s) => s.secrets.length)
   // §9 "Update available" nav row: appears above About while an update is

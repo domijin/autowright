@@ -36,7 +36,12 @@ interface Model {
   connected: boolean | null
   version: string
   automations: Automation[]
+  // §7/§19 window: live headers + the 200 newest finished, kept current by
+  // the execution events — the Executions page fetches deeper pages itself.
   executions: Execution[]
+  // §19 executionsTotal — the §9 Executions pill; every header the backend
+  // holds, not just the window.
+  executionsTotal: number
   agents: Agent[]
   secrets: SecretMeta[]
   settings: Settings | null
@@ -193,6 +198,7 @@ export const useStore = create<Model>((set, get) => ({
   version: '',
   automations: [],
   executions: [],
+  executionsTotal: 0,
   agents: [],
   secrets: [],
   settings: null,
@@ -272,7 +278,7 @@ export const useStore = create<Model>((set, get) => ({
         ...(deepAutomationId ? { page: 'automation' as const, automationId: deepAutomationId } : {}),
         ...(n === refreshSeq ? {
           version: s.version, automations: s.automations, executions: s.executions,
-          agents: s.agents, secrets: s.secrets, settings: s.settings,
+          executionsTotal: s.executionsTotal, agents: s.agents, secrets: s.secrets, settings: s.settings,
           pendingDraft: s.pendingDraft, draftJobs: s.draftJobs ?? [],
         } : {}),
       })
@@ -322,7 +328,7 @@ export const useStore = create<Model>((set, get) => ({
         if (mut !== eventSeq && attempt < 3) continue
         // §19 reconnect rule: version rides along — after a §3 version-sync restarts
         // the backend, this refresh is what updates the §9.4 About page's number.
-        set({ version: s.version, automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft, draftJobs: s.draftJobs ?? [] })
+        set({ version: s.version, automations: mergeAutoRows(get().automations, s.automations), executions: s.executions, executionsTotal: s.executionsTotal, agents: s.agents, secrets: s.secrets, settings: s.settings, pendingDraft: s.pendingDraft, draftJobs: s.draftJobs ?? [] })
         updateTrayAlert(s.automations)
         return
       }
@@ -371,12 +377,19 @@ export const useStore = create<Model>((set, get) => ({
     }
     // §6 exec.queued (a firing admitted to the queue) carries the same header
     // shape as exec.started — the record lands in the list the same way, which
-    // is what the §7 Waiting section and the §9.2 "N waiting" line count.
+    // is what the §7 Queued section and the §9.2 "N waiting" line count.
     if (ev === 'execution.started' || ev === 'execution.finished' || ev === 'execution.queued') {
       eventSeq++ // an in-flight /state snapshot is stale from here on
       const ej = msg.execution
       const rest = m.executions.filter((e) => e.id !== ej.id)
-      set({ executions: [ej, ...rest].sort((a, b) => b.startedMs - a.startedMs) })
+      // §7/§19: an id the window has never seen counts as one more toward the
+      // pill's total. A retry of a beyond-the-window record overcounts by one
+      // until the next /state refresh trues it up — the §7 accepted drift.
+      const isNew = rest.length === m.executions.length
+      set({
+        executions: [ej, ...rest].sort((a, b) => b.startedMs - a.startedMs),
+        ...(isNew ? { executionsTotal: m.executionsTotal + 1 } : {}),
+      })
       // §19: the event carries the owning automation's row (live/lastStatus/
       // chip) — patch it in place; no /state refetch on the execution path.
       // null means a test execution or a just-deleted automation: no row change.

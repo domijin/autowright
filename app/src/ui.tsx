@@ -34,7 +34,7 @@ export function badgeOf(status: Status | string): { label: string; c: string; bg
 }
 
 /** §7 how long a §6 firing has waited in the queue — the executions list's
- * WAITING FOR column and the queued execution page's metadata line. Whole
+ * QUEUED FOR column and the queued execution page's metadata line. Whole
  * seconds: both tick once a second, so tenths would only ever flicker. */
 export function waitedLabel(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000))

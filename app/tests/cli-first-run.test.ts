@@ -41,7 +41,7 @@ const cliStatus = vi.fn<() => Promise<Cli>>()
 const cliInstall = vi.fn<() => Promise<{ ok: boolean }>>()
 
 const snapshot = (cliEnabled: boolean): StateSnapshot => ({
-  version: '0.0.0', automations: [], executions: [], agents: [], secrets: [],
+  version: '0.0.0', automations: [], executions: [], executionsTotal: 0, agents: [], secrets: [],
   pendingDraft: null, draftJobs: [],
   settings: {
     login: false, menuBarIcon: false, keepAwake: false, automaticUpdateCheck: false,

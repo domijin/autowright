@@ -1,10 +1,13 @@
-// Component tests for the §7 executions list: the three sections (Running /
-// Waiting / Finished), the Waiting table's own columns, and the drain order —
-// a §6 queued firing must read top-down in the order it will actually run.
+// Component tests for the §7 executions list: the three-section stack that
+// belongs to All alone (Running / Queued / Finished), the Queued table's own
+// columns, and the drain order — a §6 queued firing must read top-down in the
+// order it will actually run. Every other segment shows exactly one table:
+// Running and Queued their live rows straight out of the §19 window (never a
+// fetch), a terminal segment only that status's finished rows.
 // ExecutionsList renders for real (happy-dom) with the store seeded and the
 // api module mocked.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Execution } from '../src/types'
 
 vi.mock('../src/api', () => ({
@@ -12,12 +15,14 @@ vi.mock('../src/api', () => ({
   openWs: vi.fn(() => () => {}),
   api: {
     state: vi.fn(() => Promise.reject(new Error('offline'))),
+    listExecutions: vi.fn(async () => ({ executions: [], total: 0 })),
     getExecution: vi.fn(() => Promise.reject(new Error('offline'))),
     getExecutionLogs: vi.fn(() => Promise.reject(new Error('offline'))),
   },
 }))
 
 let storeMod: typeof import('../src/store')
+let mockedApi: Record<string, ReturnType<typeof vi.fn>>
 let ExecutionsList: typeof import('../src/pages/ExecutionsList').default
 let ExecutionPage: typeof import('../src/pages/ExecutionPage').default
 
@@ -27,6 +32,7 @@ beforeAll(async () => {
     trayAlert: () => Promise.resolve(),
   }
   storeMod = await import('../src/store')
+  mockedApi = (await import('../src/api')).api as unknown as Record<string, ReturnType<typeof vi.fn>>
   ExecutionsList = (await import('../src/pages/ExecutionsList')).default
   ExecutionPage = (await import('../src/pages/ExecutionPage')).default
 })
@@ -40,16 +46,28 @@ const ex = (id: string, over: Partial<Execution> = {}): Execution => ({
   note: null, error: null, ...over,
 })
 
-const seed = (executions: Execution[]) => storeMod.useStore.setState({ page: 'executions', executions })
+// §19: the store holds the window; executionsTotal counts every header the
+// backend has — seed them apart only when the test wants hidden rows.
+const seed = (executions: Execution[], executionsTotal = executions.length) =>
+  storeMod.useStore.setState({ page: 'executions', executions, executionsTotal })
 
 beforeEach(() => {
   vi.spyOn(Date, 'now').mockReturnValue(NOW)
-  storeMod.useStore.setState({ page: 'executions', executions: [], automations: [], toast: null })
+  mockedApi.listExecutions.mockReset()
+  mockedApi.listExecutions.mockResolvedValue({ executions: [], total: 0 })
+  storeMod.useStore.setState({
+    page: 'executions', executions: [], executionsTotal: 0, automations: [], toast: null,
+  })
 })
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
+// The filter buttons live in the header's segmented group — a row's status
+// badge carries the same words, so the group scopes the query.
+const filterButton = (label: string) =>
+  within(screen.getByRole('group', { name: 'Filter executions' })).getByText(label)
+
 describe('executions list sections (§7)', () => {
-  it('splits queued firings out of Running into their own Waiting section', () => {
+  it('splits queued firings out of Running into their own Queued section', () => {
     seed([
       ex('e-run', { status: 'executing', duration: '', endedMs: 0 }),
       ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 5_000, trigger: 'Discord' }),
@@ -58,21 +76,21 @@ describe('executions list sections (§7)', () => {
     const { container } = render(<ExecutionsList />)
 
     expect(screen.getByText('RUNNING')).toBeTruthy()
-    expect(screen.getByText('WAITING')).toBeTruthy()
+    expect(screen.getByText('QUEUED')).toBeTruthy()
     expect(screen.getByText('FINISHED')).toBeTruthy()
     // section membership read from document order (labels precede their tables):
-    // the running row sits between RUNNING and WAITING, the queued row after WAITING
+    // the running row sits between RUNNING and QUEUED, the queued row after QUEUED
     const text = container.textContent!
     expect(text.indexOf('e-run')).toBeGreaterThan(text.indexOf('RUNNING'))
-    expect(text.indexOf('e-run')).toBeLessThan(text.indexOf('WAITING'))
-    expect(text.indexOf('e-wait')).toBeGreaterThan(text.indexOf('WAITING'))
+    expect(text.indexOf('e-run')).toBeLessThan(text.indexOf('QUEUED'))
+    expect(text.indexOf('e-wait')).toBeGreaterThan(text.indexOf('QUEUED'))
   })
 
-  it('gives the Waiting table its own columns — a queued row has no duration and never started', () => {
+  it('gives the Queued table its own columns — a queued row has no duration and never started', () => {
     seed([ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 65_000 })])
     render(<ExecutionsList />)
 
-    expect(screen.getByText('WAITING FOR')).toBeTruthy()
+    expect(screen.getByText('QUEUED FOR')).toBeTruthy()
     expect(screen.getByText('QUEUED AT')).toBeTruthy()
     expect(screen.getByText('1m 5s')).toBeTruthy()
     // DURATION / STARTED belong to the other tables, and neither is rendered here
@@ -80,7 +98,7 @@ describe('executions list sections (§7)', () => {
     expect(screen.queryByText('STARTED')).toBeNull()
   })
 
-  it('orders Waiting oldest-first — the §6 drain order, so the next to run reads top', () => {
+  it('orders Queued oldest-first — the §6 drain order, so the next to run reads top', () => {
     seed([
       ex('e-new', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 2_000 }),
       ex('e-old', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 30_000 }),
@@ -88,16 +106,16 @@ describe('executions list sections (§7)', () => {
     const { container } = render(<ExecutionsList />)
 
     const text = container.textContent!
-    expect(text.indexOf('e-old')).toBeGreaterThan(text.indexOf('WAITING'))
+    expect(text.indexOf('e-old')).toBeGreaterThan(text.indexOf('QUEUED'))
     expect(text.indexOf('e-old')).toBeLessThan(text.indexOf('e-new'))
   })
 
-  it('stays a single unlabelled table when nothing is live or waiting', () => {
+  it('stays a single unlabelled table when nothing is live or queued', () => {
     seed([ex('e-done')])
     render(<ExecutionsList />)
 
     expect(screen.queryByText('RUNNING')).toBeNull()
-    expect(screen.queryByText('WAITING')).toBeNull()
+    expect(screen.queryByText('QUEUED')).toBeNull()
     expect(screen.queryByText('FINISHED')).toBeNull()
   })
 
@@ -111,54 +129,200 @@ describe('executions list sections (§7)', () => {
     expect(screen.getByText('Test')).toBeTruthy()
   })
 
-  it('keeps waiting rows visible under a filter that only applies to finished rows', () => {
+  it('hides the live rows under a terminal filter — that segment is one table of finished rows', async () => {
     seed([
+      ex('e-run', { status: 'executing', duration: '', endedMs: 0 }),
       ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 1_000 }),
-      ex('e-done', { status: 'failed' }),
+      ex('e-ok'),
+      ex('e-bad', { status: 'failed' }),
     ])
     render(<ExecutionsList />)
 
-    // apply the Succeeded filter: the failed finished row is filtered out…
-    fireEvent.click(screen.getByText('Succeeded'))
-    expect(screen.queryByText('e-done')).toBeNull()
-    expect(screen.getByText('No succeeded executions')).toBeTruthy()
-    // …but the waiting row is outside the filter and stays visible
-    expect(screen.getByText('WAITING')).toBeTruthy()
-    expect(screen.getByText('e-wait')).toBeTruthy()
+    fireEvent.click(filterButton('Succeeded'))
+    await waitFor(() => expect(mockedApi.listExecutions).toHaveBeenCalled())
+    expect(mockedApi.listExecutions).toHaveBeenCalledWith({ status: 'succeeded', limit: 200 })
+    // only the matching finished row survives — the live rows are not stacked above it
+    expect(screen.getAllByTestId('execution-row').length).toBe(1)
+    expect(screen.getByText('e-ok')).toBeTruthy()
+    expect(screen.queryByText('e-run')).toBeNull()
+    expect(screen.queryByText('e-wait')).toBeNull()
+    expect(screen.queryByText('e-bad')).toBeNull()
+    // and a single table carries no section labels
+    expect(screen.queryByText('RUNNING')).toBeNull()
+    expect(screen.queryByText('QUEUED')).toBeNull()
+    expect(screen.queryByText('FINISHED')).toBeNull()
   })
 })
 
-// §7 Finished cap: retention can be off entirely (`keepForever`), so the finished
-// list is unbounded; the page paints 200 rows and reveals the rest 200 at a time.
-describe('executions list finished cap (§7)', () => {
+// §7 live segments: Running and Queued each show exactly one table read
+// straight out of the §19 window — no section label, no fetch, no paging.
+describe('executions list live segments (§7)', () => {
+  const liveMix = () => [
+    ex('e-run', { status: 'executing', duration: '2.0s', endedMs: 0 }),
+    ex('q-new', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 2_000 }),
+    ex('q-old', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 30_000 }),
+    ex('e-done'),
+  ]
+
+  it('shows only executing rows under Running and never fetches', () => {
+    seed(liveMix())
+    render(<ExecutionsList />)
+
+    fireEvent.click(filterButton('Running'))
+    expect(screen.getAllByTestId('execution-row').length).toBe(1)
+    expect(screen.getByText('e-run')).toBeTruthy()
+    expect(screen.queryByText('q-old')).toBeNull()
+    expect(screen.queryByText('e-done')).toBeNull()
+    // normal columns, and no section label above a lone table
+    expect(screen.getByText('DURATION')).toBeTruthy()
+    expect(screen.queryByText('QUEUED FOR')).toBeNull()
+    expect(screen.queryByText('RUNNING')).toBeNull()
+    expect(screen.queryByText('QUEUED')).toBeNull()
+    expect(screen.queryByText('FINISHED')).toBeNull()
+    // the window always holds every live row (§19) — nothing to page in
+    expect(mockedApi.listExecutions).not.toHaveBeenCalled()
+  })
+
+  it('keeps the Queued segment\'s own columns and drain order, and never fetches', () => {
+    seed(liveMix())
+    const { container } = render(<ExecutionsList />)
+
+    fireEvent.click(filterButton('Queued'))
+    const rows = screen.getAllByTestId('execution-row')
+    expect(rows.length).toBe(2)
+    expect(screen.getByText('QUEUED FOR')).toBeTruthy()
+    expect(screen.getByText('QUEUED AT')).toBeTruthy()
+    expect(screen.queryByText('DURATION')).toBeNull()
+    expect(screen.queryByText('STARTED')).toBeNull()
+    // §6 drain order: the oldest wait reads top
+    expect(rows[0].textContent).toContain('q-old')
+    expect(rows[1].textContent).toContain('q-new')
+    const text = container.textContent!
+    expect(text.indexOf('q-old')).toBeLessThan(text.indexOf('q-new'))
+    expect(mockedApi.listExecutions).not.toHaveBeenCalled()
+  })
+
+  it('names the live segment in its empty state', () => {
+    seed([ex('e-run', { status: 'executing', duration: '', endedMs: 0 })])
+    const { unmount } = render(<ExecutionsList />)
+
+    fireEvent.click(filterButton('Queued'))
+    expect(screen.getByText('No queued executions')).toBeTruthy()
+    expect(screen.getByText('Executions matching this filter will appear here.')).toBeTruthy()
+    unmount()
+
+    seed([ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 1_000 })])
+    render(<ExecutionsList />)
+    fireEvent.click(filterButton('Running'))
+    expect(screen.getByText('No running executions')).toBeTruthy()
+    expect(mockedApi.listExecutions).not.toHaveBeenCalled()
+  })
+})
+
+// §7 status filter: All, the two live segments, and the five §4.6 terminal
+// statuses. Picking a terminal filter fetches that status's own newest page
+// (§19), because the window may hold only a slice of it.
+describe('executions list status filter (§7)', () => {
+  it('renders All, the live segments, and the five terminal statuses in the sections\' order', () => {
+    seed([ex('e-done')])
+    render(<ExecutionsList />)
+
+    const group = screen.getByRole('group', { name: 'Filter executions' })
+    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'All', 'Running', 'Queued', 'Succeeded', 'Failed', 'Cancelled', 'Skipped', 'Interrupted',
+    ])
+  })
+
+  it('fetches the filter\'s own page and merges it with the window\'s matching rows', async () => {
+    mockedApi.listExecutions.mockResolvedValue({
+      executions: [ex('e-fetch', { status: 'failed', startedMs: NOW - 5_000, endedMs: NOW - 5_000 })],
+      total: 2,
+    })
+    seed([
+      ex('e-win', { status: 'failed' }),
+      ex('e-ok'),
+    ])
+    render(<ExecutionsList />)
+
+    fireEvent.click(filterButton('Failed'))
+    await waitFor(() => expect(screen.getByText('e-fetch')).toBeTruthy())
+    expect(mockedApi.listExecutions).toHaveBeenCalledWith({ status: 'failed', limit: 200 })
+    expect(screen.getByText('e-win')).toBeTruthy()      // the window's matching row stays
+    expect(screen.queryByText('e-ok')).toBeNull()       // a non-matching one does not
+    expect(screen.getAllByTestId('execution-row').length).toBe(2)
+  })
+
+  it('names the filter in the empty state when nothing matches', async () => {
+    seed([ex('e-done')])
+    render(<ExecutionsList />)
+
+    fireEvent.click(filterButton('Cancelled'))
+    await waitFor(() => expect(mockedApi.listExecutions).toHaveBeenCalled())
+    expect(screen.getByText('No cancelled executions')).toBeTruthy()
+  })
+
+  it('renders a fetched row the window already holds exactly once — the window wins', async () => {
+    mockedApi.listExecutions.mockResolvedValue({
+      executions: [ex('e-dup', { status: 'failed', automationName: 'Stale copy' })],
+      total: 1,
+    })
+    seed([ex('e-dup', { status: 'failed', automationName: 'Window copy' })])
+    render(<ExecutionsList />)
+
+    fireEvent.click(filterButton('Failed'))
+    await waitFor(() => expect(mockedApi.listExecutions).toHaveBeenCalled())
+    expect(screen.getAllByTestId('execution-row').length).toBe(1)
+    expect(screen.getByText('Window copy')).toBeTruthy()
+    expect(screen.queryByText('Stale copy')).toBeNull()
+  })
+})
+
+// §7 Finished paging: retention can be off entirely (`keepForever`), so the
+// finished list is unbounded. The store holds the §19 window and the page
+// renders all of it; "Show more (N hidden)" fetches the next keyset page.
+describe('executions list finished paging (§7)', () => {
   const finishedRows = (n: number) =>
     Array.from({ length: n }, (_, i) =>
       ex(`e-${String(i).padStart(4, '0')}`, { endedMs: NOW - i * 1000, startedMs: NOW - i * 1000 }))
 
-  it('renders 200 finished rows and says how many are hidden', () => {
-    seed(finishedRows(1250))
+  it('renders the window and says how many are hidden', () => {
+    seed([
+      ...Array.from({ length: 3 }, (_, i) =>
+        ex(`r-${i}`, { status: 'executing', duration: '', endedMs: 0 })),
+      ...finishedRows(250),
+    ], 1253)
     render(<ExecutionsList />)
 
-    expect(screen.getAllByTestId('execution-row').length).toBe(200)
-    expect(screen.getByText('Show more (1,050 hidden)')).toBeTruthy()
-    // the cap keeps the newest rows: the sort is by endedMs, newest first
+    // every window row renders: 3 running + all 250 finished
+    expect(screen.getAllByTestId('execution-row').length).toBe(253)
+    // 1253 headers minus the 3 live rows minus the 250 on screen
+    expect(screen.getByText('Show more (1,000 hidden)')).toBeTruthy()
     expect(screen.getByText('e-0000')).toBeTruthy()
-    expect(screen.queryByText('e-0200')).toBeNull()
+    expect(screen.getByText('e-0249')).toBeTruthy()
   })
 
-  it('reveals the next 200 on each click, then drops the control', () => {
-    seed(finishedRows(450))
+  it('fetches the next page on click, then drops the control', async () => {
+    const older = [
+      ex('e-0002', { startedMs: NOW - 2000, endedMs: NOW - 2000 }),
+      ex('e-0003', { startedMs: NOW - 3000, endedMs: NOW - 3000 }),
+    ]
+    mockedApi.listExecutions.mockResolvedValue({ executions: older, total: 4 })
+    const windowRows = finishedRows(2)
+    seed(windowRows, 4)
     render(<ExecutionsList />)
 
-    fireEvent.click(screen.getByText('Show more (250 hidden)'))
-    expect(screen.getAllByTestId('execution-row').length).toBe(400)
-
-    fireEvent.click(screen.getByText('Show more (50 hidden)'))
-    expect(screen.getAllByTestId('execution-row').length).toBe(450)
+    fireEvent.click(screen.getByText('Show more (2 hidden)'))
+    await waitFor(() => expect(screen.getByText('e-0003')).toBeTruthy())
+    // §19 keyset cursor: the last rendered finished row's position
+    expect(mockedApi.listExecutions).toHaveBeenCalledWith({
+      status: 'finished', limit: 200,
+      before: { startedMs: windowRows[1].startedMs, id: windowRows[1].id },
+    })
+    expect(screen.getAllByTestId('execution-row').length).toBe(4)
     expect(screen.queryByText(/Show more/)).toBeNull()
   })
 
-  it('shows no control when the finished list fits the cap', () => {
+  it('shows no control when the window already holds every row', () => {
     seed(finishedRows(200))
     render(<ExecutionsList />)
 
@@ -166,17 +330,21 @@ describe('executions list finished cap (§7)', () => {
     expect(screen.queryByText(/Show more/)).toBeNull()
   })
 
-  it('never caps Running or Waiting', () => {
+  it('never caps Running or Queued', () => {
     seed([
       ...Array.from({ length: 3 }, (_, i) =>
         ex(`r-${i}`, { status: 'executing', duration: '', endedMs: 0 })),
+      ...Array.from({ length: 4 }, (_, i) =>
+        ex(`q-${i}`, { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - i * 1000 })),
       ...finishedRows(250),
     ])
     render(<ExecutionsList />)
 
-    // 3 running + the 200-row finished page
-    expect(screen.getAllByTestId('execution-row').length).toBe(203)
-    expect(screen.getByText('Show more (50 hidden)')).toBeTruthy()
+    // 3 running + 4 queued + every finished row the window holds
+    expect(screen.getAllByTestId('execution-row').length).toBe(257)
+    expect(screen.getByText('RUNNING')).toBeTruthy()
+    expect(screen.getByText('QUEUED')).toBeTruthy()
+    expect(screen.queryByText(/Show more/)).toBeNull()
   })
 })
 

@@ -451,11 +451,24 @@ def instructions() -> dict:
 def state() -> dict:
     settings = _settings_json()  # walks the executions tree — never under the lock
     with store.lock:
+        # §7 window: every live header plus the newest finished page, in the
+        # canonical order — deeper history pages in via GET /executions and
+        # never rides the snapshot whole.
+        rows = sorted((store.exec_json(h) for h in store.execs.values()),
+                      key=lambda e: (-e["startedMs"], e["id"]))
+        finished_left = EXECUTIONS_PAGE_LIMIT
+        window = []
+        for e in rows:
+            if e["status"] in LIVE_STATUSES:
+                window.append(e)
+            elif finished_left > 0:
+                window.append(e)
+                finished_left -= 1
         return {
             "version": __version__,
             "automations": [store.auto_json(a) for a in store.autos.values()],
-            "executions": sorted((store.exec_json(h) for h in store.execs.values()),
-                            key=lambda e: e["startedMs"], reverse=True),
+            "executions": window,
+            "executionsTotal": len(store.execs),
             "agents": _agents_json(),
             "secrets": _secrets_json(),
             "settings": settings,
@@ -1487,15 +1500,45 @@ def ack_draft(job_id: str) -> dict:
     return {"ok": True}
 
 # ---------- executions ----------
+# §4.6 execution statuses, plus §19's `finished` group value (any terminal one).
+EXECUTION_STATUSES = ("queued", "executing", "succeeded", "failed",
+                      "cancelled", "skipped", "interrupted")
+LIVE_STATUSES = ("queued", "executing")
+EXECUTIONS_PAGE_LIMIT = 200  # §7: the /state finished window and the page size
+
+
 @app.get("/executions", dependencies=[Depends(auth)])
-def list_execs(automation: str | None = None, status: str | None = None) -> list[dict]:
+def list_execs(automation: str | None = None, status: str | None = None,
+               limit: int | None = Query(None, ge=1),
+               before_started_ms: int | None = Query(None, alias="beforeStartedMs"),
+               before_id: str | None = Query(None, alias="beforeId")) -> dict:
+    """§19 executions query: headers in the §7 canonical order (startedMs desc,
+    id asc on ties), status filter over the §4.6 vocabulary + `finished`, and
+    the keyset cursor for paging. `total` counts every match, not the page;
+    `limit` omitted means every match (§20 reference resolution reads that)."""
+    if status is not None and status != "finished" and status not in EXECUTION_STATUSES:
+        raise HTTPException(422, "unknown status — one of: "
+                            + ", ".join(EXECUTION_STATUSES) + ", finished")
+    if (before_started_ms is None) != (before_id is None):
+        raise HTTPException(422, "beforeStartedMs and beforeId select the cursor "
+                                 "position together — one without the other is ambiguous")
     with store.lock:
         hs = list(store.execs.values())
         if automation:
             hs = [h for h in hs if h["automation_id"] == automation]
-        if status:
+        if status == "finished":
+            hs = [h for h in hs if h["status"] not in LIVE_STATUSES]
+        elif status:
             hs = [h for h in hs if h["status"] == status]
-        return sorted((store.exec_json(h) for h in hs), key=lambda e: e["startedMs"], reverse=True)
+        rows = sorted((store.exec_json(h) for h in hs),
+                      key=lambda e: (-e["startedMs"], e["id"]))
+    total = len(rows)
+    if before_started_ms is not None:
+        # Strictly after the cursor position in sort order — stable while new
+        # executions land above the page.
+        rows = [e for e in rows if e["startedMs"] < before_started_ms
+                or (e["startedMs"] == before_started_ms and e["id"] > before_id)]
+    return {"executions": rows[:limit], "total": total}
 
 
 @app.get("/executions/{execution_id}", dependencies=[Depends(auth)])

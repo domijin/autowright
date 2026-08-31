@@ -765,7 +765,7 @@ duration, started ("Today, 8:00 AM"), startedMs, endedMs (0 while live and on ro
   `finished_at` was never set, e.g. §3 interrupted) — duration accumulates across in-place retry
   passes (§7); started never changes on retry
 queuedMs: epoch ms of `queuedAt`, 0 on every execution that never waited — what the §7
-  executions list ticks its WAITING FOR column from
+  executions list ticks its QUEUED FOR column from
 steps: [{ name, file, status, duration, attempts: [{ number, status, duration, startedMs }] }] — file is the
   version-folder script filename (keys the per-attempt log files, §5). `file` is
   record-only: the API's full-record serialization emits only name/status/duration/attempts, and

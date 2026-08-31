@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
-import type { Automation } from '../types'
+import type { Automation, Execution } from '../types'
 import {
   BackLink, Badge, BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, EmptyNotice, executingToast,
   Eyebrow, FailureNotice, HeaderActions, MenuRow, MiniBadge, Modal, PopMenu, ScrollArea, Toggle,
@@ -51,6 +51,20 @@ export default function AutomationDetail() {
   useEffect(() => {
     if (automationId) void loadAuto(automationId)
   }, [automationId])
+  // §9.2: this automation's execution headers — the §19 /state window may hold
+  // none of an old automation's rows, so RECENT EXECUTIONS and the failure
+  // notice read a per-automation fetch merged with the window (window wins:
+  // events land there). A failed fetch degrades to the window's rows alone.
+  const [fetchedExecs, setFetchedExecs] = useState<Execution[]>([])
+  useEffect(() => {
+    let stale = false
+    setFetchedExecs([])
+    if (!automationId) return
+    void api.listExecutions({ automation: automationId, limit: 200 }).then(
+      (r) => { if (!stale) setFetchedExecs(r.executions) },
+      () => {})
+    return () => { stale = true }
+  }, [automationId])
   // §4.3: refresh the countdown every 30 s.
   useEffect(() => {
     const t = setInterval(() => setTick((x) => x + 1), 30000)
@@ -72,9 +86,16 @@ export default function AutomationDetail() {
   const atCapacity = liveCount >= auto.maxParallel
   const busyToast = executingToast(auto.maxParallel, auto.maxQueued)
   // §9.2 capacity popup: the waiting count is the automation's own `queued`
-  // records — the same source the ConcurrencyCard and the §7 Waiting section
-  // count, so the popup and the settings row can never disagree.
+  // records — the same source the ConcurrencyCard and the §7 Queued section
+  // count, so the popup and the settings row can never disagree. Live rows
+  // always ride the §19 window, so the store alone is complete here.
   const waiting = executions.filter((e) => e.automationId === auto.id && e.status === 'queued' && !e.test).length
+  // §9.2: this automation's rows — §19 window merged with the per-automation
+  // fetch (window wins by id), in the §7 canonical order.
+  const windowExecs = executions.filter((e) => e.automationId === auto.id)
+  const windowExecIds = new Set(windowExecs.map((e) => e.id))
+  const autoExecs = [...windowExecs, ...fetchedExecs.filter((e) => !windowExecIds.has(e.id))]
+    .sort((a, b) => b.startedMs - a.startedMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
   const trigs = auto.triggers
   const noTrigs = trigs.length === 0
   const allOff = auto.allTriggersOff
@@ -152,15 +173,15 @@ export default function AutomationDetail() {
   // §9.2 failure notice: latest execution (§4.1: skipped AND queued records
   // never count as latest — a waiting firing must not hide a failure notice)
   // failed → its §4.5 error leads the LATEST RESULT card.
-  const latestExec = executions.find((e) =>
-    e.automationId === auto.id && e.status !== 'skipped' && e.status !== 'queued' && !e.test)
+  const latestExec = autoExecs.find((e) =>
+    e.status !== 'skipped' && e.status !== 'queued' && !e.test)
   const failedExec = latestExec?.status === 'failed' && latestExec.error ? latestExec : null
   const params = auto.params ?? []
   const steps = auto.steps ?? []
   const spec = auto.spec ?? []
   const olderVersions = (auto.versions ?? []).filter((v) => v.version !== auto.version)
   // §11 test executions are draft-scoped — never listed among real executions
-  const recentExecs = executions.filter((e) => e.automationId === auto.id && !e.test).slice(0, 6)
+  const recentExecs = autoExecs.filter((e) => !e.test).slice(0, 6)
 
   return (
     <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 30px 70px' }}>

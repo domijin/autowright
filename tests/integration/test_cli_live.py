@@ -23,7 +23,7 @@ def test_cli_execute_follow_streams_to_exit(backend, client):
     r = run_cli(backend.home, "automation", "execute", "Followed", "--follow")
     assert r.returncode == 0, r.stderr + r.stdout
     assert "integration says hi" in r.stdout
-    e = client.get("/executions").json()[0]
+    e = client.get("/executions").json()["executions"][0]
     assert e["automationId"] == a["id"]
     assert e["status"] == "succeeded"
 

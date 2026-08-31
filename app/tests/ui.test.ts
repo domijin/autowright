@@ -167,7 +167,7 @@ describe('stepRetriesLabel / stepRetriesTitle (§9.2 retry tag)', () => {
   })
 })
 
-describe('waitedLabel (§7 WAITING FOR column)', () => {
+describe('waitedLabel (§7 QUEUED FOR column)', () => {
   it('whole seconds under a minute, "Xm Xs" from 60s up', () => {
     expect(waitedLabel(59_000)).toBe('59s')
     expect(waitedLabel(60_000)).toBe('1m 0s')  // the boundary

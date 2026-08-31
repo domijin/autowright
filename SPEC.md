@@ -294,6 +294,11 @@ migrate-on-load migration so data written by released versions keeps loading (§
   template images — and the §13 Windows colored variants `trayWin.png`/`@2x`,
   `trayWinAlert.png`/`@2x`),
   rendered by `scripts/gen_tray_icon.py`.
+  The Vite dev server allows serving from the repo root (`server.fs.allow` in
+  `vite.config.ts`): the §9.4 doc modals raw-import repo-root documents
+  (`PRIVACY.md`, `TERMS.md`, `CHANGELOG.md`), and Vite's default allowlist stops at
+  `app/`, which 403s those imports in the dev loop (the production build bundles them
+  and needs no allowance).
   Renderer tests live here too: `app/tests/` (vitest unit/render suites) and `app/e2e/`
   (end-to-end specs driving the real Electron app, shared `harness.ts`); both Vitest configs
   (`vitest.config.ts`, `vitest.e2e.config.ts`) sit at the `app/` root — `npm run test:e2e`

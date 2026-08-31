@@ -1,10 +1,9 @@
-// §9.4 post-update auto-open, driven from store.boot(): the renderer keeps the
-// last version it ran under the localStorage key ad-last-seen-version (§15) and
-// compares it with the version the boot snapshot reports. A differing value
-// opens the What's-new modal; an equal one does nothing; a missing one is an
-// upgrade from a pre-changelog version when ad-onboarded is set and a fresh
-// install when it is not. The key is written in every branch except the §13
-// menu-bar panel, which is exempt from the check entirely.
+// §9.4 post-update: no auto-open, driven from store.boot(): the renderer keeps
+// the last version it ran under the localStorage key ad-last-seen-version
+// (§15), silently rewriting it at boot whenever it differs from the version
+// the boot snapshot reports. The modal never opens by itself in any branch;
+// only the About-page View button opens it. The §13 menu-bar panel is exempt
+// from the check entirely and never writes the key.
 //
 // The check is one-shot per launch through a module-level guard, so every
 // scenario re-imports the store through vi.resetModules() to get a fresh
@@ -62,47 +61,45 @@ async function launch(version: string, hash = '#/app') {
 
 beforeEach(() => { localStorage.clear() })
 
-describe('§9.4 post-update auto-open (via boot)', () => {
-  it('a stored version differing from the booted one opens the modal and rewrites the key', async () => {
+describe('§9.4 post-update version tracking (via boot, no auto-open)', () => {
+  it('a stored version differing from the booted one rewrites the key without opening the modal', async () => {
     localStorage.setItem('ad-last-seen-version', '0.7.0')
     const store = await launch('0.8.0')
-    expect(store.useStore.getState().whatsNewOpen).toBe(true)
+    expect(store.useStore.getState().whatsNewOpen).toBe(false)
     expect(localStorage.getItem('ad-last-seen-version')).toBe('0.8.0')
   })
 
-  it('a stored version equal to the booted one shows nothing', async () => {
+  it('a stored version equal to the booted one shows nothing and keeps the key', async () => {
     localStorage.setItem('ad-last-seen-version', '0.8.0')
     const store = await launch('0.8.0')
     expect(store.useStore.getState().whatsNewOpen).toBe(false)
     expect(localStorage.getItem('ad-last-seen-version')).toBe('0.8.0')
   })
 
-  it('no stored version with ad-onboarded set is an upgrade — opens and writes', async () => {
+  it('no stored version with ad-onboarded set (an upgrade) writes silently, no modal', async () => {
     localStorage.setItem('ad-onboarded', '1')
     const store = await launch('0.8.0')
-    expect(store.useStore.getState().whatsNewOpen).toBe(true)
-    expect(localStorage.getItem('ad-last-seen-version')).toBe('0.8.0')
-  })
-
-  it('no stored version and no ad-onboarded is a fresh install — writes silently', async () => {
-    const store = await launch('0.8.0')
-    // Onboarding owns the first launch; a fresh install has no "what's new".
     expect(store.useStore.getState().whatsNewOpen).toBe(false)
     expect(localStorage.getItem('ad-last-seen-version')).toBe('0.8.0')
   })
 
-  it('§13: the menu-bar panel neither opens the modal nor spends the key', async () => {
+  it('no stored version and no ad-onboarded (a fresh install) writes silently, no modal', async () => {
+    const store = await launch('0.8.0')
+    expect(store.useStore.getState().whatsNewOpen).toBe(false)
+    expect(localStorage.getItem('ad-last-seen-version')).toBe('0.8.0')
+  })
+
+  it('§13: the menu-bar panel neither opens the modal nor writes the key', async () => {
     localStorage.setItem('ad-onboarded', '1')
     const store = await launch('0.8.0', '#menubar')
     expect(store.useStore.getState().whatsNewOpen).toBe(false)
-    // Writing it here would cost the main window its one showing.
+    // The main window owns the record of what it has run.
     expect(localStorage.getItem('ad-last-seen-version')).toBeNull()
   })
 
-  it('one check per launch: a second boot in the same renderer run never re-opens', async () => {
+  it('one check per launch: a second boot in the same renderer run stays silent', async () => {
     localStorage.setItem('ad-last-seen-version', '0.7.0')
     const store = await launch('0.8.0')
-    store.useStore.setState({ whatsNewOpen: false })   // as if the user closed it
     await store.useStore.getState().boot()             // backend restart, same launch
     expect(store.useStore.getState().whatsNewOpen).toBe(false)
   })

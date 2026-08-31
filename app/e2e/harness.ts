@@ -255,9 +255,8 @@ export async function launchApp(home: string, onboarded: boolean): Promise<AppHa
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
-  // §9.4: with ad-onboarded set but no ad-last-seen-version, the renderer
-  // reads the launch as an upgrade and auto-opens the What's-new modal over
-  // every spec — pin the key to the app's own version so the check is a no-op.
+  // §9.4: the renderer silently pins ad-last-seen-version at boot; seed it to
+  // the app's own version so the tracked localStorage state is deterministic.
   const version = (await readFile(path.join(REPO, 'VERSION'), 'utf-8')).trim()
   await page.evaluate(({ flag, version: v }: { flag: boolean; version: string }) => {
     localStorage.clear()

@@ -941,23 +941,18 @@ also open itself after an update (below) with the About page nowhere in sight.
   changelog is the authoritative user-facing one; the GitHub releases page keeps
   its auto-generated notes and is not linked from here.
 
-  **Post-update auto-open.** The same modal opens by itself, once, on the first
-  launch after an update, so the user lands on the notes for the version they
-  just got (the newest entry — the top of the file). Mechanism: the renderer
-  keeps the last version it ran under the localStorage key
-  `ad-last-seen-version` (beside `ad-onboarded`, §10). At store boot, once
-  `GET /state` supplies the running version: a stored value that differs from it
-  opens the modal and rewrites the key; an equal value does nothing. No stored
-  value means either a fresh install or an upgrade from a pre-changelog version,
-  told apart by `ad-onboarded`: when it is set the launch is an upgrade — open
-  the modal (and write the key); when it is not, write the key silently and show
-  nothing (a fresh install has no "what's new"; onboarding owns that first
-  launch). The key is written in every branch, so the modal can never re-open on
-  later launches of the same version, and closing it is the only interaction —
-  no separate dismissal state. The check runs once per app launch, not on every
-  `/state` poll. The §13 menu-bar panel window is exempt: it neither opens the
-  modal nor writes the key — a panel boot must not spend the main window's one
-  showing.
+  **Post-update: no auto-open.** The modal never opens by itself. The first
+  launch after an update lands on the normal home page like any other launch;
+  the release notes are reachable only through this row's View button. The
+  renderer still keeps the last version it ran under the localStorage key
+  `ad-last-seen-version` (beside `ad-onboarded`, §10): at store boot, once
+  `GET /state` supplies the running version, the key is silently rewritten to
+  it whenever it differs or is missing. Maintaining the key without showing
+  anything keeps the ground truth current, so a future re-enable of the
+  auto-open would fire only for versions installed after that point, never for
+  the backlog accumulated while it was off. The check runs once per app launch,
+  not on every `/state` poll. The §13 menu-bar panel window is exempt and does
+  not write the key (the main window owns the record of what it has run).
 
 **LEGAL**
 

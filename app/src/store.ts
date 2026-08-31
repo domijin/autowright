@@ -149,22 +149,17 @@ async function ensureCliFirstRun(settings: Settings): Promise<void> {
   }
 }
 
-// §9.4 post-update auto-open: one check per launch, off the boot snapshot's
-// version. The key is written in every branch, so the modal can never re-open
-// for a version already seen. No stored key means a fresh install (onboarding
-// owns that launch — write silently) unless ad-onboarded shows the install
-// predates the key, which makes this launch an upgrade like any other. The
-// menu-bar panel window is exempt: it neither opens the modal nor writes the
-// key — a panel boot must not spend the main window's one showing.
+// §9.4 post-update: no auto-open. The modal opens only from the About page.
+// The key still tracks the last version this renderer ran, silently, so a
+// future re-enable of the auto-open fires only for versions installed after
+// that point. One check per launch; the menu-bar panel window is exempt and
+// does not write the key.
 let whatsNewChecked = false
 function checkWhatsNew(version: string, menubar: boolean) {
   if (whatsNewChecked || menubar || !version) return
   whatsNewChecked = true
-  const last = localStorage.getItem('ad-last-seen-version')
-  if (last === version) return
-  localStorage.setItem('ad-last-seen-version', version)
-  if (last !== null || localStorage.getItem('ad-onboarded') === '1') {
-    useStore.setState({ whatsNewOpen: true })
+  if (localStorage.getItem('ad-last-seen-version') !== version) {
+    localStorage.setItem('ad-last-seen-version', version)
   }
 }
 

@@ -51,8 +51,8 @@ beforeAll(async () => {
     },
   })
   localStorage.setItem('ad-onboarded', '1')
-  // The §9.4 auto-open is one-shot per launch and would race these renders —
-  // seed the key at the booted version so this launch has nothing to show.
+  // §9.4 tracks the booted version under this key (silently, no auto-open);
+  // seed it so the one-shot boot check has nothing to rewrite.
   localStorage.setItem('ad-last-seen-version', '0.8.2')
   storeMod = await import('../src/store')
   App = (await import('../src/App')).default

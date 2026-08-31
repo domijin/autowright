@@ -660,7 +660,7 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   dashed "No triggers" row. Trigger edits apply immediately (§19 PATCH) — no version, no AI.
   No Execute-now button here — manual execution lives in the title row and the menu bar.
 - **PARAMETERS** — directly editable here per the §4.2 edit behaviors; caption "Changes apply on
-  the next execution — no new version, no AI involved." Row layout splits by control size:
+  the next execution." Row layout splits by control size:
   `toggle` and `number` rows keep label + control on one line — the label side flexes to the
   available width, the control sits vertically centered at the row's right edge, and the help
   text runs below the label at full width. `text`, `list`, and `kv` rows stack — label (with

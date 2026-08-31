@@ -42,7 +42,7 @@ export function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToa
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
         <Eyebrow>CONCURRENCY</Eyebrow>
         <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-          Changes apply immediately — no new version, no AI involved.
+          Changes apply immediately.
         </span>
       </div>
       <div className="ad-card" style={{ overflow: 'hidden' }}>

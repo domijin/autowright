@@ -385,7 +385,7 @@ export default function AutomationDetail() {
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <Eyebrow>PARAMETERS</Eyebrow>
             <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-              Changes apply on the next execution — no new version, no AI involved.
+              Changes apply on the next execution.
             </span>
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
@@ -410,7 +410,6 @@ export default function AutomationDetail() {
         <div style={{ marginBottom: 26 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
             <Eyebrow>STEPS</Eyebrow>
-            <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Written by your AI — read them anytime.</span>
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
             {/* §9.2: one agent tag per entry id in a step's agents list,

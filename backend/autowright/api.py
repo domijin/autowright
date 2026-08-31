@@ -1504,7 +1504,7 @@ def ack_draft(job_id: str) -> dict:
 EXECUTION_STATUSES = ("queued", "executing", "succeeded", "failed",
                       "cancelled", "skipped", "interrupted")
 LIVE_STATUSES = ("queued", "executing")
-EXECUTIONS_PAGE_LIMIT = 200  # §7: the /state finished window and the page size
+EXECUTIONS_PAGE_LIMIT = 50  # §7: the /state finished window and the page size
 
 
 @app.get("/executions", dependencies=[Depends(auth)])

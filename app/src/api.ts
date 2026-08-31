@@ -117,7 +117,7 @@ export const api = {
     req('POST', `/executions/${executionId}/skip-step`, { index }),
   // §19 executions query — §7 paging: status filter (a §4.6 status or
   // 'finished' = any terminal one), keyset cursor, envelope with the match
-  // total (what sizes "Show more (N hidden)").
+  // total (what sizes the pager readout).
   listExecutions: (opts: {
     automation?: string; status?: string; limit?: number
     before?: { startedMs: number; id: string }

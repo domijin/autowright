@@ -304,8 +304,8 @@ single table needs none). A terminal segment shows that status's finished rows. 
 shows just the `executing` rows (normal columns) and **Queued** just the `queued` rows (its
 own columns, below); segment labels are the section names, never the raw §4.6 words
 ("Running", not "executing"). Both live segments read entirely from the §19 window - every
-live row always rides it - so neither ever fetches, pages, or renders the Show-more
-control. The Queued table swaps
+live row always rides it - so neither ever fetches, pages, or renders the pager. The Queued
+table swaps
 the last two columns for **QUEUED FOR** (elapsed since §4.5 `queuedMs`, ticking every second)
 and **QUEUED AT**; a queued row has no duration and has not started, so showing either would be
 a lie. Each row shows the automation name with
@@ -318,27 +318,36 @@ text — skipped/cancelled notes appear on the detail page's RECENT EXECUTIONS r
 execution page.
 
 **Finished paging.** Retention (§5) defaults to 90 days and `keepForever` turns cleanup off
-entirely, so finished history has no upper bound; it moves in pages of **200 rows** and never
+entirely, so finished history has no upper bound; it moves in pages of **50 rows** and never
 rides into the renderer whole. §19 `GET /state` ships a **window**, not the full list: every
-`queued` and `executing` header, the 200 newest finished headers, and `executionsTotal` (the
-count of every header the backend holds, §4.5 test rows included - the §9 sidebar pill's
-number). The page derives Running, Queued, and the first Finished page from that window, so
-it opens with no fetch of its own. Deeper history and the terminal filters come from §19
-`GET /executions` (the Running and Queued segments never fetch - the window is already
-complete for live rows): picking a terminal filter fetches that status's newest page
-(`?status=<status>&limit=200`; while the fetch is in flight the section shows the window's
-matching rows), and one quiet text control under the finished table, **"Show more (N
-hidden)"**, fetches the next page with the keyset cursor - `beforeStartedMs`/`beforeId` from
-the last rendered finished row, `status=finished` when the filter is All. N is the withheld
-count, thousands-separated ("Show more (1,240 hidden)"): the filter's server `total` (on All,
-`executionsTotal` minus the live rows) minus the finished rows on screen, and the control
-stops rendering when nothing is withheld. A failed page fetch surfaces the standard error
-toast and leaves the control in place. Fetched rows are headers, exactly like the window's,
-and merge with the window by id (window wins - it is fresher), sorted in the canonical order,
-so a run finishing mid-scroll still lands at the top via its §19 event while the fetched tail
-stays put. Fetched pages are view state only, held by the page component: they reset when the
-page unmounts and whenever the filter changes (each filter change starts from its own fresh
-first page), and are never stored or synced. Running and Queued are never capped or paged.
+`queued` and `executing` header, the 50 newest finished headers (exactly one page), and
+`executionsTotal` (the count of every header the backend holds, §4.5 test rows included - the
+§9 sidebar pill's number). The page derives Running, Queued, and the first Finished page from
+that window, so it opens with no fetch of its own. Deeper history and the terminal filters
+come from §19 `GET /executions` (the Running and Queued segments never fetch - the window is
+already complete for live rows): picking a terminal filter fetches that status's newest page
+(`?status=<status>&limit=50`; while the fetch is in flight the section shows the window's
+matching rows). **Paging applies to finished rows alone**: the finished table renders one
+50-row page at a time behind a quiet text **pager** under it - under the FINISHED section on
+All (the RUNNING and QUEUED sections above always render every live row in full), under the
+single table on a terminal segment. The pager reads **"Prev · 1–50 of 1,240 · Next"**: the
+range is the rows on screen, the total is the filter's server `total` (on All,
+`executionsTotal` minus the live rows), thousands-separated and trued up by every `/state`
+refresh; Prev and Next disable at their edges. The pager renders only when that total
+exceeds 50 - one page needs no controls, and a short table looks exactly as it did before
+paging existed. Rows fetched so far accumulate in the page component, merged with the window
+by id (window wins - it is fresher) and sorted in the canonical order; the visible page is
+that merged finished list's slice at `page × 50`. **Prev** - and any page whose rows are
+already in hand - re-slices with no request; **Next** past the rows in hand fetches the next
+page with the keyset cursor - `beforeStartedMs`/`beforeId` from the last finished row in
+hand, `status=finished` when the filter is All - and advances only when it lands. A failed
+page fetch surfaces the standard error toast and stays on the current page, pager in place.
+A run finishing mid-view lands at the top of Finished via its §19 event and can push the
+current slice's rows down by one - the canonical order shared by window, keyset, and index
+keeps the pages seamless either way. Fetched pages and the page number are view state only,
+held by the page component: they reset when the page unmounts and whenever the filter
+changes (each filter change starts from its own fresh first page), and are never stored or
+synced. Running and Queued are never capped or paged.
 Both are naturally small (`AUTOWRIGHT_QUEUE_TTL_S`, §15, caps a wait at 120 s by default) and
 both are the live rows the page exists to surface. The pill's `executionsTotal` is kept in
 step by the §19 execution events (a header id the store has never seen counts as one more)

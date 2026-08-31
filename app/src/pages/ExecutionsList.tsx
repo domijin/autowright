@@ -3,7 +3,7 @@
 // every other segment shows exactly one table — Running/Queued their live
 // rows, a terminal segment that status's finished rows. The store holds only
 // the §19 window (live rows plus the newest finished page); the terminal
-// filters and "Show more" page deeper history in via GET /executions.
+// filters and the pager bring deeper history in via GET /executions.
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
@@ -98,9 +98,9 @@ function Table({ rows, go, queued }: {
 const sectionLabel: React.CSSProperties = { ...headCell, display: 'block', margin: '0 0 8px 2px' }
 
 // §7 Finished paging: retention defaults to 90 days and `keepForever` turns
-// cleanup off entirely, so history is unbounded — it moves in pages of 200,
+// cleanup off entirely, so history is unbounded — it moves in pages of 50,
 // the same size as the §19 /state finished window.
-const PAGE = 200
+const PAGE = 50
 
 // §7 canonical order: startedMs desc, id asc on ties — the §19 keyset order,
 // which is what lets fetched pages line up with the live window.
@@ -113,11 +113,12 @@ export default function ExecutionsList() {
   const showToast = useStore((s) => s.showToast)
   const go = useStore((s) => s.go)
   const [filt, setFilt] = useState<Filter>('All')
-  // §7 fetched pages: view state only — reset on unmount and on every filter
-  // change. `serverTotal` is the current filter's match count from the last
-  // fetch (null until one lands).
+  // §7 fetched pages and the page number: view state only — reset on unmount
+  // and on every filter change. `serverTotal` is the current filter's match
+  // count from the last fetch (null until one lands).
   const [fetched, setFetched] = useState<Execution[]>([])
   const [serverTotal, setServerTotal] = useState<number | null>(null)
+  const [page, setPage] = useState(0)
   const [busy, setBusy] = useState(false)
   const fetchSeq = useRef(0)
 
@@ -151,6 +152,7 @@ export default function ExecutionsList() {
     const n = ++fetchSeq.current
     setFetched([])
     setServerTotal(null)
+    setPage(0)
     if (filt === 'All' || filt === 'Running' || filt === 'Queued') return
     void api.listExecutions({ status: filt.toLowerCase(), limit: PAGE }).then((r) => {
       if (n !== fetchSeq.current) return
@@ -173,16 +175,28 @@ export default function ExecutionsList() {
   // three-section stack belongs to the All filter alone (§7).
   const labelled = filt === 'All' && (running.length > 0 || queued.length > 0)
 
-  // §7 "Show more (N hidden)": the filter's match total minus what's on
-  // screen. All derives its total from the pill count minus live rows until a
-  // fetch supplies the server's exact number.
+  // §7 pager: the filter's match total sizes the readout. All derives its
+  // total from the pill count minus live rows until a fetch supplies the
+  // server's exact number.
   const total = serverTotal ?? (filt === 'All'
     ? Math.max(0, executionsTotal - running.length - queued.length)
     : finished.length)
-  const hidden = Math.max(0, total - finished.length)
+  // Clamp the page when the total shrinks beneath it (a retention sweep, a
+  // filter's true count landing) — never an empty slice with rows in hand.
+  const maxPage = Math.max(0, Math.ceil(total / PAGE) - 1)
+  const p = Math.min(page, maxPage)
+  const visible = finished.slice(p * PAGE, p * PAGE + PAGE)
 
-  const showMore = () => {
+  // §7 Next: a page whose rows are already in hand re-slices with no request;
+  // past the rows in hand it fetches the next keyset page — cursor at the last
+  // finished row in hand — and advances only when it lands.
+  const next = () => {
     if (busy || finished.length === 0) return
+    const target = p + 1
+    if (finished.length >= Math.min((target + 1) * PAGE, total)) {
+      setPage(target)
+      return
+    }
     const last = finished[finished.length - 1]
     const n = fetchSeq.current
     setBusy(true)
@@ -195,6 +209,7 @@ export default function ExecutionsList() {
       if (n !== fetchSeq.current) return
       setFetched((f) => [...f, ...r.executions])
       setServerTotal(r.total)
+      if (r.executions.length > 0) setPage(target)
     }, (err: Error) => { if (n === fetchSeq.current) showToast(err.message) })
       .finally(() => setBusy(false))
   }
@@ -262,15 +277,32 @@ export default function ExecutionsList() {
             />
           ) : (
             <>
-              <Table rows={finished} go={go} />
-              {hidden > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+              <Table rows={visible} go={go} />
+              {/* §7 pager: only when the total exceeds one page — a short
+                * table looks exactly as it did before paging existed. */}
+              {total > PAGE && (
+                <div
+                  data-testid="executions-pager"
+                  style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 12 }}
+                >
                   <button
                     className="ad-btn-text dim"
-                    disabled={busy}
-                    onClick={showMore}
+                    disabled={p === 0}
+                    onClick={() => setPage(p - 1)}
                   >
-                    {`Show more (${hidden.toLocaleString('en-US')} hidden)`}
+                    Prev
+                  </button>
+                  <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>·</span>
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>
+                    {`${(p * PAGE + 1).toLocaleString('en-US')}–${(p * PAGE + visible.length).toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`}
+                  </span>
+                  <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>·</span>
+                  <button
+                    className="ad-btn-text dim"
+                    disabled={busy || p * PAGE + visible.length >= total}
+                    onClick={next}
+                  >
+                    Next
                   </button>
                 </div>
               )}

@@ -698,7 +698,7 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   pages. The rows' source - shared with the failure notice's latest-execution lookup above -
   is a per-automation §19 query (`GET /executions?automation=<id>&limit=200`) fetched when
   the page opens, merged by id with the store's §7 window (window wins) so §19 events keep
-  the rows live: the window alone may hold none of an automation's rows once 200 newer
+  the rows live: the window alone may hold none of an automation's rows once 50 newer
   executions of other automations have finished. A failed fetch degrades to the window's
   rows alone - the next execution event or page re-open recovers.
 - **MEMORY** card — mono size/updated info line; "Show in Finder", "Snapshot" and "Clear

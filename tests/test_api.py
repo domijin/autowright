@@ -3522,7 +3522,7 @@ def test_executions_finished_filter_excludes_live_rows(client):
 
 def test_executions_limit_caps_rows_not_total(client):
     """§19: `total` counts every match regardless of `limit` — it is what
-    sizes the §7 "Show more (N hidden)" control. limit below 1 → 422."""
+    sizes the §7 pager's "1–50 of 1,240" readout. limit below 1 → 422."""
     from autowright.storage import store
 
     a = store.create_automation(make_version(), "Capped", "mock")

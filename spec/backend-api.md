@@ -37,7 +37,8 @@ remain plain dicts (§2).
   and is the one surface clients gate platform features on (never by sniffing the platform
   at a call site)
 - `GET /state` → boot snapshot: automations (full), executions (the §7 window, not the full
-  list: every `queued`/`executing` header plus the 200 newest finished headers, in the §7
+  list: every `queued`/`executing` header plus the 50 newest finished headers - exactly one
+  §7 page - in the §7
   canonical order - `startedMs` desc, id asc on ties), `executionsTotal` (count of every
   execution header the backend holds, §4.5 test rows included - backs the §9 sidebar pill;
   deeper history pages in via `GET /executions` below), agents, secrets (the
@@ -434,8 +435,8 @@ remain plain dicts (§2).
   every terminal status (everything but `queued`/`executing`); an unknown value answers 422
   naming the vocabulary, never an empty list. `limit` (optional int ≥ 1; anything lower
   answers 422) caps the returned rows; omitted means every match - §20 reference resolution
-  reads the uncapped list, while the §7 page always sends 200. `total` counts every match
-  regardless of `limit` and cursor - it is what sizes "Show more (N hidden)".
+  reads the uncapped list, while the §7 page always sends 50. `total` counts every match
+  regardless of `limit` and cursor - it is what sizes the §7 pager readout.
   `beforeStartedMs` + `beforeId` are the §7 keyset cursor: only rows strictly after that
   `(startedMs, id)` position in sort order, so a page stays stable while new executions land
   above it; one without the other answers 422 (never a silent default - the same rule as the

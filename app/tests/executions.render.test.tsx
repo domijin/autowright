@@ -47,7 +47,7 @@ const ex = (id: string, over: Partial<Execution> = {}): Execution => ({
 })
 
 // §19: the store holds the window; executionsTotal counts every header the
-// backend has — seed them apart only when the test wants hidden rows.
+// backend has — seed them apart only when the test wants rows past the window.
 const seed = (executions: Execution[], executionsTotal = executions.length) =>
   storeMod.useStore.setState({ page: 'executions', executions, executionsTotal })
 
@@ -140,7 +140,7 @@ describe('executions list sections (§7)', () => {
 
     fireEvent.click(filterButton('Succeeded'))
     await waitFor(() => expect(mockedApi.listExecutions).toHaveBeenCalled())
-    expect(mockedApi.listExecutions).toHaveBeenCalledWith({ status: 'succeeded', limit: 200 })
+    expect(mockedApi.listExecutions).toHaveBeenCalledWith({ status: 'succeeded', limit: 50 })
     // only the matching finished row survives — the live rows are not stacked above it
     expect(screen.getAllByTestId('execution-row').length).toBe(1)
     expect(screen.getByText('e-ok')).toBeTruthy()
@@ -246,7 +246,7 @@ describe('executions list status filter (§7)', () => {
 
     fireEvent.click(filterButton('Failed'))
     await waitFor(() => expect(screen.getByText('e-fetch')).toBeTruthy())
-    expect(mockedApi.listExecutions).toHaveBeenCalledWith({ status: 'failed', limit: 200 })
+    expect(mockedApi.listExecutions).toHaveBeenCalledWith({ status: 'failed', limit: 50 })
     expect(screen.getByText('e-win')).toBeTruthy()      // the window's matching row stays
     expect(screen.queryByText('e-ok')).toBeNull()       // a non-matching one does not
     expect(screen.getAllByTestId('execution-row').length).toBe(2)
@@ -278,73 +278,132 @@ describe('executions list status filter (§7)', () => {
 })
 
 // §7 Finished paging: retention can be off entirely (`keepForever`), so the
-// finished list is unbounded. The store holds the §19 window and the page
-// renders all of it; "Show more (N hidden)" fetches the next keyset page.
+// finished list is unbounded — it moves in pages of 50 behind the pager under
+// the finished table. Prev, and any page whose rows are already in hand,
+// re-slices with no request; Next past them fetches the next §19 keyset page.
 describe('executions list finished paging (§7)', () => {
-  const finishedRows = (n: number) =>
+  const finishedRows = (n: number, from = 0) =>
     Array.from({ length: n }, (_, i) =>
-      ex(`e-${String(i).padStart(4, '0')}`, { endedMs: NOW - i * 1000, startedMs: NOW - i * 1000 }))
+      ex(`e-${String(from + i).padStart(4, '0')}`, {
+        endedMs: NOW - (from + i) * 1000, startedMs: NOW - (from + i) * 1000,
+      }))
 
-  it('renders the window and says how many are hidden', () => {
+  const pager = () => screen.getByTestId('executions-pager')
+  const pagerButton = (label: string) =>
+    within(pager()).getByText(label).closest('button')! as HTMLButtonElement
+
+  it('renders one 50-row page under the pager, Prev disabled on the first', () => {
     seed([
       ...Array.from({ length: 3 }, (_, i) =>
         ex(`r-${i}`, { status: 'executing', duration: '', endedMs: 0 })),
-      ...finishedRows(250),
-    ], 1253)
+      ...finishedRows(50),
+    ], 1243)
     render(<ExecutionsList />)
 
-    // every window row renders: 3 running + all 250 finished
-    expect(screen.getAllByTestId('execution-row').length).toBe(253)
-    // 1253 headers minus the 3 live rows minus the 250 on screen
-    expect(screen.getByText('Show more (1,000 hidden)')).toBeTruthy()
+    // 3 running + one 50-row finished page — never the whole history at once
+    expect(screen.getAllByTestId('execution-row').length).toBe(53)
+    // 1243 headers minus the 3 live rows, thousands-separated
+    expect(within(pager()).getByText('1–50 of 1,240')).toBeTruthy()
+    expect(pagerButton('Prev').disabled).toBe(true)
+    expect(pagerButton('Next').disabled).toBe(false)
     expect(screen.getByText('e-0000')).toBeTruthy()
-    expect(screen.getByText('e-0249')).toBeTruthy()
+    expect(screen.getByText('e-0049')).toBeTruthy()
   })
 
-  it('fetches the next page on click, then drops the control', async () => {
-    const older = [
-      ex('e-0002', { startedMs: NOW - 2000, endedMs: NOW - 2000 }),
-      ex('e-0003', { startedMs: NOW - 3000, endedMs: NOW - 3000 }),
-    ]
-    mockedApi.listExecutions.mockResolvedValue({ executions: older, total: 4 })
-    const windowRows = finishedRows(2)
-    seed(windowRows, 4)
+  it('fetches the next keyset page on Next, then advances the slice', async () => {
+    const windowRows = finishedRows(50)
+    mockedApi.listExecutions.mockResolvedValue({ executions: finishedRows(50, 50), total: 120 })
+    seed(windowRows, 120)
     render(<ExecutionsList />)
 
-    fireEvent.click(screen.getByText('Show more (2 hidden)'))
-    await waitFor(() => expect(screen.getByText('e-0003')).toBeTruthy())
-    // §19 keyset cursor: the last rendered finished row's position
+    fireEvent.click(pagerButton('Next'))
+    await waitFor(() => expect(screen.getByText('e-0050')).toBeTruthy())
+    // §19 keyset cursor: the last finished row in hand
     expect(mockedApi.listExecutions).toHaveBeenCalledWith({
-      status: 'finished', limit: 200,
-      before: { startedMs: windowRows[1].startedMs, id: windowRows[1].id },
+      status: 'finished', limit: 50,
+      before: { startedMs: windowRows[49].startedMs, id: windowRows[49].id },
     })
-    expect(screen.getAllByTestId('execution-row').length).toBe(4)
-    expect(screen.queryByText(/Show more/)).toBeNull()
+    expect(screen.getAllByTestId('execution-row').length).toBe(50)
+    expect(within(pager()).getByText('51–100 of 120')).toBeTruthy()
+    expect(screen.queryByText('e-0049')).toBeNull()
   })
 
-  it('shows no control when the window already holds every row', () => {
-    seed(finishedRows(200))
+  it('re-slices on Prev with no request', async () => {
+    mockedApi.listExecutions.mockResolvedValue({ executions: finishedRows(50, 50), total: 120 })
+    seed(finishedRows(50), 120)
     render(<ExecutionsList />)
 
-    expect(screen.getAllByTestId('execution-row').length).toBe(200)
-    expect(screen.queryByText(/Show more/)).toBeNull()
+    fireEvent.click(pagerButton('Next'))
+    await waitFor(() => expect(screen.getByText('e-0050')).toBeTruthy())
+    expect(mockedApi.listExecutions).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(pagerButton('Prev'))
+    expect(screen.getByText('e-0000')).toBeTruthy()
+    expect(screen.getByText('e-0049')).toBeTruthy()
+    expect(within(pager()).getByText('1–50 of 120')).toBeTruthy()
+    expect(pagerButton('Prev').disabled).toBe(true)
+    expect(mockedApi.listExecutions).toHaveBeenCalledTimes(1)
   })
 
-  it('never caps Running or Queued', () => {
+  it('re-slices on Next when the page\'s rows are already in hand', async () => {
+    mockedApi.listExecutions.mockResolvedValue({ executions: finishedRows(50, 50), total: 120 })
+    seed(finishedRows(50), 120)
+    render(<ExecutionsList />)
+
+    fireEvent.click(pagerButton('Next'))
+    await waitFor(() => expect(screen.getByText('e-0050')).toBeTruthy())
+    fireEvent.click(pagerButton('Prev'))
+
+    // the second page is fetched already — going forward again asks for nothing
+    fireEvent.click(pagerButton('Next'))
+    expect(screen.getByText('e-0050')).toBeTruthy()
+    expect(within(pager()).getByText('51–100 of 120')).toBeTruthy()
+    expect(mockedApi.listExecutions).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders no pager when the total fits one page', () => {
+    seed(finishedRows(50))
+    render(<ExecutionsList />)
+
+    expect(screen.getAllByTestId('execution-row').length).toBe(50)
+    expect(screen.queryByTestId('executions-pager')).toBeNull()
+  })
+
+  it('toasts a failed page fetch and stays on the current page, pager in place', async () => {
+    mockedApi.listExecutions.mockRejectedValue(new Error('backend is offline'))
+    seed(finishedRows(50), 120)
+    render(<ExecutionsList />)
+
+    fireEvent.click(pagerButton('Next'))
+    await waitFor(() => expect(storeMod.useStore.getState().toast).toBe('backend is offline'))
+    expect(within(pager()).getByText('1–50 of 120')).toBeTruthy()
+    expect(screen.getByText('e-0000')).toBeTruthy()
+    expect(screen.getAllByTestId('execution-row').length).toBe(50)
+  })
+
+  it('never caps or pages Running and Queued', () => {
     seed([
-      ...Array.from({ length: 3 }, (_, i) =>
-        ex(`r-${i}`, { status: 'executing', duration: '', endedMs: 0 })),
-      ...Array.from({ length: 4 }, (_, i) =>
-        ex(`q-${i}`, { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - i * 1000 })),
-      ...finishedRows(250),
+      ...Array.from({ length: 60 }, (_, i) =>
+        ex(`r-${String(i).padStart(2, '0')}`, { status: 'executing', duration: '', endedMs: 0 })),
+      ...Array.from({ length: 55 }, (_, i) =>
+        ex(`q-${String(i).padStart(2, '0')}`, {
+          status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - i * 1000,
+        })),
+      ...finishedRows(50),
     ])
     render(<ExecutionsList />)
 
-    // 3 running + 4 queued + every finished row the window holds
-    expect(screen.getAllByTestId('execution-row').length).toBe(257)
+    // 60 running + 55 queued, both whole, above the 50-row finished page
+    expect(screen.getAllByTestId('execution-row').length).toBe(165)
     expect(screen.getByText('RUNNING')).toBeTruthy()
     expect(screen.getByText('QUEUED')).toBeTruthy()
-    expect(screen.queryByText(/Show more/)).toBeNull()
+    // 165 headers minus the 115 live rows is exactly one page — no pager
+    expect(screen.queryByTestId('executions-pager')).toBeNull()
+
+    fireEvent.click(filterButton('Running'))
+    expect(screen.getAllByTestId('execution-row').length).toBe(60)
+    expect(screen.queryByTestId('executions-pager')).toBeNull()
+    expect(mockedApi.listExecutions).not.toHaveBeenCalled()
   })
 })
 

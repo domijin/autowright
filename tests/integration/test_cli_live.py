@@ -144,7 +144,7 @@ def test_cli_automation_show_unknown_reference_exits_1(backend, client):
 
 def test_cli_execution_list_filters_and_json(backend, client):
     """§20: `execution list` filters by automation and status, caps with -n, and
-    `--json` returns the raw rows."""
+    `--json` returns the raw §19 envelope ({executions, total})."""
     quiet = create_auto(client, name="Quiet")
     noisy = create_auto(client, name="Noisy")
     for _ in range(2):
@@ -164,11 +164,12 @@ def test_cli_execution_list_filters_and_json(backend, client):
 
     r = run_cli(backend.home, "execution", "list", "--status", "succeeded", "--json")
     assert r.returncode == 0, r.stderr + r.stdout
-    execs = json.loads(r.stdout)
-    assert len(execs) == 3
+    data = json.loads(r.stdout)
+    execs = data["executions"]
+    assert len(execs) == 3 and data["total"] == 3
     assert {e["status"] for e in execs} == {"succeeded"}
     assert {e["automationName"] for e in execs} == {"Noisy", "Quiet"}
 
     r = run_cli(backend.home, "execution", "list", "--status", "failed", "--json")
     assert r.returncode == 0, r.stderr + r.stdout
-    assert json.loads(r.stdout) == []
+    assert json.loads(r.stdout) == {"executions": [], "total": 0}

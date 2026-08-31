@@ -18,6 +18,7 @@ import Onboarding from './pages/Onboarding'
 import ReportModal from './pages/ReportModal'
 import SecretsPage from './pages/SecretsPage'
 import SettingsPage from './pages/SettingsPage'
+import WhatsNewModal from './pages/WhatsNewModal'
 
 const NAV: { page: string; label: string; icon: string }[] = [
   { page: 'automations', label: 'Automations', icon: 'fa-bolt' },
@@ -215,6 +216,7 @@ export default function App() {
   const page = useStore((s) => s.page)
   const toast = useStore((s) => s.toast)
   const reportOpen = useStore((s) => s.reportOpen)
+  const whatsNewOpen = useStore((s) => s.whatsNewOpen)
   const boot = useStore((s) => s.boot)
   const disconnect = useStore((s) => s.disconnect)
   const login = useStore((s) => s.settings?.login)
@@ -284,6 +286,9 @@ export default function App() {
       <Toast msg={toast} />
       {/* §9.5 report bug modal — opened by the nav row, never a page */}
       {reportOpen && <ReportModal />}
+      {/* §9.4 What's-new modal — the About row and the post-update auto-open
+          share this one shell-mounted instance, never a page */}
+      {whatsNewOpen && <WhatsNewModal />}
       {/* §9.3 developer log overlay — main-window surfaces only */}
       <DevLogOverlay />
     </div>

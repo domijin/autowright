@@ -142,7 +142,13 @@ that live in more than one hand-maintained file: the app version agrees across `
 `instructions/framework-instructions.md`, and §6.2 itself, with the import-name ↔
 distribution-name mapping written out in the guard; and every `*.ps1` in the §17 script
 directories still starts with a UTF-8 BOM (Windows PowerShell 5.1 misreads a BOM-less file
-as ANSI and fails to parse the scripts' non-ASCII result lines).
+as ANSI and fails to parse the scripts' non-ASCII result lines); and the §17
+`CHANGELOG.md` carries a `## v<version> - <date>` entry for the current `VERSION` with its
+version headings in strictly descending semver order (newest first, no duplicates). The
+changelog guard deliberately checks "an entry exists", not "the top entry matches":
+notes for the *next* version may be written and committed ahead of running `release.sh`
+(its §18 preflight requires exactly that), and a pre-written newer entry above the
+current version's is legitimate.
 
 The same file guards the §3 update feeds under `release/` and the §17
 `docs/downloads.json` index, which nothing else reads at test time - their only real
@@ -385,7 +391,10 @@ Dev workflow:
   exists (checked locally and on `origin`, before
   anything is modified), or if the new version is not strictly higher than the current
   `VERSION` (semver ordering: numeric core compared field by field; on an equal core a
-  release outranks any pre-release, and two pre-releases compare lexically); validates the
+  release outranks any pre-release, and two pre-releases compare lexically), or if the
+  repo-root `CHANGELOG.md` (§17) has no `## v<version>` section heading for the version
+  being released — the §9.4 What's-new notes are written before the release is cut, never
+  after; validates the
   argument (semver: `MAJOR.MINOR.PATCH`, optional
   pre-release suffix); writes it to the repo-root `VERSION` file (the single version source, §17) and
   syncs it into the three version sites: `app/package.json` (`"version"`),

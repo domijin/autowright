@@ -333,6 +333,71 @@ def test_downloads_index_agrees_with_the_feeds():
                     "name - the site and the updater must hand out the same artifact")
 
 
+# ---------------------------------------------------------------- §17 changelog
+
+# §17: one `## v<version> - <YYYY-MM-DD>` section per released version, newest
+# first. The version half is semver with an optional pre-release suffix; the
+# date half is what a reader (and the §9.4 modal) sees beside it.
+CHANGELOG_HEADING = re.compile(
+    r"^## v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.\-]+)?) - \d{4}-\d{2}-\d{2}$")
+
+
+def _changelog_versions() -> list[str]:
+    """The version of every `## ` heading in `CHANGELOG.md`, in file order,
+    with each heading checked for shape on the way through."""
+    versions = []
+    for line in _read("CHANGELOG.md").splitlines():
+        if not line.startswith("## "):
+            continue
+        m = CHANGELOG_HEADING.match(line)
+        assert m, (
+            f"CHANGELOG.md heading {line!r} is not a §17 section heading "
+            "(`## v<version> - <YYYY-MM-DD>`)")
+        versions.append(m.group(1))
+    return versions
+
+
+def _changelog_order_key(version: str) -> tuple[tuple[int, ...], int, str]:
+    """Newest-first ordering key: the numeric core field by field, then a
+    release ahead of any pre-release on an equal core, then pre-releases
+    against each other lexically."""
+    core, _, pre = version.partition("-")
+    return tuple(int(part) for part in core.split(".")), 0 if pre else 1, pre
+
+
+def test_changelog_headings_are_section_headings():
+    """§17: every `## ` line in `CHANGELOG.md` is a version section — the file
+    has no other second-level headings. A heading in any other shape is
+    invisible to `release.sh`'s §18 preflight and to the guards below."""
+    versions = _changelog_versions()
+    assert versions, "CHANGELOG.md has no `## v<version>` section — did it move?"
+
+
+def test_changelog_has_an_entry_for_the_current_version():
+    """§17/§18: `release.sh` refuses to cut a version with no entry, so the
+    entry must exist by the time `VERSION` names it. Deliberately "an entry
+    exists", not "the top entry matches": notes for the *next* version may be
+    written and committed ahead of the release (the preflight requires exactly
+    that), so a newer entry sitting above the current one is legitimate."""
+    version = _read("VERSION").strip()
+    versions = _changelog_versions()
+    assert version in versions, (
+        f"CHANGELOG.md has no `## v{version}` section, but VERSION says "
+        f"{version!r}; found {versions}. Write the release notes before "
+        "cutting the release.")
+
+
+def test_changelog_versions_descend_without_duplicates():
+    """§17: newest first, so the §9.4 What's-new modal opens on the notes for
+    the version the user just got. Two sections for one version, or a section
+    filed under an older one, would put the wrong notes at the top."""
+    versions = _changelog_versions()
+    for newer, older in zip(versions, versions[1:]):
+        assert _changelog_order_key(newer) > _changelog_order_key(older), (
+            f"CHANGELOG.md lists v{newer} above v{older}; the sections must be "
+            "in strictly descending version order, newest first")
+
+
 def test_powershell_scripts_start_with_a_utf8_bom():
     """§17/§18 `scripts/*.ps1` + `windows-scripts/*.ps1`: Windows PowerShell
     5.1 reads a BOM-less file as ANSI, and the scripts carry non-ASCII

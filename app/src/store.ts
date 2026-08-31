@@ -58,6 +58,9 @@ interface Model {
   draftJobs: DraftJobRow[]
   // §9.5 report issue modal — opened by the §9 "Report an issue" nav row; not a page.
   reportOpen: boolean
+  // §9.4 What's-new modal — opened by the About row and by the post-update
+  // auto-open at boot; not a page.
+  whatsNewOpen: boolean
   // §2/§9 platform gating, read from §19 GET /health at every backend
   // connection: the §5.1 os token ('' until the first read) and the platform
   // layer's flag set. Every OS-coupled surface gates on these — the renderer
@@ -146,6 +149,25 @@ async function ensureCliFirstRun(settings: Settings): Promise<void> {
   }
 }
 
+// §9.4 post-update auto-open: one check per launch, off the boot snapshot's
+// version. The key is written in every branch, so the modal can never re-open
+// for a version already seen. No stored key means a fresh install (onboarding
+// owns that launch — write silently) unless ad-onboarded shows the install
+// predates the key, which makes this launch an upgrade like any other. The
+// menu-bar panel window is exempt: it neither opens the modal nor writes the
+// key — a panel boot must not spend the main window's one showing.
+let whatsNewChecked = false
+function checkWhatsNew(version: string, menubar: boolean) {
+  if (whatsNewChecked || menubar || !version) return
+  whatsNewChecked = true
+  const last = localStorage.getItem('ad-last-seen-version')
+  if (last === version) return
+  localStorage.setItem('ad-last-seen-version', version)
+  if (last !== null || localStorage.getItem('ad-onboarded') === '1') {
+    useStore.setState({ whatsNewOpen: true })
+  }
+}
+
 // Execution cache eviction: full records and log buckets are kept only for
 // the currently viewed execution plus the 5 most recently viewed (MRU head is
 // the current one, so its live-streaming buckets are never evicted mid-view);
@@ -206,6 +228,7 @@ export const useStore = create<Model>((set, get) => ({
   pendingDraft: null,
   draftJobs: [],
   reportOpen: false,
+  whatsNewOpen: false,
   platformOs: '',
   platformCapabilities: MAC_CAPABILITIES,
   surface: 'app',
@@ -286,6 +309,9 @@ export const useStore = create<Model>((set, get) => ({
       // §3 one-shot first-run CLI install — fire-and-forget off the freshly
       // fetched snapshot (not the store: a stale boot yields its snapshot set).
       void ensureCliFirstRun(s.settings)
+      // §9.4 post-update auto-open — like the CLI first-run, off the snapshot,
+      // not the store (a stale boot still knows the backend's version).
+      checkWhatsNew(s.version, hash.includes('menubar'))
       // Exactly one live socket: a re-entrant boot (StrictMode re-mount,
       // backend restart) must not stack subscriptions — every stacked socket
       // applies each event once more (duplicate log lines, double toasts).

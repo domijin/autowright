@@ -272,11 +272,13 @@ export default function AboutPage() {
         <div style={row}>
           <div style={{ flex: 1 }}>
             <div style={rowTitle}>What&rsquo;s new</div>
-            <div style={rowSub}>Release notes for every version live on GitHub.</div>
+            <div style={rowSub}>What changed in each version of Autowright.</div>
           </div>
-          <a className="ad-btn-soft" href={`${REPO_URL}/releases`} target="_blank" rel="noopener noreferrer" style={linkBtn}>
-            Release notes ↗
-          </a>
+          {/* §9.4: opens the shell-mounted What's-new modal (CHANGELOG.md) —
+              the same one the post-update auto-open shows. */}
+          <button className="ad-btn-soft" onClick={() => useStore.setState({ whatsNewOpen: true })} style={{ flex: 'none' }}>
+            View
+          </button>
         </div>
       </Section>
 

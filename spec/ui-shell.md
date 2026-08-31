@@ -838,13 +838,17 @@ sections with Settings' anatomy (mono eyebrow + card of rows) — **APP**,
 **UPDATES**, **LEGAL** — and new about-ish content (credits, support links)
 lands in one of these or a new eyebrow here, never on Settings.
 
-Document rows (Privacy policy, Terms of service, Open-source libraries) share one **doc modal**:
+Document rows (Privacy policy, Terms of service, Open-source libraries, What's
+new) share one **doc modal** pattern:
 width 680, `h2` title, body caps at 62 vh and scrolls, content
 rendered through the shared §4.5 Markdown renderer, quiet Close in the footer.
 Each document loads through a dynamic `?raw` import so it stays out of the main
 bundle, fetched once on first open. A failed load never strands the modal on
 "Loading…": the body swaps to a `--red-text` line ("Couldn't load the document.")
-with a bordered **Retry** button that re-attempts the import.
+with a bordered **Retry** button that re-attempts the import. The three LEGAL
+documents share one modal local to this page; the What's-new document renders in
+its own instance of the same pattern, mounted at the app shell level so it can
+also open itself after an update (below) with the About page nowhere in sight.
 
 **APP**
 
@@ -929,10 +933,31 @@ with a bordered **Retry** button that re-attempts the import.
   reconcile starts or stops the §3 automatic check — turning it on checks
   immediately). The row lives here, not on Settings — updates are About-page
   territory (§4.9).
-- **What's new** — sub-line "Release notes for every version live on GitHub.";
-  right-side "Release notes ↗" link (same external-anchor mechanism) to
-  https://github.com/hansololz/autowright/releases. The changelog is the GitHub
-  releases page — the app never duplicates it.
+- **What's new** — sub-line "What changed in each version of Autowright.";
+  right-side "View" button opens the **What's-new modal**: the shell-mounted doc
+  modal (title "What's new") rendering the repo-root `CHANGELOG.md` (§17) — the
+  canonical curated release notes, every released version newest-first — through
+  the same raw import and first-H1 strip as the privacy policy. The in-app
+  changelog is the authoritative user-facing one; the GitHub releases page keeps
+  its auto-generated notes and is not linked from here.
+
+  **Post-update auto-open.** The same modal opens by itself, once, on the first
+  launch after an update, so the user lands on the notes for the version they
+  just got (the newest entry — the top of the file). Mechanism: the renderer
+  keeps the last version it ran under the localStorage key
+  `ad-last-seen-version` (beside `ad-onboarded`, §10). At store boot, once
+  `GET /state` supplies the running version: a stored value that differs from it
+  opens the modal and rewrites the key; an equal value does nothing. No stored
+  value means either a fresh install or an upgrade from a pre-changelog version,
+  told apart by `ad-onboarded`: when it is set the launch is an upgrade — open
+  the modal (and write the key); when it is not, write the key silently and show
+  nothing (a fresh install has no "what's new"; onboarding owns that first
+  launch). The key is written in every branch, so the modal can never re-open on
+  later launches of the same version, and closing it is the only interaction —
+  no separate dismissal state. The check runs once per app launch, not on every
+  `/state` poll. The §13 menu-bar panel window is exempt: it neither opens the
+  modal nor writes the key — a panel boot must not spend the main window's one
+  showing.
 
 **LEGAL**
 

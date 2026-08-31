@@ -555,6 +555,14 @@ migrate-on-load migration so data written by released versions keeps loading (§
 - `.gitattributes` — `*.cmd text eol=crlf`: batch files (the §15 `tests/bin/*.cmd` doubles)
   must reach a Windows checkout CRLF regardless of the clone's autocrlf setting.
 - `LICENSE` — MIT, copyright David Zhang (also `"license": "MIT"` in `app/package.json`).
+- `CHANGELOG.md` — the release notes, canonical copy: an `# Changelog` H1, then one
+  `## v<version> - <YYYY-MM-DD>` section per released version, newest first, each a short
+  curated list of user-facing changes (features, UI, fixes — written for users, never a
+  commit dump; plain hyphens, no em dash). Rendered in-app in the §9.4 What's-new modal
+  (raw import into the renderer bundle, same mechanism as `PRIVACY.md`) and read by GitHub
+  visitors in place. Hand-written by the developer before each release: `release.sh`
+  refuses to cut a version that has no entry (§18), and a §15 drift guard requires an
+  entry for the current `VERSION` and keeps the headings in descending semver order.
 - `PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
   page (raw import into the renderer bundle), read by GitHub visitors in place, and
   mirrored verbatim into the `docs/privacy.html` web page (above).

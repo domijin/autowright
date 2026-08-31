@@ -1,8 +1,8 @@
 // Component tests for the §7 executions list: the three-section stack that
-// belongs to All alone (Running / Queued / Finished), the Queued table's own
+// belongs to All alone (Executing / Queued / Finished), the Queued table's own
 // columns, and the drain order — a §6 queued firing must read top-down in the
 // order it will actually run. Every other segment shows exactly one table:
-// Running and Queued their live rows straight out of the §19 window (never a
+// Executing and Queued their live rows straight out of the §19 window (never a
 // fetch), a terminal segment only that status's finished rows.
 // ExecutionsList renders for real (happy-dom) with the store seeded and the
 // api module mocked.
@@ -67,7 +67,7 @@ const filterButton = (label: string) =>
   within(screen.getByRole('group', { name: 'Filter executions' })).getByText(label)
 
 describe('executions list sections (§7)', () => {
-  it('splits queued firings out of Running into their own Queued section', () => {
+  it('splits queued firings out of Executing into their own Queued section', () => {
     seed([
       ex('e-run', { status: 'executing', duration: '', endedMs: 0 }),
       ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 5_000, trigger: 'Discord' }),
@@ -75,13 +75,13 @@ describe('executions list sections (§7)', () => {
     ])
     const { container } = render(<ExecutionsList />)
 
-    expect(screen.getByText('RUNNING')).toBeTruthy()
+    expect(screen.getByText('EXECUTING')).toBeTruthy()
     expect(screen.getByText('QUEUED')).toBeTruthy()
     expect(screen.getByText('FINISHED')).toBeTruthy()
     // section membership read from document order (labels precede their tables):
-    // the running row sits between RUNNING and QUEUED, the queued row after QUEUED
+    // the executing row sits between EXECUTING and QUEUED, the queued row after QUEUED
     const text = container.textContent!
-    expect(text.indexOf('e-run')).toBeGreaterThan(text.indexOf('RUNNING'))
+    expect(text.indexOf('e-run')).toBeGreaterThan(text.indexOf('EXECUTING'))
     expect(text.indexOf('e-run')).toBeLessThan(text.indexOf('QUEUED'))
     expect(text.indexOf('e-wait')).toBeGreaterThan(text.indexOf('QUEUED'))
   })
@@ -114,7 +114,7 @@ describe('executions list sections (§7)', () => {
     seed([ex('e-done')])
     render(<ExecutionsList />)
 
-    expect(screen.queryByText('RUNNING')).toBeNull()
+    expect(screen.queryByText('EXECUTING')).toBeNull()
     expect(screen.queryByText('QUEUED')).toBeNull()
     expect(screen.queryByText('FINISHED')).toBeNull()
   })
@@ -148,13 +148,13 @@ describe('executions list sections (§7)', () => {
     expect(screen.queryByText('e-wait')).toBeNull()
     expect(screen.queryByText('e-bad')).toBeNull()
     // and a single table carries no section labels
-    expect(screen.queryByText('RUNNING')).toBeNull()
+    expect(screen.queryByText('EXECUTING')).toBeNull()
     expect(screen.queryByText('QUEUED')).toBeNull()
     expect(screen.queryByText('FINISHED')).toBeNull()
   })
 })
 
-// §7 live segments: Running and Queued each show exactly one table read
+// §7 live segments: Executing and Queued each show exactly one table read
 // straight out of the §19 window — no section label, no fetch, no paging.
 describe('executions list live segments (§7)', () => {
   const liveMix = () => [
@@ -164,11 +164,11 @@ describe('executions list live segments (§7)', () => {
     ex('e-done'),
   ]
 
-  it('shows only executing rows under Running and never fetches', () => {
+  it('shows only executing rows under Executing and never fetches', () => {
     seed(liveMix())
     render(<ExecutionsList />)
 
-    fireEvent.click(filterButton('Running'))
+    fireEvent.click(filterButton('Executing'))
     expect(screen.getAllByTestId('execution-row').length).toBe(1)
     expect(screen.getByText('e-run')).toBeTruthy()
     expect(screen.queryByText('q-old')).toBeNull()
@@ -176,7 +176,7 @@ describe('executions list live segments (§7)', () => {
     // normal columns, and no section label above a lone table
     expect(screen.getByText('DURATION')).toBeTruthy()
     expect(screen.queryByText('QUEUED FOR')).toBeNull()
-    expect(screen.queryByText('RUNNING')).toBeNull()
+    expect(screen.queryByText('EXECUTING')).toBeNull()
     expect(screen.queryByText('QUEUED')).toBeNull()
     expect(screen.queryByText('FINISHED')).toBeNull()
     // the window always holds every live row (§19) — nothing to page in
@@ -213,8 +213,8 @@ describe('executions list live segments (§7)', () => {
 
     seed([ex('e-wait', { status: 'queued', duration: '', endedMs: 0, queuedMs: NOW - 1_000 })])
     render(<ExecutionsList />)
-    fireEvent.click(filterButton('Running'))
-    expect(screen.getByText('No running executions')).toBeTruthy()
+    fireEvent.click(filterButton('Executing'))
+    expect(screen.getByText('No executing executions')).toBeTruthy()
     expect(mockedApi.listExecutions).not.toHaveBeenCalled()
   })
 })
@@ -229,7 +229,7 @@ describe('executions list status filter (§7)', () => {
 
     const group = screen.getByRole('group', { name: 'Filter executions' })
     expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'All', 'Running', 'Queued', 'Succeeded', 'Failed', 'Cancelled', 'Skipped', 'Interrupted',
+      'All', 'Executing', 'Queued', 'Succeeded', 'Failed', 'Cancelled', 'Skipped', 'Interrupted',
     ])
   })
 
@@ -300,7 +300,7 @@ describe('executions list finished paging (§7)', () => {
     ], 1243)
     render(<ExecutionsList />)
 
-    // 3 running + one 50-row finished page — never the whole history at once
+    // 3 executing + one 50-row finished page — never the whole history at once
     expect(screen.getAllByTestId('execution-row').length).toBe(53)
     // 1243 headers minus the 3 live rows, thousands-separated
     expect(within(pager()).getByText('1–50 of 1,240')).toBeTruthy()
@@ -381,7 +381,7 @@ describe('executions list finished paging (§7)', () => {
     expect(screen.getAllByTestId('execution-row').length).toBe(50)
   })
 
-  it('never caps or pages Running and Queued', () => {
+  it('never caps or pages Executing and Queued', () => {
     seed([
       ...Array.from({ length: 60 }, (_, i) =>
         ex(`r-${String(i).padStart(2, '0')}`, { status: 'executing', duration: '', endedMs: 0 })),
@@ -393,14 +393,14 @@ describe('executions list finished paging (§7)', () => {
     ])
     render(<ExecutionsList />)
 
-    // 60 running + 55 queued, both whole, above the 50-row finished page
+    // 60 executing + 55 queued, both whole, above the 50-row finished page
     expect(screen.getAllByTestId('execution-row').length).toBe(165)
-    expect(screen.getByText('RUNNING')).toBeTruthy()
+    expect(screen.getByText('EXECUTING')).toBeTruthy()
     expect(screen.getByText('QUEUED')).toBeTruthy()
     // 165 headers minus the 115 live rows is exactly one page — no pager
     expect(screen.queryByTestId('executions-pager')).toBeNull()
 
-    fireEvent.click(filterButton('Running'))
+    fireEvent.click(filterButton('Executing'))
     expect(screen.getAllByTestId('execution-row').length).toBe(60)
     expect(screen.queryByTestId('executions-pager')).toBeNull()
     expect(mockedApi.listExecutions).not.toHaveBeenCalled()

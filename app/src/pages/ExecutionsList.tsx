@@ -1,6 +1,6 @@
 // Executions list (§7): every execution across all automations. The All
-// filter stacks Running and Queued (§6 firing queue) sections above Finished;
-// every other segment shows exactly one table — Running/Queued their live
+// filter stacks Executing and Queued (§6 firing queue) sections above Finished;
+// every other segment shows exactly one table — Executing/Queued their live
 // rows, a terminal segment that status's finished rows. The store holds only
 // the §19 window (live rows plus the newest finished page); the terminal
 // filters and the pager bring deeper history in via GET /executions.
@@ -10,9 +10,10 @@ import { useStore } from '../store'
 import { Badge, EmptyNotice, PageTitle, PULSE, waitedLabel } from '../ui'
 import type { Execution } from '../types'
 
-// §7: the sections' own order — the live segments carry the section names
-// ("Running", never "executing"), then the five §4.6 terminal statuses.
-const FILTERS = ['All', 'Running', 'Queued', 'Succeeded', 'Failed', 'Cancelled', 'Skipped', 'Interrupted'] as const
+// §7: the sections' own order — the live segments carry the section names.
+// Labels are the §4.6 words capitalized ("Executing", "Queued"), then the five
+// terminal statuses.
+const FILTERS = ['All', 'Executing', 'Queued', 'Succeeded', 'Failed', 'Cancelled', 'Skipped', 'Interrupted'] as const
 type Filter = (typeof FILTERS)[number]
 
 const GRID = '2fr 1.1fr .8fr .6fr 1fr'
@@ -122,7 +123,7 @@ export default function ExecutionsList() {
   const [busy, setBusy] = useState(false)
   const fetchSeq = useRef(0)
 
-  const running = executions
+  const executing = executions
     .filter((e) => e.status === 'executing')
     .sort((a, b) => b.startedMs - a.startedMs)
   // §6 firing queue: oldest wait first — the drain order, so the next one to
@@ -133,7 +134,7 @@ export default function ExecutionsList() {
 
   // §7: the live segments read the window directly; only All and the terminal
   // segments deal in finished rows (and only those ever fetch).
-  const liveSegment = filt === 'Running' || filt === 'Queued'
+  const liveSegment = filt === 'Executing' || filt === 'Queued'
   const matchesFilter = (e: Execution) =>
     e.status !== 'queued' && e.status !== 'executing' &&
     (filt === 'All' || e.status === filt.toLowerCase())
@@ -153,7 +154,7 @@ export default function ExecutionsList() {
     setFetched([])
     setServerTotal(null)
     setPage(0)
-    if (filt === 'All' || filt === 'Running' || filt === 'Queued') return
+    if (filt === 'All' || filt === 'Executing' || filt === 'Queued') return
     void api.listExecutions({ status: filt.toLowerCase(), limit: PAGE }).then((r) => {
       if (n !== fetchSeq.current) return
       setFetched(r.executions)
@@ -173,13 +174,13 @@ export default function ExecutionsList() {
 
   // Labels appear as soon as the page holds more than one section — and the
   // three-section stack belongs to the All filter alone (§7).
-  const labelled = filt === 'All' && (running.length > 0 || queued.length > 0)
+  const labelled = filt === 'All' && (executing.length > 0 || queued.length > 0)
 
   // §7 pager: the filter's match total sizes the readout. All derives its
   // total from the pill count minus live rows until a fetch supplies the
   // server's exact number.
   const total = serverTotal ?? (filt === 'All'
-    ? Math.max(0, executionsTotal - running.length - queued.length)
+    ? Math.max(0, executionsTotal - executing.length - queued.length)
     : finished.length)
   // Clamp the page when the total shrinks beneath it (a retention sweep, a
   // filter's true count landing) — never an empty slice with rows in hand.
@@ -235,29 +236,29 @@ export default function ExecutionsList() {
         Executions
       </PageTitle>
 
-      {filt === 'All' && running.length > 0 && (
+      {filt === 'All' && executing.length > 0 && (
         <>
-          <span style={sectionLabel}>RUNNING</span>
-          <Table rows={running} go={go} />
+          <span style={sectionLabel}>EXECUTING</span>
+          <Table rows={executing} go={go} />
         </>
       )}
       {filt === 'All' && queued.length > 0 && (
         <>
-          <span style={{ ...sectionLabel, marginTop: running.length > 0 ? 22 : 0 }}>QUEUED</span>
+          <span style={{ ...sectionLabel, marginTop: executing.length > 0 ? 22 : 0 }}>QUEUED</span>
           <Table rows={queued} go={go} queued />
         </>
       )}
       {liveSegment ? (
         // §7 live segments: one table, no section label, never fetched or
         // paged — the window always holds every live row.
-        (filt === 'Running' ? running : queued).length === 0 ? (
+        (filt === 'Executing' ? executing : queued).length === 0 ? (
           <EmptyNotice
             title={`No ${filt.toLowerCase()} executions`}
             body="Executions matching this filter will appear here."
           />
         ) : (
           <Table
-            rows={filt === 'Running' ? running : queued}
+            rows={filt === 'Executing' ? executing : queued}
             go={go}
             queued={filt === 'Queued'}
           />

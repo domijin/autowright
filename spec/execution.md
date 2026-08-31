@@ -275,35 +275,36 @@ automation's; in create mode the draft's name, "New automation" fallback), never
 the redundant pair (a mocked sender still appears between: "Test · Dave"). Test rows share
 the record's draft-scoped lifetime (§11 keep-latest): starting the next test replaces the
 previous row, and a settling draft removes its rows. Three sections, top to bottom —
-active work, then what it is holding up, then history: **Running** (`executing` rows, newest
+active work, then what it is holding up, then history: **Executing** (`executing` rows, newest
 start first), **Queued** (§6 firing-queue `queued` rows, oldest wait first — the drain order,
 so the next one to run reads top), **Finished** (newest start first, by §4.5 `startedMs`, id
 ascending on ties: the one canonical order the §19 `/state` window, the `GET /executions`
 keyset, and the §5 `(started_at DESC, id)` index all share, which is what lets paged fetches
 line up seamlessly with the live window. `endedMs` plays no part in ordering, so a finishing
 execution slides down into the position its start time earns, not automatically to the top of
-Finished; a long run lands below everything that started after it, matching how Running
+Finished; a long execution lands below everything that started after it, matching how Executing
 itself is ordered).
-Running and Queued each render only when they hold rows, and a promoted firing moves itself
-from Queued to Running with no refetch. Queued rows get their own section rather than sitting
-in Running because their columns differ and because "waiting on a slot" is a different question
-from "running now". With nothing live or queued
+Executing and Queued each render only when they hold rows, and a promoted firing moves itself
+from Queued to Executing with no refetch. Queued rows get their own section rather than sitting
+in Executing because their columns differ and because "waiting on a slot" is a different question
+from "executing now". With nothing live or queued
 the page stays a single unlabeled table; as soon as either section exists, every rendered
-section gets a small mono label (RUNNING / QUEUED / FINISHED) and an empty Finished section
+section gets a small mono label (EXECUTING / QUEUED / FINISHED) and an empty Finished section
 shows the filter's empty-state card. That card's title: "No `<filter>` executions" ("No
-succeeded executions", "No running executions" - the filter name lowercased) under a
+succeeded executions", "No executing executions" - the filter name lowercased) under a
 filter; on All, "No finished
 executions yet" when sections are labelled, else "No executions yet". Body: "Executions
 matching this filter will appear here." under a filter; on All, "Finished executions will
 appear here." when labelled, else "Execute an automation — every execution will appear
-right here." The status filter is the page title's segmented control: **All · Running ·
+right here." The status filter is the page title's segmented control: **All · Executing ·
 Queued · Succeeded · Failed · Cancelled · Skipped · Interrupted** - single-select, in the
 sections' own order. The three-section stack belongs to **All** alone; every other segment
 shows exactly one table with no sections stacked above it (and no mono section label - a
-single table needs none). A terminal segment shows that status's finished rows. **Running**
+single table needs none). A terminal segment shows that status's finished rows. **Executing**
 shows just the `executing` rows (normal columns) and **Queued** just the `queued` rows (its
-own columns, below); segment labels are the section names, never the raw §4.6 words
-("Running", not "executing"). Both live segments read entirely from the §19 window - every
+own columns, below); segment labels are the section names, which are the §4.6 words
+capitalized ("Executing", "Queued") - execution terminology everywhere, never "Running" or
+"run" wording on this page. Both live segments read entirely from the §19 window - every
 live row always rides it - so neither ever fetches, pages, or renders the pager. The Queued
 table swaps
 the last two columns for **QUEUED FOR** (elapsed since §4.5 `queuedMs`, ticking every second)
@@ -322,14 +323,14 @@ entirely, so finished history has no upper bound; it moves in pages of **50 rows
 rides into the renderer whole. §19 `GET /state` ships a **window**, not the full list: every
 `queued` and `executing` header, the 50 newest finished headers (exactly one page), and
 `executionsTotal` (the count of every header the backend holds, §4.5 test rows included - the
-§9 sidebar pill's number). The page derives Running, Queued, and the first Finished page from
+§9 sidebar pill's number). The page derives Executing, Queued, and the first Finished page from
 that window, so it opens with no fetch of its own. Deeper history and the terminal filters
-come from §19 `GET /executions` (the Running and Queued segments never fetch - the window is
+come from §19 `GET /executions` (the Executing and Queued segments never fetch - the window is
 already complete for live rows): picking a terminal filter fetches that status's newest page
 (`?status=<status>&limit=50`; while the fetch is in flight the section shows the window's
 matching rows). **Paging applies to finished rows alone**: the finished table renders one
 50-row page at a time behind a quiet text **pager** under it - under the FINISHED section on
-All (the RUNNING and QUEUED sections above always render every live row in full), under the
+All (the EXECUTING and QUEUED sections above always render every live row in full), under the
 single table on a terminal segment. The pager reads **"Prev · 1–50 of 1,240 · Next"**: the
 range is the rows on screen, the total is the filter's server `total` (on All,
 `executionsTotal` minus the live rows), thousands-separated and trued up by every `/state`
@@ -342,12 +343,12 @@ already in hand - re-slices with no request; **Next** past the rows in hand fetc
 page with the keyset cursor - `beforeStartedMs`/`beforeId` from the last finished row in
 hand, `status=finished` when the filter is All - and advances only when it lands. A failed
 page fetch surfaces the standard error toast and stays on the current page, pager in place.
-A run finishing mid-view lands at the top of Finished via its §19 event and can push the
+An execution finishing mid-view lands at the top of Finished via its §19 event and can push the
 current slice's rows down by one - the canonical order shared by window, keyset, and index
 keeps the pages seamless either way. Fetched pages and the page number are view state only,
 held by the page component: they reset when the page unmounts and whenever the filter
 changes (each filter change starts from its own fresh first page), and are never stored or
-synced. Running and Queued are never capped or paged.
+synced. Executing and Queued are never capped or paged.
 Both are naturally small (`AUTOWRIGHT_QUEUE_TTL_S`, §15, caps a wait at 120 s by default) and
 both are the live rows the page exists to surface. The pill's `executionsTotal` is kept in
 step by the §19 execution events (a header id the store has never seen counts as one more)

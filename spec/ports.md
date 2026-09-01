@@ -110,10 +110,6 @@ selectors, done via `app/e2e/harness.ts` `COPY`). Each remaining item moves into
   the packaged answer before the Linux release (ship an AppArmor profile with the app?
   document a one-time sysctl?). The dev loop already heals its own checkout:
   `linux-scripts/dev.sh` fixes `chrome-sandbox` ownership/mode via sudo (§18).
-- **`app/src/acknowledgements.md` lost the Linux keyring closure** (cffi, cryptography,
-  jeepney, pycparser, SecretStorage) when a macOS regeneration overwrote a Linux one
-  (467aa24). `build.sh` regenerates per-build so the AppImage itself is fine, but the
-  checked-in file under-reports; regenerate on a Linux build when convenient.
 - **Dev-setup notes** (Debian/Ubuntu): `apt install python3.14-venv` (ensurepip is split
   out of the base python package, so `python3.14 -m venv` fails without it). Node lives
   user-local at `~/.local/opt/node-v24.19.0-linux-x64` (symlinked into `~/.local/bin`).

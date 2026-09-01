@@ -329,7 +329,9 @@ migrate-on-load migration so data written by released versions keeps loading (§
   `knowledge.sh` regenerates `knowledge.md`; its `audit` mode writes `knowledge-audit.md`, §18;
   `pip-release.sh` builds and uploads the `pypi/` placeholder package, §18;
   `gen_licenses.py` regenerates `app/src/acknowledgements.md` — the §4.9
-  open-source-libraries list, checked in, refreshed by `build.sh` on every build).
+  open-source-libraries list, checked in, refreshed by `build.sh` on every build; the
+  Python closure is the cross-platform union (§9 LEGAL), backed by the gitignored
+  `build/license-wheels/` cache).
 - `windows-scripts/` — Windows developer scripts (PowerShell, runnable only on Windows).
   Developer-only exactly like `scripts/` — the same never-run rule and guard hook cover all
   three script directories, and the §15 BOM drift guard covers `*.ps1` here too. Currently:

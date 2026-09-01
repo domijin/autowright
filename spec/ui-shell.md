@@ -973,11 +973,28 @@ also open itself after an update (below) with the About page nowhere in sight.
   `app/src/acknowledgements.md`. The file is generated — never hand-edited — by
   `scripts/gen_licenses.py` (§17) and checked in; `build.sh` regenerates it on
   every build so it tracks dependency changes. It lists every shipped component —
-  the npm production closure (`npm ls --omit=dev --all --json`) plus Electron
-  (dev dependency, but its runtime ships in the bundle), and the backend venv's
+  the npm production closure (`npm ls --omit=dev --all --json`; platform-independent,
+  since every platform-gated npm package in the lockfile is dev-only) plus Electron
+  (dev dependency, but its runtime ships in the bundle), and the backend's
   recursive distribution closure of the `autowright` package (dev extras
   excluded) — each entry: name, version, license id, and the package's license
   text when it ships one.
+
+  The Python closure is the union across macOS, Windows, and Linux, so the file
+  is a superset identical no matter which platform regenerates it (regenerating
+  on one OS must never drop another OS's components). Environment markers are
+  evaluated against all three target environments; a marker-gated distribution
+  absent from the local venv (e.g. `tzdata` on Windows, the Linux keyring
+  stack) is resolved from a downloaded wheel cached under
+  `build/license-wheels/` (gitignored; any platform's wheel serves, since the
+  license text is platform-independent, and a cached wheel is reused so
+  regeneration works offline after the first run). An entry that ships on only
+  some platforms carries a platform note in its heading, e.g.
+  "(Windows only)" or "(Linux only)", and the intro paragraph says such
+  entries ship only in that platform's builds. A distribution that cannot be
+  resolved locally or from a wheel aborts generation with an error; it is never
+  silently dropped, since silent under-attribution is the failure mode this
+  design exists to remove.
 
 The LEGAL card ends with a muted disclaimer paragraph (footer text inside the
 card, below the rows): "Autowright is provided as is, without warranty of any

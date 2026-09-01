@@ -1,10 +1,10 @@
 #!/bin/bash
 # Full test gate (§15 shift-left order): every tier, cheapest first, failing fast.
-# Developer-only, run by hand: ./scripts/test-all.sh
+# Developer-only, run by hand: ./scripts/tests/all.sh
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
-./scripts/test-fast.sh
+./scripts/tests/fast.sh
 
 echo "── pytest -m integration (real backend subprocess) ──"
 .venv/bin/python -m pytest -m integration

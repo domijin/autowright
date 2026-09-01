@@ -13,7 +13,7 @@
 #   1. read the repo-root VERSION and require the GitHub release v<version> to
 #      exist already (created by release.sh);
 #   2. run the full test suite (§15 shift-left order: build.sh --deps →
-#      test-fast.sh → pytest -m integration → npm run test:e2e — the same
+#      scripts/tests/fast.sh → pytest -m integration → npm run test:e2e — the same
 #      suite release.sh runs); any failure aborts before anything is built
 #      or uploaded;
 #   3. build the AppImage via linux-scripts/prod.sh (which re-checks that
@@ -54,7 +54,7 @@ gh release view "$TAG" > /dev/null 2>&1 \
 # Shift-left order (§15): cheap gate, then integration, then E2E.
 echo "· running tests"
 "$ROOT/scripts/build.sh" --deps
-"$ROOT/scripts/test-fast.sh"
+"$ROOT/scripts/tests/fast.sh"
 "$ROOT/.venv/bin/python" -m pytest -m integration
 (cd "$ROOT/app" && npm run test:e2e)
 

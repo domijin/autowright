@@ -141,7 +141,7 @@ Required sections, in order:
     UI, rejected by the API) — describe the intended shape per the spec
     without inventing implementation detail.
 11. **Dev workflow** — table of scripts/ entries (dev.sh, build.sh, prod.sh,
-    test-fast.sh, release.sh, knowledge.sh, commit.sh …): script | what it
+    tests/fast.sh, tests/all.sh, release.sh, knowledge.sh, commit.sh …): script | what it
     does | when to use. Note the test tiers (§15 shift-left order) and the
     fake agent CLI under tests/bin.
 12. **Where things live at runtime** — table of data dir, logs dir, version

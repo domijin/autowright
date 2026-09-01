@@ -186,11 +186,11 @@ machine or a secret store is called on a given OS.
 
 **Shift-left order.** Tiers run cheapest-first so failures surface early: Vitest unit
 (<1 s) → `tsc --noEmit` (both configs) → pytest unit (seconds) → pytest `-m integration`
-(~10 s) → e2e (minutes). `scripts/test-fast.sh` (§18) runs the three cheap tiers in that
+(~10 s) → e2e (minutes). `scripts/tests/fast.sh` (§18) runs the three cheap tiers in that
 order, failing fast; its typecheck step is the pair of invocations, `tsc --noEmit`
 followed by `tsc --noEmit -p tsconfig.test.json`.
-`scripts/test-all.sh` (§18) runs all five tiers in the same order — the
-fast gate via `test-fast.sh`, then integration, then e2e — failing fast at every tier.
+`scripts/tests/all.sh` (§18) runs all five tiers in the same order — the
+fast gate via `fast.sh`, then integration, then e2e — failing fast at every tier.
 
 **Integration tests** live under `tests/integration/`, marked `integration` and excluded from
 the default run (`pytest.ini` at the repo root; run them with `python -m pytest -m
@@ -400,7 +400,7 @@ Dev workflow:
   syncs it into the three version sites: `app/package.json` (`"version"`),
   `backend/pyproject.toml` (`version =`), and `backend/autowright/__init__.py`
   (`__version__`); runs the full test suite before anything is committed or built
-  (`build.sh --deps` for the venv/node_modules, then `test-fast.sh`, then
+  (`build.sh --deps` for the venv/node_modules, then `scripts/tests/fast.sh`, then
   `pytest -m integration`, then `npm run test:e2e` — §15 shift-left order; any failure
   aborts the release with the bump uncommitted); commits the bump via `scripts/commit.sh`
   (AI-generated message; skipped when the version is unchanged) and pushes; invokes
@@ -504,7 +504,7 @@ Dev workflow:
   creates a release, tag, or version bump — those stay with `release.sh` on macOS. Steps,
   in order: requires an authenticated `gh`, an existing GitHub release `v<VERSION>` (fails
   with the cut-it-from-macOS hint otherwise), and a clean working tree; runs the full test
-  suite in the §15 shift-left order (`build.sh --deps`, `test-fast.sh`,
+  suite in the §15 shift-left order (`build.sh --deps`, `scripts/tests/fast.sh`,
   `pytest -m integration`, `npm run test:e2e` — the same suite `release.sh` runs; any
   failure aborts before anything is built or uploaded); builds the AppImage via
   `linux-scripts/prod.sh` (which re-checks the three-site version gate); uploads the

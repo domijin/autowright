@@ -326,8 +326,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   GitHub release via `gh`, rewrites the §3 update feed under the repo-root `release/`
   and the built arch's entry in the §17 `docs/downloads.json` distributable index, and
   last publishes the §3 Homebrew cask to the separate `homebrew-tap` repository, §18;
-  `test-fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
-  `test-all.sh` runs every test tier in the same order — the fast gate via `test-fast.sh`,
+  `tests/fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
+  `tests/all.sh` runs every test tier in the same order — the fast gate via `tests/fast.sh`,
   then pytest `-m integration`, then e2e — §15/§18;
   `knowledge.sh` regenerates `knowledge.md`; its `audit` mode writes `knowledge-audit.md`, §18;
   `pip-release.sh` builds and uploads the `pypi/` placeholder package, §18;

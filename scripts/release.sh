@@ -446,7 +446,7 @@ else
   # aborts here with the version bump still uncommitted.
   echo "· running tests"
   "$ROOT/scripts/build.sh" --deps
-  "$ROOT/scripts/test-fast.sh"
+  "$ROOT/scripts/tests/fast.sh"
   "$ROOT/.venv/bin/python" -m pytest -m integration
   (cd "$ROOT/app" && npm run test:e2e)
 

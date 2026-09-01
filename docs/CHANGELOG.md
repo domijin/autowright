@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.3 - 2026-08-31
+
+- A What's-new changelog is now built into the app: open it from the About page to read the release notes for this and earlier versions.
+- Acknowledgements now list the open-source components used on every platform, including the Windows and Linux packages that were previously missing.
+
 ## v0.8.2 - 2026-08-31
 
 - The Executions list is now paged: 50 finished rows at a time with a Prev/Next pager, and deeper history fetched on demand.

@@ -719,4 +719,25 @@ Dev workflow:
   empty message, does not push, developer-only — mapped per-OS: the prompt goes to
   `claude -p` on **stdin** instead of as an argument — Linux caps a single argv string at
   `MAX_ARG_STRLEN` (128 KiB), which a real diff overflows.
+- **`./scripts/changelog.sh <version>`**: drafts the §17 `docs/CHANGELOG.md` section for
+  `<version>` (a leading `v` is accepted and stripped; the version must match the release
+  shape `MAJOR.MINOR.PATCH[-prerelease]` and order semver-higher than the last release,
+  same ordering rule as `release.sh`). The last released version is the newest `## v`
+  heading in the changelog; its `v<last>` git tag must exist (fix hint: `git fetch
+  --tags`), and the script refuses a version that already has a section. It collects the
+  `v<last>..HEAD` commit subjects and bodies plus the range diffstat, and a porcelain
+  summary and diffstat of uncommitted work (release notes are drafted while the release's
+  changes often still sit uncommitted), each block size-capped, and asks Claude (Opus 5,
+  `claude --model claude-opus-5 -p`, prompt on stdin) for the user-facing bullet list:
+  the two newest changelog sections ride along as voice examples, and the prompt demands
+  `- ` bullet lines only, written for users (never a commit dump, internal-only changes
+  skipped, plain hyphens, no em dash). The reply is cleaned (code-fence and blank lines
+  dropped, any em dash replaced with a plain hyphen) and rejected, with the raw output
+  printed, unless every remaining line is a `- ` bullet. On success the new
+  `## v<version> - <today>` section is inserted directly above the previous newest
+  section and printed. The result is a draft: the developer curates it by hand before
+  `release.sh` cuts the version (its §17 changelog gate and the §15 drift guards still
+  apply unchanged). Fails if the `claude` CLI is missing, the changelog has no `## v`
+  heading, there are no changes since `v<last>`, or the model returns nothing usable.
+  Developer-only: agents never run this script (`.claude/CLAUDE.md` forbids it).
 

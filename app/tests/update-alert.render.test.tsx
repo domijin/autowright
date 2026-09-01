@@ -206,7 +206,7 @@ describe('About LEGAL document rows (§9.4)', () => {
       screen.getByText(title).compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING
       && !(screen.getByText(nextTitle).compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING))
 
-  it('Privacy policy opens the doc modal on the repo-root PRIVACY.md', async () => {
+  it('Privacy policy opens the doc modal on docs/PRIVACY.md', async () => {
     render(<AboutPage />)
     fireEvent.click(viewButtonAfter('Privacy policy', 'Terms of service')!)
     expect(await screen.findByRole('heading', { level: 2, name: 'Privacy policy' })).toBeTruthy()
@@ -214,7 +214,7 @@ describe('About LEGAL document rows (§9.4)', () => {
     expect(screen.queryByText("Couldn't load the document.")).toBeNull()
   })
 
-  it('Terms of service row sits in LEGAL and opens the doc modal on the repo-root TERMS.md', async () => {
+  it('Terms of service row sits in LEGAL and opens the doc modal on docs/TERMS.md', async () => {
     render(<AboutPage />)
     expect(screen.getByText('No warranty, and your automations are your responsibility.')).toBeTruthy()
     fireEvent.click(viewButtonAfter('Terms of service', 'Open-source libraries')!)

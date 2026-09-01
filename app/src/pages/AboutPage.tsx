@@ -48,12 +48,12 @@ type UpdateCheck =
 const DOCS = {
   privacy: {
     title: 'Privacy policy',
-    // Repo-root canonical copy; strip its H1 — the modal title already says it.
-    load: () => import('../../../PRIVACY.md?raw').then((m) => m.default.replace(/^# .*\n/, '')),
+    // Canonical copy in docs/; strip its H1 — the modal title already says it.
+    load: () => import('../../../docs/PRIVACY.md?raw').then((m) => m.default.replace(/^# .*\n/, '')),
   },
   terms: {
     title: 'Terms of service',
-    load: () => import('../../../TERMS.md?raw').then((m) => m.default.replace(/^# .*\n/, '')),
+    load: () => import('../../../docs/TERMS.md?raw').then((m) => m.default.replace(/^# .*\n/, '')),
   },
   libraries: {
     title: 'Open-source libraries',

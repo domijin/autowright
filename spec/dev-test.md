@@ -143,7 +143,7 @@ that live in more than one hand-maintained file: the app version agrees across `
 distribution-name mapping written out in the guard; and every `*.ps1` in the §17 script
 directories still starts with a UTF-8 BOM (Windows PowerShell 5.1 misreads a BOM-less file
 as ANSI and fails to parse the scripts' non-ASCII result lines); and the §17
-`CHANGELOG.md` carries a `## v<version> - <date>` entry for the current `VERSION` with its
+`docs/CHANGELOG.md` carries a `## v<version> - <date>` entry for the current `VERSION` with its
 version headings in strictly descending semver order (newest first, no duplicates). The
 changelog guard deliberately checks "an entry exists", not "the top entry matches":
 notes for the *next* version may be written and committed ahead of running `release.sh`
@@ -392,7 +392,7 @@ Dev workflow:
   anything is modified), or if the new version is not strictly higher than the current
   `VERSION` (semver ordering: numeric core compared field by field; on an equal core a
   release outranks any pre-release, and two pre-releases compare lexically), or if the
-  repo-root `CHANGELOG.md` (§17) has no `## v<version>` section heading for the version
+  `docs/CHANGELOG.md` (§17) has no `## v<version>` section heading for the version
   being released — the §9.4 What's-new notes are written before the release is cut, never
   after; validates the
   argument (semver: `MAJOR.MINOR.PATCH`, optional

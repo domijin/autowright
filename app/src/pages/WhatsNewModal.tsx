@@ -1,5 +1,5 @@
-// §9.4 What's-new modal: the shell-mounted doc modal rendering the repo-root
-// CHANGELOG.md — opened by the About page's What's-new row and by the
+// §9.4 What's-new modal: the shell-mounted doc modal rendering
+// docs/CHANGELOG.md — opened by the About page's What's-new row and by the
 // post-update auto-open at store boot. Same anatomy as the About page's LEGAL
 // doc modal: dynamic ?raw import, first-H1 strip, Retry on a failed load.
 import React, { useEffect, useState } from 'react'
@@ -7,8 +7,8 @@ import { useStore } from '../store'
 import { BtnGhost, Modal, ScrollArea } from '../ui'
 import { Markdown } from '../result'
 
-// Repo-root canonical copy; strip its H1 — the modal title already says it.
-const load = () => import('../../../CHANGELOG.md?raw').then((m) => m.default.replace(/^# .*\n/, ''))
+// Canonical copy in docs/; strip its H1 — the modal title already says it.
+const load = () => import('../../../docs/CHANGELOG.md?raw').then((m) => m.default.replace(/^# .*\n/, ''))
 
 const sub: React.CSSProperties = { fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)' }
 

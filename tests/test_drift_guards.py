@@ -343,15 +343,15 @@ CHANGELOG_HEADING = re.compile(
 
 
 def _changelog_versions() -> list[str]:
-    """The version of every `## ` heading in `CHANGELOG.md`, in file order,
-    with each heading checked for shape on the way through."""
+    """The version of every `## ` heading in `docs/CHANGELOG.md`, in file
+    order, with each heading checked for shape on the way through."""
     versions = []
-    for line in _read("CHANGELOG.md").splitlines():
+    for line in _read("docs/CHANGELOG.md").splitlines():
         if not line.startswith("## "):
             continue
         m = CHANGELOG_HEADING.match(line)
         assert m, (
-            f"CHANGELOG.md heading {line!r} is not a §17 section heading "
+            f"docs/CHANGELOG.md heading {line!r} is not a §17 section heading "
             "(`## v<version> - <YYYY-MM-DD>`)")
         versions.append(m.group(1))
     return versions
@@ -366,11 +366,12 @@ def _changelog_order_key(version: str) -> tuple[tuple[int, ...], int, str]:
 
 
 def test_changelog_headings_are_section_headings():
-    """§17: every `## ` line in `CHANGELOG.md` is a version section — the file
-    has no other second-level headings. A heading in any other shape is
+    """§17: every `## ` line in `docs/CHANGELOG.md` is a version section — the
+    file has no other second-level headings. A heading in any other shape is
     invisible to `release.sh`'s §18 preflight and to the guards below."""
     versions = _changelog_versions()
-    assert versions, "CHANGELOG.md has no `## v<version>` section — did it move?"
+    assert versions, (
+        "docs/CHANGELOG.md has no `## v<version>` section — did it move?")
 
 
 def test_changelog_has_an_entry_for_the_current_version():
@@ -382,7 +383,7 @@ def test_changelog_has_an_entry_for_the_current_version():
     version = _read("VERSION").strip()
     versions = _changelog_versions()
     assert version in versions, (
-        f"CHANGELOG.md has no `## v{version}` section, but VERSION says "
+        f"docs/CHANGELOG.md has no `## v{version}` section, but VERSION says "
         f"{version!r}; found {versions}. Write the release notes before "
         "cutting the release.")
 
@@ -394,8 +395,8 @@ def test_changelog_versions_descend_without_duplicates():
     versions = _changelog_versions()
     for newer, older in zip(versions, versions[1:]):
         assert _changelog_order_key(newer) > _changelog_order_key(older), (
-            f"CHANGELOG.md lists v{newer} above v{older}; the sections must be "
-            "in strictly descending version order, newest first")
+            f"docs/CHANGELOG.md lists v{newer} above v{older}; the sections "
+            "must be in strictly descending version order, newest first")
 
 
 def test_powershell_scripts_start_with_a_utf8_bom():

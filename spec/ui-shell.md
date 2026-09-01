@@ -935,7 +935,7 @@ also open itself after an update (below) with the About page nowhere in sight.
   territory (§4.9).
 - **What's new** — sub-line "What changed in each version of Autowright.";
   right-side "View" button opens the **What's-new modal**: the shell-mounted doc
-  modal (title "What's new") rendering the repo-root `CHANGELOG.md` (§17) — the
+  modal (title "What's new") rendering `docs/CHANGELOG.md` (§17) — the
   canonical curated release notes, every released version newest-first — through
   the same raw import and first-H1 strip as the privacy policy. The in-app
   changelog is the authoritative user-facing one; the GitHub releases page keeps
@@ -958,14 +958,14 @@ also open itself after an update (below) with the About page nowhere in sight.
 
 - **Privacy policy** — sub-line "What Autowright collects — nothing — and where
   your data lives."; right-side "View" button opens the doc modal (title
-  "Privacy policy") rendering the repo-root `PRIVACY.md` (§17) — the canonical
+  "Privacy policy") rendering `docs/PRIVACY.md` (§17) — the canonical
   copy, shipped into the bundle by the raw import, so the same text serves
   GitHub visitors and the app. The file opens with an `# Privacy policy` H1 for
   GitHub; the app strips the first H1 line before rendering (the modal title
   already says it).
 - **Terms of service** - sub-line "No warranty, and your automations are your
   responsibility."; right-side "View" button opens the doc modal (title "Terms of
-  service") rendering the repo-root `TERMS.md` (§17) through the same raw import and
+  service") rendering `docs/TERMS.md` (§17) through the same raw import and
   first-H1 strip as the privacy policy.
 - **Open-source libraries** — sub-line "Everything Autowright is built on, with
   each project's license."; right-side "View" button opens the doc modal (title

@@ -17,7 +17,7 @@
 #                                    last publish the §3 Homebrew cask to the
 #                                    homebrew-tap repo. Needs a clean working tree,
 #                                    an authenticated `gh` CLI, and a committed
-#                                    CHANGELOG.md entry for the version (§18).
+#                                    docs/CHANGELOG.md entry for the version (§18).
 #   ./scripts/release.sh --sync      rewrite the sites from VERSION (build.sh runs this)
 #   ./scripts/release.sh --check     verify all sites match VERSION; exit 1 listing
 #                                    mismatches (prod.sh refuses to build on failure)
@@ -335,8 +335,8 @@ if [ "$MODE" != "--sync" ] && [ "$MODE" != "--check" ] \
   fi
   # §17/§18 changelog gate: the §9.4 What's-new notes are written (and, per the
   # clean-tree rule above, committed) before the release is cut, never after.
-  if ! grep -Eq "^## v${MODE//./\\.}( |\$)" "$ROOT/CHANGELOG.md" 2> /dev/null; then
-    echo "CHANGELOG.md has no '## v$MODE' entry — write the release notes before releasing"
+  if ! grep -Eq "^## v${MODE//./\\.}( |\$)" "$ROOT/docs/CHANGELOG.md" 2> /dev/null; then
+    echo "docs/CHANGELOG.md has no '## v$MODE' entry — write the release notes before releasing"
     exit 1
   fi
   tap_preflight

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  // The §9.4 About page raw-imports the repo-root PRIVACY.md / TERMS.md; Vite's
+  // The §9.4 About page raw-imports docs/PRIVACY.md / docs/TERMS.md; Vite's
   // fs sandbox is rooted at app/ and would deny them ("Denied ID") in tests.
   server: { fs: { allow: ['..'] } },
   test: {

@@ -65,4 +65,4 @@ Or build from source - see §18 in [SPEC.md](SPEC.md).
 Early release, under active development. Feedback and issues are very welcome. `SPEC.md` is
 the source of truth for the whole app; see §18 for the dev workflow.
 
-Found a security problem? Please report it privately; see [SECURITY.md](SECURITY.md).
+Found a security problem? Please report it privately; see [SECURITY.md](docs/SECURITY.md).

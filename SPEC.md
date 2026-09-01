@@ -295,10 +295,10 @@ migrate-on-load migration so data written by released versions keeps loading (§
   `trayWinAlert.png`/`@2x`),
   rendered by `scripts/gen_tray_icon.py`.
   The Vite dev server allows serving from the repo root (`server.fs.allow` in
-  `vite.config.ts`): the §9.4 doc modals raw-import repo-root documents
-  (`PRIVACY.md`, `TERMS.md`, `CHANGELOG.md`), and Vite's default allowlist stops at
-  `app/`, which 403s those imports in the dev loop (the production build bundles them
-  and needs no allowance).
+  `vite.config.ts`): the §9.4 doc modals raw-import documents from `docs/`
+  (`docs/PRIVACY.md`, `docs/TERMS.md`, `docs/CHANGELOG.md`), and Vite's default
+  allowlist stops at `app/`, which 403s those imports in the dev loop (the production
+  build bundles them and needs no allowance).
   Renderer tests live here too: `app/tests/` (vitest unit/render suites) and `app/e2e/`
   (end-to-end specs driving the real Electron app, shared `harness.ts`); both Vitest configs
   (`vitest.config.ts`, `vitest.e2e.config.ts`) sit at the `app/` root — `npm run test:e2e`
@@ -373,7 +373,12 @@ migrate-on-load migration so data written by released versions keeps loading (§
   the suite. Renderer tests live under `app/` (above), not here.
 - `docs/` — marketing landing page for autowright.ai, hosted via GitHub Pages (`index.html`
   single self-contained page + the two legal pages `privacy.html` and `terms.html` (below)
-  + `CNAME` with the custom domain + `robots.txt` and `sitemap.xml` for search crawlers). Dark, matches the §14 visual
+  + `CNAME` with the custom domain + `robots.txt` and `sitemap.xml` for search crawlers
+  + `.nojekyll` so Pages serves every file verbatim — without it Jekyll would convert the
+  directory's Markdown documents into stray themeless HTML pages). The directory also
+  holds the canonical Markdown documents `CHANGELOG.md`, `PRIVACY.md`, `TERMS.md`, and
+  `SECURITY.md` (their own entries below); Pages serves them raw, which is harmless —
+  they are public user-facing text. Dark, matches the §14 visual
   language (IBM Plex Sans/Mono — no 700 weight, per §14 — brand orange accent `#f68b43`, and
   the §14 AW-monogram mark as both header mark and favicon, inlined from
   `app/electron/icon/icon.svg`). Audience: technically savvy users — copy is concise and
@@ -489,10 +494,11 @@ migrate-on-load migration so data written by released versions keeps loading (§
   source file's sections as `<h2>` + prose, left-aligned. The page's `.wrap` is narrower
   than the landing page's (`max-width` 680 px against 980) and the header, article, and
   footer all fill it edge to edge, so the prose runs the full width of the column with
-  nothing hanging off to the right. The prose is the repo-root `PRIVACY.md` / `TERMS.md`
+  nothing hanging off to the right. The prose is `docs/PRIVACY.md` / `docs/TERMS.md`
   verbatim, paragraph for paragraph; the only substitutions are Markdown syntax rendered
   as HTML (bold → `<strong>`, backticked paths → `<code>`), the Markdown file references,
-  which become links (`LICENSE` and `PRIVACY.md` to their repo-root copies on GitHub,
+  which become links (`LICENSE` to its repo-root copy and `PRIVACY.md` to its `docs/`
+  copy on GitHub,
   except that a reference to the other legal page links to that page), URLs, which become
   links, and the em dash, which the page renders as a spaced hyphen (the same rule the
   landing page applies to app strings). The Markdown files stay the canonical copies: any
@@ -562,7 +568,7 @@ migrate-on-load migration so data written by released versions keeps loading (§
 - `.gitattributes` — `*.cmd text eol=crlf`: batch files (the §15 `tests/bin/*.cmd` doubles)
   must reach a Windows checkout CRLF regardless of the clone's autocrlf setting.
 - `LICENSE` — MIT, copyright David Zhang (also `"license": "MIT"` in `app/package.json`).
-- `CHANGELOG.md` — the release notes, canonical copy: an `# Changelog` H1, then one
+- `docs/CHANGELOG.md` — the release notes, canonical copy: an `# Changelog` H1, then one
   `## v<version> - <YYYY-MM-DD>` section per released version, newest first, each a short
   curated list of user-facing changes (features, UI, fixes — written for users, never a
   commit dump; plain hyphens, no em dash). Rendered in-app in the §9.4 What's-new modal
@@ -570,12 +576,16 @@ migrate-on-load migration so data written by released versions keeps loading (§
   visitors in place. Hand-written by the developer before each release: `release.sh`
   refuses to cut a version that has no entry (§18), and a §15 drift guard requires an
   entry for the current `VERSION` and keeps the headings in descending semver order.
-- `PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
+- `docs/PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
   page (raw import into the renderer bundle), read by GitHub visitors in place, and
   mirrored verbatim into the `docs/privacy.html` web page (above).
-- `TERMS.md` — the terms of service, canonical copy, same mechanism as `PRIVACY.md`:
+- `docs/TERMS.md` — the terms of service, canonical copy, same mechanism as `PRIVACY.md`:
   rendered in-app on the §9.4 About page, read by GitHub visitors in place, and mirrored
   verbatim into the `docs/terms.html` web page (above). Written
   OS-neutral ("this computer"). States only what is true of the app: no account or
   server, MIT no-warranty, automations are the user's responsibility (the engine is not a
   sandbox, per §6.2), third-party agents under their own terms, updates from GitHub.
+- `docs/SECURITY.md` — the security policy: how to report a vulnerability privately, plus
+  the app's trust boundaries. Linked from `README.md`; GitHub recognizes `docs/` as a
+  community-health-file location, so it still backs the repo's Security tab. Not rendered
+  in-app.

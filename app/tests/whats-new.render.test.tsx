@@ -1,6 +1,6 @@
 // §9.4 What's new: the About page's UPDATES row (sub-line + View button, no
 // external release-notes link any more) and the shell-mounted modal it opens —
-// the repo-root CHANGELOG.md rendered through the same raw import and first-H1
+// docs/CHANGELOG.md rendered through the same raw import and first-H1
 // strip as the LEGAL doc modals. App renders for real (happy-dom) with the api
 // module mocked to a connected, onboarded snapshot.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -101,7 +101,7 @@ describe('What’s-new modal (§9.4)', () => {
     return await screen.findByRole('dialog')
   }
 
-  it('renders the repo-root CHANGELOG.md with its H1 stripped', async () => {
+  it('renders docs/CHANGELOG.md with its H1 stripped', async () => {
     const dialog = await openModal()
     expect(within(dialog).getByRole('heading', { level: 2, name: 'What’s new' })).toBeTruthy()
     // The file's `# Changelog` H1 is stripped — the modal title already says it.

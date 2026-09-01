@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   base: './',
   build: { outDir: 'dist' },
-  // §17: the §9.4 doc modals raw-import repo-root documents (PRIVACY.md,
+  // §17: the §9.4 doc modals raw-import documents from docs/ (PRIVACY.md,
   // TERMS.md, CHANGELOG.md); the dev server's default allowlist stops at app/,
   // which 403s those imports in the dev loop. The production build bundles the
   // files and needs no allowance.

@@ -735,13 +735,32 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   - "Before restoring a snapshot" — "Saves a copy of the current memory right before a
     restore replaces it, so a restore can be undone." (pre-restore)
   Edits apply immediately (§19 PATCH `snapshotSettings`) — no version, no AI.
-- **STEPS** card — read-only step rows (number, name, description; the whole row is a click-to-expand
-  disclosure whose only right-edge affordance is a caret — no "view script" text label, so
-  narrow windows don't crush the row's middle column; the caret carries a "View script" /
-  "Hide script" `title` tooltip; expanding shows the script with §11 `PyCode`
-  highlighting; agent steps show the "Why an agent" note when expanded). Steps expand
-  independently — opening one never closes another, so each §14 collapse animates alone
-  instead of cancelling against a simultaneous close above it. Step tags are
+- **STEPS** card — read-only step rows (number, name, description, tags; the whole row is a
+  click target whose only right-edge affordance is an expand glyph (`fa-expand`): no
+  "view script" text label, so narrow windows don't crush the row's middle column, and the
+  glyph carries a "View script" `title` tooltip). Clicking a row opens the **step-script
+  modal**, a large §14 `Modal` card: `min(1000px, 92vw)` wide, content column fixed at
+  82vh so flipping between steps never resizes the frame, `overflow: hidden` on the card
+  so the full-bleed code background stays inside the rounded corners. Header row
+  (hairline bottom border): a faint mono eyebrow "STEP N OF M", with " · `<file>`"
+  appended when the step carries its §4.1 version-folder filename (the one place that
+  filename appears in the UI); the step name beneath; and at the right edge three
+  `.ad-btn-icon` buttons: previous / next step chevrons (disabled at the ends; the ← / →
+  arrow keys navigate too) and a close ✕ (Escape and backdrop click also close, standard
+  `Modal` behavior). Body, one §14 overlay-scrollbar pane so description, metadata, and
+  script scroll as one page: the step description, then the step's metadata written out
+  one line per fact (icon + sentence, reusing the row tags' tooltip sentences verbatim:
+  agents, secrets, time limit, retries — §11's editor modal adds packages — with the same
+  red treatment for dangling/disabled references), so the modal shows in plain text what
+  the tags only show on hover; the "Why an agent" note lives in the agent line's
+  appended " — `<why>`" clause, not a separate strip. Below the metadata, the script with
+  §11 `PyCode` highlighting on the code background (`--bg-code`, hairline top border),
+  stretching to the card's bottom edge when shorter than the frame. Because this pane
+  runs full-bleed to the card edge, the modal insets the §14 overlay-scrollbar thumb to
+  `right: 6px` (from the app-wide 3px) so the card's 12px corner radius never slices its
+  bottom into a wedge. Switching steps
+  remounts the body with the §14 keyed fade, which also resets its scroll. One step
+  shows at a time; there is no inline expansion. Step tags are
   display-only — never menus, and every tag carries a plain-language tooltip (the §14 Tag
   tooltip bubble — custom, not the native `title`) explaining
   what it shows (one shape everywhere: what the tag is, then " — `<why>`" appended when a

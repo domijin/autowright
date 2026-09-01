@@ -1,14 +1,14 @@
 // Shared step-list / param-editor module (§17): one StepList renders the
-// read-only step rows on the §11 create/edit flow ('editor' variant — agent
-// warning colors, package tags, inline step numbers) and the §9.2 automation
-// detail page ('detail' variant — gutter numbers, accent-only tags), and one
-// presentational ParamValueEditor renders the five §4.2 value kinds
-// (toggle/list/kv/number/text) for both the editor's test-value card and the
-// detail page's debounced ParamRow.
+// read-only step rows and the §9.2 step-script modal on the §11 create/edit
+// flow ('editor' variant — agent warning colors, package facts, inline step
+// numbers) and the §9.2 automation detail page ('detail' variant — gutter
+// numbers, accent-only tags), and one presentational ParamValueEditor renders
+// the five §4.2 value kinds (toggle/list/kv/number/text) for both the
+// editor's test-value card and the detail page's debounced ParamRow.
 import React, { useEffect, useState } from 'react'
 import { usePlatformCopy } from './platformCopy'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from './types'
-import { Caret, Collapse, MiniBadge, PyCode, Tag, Toggle, agName, dispModel, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
+import { MiniBadge, Modal, PyCode, ScrollArea, Tag, Toggle, agName, dispModel, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
 
 // §4.1/§6.1 code-reference scan: literal quoted uuid subscripts only.
 const SECRET_REF_RE = /\bsecrets\[\s*["']([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']\s*\]/g
@@ -64,54 +64,140 @@ export function stepPackageTags(s: Step, packages: PackageDep[]):
   return tags
 }
 
-// ---------- step rows ----------
+// ---------- step rows + step-script modal ----------
 
-type StepRowProps = {
-  step: Step
-  i: number
-  open: boolean
-  onToggle: () => void
-  last: boolean
-  secrets: SecretMeta[]
-  unresolvedReferences?: UnresolvedRefs
-} & (
-  | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[]; packages: PackageDep[] }
-  | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
-)
+// One descriptor per step fact, shared by the row's Tag chips and the
+// step-script modal's written-out metadata lines: `title` is the tag's tooltip
+// sentence AND the modal line, so hover text and modal text can never drift.
+type StepTagDesc = {
+  key: string
+  icon: string
+  label: string
+  title: string
+  tone: 'accent' | 'plain' | 'red'
+}
 
-function StepRow(props: StepRowProps) {
-  const { step, i, open, onToggle, last } = props
-  // §9 per-OS copy rule: the secret-store name in the secret tag tooltips.
-  const copy = usePlatformCopy()
+// Per-variant Tag visuals for a tone; the two variants keep their historic
+// colors (editor agent chips use --accent-hover, detail uses --accent; detail
+// plain chips leave the Tag's default text color).
+const tagVisual = (tone: StepTagDesc['tone'], editor: boolean): { c?: string; style: React.CSSProperties } =>
+  tone === 'red'
+    ? { c: 'var(--red-text)', style: { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' } }
+    : tone === 'accent'
+      ? { c: editor ? 'var(--accent-hover)' : 'var(--accent)', style: { background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' } }
+      : { ...(editor ? { c: 'var(--text-muted)' } : {}), style: { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' } }
+
+// The full ordered fact list for one step (§9.2/§11): agents, secrets,
+// packages (editor only), time limit, retries.
+function stepTagDescs(props: StepListProps, step: Step, copy: ReturnType<typeof usePlatformCopy>): StepTagDesc[] {
   const unres = props.unresolvedReferences
-  const stepSecrets = stepSecretTags(step, props.secrets, unres)
   // §5.1: a dangling agent id carried by unresolvedReferences shows the
-  // archive record's name with the imported-file tooltip.
+  // archive record's name with the imported-file sentence.
   const unresAgent = (id: string) => (unres?.[id]?.kind === 'agent' ? unres[id] : null)
-  if (props.variant === 'editor') {
-    const { availAgents, allAgents, packages } = props
+  const descs: StepTagDesc[] = []
+  if (props.variant === 'editor' && step.agent) {
     // §4.1: one tag per entry in the step's `agents` list, resolved BY ID to
     // the live agent (a rename updates the tag); an empty list falls
     // back to the automation's first enabled agent ("no agent" when none is).
     // enabled=false + ag → exists but not enabled; ag=null → deleted agent.
-    const agentTags: { nm: string | null; why?: string; ag: Agent | null; enabled: boolean; imported?: boolean }[] = step.agent
-      ? ((step.agents ?? []).length
+    // §11: why = the entry's role note, falling back to the step's own why.
+    const entries: { nm: string | null; why?: string; ag: Agent | null; enabled: boolean; imported?: boolean }[] =
+      (step.agents ?? []).length
         ? (step.agents ?? []).map((e) => {
-          const ag = allAgents.find((g) => g.id === e.id) ?? null
+          const ag = props.allAgents.find((g) => g.id === e.id) ?? null
           const un = ag ? null : unresAgent(e.id)
           return {
             nm: ag ? agName(ag) : un ? un.name : shortId(e.id), why: e.why, ag,
-            enabled: availAgents.some((g) => g.id === e.id), ...(un ? { imported: true } : {}),
+            enabled: props.availAgents.some((g) => g.id === e.id), ...(un ? { imported: true } : {}),
           }
         })
-        : [{ nm: availAgents[0] ? agName(availAgents[0]) : null, ag: availAgents[0] ?? null, enabled: !!availAgents[0] }])
-      : []
-    const stepPkgs = stepPackageTags(step, packages)
+        : [{ nm: props.availAgents[0] ? agName(props.availAgents[0]) : null, ag: props.availAgents[0] ?? null, enabled: !!props.availAgents[0] }]
+    entries.forEach(({ nm, why, ag, enabled, imported }, j) => descs.push({
+      key: `agent-${j}`, icon: 'fa-microchip', label: nm ?? 'no agent',
+      tone: ag && enabled ? 'accent' : 'red',
+      title: ag && enabled
+        ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution${(why || step.why) ? ` — ${why || step.why}` : ''}`
+        : ag
+          ? `${agName(ag)} isn’t enabled for steps — this step would fail`
+          : imported
+            ? `This step calls ${nm} from the imported file. No agent on this ${copy.machine} matched it, so this step would fail.`
+            : nm
+              ? 'This step calls an agent that no longer exists — this step would fail'
+              : 'No agent is enabled for steps — this step would fail',
+    }))
+  }
+  if (props.variant === 'detail' && step.agent) {
+    // §9.2: accent-only agent tags; entry ids resolve to LIVE names (a rename
+    // updates the tag); a dangling id renders the red deleted state, under the
+    // archive record's name when unresolvedReferences carries it, else the
+    // short id prefix.
+    const entries: { name: string; why?: string; missing: boolean; imported?: boolean }[] = step.agents?.length
+      ? step.agents.map((e) => {
+        const ag = props.agents.find((g) => g.id === e.id)
+        const un = ag ? null : unresAgent(e.id)
+        return {
+          name: ag ? agName(ag) : un ? un.name : shortId(e.id), why: e.why, missing: !ag,
+          ...(un ? { imported: true } : {}),
+        }
+      })
+      : [{ name: props.fallbackAgent, missing: false }]
+    entries.forEach((t, j) => descs.push({
+      key: `agent-${j}`, icon: 'fa-microchip', label: t.name, tone: t.missing ? 'red' : 'accent',
+      title: t.missing
+        ? t.imported
+          ? `This step calls ${t.name} from the imported file. No agent on this ${copy.machine} matched it, so this step would fail.`
+          : 'This step calls an agent that no longer exists — this step would fail'
+        : `This step calls the ${t.name} AI agent${(t.why || step.why) ? ` — ${t.why || step.why}` : ''}`,
+    }))
+  }
+  for (const t of stepSecretTags(step, props.secrets, unres)) {
+    descs.push({
+      key: `secret-${t.id}`, icon: 'fa-key', label: t.name, tone: t.missing ? 'red' : 'plain',
+      title: t.missing
+        ? t.imported
+          ? `This step uses ${t.name} from the imported file. No secret on this ${copy.machine} matched it, so this step would fail.`
+          : 'This step uses a secret that no longer exists — this step would fail'
+        : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`,
+    })
+  }
+  if (props.variant === 'editor') {
+    for (const p of stepPackageTags(step, props.packages)) {
+      descs.push({
+        key: `pkg-${p.import}`, icon: 'fa-cube', label: p.import, tone: 'plain',
+        title: `This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''}${p.why ? ` — ${p.why}` : ''}`,
+      })
+    }
+  }
+  descs.push({ key: 'timeout', icon: 'fa-clock', label: stepTimeoutLabel(step), title: stepTimeoutTitle(step), tone: 'plain' })
+  const retries = stepRetriesLabel(step)
+  if (retries) {
+    descs.push({ key: 'retries', icon: 'fa-rotate-right', label: retries, title: stepRetriesTitle(step), tone: 'plain' })
+  }
+  return descs
+}
+
+// §9.2/§11 step row: the whole row is a click target opening the step-script
+// modal; the only right-edge affordance is the expand glyph ("View script"
+// tooltip, no text label, so narrow windows don't crush the middle column).
+function StepRow({ step, i, last, editor, tags, onOpen }: {
+  step: Step; i: number; last: boolean; editor: boolean; tags: StepTagDesc[]; onOpen: () => void
+}) {
+  const tagNodes = tags.map((t) => {
+    const v = tagVisual(t.tone, editor)
+    return <Tag key={t.key} icon={t.icon} c={v.c} title={t.title} style={v.style}>{t.label}</Tag>
+  })
+  const glyph = (
+    <span title="View script" style={{ color: 'var(--text-deco)', flex: 'none' }}>
+      <i className="fa-solid fa-expand" style={{ fontSize: 12 }} />
+    </span>
+  )
+  if (editor) {
+    // §11: inline step-number prefix, no gutter column.
     return (
       <div style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
         <button
           className="ad-btn-bare ad-focus-inset ad-hover-row"
-          onClick={onToggle}
+          onClick={onOpen}
           style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', cursor: 'pointer' }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -119,204 +205,118 @@ function StepRow(props: StepRowProps) {
               <div style={{ font: "600 13px var(--sans)" }}>
                 <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{i + 1}.</span> {step.name}
               </div>
-              {/* §11: why = the entry's role note, falling back to the step's own why */}
-              {agentTags.map(({ nm, why, ag, enabled, imported }, j) => (
-                <Tag
-                  key={j}
-                  title={ag && enabled
-                    ? `This step calls ${agName(ag)} · ${dispModel(ag)} mid-execution${(why || step.why) ? ` — ${why || step.why}` : ''}`
-                    : ag
-                      ? `${agName(ag)} isn’t enabled for steps — this step would fail`
-                      : imported
-                        ? `This step calls ${nm} from the imported file. No agent on this ${copy.machine} matched it, so this step would fail.`
-                        : nm
-                          ? 'This step calls an agent that no longer exists — this step would fail'
-                          : 'No agent is enabled for steps — this step would fail'}
-                  icon="fa-microchip"
-                  c={ag && enabled ? 'var(--accent-hover)' : 'var(--red-text)'}
-                  style={{
-                    background: ag && enabled ? 'var(--accent-chip-bg)' : 'var(--red-bg)',
-                    border: `1px solid ${ag && enabled ? 'var(--border-card-hover)' : 'oklch(0.7 0.19 25 / .4)'}`,
-                  }}
-                >
-                  {nm ?? 'no agent'}
-                </Tag>
-              ))}
-              {stepSecrets.map((t) => (
-                <Tag
-                  key={t.id}
-                  title={t.missing
-                    ? t.imported
-                      ? `This step uses ${t.name} from the imported file. No secret on this ${copy.machine} matched it, so this step would fail.`
-                      : 'This step uses a secret that no longer exists — this step would fail'
-                    : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`}
-                  icon="fa-key" c={t.missing ? 'var(--red-text)' : 'var(--text-muted)'}
-                  style={t.missing
-                    ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
-                    : { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-                >
-                  {t.name}
-                </Tag>
-              ))}
-              {stepPkgs.map((p) => (
-                <Tag
-                  key={p.import}
-                  title={`This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''}${p.why ? ` — ${p.why}` : ''}`}
-                  icon="fa-cube" c="var(--text-muted)"
-                  style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-                >
-                  {p.import}
-                </Tag>
-              ))}
-              <Tag
-                title={stepTimeoutTitle(step)}
-                icon="fa-clock" c="var(--text-muted)"
-                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-              >
-                {stepTimeoutLabel(step)}
-              </Tag>
-              {stepRetriesLabel(step) && (
-                <Tag
-                  title={stepRetriesTitle(step)}
-                  icon="fa-rotate-right" c="var(--text-muted)"
-                  style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-                >
-                  {stepRetriesLabel(step)}
-                </Tag>
-              )}
+              {tagNodes}
             </div>
             <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{step.description}</div>
           </div>
-          <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
-            <Caret open={open} openDeg={0} closedDeg={90} style={{ fontSize: 12 }} />
-          </span>
+          {glyph}
         </button>
-        <Collapse open={open}>
-          {step.agent && (
-            <div style={{
-              display: 'flex', gap: 9, alignItems: 'flex-start', borderTop: '1px solid var(--hairline-dim)',
-              background: 'var(--accent-hint-bg)', padding: '10px 20px',
-            }}>
-              <i className="fa-solid fa-microchip" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
-              <span style={{ font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
-                <span style={{ font: "500 11.5px var(--sans)", color: 'var(--text-2)' }}>Why an agent: </span>{step.why || ''}
-              </span>
-            </div>
-          )}
-          <PyCode code={step.code || '# script not written yet'} style={{
-            margin: 0, background: 'var(--bg-code)', borderTop: '1px solid var(--hairline-dim)',
-            padding: '12px 20px', font: "400 11.5px/1.75 var(--mono)", color: 'var(--code-text)',
-            whiteSpace: 'pre-wrap', overflowWrap: 'break-word', minWidth: 0,
-          }} />
-        </Collapse>
       </div>
     )
   }
-  // 'detail' variant — §9.2: gutter step number, accent-only agent tags;
-  // entry ids resolve to LIVE names (a rename updates the tag); a dangling id
-  // renders the red deleted state — the archive record's name when
-  // unresolvedReferences carries it, else the short id prefix.
-  const agentTags: { name: string; why?: string; missing: boolean; imported?: boolean }[] = step.agents?.length
-    ? step.agents.map((e) => {
-      const ag = props.agents.find((g) => g.id === e.id)
-      const un = ag ? null : unresAgent(e.id)
-      return {
-        name: ag ? agName(ag) : un ? un.name : shortId(e.id), why: e.why, missing: !ag,
-        ...(un ? { imported: true } : {}),
-      }
-    })
-    : [{ name: props.fallbackAgent, missing: false }]
+  // 'detail' variant — §9.2: gutter step number.
   return (
     <div style={{ borderBottom: last ? 'none' : '1px solid var(--hairline-dim)' }}>
-      <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
+      <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onOpen} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
         <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)', width: 14, flex: 'none' }}>{i + 1}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{step.name}</span>
-            {step.agent && agentTags.map((t, j) => (
-              <Tag
-                key={j}
-                icon="fa-microchip"
-                c={t.missing ? 'var(--red-text)' : 'var(--accent)'}
-                title={t.missing
-                  ? t.imported
-                    ? `This step calls ${t.name} from the imported file. No agent on this ${copy.machine} matched it, so this step would fail.`
-                    : 'This step calls an agent that no longer exists — this step would fail'
-                  : `This step calls the ${t.name} AI agent${(t.why || step.why) ? ` — ${t.why || step.why}` : ''}`}
-                style={t.missing
-                  ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
-                  : { background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' }}
-              >
-                {t.name}
-              </Tag>
-            ))}
-            {stepSecrets.map((t) => (
-              <Tag
-                key={t.id}
-                icon="fa-key"
-                c={t.missing ? 'var(--red-text)' : undefined}
-                title={t.missing
-                  ? t.imported
-                    ? `This step uses ${t.name} from the imported file. No secret on this ${copy.machine} matched it, so this step would fail.`
-                    : 'This step uses a secret that no longer exists — this step would fail'
-                  : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`}
-                style={t.missing
-                  ? { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' }
-                  : { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-              >
-                {t.name}
-              </Tag>
-            ))}
-            <Tag
-              icon="fa-clock"
-              title={stepTimeoutTitle(step)}
-              style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-            >
-              {stepTimeoutLabel(step)}
-            </Tag>
-            {stepRetriesLabel(step) && (
-              <Tag
-                icon="fa-rotate-right"
-                title={stepRetriesTitle(step)}
-                style={{ background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' }}
-              >
-                {stepRetriesLabel(step)}
-              </Tag>
-            )}
+            {tagNodes}
           </div>
           <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>{step.description}</div>
         </div>
-        <span title={open ? 'Hide script' : 'View script'} style={{ color: 'var(--text-deco)', flex: 'none' }}>
-          <Caret open={open} openDeg={180} closedDeg={0} style={{ fontSize: 12 }} />
-        </span>
+        {glyph}
       </button>
-      <Collapse open={open}>
-        {step.agent && step.why && (
-          <div style={{
-            display: 'flex', gap: 9, alignItems: 'flex-start', borderTop: '1px solid var(--hairline-dim)',
-            background: 'var(--accent-hint-bg)', padding: '10px 18px 10px 45px',
-          }}>
-            <i className="fa-solid fa-microchip" style={{ color: 'var(--accent-hover)', fontSize: 10, marginTop: 3 }} />
-            <span style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-muted)' }}>
-              <span style={{ fontWeight: 500, color: 'var(--text-2)' }}>Why an agent: </span>{step.why}
-            </span>
-          </div>
-        )}
-        <PyCode code={step.code} style={{
-          margin: 0, background: 'var(--bg-code)', borderTop: '1px solid var(--hairline-dim)',
-          padding: '14px 18px 14px 45px', fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.75,
-          color: 'var(--code-text)', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', minWidth: 0,
-        }} />
-      </Collapse>
     </div>
   )
 }
 
-// Holds the open-step set locally so a toggle re-renders only this list —
-// a page-level re-render blocks paint past the front-loaded half of the
-// §14 collapse transition and the expand reads as a pop. Steps open
-// independently: auto-closing the previous step would run its collapse
-// simultaneously and the two motions cancel into a layout shuffle.
+// §9.2 step-script modal: one large Modal card, content column fixed at 82vh
+// so flipping between steps never resizes the frame. Header: "STEP N OF M"
+// eyebrow (plus the §4.1 version-folder filename, its one appearance in the
+// UI), the step name, and prev / next / close icon buttons. Body: one
+// overlay-scrollbar pane holding the description, the metadata lines (the row
+// tags' tooltip sentences, written out), and the PyCode script stretching to
+// the card's bottom edge. Switching steps remounts the body with the §14
+// keyed fade, which also resets its scroll.
+function StepModal({ steps, i, editor, tags, onNav, onClose }: {
+  steps: Step[]; i: number; editor: boolean; tags: StepTagDesc[]
+  onNav: (i: number) => void; onClose: () => void
+}) {
+  const step = steps[i]
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); onNav(i - 1) }
+      if (e.key === 'ArrowRight' && i < steps.length - 1) { e.preventDefault(); onNav(i + 1) }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [i, steps.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Modal
+      onClose={onClose} width={1000} ariaLabel={`Step ${i + 1} of ${steps.length}: ${step.name}`}
+      cardStyle={{ width: 'min(1000px, 92vw)', overflow: 'hidden' }}
+    >
+      {(close) => (
+        <div className="ad-stepmodal" style={{ height: '82vh', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 20px', borderBottom: '1px solid var(--hairline-dim)', flex: 'none' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)' }}>
+                STEP {i + 1} OF {steps.length}{step.file ? ` · ${step.file}` : ''}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {step.name}
+              </div>
+            </div>
+            <button className="ad-btn-icon" aria-label="Previous step" disabled={i === 0} onClick={() => onNav(i - 1)}>
+              <i className="fa-solid fa-chevron-left" />
+            </button>
+            <button className="ad-btn-icon" aria-label="Next step" disabled={i === steps.length - 1} onClick={() => onNav(i + 1)}>
+              <i className="fa-solid fa-chevron-right" />
+            </button>
+            <button className="ad-btn-icon" aria-label="Close" onClick={close}>
+              <i className="fa-solid fa-xmark" style={{ fontSize: 14 }} />
+            </button>
+          </div>
+          <ScrollArea key={i} className="ad-anim-fade" wrapStyle={{ flex: 1, minHeight: 0 }}>
+            <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10, flex: 'none' }}>
+                {step.description && (
+                  <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-2)' }}>{step.description}</div>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {tags.map((t) => (
+                    <div key={t.key} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+                      <i
+                        className={`fa-solid ${t.icon}`}
+                        style={{
+                          color: t.tone === 'red' ? 'var(--red-text)' : t.tone === 'accent' ? 'var(--accent-hover)' : 'var(--text-muted)',
+                          fontSize: 10, marginTop: 3, width: 12, textAlign: 'center', flex: 'none',
+                        }}
+                      />
+                      <span style={{ fontSize: 11.5, lineHeight: 1.55, color: t.tone === 'red' ? 'var(--red-text)' : 'var(--text-muted)' }}>
+                        {t.title}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <PyCode code={editor ? (step.code || '# script not written yet') : step.code} style={{
+                margin: 0, flex: 1, background: 'var(--bg-code)', borderTop: '1px solid var(--hairline-dim)',
+                padding: '14px 20px', font: "400 11.5px/1.75 var(--mono)", color: 'var(--code-text)',
+                whiteSpace: 'pre-wrap', overflowWrap: 'break-word', minWidth: 0,
+              }} />
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+// Holds the viewed-step index locally so opening the modal re-renders only
+// this list. One step shows at a time; prev / next flips inside the modal.
 export type StepListProps = { steps: Step[]; secrets: SecretMeta[]; unresolvedReferences?: UnresolvedRefs } & (
   | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[]; packages: PackageDep[] }
   | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
@@ -324,27 +324,34 @@ export type StepListProps = { steps: Step[]; secrets: SecretMeta[]; unresolvedRe
 
 export function StepList(props: StepListProps) {
   const { steps } = props
-  const [open, setOpen] = useState<ReadonlySet<number>>(new Set())
-  // The editor's list resets its open set when a sync/undo swaps the steps;
-  // the detail page's list keeps its open state across store refreshes.
+  // §9 per-OS copy rule: the secret-store name in the secret fact sentences.
+  const copy = usePlatformCopy()
+  const [viewing, setViewing] = useState<number | null>(null)
+  // §11: a sync/undo that swaps the steps closes the editor's modal — the
+  // index would no longer name the same step. The detail page's modal stays
+  // open across store refreshes.
   const editor = props.variant === 'editor'
-  useEffect(() => { if (editor) setOpen(new Set()) }, [steps]) // eslint-disable-line react-hooks/exhaustive-deps
-  const toggle = (i: number) => setOpen((prev) => {
-    const next = new Set(prev)
-    next.has(i) ? next.delete(i) : next.add(i)
-    return next
-  })
+  useEffect(() => { if (editor) setViewing(null) }, [steps]) // eslint-disable-line react-hooks/exhaustive-deps
+  const current = viewing !== null && viewing < steps.length ? viewing : null
   return (
     <>
       {steps.map((s, i) => (
         <StepRow
-          {...props}
           key={i} step={s} i={i}
-          open={open.has(i)}
-          onToggle={() => toggle(i)}
           last={i === steps.length - 1}
+          editor={editor}
+          tags={stepTagDescs(props, s, copy)}
+          onOpen={() => setViewing(i)}
         />
       ))}
+      {current !== null && (
+        <StepModal
+          steps={steps} i={current} editor={editor}
+          tags={stepTagDescs(props, steps[current], copy)}
+          onNav={setViewing}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </>
   )
 }

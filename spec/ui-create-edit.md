@@ -1103,12 +1103,16 @@ editors enter with
   shows the §9.2 clock-icon time-limit tag and, when its §4.1 retry budget is set, the §9.2
   rotate-icon retry tag (same labels, tooltips, and hide-at-zero rule). Which agents a step calls is decided by
   the drafting agent per the §8 selection rule — changing it happens through the spec or
-  build instructions plus sync (or the agent-enablement card), not per step. Step rows expand the same way as §9.2 — whole-row click, caret-only right-edge
-  affordance with the "View script" / "Hide script" tooltip, no text label, and independent
-  open state (opening a step never closes another) — except the caret direction: it points
-  left when the step is collapsed and down when expanded. The step number
+  build instructions plus sync (or the agent-enablement card), not per step. Step rows open the same §9.2 step-script modal (whole-row click, expand-glyph-only
+  right-edge affordance with the "View script" tooltip, no text label; one step shows at a
+  time, with previous / next and the arrow keys flipping inside the modal). The step number
   prefixes the title ("1. Fetch page" — faint mono numeral, title styling unchanged) instead
-  of occupying a left gutter column, keeping the row's left edge free on narrow windows. An expanded step renders its
+  of occupying a left gutter column, keeping the row's left edge free on narrow windows.
+  The editor's modal adds the step's package facts to the §9.2 metadata lines (the
+  box-icon tooltip sentences) and renders `code` falling back to "# script not written
+  yet" for a step whose script hasn't been generated. A sync or undo that swaps the
+  steps closes an open step-script modal (same reason the old open set reset: the index
+  no longer names the same step). The modal renders the step's
   `code` with Python syntax highlighting — a self-contained tokenizer (`PyCode` in `ui.tsx`, no
   dependency) coloring keywords, constants, strings, numbers, comments, decorators, builtins,
   `def`/`class` names, and call names over the base mono `pre`. Language is always

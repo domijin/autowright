@@ -1,10 +1,10 @@
 // Component tests for the shared step-list / param-editor module (src/steps.tsx)
 // serving both the §11 create/edit flow ('editor' variant) and the §9.2
 // automation detail page ('detail' variant): step rows with agent/secret/
-// package/timeout tags, the script disclosure, and the five §4.2 param value
-// kinds with each variant's cosmetic contract.
+// package/timeout tags, the step-script modal a row opens, and the five §4.2
+// param value kinds with each variant's cosmetic contract.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from '../src/types'
 import { ParamValueEditor, StepList, stepPackageTags, stepSecretTags } from '../src/steps'
 
@@ -31,14 +31,14 @@ const UNRESOLVED: UnresolvedRefs = {
 const step = (over: Partial<Step> = {}): Step => ({ name: 'Fetch page', description: 'reads it', code: '', ...over })
 
 describe('StepList (shared)', () => {
-  it('detail variant: secret tags from code refs resolve to live names, fallback agent tag, script on expand', () => {
+  it('detail variant: secret tags from code refs resolve to live names, fallback agent tag, script in the step-script modal', () => {
     const steps = [step({ agent: true, code: `x = secrets["${MAIL_ID}"]  # MAIL_PASSWORD\nlog(x)` })]
     render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} fallbackAgent="Cloud writer" />)
     expect(screen.getByText('MAIL_PASSWORD')).toBeTruthy()
     expect(screen.getByText('Cloud writer')).toBeTruthy()
     // gutter number, no dot
     expect(screen.getByText('1')).toBeTruthy()
-    // the script renders inside the collapsible body
+    // clicking the row opens the step-script modal, which holds the script
     fireEvent.click(screen.getByText('Fetch page'))
     expect(screen.getByText(new RegExp(MAIL_ID), { selector: 'pre *, pre' })).toBeTruthy()
   })
@@ -128,7 +128,7 @@ describe('StepList (shared)', () => {
     const packages: PackageDep[] = [{ pip: 'beautifulsoup4', import: 'bs4', why: 'parse pages' }]
     const steps = [step({ agent: true, code: 'import bs4' })]
     render(<StepList variant="editor" steps={steps} availAgents={[]} allAgents={[]} secrets={[]} packages={packages} />)
-    // 'bs4' also appears in the (collapsed) script body — assert the tag itself
+    // the import name can ride other tags too — assert the package tag itself
     // (the tooltip text rides the tag's aria-label — §14 Tag tooltip)
     const pkgTag = screen.getAllByText('bs4').find((el) =>
       el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
@@ -239,6 +239,78 @@ describe('StepList (shared)', () => {
       const labels = Array.from(row.querySelectorAll('span[aria-label]')).map((e) => e.textContent)
       expect(labels.indexOf('15m')).toBeLessThan(labels.indexOf('5 retries'))
     }
+  })
+})
+
+describe('step-script modal', () => {
+  // Two detail-variant steps: the first carries the §4.1 version-folder
+  // filename, the fallback agent and a declared secret, so its modal shows the
+  // written-out metadata lines; the second is bare, so prev/next has somewhere
+  // to go.
+  const TWO_STEPS: Step[] = [
+    step({ file: '01-fetch-page.py', agent: true, secrets: [{ id: MAIL_ID }], code: `x = secrets["${MAIL_ID}"]` }),
+    step({ name: 'Send mail', description: 'mails it', code: 'send(x)' }),
+  ]
+  const renderDetail = () => render(
+    <StepList variant="detail" steps={TWO_STEPS} agents={[AGENT]} secrets={SECRETS} fallbackAgent="Cloud writer" />,
+  )
+  // the step name renders twice once the modal is up (row + modal header)
+  const openFirst = () => fireEvent.click(screen.getAllByText('Fetch page')[0])
+
+  it('detail variant: a row opens the dialog with the STEP N OF M eyebrow, the filename and the fact sentences', () => {
+    renderDetail()
+    openFirst()
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Step 1 of 2: Fetch page')
+    expect(screen.getByText(/STEP 1 OF 2 · 01-fetch-page\.py/)).toBeTruthy()
+    // the row tag's tooltip sentence, written out as plain text in the body
+    expect(screen.getByText('This step uses the MAIL_PASSWORD secret from your Keychain')).toBeTruthy()
+    expect((screen.getByLabelText('Previous step') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Next step') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('detail variant: next/prev buttons and the arrow keys flip steps, guarded at both ends', () => {
+    renderDetail()
+    openFirst()
+    fireEvent.click(screen.getByLabelText('Next step'))
+    expect(screen.getByText('STEP 2 OF 2')).toBeTruthy()
+    expect((screen.getByLabelText('Next step') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.keyDown(document, { key: 'ArrowLeft' })
+    expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+    // ArrowLeft at the first step is a no-op, never an underflow
+    fireEvent.keyDown(document, { key: 'ArrowLeft' })
+    expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+  })
+
+  it('editor variant: an empty script reads as the placeholder, and swapped steps close the modal', () => {
+    const steps = [step({ name: 'Empty step', code: '' })]
+    const { rerender } = render(
+      <StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />,
+    )
+    fireEvent.click(screen.getAllByText('Empty step')[0])
+    expect(document.querySelector('pre')?.textContent).toBe('# script not written yet')
+    // §11: a sync/undo hands the list a new steps array — the modal closes
+    rerender(
+      <StepList
+        variant="editor" steps={[step({ name: 'Empty step', code: '' })]}
+        availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]}
+      />,
+    )
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('Escape closes the modal', async () => {
+    renderDetail()
+    openFirst()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+
+  it('the row keeps one wordless expand glyph and never a hide-script label', () => {
+    renderDetail()
+    expect(document.querySelectorAll('span[title="View script"]')).toHaveLength(2)
+    openFirst()
+    expect(screen.queryByText('Hide script')).toBeNull()
   })
 })
 

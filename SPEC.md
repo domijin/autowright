@@ -317,8 +317,9 @@ migrate-on-load migration so data written by released versions keeps loading (§
   (§14) — invoked from `app/` as `./node_modules/.bin/electron ../scripts/gen_icon.cjs`;
   `commit.sh` stages all uncommitted changes, generates a commit message via
   `claude --model claude-opus-5 -p` from the staged diff, and commits;
-  `changelog.sh` drafts the next `docs/CHANGELOG.md` section for a given version from the
-  git history since the last released tag via `claude --model claude-opus-5 -p`, §18;
+  `update-changelog.sh` drafts the next `docs/CHANGELOG.md` section for a given version
+  from the git history since the last released tag via `claude --model claude-opus-5 -p`,
+  §18;
   `release.sh` sets the app version from the repo-root `VERSION` file, invokes
   `prod.sh` to build the release distributable, publishes the DMG (install artifact) and
   the update zip as a
@@ -576,8 +577,8 @@ migrate-on-load migration so data written by released versions keeps loading (§
   commit dump; plain hyphens, no em dash). Rendered in-app in the §9.4 What's-new modal
   (raw import into the renderer bundle, same mechanism as `PRIVACY.md`) and read by GitHub
   visitors in place. Written by the developer before each release
-  (`scripts/changelog.sh` drafts the section from the git history since the last release
-  for the developer to curate, §18): `release.sh`
+  (`scripts/update-changelog.sh` drafts the section from the git history since the last
+  release for the developer to curate, §18): `release.sh`
   refuses to cut a version that has no entry (§18), and a §15 drift guard requires an
   entry for the current `VERSION` and keeps the headings in descending semver order.
 - `docs/PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About

@@ -719,7 +719,7 @@ Dev workflow:
   empty message, does not push, developer-only — mapped per-OS: the prompt goes to
   `claude -p` on **stdin** instead of as an argument — Linux caps a single argv string at
   `MAX_ARG_STRLEN` (128 KiB), which a real diff overflows.
-- **`./scripts/changelog.sh <version>`**: drafts the §17 `docs/CHANGELOG.md` section for
+- **`./scripts/update-changelog.sh <version>`**: drafts the §17 `docs/CHANGELOG.md` section for
   `<version>` (a leading `v` is accepted and stripped; the version must match the release
   shape `MAJOR.MINOR.PATCH[-prerelease]` and order semver-higher than the last release,
   same ordering rule as `release.sh`). The last released version is the newest `## v`

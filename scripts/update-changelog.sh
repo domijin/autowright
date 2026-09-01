@@ -10,7 +10,7 @@
 #
 # Developer-only: agents must never run this script.
 #
-#   ./scripts/changelog.sh <version>      e.g. ./scripts/changelog.sh 0.8.3
+#   ./scripts/update-changelog.sh <version>      e.g. ./scripts/update-changelog.sh 0.8.3
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"

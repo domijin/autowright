@@ -46,9 +46,10 @@ description: Build, launch, and drive Autowright (Electron + Python backend) to 
   boot regardless of `AUTOWRIGHT_HOME`). After a verify session, check System Settings login
   items (`osascript -e 'tell application "System Events" to get the name of every login
   item'`) and remove any Electron/dev entries the run added (observed 2026-08-27: two).
-- **Onboarding only shows when the backend has zero automations AND `ad-onboarded` is absent
-  from localStorage** (`store.ts` boot). Non-empty home → straight to app. Use an empty home on
-  a second port.
+- **Onboarding shows whenever `ad-onboarded` is absent from localStorage** (`store.ts` boot) —
+  existing automations do NOT bypass it (observed 2026-08-31). Either click Continue past step 1
+  without touching any "Set up …" card, or set `localStorage['ad-onboarded']` via
+  `electronApp.evaluate`/page script and reload before driving.
 - The onboarding install machines are REAL (§10/§19): clicking a "Set up …" suggestion card
   actually installs that CLI into `~/.local/bin` on this Mac, and sign-in help really opens
   Terminal/browser. Don't click them in automated runs unless that side effect is intended;

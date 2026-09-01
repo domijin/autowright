@@ -33,7 +33,7 @@ const step = (over: Partial<Step> = {}): Step => ({ name: 'Fetch page', descript
 describe('StepList (shared)', () => {
   it('detail variant: secret tags from code refs resolve to live names, fallback agent tag, script in the step-script modal', () => {
     const steps = [step({ agent: true, code: `x = secrets["${MAIL_ID}"]  # MAIL_PASSWORD\nlog(x)` })]
-    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} fallbackAgent="Cloud writer" />)
+    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} packages={[]} fallbackAgent="Cloud writer" />)
     expect(screen.getByText('MAIL_PASSWORD')).toBeTruthy()
     expect(screen.getByText('Cloud writer')).toBeTruthy()
     // gutter number, no dot
@@ -49,7 +49,7 @@ describe('StepList (shared)', () => {
       agents: [{ id: GONE_ID }],
       code: `x = secrets["${GONE_ID}"]`,
     })]
-    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} fallbackAgent="Cloud writer" />)
+    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} packages={[]} fallbackAgent="Cloud writer" />)
     const tags = screen.getAllByText('99999999…')
     expect(tags.length).toBe(2) // one agent tag, one secret tag
     const labels = tags.map((el) => el.closest('span')?.getAttribute('aria-label'))
@@ -65,7 +65,7 @@ describe('StepList (shared)', () => {
     })]
     render(
       <StepList
-        variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS}
+        variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} packages={[]}
         unresolvedReferences={UNRESOLVED} fallbackAgent="Cloud writer"
       />,
     )
@@ -88,7 +88,7 @@ describe('StepList (shared)', () => {
     })]
     render(
       <StepList
-        variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS}
+        variant="detail" steps={steps} agents={[AGENT]} secrets={SECRETS} packages={[]}
         unresolvedReferences={UNRESOLVED} fallbackAgent="Cloud writer"
       />,
     )
@@ -212,7 +212,7 @@ describe('StepList (shared)', () => {
 
   it('detail variant: agent tag tooltip reads what + why', () => {
     const steps = [step({ agent: true, why: 'writes the final summary' })]
-    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} fallbackAgent="Cloud writer" />)
+    render(<StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer" />)
     const tag = screen.getByText('Cloud writer')
     expect(tag.closest('span')?.getAttribute('aria-label'))
       .toBe('This step calls the Cloud writer AI agent — writes the final summary')
@@ -223,7 +223,7 @@ describe('StepList (shared)', () => {
     for (const variant of ['detail', 'editor'] as const) {
       cleanup()
       render(variant === 'detail'
-        ? <StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} fallbackAgent="Cloud writer" />
+        ? <StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer" />
         : <StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />)
       const five = screen.getByText('5 retries')
       expect(five.closest('span')?.getAttribute('aria-label'))
@@ -245,27 +245,79 @@ describe('StepList (shared)', () => {
 describe('step-script modal', () => {
   // Two detail-variant steps: the first carries the §4.1 version-folder
   // filename, the fallback agent and a declared secret, so its modal shows the
-  // written-out metadata lines; the second is bare, so prev/next has somewhere
-  // to go.
+  // tag row; the second is bare, so prev/next has somewhere to go.
   const TWO_STEPS: Step[] = [
     step({ file: '01-fetch-page.py', agent: true, secrets: [{ id: MAIL_ID }], code: `x = secrets["${MAIL_ID}"]` }),
     step({ name: 'Send mail', description: 'mails it', code: 'send(x)' }),
   ]
   const renderDetail = () => render(
-    <StepList variant="detail" steps={TWO_STEPS} agents={[AGENT]} secrets={SECRETS} fallbackAgent="Cloud writer" />,
+    <StepList variant="detail" steps={TWO_STEPS} agents={[AGENT]} secrets={SECRETS} packages={[]} fallbackAgent="Cloud writer" />,
   )
   // the step name renders twice once the modal is up (row + modal header)
   const openFirst = () => fireEvent.click(screen.getAllByText('Fetch page')[0])
 
-  it('detail variant: a row opens the dialog with the STEP N OF M eyebrow, the filename and the fact sentences', () => {
+  it('detail variant: a row opens the dialog with the STEP N OF M eyebrow, the code-card filename and the tag row', () => {
     renderDetail()
     openFirst()
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Step 1 of 2: Fetch page')
-    expect(screen.getByText(/STEP 1 OF 2 · 01-fetch-page\.py/)).toBeTruthy()
-    // the row tag's tooltip sentence, written out as plain text in the body
-    expect(screen.getByText('This step uses the MAIL_PASSWORD secret from your Keychain')).toBeTruthy()
+    // the eyebrow is the step counter alone — the filename rides the code card
+    expect(screen.getByText(/STEP 1 OF 2/).textContent).toBe('STEP 1 OF 2')
+    expect(screen.getByText('01-fetch-page.py')).toBeTruthy()
+    // the modal repeats the row's chips — the secret chip now renders twice
+    // (row + modal), each carrying the same §14 tooltip sentence
+    const chips = screen.getAllByText('MAIL_PASSWORD')
+    expect(chips).toHaveLength(2)
+    for (const chip of chips) {
+      expect(chip.closest('span')?.getAttribute('aria-label'))
+        .toBe('This step uses the MAIL_PASSWORD secret from your Keychain')
+    }
     expect((screen.getByLabelText('Previous step') as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByLabelText('Next step') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('a bare step\'s modal shows only the always-on time-limit chip', () => {
+    const steps = [step({ name: 'Bare step', code: 'send(x)' })]
+    render(
+      <StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer" />,
+    )
+    fireEvent.click(screen.getAllByText('Bare step')[0])
+    // row + modal each carry the one chip; an empty family simply has no chip
+    expect(screen.getAllByText('15m')).toHaveLength(2)
+    expect(screen.queryByText('Cloud writer')).toBeNull() // no agent → no agent chip
+    expect(screen.queryByText(/retr/)).toBeNull()
+  })
+
+  it('the code card counts the script lines, singular at one, ignoring the trailing final newline', () => {
+    const steps = [
+      // trailing \n — the file-final newline is neither rendered nor counted
+      step({ name: 'Three liner', code: 'a = 1\nb = 2\nsend(a + b)\n' }),
+      step({ name: 'One liner', code: 'send(x)' }),
+    ]
+    render(
+      <StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer" />,
+    )
+    fireEvent.click(screen.getAllByText('Three liner')[0])
+    expect(screen.getByText('3 lines')).toBeTruthy()
+    // no filename on the step → the code card header falls back to 'script'
+    expect(screen.getByText('script')).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Next step'))
+    expect(screen.getByText('1 line')).toBeTruthy()
+  })
+
+  it('detail variant: package chips are modal-only — absent from the row, present once opened', () => {
+    const packages: PackageDep[] = [{ pip: 'beautifulsoup4', import: 'bs4', why: 'parse pages' }]
+    const steps = [step({ name: 'Parse page', code: 'import bs4' })]
+    render(
+      <StepList variant="detail" steps={steps} agents={[AGENT]} secrets={[]} packages={packages} fallbackAgent="Cloud writer" />,
+    )
+    // §9.2: the detail rows carry no package chips
+    expect(screen.queryByText('bs4')).toBeNull()
+    fireEvent.click(screen.getAllByText('Parse page')[0])
+    // 'bs4' also rides the script inside the code card — assert the chip itself
+    const chip = screen.getAllByText('bs4').find((el) =>
+      el.closest('span')?.getAttribute('aria-label')?.includes('Python package'))
+    expect(chip!.closest('span')?.getAttribute('aria-label'))
+      .toBe('This step uses the bs4 Python package — parse pages')
   })
 
   it('detail variant: next/prev buttons and the arrow keys flip steps, guarded at both ends', () => {

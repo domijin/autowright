@@ -1108,9 +1108,10 @@ editors enter with
   time, with previous / next and the arrow keys flipping inside the modal). The step number
   prefixes the title ("1. Fetch page" — faint mono numeral, title styling unchanged) instead
   of occupying a left gutter column, keeping the row's left edge free on narrow windows.
-  The editor's modal adds the step's package facts to the §9.2 metadata lines (the
-  box-icon tooltip sentences) and renders `code` falling back to "# script not written
-  yet" for a step whose script hasn't been generated. A sync or undo that swaps the
+  The editor's modal draws its §9.2 package facts from the draft's declared packages
+  (the detail page's modal reads the automation record's §6.2 list instead) and renders
+  `code` falling back to "# script not written yet" for a step whose script hasn't been
+  generated. A sync or undo that swaps the
   steps closes an open step-script modal (same reason the old open set reset: the index
   no longer names the same step). The modal renders the step's
   `code` with Python syntax highlighting — a self-contained tokenizer (`PyCode` in `ui.tsx`, no

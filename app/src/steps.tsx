@@ -67,14 +67,16 @@ export function stepPackageTags(s: Step, packages: PackageDep[]):
 // ---------- step rows + step-script modal ----------
 
 // One descriptor per step fact, shared by the row's Tag chips and the
-// step-script modal's written-out metadata lines: `title` is the tag's tooltip
-// sentence AND the modal line, so hover text and modal text can never drift.
+// step-script modal's tag row — both render the same chips with the same
+// tooltip sentences, so row and modal can never drift. `rowHidden` marks
+// modal-only facts (§9.2: the detail rows carry no package chips).
 type StepTagDesc = {
   key: string
   icon: string
   label: string
   title: string
   tone: 'accent' | 'plain' | 'red'
+  rowHidden?: boolean
 }
 
 // Per-variant Tag visuals for a tone; the two variants keep their historic
@@ -88,7 +90,7 @@ const tagVisual = (tone: StepTagDesc['tone'], editor: boolean): { c?: string; st
       : { ...(editor ? { c: 'var(--text-muted)' } : {}), style: { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' } }
 
 // The full ordered fact list for one step (§9.2/§11): agents, secrets,
-// packages (editor only), time limit, retries.
+// packages (rowHidden on the detail variant), time limit, retries.
 function stepTagDescs(props: StepListProps, step: Step, copy: ReturnType<typeof usePlatformCopy>): StepTagDesc[] {
   const unres = props.unresolvedReferences
   // §5.1: a dangling agent id carried by unresolvedReferences shows the
@@ -160,13 +162,15 @@ function stepTagDescs(props: StepListProps, step: Step, copy: ReturnType<typeof 
         : `This step uses the ${t.name} secret from your ${copy.secretStore}${t.why ? ` — ${t.why}` : ''}`,
     })
   }
-  if (props.variant === 'editor') {
-    for (const p of stepPackageTags(step, props.packages)) {
-      descs.push({
-        key: `pkg-${p.import}`, icon: 'fa-cube', label: p.import, tone: 'plain',
-        title: `This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''}${p.why ? ` — ${p.why}` : ''}`,
-      })
-    }
+  // §9.2: package facts feed both variants' modals — the editor from the
+  // draft's declared packages, the detail modal from the automation record's
+  // §6.2 list — but the detail ROWS carry no package chips (rowHidden).
+  for (const p of stepPackageTags(step, props.packages)) {
+    descs.push({
+      key: `pkg-${p.import}`, icon: 'fa-cube', label: p.import, tone: 'plain',
+      title: `This step uses the ${p.import} Python package${p.version ? `, version ${p.version}` : ''}${p.why ? ` — ${p.why}` : ''}`,
+      ...(props.variant === 'detail' ? { rowHidden: true } : {}),
+    })
   }
   descs.push({ key: 'timeout', icon: 'fa-clock', label: stepTimeoutLabel(step), title: stepTimeoutTitle(step), tone: 'plain' })
   const retries = stepRetriesLabel(step)
@@ -182,7 +186,7 @@ function stepTagDescs(props: StepListProps, step: Step, copy: ReturnType<typeof 
 function StepRow({ step, i, last, editor, tags, onOpen }: {
   step: Step; i: number; last: boolean; editor: boolean; tags: StepTagDesc[]; onOpen: () => void
 }) {
-  const tagNodes = tags.map((t) => {
+  const tagNodes = tags.filter((t) => !t.rowHidden).map((t) => {
     const v = tagVisual(t.tone, editor)
     return <Tag key={t.key} icon={t.icon} c={v.c} title={t.title} style={v.style}>{t.label}</Tag>
   })
@@ -233,18 +237,25 @@ function StepRow({ step, i, last, editor, tags, onOpen }: {
 }
 
 // §9.2 step-script modal: one large Modal card, content column fixed at 82vh
-// so flipping between steps never resizes the frame. Header: "STEP N OF M"
-// eyebrow (plus the §4.1 version-folder filename, its one appearance in the
-// UI), the step name, and prev / next / close icon buttons. Body: one
-// overlay-scrollbar pane holding the description, the metadata lines (the row
-// tags' tooltip sentences, written out), and the PyCode script stretching to
-// the card's bottom edge. Switching steps remounts the body with the §14
-// keyed fade, which also resets its scroll.
+// so flipping between steps never resizes the frame. No header row: the card
+// is one overlay-scrollbar pane leading with the "STEP N OF M" eyebrow and
+// the step name (they scroll away with the content), then the description,
+// the tag row (the same §14 chips the step row carries, tooltips holding the
+// detail, plus the detail variant's modal-only package chips), and the script
+// inside a content-sized inset code card whose header line carries the §4.1
+// version-folder filename (its one appearance in the UI) and a line count. Prev / next / close float
+// as a cluster pinned to the card's top-right corner on a solid backdrop,
+// outside the §14 keyed fade that remounts the pane (and resets its scroll)
+// when the step switches, so the buttons never flash while flipping.
 function StepModal({ steps, i, editor, tags, onNav, onClose }: {
   steps: Step[]; i: number; editor: boolean; tags: StepTagDesc[]
   onNav: (i: number) => void; onClose: () => void
 }) {
   const step = steps[i]
+  // A script's single trailing final newline is neither rendered nor counted —
+  // it would show as a blank last line and count one line too many (§9.2).
+  const code = (editor ? (step.code || '# script not written yet') : step.code || '').replace(/\n$/, '')
+  const lineCount = code.split('\n').length
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); onNav(i - 1) }
@@ -259,16 +270,12 @@ function StepModal({ steps, i, editor, tags, onNav, onClose }: {
       cardStyle={{ width: 'min(1000px, 92vw)', overflow: 'hidden' }}
     >
       {(close) => (
-        <div className="ad-stepmodal" style={{ height: '82vh', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 20px', borderBottom: '1px solid var(--hairline-dim)', flex: 'none' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)' }}>
-                STEP {i + 1} OF {steps.length}{step.file ? ` · ${step.file}` : ''}
-              </div>
-              <div style={{ fontSize: 15, fontWeight: 600, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {step.name}
-              </div>
-            </div>
+        <div className="ad-stepmodal" style={{ height: '82vh', position: 'relative', minWidth: 0 }}>
+          <div style={{
+            position: 'absolute', top: 12, right: 14, zIndex: 1,
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'var(--bg-menu)', borderRadius: 8, padding: 2,
+          }}>
             <button className="ad-btn-icon" aria-label="Previous step" disabled={i === 0} onClick={() => onNav(i - 1)}>
               <i className="fa-solid fa-chevron-left" />
             </button>
@@ -279,32 +286,45 @@ function StepModal({ steps, i, editor, tags, onNav, onClose }: {
               <i className="fa-solid fa-xmark" style={{ fontSize: 14 }} />
             </button>
           </div>
-          <ScrollArea key={i} className="ad-anim-fade" wrapStyle={{ flex: 1, minHeight: 0 }}>
-            <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
-              <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 10, flex: 'none' }}>
-                {step.description && (
-                  <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-2)' }}>{step.description}</div>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {tags.map((t) => (
-                    <div key={t.key} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
-                      <i
-                        className={`fa-solid ${t.icon}`}
-                        style={{
-                          color: t.tone === 'red' ? 'var(--red-text)' : t.tone === 'accent' ? 'var(--accent-hover)' : 'var(--text-muted)',
-                          fontSize: 10, marginTop: 3, width: 12, textAlign: 'center', flex: 'none',
-                        }}
-                      />
-                      <span style={{ fontSize: 11.5, lineHeight: 1.55, color: t.tone === 'red' ? 'var(--red-text)' : 'var(--text-muted)' }}>
-                        {t.title}
-                      </span>
-                    </div>
-                  ))}
+          <ScrollArea key={i} className="ad-anim-fade" wrapStyle={{ height: '100%' }}>
+            <div style={{ padding: '16px 20px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ paddingRight: 108 }}>
+                <div style={{ font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)' }}>
+                  STEP {i + 1} OF {steps.length}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 600, marginTop: 3, letterSpacing: '-.01em' }}>
+                  {step.name}
                 </div>
               </div>
-              <PyCode code={editor ? (step.code || '# script not written yet') : step.code} style={{
-                margin: 0, flex: 1, background: 'var(--bg-code)', borderTop: '1px solid var(--hairline-dim)',
-                padding: '14px 20px', font: "400 11.5px/1.75 var(--mono)", color: 'var(--code-text)',
+              {step.description && (
+                <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-2)' }}>{step.description}</div>
+              )}
+              {/* §9.2 tag row: the same chips the step row carries (tooltips
+                  hold the detail), plus package chips in the detail modal. */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                {tags.map((t) => {
+                  const v = tagVisual(t.tone, editor)
+                  return <Tag key={t.key} icon={t.icon} c={v.c} title={t.title} style={v.style}>{t.label}</Tag>
+                })}
+              </div>
+            </div>
+            <div style={{
+              margin: '0 20px 20px', border: '1px solid var(--hairline-dim)', borderRadius: 8,
+              background: 'var(--bg-code)', overflow: 'hidden',
+            }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                padding: '8px 16px', borderBottom: '1px solid var(--hairline-dim)',
+              }}>
+                <span style={{ font: "500 10.5px var(--mono)", letterSpacing: '.05em', color: 'var(--text-faint)' }}>
+                  {step.file || 'script'}
+                </span>
+                <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-faint)', flex: 'none' }}>
+                  {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+                </span>
+              </div>
+              <PyCode code={code} style={{
+                margin: 0, padding: '14px 16px', font: "400 11.5px/1.75 var(--mono)", color: 'var(--code-text)',
                 whiteSpace: 'pre-wrap', overflowWrap: 'break-word', minWidth: 0,
               }} />
             </div>
@@ -317,8 +337,8 @@ function StepModal({ steps, i, editor, tags, onNav, onClose }: {
 
 // Holds the viewed-step index locally so opening the modal re-renders only
 // this list. One step shows at a time; prev / next flips inside the modal.
-export type StepListProps = { steps: Step[]; secrets: SecretMeta[]; unresolvedReferences?: UnresolvedRefs } & (
-  | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[]; packages: PackageDep[] }
+export type StepListProps = { steps: Step[]; secrets: SecretMeta[]; packages: PackageDep[]; unresolvedReferences?: UnresolvedRefs } & (
+  | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[] }
   | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
 )
 

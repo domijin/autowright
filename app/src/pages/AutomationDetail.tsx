@@ -441,6 +441,7 @@ export default function AutomationDetail() {
               steps={steps}
               agents={agents}
               secrets={secrets}
+              packages={auto.packages ?? []}
               unresolvedReferences={auto.unresolvedReferences}
               fallbackAgent={(() => {
                 const first = auto.stepAgents.map((id) => agents.find((z) => z.id === id)).find((g) => !!g)

@@ -747,7 +747,8 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
 - **STEPS** card — read-only step rows (number, name, description, tags; the whole row is a
   click target whose only right-edge affordance is an expand glyph (`fa-expand`): no
   "view script" text label, so narrow windows don't crush the row's middle column, and the
-  glyph carries a "View script" `title` tooltip). Clicking a row opens the **step-script
+  glyph carries a "View script" `title` tooltip; the §11 editor's rows drop the glyph
+  entirely). Clicking a row opens the **step-script
   modal**, a large §14 `Modal` card laid out as a two-column viewer: `min(1120px, 92vw)`
   wide, `overflow: hidden`, no header row and nothing that scrolls the card as a whole. Its
   height is fixed for the life of the open modal, so flipping between steps never resizes

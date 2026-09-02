@@ -415,8 +415,10 @@ function stepTagDescs(props: StepListProps, step: Step, copy: ReturnType<typeof 
 }
 
 // §9.2/§11 step row: the whole row is a click target opening the step-script
-// modal; the only right-edge affordance is the expand glyph ("View script"
-// tooltip, no text label, so narrow windows don't crush the middle column).
+// modal. The detail page's only right-edge affordance is the expand glyph
+// ("View script" tooltip, no text label, so narrow windows don't crush the
+// middle column); the §11 editor's rows carry no glyph at all and keep the
+// tooltip on the row.
 function StepRow({ step, i, last, editor, tags, onOpen }: {
   step: Step; i: number; last: boolean; editor: boolean; tags: StepTagDesc[]; onOpen: () => void
 }) {
@@ -424,7 +426,7 @@ function StepRow({ step, i, last, editor, tags, onOpen }: {
     const v = tagVisual(t.tone, editor)
     return <Tag key={t.key} icon={t.icon} c={v.c} title={t.title} style={v.style}>{t.label}</Tag>
   })
-  const glyph = (
+  const glyph = editor ? null : (
     <span title="View script" style={{ color: 'var(--text-deco)', flex: 'none' }}>
       <i className="fa-solid fa-expand" style={{ fontSize: 12 }} />
     </span>
@@ -433,7 +435,7 @@ function StepRow({ step, i, last, editor, tags, onOpen }: {
   // 13/600 name, 11.5 sub-line, divider suppressed on the last row.
   return (
     <div style={{ borderBottom: last ? 'none' : '1px solid var(--hairline-dim)' }}>
-      <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onOpen} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
+      <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onOpen} title={editor ? 'View script' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
         <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)', width: 14, flex: 'none' }}>{i + 1}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

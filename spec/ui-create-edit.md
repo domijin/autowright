@@ -1141,8 +1141,10 @@ editors enter with
   shows the §9.2 clock-icon time-limit tag and, when its §4.1 retry budget is set, the §9.2
   rotate-icon retry tag (same labels, tooltips, and hide-at-zero rule). Which agents a step calls is decided by
   the drafting agent per the §8 selection rule — changing it happens through the spec or
-  build instructions plus sync (or the agent-enablement card), not per step. Step rows open the same §9.2 step-script modal (whole-row click, expand-glyph-only
-  right-edge affordance with the "View script" tooltip, no text label; one step shows at a
+  build instructions plus sync (or the agent-enablement card), not per step. Step rows open the same §9.2 step-script modal (whole-row click; unlike the
+  detail page's rows the editor's carry **no** right-edge expand glyph — the row's hover
+  fill is the only affordance, and the button's "View script" `title` tooltip is kept on
+  the row itself; one step shows at a
   time, with the modal's step navigator, previous / next, and the arrow keys flipping inside
   it). The step number
   prefixes the title ("1. Fetch page" — faint mono numeral, title styling unchanged) instead

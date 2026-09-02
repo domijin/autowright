@@ -369,7 +369,6 @@ describe('step-script modal', () => {
     const viewed = navRow('Fetch page')
     expect(viewed.tagName).toBe('DIV')
     expect(viewed.style.userSelect).toBe('text')
-    expect(viewed.getAttribute('tabindex')).toBe('-1')
     expect(navRow('Send mail').tagName).toBe('BUTTON')
     // clicking the viewed block is inert; clicking a button row views it and swaps roles
     fireEvent.click(viewed)
@@ -379,20 +378,28 @@ describe('step-script modal', () => {
     expect(navRow('Fetch page').tagName).toBe('BUTTON')
   })
 
-  it('focus follows the viewed row while it sits in the navigator, and stays put elsewhere', () => {
+  it('flipping steps never leaves a focus target: the viewed block is unfocusable and a key flip blurs the controls', () => {
     renderDetail()
     openFirst()
-    // a click leaves focus on the clicked row; an arrow flip moves it to the viewed row
+    expect(navRow('Fetch page').getAttribute('tabindex')).toBeNull()
+    // a clicked row unmounts as it becomes the viewed block — focus falls to the body
     navRow('Send mail').focus()
     fireEvent.click(navRow('Send mail'))
-    expect(document.activeElement).toBe(navRow('Send mail'))
+    expect(document.activeElement).toBe(document.body)
+    // an arrow flip drops focus from a focused chevron
+    const prev = screen.getByLabelText('Previous step') as HTMLButtonElement
+    prev.focus()
+    expect(document.activeElement).toBe(prev)
     fireEvent.keyDown(document, { key: 'ArrowLeft' })
-    expect(document.activeElement).toBe(navRow('Fetch page'))
-    // focus resting on the toolbar is left alone
-    const next = screen.getByLabelText('Next step') as HTMLButtonElement
-    next.focus()
-    fireEvent.click(next)
-    expect(document.activeElement).toBe(next)
+    expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+    expect(document.activeElement).toBe(document.body)
+    // …and from the page's step row behind the modal (the one that opened it)
+    const pageRow = screen.getAllByText('Fetch page')[0].closest('button') as HTMLButtonElement
+    pageRow.focus()
+    expect(document.activeElement).toBe(pageRow)
+    fireEvent.keyDown(document, { key: 'ArrowRight' })
+    expect(screen.getByText('STEP 2 OF 2')).toBeTruthy()
+    expect(document.activeElement).toBe(document.body)
   })
 
   it('the frame height follows the longest script, floored and capped', () => {

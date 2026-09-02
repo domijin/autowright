@@ -5,7 +5,7 @@
 // numbers, accent-only tags), and one presentational ParamValueEditor renders
 // the five §4.2 value kinds (toggle/list/kv/number/text) for both the
 // editor's test-value card and the detail page's debounced ParamRow.
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { usePlatformCopy } from './platformCopy'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from './types'
 import { MiniBadge, Modal, ScrollArea, Tag, Toggle, agName, dispModel, highlightPythonLines, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
@@ -427,8 +427,16 @@ function StepArrowKeys({ i, count, closing, onNav }: {
   useEffect(() => {
     if (closing) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); onNav(i - 1) }
-      if (e.key === 'ArrowRight' && i < count - 1) { e.preventDefault(); onNav(i + 1) }
+      const flip = e.key === 'ArrowLeft' ? (i > 0 ? i - 1 : null) : e.key === 'ArrowRight' ? (i < count - 1 ? i + 1 : null) : null
+      if (flip === null) return
+      e.preventDefault()
+      // §9.2: a key flip drops focus from whatever holds it — a chevron, or
+      // the page's step row that opened the modal and still holds focus
+      // behind it (wider than the card, its ring would peek past the edge) —
+      // so keyboard mode never draws a ring; the accent bar alone marks the
+      // step.
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+      onNav(flip)
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -452,29 +460,16 @@ const EYEBROW: React.CSSProperties = { font: "600 10.5px var(--mono)", letterSpa
 function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
   step: Step; j: number; viewed: boolean; editor: boolean; tags: StepTagDesc[]; facts: StepFactSection[]; onNav: () => void
 }) {
-  const ref = useRef<HTMLElement>(null)
-  // An arrow-key flip after a row click would leave the clicked row's
-  // focus ring on a step no longer viewed — two rows reading as current. While
-  // focus sits in the navigator it follows the viewed row; focus resting on
-  // the toolbar buttons is left alone. A clicked button row unmounts as it
-  // becomes the viewed block (focus falls to the body), so the body counts
-  // as "in the navigator" here.
-  useEffect(() => {
-    const el = ref.current
-    if (!viewed || !el || document.activeElement === el) return
-    const active = document.activeElement
-    if (!active || active === document.body || active.closest('.ad-stepnav')) el.focus({ preventScroll: true })
-  }, [viewed])
-  // §9.2: the viewed row is a plain, text-selectable block — a button would
-  // stop the user from dragging over its description, chips and facts to
-  // copy them, and clicking the viewed row does nothing anyway.
+  // §9.2: the viewed row is a plain, text-selectable, unfocusable block — a
+  // button would stop the user from dragging over its description, chips and
+  // facts to copy them, and clicking the viewed row does nothing anyway. A
+  // clicked button row unmounts as it becomes this block, so no focus ring
+  // can linger on a step no longer viewed.
   const Row: 'div' | 'button' = viewed ? 'div' : 'button'
   return (
     <Row
-      ref={ref as React.Ref<HTMLDivElement & HTMLButtonElement>}
-      className={`${viewed ? '' : 'ad-btn-bare ad-hover-row '}ad-focus-inset`}
+      className={viewed ? undefined : 'ad-btn-bare ad-hover-row ad-focus-inset'}
       aria-current={viewed ? 'step' : undefined}
-      tabIndex={viewed ? -1 : undefined}
       onClick={viewed ? undefined : onNav}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 18px 9px 14px',

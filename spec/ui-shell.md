@@ -758,14 +758,17 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   border) is its own §14 overlay-scrollbar pane: a faint mono "STEPS" eyebrow with the
   step count right-aligned, then one row per step in order — the number in faint mono, then
   the name (13/600 `--text` on the viewed row, 500 `--text-muted` on the others, hover
-  brightening them). Clicking a row views that step; while keyboard focus sits in the
-  navigator it follows the viewed row (an arrow-key flip after a row click never leaves a
-  stale focus ring on a step no longer viewed; a click on a row, which swaps that row's
-  element, lands focus on the new viewed block too). The unviewed rows are buttons; the viewed
-  row is a plain, text-selectable block (`user-select: text`, focusable only
-  programmatically) — clicking it would do nothing, and a button would stop the user from
-  dragging over its name, description, chips and facts to highlight and copy them, which
-  is exactly what a host or a file name in the fact list is for. The viewed row carries a 2 px accent
+  brightening them). Clicking a row views that step. The unviewed rows are buttons; the
+  viewed row is a plain, text-selectable block (`user-select: text`, not focusable) —
+  clicking it would do nothing, and a button would stop the user from dragging over its
+  name, description, chips and facts to highlight and copy them, which is exactly what a
+  host or a file name in the fact list is for. Flipping steps never draws a focus ring:
+  the viewed block cannot take focus, a clicked row unmounts as it becomes the viewed
+  block (so no ring lingers on a step no longer viewed), and an arrow-key flip drops
+  focus from whatever holds it — a chevron, or the page's step row that opened the modal
+  and still holds focus behind it (wider than the card, its ring would peek past the
+  card's edge) — so the accent bar alone marks the step: no box around a row, a chevron,
+  or anything behind the backdrop. The viewed row carries a 2 px accent
   bar down its left edge and a faint fill, and expands beneath its name to hold the
   step's description (12 muted) and its **tag row**: the same §14 `Tag` chips the step
   row carries (same variant colors, red states, and tooltip bubbles; agents, secrets,

@@ -677,7 +677,7 @@ export function RightCards({
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', opacity: outOfSync || busyRewrite ? 0.45 : 1, transition: 'opacity var(--t-hover) var(--ease-enter)', marginBottom: -1 }}>
-          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} unresolvedReferences={unresolvedReferences} packages={rev.packages} history={stepHistory} viewing={rev.viewing} />
+          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} unresolvedReferences={unresolvedReferences} packages={rev.packages} history={stepHistory} viewing={rev.viewing} params={rev.params} />
         </div>
       </div>
 

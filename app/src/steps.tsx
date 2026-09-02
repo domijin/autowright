@@ -158,6 +158,16 @@ export function stepMemory(code: string): { loads: string[]; saves: string[] } {
   return { loads, saves }
 }
 
+// §4.2 param name literals the script reads: params["<name>"] / params.get("<name>").
+export function stepParams(code: string): string[] {
+  const out: string[] = []
+  for (const m of code.matchAll(new RegExp(String.raw`\bparams(?:\[\s*|\.get\(\s*)(${STR_SRC})`, 'g'))) {
+    const k = unquote(m[1])
+    if (k && !/[{}]/.test(k) && !out.includes(k)) out.push(k)
+  }
+  return out
+}
+
 // One stored revision's steps, for the change badge.
 export type StepHistory = { version: number; steps: Step[] }
 
@@ -196,10 +206,13 @@ export type StepFact = { icon: string; text: string }
 
 // The ordered fact list for one step (§9.2), with the file hand-offs resolved
 // against the other steps.
-export function stepFacts(steps: Step[], i: number, viewing: number | 'draft' | undefined, history: StepHistory[] | undefined): StepFact[] {
+export function stepFacts(steps: Step[], i: number, viewing: number | 'draft' | undefined, history: StepHistory[] | undefined, params: ParamDef[] = []): StepFact[] {
   const step = steps[i]
   const code = step.code || ''
   const facts: StepFact[] = []
+  const listWord = (xs: string[]) => xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`
+  const names = stepParams(code).map((k) => `“${params.find((p) => p.name === k)?.label || k}”`)
+  if (names.length) facts.push({ icon: 'fa-sliders', text: `Uses the ${listWord(names)} parameter${names.length === 1 ? '' : 's'}` })
   const hosts = stepHosts(code)
   if (hosts.length) facts.push({ icon: 'fa-globe', text: `Talks to ${hosts.join(', ')}` })
   const ag = stepAgentPrompts(code)
@@ -214,7 +227,7 @@ export function stepFacts(steps: Step[], i: number, viewing: number | 'draft' | 
     })
   }
   const files = steps.map((s) => stepFiles(s.code || ''))
-  const stepsWord = (ns: number[]) => ns.length === 1 ? `step ${ns[0]}` : `steps ${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}`
+  const stepsWord = (ns: number[]) => `step${ns.length === 1 ? '' : 's'} ${listWord(ns.map(String))}`
   for (const f of files[i].reads) {
     let producer: number | null = null
     for (let j = i - 1; j >= 0; j--) if (files[j].writes.includes(f)) { producer = j + 1; break }
@@ -605,6 +618,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
 export type StepListProps = {
   steps: Step[]; secrets: SecretMeta[]; packages: PackageDep[]; unresolvedReferences?: UnresolvedRefs
   history?: StepHistory[]; viewing?: number | 'draft'
+  params?: ParamDef[] // §4.2 definitions, labeling the "Uses the … parameter" fact
 } & (
   | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[] }
   | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
@@ -637,10 +651,10 @@ export function StepList(props: StepListProps) {
   ) // eslint-disable-line react-hooks/exhaustive-deps
   // §9.2 facts: the literal scans rerun only when the scripts or the stored
   // history change.
-  const { history, viewing: revision } = props
+  const { history, viewing: revision, params } = props
   const factsByStep = useMemo(
-    () => steps.map((_, i) => stepFacts(steps, i, revision, history)),
-    [steps, history, revision],
+    () => steps.map((_, i) => stepFacts(steps, i, revision, history, params)),
+    [steps, history, revision, params],
   )
   return (
     <>

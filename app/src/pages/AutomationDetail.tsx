@@ -455,6 +455,7 @@ export default function AutomationDetail() {
               unresolvedReferences={auto.unresolvedReferences}
               history={stepHistory}
               viewing={auto.version}
+              params={params}
               fallbackAgent={(() => {
                 const first = auto.stepAgents.map((id) => agents.find((z) => z.id === id)).find((g) => !!g)
                 return first ? (first.name || first.harness) : 'agent'

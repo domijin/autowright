@@ -769,6 +769,12 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   literal-only scan of the script — the same kind of scan the secret and import tags use —
   so users can see what a step reaches and touches without reading the code. In order,
   each present only when the scan finds something:
+  - `fa-sliders` **Uses the “**`<label>`**” parameter** — every distinct `params["<name>"]` /
+    `params.get("<name>")` literal, each shown under its §4.2 definition's `label` (the raw
+    name when no definition matches) in curly quotes, so a multi-word label keeps a visible
+    boundary from the sentence around it; joined "the “A” parameter" / "the “A” and “B”
+    parameters" / "the “A”, “B” and “C” parameters". The inputs come first, so the list reads as a sentence:
+    what the step takes in, then what it reaches, then what it hands on.
   - `fa-globe` **Talks to** `<host>` — every distinct `http(s)://` host literal in the
     script, comma-joined in order of appearance (an f-string host with an interpolation
     is not a literal and is skipped).

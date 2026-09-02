@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from '../src/types'
-import { ParamValueEditor, StepList, stepAgentPrompts, stepChange, stepFacts, stepFiles, stepHosts, stepMemory, stepModalFrame, stepPackageTags, stepSecretTags } from '../src/steps'
+import { ParamValueEditor, StepList, stepAgentPrompts, stepChange, stepFacts, stepFiles, stepHosts, stepMemory, stepModalFrame, stepPackageTags, stepParams, stepSecretTags } from '../src/steps'
 
 afterEach(() => cleanup())
 
@@ -461,6 +461,11 @@ describe('navigator facts (§9.2 literal scans)', () => {
     expect(stepFiles(code)).toEqual({ reads: ['links.json', 'in.csv'], writes: ['found.json', 'log.txt', 'table.html'] })
   })
 
+  it('stepParams: subscript and .get literals, deduped, interpolated keys skipped', () => {
+    expect(stepParams('a = params["recipients"]\nb = params.get("subject", "")\nc = params["recipients"]\nd = params[f"{k}"]\ne = params[key]'))
+      .toEqual(['recipients', 'subject'])
+  })
+
   it('stepMemory: load and save key literals', () => {
     expect(stepMemory('rows = memory.load("sources", [])\nmemory.save("seen", seen)\nmemory.load(key)'))
       .toEqual({ loads: ['sources'], saves: ['seen'] })
@@ -506,6 +511,19 @@ describe('navigator facts (§9.2 literal scans)', () => {
     expect(c.map((f) => f.icon)).toEqual(['fa-file-import', 'fa-file-import', 'fa-file-export', 'fa-brain', 'fa-code-commit'])
     // no literal prompt at all → the bare line
     expect(stepFacts([{ name: 'x', description: '', code: 'agent.ask(p)' }], 0, undefined, undefined).map((f) => f.text)).toEqual(['Asks the agent'])
+    // params lead the list, labeled through their §4.2 definition, raw name when none matches
+    const defs: ParamDef[] = [
+      { name: 'recipients', kind: 'list', label: 'Recipients', help: '' },
+      { name: 'subject', kind: 'text', label: 'Subject line', help: '' },
+    ]
+    const pcode = 'to = params["recipients"]\ns = params.get("subject")\nx = params["extra"]\nr = fetch_page("https://a.io")'
+    const pf = stepFacts([{ name: 'p', description: '', code: pcode }], 0, undefined, undefined, defs)
+    expect(pf.map((f) => f.text)).toEqual(['Uses the “Recipients”, “Subject line” and “extra” parameters', 'Talks to a.io'])
+    expect(pf[0].icon).toBe('fa-sliders')
+    expect(stepFacts([{ name: 'p', description: '', code: 'params["subject"]' }], 0, undefined, undefined, defs).map((f) => f.text))
+      .toEqual(['Uses the “Subject line” parameter'])
+    expect(stepFacts([{ name: 'p', description: '', code: 'params["a"], params["b"]' }], 0, undefined, undefined).map((f) => f.text))
+      .toEqual(['Uses the “a” and “b” parameters'])
   })
 
   it('the navigator shows the fact list under the viewed row only', () => {

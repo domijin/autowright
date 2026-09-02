@@ -64,6 +64,177 @@ export function stepPackageTags(s: Step, packages: PackageDep[]):
   return tags
 }
 
+// ---------- §9.2 navigator facts (literal-only scans) ----------
+
+const STR_SRC = String.raw`(?:[rbfuRBFU]{0,2})(?:'''[\s\S]*?'''|"""[\s\S]*?"""|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*')`
+const STR_RE = new RegExp(STR_SRC, 'g')
+// A string token's contents: prefix and quotes stripped.
+const unquote = (tok: string) => {
+  const q = tok.match(/^[rbfuRBFU]{0,2}('''|"""|"|')/)
+  if (!q) return tok
+  return tok.slice(q[0].length, tok.length - q[1].length)
+}
+// A literal workspace-relative file name; absolute, home, parent-relative
+// and interpolated (f-string) names are skipped.
+const relFile = (tok: string) => {
+  if (/^[rbuRBU]*[fF]/.test(tok)) return null
+  const v = unquote(tok)
+  return v && !/^[/~]|\.\./.test(v) && !/[{}]/.test(v) ? v : null
+}
+
+// Every distinct http(s) host literal, in order of appearance.
+export function stepHosts(code: string): string[] {
+  const out: string[] = []
+  for (const m of code.matchAll(/https?:\/\/([A-Za-z0-9.-]+(?::\d+)?)/g)) {
+    if (!out.includes(m[1])) out.push(m[1])
+  }
+  return out
+}
+
+// agent / agents["…"] .ask / .read / .write call sites: the first string
+// literal inside each call's balanced parentheses is its prompt.
+export function stepAgentPrompts(code: string): { count: number; prompts: string[] } {
+  const prompts: string[] = []
+  let count = 0
+  for (const m of code.matchAll(/\bagents?(?:\[[^\]]*\])?\.(?:ask|read|write)\(/g)) {
+    count++
+    let depth = 1
+    let i = m.index! + m[0].length
+    const start = i
+    while (i < code.length && depth > 0) {
+      const ch = code[i]
+      if (ch === '"' || ch === "'" || /[rbfuRBFU]/.test(ch)) {
+        STR_RE.lastIndex = i
+        const sm = STR_RE.exec(code)
+        if (sm && sm.index === i) { i += sm[0].length; continue }
+      }
+      if (ch === '(' || ch === '[' || ch === '{') depth++
+      else if (ch === ')' || ch === ']' || ch === '}') depth--
+      i++
+    }
+    const inner = code.slice(start, depth === 0 ? i - 1 : i)
+    const lit = inner.match(new RegExp(STR_SRC))
+    if (lit) {
+      // Adjacent literals concatenate, as in Python — a prompt split across
+      // lines is quoted whole, never from its first piece alone.
+      let text = unquote(lit[0])
+      const next = new RegExp(String.raw`\s*(${STR_SRC})`, 'y')
+      next.lastIndex = lit.index! + lit[0].length
+      for (let nm = next.exec(inner); nm; nm = next.exec(inner)) text += unquote(nm[1])
+      text = text.replace(/\s+/g, ' ').trim()
+      if (text) prompts.push(text.length > 72 ? `${text.slice(0, 71)}…` : text)
+    }
+  }
+  return { count, prompts }
+}
+
+// Workspace-relative files the script opens, split by direction.
+export function stepFiles(code: string): { reads: string[]; writes: string[] } {
+  const reads: string[] = []
+  const writes: string[] = []
+  const add = (list: string[], f: string) => { if (!list.includes(f)) list.push(f) }
+  for (const m of code.matchAll(new RegExp(String.raw`\bopen\(\s*(${STR_SRC})\s*(?:,\s*(?:mode\s*=\s*)?(${STR_SRC}))?`, 'g'))) {
+    const f = relFile(m[1])
+    if (!f) continue
+    add(m[2] && /[wax]/.test(unquote(m[2])) ? writes : reads, f)
+  }
+  for (const m of code.matchAll(new RegExp(String.raw`\bPath\(\s*(${STR_SRC})\s*\)\s*\.\s*(write_text|write_bytes|read_text|read_bytes|open)\(`, 'g'))) {
+    const f = relFile(m[1])
+    if (!f) continue
+    add(m[2].startsWith('write') ? writes : reads, f)
+  }
+  return { reads, writes }
+}
+
+// §6.1 memory.load / memory.save key literals.
+export function stepMemory(code: string): { loads: string[]; saves: string[] } {
+  const loads: string[] = []
+  const saves: string[] = []
+  for (const m of code.matchAll(new RegExp(String.raw`\bmemory\.(load|save)\(\s*(${STR_SRC})`, 'g'))) {
+    const list = m[1] === 'load' ? loads : saves
+    const k = unquote(m[2])
+    if (k && !list.includes(k)) list.push(k)
+  }
+  return { loads, saves }
+}
+
+// One stored revision's steps, for the change badge.
+export type StepHistory = { version: number; steps: Step[] }
+
+// §9.2 change badge: the step compared by NAME across the stored versions.
+// `viewing` is the revision the step belongs to — a version number, or
+// 'draft' for the §11 editor's unsaved draft over the newest stored version.
+export function stepChange(step: Step, viewing: number | 'draft', history: StepHistory[]): string | null {
+  if (!history.length) return null
+  const byVersion = [...history].sort((a, b) => b.version - a.version)
+  const find = (v: number) => byVersion.find((h) => h.version === v)
+  const code = (s: Step) => (s.code || '').replace(/\n$/, '')
+  const same = (a: Step, b: Step) => code(a) === code(b)
+  let base: number
+  if (viewing === 'draft') {
+    base = byVersion[0].version
+    const prev = find(base)!.steps.find((s) => s.name === step.name)
+    if (!prev) return 'New in this draft'
+    if (!same(prev, step)) return 'Changed in this draft'
+  } else {
+    base = viewing
+    if (!find(base)) return null
+  }
+  // Walk back through identical predecessors; `earliest` is the oldest
+  // version in the unbroken run of identical scripts.
+  let earliest = base
+  for (;;) {
+    const prevVersion = byVersion.find((h) => h.version < earliest)?.version
+    const prev = prevVersion === undefined ? undefined : find(prevVersion)!.steps.find((s) => s.name === step.name)
+    if (prev && same(prev, step)) { earliest = prevVersion!; continue }
+    if (earliest !== base) return `Unchanged since v${earliest}`
+    return prev ? `Changed in v${base}` : `New in v${base}`
+  }
+}
+
+export type StepFact = { icon: string; text: string }
+
+// The ordered fact list for one step (§9.2), with the file hand-offs resolved
+// against the other steps.
+export function stepFacts(steps: Step[], i: number, viewing: number | 'draft' | undefined, history: StepHistory[] | undefined): StepFact[] {
+  const step = steps[i]
+  const code = step.code || ''
+  const facts: StepFact[] = []
+  const hosts = stepHosts(code)
+  if (hosts.length) facts.push({ icon: 'fa-globe', text: `Talks to ${hosts.join(', ')}` })
+  const ag = stepAgentPrompts(code)
+  for (const p of ag.prompts) facts.push({ icon: 'fa-comment', text: `Asks the agent “${p}”` })
+  const rest = ag.count - ag.prompts.length
+  if (rest > 0) {
+    facts.push({
+      icon: 'fa-comment',
+      text: ag.prompts.length
+        ? `Asks the agent ${rest} more time${rest === 1 ? '' : 's'}`
+        : rest === 1 ? 'Asks the agent' : `Asks the agent ${rest} times`,
+    })
+  }
+  const files = steps.map((s) => stepFiles(s.code || ''))
+  const stepsWord = (ns: number[]) => ns.length === 1 ? `step ${ns[0]}` : `steps ${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}`
+  for (const f of files[i].reads) {
+    let producer: number | null = null
+    for (let j = i - 1; j >= 0; j--) if (files[j].writes.includes(f)) { producer = j + 1; break }
+    facts.push({ icon: 'fa-file-import', text: producer ? `Reads ${f} from step ${producer}` : `Reads ${f}` })
+  }
+  for (const f of files[i].writes) {
+    const consumers: number[] = []
+    for (let j = i + 1; j < steps.length; j++) if (files[j].reads.includes(f)) consumers.push(j + 1)
+    facts.push({ icon: 'fa-file-export', text: consumers.length ? `Hands ${f} to ${stepsWord(consumers)}` : `Writes ${f}` })
+  }
+  const mem = stepMemory(code)
+  for (const k of mem.loads) facts.push({ icon: 'fa-brain', text: `Reads ${k} from memory` })
+  for (const k of mem.saves) facts.push({ icon: 'fa-brain', text: `Saves ${k} to memory` })
+  if (viewing !== undefined && history) {
+    const change = stepChange(step, viewing, history)
+    if (change) facts.push({ icon: 'fa-code-commit', text: change })
+  }
+  return facts
+}
+
 // ---------- step rows + step-script modal ----------
 
 // One descriptor per step fact, shared by the row's Tag chips and the
@@ -268,8 +439,8 @@ function StepArrowKeys({ i, count, closing, onNav }: {
 // the toolbar stay put, so nothing under the pointer flashes.
 const EYEBROW: React.CSSProperties = { font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)', flex: 'none' }
 
-function StepNavRow({ step, j, viewed, editor, tags, onNav }: {
-  step: Step; j: number; viewed: boolean; editor: boolean; tags: StepTagDesc[]; onNav: () => void
+function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
+  step: Step; j: number; viewed: boolean; editor: boolean; tags: StepTagDesc[]; facts: StepFact[]; onNav: () => void
 }) {
   const ref = useRef<HTMLButtonElement>(null)
   // An arrow-key flip after a row click would leave the clicked row's
@@ -312,6 +483,19 @@ function StepNavRow({ step, j, viewed, editor, tags, onNav }: {
                 return <Tag key={t.key} icon={t.icon} c={v.c} title={t.title} style={v.style}>{t.label}</Tag>
               })}
             </div>
+            {/* §9.2 fact list: what the script reaches and touches, from a
+                literal-only scan — lines, not chips (hosts, prompts and file
+                names are too long for a chip). */}
+            {facts.length > 0 && (
+              <div data-testid="step-facts" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10 }}>
+                {facts.map((f, k) => (
+                  <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>
+                    <i className={`fa-solid ${f.icon}`} style={{ fontSize: 10, color: 'var(--text-deco)', width: 12, textAlign: 'center', flex: 'none', marginTop: 3 }} />
+                    <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{f.text}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -329,8 +513,8 @@ export function stepModalFrame(steps: Step[]): string {
   return `clamp(440px, ${Math.ceil(44 + 38 + longest * 12 * 1.65)}px, 82vh)`
 }
 
-function StepModal({ steps, i, editor, tagsByStep, onNav, onClose }: {
-  steps: Step[]; i: number; editor: boolean; tagsByStep: StepTagDesc[][]
+function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }: {
+  steps: Step[]; i: number; editor: boolean; tagsByStep: StepTagDesc[][]; factsByStep: StepFact[][]
   onNav: (i: number) => void; onClose: () => void
 }) {
   const step = steps[i]
@@ -360,7 +544,7 @@ function StepModal({ steps, i, editor, tagsByStep, onNav, onClose }: {
             <ScrollArea wrapStyle={{ flex: 1, minHeight: 0 }}>
               <div style={{ paddingBottom: 12 }}>
                 {steps.map((s, j) => (
-                  <StepNavRow key={j} step={s} j={j} viewed={j === i} editor={editor} tags={tagsByStep[j]} onNav={() => onNav(j)} />
+                  <StepNavRow key={j} step={s} j={j} viewed={j === i} editor={editor} tags={tagsByStep[j]} facts={factsByStep[j]} onNav={() => onNav(j)} />
                 ))}
               </div>
             </ScrollArea>
@@ -416,7 +600,12 @@ function StepModal({ steps, i, editor, tagsByStep, onNav, onClose }: {
 
 // Holds the viewed-step index locally so opening the modal re-renders only
 // this list. One step shows at a time; prev / next flips inside the modal.
-export type StepListProps = { steps: Step[]; secrets: SecretMeta[]; packages: PackageDep[]; unresolvedReferences?: UnresolvedRefs } & (
+// `history` / `viewing` feed the §9.2 change badge: the stored revisions
+// (current version + `versions`) and which revision these steps belong to.
+export type StepListProps = {
+  steps: Step[]; secrets: SecretMeta[]; packages: PackageDep[]; unresolvedReferences?: UnresolvedRefs
+  history?: StepHistory[]; viewing?: number | 'draft'
+} & (
   | { variant: 'editor'; availAgents: Agent[]; allAgents: Agent[] }
   | { variant: 'detail'; agents: Agent[]; fallbackAgent: string }
 )
@@ -446,6 +635,13 @@ export function StepList(props: StepListProps) {
     [steps, secrets, packages, unresolvedReferences, editor, copy,
       editor ? props.allAgents : props.agents, editor ? props.availAgents : props.fallbackAgent],
   ) // eslint-disable-line react-hooks/exhaustive-deps
+  // §9.2 facts: the literal scans rerun only when the scripts or the stored
+  // history change.
+  const { history, viewing: revision } = props
+  const factsByStep = useMemo(
+    () => steps.map((_, i) => stepFacts(steps, i, revision, history)),
+    [steps, history, revision],
+  )
   return (
     <>
       {steps.map((s, i) => (
@@ -461,6 +657,7 @@ export function StepList(props: StepListProps) {
         <StepModal
           steps={steps} i={current} editor={editor}
           tagsByStep={tagsByStep}
+          factsByStep={factsByStep}
           onNav={setViewing}
           onClose={() => setViewing(null)}
         />

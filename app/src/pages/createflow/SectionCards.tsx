@@ -7,7 +7,7 @@ import React, { useState } from 'react'
 import { usePlatformCopy } from '../../platformCopy'
 import { SecretModal } from '../../SecretModal'
 import { useTriggerPreview } from '../../triggers'
-import { StepList } from '../../steps'
+import { StepList, type StepHistory } from '../../steps'
 import type { Agent, SecretMeta, UnresolvedRefs } from '../../types'
 import { Caret, CheckBox, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
 import { Markdown, SpecMarkdown } from '../../result'
@@ -632,6 +632,7 @@ export function LeftColumn({
 // ---------- right column (below the Build & test panel) ----------
 
 export interface RightCardsProps {
+  stepHistory?: StepHistory[] // §9.2 change badge: the stored revisions (edit mode only)
   rev: Rev
   up: (patch: Partial<Rev>) => void
   liveParams?: import('../../types').ParamDef[] // edit mode: the automation's stored values (§16 summary source)
@@ -654,6 +655,7 @@ export interface RightCardsProps {
 export function RightCards({
   rev, up, liveParams, liveConcurrency, drafting, isCreateEmpty, outOfSync, busyRewrite,
   availAgents, agents, secrets, unresolvedReferences, pkgSecOpenEff, updatePkgs, installPkgs,
+  stepHistory,
 }: RightCardsProps) {
   // §19: the §11 draft-trigger chips label through POST /triggers/preview —
   // the renderer keeps no local trigger-math mirror (§4.3)
@@ -675,7 +677,7 @@ export function RightCards({
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', opacity: outOfSync || busyRewrite ? 0.45 : 1, transition: 'opacity var(--t-hover) var(--ease-enter)', marginBottom: -1 }}>
-          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} unresolvedReferences={unresolvedReferences} packages={rev.packages} />
+          <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} unresolvedReferences={unresolvedReferences} packages={rev.packages} history={stepHistory} viewing={rev.viewing} />
         </div>
       </div>
 

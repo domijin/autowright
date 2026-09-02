@@ -1,6 +1,6 @@
 // Automation detail (§4.3/§4.4/§7, prototype "Automation detail" screen).
 // Thin page shell — the section cards live in ./detail/ (§17).
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
@@ -181,6 +181,11 @@ export default function AutomationDetail() {
   const steps = auto.steps ?? []
   const spec = auto.spec ?? []
   const olderVersions = (auto.versions ?? []).filter((v) => v.version !== auto.version)
+  // §9.2 change badge: the current version's steps plus the stored history.
+  const stepHistory = useMemo(
+    () => [{ version: auto.version, steps: auto.steps ?? [] }, ...olderVersions.map((v) => ({ version: v.version, steps: v.steps }))],
+    [auto.version, auto.steps, auto.versions], // eslint-disable-line react-hooks/exhaustive-deps
+  )
   // §11 test executions are draft-scoped — never listed among real executions
   const recentExecs = autoExecs.filter((e) => !e.test).slice(0, 6)
 
@@ -448,6 +453,8 @@ export default function AutomationDetail() {
               secrets={secrets}
               packages={auto.packages ?? []}
               unresolvedReferences={auto.unresolvedReferences}
+              history={stepHistory}
+              viewing={auto.version}
               fallbackAgent={(() => {
                 const first = auto.stepAgents.map((id) => agents.find((z) => z.id === id)).find((g) => !!g)
                 return first ? (first.name || first.harness) : 'agent'

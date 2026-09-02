@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from '../src/types'
-import { ParamValueEditor, StepList, stepModalFrame, stepPackageTags, stepSecretTags } from '../src/steps'
+import { ParamValueEditor, StepList, stepAgentPrompts, stepChange, stepFacts, stepFiles, stepHosts, stepMemory, stepModalFrame, stepPackageTags, stepSecretTags } from '../src/steps'
 
 afterEach(() => cleanup())
 
@@ -408,6 +408,124 @@ describe('step-script modal', () => {
     expect(document.querySelectorAll('span[title="View script"]')).toHaveLength(2)
     openFirst()
     expect(screen.queryByText('Hide script')).toBeNull()
+  })
+})
+
+describe('navigator facts (§9.2 literal scans)', () => {
+  it('stepHosts: distinct http(s) hosts in order, ports kept, interpolated hosts skipped', () => {
+    const code = [
+      'a = "https://reports.example.com/v2/entries?page=1"',
+      'b = "http://localhost:8080/x"',
+      'c = "https://reports.example.com/other"',
+      'd = f"https://{site}/feed"',
+    ].join('\n')
+    expect(stepHosts(code)).toEqual(['reports.example.com', 'localhost:8080'])
+  })
+
+  it('stepAgentPrompts: the first literal in each ask/read/write call, whitespace collapsed, truncated at 72', () => {
+    const code = [
+      'latest = agent.read(page[:5000],',
+      '    "newest chapter: number,   title, date")  # reads like a person',
+      'agents["550e8400-e29b-41d4-a716-446655440000"].ask(f"Summarize {x}")',
+      'note = agent.ask(prompt)',
+      "agent.write(rows, '" + 'x'.repeat(80) + "')",
+    ].join('\n')
+    const r = stepAgentPrompts(code)
+    expect(r.count).toBe(4)
+    // the f-string is still a literal prompt; the variable prompt has none
+    expect(r.prompts).toEqual(['newest chapter: number, title, date', 'Summarize {x}', `${'x'.repeat(71)}…`])
+  })
+
+  it('stepAgentPrompts: adjacent literals join as Python concatenates them', () => {
+    const code = 'agent.read(title, "Return the URL, or an empty "\n    "string when unsure.")\nagent.ask("a" "b", data)'
+    expect(stepAgentPrompts(code).prompts).toEqual(['Return the URL, or an empty string when unsure.', 'ab'])
+  })
+
+  it('stepAgentPrompts: a string containing parentheses does not unbalance the call scan', () => {
+    const code = 'a = agent.ask("count the (open) items")\nb = agent.ask("second")'
+    expect(stepAgentPrompts(code).prompts).toEqual(['count the (open) items', 'second'])
+  })
+
+  it('stepFiles: open() modes and Path methods split reads from writes; non-workspace names skipped', () => {
+    const code = [
+      'links = json.load(open("links.json"))',
+      'json.dump(found, open("found.json", "w"))',
+      'with open("log.txt", mode="a") as f: pass',
+      'Path("table.html").write_text(html)',
+      'raw = Path("in.csv").read_text()',
+      'open("/etc/hosts")',
+      'open("~/notes.txt")',
+      'open("../up.txt")',
+      'open(f"{name}.json")',
+    ].join('\n')
+    expect(stepFiles(code)).toEqual({ reads: ['links.json', 'in.csv'], writes: ['found.json', 'log.txt', 'table.html'] })
+  })
+
+  it('stepMemory: load and save key literals', () => {
+    expect(stepMemory('rows = memory.load("sources", [])\nmemory.save("seen", seen)\nmemory.load(key)'))
+      .toEqual({ loads: ['sources'], saves: ['seen'] })
+  })
+
+  it('stepChange: unchanged-since walks back through identical predecessors; changed / new stop at the viewed version', () => {
+    const v = (version: number, ...steps: [string, string][]) => ({ version, steps: steps.map(([name, code]) => ({ name, description: '', code })) })
+    const history = [v(1, ['Fetch', 'a']), v(2, ['Fetch', 'a'], ['Send', 's1']), v(3, ['Fetch', 'b'], ['Send', 's1'])]
+    const st = (name: string, code: string): Step => ({ name, description: '', code })
+    expect(stepChange(st('Fetch', 'b'), 3, history)).toBe('Changed in v3')
+    expect(stepChange(st('Send', 's1'), 3, history)).toBe('Unchanged since v2')
+    expect(stepChange(st('Fetch', 'a'), 2, history)).toBe('Unchanged since v1')
+    expect(stepChange(st('Send', 's1'), 2, history)).toBe('New in v2')
+    expect(stepChange(st('Fetch', 'a'), 1, history)).toBe('New in v1')
+    // the editor's draft compares against the newest stored version
+    // a draft identical to the current version reads as that version (trailing newline ignored)
+    expect(stepChange(st('Fetch', 'b\n'), 'draft', history)).toBe('Changed in v3')
+    expect(stepChange(st('Send', 's1'), 'draft', history)).toBe('Unchanged since v2')
+    expect(stepChange(st('Fetch', 'c'), 'draft', history)).toBe('Changed in this draft')
+    expect(stepChange(st('Notify', 'n'), 'draft', history)).toBe('New in this draft')
+    expect(stepChange(st('Fetch', 'a'), 9, history)).toBeNull() // unknown revision
+    expect(stepChange(st('Fetch', 'a'), 1, [])).toBeNull()
+  })
+
+  it('stepFacts: ordered lines with file hand-offs resolved across steps', () => {
+    const steps: Step[] = [
+      { name: 'Read list', description: '', code: 'rows = memory.load("sources", [])\njson.dump(rows, open("links.json", "w"))' },
+      { name: 'Check', description: '', code: 'links = json.load(open("links.json"))\nr = fetch_page("https://example.org/a")\nx = agent.read(r, "newest chapter")\nagent.ask(p)\njson.dump(x, open("found.json", "w"))' },
+      { name: 'Compare', description: '', code: 'a = json.load(open("found.json"))\nb = json.load(open("links.json"))\nmemory.save("seen", a)\nopen("report.html", "w")' },
+      { name: 'Send', description: '', code: 'open("found.json")' },
+    ]
+    expect(stepFacts(steps, 0, undefined, undefined).map((f) => f.text)).toEqual([
+      'Hands links.json to steps 2 and 3', 'Reads sources from memory',
+    ])
+    expect(stepFacts(steps, 1, undefined, undefined).map((f) => f.text)).toEqual([
+      'Talks to example.org', 'Asks the agent “newest chapter”', 'Asks the agent 1 more time',
+      'Reads links.json from step 1', 'Hands found.json to steps 3 and 4',
+    ])
+    const c = stepFacts(steps, 2, 2, [{ version: 2, steps }, { version: 1, steps: [] }])
+    expect(c.map((f) => f.text)).toEqual([
+      'Reads found.json from step 2', 'Reads links.json from step 1', 'Writes report.html', 'Saves seen to memory', 'New in v2',
+    ])
+    expect(c.map((f) => f.icon)).toEqual(['fa-file-import', 'fa-file-import', 'fa-file-export', 'fa-brain', 'fa-code-commit'])
+    // no literal prompt at all → the bare line
+    expect(stepFacts([{ name: 'x', description: '', code: 'agent.ask(p)' }], 0, undefined, undefined).map((f) => f.text)).toEqual(['Asks the agent'])
+  })
+
+  it('the navigator shows the fact list under the viewed row only', () => {
+    const steps: Step[] = [
+      step({ name: 'Pull', code: 'r = fetch_page("https://example.org")\njson.dump(r, open("out.json", "w"))' }),
+      step({ name: 'Use', code: 'open("out.json")' }),
+    ]
+    render(
+      <StepList
+        variant="detail" steps={steps} agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer"
+        history={[{ version: 1, steps }]} viewing={1}
+      />,
+    )
+    // rows carry no facts
+    expect(screen.queryByTestId('step-facts')).toBeNull()
+    fireEvent.click(screen.getAllByText('Pull')[0])
+    const facts = () => Array.from(screen.getAllByTestId('step-facts')).map((el) => el.textContent)
+    expect(facts()).toEqual(['Talks to example.orgHands out.json to step 2New in v1'])
+    fireEvent.click(screen.getByLabelText('Next step'))
+    expect(facts()).toEqual(['Reads out.json from step 1New in v1'])
   })
 })
 

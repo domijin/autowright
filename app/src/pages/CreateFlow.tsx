@@ -306,6 +306,12 @@ export default function CreateFlow() {
   // show the archive name instead of a short id.
   const unresolvedRefs = isEdit ? auto?.unresolvedReferences : undefined
   const secRefs = useMemo(() => (rev ? secretRefsOf(rev.steps, unresolvedRefs) : []), [rev?.steps, unresolvedRefs]) // eslint-disable-line react-hooks/exhaustive-deps
+  // §9.2 change badge: the stored revisions (current version + history) the
+  // editor's step-script modal compares the viewed revision against.
+  const stepHistory = useMemo(
+    () => auto ? [{ version: auto.version, steps: auto.steps ?? [] }, ...(auto.versions ?? []).map((v) => ({ version: v.version, steps: v.steps }))] : undefined,
+    [auto?.version, auto?.steps, auto?.versions], // eslint-disable-line react-hooks/exhaustive-deps
+  )
   const derived = useMemo(() => {
     const availAgents = rev ? rev.enabledAgents.map((id) => agents.find((g) => g.id === id)).filter((g): g is Agent => !!g) : []
     const agName = (g: Agent) => g.name || g.harness
@@ -1301,6 +1307,7 @@ export default function CreateFlow() {
                   agents={agents}
                   secrets={secrets}
                   unresolvedReferences={unresolvedRefs}
+                  stepHistory={stepHistory}
                   pkgSecOpenEff={pkgSecOpenEff}
                   updatePkgs={(pips) => void updatePkgs(pips)}
                   installPkgs={() => void installPkgs()}

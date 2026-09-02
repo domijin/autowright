@@ -25,7 +25,7 @@ import yaml
 from . import __version__, harness, paths, timefmt, triggers as triggerlib
 from .drafting import STEP_FILE_RE
 from .specmd import blocks_to_md, md_to_blocks
-from .storage import AGENT_REF_RE, SECRET_REF_RE, Store, new_id
+from .storage import AGENT_REF_RE, SECRET_REF_RE, Store, new_id, strip_param_values
 
 FORMAT_VERSION = 2
 SECRET_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -204,7 +204,11 @@ def export_automation(store: Store, a: dict, include_values: bool = True) -> byt
             manifest["param_values"] = {
                 k: v for k, v in a["param_values"].items()
                 if any(p.get("name") == k for p in ver.get("params", []))}
-        meta: dict = {"description": a.get("description", ""), "params": ver.get("params", [])}
+        # §5.1: definitions only — a version written before the §4.2 save-side
+        # strip may still hold resolved values; they must never leave the
+        # machine outside the include-values gate.
+        meta: dict = {"description": a.get("description", ""),
+                      "params": strip_param_values(ver.get("params"))}
         pkgs = [{"pip": p.get("pip"), "import": p.get("import"),
                  **({"why": p["why"]} if p.get("why") else {})}
                 for p in ver.get("packages", []) or []]
@@ -432,12 +436,19 @@ def _validate(z: zipfile.ZipFile) -> dict:
         raise TransferError("manifest param_values must be a mapping")
 
     meta = _yaml_or_reject(z, "automation/automation.yaml")
+    if meta.get("description") is not None and not isinstance(meta["description"], str):
+        # §5.1: the whole archive validates up front — a non-string
+        # description would 500 out of the similarity tokenizer instead.
+        raise TransferError("the automation description must be text")
     params = meta.get("params") or []
     if not isinstance(params, list):
         raise TransferError("param definitions must be a list")
     for p in params:
         if not isinstance(p, dict) or not p.get("name") or p.get("kind") not in PARAM_KINDS:
             raise TransferError(f"invalid parameter definition: {p!r}")
+    # §5.1: definitions only — an archive exported before the §4.2 save-side
+    # strip can carry resolved values inside its definitions; they never land.
+    params = strip_param_values(params)
     packages = meta.get("packages") or []
     if not isinstance(packages, list) or any(
             not isinstance(p, dict) or not p.get("pip") or not p.get("import")
@@ -556,6 +567,9 @@ def _validate(z: zipfile.ZipFile) -> dict:
         if (not isinstance(g.get("name"), str) or not g["name"]
                 or g.get("harness") not in harness.HARNESS_ID):
             raise TransferError(f"invalid agent in the archive: {g!r}")
+        if g.get("description") is not None and not isinstance(g["description"], str):
+            raise TransferError(f"invalid agent in the archive: {g!r} - the "
+                                "description must be text")
         mode = g.get("mode", "default")
         if mode not in MODES:
             raise TransferError(f"invalid agent mode {mode!r}")
@@ -578,6 +592,9 @@ def _validate(z: zipfile.ZipFile) -> dict:
         if (not isinstance(s.get("name"), str)
                 or not SECRET_NAME_RE.match(s["name"])):
             raise TransferError(f"invalid secret in the archive: {s!r}")
+        if s.get("description") is not None and not isinstance(s["description"], str):
+            raise TransferError(f"invalid secret in the archive: {s!r} - the "
+                                "description must be text")
     secret_refs = [s["ref"] for s in secrets]
     if len(set(secret_refs)) != len(secret_refs):
         raise TransferError("duplicate secret refs in the archive - refs must be unique")
@@ -664,7 +681,11 @@ _MARGIN = 0.15
 
 def _tokens(text: str | None) -> frozenset[str]:
     """§5.1 tokenizer: split camelCase boundaries and non-alphanumeric runs,
-    lowercase, drop tokens shorter than 2 characters and the stopwords."""
+    lowercase, drop tokens shorter than 2 characters and the stopwords.
+    Non-string input tokenizes empty (validation rejects it upstream; this
+    backstop keeps a stray shape from 500ing the match pass)."""
+    if not isinstance(text, str):
+        return frozenset()
     parts = _NONWORD_RE.split(_CAMEL_SPLIT_RE.sub(" ", text or ""))
     return frozenset(p.lower() for p in parts
                      if len(p) >= 2 and p.lower() not in _STOPWORDS)

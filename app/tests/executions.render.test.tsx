@@ -328,6 +328,31 @@ describe('executions list finished paging (§7)', () => {
     expect(screen.queryByText('e-0049')).toBeNull()
   })
 
+  it('keeps deeper pages seamless when a /state refresh shifts the window (§7 absorption)', async () => {
+    const windowRows = finishedRows(50)
+    mockedApi.listExecutions.mockResolvedValue({ executions: finishedRows(50, 50), total: 120 })
+    seed(windowRows, 120)
+    render(<ExecutionsList />)
+
+    fireEvent.click(pagerButton('Next'))
+    await waitFor(() => expect(screen.getByText('e-0050')).toBeTruthy())
+
+    // Two new executions finish and a /state refresh replaces the window
+    // wholesale: the newest 50 finished are the 2 new rows + old rows 0-47.
+    // Old rows 48-49 leave the window — the accumulated set must absorb
+    // them, or page 2 silently loses two rows and shifts against the readout.
+    const fresh = [
+      ex('e-new-1', { startedMs: NOW + 2000, endedMs: NOW + 2000 }),
+      ex('e-new-2', { startedMs: NOW + 1000, endedMs: NOW + 1000 }),
+    ]
+    seed([...fresh, ...finishedRows(48)], 122)
+
+    await waitFor(() => expect(within(pager()).getByText('51–100 of 122')).toBeTruthy())
+    expect(screen.getByText('e-0048')).toBeTruthy()
+    expect(screen.getByText('e-0049')).toBeTruthy()
+    expect(screen.getAllByTestId('execution-row').length).toBe(50)
+  })
+
   it('re-slices on Prev with no request', async () => {
     mockedApi.listExecutions.mockResolvedValue({ executions: finishedRows(50, 50), total: 120 })
     seed(finishedRows(50), 120)

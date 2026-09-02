@@ -83,7 +83,7 @@ def test_no_triggers_roundtrip(store, home):
     j = s2.auto_json(b)
     assert j["triggerChip"] == "No triggers"
     assert j["allTriggersOff"] is False
-    assert j["nextAt"] is None
+    assert j["nextAtMs"] is None
 
 
 def test_step_timeout_roundtrip(store, home):

@@ -274,6 +274,10 @@ the update bullets below).
   and startup recovery SIGKILLs any group a crashed backend orphaned (via the record's
   persisted `pgid`, §4.5, with a pid-reuse guard) before marking its record interrupted —
   otherwise the orphan keeps writing `memory/` while the next cron tick starts a second copy.
+  The repair trusts the yaml, not the §5 index row it iterates: a crash between an
+  execution's final yaml write and its sqlite commit leaves the row one transition behind,
+  and a record whose yaml already holds a terminal status is re-adopted as it stands (index
+  row re-synced), never rewritten as interrupted or skipped — the yaml is authoritative (§5).
   Graceful shutdown is time-boxed: uvicorn runs with `timeout_graceful_shutdown` set to the
   `main.py` `SHUTDOWN_GRACE_S` constant (5 s), because the renderer keeps its §19 `/ws`
   socket open during quit-all and reset, and an unbounded shutdown waits on open WebSockets

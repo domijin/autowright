@@ -159,7 +159,18 @@ def notify_busy(payload: dict) -> None:
     read misses heartbeats and drops the connection)."""
     if (payload or {}).get("kind") not in ("discord", "imessage"):
         return  # cron/app-start firings have nobody to answer
-    _busy_q.put(payload)  # queued before the worker check, so none is stranded
+    # queued before the worker check, so none is stranded
+    _busy_q.put(lambda: _send_busy(payload))
+    _start_busy_worker()
+
+
+def submit_send(job) -> None:
+    """§6/§6.1: hand any outbound message send to the shared delivery worker —
+    the engine's step-log read loop routes reply() sends here for the same
+    reason the gateway routes busy notices: a synchronous send (up to 10 s
+    Discord, 30 s osascript) must never stall the thread that called it.
+    One FIFO keeps replies and busy notices in arrival order."""
+    _busy_q.put(job)
     _start_busy_worker()
 
 
@@ -177,13 +188,13 @@ def _start_busy_worker() -> None:
 
 def _busy_loop() -> None:
     while True:
-        payload = _busy_q.get()
+        job = _busy_q.get()
         try:
-            _send_busy(payload)
+            job()
         except Exception:  # noqa: BLE001
             # The worker is the only one there is: an unexpected error in one
-            # send must never end the thread and silence every later notice.
-            log.exception("busy notice failed")
+            # send must never end the thread and silence every later send.
+            log.exception("outbound send failed")
         finally:
             _busy_q.task_done()
 
@@ -301,20 +312,25 @@ class _Conn(threading.Thread):
                 awaiting_ack = False
                 next_beat = time.monotonic() + interval
                 while not self._stop.is_set():
+                    # Deadline checked at the top of every iteration, not only
+                    # on a read timeout: a continuously readable socket (a
+                    # GUILD_CREATE burst, a busy guild) returns buffered frames
+                    # even at timeout=0 and would otherwise starve the
+                    # heartbeat until Discord closes the session.
+                    if time.monotonic() >= next_beat:
+                        if awaiting_ack:
+                            # §6: no ack for the previous heartbeat - a
+                            # half-dead TCP path (sleep/wake, network
+                            # switch) would otherwise sit "connected" while
+                            # dropping messages until the OS kills the
+                            # socket. Reconnect now.
+                            raise RuntimeError("gateway heartbeat not acknowledged")
+                        ws.send(json.dumps({"op": 1, "d": seq}))
+                        awaiting_ack = True
+                        next_beat = time.monotonic() + interval
                     try:
                         raw = ws.recv(timeout=max(0.0, min(next_beat - time.monotonic(), 5.0)))
                     except TimeoutError:
-                        if time.monotonic() >= next_beat:
-                            if awaiting_ack:
-                                # §6: no ack for the previous heartbeat - a
-                                # half-dead TCP path (sleep/wake, network
-                                # switch) would otherwise sit "connected" while
-                                # dropping messages until the OS kills the
-                                # socket. Reconnect now.
-                                raise RuntimeError("gateway heartbeat not acknowledged")
-                            ws.send(json.dumps({"op": 1, "d": seq}))
-                            awaiting_ack = True
-                            next_beat = time.monotonic() + interval
                         continue
                     msg = json.loads(raw)
                     if msg.get("s") is not None:
@@ -438,7 +454,10 @@ class Listeners:
 
     def stop(self) -> None:
         self._stop.set()
-        for c in self._conns.values():
+        # Snapshot: a _reconcile already in flight on the manager thread keeps
+        # mutating _conns until it notices the stop flag — iterating the live
+        # dict here can raise mid-shutdown, before backend.json is unlinked.
+        for c in list(self._conns.values()):
             c.stop()
         if self._imsg is not None:
             self._imsg.close()

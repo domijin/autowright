@@ -5,7 +5,7 @@
 // numbers, accent-only tags), and one presentational ParamValueEditor renders
 // the five §4.2 value kinds (toggle/list/kv/number/text) for both the
 // editor's test-value card and the detail page's debounced ParamRow.
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { usePlatformCopy } from './platformCopy'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from './types'
 import { MiniBadge, Modal, PyCode, ScrollArea, Tag, Toggle, agName, dispModel, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
@@ -236,6 +236,25 @@ function StepRow({ step, i, last, editor, tags, onOpen }: {
   )
 }
 
+// Left / right arrow keys flip the viewed step. Rendered inside the Modal so
+// it can see `closing`: the children stay mounted through the ~200 ms exit
+// animation, and an arrow press then would flip the step under the fading
+// card — same guard shape as the Modal's own Escape handler.
+function StepArrowKeys({ i, count, closing, onNav }: {
+  i: number; count: number; closing: boolean; onNav: (i: number) => void
+}) {
+  useEffect(() => {
+    if (closing) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); onNav(i - 1) }
+      if (e.key === 'ArrowRight' && i < count - 1) { e.preventDefault(); onNav(i + 1) }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [i, count, closing]) // eslint-disable-line react-hooks/exhaustive-deps
+  return null
+}
+
 // §9.2 step-script modal: one large Modal card, content column fixed at 82vh
 // so flipping between steps never resizes the frame. No header row: the card
 // is one overlay-scrollbar pane leading with the "STEP N OF M" eyebrow and
@@ -256,21 +275,14 @@ function StepModal({ steps, i, editor, tags, onNav, onClose }: {
   // it would show as a blank last line and count one line too many (§9.2).
   const code = (editor ? (step.code || '# script not written yet') : step.code || '').replace(/\n$/, '')
   const lineCount = code.split('\n').length
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); onNav(i - 1) }
-      if (e.key === 'ArrowRight' && i < steps.length - 1) { e.preventDefault(); onNav(i + 1) }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [i, steps.length]) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Modal
       onClose={onClose} width={1000} ariaLabel={`Step ${i + 1} of ${steps.length}: ${step.name}`}
       cardStyle={{ width: 'min(1000px, 92vw)', overflow: 'hidden' }}
     >
-      {(close) => (
+      {(close, closing) => (
         <div className="ad-stepmodal" style={{ height: '82vh', position: 'relative', minWidth: 0 }}>
+          <StepArrowKeys i={i} count={steps.length} closing={closing} onNav={onNav} />
           <div style={{
             position: 'absolute', top: 12, right: 14, zIndex: 1,
             display: 'flex', alignItems: 'center', gap: 6,
@@ -353,6 +365,20 @@ export function StepList(props: StepListProps) {
   const editor = props.variant === 'editor'
   useEffect(() => { if (editor) setViewing(null) }, [steps]) // eslint-disable-line react-hooks/exhaustive-deps
   const current = viewing !== null && viewing < steps.length ? viewing : null
+  // Deriving the facts scans every script for secret references and package
+  // imports, so it only reruns when the steps or the records they resolve
+  // against change — an unrelated re-render (the §11 job poll ticks the editor
+  // twice a second with the modal open) reuses the descriptors. Rows and modal
+  // read the same entry, so they still can never drift.
+  const { secrets, packages, unresolvedReferences } = props
+  const tagsByStep = useMemo(
+    () => steps.map((s) => stepTagDescs(props, s, copy)),
+    // The last two are the per-variant agent inputs: the editor resolves entry
+    // ids against allAgents and checks them against availAgents, the detail
+    // variant against agents with fallbackAgent for an empty list.
+    [steps, secrets, packages, unresolvedReferences, editor, copy,
+      editor ? props.allAgents : props.agents, editor ? props.availAgents : props.fallbackAgent],
+  ) // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       {steps.map((s, i) => (
@@ -360,14 +386,14 @@ export function StepList(props: StepListProps) {
           key={i} step={s} i={i}
           last={i === steps.length - 1}
           editor={editor}
-          tags={stepTagDescs(props, s, copy)}
+          tags={tagsByStep[i]}
           onOpen={() => setViewing(i)}
         />
       ))}
       {current !== null && (
         <StepModal
           steps={steps} i={current} editor={editor}
-          tags={stepTagDescs(props, steps[current], copy)}
+          tags={tagsByStep[current]}
           onNav={setViewing}
           onClose={() => setViewing(null)}
         />

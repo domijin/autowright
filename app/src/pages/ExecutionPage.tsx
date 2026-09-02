@@ -218,16 +218,19 @@ export default function ExecutionPage() {
   // Mount / executionId change: guard, reset, (re)fetch the full record.
   useEffect(() => {
     if (!executionId) { go('executions'); return }
+    let stale = false
     manualSel.current = false
     stickRef.current = true
     setSel(null)
     setMissing(false)
     void loadExecution(executionId).then(() => {
       // loadExecution swallows the 404 — if nothing landed anywhere, the record is
-      // gone (deleted by retention): show that instead of a forever-spinner.
+      // gone (deleted by retention): show that instead of a forever-spinner. A
+      // late resolution must not mark the execution the page moved on to missing.
       const st = useStore.getState()
-      if (!st.executionFull[executionId] && !st.executions.some((x) => x.id === executionId)) setMissing(true)
+      if (!stale && !st.executionFull[executionId] && !st.executions.some((x) => x.id === executionId)) setMissing(true)
     })
+    return () => { stale = true }
   }, [executionId])
 
   // Selection (§7): auto-follow the live step until the user picks a row; a

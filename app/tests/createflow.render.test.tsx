@@ -39,7 +39,7 @@ vi.mock('../src/api', () => ({
     triggersPreview: vi.fn(async (triggers: Array<Record<string, unknown>>) => ({
       triggers: triggers.map((t) => ({
         valid: true, label: String(t.expression ?? t.channel ?? t.from ?? t.kind),
-        short: String(t.kind), nextAt: null,
+        short: String(t.kind), nextAtMs: null,
       })),
     })),
   },
@@ -72,7 +72,7 @@ const SECRETS: SecretMeta[] = [
 ]
 const AUTO = {
   id: 'a1', name: 'My auto', description: '', version: 1,
-  triggers: [], triggerChip: 'No triggers', allTriggersOff: false, nextAt: null,
+  triggers: [], triggerChip: 'No triggers', allTriggersOff: false, nextAtMs: null,
   instructions: '- keep it simple',
   lastStatus: 'none', live: [], resultChip: null, resultStatus: null, lastExecutionLabel: '',
   agentId: 'g1', stepAgents: ['g1', 'g2'], allowedSecrets: [MAIL_ID, CRM_ID], problems: [],

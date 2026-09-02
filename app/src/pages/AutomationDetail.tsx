@@ -99,17 +99,17 @@ export default function AutomationDetail() {
   const trigs = auto.triggers
   const noTrigs = trigs.length === 0
   const allOff = auto.allTriggersOff
-  const countdown = auto.nextAt == null ? '' : nextIn(auto)
+  const countdown = auto.nextAtMs == null ? '' : nextIn(auto)
   const nextShort = nextTriggerShort(trigs, trigPreviews)
-  // §4.3: enabled app_start/message triggers have no computable next — nextAt stays null.
+  // §4.3: enabled app_start/message triggers have no computable next — nextAtMs stays null.
   const discordOn = trigs.some((t) => t.kind === 'discord' && t.enabled)
   const imsgOn = trigs.some((t) => t.kind === 'imessage' && t.enabled)
-  const msgListening = auto.nextAt == null && (discordOn || imsgOn)
+  const msgListening = auto.nextAtMs == null && (discordOn || imsgOn)
   const listenWhat = discordOn && imsgOn ? 'messages' : discordOn ? 'Discord messages' : 'iMessages'
-  const appStartOnly = auto.nextAt == null && !msgListening && trigs.some((t) => t.kind === 'app_start' && t.enabled)
-  // nextAt can be null with an enabled non-app_start trigger too (e.g. an
+  const appStartOnly = auto.nextAtMs == null && !msgListening && trigs.some((t) => t.kind === 'app_start' && t.enabled)
+  // nextAtMs can be null with an enabled non-app_start trigger too (e.g. an
   // elapsed one-shot not yet consumed) — never render a dangling "next in ".
-  const noNext = auto.nextAt == null
+  const noNext = auto.nextAtMs == null
   const trigChip = executing ? `${auto.triggerChip} · executing now`
     : noTrigs ? 'No triggers'
     : allOff ? `${auto.triggerChip} · triggers off`
@@ -411,7 +411,11 @@ export default function AutomationDetail() {
           </div>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
             {params.map((p, i) => (
-              <ParamRow key={p.name} automationId={auto.id} p={p} last={i === params.length - 1} />
+              // detail→detail navigation keeps this page mounted (store deep
+              // link), so the key carries the automation id — a same-named
+              // param on the next automation must get a fresh ParamRow rather
+              // than inherit the previous one's local edit state.
+              <ParamRow key={`${auto.id}:${p.name}`} automationId={auto.id} p={p} last={i === params.length - 1} />
             ))}
           </div>
         </div>

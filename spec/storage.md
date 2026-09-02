@@ -381,7 +381,7 @@ executions/
 parses every top-level `automation.yaml` plus each `versions/vN/` folder (its `automation.yaml`
 + `spec.md` + `instructions.md` + `notes.md` + step scripts), and serves all automation reads (lists,
 detail, scheduler, menu bar) from memory. There is no automations table: the YAML files plus the
-startup walk are the whole story. The id → path map and `nextAt` are derived in memory
+startup walk are the whole story. The id → path map and `nextAtMs` are derived in memory
 during/after the walk, and the walk loads any stored draft straight onto the record;
 execution-derived display state (`last_status`, `last_execution_at`, and the set of executing
 execution ids — serialized as the §4.1 `live` list, several at once under `maxParallel`) is

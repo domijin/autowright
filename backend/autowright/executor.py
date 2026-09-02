@@ -16,7 +16,7 @@ import traceback
 import urllib.error
 import urllib.robotparser
 import urllib.request
-from pathlib import Path
+from pathlib import Path, PurePath
 
 # Import before main() replaces sys.modules["autowright"] with the SDK shim.
 from . import harness as _harness
@@ -109,6 +109,11 @@ class Memory:
         if not name or name.startswith("/") or "/" in name or "\\" in name or name == "..":
             raise ValueError(
                 f"memory name {name!r} must be a plain file name, without path separators")
+        # A drive-relative or rooted name ("C:x.yaml") replaces the whole path
+        # under pathlib's join semantics — it would escape the memory dir.
+        if PurePath(name).drive or PurePath(name).is_absolute():
+            raise ValueError(
+                f"memory name {name!r} must be a plain file name, without a drive or root")
         return self.path / (name if "." in name else name + ".yaml")
 
     def load(self, name: str, default=None):
@@ -260,10 +265,25 @@ class Agent:
              text=f"agent query → {_harness.grant_name(cfg)} ({cfg.get('harness')}, {len(full)} chars)")
         if len(full) > 200_000:
             raise RuntimeError("agent prompt too large (200k char cap)")
+        # §7 kill semantics: the harness CLI spawns in its OWN session (its
+        # watchdog kills it without killing this step), so a step-group kill
+        # can't reach it. Report its group to the engine at spawn and retract
+        # it when the call ends — cancel/timeout/skip then kill it too, and
+        # §3 recovery sweeps one a crashed backend orphaned.
+        spawned: dict = {}
+
+        def _on_spawn(p) -> None:
+            spawned["pgid"] = p.pid  # own session → pgid == pid (§2)
+            emit("agent_group", pgid=p.pid)
+
         try:
-            reply = _harness.invoke(cfg, full, timeout=self._ctx.get("agent_timeout", 120))
+            reply = _harness.invoke(cfg, full, timeout=self._ctx.get("agent_timeout", 120),
+                                    on_spawn=_on_spawn)
         except Exception as e:  # noqa: BLE001
             raise AgentCallError(f"agent call failed ({cfg.get('harness')}): {e}") from e
+        finally:
+            if "pgid" in spawned:
+                emit("agent_group_done", pgid=spawned["pgid"])
         if len(reply) > 200_000:
             raise RuntimeError("agent reply too large (200k char cap)")
         # §6: the FULL prompt/reply go to logs for audit (already size-capped above).

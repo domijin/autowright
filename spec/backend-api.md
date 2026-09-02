@@ -59,7 +59,13 @@ remain plain dicts (§2).
   finish** (bounded by the §7 SIGTERM→SIGKILL grace plus margin) before removing the
   automation directory — a step still dying during the grace window must not re-create
   `memory/` after the rmtree (a half-recreated directory with no `versions/` would be
-  invisible to the UI forever). If a thread somehow survives the wait, the directory is
+  invisible to the UI forever). The admission window closes first: the automation stays
+  registered while its executions are cancelled and awaited, so before anything else the
+  delete flags the record in memory and `engine.start` refuses admissions for it — a
+  scheduler tick, listener dispatch, or app-start firing landing mid-delete would otherwise
+  escape the wait set and re-create the tree after the rmtree (the scheduler's own
+  one-shot consumption carries the same registered-object guard for the same reason).
+  If a thread somehow survives the wait, the directory is
   removed anyway (the step group is already hard-killed by then)
 - `PATCH /automations/{id}` — user-owned fields only: name (a blank or missing name is
   ignored — a rename can never clear the name; a name another automation already holds,
@@ -87,7 +93,7 @@ remain plain dicts (§2).
   `maxQueued` below the number already waiting keeps those entries — the cap governs admission,
   not eviction (§6).
 - `POST /triggers/preview` `{ triggers: [trigger, …] }` → `{ triggers: [{ valid, error?,
-  label, short, nextAt, nextLabel? }, …] }` — a **pure function endpoint**: no state read or
+  label, short, nextAtMs, nextLabel? }, …] }` — a **pure function endpoint**: no state read or
   written. Validates and labels a list of §4.3-shaped trigger dicts (kind plus its stored
   fields, `timezone` where relevant) with the same `triggers.py` code that gates the PATCH,
   answering one result per request entry in order. `valid` says whether the entry would
@@ -95,7 +101,7 @@ remain plain dicts (§2).
   (minute hour day month weekday)", the
   §4.3 field rules) — an invalid entry is a `valid: false` result, never a 422 (the editors
   preview half-typed state); only a body that isn't a list of trigger dicts gets the
-  ordinary 422. `label`/`short` are the §4.3 display strings; `nextAt` the next-occurrence
+  ordinary 422. `label`/`short` are the §4.3 display strings; `nextAtMs` the next-occurrence
   epoch ms (null when the kind has no computable next — app_start and message triggers —
   or the entry is invalid or elapsed) and `nextLabel` its "Jul 20, 3:00 PM"-style moment
   label. The renderer keeps **no local trigger-math mirror**: the §9.2 Add-trigger editor's
@@ -430,7 +436,9 @@ remain plain dicts (§2).
 - `GET /executions?automation=&status=&limit=&beforeStartedMs=&beforeId=` →
   `{ executions, total }` (headers only — no steps; rows carry the §4.5 `triggerSender`),
   sorted in the §7 canonical order: `startedMs` desc, id asc on ties, the §5
-  `(started_at DESC, id)` index order. `automation` filters to one automation id (exact).
+  §7 canonical order (`startedMs` desc, `id` asc on ties — computed over the in-memory
+  headers; the §5 `executions.db` index only seeds that set at startup). `automation`
+  filters to one automation id (exact).
   `status` filters to one §4.6 execution status, or the literal `finished`, which matches
   every terminal status (everything but `queued`/`executing`); an unknown value answers 422
   naming the vocabulary, never an empty list. `limit` (optional int ≥ 1; anything lower
@@ -703,7 +711,7 @@ already neutralize. The provider config and
   keys matching the REST shapes: `execution.started`/`queued`/`finished` carry `execution`
   (the record header, §19 executions-list shape) plus `automation` — the owning automation in
   list shape, or `null` when there is no row to patch (§11 test executions; an automation
-  deleted before `finished`) — so clients patch the row (`lastStatus`, `live`, `nextAt`)
+  deleted before `finished`) — so clients patch the row (`lastStatus`, `live`, `nextAtMs`)
   without a poll; the merge rule below applies. A non-test `execution.finished` additionally
   makes a client holding that automation's **full** record re-`GET /automations/{id}`: the
   full-only fields (`latest`/`memory`/`snapshots`/`versions`) never ride events, and this

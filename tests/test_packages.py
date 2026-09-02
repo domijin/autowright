@@ -217,6 +217,9 @@ def test_pip_install_timeout_cancel_and_stderr_tail(home, monkeypatch):
             self.pid = 4242
             self.returncode = None
             self._killed = False
+            # A survivor of the group kill holds the pipes open, so the drain
+            # times out too and closes them directly.
+            self.stdout, self.stderr = io.StringIO(), io.StringIO()
 
         def communicate(self, timeout=None):
             # After the kill the pipes drain immediately; before it, hang.

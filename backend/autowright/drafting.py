@@ -141,7 +141,9 @@ Delivery override for this environment — this changes HOW you return files, no
 - When asked to resend corrected files, write EVERY file again the same way — the
   corrected ones and the unchanged ones alike. Each attempt starts with an empty working
   directory, so only the files you write this time exist; a file you skip is lost."""
-FENCE_OPEN_RE = re.compile(r"^```[\w+.-]*$")
+# Canonical in harness (the recombiner needs it too; drafting imports
+# harness, never the reverse) — aliased so every drafting reference stays.
+FENCE_OPEN_RE = harness.FENCE_OPEN_RE
 
 # §8 prompt texts live as markdown next to the code so they can be read and
 # edited without touching Python: framework-instructions.md travels with EVERY
@@ -660,20 +662,10 @@ def parse_envelope(text: str) -> dict[str, str]:
     return files
 
 
-def _blocked_mark_outside_fences(text: str) -> re.Match | None:
-    """§8 shape-aware blocker detection: the first line-anchored ===BLOCKED===
-    that does NOT sit inside a markdown code fence - a fenced marker is quoted
-    prose (an answer explaining the format), never an envelope."""
-    fenced = False
-    pos = 0
-    for line in text.splitlines(keepends=True):
-        bare = line.rstrip("\r\n")
-        if FENCE_OPEN_RE.match(bare):
-            fenced = not fenced
-        elif not fenced and BLOCKED_MARK_RE.match(bare):
-            return BLOCKED_MARK_RE.match(text, pos)
-        pos += len(line)
-    return None
+# §8 shape-aware blocker detection — canonical in harness (see
+# blocked_mark_outside_fences there); aliased so drafting's parse and the
+# recombiner can never disagree about what counts as a blocker envelope.
+_blocked_mark_outside_fences = harness.blocked_mark_outside_fences
 
 
 def parse_blockers(text: str) -> tuple[list[dict] | None, str | None]:
@@ -1824,6 +1816,12 @@ class DraftJobs:
             self._event(job, "The agent call failed — retrying once…")
             time.sleep(2)
             self._check_cancel(job)
+            # §8: the retry streams into the same callbacks — reset their
+            # shared scanner state so attempt 2 isn't parsed as a
+            # continuation of attempt 1's stream.
+            reset = getattr(on_chunk, "reset", None)
+            if reset:
+                reset()
             out = harness.invoke(agent, prompt, proc_holder=job["_proc"],
                                  on_chunk=on_chunk, on_tool=self._tool_cb(job),
                                  on_file=on_file,
@@ -2020,6 +2018,16 @@ class DraftJobs:
                 label, detail = label_detail(name, lines)
                 show(name, label, detail)
 
+        def reset() -> None:
+            # §8 one-retry: attempt 2 must not inherit attempt 1's stream — a
+            # carried-over scanner would count lines across both streams,
+            # `documents` would hold content from a scratch dir already
+            # removed, and `seen` would suppress every fresh milestone.
+            with state["lock"]:
+                state.update(scanner=_StreamScanner(), shape=None, last=0.0,
+                             total=None, documents={}, seen=set())
+
+        cb.reset = reset  # type: ignore[attr-defined] — read by _invoke's retry
         return cb, file_cb
 
     # §8 chat-call streamed-marker labels — one per allowed block name.
@@ -2149,6 +2157,15 @@ class DraftJobs:
                 label, detail = document_label(name, lines)
                 show(name, label, detail)
 
+        def reset() -> None:
+            # §8 one-retry: see _progress_cb's twin — a fresh attempt must
+            # not compute the plan or line counts over both streams
+            # concatenated, and `seen` must not suppress its milestones.
+            with state["lock"]:
+                state.update(scanner=_StreamScanner(), shape=None, last=0.0,
+                             has_text=False, seen=set())
+
+        cb.reset = reset  # type: ignore[attr-defined] — read by _invoke's retry
         return cb, file_cb
 
     @staticmethod

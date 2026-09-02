@@ -140,7 +140,8 @@ def invoke_spy(monkeypatch):
 
     # Strict signature on purpose: §6 runtime agent.ask calls must never pass
     # web= (drafting-only) — if the executor ever did, this spy TypeErrors.
-    def fake_invoke(cfg, prompt, timeout=120):
+    # on_spawn is the §7 agent-group report the executor DOES pass.
+    def fake_invoke(cfg, prompt, timeout=120, on_spawn=None):
         calls.append((cfg, prompt, timeout))
         return "  the reply  "
 
@@ -158,6 +159,38 @@ def test_ask_happy_path_emits_audit(ctrl, invoke_spy):
     assert audit == [{"op": "agent_audit",
                       "prompt": "question: summarize\n\ndata:\nrows",
                       "reply": "  the reply  "}]
+
+
+def test_ask_reports_agent_group_start_and_done(ctrl, monkeypatch):
+    """§7 kill semantics: the harness CLI spawns in its own session, so the
+    executor reports its group at spawn and retracts it when the call ends —
+    on failure too (the finally), or a killed call would leave a stale group
+    id for a later step's kill to re-signal."""
+    from autowright import executor
+
+    class FakeProc:
+        pid = 4242
+
+    def fake_invoke(cfg, prompt, timeout=120, on_spawn=None):
+        on_spawn(FakeProc())
+        return "ok"
+
+    monkeypatch.setattr(executor._harness, "invoke", fake_invoke)
+    a = make_agent()
+    assert a.ask("hi") == "ok"
+    events = [e for e in ctrl() if e["op"] in ("agent_group", "agent_group_done")]
+    assert events == [{"op": "agent_group", "pgid": 4242},
+                      {"op": "agent_group_done", "pgid": 4242}]
+
+    def failing_invoke(cfg, prompt, timeout=120, on_spawn=None):
+        on_spawn(FakeProc())
+        raise ValueError("cli died")
+
+    monkeypatch.setattr(executor._harness, "invoke", failing_invoke)
+    with pytest.raises(executor.AgentCallError):
+        make_agent().ask("hi")
+    events = [e for e in ctrl() if e["op"] in ("agent_group", "agent_group_done")]
+    assert events[-1] == {"op": "agent_group_done", "pgid": 4242}
 
 
 def test_ask_refuses_secret_value_in_prompt(ctrl, invoke_spy):
@@ -221,7 +254,7 @@ def test_ask_wraps_invoke_failure_naming_harness(ctrl, monkeypatch):
     harness, so the engine can classify it as an agent failure."""
     from autowright import executor
 
-    def boom(cfg, prompt, timeout=120):
+    def boom(cfg, prompt, timeout=120, on_spawn=None):
         raise ValueError("cli went away")
 
     monkeypatch.setattr(executor._harness, "invoke", boom)
@@ -235,13 +268,13 @@ def test_ask_caps_reply_at_200k(ctrl, monkeypatch):
     from autowright import executor
 
     monkeypatch.setattr(executor._harness, "invoke",
-                        lambda cfg, prompt, timeout=120: "y" * 200_001)
+                        lambda cfg, prompt, timeout=120, on_spawn=None: "y" * 200_001)
     a = make_agent()
     with pytest.raises(RuntimeError, match="agent reply too large"):
         a.ask("hi")
     # exactly at the cap still goes through
     monkeypatch.setattr(executor._harness, "invoke",
-                        lambda cfg, prompt, timeout=120: "y" * 200_000)
+                        lambda cfg, prompt, timeout=120, on_spawn=None: "y" * 200_000)
     assert a.ask("hi") == "y" * 200_000
 
 

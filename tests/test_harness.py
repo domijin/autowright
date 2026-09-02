@@ -393,12 +393,16 @@ def test_detect_reports_all_four_with_sign_in_state(monkeypatch):
     monkeypatch.setattr(harness, "resolve_bin",
                         lambda name: f"/usr/local/bin/{name}" if name in present else None)
 
-    class _R:
+    class _Proc:
         returncode = 0
-        stdout = "9.9.9\n"
-        stderr = ""
 
-    monkeypatch.setattr(harness.subprocess, "run", lambda *a, **kw: _R())
+        def __init__(self, *a, **kw):
+            pass
+
+        def communicate(self, timeout=None):
+            return "9.9.9\n", ""
+
+    monkeypatch.setattr(harness.subprocess, "Popen", _Proc)
     monkeypatch.setattr(harness, "signed_in", lambda pid: pid == "gemini")
     by_id = {f["id"]: f for f in harness.detect()}
     # §19: one entry per harness, all four always present — Ollama is not a

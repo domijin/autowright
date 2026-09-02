@@ -20,11 +20,12 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from . import __version__, harness, imessage, installer, keychain, models, paths, platform
 from . import drafting, packages as pkglib, reqlog, timefmt, transfer, triggers as triggerlib
 from .drafting import draft_jobs
-from .engine import Engine, kill_orphan_group
+from .engine import Engine, kill_orphan_agent_group, kill_orphan_group
 from .events import OVERFLOW, hub
 from .firing import cancel_unmatched_queue, drain_queue, finish_never_ran, fire_trigger, queue_manual
 from .storage import (LiveExecutionError, StoreUnwritableError, _kind_ok, is_test,
-                      iter_file_stats, new_id, size_label, store)
+                      exec_started_ms, iter_file_stats, new_id, size_label, store,
+                      strip_param_values)
 from . import testexec
 
 log = logging.getLogger("autowright.api")
@@ -357,17 +358,22 @@ def _validate_draft_steps(d: dict, a: dict | None = None) -> None:
 # never run while holding store.lock (it would stall live log streaming).
 _DATA_SIZE_TTL_S = 30
 _data_size_cache: tuple[float, str] | None = None
+# Serializes the walk itself: concurrent /state calls landing on an expired
+# cache would each run the full recursive stat walk, burning a threadpool
+# worker apiece for the same answer.
+_data_size_lock = threading.Lock()
 
 
 def _data_size_label() -> str:
     global _data_size_cache
-    now = time.monotonic()
-    if _data_size_cache and now - _data_size_cache[0] < _DATA_SIZE_TTL_S:
+    with _data_size_lock:
+        now = time.monotonic()
+        if _data_size_cache and now - _data_size_cache[0] < _DATA_SIZE_TTL_S:
+            return _data_size_cache[1]
+        p = store.executions_dir()
+        total = sum(st.st_size for st in iter_file_stats(p))
+        _data_size_cache = (now, size_label(total))
         return _data_size_cache[1]
-    p = store.executions_dir()
-    total = sum(st.st_size for st in iter_file_stats(p))
-    _data_size_cache = (now, size_label(total))
-    return _data_size_cache[1]
 
 
 def _agents_json() -> list[dict]:
@@ -453,16 +459,20 @@ def state() -> dict:
     with store.lock:
         # §7 window: every live header plus the newest finished page, in the
         # canonical order — deeper history pages in via GET /executions and
-        # never rides the snapshot whole.
-        rows = sorted((store.exec_json(h) for h in store.execs.values()),
-                      key=lambda e: (-e["startedMs"], e["id"]))
+        # never rides the snapshot whole. Sort the raw headers and serialize
+        # only the window: exec_json per row is three timestamp parses plus a
+        # locale strftime, and paying that for every execution ever held (an
+        # unbounded set under keepForever) on every /state — under store.lock —
+        # is exactly the cost the §7 window exists to remove.
+        hs = sorted(store.execs.values(),
+                    key=lambda h: (-exec_started_ms(h), h["id"]))
         finished_left = EXECUTIONS_PAGE_LIMIT
         window = []
-        for e in rows:
-            if e["status"] in LIVE_STATUSES:
-                window.append(e)
+        for h in hs:
+            if h["status"] in LIVE_STATUSES:
+                window.append(store.exec_json(h))
             elif finished_left > 0:
-                window.append(e)
+                window.append(store.exec_json(h))
                 finished_left -= 1
         return {
             "version": __version__,
@@ -567,7 +577,7 @@ def triggers_preview(body: models.TriggersPreview) -> dict:
                 err = "only one app-start trigger per automation"
             seen_app_start = True
         if err:
-            entry = {"valid": False, "error": err, "label": "", "short": "", "nextAt": None}
+            entry = {"valid": False, "error": err, "label": "", "short": "", "nextAtMs": None}
             try:  # best-effort display for a half-typed entry
                 entry["label"], entry["short"] = triggerlib.trigger_display(t)
             except Exception:  # noqa: BLE001 — undisplayable is fine, not an error
@@ -578,7 +588,7 @@ def triggers_preview(body: models.TriggersPreview) -> dict:
         label, short = triggerlib.trigger_display(n)
         nxt = triggerlib.trigger_next(n)  # None for app_start/message kinds and elapsed one-shots
         entry = {"valid": True, "label": label, "short": short,
-                 "nextAt": int(nxt.timestamp() * 1000) if nxt else None}
+                 "nextAtMs": int(nxt.timestamp() * 1000) if nxt else None}
         if nxt:
             entry["nextLabel"] = f"{nxt.strftime('%b')} {nxt.day}, {timefmt.clock(nxt)}"
         out.append(entry)
@@ -588,7 +598,14 @@ def triggers_preview(body: models.TriggersPreview) -> dict:
 @app.delete("/automations/{automation_id}", dependencies=[Depends(auth)])
 def delete_auto(automation_id: str) -> dict:
     a = _auto_or_404(automation_id)
-    live = list(a.get("_live") or ())
+    with store.lock:
+        # §19: close the admission window first — the automation stays in
+        # store.autos until the last line, so a scheduler tick, listener
+        # dispatch, or app-start firing admitted mid-delete would escape the
+        # wait set below and re-create the tree after the rmtree. engine.start
+        # refuses while this flag is set.
+        a["_deleting"] = True
+        live = list(a.get("_live") or ())
     for eid in live:
         engine.cancel(eid)
     # §19: delete settles the draft work too - a live §11 test or building §8
@@ -620,7 +637,12 @@ def _draft_to_version(d: dict) -> dict:
     # camelCase flags (noTimeout/infiniteRetries) to snake_case — nothing past
     # the models reads the camel keys.
     return {"description": d.get("description", ""), "note": d.get("note", ""),
-            "params": d.get("params", []), "packages": d.get("packages", []),
+            # §4.2: the draft's params were seeded from the merged API shape —
+            # strip the resolved-value keys so a version never stores values
+            # inside its definitions (values live top-level; §5.1 export gates
+            # on param_values alone).
+            "params": strip_param_values(d.get("params")),
+            "packages": d.get("packages", []),
             "steps": d.get("steps") or [],
             "spec": d.get("spec") or [], "instructions": d.get("instructions"),
             "notes": d.get("notes") or ""}
@@ -1519,7 +1541,10 @@ def list_execs(automation: str | None = None, status: str | None = None,
     if status is not None and status != "finished" and status not in EXECUTION_STATUSES:
         raise HTTPException(422, "unknown status — one of: "
                             + ", ".join(EXECUTION_STATUSES) + ", finished")
-    if (before_started_ms is None) != (before_id is None):
+    if (before_started_ms is None) != (not before_id):
+        # An empty beforeId would degrade the keyset to a bare timestamp
+        # filter (every id compares > ""), duplicating tie rows across pages —
+        # a half cursor answers 422 whichever half is missing (§19).
         raise HTTPException(422, "beforeStartedMs and beforeId select the cursor "
                                  "position together — one without the other is ambiguous")
     with store.lock:
@@ -1530,15 +1555,20 @@ def list_execs(automation: str | None = None, status: str | None = None,
             hs = [h for h in hs if h["status"] not in LIVE_STATUSES]
         elif status:
             hs = [h for h in hs if h["status"] == status]
-        rows = sorted((store.exec_json(h) for h in hs),
-                      key=lambda e: (-e["startedMs"], e["id"]))
-    total = len(rows)
-    if before_started_ms is not None:
-        # Strictly after the cursor position in sort order — stable while new
-        # executions land above the page.
-        rows = [e for e in rows if e["startedMs"] < before_started_ms
-                or (e["startedMs"] == before_started_ms and e["id"] > before_id)]
-    return {"executions": rows[:limit], "total": total}
+        # Sort headers on the shared canonical key and serialize only the page
+        # actually returned (exec_json for every match on every keyset fetch
+        # is the §7 unbounded-history cost the paging exists to avoid).
+        keyed = sorted(((exec_started_ms(h), h) for h in hs),
+                       key=lambda p: (-p[0], p[1]["id"]))
+        total = len(keyed)
+        if before_started_ms is not None:
+            # Strictly after the cursor position in sort order — stable while
+            # new executions land above the page.
+            keyed = [(ms, h) for ms, h in keyed
+                     if ms < before_started_ms
+                     or (ms == before_started_ms and h["id"] > before_id)]
+        return {"executions": [store.exec_json(h) for _, h in keyed[:limit]],
+                "total": total}
 
 
 @app.get("/executions/{execution_id}", dependencies=[Depends(auth)])
@@ -2215,29 +2245,45 @@ def _repair_stale_executing() -> None:
     store.lock (RLock, re-entry is fine)."""
     with store.lock:
         for h in list(store.execs.values()):
-            if h["status"] == "queued":
-                full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []}
+            if h["status"] not in ("queued", "executing"):
+                continue
+            if h["status"] == "executing" and engine.is_live(h["id"]):
+                continue
+            full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []}
+            if full["status"] not in ("queued", "executing"):
+                # §5: the yaml is authoritative — the index row went stale (a
+                # crash between the yaml write and the sqlite commit of a
+                # finish). Re-adopt the yaml truth instead of rewriting a
+                # completed execution as interrupted/skipped.
+                store.execs[full["id"]] = full
+                store.update_execution(full)
+                continue
+            if full["status"] == "queued":
                 store.execs[full["id"]] = full
                 finish_never_ran(store, full, "backend restarted before this ran")
                 continue
-            if h["status"] == "executing" and not engine.is_live(h["id"]):
-                full = store.exec_full(h["id"]) or {**h, "steps": [], "redacted_secrets": [], "params": []}
-                # §3: the previous backend's step group may still be running —
-                # kill it before freeing the slot, or the next cron tick starts
-                # a second copy writing the same memory/ dir.
-                if full.get("pgid"):
-                    kill_orphan_group(full["pgid"])
-                full["pgid"] = None
-                full["status"] = "interrupted"
-                full["note"] = full["note"] or "backend restarted mid-execution"
-                for s in full["steps"]:
-                    if s["status"] == "executing":
-                        s["status"] = "interrupted"
-                        for a in s.get("attempts", []):
-                            if a["status"] == "executing":
-                                a["status"] = "interrupted"
-                store.execs[full["id"]] = full
-                store.update_execution(full)
+            # §3: the previous backend's step group may still be running —
+            # kill it before freeing the slot, or the next cron tick starts
+            # a second copy writing the same memory/ dir.
+            if full.get("pgid"):
+                kill_orphan_group(full["pgid"])
+            full["pgid"] = None
+            # §4.5 agentPgids: an agent call in flight at the crash left its
+            # own-session harness CLI behind — sweep it with the same
+            # pid-reuse care.
+            for g in full.get("agent_pgids") or []:
+                kill_orphan_agent_group(g)
+            full["agent_pgids"] = []
+            full["status"] = "interrupted"
+            full["note"] = full["note"] or "backend restarted mid-execution"
+            for s in full["steps"]:
+                if s["status"] == "executing":
+                    s["status"] = "interrupted"
+                    for a in s.get("attempts", []):
+                        if a["status"] == "executing":
+                            a["status"] = "interrupted"
+            store.execs[full["id"]] = full
+            store.update_execution(full)
         store._refresh_exec_derived()
 
 

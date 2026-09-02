@@ -161,8 +161,8 @@ export interface TriggerPreview {
   error?: string       // plain-word reason when invalid
   label: string        // §4.3 long display string (best-effort when invalid)
   short: string        // §4.3 short display string
-  nextAt: number | null // next-occurrence epoch ms; null when none is computable
-  nextLabel?: string   // "Jul 20, 3:00 PM"-style moment label for nextAt
+  nextAtMs: number | null // next-occurrence epoch ms; null when none is computable
+  nextLabel?: string   // "Jul 20, 3:00 PM"-style moment label for nextAtMs
 }
 
 export interface Automation {
@@ -173,7 +173,7 @@ export interface Automation {
   triggers: Trigger[]        // §4.3 — user-owned, never versioned
   triggerChip: string        // one → its short label · several → "N triggers" · none → "No triggers"
   allTriggersOff: boolean    // nonempty list, every trigger off (drives the OFF tag)
-  nextAt: number | null      // epoch ms of the next enabled occurrence
+  nextAtMs: number | null      // epoch ms of the next enabled occurrence
   instructions: string
   notes: string              // §4.1 — the current version's notes doc ("" when empty)
   lastStatus: Exclude<Status, 'queued' | 'skipped'>  // §4.1: those two can never be an automation's latest
@@ -523,7 +523,7 @@ export interface StateSnapshot {
   version: string
   automations: Automation[]
   // §7/§19 window, not the full list: every queued/executing header plus the
-  // 200 newest finished ones — deeper history pages in via GET /executions.
+  // 50 newest finished ones — deeper history pages in via GET /executions.
   executions: Execution[]
   // §19: count of every execution header the backend holds (test rows
   // included) — the §9 sidebar pill's number.

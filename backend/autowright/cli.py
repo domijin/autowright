@@ -511,7 +511,7 @@ def _grants(c: Client, args, draft: dict,
                   if i in secret_name_by_id])
     if missing:
         sys.exit("the steps use agents/secrets this automation isn't granted — "
-                 f"grants are explicit (§20); re-run with {' '.join(missing)}")
+                 f"grants are explicit; re-run with {' '.join(missing)}")
     # §20: an agent step with no `agents:` list runs on the first enabled agent,
     # so it still needs at least one granted agent.
     if not granted_agent_ids and any(s.get("agent") for s in draft.get("steps", [])):
@@ -528,7 +528,9 @@ def cmd_status(c: Client, args) -> None:
     info = {
         "version": h.get("version"), "backend": c.base,
         "automations": len(s.get("automations") or []),
-        "executions": len(s.get("executions") or []),
+        # §19: /state.executions is the §7 window, not the list — the real
+        # count rides executionsTotal.
+        "executions": s.get("executionsTotal") or len(s.get("executions") or []),
         "agents": len(s.get("agents") or []),
         "secrets": len(s.get("secrets") or []),
         "pendingDraft": s.get("pendingDraft"),
@@ -634,10 +636,12 @@ def cmd_automation_push(c: Client, args) -> None:
     if draft.get("name"):
         body["name"] = draft["name"]
     r = c.req("POST", f"/automations/{a['id']}/versions", body)
+    # Reported before the description PATCH — a failing PATCH exits, and the
+    # version has already landed either way.
+    print(f"saved {draft.get('name') or full['name']!r} as v{r['version']}")
     description = draft.get("description")
     if description and description != (full.get("description") or ""):
         c.req("PATCH", f"/automations/{a['id']}", {"description": description})
-    print(f"saved {draft.get('name') or full['name']!r} as v{r['version']}")
     ensure_packages(c, draft.get("packages") or [])
 
 
@@ -730,7 +734,9 @@ def cmd_automation_import(c: Client, args) -> None:
             with open(args.path, "rb") as f:
                 data = f.read()
         except OSError as e:
-            sys.exit(str(e))
+            # §20: an unreadable archive is a plain message on stderr, never a
+            # raw OSError.
+            sys.exit(f"can't read {args.path}: {e.strerror or e}")
         r = json.loads(c.req_raw("POST", "/automations/import", data).decode() or "{}")
     s = r.get("summary", {})
     print(f"imported {r.get('automation', {}).get('name', '?')!r} [{r.get('automation', {}).get('id', '')[:8]}]")

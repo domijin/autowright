@@ -1,10 +1,10 @@
 // Unit tests for the pure helpers in src/ui.tsx. No component rendering:
-// highlightPython isn't exported, so it is exercised through PyCode called as
-// a plain function — the returned element's children are the token nodes.
+// highlightPython is exercised directly — it returns the token nodes PyCode
+// memoizes into its <pre>.
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  nextIn, paramSummary, validUrl, badgeOf, resultChipColors, P, PyCode,
+  nextIn, paramSummary, validUrl, badgeOf, resultChipColors, P, highlightPython,
   executingToast, stepTimeoutLabel, stepRetriesLabel, stepRetriesTitle, waitedLabel, durationLabel, dispModel, agName, logColor,
 } from '../src/ui'
 import type { ParamDef, Step } from '../src/types'
@@ -14,22 +14,22 @@ describe('nextIn', () => {
   const now = new Date('2026-07-20T00:00:00Z').getTime()
   const pin = () => { vi.useFakeTimers(); vi.setSystemTime(now) }
 
-  it('null nextAt → empty string', () => {
-    expect(nextIn({ nextAt: null })).toBe('')
+  it('null nextAtMs → empty string', () => {
+    expect(nextIn({ nextAtMs: null })).toBe('')
   })
-  it('past nextAt clamps to one minute', () => {
+  it('past nextAtMs clamps to one minute', () => {
     pin()
-    expect(nextIn({ nextAt: now - 5 * 60000 })).toBe('0h 1m')
+    expect(nextIn({ nextAtMs: now - 5 * 60000 })).toBe('0h 1m')
   })
   it('exact day boundary → "Xd Xh" form', () => {
     pin()
-    expect(nextIn({ nextAt: now + 1440 * 60000 })).toBe('1d 0h')
-    expect(nextIn({ nextAt: now + 25 * 3600000 })).toBe('1d 1h')
+    expect(nextIn({ nextAtMs: now + 1440 * 60000 })).toBe('1d 0h')
+    expect(nextIn({ nextAtMs: now + 25 * 3600000 })).toBe('1d 1h')
   })
   it('sub-day → "Xh Xm" form', () => {
     pin()
-    expect(nextIn({ nextAt: now + 90 * 60000 })).toBe('1h 30m')
-    expect(nextIn({ nextAt: now + 60000 })).toBe('0h 1m')
+    expect(nextIn({ nextAtMs: now + 90 * 60000 })).toBe('1h 30m')
+    expect(nextIn({ nextAtMs: now + 60000 })).toBe('0h 1m')
   })
 })
 
@@ -214,7 +214,7 @@ describe('logColor (§7 log views)', () => {
   })
 })
 
-// ---------- highlightPython (via PyCode called as a plain function) ----------
+// ---------- highlightPython ----------
 
 const COLOR = {
   keyword: 'var(--syn-keyword)', const: 'var(--syn-const)', string: 'var(--syn-string)',
@@ -224,9 +224,7 @@ const COLOR = {
 
 interface Tok { text: string; color?: string; italic?: boolean }
 function tokens(code: string): Tok[] {
-  const el = PyCode({ code }) as React.ReactElement
-  const children = (el.props as { children: React.ReactNode[] }).children
-  return children.map((n) => {
+  return highlightPython(code).map((n) => {
     if (typeof n === 'string') return { text: n }
     const e = n as React.ReactElement<{ style?: React.CSSProperties; children?: React.ReactNode }>
     const style = e.props.style ?? {}

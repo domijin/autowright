@@ -28,4 +28,4 @@ def test_time_trigger_fires_and_is_consumed(backend, client):
     assert e["status"] in ("executing", "succeeded")
     auto = client.get(f"/automations/{a['id']}").json()
     assert auto["triggers"] == []  # §4.3: consumed, never lingers spent
-    assert auto["nextAt"] is None
+    assert auto["nextAtMs"] is None

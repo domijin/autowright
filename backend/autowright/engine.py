@@ -202,6 +202,18 @@ def kill_orphan_group(pgid: int) -> None:
     procs.kill_group(pgid)
 
 
+def kill_orphan_agent_group(pgid: int) -> None:
+    """§3 startup recovery for a §6.1 runtime agent call's own-session group
+    (§4.5 agentPgids) orphaned by a crashed backend. Same pid-reuse rule as
+    `kill_orphan_group`, with the harness CLI binaries as the markers — a
+    recycled pgid must never take down an unrelated process."""
+    procs = _processes()
+    if not any(procs.group_has_command(pgid, m)
+               for m in ("claude", "codex", "gemini", "opencode")):
+        return
+    procs.kill_group(pgid)
+
+
 def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
                      holder: dict, timeout_s: float | None,
                      on_reply=None, step_i: int | None = None) -> int:
@@ -244,14 +256,24 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
     pipe_closed = threading.Event()
 
     def _hard_kill() -> None:
-        """SIGKILL the group and close our read end — §7 kill semantics:
+        """SIGKILL the group and defuse our read end — §7 kill semantics:
         children can never hold the log pipe open past the kill. Shared by the
         timeout watchdog and the cancel/skip escalation (a step that ignores
-        SIGTERM must not strand the execution \"executing\" forever)."""
+        SIGTERM must not strand the execution \"executing\" forever). The read
+        end is dup2'd over, never `.close()`d cross-thread: close() takes the
+        buffer lock a blocked readline holds and would wedge this thread."""
         pipe_closed.set()
         if proc.poll() is None:
             kill_step_group(proc)
-        _close_pipe(proc.stdout)
+        # §7: any in-flight agent call's own-session group dies with the step —
+        # its watchdog lived in the executor this kill just took down.
+        procs = _processes()
+        for g in list(state.get("agent_pgids") or ()):
+            try:
+                procs.kill_group(g)
+            except Exception:  # noqa: BLE001 — an already-gone group is fine
+                pass
+        harness.defuse_read_end(proc.stdout)
 
     state["hard_kill"] = _hard_kill
 
@@ -330,6 +352,21 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
                         # (the 200k prompt/reply size caps already apply upstream).
                         log("sys", f"agent prompt: {msg.get('prompt', '')}")
                         log("sys", f"agent reply: {msg.get('reply', '')}")
+                    elif op in ("agent_group", "agent_group_done"):
+                        # §7 kill semantics: a runtime agent call's harness CLI
+                        # runs in its own session — track its group while the
+                        # call is in flight so kill paths and §3 recovery can
+                        # reach it (the step-group signal can't).
+                        g = msg.get("pgid")
+                        if isinstance(g, int) and not isinstance(g, bool):
+                            groups = state.setdefault("agent_pgids", set())
+                            if op == "agent_group":
+                                groups.add(g)
+                            else:
+                                groups.discard(g)
+                            persist = state.get("on_agent_groups")
+                            if persist:
+                                persist(sorted(groups))
                 elif line.strip():
                     log("out", line)
         except ValueError:
@@ -360,6 +397,13 @@ def run_step_process(script: Path, ctx: dict, state: dict, log, result: dict,
         _close_pipe(proc.stdin)
         state["proc"] = None
         state.pop("hard_kill", None)
+        # §7: the executor is gone, so its agent calls are over — a done event
+        # that never arrived (killed mid-call) must not leave stale group ids
+        # for a later step's kill to re-signal (pid-reuse hazard).
+        if state.pop("agent_pgids", None):
+            persist = state.get("on_agent_groups")
+            if persist:
+                persist([])
     if timed_out.is_set() and proc.returncode != 0:
         msg = f"step timed out after {int(timeout_s)}s"
         log("err", msg)
@@ -395,6 +439,12 @@ class Engine:
         the worker thread, before step 1, because a memory dir can be gigabytes
         and no copytree may run under store.lock."""
         with self.store.lock:
+            # §19 delete: an admission racing the DELETE window (the automation
+            # is still registered while its live executions are cancelled and
+            # awaited) must not start — it would escape the delete's wait set
+            # and re-create the tree after the rmtree.
+            if auto.get("_deleting"):
+                raise RuntimeError("this automation is being deleted")
             # §4.5: the record stores (kind, version) — the §19 label is parsed
             # here at the boundary and never kept. Resolution runs BEFORE the
             # capacity check: §19 says an unresolvable label answers 404
@@ -506,6 +556,13 @@ class Engine:
         """§7 in-place retry: the same execution record re-executes from the
         failed step as a new attempt; succeeded/skipped steps are untouched."""
         with self.store.lock:
+            # Re-read under the lock: the caller's header may be the stale
+            # object a first retry already replaced in store.execs — checking
+            # its status would let two concurrent retries both pass and launch
+            # two engine threads on the same record.
+            h = self.store.execs.get(h["id"]) or h
+            if self.is_live(h["id"]):
+                raise RuntimeError("already executing")
             if self.at_capacity(auto):
                 raise RuntimeError("already executing")
             if h["status"] != "failed":
@@ -548,7 +605,15 @@ class Engine:
                 h["pgid"] = pgid
                 self.store.update_execution(h)
 
-        state = {"proc": None, "cancel": False, "on_spawn": _on_spawn}
+        def _on_agent_groups(groups: list[int]) -> None:
+            # §4.5 agentPgids: persist the in-flight agent-call groups so §3
+            # recovery can sweep one a crashed backend orphaned.
+            with self.store.lock:
+                h["agent_pgids"] = groups
+                self.store.update_execution(h)
+
+        state = {"proc": None, "cancel": False, "on_spawn": _on_spawn,
+                 "on_agent_groups": _on_agent_groups}
         t = threading.Thread(target=self._execute, args=(auto, ver, h, state), daemon=True)
         state["thread"] = t
         with self._lock:
@@ -560,7 +625,30 @@ class Engine:
             hub.publish("execution.started", executionId=h["id"], automationId=auto["id"],
                         execution=self.store.exec_json(h),
                         automation=self.store.auto_json(auto, full=False))
-        t.start()
+        try:
+            t.start()
+        except BaseException as e:
+            # Thread exhaustion is rare but must not strand the record
+            # "executing" with no thread — it would pin a §6 slot until a
+            # backend restart and 409 every later firing.
+            with self._lock:
+                self._live.pop(h["id"], None)
+            with self.store.lock:
+                h["status"] = "failed"
+                h["finished_at"] = timefmt.now_iso()
+                if not h.get("error"):
+                    h["error"] = {"step": None,
+                                  "message": f"the execution thread couldn't start: {e}",
+                                  "reason": None}
+                self.store.update_execution(h)
+                a = self.store.autos.get(h["automation_id"])
+                if a:
+                    a["_live"].discard(h["id"])
+                hub.publish("execution.finished", executionId=h["id"],
+                            automationId=h["automation_id"],
+                            execution=self.store.exec_json(h),
+                            automation=self.store.auto_json(a, full=False) if a else None)
+            raise
         return h
 
     KILL_GRACE = 5.0  # seconds between the polite SIGTERM and the group SIGKILL
@@ -724,6 +812,10 @@ class Engine:
             except OSError:
                 pass
             h.get("_log_seq", {}).pop(name, None)
+            # The store's per-file line count is keyed the same way — an
+            # infiniteRetries step would otherwise leak one key per prune.
+            with self.store.lock:
+                self.store._log_counts.pop((h["id"], name), None)
 
     @staticmethod
     def _await_retry(state: dict, i: int, forever: bool) -> None:
@@ -991,6 +1083,7 @@ class Engine:
                 h["status"] = "succeeded"
             h["finished_at"] = timefmt.now_iso()
             h["pgid"] = None  # §3: no live step group to recover anymore
+            h["agent_pgids"] = []
             if result_touched and not cancelled:
                 # The chip is optional (§4.5): it lives on the execution header,
                 # tinted by the execution's result status. It is persisted and
@@ -1020,6 +1113,7 @@ class Engine:
             h["status"] = "failed"
             h["finished_at"] = timefmt.now_iso()
             h["pgid"] = None
+            h["agent_pgids"] = []
             h["_cur"] = None
             try:
                 self._log(h, "err", f"engine error: {e}", redactions)
@@ -1039,9 +1133,19 @@ class Engine:
                 self._live.pop(h["id"], None)
             with self.store.lock:
                 # Belt and braces: even if update_execution failed above, the
-                # automation must never stay pinned "executing" in memory.
+                # automation must never stay pinned "executing" in memory. A
+                # BaseException escape (interpreter shutdown aside) can reach
+                # here with the status still "executing" — force it terminal
+                # rather than pin the §6 slot until a backend restart.
+                if h["status"] == "executing":
+                    h["status"] = "interrupted"
+                    h["finished_at"] = h.get("finished_at") or timefmt.now_iso()
+                    try:
+                        self.store.update_execution(h)
+                    except Exception:  # noqa: BLE001
+                        pass
                 a = self.store.autos.get(h["automation_id"])
-                if a and h["status"] != "executing":
+                if a:
                     a["_live"].discard(h["id"])
                 hub.publish("execution.finished", executionId=h["id"], automationId=h["automation_id"],
                             execution=self.store.exec_json(h),
@@ -1122,13 +1226,21 @@ class Engine:
                 self._log(h, "err",
                           f"reply blocked — it contains the value of secret {hit}", redactions)
                 return
-            err = listeners.send_reply(payload, text)
-            if err:
-                self._log(h, "err", f"reply failed — {err}", redactions)
-            else:
-                where = (f"iMessage ({payload.get('chat')})" if payload.get("kind") == "imessage"
-                         else f"Discord ({payload.get('channel')})")
-                self._log(h, "sys", f"reply sent to {where}", redactions)
+            # §6.1 fire-and-forget, delivered off-thread: this callback runs on
+            # the step's log read loop, and a synchronous send (up to 10 s
+            # Discord, 30 s osascript) would stall log streaming while the
+            # step's own stdout pipe fills behind it. The shared §6 delivery
+            # worker keeps replies and busy notices in one ordered FIFO.
+            def deliver() -> None:
+                err = listeners.send_reply(payload, text)
+                if err:
+                    self._log(h, "err", f"reply failed — {err}", redactions)
+                else:
+                    where = (f"iMessage ({payload.get('chat')})" if payload.get("kind") == "imessage"
+                             else f"Discord ({payload.get('channel')})")
+                    self._log(h, "sys", f"reply sent to {where}", redactions)
+
+            listeners.submit_send(deliver)
 
         return run_step_process(script, ctx, state,
                                 lambda k, text: self._log(h, k, text, redactions),

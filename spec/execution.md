@@ -49,6 +49,14 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   (`start_new_session`), and timeout/cancel/skip signal the whole group — a step's children
   (Playwright browsers, subprocesses) die with it, are never orphaned, and can never hold the
   engine's log pipe open past the kill (which would strand the automation "executing").
+  One child deliberately escapes that group: a §6.1 runtime agent call's harness CLI spawns
+  in its **own** session (so the call's idle-window watchdog can kill the CLI and its helpers
+  without killing the step). The executor therefore reports that child's group id to the
+  engine over the event stream when the call starts and retracts it when the call returns;
+  the engine keeps the live set in the execution's kill state and persists it on the record
+  (`agentPgids`, §4.5), so cancel/timeout/skip kill the agent group(s) right after the step
+  group, and §3 orphan recovery sweeps them with the same pid-reuse guard as `pgid`. Without
+  this, killing the step would orphan a running harness CLI mid-call.
   On Windows the executor spawns via the console interpreter with a hidden console (§2 spawn
   policy: `paths.console_python()` + `CREATE_NO_WINDOW`), so a step's console-subsystem
   children inherit the invisible console instead of each opening a terminal window under the
@@ -143,7 +151,11 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   note ("previous execution still in progress", "the queue was full (N waiting)", "waited too
   long in the queue" — never on a §6 manual queue entry, which has no TTL —
   "cancelled before it ran", "backend restarted before this ran",
-  "version vN no longer exists" — a queued entry whose admitted version is gone by its turn). The
+  "version vN no longer exists" — a queued entry whose admitted version is gone by its turn,
+  and equally a trigger firing whose `currentVersion` doesn't resolve: it leaves this
+  skipped record rather than vanishing, since an automation whose current version is gone
+  would otherwise fire and disappear silently every occurrence forever, with §4.1 `overdue`
+  never flagging it). The
   first two are different problems and must not share a note: "still in progress" is the
   configured skip-on-busy behaviour, while a full queue is a capacity limit the user fixes by
   raising `maxQueued` (§4.1) — the note names the cap so the row says which knob to turn. A `queued` execution (§6 firing queue) has no steps and no
@@ -345,7 +357,13 @@ hand, `status=finished` when the filter is All - and advances only when it lands
 page fetch surfaces the standard error toast and stays on the current page, pager in place.
 An execution finishing mid-view lands at the top of Finished via its §19 event and can push the
 current slice's rows down by one - the canonical order shared by window, keyset, and index
-keeps the pages seamless either way. Fetched pages and the page number are view state only,
+keeps the pages seamless either way. The accumulated set also **absorbs** the window's
+finished rows on every window change: a `/state` refresh replaces the window wholesale, and
+new finishes push old rows out of it - a row that leaves the window mid-session must survive
+in the accumulated set, or the page the user is on silently loses it and every deeper page
+shifts against the readout. A terminal segment whose first page fetch is still in flight
+never shows the "No <status> executions" empty card - the card means the server answered
+empty, not that the answer hasn't arrived. Fetched pages and the page number are view state only,
 held by the page component: they reset when the page unmounts and whenever the filter
 changes (each filter change starts from its own fresh first page), and are never stored or
 synced. Executing and Queued are never capped or paged.

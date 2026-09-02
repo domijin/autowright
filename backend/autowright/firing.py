@@ -114,14 +114,32 @@ def fire_trigger(store: Store, engine: Engine, a: dict, t: dict,
             try:
                 engine.start(a, kind, payload=payload)
                 started = True
-            except (RuntimeError, LookupError):
+            except Exception as e:  # noqa: BLE001 - a disk error, a bad step folder, …
                 started = False
-            except Exception:  # noqa: BLE001 - a disk error, a bad step folder, …
+                if isinstance(e, LookupError):
+                    # §7: the version this firing targets doesn't resolve
+                    # (corrupt current_version) — a silent swallow would fire
+                    # and vanish every tick forever, with §4.1 overdue never
+                    # flagging it. Leave the skipped record every other
+                    # never-ran path leaves.
+                    try:
+                        h = store.create_execution(
+                            a, "version", a["current_version"], kind,
+                            steps=[], status="skipped",
+                            note=f"version v{a['current_version']} no longer exists",
+                            trigger_payload=payload)
+                        finish_never_ran(store, h,
+                                         f"version v{a['current_version']} no longer exists",
+                                         finished_at=timefmt.now_iso())
+                        skipped = True
+                    except Exception:  # noqa: BLE001
+                        log.exception("recording a failed firing on %r", a.get("name"))
+                elif not isinstance(e, RuntimeError):
+                    log.exception("firing %s on %r failed", kind, a.get("name"))
                 # §4.6: `start` may already have created the record before it
-                # failed. Left `executing` it would hold a §6 slot forever and
-                # 409 every later firing, so the never-ran finisher ends it.
-                log.exception("firing %s on %r failed", kind, a.get("name"))
-                started = False
+                # failed — any exception class, not only unexpected ones. Left
+                # `executing` it would hold a §6 slot forever and 409 every
+                # later firing, so the never-ran finisher ends it.
                 for eid in set(a.get("_live") or ()) - live_before:
                     h = store.execs.get(eid)
                     if h is not None:
@@ -234,7 +252,14 @@ def drain_queue(store: Store, engine: Engine, automation_id: str) -> None:
                     # rather than blocking the queue behind it forever.
                     pass
                 except RuntimeError:
-                    return  # slot taken under us; the next finish drains again
+                    # Slot taken under us — but if the failure landed after
+                    # the entry was already promoted (a §7 launch failure),
+                    # the record must not stay `executing` with no thread.
+                    if head["status"] == "executing" and not engine.is_live(head["id"]):
+                        finish_never_ran(store, head, "the execution couldn't be started",
+                                         finished_at=timefmt.now_iso(),
+                                         with_automation=True)
+                    return  # the next finish drains again
         finish_queued(store, head,
                       "waited too long in the queue" if stale
                       else f"version v{head['version']} no longer exists")

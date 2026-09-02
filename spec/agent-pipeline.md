@@ -750,7 +750,12 @@ a call that keeps observably working keeps running, while a harness that reports
 gets no resets and the window degrades to a fixed timeout. On top of the window sits a
 **total wall-clock hard cap**,
 30 minutes by default (§15 `AUTOWRIGHT_AGENT_HARD_CAP_S`), so even a call that never stops
-streaming still ends. Both kills raise the same retryable timeout error; cancelling
+streaming still ends. Stream size is bounded too: one invocation's stdout is capped at
+50 MB of characters (the call is killed and fails non-retryably — no valid response is
+anywhere near that large, and a harness stuck in a tool loop must not push the whole hard
+cap's worth of output through backend memory and every log sink) and stderr is drained
+into a 1 MB tail-keeping buffer (the decisive error lines come last). Both kills raise the
+same retryable timeout error; cancelling
 the job (Start over, or an edit that supersedes an in-flight steps call, §11) kills the harness
 process. One pre-flight guards the known interactive trap: a signed-out Gemini CLI does not
 exit with an auth error - it prints a browser sign-in prompt to stdout and blocks on it

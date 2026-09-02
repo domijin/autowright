@@ -19,7 +19,7 @@ vi.mock('../src/api', () => ({
     triggersPreview: vi.fn(async (triggers: Array<Record<string, unknown>>) => ({
       triggers: triggers.map((t) => ({
         valid: true, label: String(t.expression ?? t.at ?? t.kind),
-        short: String(t.kind), nextAt: null,
+        short: String(t.kind), nextAtMs: null,
       })),
     })),
   },
@@ -46,7 +46,7 @@ const trigger = (over: Partial<Trigger> = {}): Trigger => ({
 
 const auto = (triggers: Trigger[]): Automation => ({
   id: 'a1', name: 'Job', description: '', version: 1, triggers, triggerChip: 'Daily 8:00',
-  allTriggersOff: false, nextAt: null, instructions: '', notes: '', lastStatus: 'succeeded',
+  allTriggersOff: false, nextAtMs: null, instructions: '', notes: '', lastStatus: 'succeeded',
   live: [], maxParallel: 1, maxQueued: 0, resultChip: null, resultStatus: null,
   lastExecutionLabel: 'Today', agentId: null, stepAgents: [], allowedSecrets: [], problems: [],
   unresolvedReferences: {},

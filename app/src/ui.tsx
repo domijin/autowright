@@ -1,7 +1,7 @@
 // Shared UI primitives — one source of truth for badges, toggles, radios,
 // popovers, toasts (prototype Component helpers, §14 tokens). The result
 // section and its views live in result.tsx.
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ParamDef, Status, Step } from './types'
 import { useStore } from './store'
@@ -649,10 +649,10 @@ export function logColor(k: string): string {
   return 'var(--text-2)'
 }
 
-/** §4.3 countdown "next in Xd Xh" / "Xh Xm" from the backend-derived `nextAt`. */
-export function nextIn(a: { nextAt: number | null }): string {
-  if (a.nextAt == null) return ''
-  const mTot = Math.max(1, Math.round((a.nextAt - Date.now()) / 60000))
+/** §4.3 countdown "next in Xd Xh" / "Xh Xm" from the backend-derived `nextAtMs`. */
+export function nextIn(a: { nextAtMs: number | null }): string {
+  if (a.nextAtMs == null) return ''
+  const mTot = Math.max(1, Math.round((a.nextAtMs - Date.now()) / 60000))
   const dd = Math.floor(mTot / 1440)
   const hh = Math.floor((mTot % 1440) / 60)
   const mm = mTot % 60
@@ -740,7 +740,10 @@ export const anyModalOpen = () => modalStack.length > 0
 export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog', ariaLabel, children }: {
   onClose: () => void; width: number; zIndex?: number; cardStyle?: React.CSSProperties
   role?: 'dialog' | 'alertdialog'; ariaLabel?: string
-  children: (close: () => void) => React.ReactNode
+  // `closing` is true through the ~200 ms exit animation, during which the
+  // children stay mounted — a child with its own key/pointer handlers must
+  // stop acting on the card the user is already dismissing.
+  children: (close: () => void, closing: boolean) => React.ReactNode
 }) {
   const [closing, setClosing] = useState(false)
   const closed = useRef(false)
@@ -789,7 +792,7 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog',
         ...cardStyle,
       }}>
         <ScrollArea wrapStyle={{ minHeight: 0 }} style={{ maxHeight: '100%' }}>
-          {children(() => setClosing(true))}
+          {children(() => setClosing(true), closing)}
         </ScrollArea>
       </div>
     </div>,
@@ -895,7 +898,7 @@ const PY_COLOR = {
 // Whitespace, newline, (prefix)string, comment, decorator, number, identifier, symbol.
 const PY_TOKEN = /([ \t]+)|(\r?\n)|((?:[rbfuRBFU]{0,2})(?:'''[\s\S]*?'''|"""[\s\S]*?"""|"(?:\\.|[^"\\\n])*"?|'(?:\\.|[^'\\\n])*'?))|(#[^\n]*)|(@[A-Za-z_][\w.]*)|(\d[\d_]*\.?[\d_]*(?:[eE][+-]?\d+)?[jJ]?)|([A-Za-z_]\w*)|([\s\S])/g
 
-function highlightPython(code: string): React.ReactNode[] {
+export function highlightPython(code: string): React.ReactNode[] {
   const out: React.ReactNode[] = []
   let m: RegExpExecArray | null
   let prevIdent = ''
@@ -930,11 +933,14 @@ function highlightPython(code: string): React.ReactNode[] {
 }
 
 // Highlighted Python <pre>. Pass the same style/className the plain <pre> used;
-// per-token colors override the base text color for recognized tokens.
+// per-token colors override the base text color for recognized tokens. The
+// tokenizer walks the whole script, so it only reruns when the code changes —
+// an unrelated re-render (a poll tick under an open modal) reuses the nodes.
 export function PyCode({ code, className, style }: {
   code: string; className?: string; style?: React.CSSProperties
 }) {
-  return <pre className={className} style={style}>{highlightPython(code)}</pre>
+  const nodes = useMemo(() => highlightPython(code), [code])
+  return <pre className={className} style={style}>{nodes}</pre>
 }
 
 // §14 overlay scrollbar: the scroller hides its native bar (.ad-scrollhide) and

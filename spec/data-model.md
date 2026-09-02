@@ -45,7 +45,7 @@ triggers: ordered trigger list (§4.3) — user-owned, never versioned; the draf
 triggerChip: derived chip string (§4.3): one trigger → its short label, several → "N triggers",
   empty → "No triggers"
 allTriggersOff: bool — derived: the list is nonempty and every trigger is off (drives the OFF tag)
-nextAt: epoch ms of the next enabled occurrence across all triggers (§4.3) | null
+nextAtMs: epoch ms of the next enabled occurrence across all triggers (§4.3) | null
 instructions: optional multiline free-text user instructions to the agent
 notes: agent-owned working-knowledge document (markdown string, may be empty) — selectors and
   short HTML excerpts, API endpoints and quirks, approaches that failed and why, environment
@@ -193,7 +193,7 @@ problems: [{ kind, label }] — derived at serialization, never stored: the "wou
     execution's start (the `lastStatus` population: `skipped`/`queued`/test records
     excluded), falling back to the automation's `created_at` if it never ran - and that
     trigger's §4.3 `enabledAt` stamp; overdue iff the second §4.3 next-occurrence after
-    that baseline (the same DST-aware math as `nextAt`) is already in the past. The stamp
+    that baseline (the same DST-aware math as `nextAtMs`) is already in the past. The stamp
     is what keeps a re-enable honest: occurrences that passed while the trigger was off
     are ignored even after it comes back on, so turning a cron on again after a week
     away (or adding a cron to an automation created long ago) starts counting from that
@@ -309,7 +309,11 @@ the **§4.3 trigger merge** — saving an edit (§4.4) merges the draft's spec-d
 
 - **Crons replace the spec-sourced cron subset**: a drafted cron matching a stored one
   (either source) on (`expression`, `timezone`)
-  keeps that trigger's `id`, `enabled` state, `source`, and `runIfMissed`; other drafted
+  keeps that trigger's `id`, `enabled` state, `source`, and `runIfMissed` — except on a §20
+  CLI push, where the workdir manifest round-trips `run_if_missed` explicitly, so a matched
+  cron takes the manifest entry's value (absent = true) instead of keeping the stored one
+  (§20 push rules); the §8 sync manifest never carries the key, so the app's merge always
+  keeps the stored value; other drafted
   crons arrive enabled with fresh ids, `source: spec`, and the default `runIfMissed`; **`source: spec`** crons the draft no longer
   derives are dropped, while **`source: user`** crons always survive — a schedule the user
   set by hand (detail page, chat op, CLI) is never silently removed by a sync.
@@ -356,7 +360,7 @@ compat shim; an unreadable value reads as absent.
 **Timezone (`timezone`)** — optional IANA zone name (e.g. `Asia/Tokyo`) on `cron` and `time`
 triggers. Absent → the machine's local time (labels unchanged). Present → `expression` matches and
 `at` reads as wall clock **in that zone** (DST rules below apply in that zone); occurrences
-convert to local time for `nextAt`, countdowns, and the scheduler. An unknown zone name is
+convert to local time for `nextAtMs`, countdowns, and the scheduler. An unknown zone name is
 rejected at the API (422), never stored. When `timezone` is set, both display strings append the
 zone's city — the last `/` segment of the IANA name, `_` → space — in parentheses:
 "Daily at 8:00 (Tokyo)" / "Daily 8:00 (Tokyo)"; the raw-expression fallback and one-shot
@@ -407,7 +411,7 @@ All present filters must pass (AND).
 
 A firing starts an execution with trigger label "Discord" and the §4.5 `triggerPayload`; the
 §6 one-execution-at-a-time skip applies like any trigger. Like
-`app_start`, a discord trigger has no computable next occurrence — `nextAt` ignores it, and a
+`app_start`, a discord trigger has no computable next occurrence — `nextAtMs` ignores it, and a
 list whose only enabled triggers are message triggers shows the listening status line below.
 Validation (§19, 422 otherwise): `channel` a nonempty ASCII-digit string, `secret` a uuid
 string (lowercase hyphenated, the §4 id form; it need not resolve to a stored secret — a
@@ -447,7 +451,7 @@ rules, applied to every row the watcher reads:
 
 A firing starts an execution with trigger label "iMessage" and the §4.5 `triggerPayload`;
 queueing, skip, and the busy notice behave exactly as for Discord (§6). Like every message
-trigger it has no computable next occurrence — `nextAt` ignores it. Validation (§19, 422
+trigger it has no computable next occurrence — `nextAtMs` ignores it. Validation (§19, 422
 otherwise): `from` is either an **email** (contains `@`, no whitespace) or an **E.164
 phone** — `+` then 3–15 digits, matching the form Messages stores; obvious phone formatting
 (spaces, dashes, dots, parentheses) is stripped at save, so `+1 (555) 123-4567` stores as
@@ -501,12 +505,12 @@ false` after a sleep, §6). It never lingers spent.
 **App-start semantics** (`app_start`): fires when the desktop app launches — the Electron
 process starting (§6 firing path), not a window reopening from the tray. No fields, no `timezone`.
 An automation holds at most one: a list carrying a second `app_start` answers 422 and nothing
-is stored. It has no computable next occurrence — it never contributes to `nextAt` — and it
+is stored. It has no computable next occurrence — it never contributes to `nextAtMs` — and it
 survives an edit save (the §4.3 trigger merge never drops it — a drafted `app_start` merely
 matches the stored one).
 
 **Next occurrence:** each enabled (`enabled: true`) trigger computes its own next time — cron: the
-next expression match strictly after now; time: `at`. The automation's `nextAt` is the minimum
+next expression match strictly after now; time: `at`. The automation's `nextAtMs` is the minimum
 across them, null when no enabled trigger has one. The countdown renders "next in Xd Xh" /
 "Xh Xm" and refreshes every 30 s.
 
@@ -521,14 +525,14 @@ Detail-page trigger status line (under the §9.2 TRIGGERS rows):
   bar." (pause icon)
 - all off → "All triggers are off — won't execute on its own. Execute now and the menu bar
   still work." (pause icon); the chip reads "`<triggerChip>` · triggers off"
-- `nextAt` null but an enabled message trigger (`discord`/`imessage`) exists → "Listening for
+- `nextAtMs` null but an enabled message trigger (`discord`/`imessage`) exists → "Listening for
   `<what>` — executes when a matching message arrives. Execute now and the menu bar still
   work." (clock icon), `<what>` being "Discord messages", "iMessages", or "messages" when both
   kinds are enabled; the chip shows just `triggerChip`
-- `nextAt` null but an enabled `app_start` exists → "Executes when this app next starts —
+- `nextAtMs` null but an enabled `app_start` exists → "Executes when this app next starts —
   Execute now and the menu bar still work." (clock icon); the detail-page trigger chip reads
   "`<triggerChip>` · on app start"
-- `nextAt` null otherwise (e.g. an elapsed enabled one-shot not yet consumed) → "No upcoming
+- `nextAtMs` null otherwise (e.g. an elapsed enabled one-shot not yet consumed) → "No upcoming
   occurrence — Execute now and the menu bar still work."; the chip shows just `triggerChip`,
   never a dangling countdown
 - else → "Next execution in `<countdown>` (`<short label of the next trigger>`) · executes even
@@ -804,6 +808,12 @@ pgid: int | null — on-disk only (never in list/full JSON): the process-group i
   an orphan can't keep writing `memory/` while the next execution starts. Backend shutdown
   hard-kills every live step group the same way (an interrupted record must not leave its
   processes running)
+agentPgids: int list — on-disk only (never in list/full JSON), default empty: the process-group
+  ids of any §6.1 runtime agent call's harness CLI currently in flight (each spawns in its own
+  session, §7 kill semantics), stamped when the executor reports the call starting and removed
+  when the call returns. Cancel/timeout/skip kill these groups right after the step group, and
+  §3 startup recovery sweeps any left behind (same pid-reuse guard as `pgid`); absent in
+  pre-existing records, which load as empty
 ```
 
 Logs are not part of the record payload: they live as per-step-attempt NDJSON files in the

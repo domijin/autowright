@@ -137,7 +137,10 @@ async function executionsLiveProbe() {
       signal: AbortSignal.timeout(5000),
     })
     if (!res.ok) return null
-    return (await res.json()).length > 0
+    // §19 envelope: GET /executions answers { executions, total } — never a
+    // bare array. Reading .length off the envelope would answer "not busy"
+    // forever and neuter every §3 mid-execution gate below.
+    return (((await res.json()).executions || []).length > 0)
   } catch {
     return null
   }
@@ -281,6 +284,7 @@ async function notifyAppStarted() {
           method: 'POST',
           headers: { Authorization: `Bearer ${info.token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ launchId }),
+          signal: AbortSignal.timeout(10_000),
         })
         if (res.ok) return
       } catch { /* backend not answering yet — retry */ }
@@ -390,6 +394,10 @@ function createWindow(hash) {
     show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs') },
   })
+  // The window this call owns. The retry timer below outlives a closed window,
+  // and reloading a successor would drop its WS and all renderer state — so
+  // every deferred handler here checks it is still the current, live window.
+  const w = win
   // §9: a failed main-frame load (a dead §15 AUTOWRIGHT_RENDERER_URL — a
   // packaged dist file load doesn't fail) keeps the window hidden and retries
   // every second until the renderer is really there. Chromium fires
@@ -413,7 +421,7 @@ function createWindow(hash) {
     failed = true
     failStreak += 1
     if (failStreak === 1) appLog(`window: renderer load failed (${code} ${desc}) — retrying every 1 s`)
-    setTimeout(() => { if (win) load(win, hash || '/app') }, 1000)
+    setTimeout(() => { if (win === w && !w.isDestroyed()) load(w, hash || '/app') }, 1000)
   })
   win.webContents.on('did-finish-load', () => {
     if (failed) return
@@ -486,18 +494,37 @@ function showApp(hash) {
   if (winLoaded) { win.show(); win.focus() }
 }
 
+// Each variant is decoded from disk once — the 60 s poll below asks for the
+// same two images for the life of the app.
+const trayImages = new Map()
+
 function trayIcon(alert) {
+  const cached = trayImages.get(alert)
+  if (cached) return cached
   // §13: red alert dot when any automation failed. Asset + template flag come
   // from the platform module (on macOS the alert variant is a pre-rendered
   // non-template PNG so the dot stays red on light and dark menu bars).
   const spec = plat.trayIconSpec(alert)
   const icon = nativeImage.createFromPath(path.join(__dirname, spec.file))
   icon.setTemplateImage(spec.template)
+  trayImages.set(alert, icon)
   return icon
+}
+
+// The alert state the tray icon is showing. Both writers (the poll below and
+// the renderer's §13 tray-alert IPC) go through setTrayAlert, so the icon is
+// re-set only on a real transition and the two can never disagree about it.
+let trayAlert = false
+
+function setTrayAlert(alert) {
+  if (!tray || alert === trayAlert) return
+  trayAlert = alert
+  tray.setImage(trayIcon(alert))
 }
 
 function createTray() {
   tray = new Tray(trayIcon(false))
+  trayAlert = false
   tray.setToolTip('Autowright')
   tray.on('click', () => togglePanel())
 }
@@ -518,8 +545,8 @@ async function refreshTrayAlert() {
     if (!res.ok) return
     const autos = await res.json()
     // §13: failed or §4.1 overdue only — same predicate as the renderer's.
-    tray.setImage(trayIcon(autos.some((a) => a.lastStatus === 'failed'
-      || (a.problems || []).some((p) => p.kind === 'overdue'))))
+    setTrayAlert(autos.some((a) => a.lastStatus === 'failed'
+      || (a.problems || []).some((p) => p.kind === 'overdue')))
   } catch { /* backend down — keep the current icon */ }
 }
 
@@ -536,32 +563,51 @@ let automaticUpdateTimer = null
 let dataRoot = null
 
 function applyShellSettings(s) {
-  if (typeof s?.dataPath === 'string' && s.dataPath) dataRoot = s.dataPath
+  // Each effect is guarded on its own: one that throws (a tray that won't
+  // create on this host, a login item the OS refuses) must never take the
+  // ones after it with it — the §3 update-check timer is last in line.
+  try {
+    if (typeof s?.dataPath === 'string' && s.dataPath) dataRoot = s.dataPath
+  } catch (err) {
+    appLog(`settings: applying the data path failed: ${String(err?.message || err)}`)
+  }
   // §4.9 login reconcile is per-OS (§2 applyLoginItem): the Electron login
   // item on macOS/Windows, the XDG-autostart .desktop file on Linux.
-  if (caps.loginItem && typeof s?.login === 'boolean') plat.applyLoginItem(app, s.login)
-  if (caps.trayPanel && typeof s?.menuBarIcon === 'boolean') {
-    if (s.menuBarIcon && !tray) {
-      createTray()
-      void refreshTrayAlert()
-    } else if (!s.menuBarIcon && tray) {
-      if (panel) panel.hide()
-      tray.destroy()
-      tray = null
+  try {
+    if (caps.loginItem && typeof s?.login === 'boolean') plat.applyLoginItem(app, s.login)
+  } catch (err) {
+    appLog(`settings: applying the login item failed: ${String(err?.message || err)}`)
+  }
+  try {
+    if (caps.trayPanel && typeof s?.menuBarIcon === 'boolean') {
+      if (s.menuBarIcon && !tray) {
+        createTray()
+        void refreshTrayAlert()
+      } else if (!s.menuBarIcon && tray) {
+        if (panel) panel.hide()
+        tray.destroy()
+        tray = null
+      }
     }
+  } catch (err) {
+    appLog(`settings: applying the tray icon failed: ${String(err?.message || err)}`)
   }
   // §3 automatic update check (§4.9, on by default): off→on — which includes a
   // launch with the setting on — checks immediately, then every 24 h; on→off
   // clears the timer. Nothing about past checks is persisted. Failures are
   // silent, and an automatic check never starts a download.
-  if (caps.updates && typeof s?.automaticUpdateCheck === 'boolean') {
-    if (s.automaticUpdateCheck && !automaticUpdateTimer) {
-      void fetchUpdateState()
-      automaticUpdateTimer = setInterval(() => { void fetchUpdateState() }, 24 * 60 * 60_000)
-    } else if (!s.automaticUpdateCheck && automaticUpdateTimer) {
-      clearInterval(automaticUpdateTimer)
-      automaticUpdateTimer = null
+  try {
+    if (caps.updates && typeof s?.automaticUpdateCheck === 'boolean') {
+      if (s.automaticUpdateCheck && !automaticUpdateTimer) {
+        void fetchUpdateState()
+        automaticUpdateTimer = setInterval(() => { void fetchUpdateState() }, 24 * 60 * 60_000)
+      } else if (!s.automaticUpdateCheck && automaticUpdateTimer) {
+        clearInterval(automaticUpdateTimer)
+        automaticUpdateTimer = null
+      }
     }
+  } catch (err) {
+    appLog(`settings: applying the automatic update check failed: ${String(err?.message || err)}`)
   }
 }
 
@@ -870,7 +916,7 @@ ipcMain.handle('platform-info', () => ({
 }))
 ipcMain.handle('apply-settings', (_e, s) => applyShellSettings(s))
 ipcMain.handle('tray-alert', (_e, on) => {
-  if (tray) tray.setImage(trayIcon(!!on))
+  setTrayAlert(!!on)
 })
 
 // §3 in-app updates (electron-updater on every OS): manual-only — nothing here
@@ -1277,14 +1323,15 @@ app.whenReady().then(() => {
   // before any window exists; editing shortcuts are Chromium-native.
   if (!caps.appMenu) Menu.setApplicationMenu(null)
   void ensureBackend()
-  createWindow()
-  // The reopen handler is registered before anything that can throw: whatever
-  // else fails at ready, the dock/tray must always be able to bring the window
-  // back. The hidden tray panel is also a BrowserWindow, so count only the main
-  // window — `getAllWindows().length` would block reopening from the Dock.
+  // The reopen handler is registered before anything that can throw — the first
+  // createWindow included: whatever else fails at ready, the dock/tray must
+  // always be able to bring the window back. The hidden tray panel is also a
+  // BrowserWindow, so count only the main window — `getAllWindows().length`
+  // would block reopening from the Dock.
   // §9: a not-yet-loaded window stays hidden even on an explicit reopen — it
   // shows itself on the first successful load.
   app.on('activate', () => { if (win === null) createWindow(); else if (winLoaded) { win.show(); win.focus() } })
+  createWindow()
   // §13: a tray that fails to create (a broken package missing its icon asset)
   // is logged and skipped. It must never take the rest of the ready chain with
   // it — the §6 app-start triggers, the tray-alert poll and the §4.9 settings

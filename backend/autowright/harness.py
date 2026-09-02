@@ -77,11 +77,39 @@ def agent_hard_cap() -> int:
         return 1800
 
 
+# §8 stream caps: memory bounds on one invocation's pipes. The idle window
+# never fires while a call keeps streaming, so without these a harness stuck
+# in a tool loop could push the whole hard cap's worth of output through
+# backend memory and every log sink. Both are far beyond any valid response.
+STDOUT_CAP_CHARS = 50_000_000
+STDERR_CAP_CHARS = 1_000_000
+
+
 def kill_group(proc: subprocess.Popen, sig: int | None = None) -> None:
     """Signal a harness child's whole session group (see the §2 platform
     session policy in `_invoke`); falls back to the direct child when the
     group is gone."""
     platform.current().processes.signal_group(proc, sig)
+
+
+def defuse_read_end(f) -> None:
+    """Cross-thread escape hatch for a pipe read end another thread may be
+    blocked reading (a kill whose EOF never arrives because an escaped child
+    still holds the write end). `dup2`s /dev/null over the fd: any further
+    read sees EOF, the fd number stays owned (no reuse hazard for the later
+    ordinary close), and — unlike TextIOWrapper.close(), which takes the
+    buffer lock the blocked reader holds — it can never wedge the calling
+    thread."""
+    if f is None:
+        return
+    try:
+        devnull = os.open(os.devnull, os.O_RDONLY)
+        try:
+            os.dup2(devnull, f.fileno())
+        finally:
+            os.close(devnull)
+    except (OSError, ValueError):
+        pass
 
 
 # A backend launched from the Finder/Dock gets a minimal PATH without
@@ -211,7 +239,7 @@ def probe_tools() -> list[dict]:
 def invoke(agent: dict, prompt: str, timeout: int | None = None,
            proc_holder: dict | None = None, on_chunk=None,
            should_abort=None, web: bool = False, on_tool=None,
-           on_file=None) -> str:
+           on_file=None, on_spawn=None) -> str:
     """Invoke the harness once with `prompt`, return its text reply.
 
     web=True enables the harness's web-read tools (§6 drafting calls only);
@@ -253,7 +281,7 @@ def invoke(agent: dict, prompt: str, timeout: int | None = None,
     t0 = time.monotonic()
     try:
         out = _invoke(harness, agent, prompt, timeout, proc_holder, on_chunk,
-                      should_abort, web, on_tool, on_file)
+                      should_abort, web, on_tool, on_file, on_spawn)
     except Exception as e:  # noqa: BLE001 — log, close the frame, re-raise
         _app_log(f"request failed: {e}\n>>>>> END {_stamp()} {req_id} <<<<<\n")
         reqlog.write_agent(ts, harness or "?", model, prompt, None, str(e),
@@ -304,6 +332,26 @@ def _deterministic_failure(stderr_tail: str) -> bool:
 FILE_MARK_RE = re.compile(r"^===FILE: (.+?)===\s*$", re.M)
 BLOCKED_MARK_RE = re.compile(r"^===BLOCKED===\s*$", re.M)
 STEP_FILE_RE = re.compile(r"^(\d{2})-[a-z0-9][a-z0-9-]*\.py$")
+FENCE_OPEN_RE = re.compile(r"^```[\w+.-]*$")
+
+
+def blocked_mark_outside_fences(text: str) -> re.Match | None:
+    """§8 shape-aware blocker detection: the first line-anchored ===BLOCKED===
+    that does NOT sit inside a markdown code fence - a fenced marker is quoted
+    prose (an answer explaining the format), never an envelope. Canonical here
+    so `_recombine` and drafting's parse agree — a naive search here would
+    treat a chat reply that *quotes* the marker as blocked and silently drop
+    the scratch documents from the recombined envelope."""
+    fenced = False
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\r\n")
+        if FENCE_OPEN_RE.match(bare):
+            fenced = not fenced
+        elif not fenced and BLOCKED_MARK_RE.match(bare):
+            return BLOCKED_MARK_RE.match(text, pos)
+        pos += len(line)
+    return None
 
 # §8 file-writing delivery: the response-document names the scratch watcher
 # accepts — exactly the envelope's file names, flat regular files only, so
@@ -605,7 +653,8 @@ class _ScratchWatcher:
         self._scratch = scratch
         self._sink = sink
         self._order: list[str] = []
-        self._sizes: dict[str, int] = {}
+        # (size, mtime_ns) — size alone would miss a same-length rewrite.
+        self._stamps: dict[str, tuple[int, int]] = {}
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
@@ -645,12 +694,13 @@ class _ScratchWatcher:
             try:
                 if not entry.is_file(follow_symlinks=False):
                     continue
-                size = entry.stat(follow_symlinks=False).st_size
+                st = entry.stat(follow_symlinks=False)
+                stamp = (st.st_size, st.st_mtime_ns)
             except OSError:
                 continue
-            if self._sizes.get(entry.name) == size:
+            if self._stamps.get(entry.name) == stamp:
                 continue
-            self._sizes[entry.name] = size
+            self._stamps[entry.name] = stamp
             if entry.name not in self._order:
                 self._order.append(entry.name)
             self._sink.file(entry.name, self._read(entry.name))
@@ -672,7 +722,7 @@ def _recombine(stdout_text: str, documents: list[tuple[str, str]]) -> str:
     corrects — accepted, the shape-aware parse lives in drafting). An empty
     scratch falls back to stdout unchanged (an answer-only chat reply, or an
     agent that ignored the OUTPUT section and printed the envelope)."""
-    if BLOCKED_MARK_RE.search(stdout_text):
+    if blocked_mark_outside_fences(stdout_text):
         return stdout_text
     if not documents:
         return stdout_text
@@ -735,7 +785,7 @@ def _claude_stream_line(line: str) -> tuple[str | None, str | None, list[dict]]:
 
 def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
             proc_holder: dict | None, on_chunk=None, should_abort=None,
-            web: bool = False, on_tool=None, on_file=None) -> str:
+            web: bool = False, on_tool=None, on_file=None, on_spawn=None) -> str:
     # §4.7/§6: a local-model agent (mode ollama — Claude Code, Codex, or
     # OpenCode) drives the one local Ollama server through that harness's own
     # supported mechanism: OpenCode rides `--model ollama/<model>` after the
@@ -799,6 +849,15 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
         raise
     if proc_holder is not None:
         proc_holder["proc"] = proc
+    if on_spawn is not None:
+        # §7 kill semantics: a runtime agent.ask caller reports this child's
+        # own-session group to the engine so a step kill can reach it. Called
+        # on the invoking thread, right at spawn — the whole point is that
+        # the group is known while the call is still in flight.
+        try:
+            on_spawn(proc)
+        except Exception:  # noqa: BLE001 — a reporting failure must not kill the call
+            log.exception("on_spawn callback failed")
 
     def _close_stdin() -> None:
         """Idempotent; safe from any thread (a close racing the writer's own
@@ -843,12 +902,12 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     def _kill() -> None:
         timed_out.set()
         kill_group(proc)
-        # An escaped child could still hold the pipe — close our read end so
-        # the loop unblocks regardless.
-        try:
-            proc.stdout.close()  # type: ignore[union-attr]
-        except OSError:
-            pass
+        # An escaped child could still hold the pipe — swap our read end for
+        # /dev/null so any further read sees EOF. Never `.close()` from this
+        # thread: TextIOWrapper.close() takes the buffer lock a blocked
+        # readline holds, which would wedge this watchdog instead of freeing
+        # the loop.
+        defuse_read_end(proc.stdout)
         # §8 Windows delivery: a writer thread blocked on a prompt the dead
         # child will never drain unblocks on the closed pipe (and swallows
         # the resulting error), so the kill leaks no thread and no handle.
@@ -885,8 +944,19 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
     err_parts: list[str] = []
 
     def _drain_stderr() -> None:
+        # Bounded, tail-keeping: an unbounded read() holds however much a
+        # chatty child emits in backend memory. The decisive error lines come
+        # LAST (banners first), so overflow drops the oldest chunks.
+        total = 0
         try:
-            err_parts.append(proc.stderr.read() or "")  # type: ignore[union-attr]
+            while True:
+                chunk = proc.stderr.read(65536)  # type: ignore[union-attr]
+                if not chunk:
+                    return
+                err_parts.append(chunk)
+                total += len(chunk)
+                while total > STDERR_CAP_CHARS and len(err_parts) > 1:
+                    total -= len(err_parts.pop(0))
         except (OSError, ValueError):
             # The cleanup below closed our read end mid-read — normal end.
             pass
@@ -909,9 +979,20 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
             scratch_watcher = _ScratchWatcher(scratch, sink)
             scratch_watcher.start()
         try:
+            out_total = 0
             try:
                 for line in proc.stdout:
                     _reset_idle()
+                    out_total += len(line)
+                    if out_total > STDOUT_CAP_CHARS:
+                        # §8 stream cap: the idle window never fires on a call
+                        # that keeps streaming, so a harness stuck in a tool
+                        # loop could push the full hard cap's worth of output
+                        # through backend memory and every log sink. No valid
+                        # response is anywhere near this large.
+                        raise HarnessError(
+                            f"{harness} produced over "
+                            f"{STDOUT_CAP_CHARS // 1_000_000} MB of output — aborting")
                     raw_parts.append(line)
                     handler.line(line, sink)
             except ValueError:
@@ -948,7 +1029,7 @@ def _invoke(harness: str | None, agent: dict, prompt: str, timeout: int,
                                retryable=True)
         raw = "".join(raw_parts)
         if proc.returncode != 0:
-            err = (err_parts[0] if err_parts else "") or raw
+            err = "".join(err_parts) or raw
             # The TAIL of stderr, not the head: CLIs print banners first and
             # the decisive ERROR line last (verified with Codex).
             tail = "\n".join(err.strip().splitlines()[-3:])
@@ -1177,11 +1258,22 @@ def _status_ok(cmd: list[str], provider_id: str) -> bool:
     try:
         # §2 spawn policy via session_kwargs: on Windows the windowless
         # backend's console children each open a terminal window without it.
-        r = subprocess.run(cmd, capture_output=True, timeout=10,
-                           encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
-                           env=spawn_env(cmd[0]), cwd=_neutral_cwd(provider_id),
-                           **platform.current().processes.session_kwargs())
-        return r.returncode == 0
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
+                                env=spawn_env(cmd[0]), cwd=_neutral_cwd(provider_id),
+                                **platform.current().processes.session_kwargs())
+        try:
+            proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            # The child has its own session: `run`'s kill would reach only the
+            # direct child, then block forever on a grandchild holding stdout.
+            kill_group(proc)
+            try:
+                proc.communicate(timeout=5)
+            except Exception:  # noqa: BLE001
+                pass
+            return False
+        return proc.returncode == 0
     except Exception:  # noqa: BLE001
         return False
 
@@ -1289,11 +1381,24 @@ def detect() -> list[dict]:
     def version_of(binpath: str, pid: str) -> str | None:
         try:
             # §2 spawn policy via session_kwargs (hidden console on Windows).
-            r = subprocess.run([binpath, "--version"], capture_output=True,
-                               encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
-                               timeout=5, env=spawn_env(binpath), cwd=_neutral_cwd(pid),
-                               **platform.current().processes.session_kwargs())
-            return (r.stdout or r.stderr).strip().splitlines()[0][:40] if r.returncode == 0 else None
+            proc = subprocess.Popen([binpath, "--version"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    encoding="utf-8", errors="replace",  # §2 pipe-encoding contract
+                                    env=spawn_env(binpath), cwd=_neutral_cwd(pid),
+                                    **platform.current().processes.session_kwargs())
+            try:
+                out, err = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                # The child has its own session: `run`'s kill would reach only
+                # the direct child, then block forever on a grandchild holding
+                # stdout.
+                kill_group(proc)
+                try:
+                    proc.communicate(timeout=5)
+                except Exception:  # noqa: BLE001
+                    pass
+                return None
+            return (out or err).strip().splitlines()[0][:40] if proc.returncode == 0 else None
         except Exception:  # noqa: BLE001
             return None
 

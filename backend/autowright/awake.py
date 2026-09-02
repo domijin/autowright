@@ -39,8 +39,8 @@ def reconcile(enabled: bool) -> None:
             except Exception:  # noqa: BLE001
                 _proc = None
         elif _proc is not None:
-            _proc.terminate()
             try:
+                _proc.terminate()
                 _proc.wait(timeout=5)  # reap — no zombie until interpreter GC
             except Exception:  # noqa: BLE001
                 pass

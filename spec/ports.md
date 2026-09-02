@@ -101,6 +101,13 @@ selectors, done via `app/e2e/harness.ts` `COPY`). Each remaining item moves into
   residency guard (non-null tray keeps the app alive after the last window closes)
   leaves a running process with no window and no visible icon. Needs a real probe or a
   different residency rule.
+- **Linux tray has no context menu and may not respond to `click`.** `createTray()`
+  never calls `setContextMenu`, and on StatusNotifier hosts the icon is conventionally
+  rendered/activated through its menu — Electron's own docs hedge that the Linux `click`
+  event "might not necessarily be left mouse click". As shipped, a Linux tray user may
+  have no reachable path to open the §13 panel at all. Decide a Linux tray menu (at
+  minimum Open + Quit) and verify the click path on a real StatusNotifier host; the
+  platform layer needs a `trayMenu` seam (today `trayIconSpec` is the only tray seam).
 - **AppImage runtime needs FUSE (`libfuse2`) on some distros** — decide whether the
   download page documents `--appimage-extract-and-run` as the fallback.
 - **Ubuntu 24.04+ AppArmor userns restriction**

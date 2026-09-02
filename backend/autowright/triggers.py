@@ -305,7 +305,10 @@ def validate_trigger(t: dict, allow_past: bool = False) -> str | None:
             # trigger_next) raise TypeError — the zone belongs in `timezone`.
             return "the timestamp must not carry a UTC offset — use timezone for the zone"
         zone = zone_of(t)
-        if not allow_past and (_to_local(at, zone) if zone else at) <= datetime.now():
+        # The zone-less reading goes through the same gap fix trigger_next and
+        # time_elapsed apply, so all three agree in the spring-forward gap.
+        local = _to_local(at, zone) if zone else (_local_gap_fix(at, None) or at)
+        if not allow_past and local <= datetime.now():
             return PAST_ERROR
         return None
     return f"unknown trigger kind {kind!r}"
@@ -507,11 +510,15 @@ def time_elapsed(t: dict, now: datetime | None = None) -> bool:
     zone = zone_of(t)
     if zone:
         at = _to_local(at, zone)
+    else:
+        # Same gap reading as trigger_next — the two must agree about a
+        # one-shot whose wall time falls in the local spring-forward gap.
+        at = _local_gap_fix(at, None) or at
     return at <= (now or datetime.now())
 
 
 def next_at(triggers: list[dict], after: datetime | None = None) -> datetime | None:
-    """§4.3 nextAt: minimum over enabled triggers, None when nothing is coming."""
+    """§4.3 nextAtMs: minimum over enabled triggers, None when nothing is coming."""
     nxts = [n for t in triggers if t["enabled"] if (n := trigger_next(t, after))]
     return min(nxts) if nxts else None
 

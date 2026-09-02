@@ -147,20 +147,49 @@ export default function ExecutionsList() {
 
   // §7: a terminal filter fetches its own first page — the window may hold
   // only a slice of that status (it shows its matching rows while this is in
-  // flight). All needs no fetch (the window is its first page), and the live
-  // segments never fetch (the window always holds every live row).
+  // flight, but never the empty card — that means "the server answered
+  // empty", not "the answer hasn't arrived"). All needs no fetch (the window
+  // is its first page), and the live segments never fetch (the window always
+  // holds every live row).
+  const [firstFetchDone, setFirstFetchDone] = useState(true)
   useEffect(() => {
     const n = ++fetchSeq.current
     setFetched([])
     setServerTotal(null)
     setPage(0)
-    if (filt === 'All' || filt === 'Executing' || filt === 'Queued') return
+    if (filt === 'All' || filt === 'Executing' || filt === 'Queued') {
+      setFirstFetchDone(true)
+      return
+    }
+    setFirstFetchDone(false)
     void api.listExecutions({ status: filt.toLowerCase(), limit: PAGE }).then((r) => {
       if (n !== fetchSeq.current) return
       setFetched(r.executions)
       setServerTotal(r.total)
     }, (err: Error) => { if (n === fetchSeq.current) showToast(err.message) })
+      .finally(() => { if (n === fetchSeq.current) setFirstFetchDone(true) })
   }, [filt])
+
+  // §7 absorption: a /state refresh replaces the window wholesale, and new
+  // finishes push old rows out of it — a row that leaves the window
+  // mid-session must survive in the accumulated set, or the page the user is
+  // on silently loses it and every deeper page shifts against the readout.
+  // The inverse prune rides along: an accumulated row that sorts INSIDE the
+  // window's span but isn't in the window can only have been deleted
+  // server-side (an automation delete, a retention sweep) — keeping it would
+  // show a ghost row.
+  useEffect(() => {
+    const finishedRows = executions
+      .filter((e) => e.status !== 'queued' && e.status !== 'executing')
+      .sort(byCanonicalOrder)
+    if (finishedRows.length === 0) return
+    setFetched((f) => {
+      const ids = new Set(finishedRows.map((e) => e.id))
+      const oldest = finishedRows[finishedRows.length - 1]
+      return [...finishedRows,
+              ...f.filter((e) => !ids.has(e.id) && byCanonicalOrder(e, oldest) > 0)]
+    })
+  }, [executions])
 
   // §7: the QUEUED FOR column counts up — one timer for the whole section,
   // running only while something is actually queued.
@@ -176,12 +205,14 @@ export default function ExecutionsList() {
   // three-section stack belongs to the All filter alone (§7).
   const labelled = filt === 'All' && (executing.length > 0 || queued.length > 0)
 
-  // §7 pager: the filter's match total sizes the readout. All derives its
-  // total from the pill count minus live rows until a fetch supplies the
-  // server's exact number.
-  const total = serverTotal ?? (filt === 'All'
+  // §7 pager: the filter's match total sizes the readout. All ALWAYS derives
+  // its total from the pill count minus live rows — executionsTotal is trued
+  // up by every /state refresh, while a fetch's serverTotal freezes at fetch
+  // time (pinning it would strand the last page's newest rows behind a
+  // disabled Next). Terminal filters have only their fetches to go by.
+  const total = filt === 'All'
     ? Math.max(0, executionsTotal - executing.length - queued.length)
-    : finished.length)
+    : (serverTotal ?? finished.length)
   // Clamp the page when the total shrinks beneath it (a retention sweep, a
   // filter's true count landing) — never an empty slice with rows in hand.
   const maxPage = Math.max(0, Math.ceil(total / PAGE) - 1)
@@ -266,7 +297,10 @@ export default function ExecutionsList() {
       ) : (
         <>
           {labelled && <span style={{ ...sectionLabel, marginTop: 22 }}>FINISHED</span>}
-          {finished.length === 0 ? (
+          {/* §7: no empty card while the segment's first fetch is on the
+            * wire — the card means the server answered empty. */}
+          {finished.length === 0 && !firstFetchDone ? null
+          : finished.length === 0 ? (
             <EmptyNotice
               title={filt !== 'All' ? `No ${filt.toLowerCase()} executions`
                 : labelled ? 'No finished executions yet' : 'No executions yet'}

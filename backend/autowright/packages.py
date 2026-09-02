@@ -246,6 +246,20 @@ def _pip_install(name: str, pin_installed: bool = False,
             # Windows); the layer falls back to the direct child itself.
             platform.current().processes.signal_group(proc, None)
 
+        def _drain() -> None:
+            # A helper that survived the group kill can hold the pipes open —
+            # a timeoutless drain here would wedge the process-wide _pip_lock
+            # and block every later ensure.
+            try:
+                proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                for pipe in (proc.stdout, proc.stderr):
+                    try:
+                        pipe.close()
+                    except (OSError, ValueError):
+                        pass
+
         deadline = time.monotonic() + INSTALL_TIMEOUT
         while True:
             try:
@@ -254,11 +268,11 @@ def _pip_install(name: str, pin_installed: bool = False,
             except subprocess.TimeoutExpired:
                 if should_stop and should_stop():
                     _kill()
-                    proc.communicate()
+                    _drain()
                     return "cancelled"
                 if time.monotonic() > deadline:
                     _kill()
-                    proc.communicate()
+                    _drain()
                     return f"pip timed out after {INSTALL_TIMEOUT} s"
         if proc.returncode == 0:
             return None

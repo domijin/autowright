@@ -315,7 +315,7 @@ function loadMain(): MainStub {
     loadFile() { this.record.loads += 1 } loadURL() { this.record.loads += 1 }
     on() {} show() { this.record.shows += 1 } focus() { this.record.focuses += 1 } hide() {}
     setSize() {} setPosition() {} isVisible() { return false }
-    setVisibleOnAllWorkspaces() {} destroy() {}
+    setVisibleOnAllWorkspaces() {} destroy() {} isDestroyed() { return false }
   }
 
   const electron = {

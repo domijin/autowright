@@ -239,6 +239,46 @@ def test_export_without_values(store):
     assert "param_values" not in yaml.safe_load(z.read("manifest.yaml"))
 
 
+def test_export_strips_values_embedded_in_definitions(store):
+    """§4.2/§5.1: a version written before the save-side strip can carry
+    resolved value keys inside its stored param definitions — they must never
+    leave the machine outside the include-values gate."""
+    a = _build(store)
+    ver = a["versions"][a["current_version"]]
+    assert ver["params"], "fixture must carry a param definition"
+    for p in ver["params"]:
+        p["value"] = "super-secret-value"
+    data = transfer.export_automation(store, a, include_values=False)
+    meta = yaml.safe_load(zipfile.ZipFile(io.BytesIO(data)).read("automation/automation.yaml"))
+    for p in meta["params"]:
+        assert not ({"value", "on", "lines", "rows"} & set(p))
+    assert b"super-secret-value" not in data
+
+
+def test_import_rejects_non_string_descriptions(store):
+    """§5.1: the whole archive validates up front — a non-string description
+    would otherwise TypeError out of the similarity tokenizer (a 500) exactly
+    on the normal no-exact-match path."""
+    data = transfer.export_automation(store, _build(store))
+
+    def bad_secrets(nm, b):
+        if nm != "secrets.yaml":
+            return None
+        y = yaml.safe_load(b)
+        y["secrets"][0]["description"] = 12345
+        return yaml.safe_dump(y).encode()
+
+    with pytest.raises(transfer.TransferError):
+        transfer.import_automation(store, _rezip(data, bad_secrets))
+
+    def bad_meta(meta):
+        meta["description"] = 12345
+        return meta
+
+    with pytest.raises(transfer.TransferError):
+        transfer.import_automation(store, _rezip_meta(data, bad_meta))
+
+
 def test_export_writes_run_if_missed_only_for_an_opted_out_cron(store):
     """§5.1/§4.3: the §6 wake catch-up opt-out travels as the cron entry's
     `run_if_missed: false` - written only when the stored cron opted out, so a

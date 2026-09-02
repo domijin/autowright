@@ -47,6 +47,28 @@ def trigger_label(kind: str | None) -> str:
     return TRIGGER_LABELS.get(kind or "", kind or "")
 
 
+def exec_started_ms(h: dict) -> int:
+    """§7 canonical sort key: the header's startedMs exactly as `exec_json`
+    serializes it — shared so the §19 window/keyset sorts can order headers
+    without materializing the full row JSON for every execution ever held."""
+    dt = lenient_local(h["started_at"]) if h.get("started_at") else None
+    return int(dt.timestamp() * 1000) if dt else 0
+
+
+# §4.2: the resolved-value keys `merged_params` adds for the API shape. They
+# must never persist inside versioned definitions (values live in the
+# top-level `automation.yaml` alone) and never travel in a §5.1 archive
+# outside the `param_values` gate.
+PARAM_VALUE_KEYS = ("on", "lines", "rows", "value")
+
+
+def strip_param_values(params: list | None) -> list[dict]:
+    """§4.2: definitions only — drop the resolved-value keys a draft seeded
+    from the merged API shape carries."""
+    return [{k: v for k, v in p.items() if k not in PARAM_VALUE_KEYS}
+            for p in params or [] if isinstance(p, dict)]
+
+
 def exec_version_label(h: dict) -> str:
     """§4.5 derived display label for the stored (kind, version) pair."""
     kind = h.get("kind")
@@ -752,7 +774,11 @@ class Store:
         save_yaml(vd / "automation.yaml", {
             "when": ver.get("when"),
             "note": ver.get("note"),
-            "params": ver.get("params", []),
+            # §4.2: definitions only — a draft seeded from the merged API
+            # shape carries resolved values, and persisting them here would
+            # leak them into every export (§5.1's gate covers param_values
+            # alone).
+            "params": strip_param_values(ver.get("params")),
             **({"packages": pkgs} if pkgs else {}),
             # §4.4 draft-only grant selections + trigger list + §11 dirty-gate
             # state — never present for real versions
@@ -1181,6 +1207,12 @@ class Store:
     def consume_trigger(self, a: dict, trigger_id: str) -> None:
         """§4.3 one-shot consumption: a fired or skipped `time` trigger leaves the list."""
         with self.lock:
+            if self.autos.get(a["id"]) is not a:
+                # The scheduler evaluates a snapshot taken outside the lock —
+                # a DELETE landing mid-tick removed the tree, and writing the
+                # consumed list would re-create automation.yaml as a ghost
+                # directory the UI can never see (same guard as _fire).
+                return
             a["triggers"] = [t for t in a["triggers"] if t["id"] != trigger_id]
             self._write_toplevel(a)
 
@@ -1351,6 +1383,9 @@ class Store:
             # §4.5 pgid: on-disk only — startup recovery kills the orphaned
             # step group a crashed backend left behind.
             "pgid": h.get("pgid"),
+            # §4.5 agentPgids: on-disk only — the in-flight §6.1 agent-call
+            # groups (own sessions, §7 kill semantics); written sparse.
+            **({"agent_pgids": h["agent_pgids"]} if h.get("agent_pgids") else {}),
         })
 
     def read_exec_yaml(self, execution_id: str) -> dict | None:
@@ -1371,6 +1406,8 @@ class Store:
             "error": y.get("error"), "redacted_secrets": y.get("redacted_secrets") or [],
             "params": y.get("params") or [], "steps": y.get("steps") or [],
             "pgid": y.get("pgid"),
+            # §4.5: absent in pre-existing records — loads as empty.
+            "agent_pgids": y.get("agent_pgids") or [],
         }
 
     def exec_full(self, execution_id: str) -> dict | None:
@@ -1540,9 +1577,20 @@ class Store:
                 except ValueError:
                     # One unparsable row must never abort the whole sweep.
                     log.warning("retention: unparsable started_at on %s — skipping it", h["id"])
-            for eid in doomed:
+        # Outside the selection hold: a first sweep after a retention change
+        # can carry a huge backlog, and rmtree-ing it all under one lock hold
+        # stalls every firing and live log append for the whole batch. Each
+        # delete re-checks under its own short hold — the record may have been
+        # retried into a live state since selection.
+        removed = 0
+        for eid in doomed:
+            with self.lock:
+                h = self.execs.get(eid)
+                if h is None or h["status"] in ("executing", "queued"):
+                    continue
                 self.delete_execution(eid)  # maintains each automation's `_latest`
-            return len(doomed)
+                removed += 1
+        return removed
 
     # ---------- agents / secrets / settings ----------
     def require_writable(self, path: Path) -> None:
@@ -2098,7 +2146,7 @@ class Store:
             "triggers": [self.trigger_json(t) for t in a["triggers"]],
             "triggerChip": triggerlib.trigger_chip(a["triggers"]),
             "allTriggersOff": bool(a["triggers"]) and all(not t["enabled"] for t in a["triggers"]),
-            "nextAt": int(nxt.timestamp() * 1000) if nxt else None,
+            "nextAtMs": int(nxt.timestamp() * 1000) if nxt else None,
             "instructions": cur.get("instructions") or "",
             "notes": cur.get("notes") or "",
             "lastStatus": a.get("_last_status", "none"),
@@ -2167,7 +2215,8 @@ class Store:
             "started": timefmt.started_label(dt) if dt else "",
             "startedMs": int(dt.timestamp() * 1000) if dt else 0,
             "endedMs": int(fin.timestamp() * 1000) if fin else 0,
-            # §4.5: how long this firing waited in the §6 queue, if it waited at all
+            # §4.5 queuedMs: epoch ms of queuedAt — when this firing entered
+            # the §6 queue (0 when it never waited)
             "queuedMs": int(qdt.timestamp() * 1000) if qdt else 0,
             "note": h["note"],
             "error": h.get("error"),

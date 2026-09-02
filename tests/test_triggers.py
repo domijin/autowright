@@ -241,7 +241,7 @@ def test_discord_trigger_normalize_and_display():
     assert trigger_display({"kind": "discord"}) == ("Discord · missing", "Discord")
     assert trigger_display({"kind": "imessage", "from": ""}) == ("iMessage · missing", "iMessage")
     assert trigger_display({"kind": "imessage"}) == ("iMessage · missing", "iMessage")
-    # no computable next occurrence (§4.3) — nextAt ignores discord
+    # no computable next occurrence (§4.3) — nextAtMs ignores discord
     assert trigger_next(plain[0]) is None
     assert next_at([{**plain[0], "enabled": True}]) is None
 

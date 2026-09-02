@@ -104,8 +104,11 @@ class Scheduler:
         self._warned_rewind &= live_keys
         # Both hourly sweeps advance their timestamp first (a failing sweep
         # retries next hour, never hot-loops) and are guarded so neither can
-        # abort the tick or the other sweep.
-        if (now - self._last_retention).total_seconds() > 3600:
+        # abort the tick or the other sweep. The wall clock is not monotonic
+        # (DST fall-back, NTP steps): a negative delta counts as due — a
+        # rewound clock must never stall a sweep for up to an hour.
+        retention_wait = (now - self._last_retention).total_seconds()
+        if retention_wait > 3600 or retention_wait < 0:
             self._last_retention = now
             try:
                 removed = self.store.retention_cleanup()
@@ -113,7 +116,8 @@ class Scheduler:
                     hub.publish("automation.changed")
             except Exception:  # noqa: BLE001
                 log.exception("retention sweep failed")
-        if (now - self._last_overdue).total_seconds() > 3600:
+        overdue_wait = (now - self._last_overdue).total_seconds()
+        if overdue_wait > 3600 or overdue_wait < 0:
             self._last_overdue = now
             try:
                 self._overdue_sweep(autos, now)
@@ -192,7 +196,11 @@ class Scheduler:
                 self.store.consume_trigger(a, t["id"])
                 self._publish_changed(a)
         if due:
-            # §6: same-moment (and same-wake) occurrences coalesce into one execution.
+            # §6: same-moment (and same-wake) occurrences coalesce into one
+            # execution — "at most one catch-up execution fires per wake
+            # regardless of how many occurrences — across all triggers — were
+            # slept through"; the fired execution covers the rest, a coalesced
+            # one-shot included.
             due.sort(key=lambda p: p[0])
             self._fire(a, due[0][1])
             consumed = False
@@ -270,7 +278,13 @@ class Scheduler:
                     self._overdue_notified.add(aid)
                     # §6: attention-class — posts under both §4.9 notifications
                     # values, exactly like a failed execution's end notification.
-                    notify.post(a["name"], "Scheduled executions are being missed.")
+                    # On its own thread: the osascript post can block up to
+                    # 10 s, and several automations going overdue in one sweep
+                    # would stall the scheduler tick for the sum of them.
+                    threading.Thread(
+                        target=notify.post,
+                        args=(a["name"], "Scheduled executions are being missed."),
+                        daemon=True).start()
                     self._publish_changed(a)
             else:
                 self._overdue_streak.pop(aid, None)

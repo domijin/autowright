@@ -1150,9 +1150,9 @@ def test_app_started_fires_enabled_app_start_triggers(client, monkeypatch):
     execs = client.get("/executions").json()["executions"]
     assert [e["trigger"] for e in execs if e["automationId"] == a["id"]] == ["App start"]
     assert [e for e in execs if e["automationId"] == b["id"]] == []
-    # §4.3 derived display: app_start contributes no nextAt
+    # §4.3 derived display: app_start contributes no nextAtMs
     j = client.get(f"/automations/{a['id']}").json()
-    assert j["nextAt"] is None
+    assert j["nextAtMs"] is None
     assert j["triggers"][0]["label"] == "On app start"
     assert j["triggerChip"] == "App start"
 
@@ -1170,7 +1170,7 @@ def test_patch_automation_discord_trigger(client):
     t = j["triggers"][0]
     assert (t["label"], t["short"]) == ("Discord · 123 · “go”", "Discord")
     assert t["connection"] == {"state": "connecting"}  # §4.3: derived, no listener state yet
-    assert j["nextAt"] is None  # no computable next occurrence
+    assert j["nextAtMs"] is None  # no computable next occurrence
     assert j["triggerChip"] == "Discord"
 
 
@@ -1185,7 +1185,7 @@ def test_patch_automation_imessage_trigger(client):
     t = j["triggers"][0]
     assert (t["label"], t["short"]) == ("iMessage · +15551234567 · “go”", "iMessage")
     assert t["connection"] == {"state": "connecting"}  # §4.3: shared watcher state, derived
-    assert j["nextAt"] is None  # no computable next occurrence
+    assert j["nextAtMs"] is None  # no computable next occurrence
     assert j["triggerChip"] == "iMessage"
     # §4.3: `from` must be nonempty without whitespace
     r = client.patch(f"/automations/{a['id']}", json={"triggers": [
@@ -2216,6 +2216,40 @@ def test_repair_stale_executing_flips_to_interrupted(client):
     assert [at["status"] for s in full["steps"] for at in s["attempts"]] == ["interrupted"]
     assert store.read_exec_yaml(h["id"])["status"] == "interrupted"   # persisted
     assert a["_live"] == set() and a["_last_status"] == "interrupted"
+
+
+def test_repair_readopts_yaml_truth_over_stale_index_row(client):
+    """§3/§5: the yaml is authoritative — a crash between an execution's final
+    yaml write and its sqlite commit leaves the index row one transition
+    behind. The repair must re-adopt the yaml's terminal status, never rewrite
+    a completed execution as interrupted (or a promoted one as skipped)."""
+    from autowright import api
+    from autowright import timefmt
+    from autowright.storage import store
+
+    a = store.create_automation(make_version(), "StaleIndex", "mock")
+    steps = [{"name": "Say hello", "file": "01-say.py", "status": "succeeded",
+              "attempts": [{"number": 1, "status": "succeeded",
+                            "started_at": None, "duration_ms": 5}]}]
+    h = store.create_execution(a, "version", 1, "manual", steps)  # executing
+    # Finish ON DISK only, and slim the in-memory record to the header shape a
+    # restarted backend seeds from executions.db — an index row one transition
+    # behind the yaml, exactly the crash-window shape.
+    full = {**store.exec_full(h["id"])}
+    full["status"] = "succeeded"
+    full["finished_at"] = timefmt.now_iso()
+    full["duration_ms"] = 5
+    store.write_exec_yaml(full)
+    store.execs[h["id"]] = {k: v for k, v in h.items()
+                            if k not in ("steps", "redacted_secrets", "params")}
+    assert store.execs[h["id"]]["status"] == "executing"
+    assert "steps" not in store.execs[h["id"]]
+
+    api._repair_stale_executing()
+
+    assert store.execs[h["id"]]["status"] == "succeeded"
+    assert store.read_exec_yaml(h["id"])["status"] == "succeeded"
+    assert store.exec_full(h["id"])["duration_ms"] == 5
 
 
 def test_repair_kills_orphaned_step_group(client, monkeypatch):
@@ -3336,18 +3370,18 @@ def test_triggers_preview_happy_and_invalid_entries(client):
     cron = ts[0]
     assert cron["valid"] is True and "error" not in cron
     assert (cron["label"], cron["short"]) == ("Daily at 9:00", "Daily 9:00")
-    assert isinstance(cron["nextAt"], int) and cron["nextAt"] > 0
+    assert isinstance(cron["nextAtMs"], int) and cron["nextAtMs"] > 0
     assert cron["nextLabel"]
 
     start = ts[1]
     assert start["valid"] is True
     assert (start["label"], start["short"]) == ("On app start", "App start")
-    assert start["nextAt"] is None and "nextLabel" not in start  # no computable next
+    assert start["nextAtMs"] is None and "nextLabel" not in start  # no computable next
 
     bad = ts[2]
     assert bad["valid"] is False
     assert "cron" in bad["error"]
-    assert bad["nextAt"] is None
+    assert bad["nextAtMs"] is None
 
     once = ts[3]
     assert once["valid"] is True
@@ -3356,7 +3390,7 @@ def test_triggers_preview_happy_and_invalid_entries(client):
 
     disc = ts[4]
     assert disc["valid"] is True and disc["short"] == "Discord"
-    assert disc["nextAt"] is None  # message triggers have no computable next
+    assert disc["nextAtMs"] is None  # message triggers have no computable next
 
     reserved = ts[5]
     assert reserved["valid"] is False and "coming soon" in reserved["error"]
@@ -3379,7 +3413,7 @@ def test_triggers_preview_shape_and_list_rules(client):
         {"kind": "time", "at": "2020-01-01T00:00"},
         {"kind": "app_start"}, {"kind": "app_start"},
     ]}).json()["triggers"]
-    assert r[0]["valid"] is True and r[0]["nextAt"] is None and "nextLabel" not in r[0]
+    assert r[0]["valid"] is True and r[0]["nextAtMs"] is None and "nextLabel" not in r[0]
     assert r[1]["valid"] is False and "future" in r[1]["error"]
     # §4.3: at most one app_start per list — the second reports per-entry
     assert r[2]["valid"] is True
@@ -3560,7 +3594,10 @@ def test_executions_keyset_cursor_pages_without_gaps(client):
     assert [e["id"] for e in page1["executions"] + page2["executions"]] == \
         [e["id"] for e in everything]
 
-    for half in ({"beforeStartedMs": last["startedMs"]}, {"beforeId": last["id"]}):
+    for half in ({"beforeStartedMs": last["startedMs"]}, {"beforeId": last["id"]},
+                 # an empty beforeId would degrade the keyset to a bare
+                 # timestamp filter (every id compares > "") and re-emit ties
+                 {"beforeStartedMs": last["startedMs"], "beforeId": ""}):
         assert client.get("/executions", params=half).status_code == 422
 
 

@@ -16,24 +16,24 @@ import { api } from '../src/api'
 import { nextTriggerShort, useTriggerPreview } from '../src/triggers'
 
 const pv = (over: Partial<TriggerPreview> = {}): TriggerPreview =>
-  ({ valid: true, label: 'L', short: 'S', nextAt: 1000, ...over })
+  ({ valid: true, label: 'L', short: 'S', nextAtMs: 1000, ...over })
 
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 describe('nextTriggerShort', () => {
-  it('picks the soonest nextAt among enabled valid entries; enabled defaults to true', () => {
+  it('picks the soonest nextAtMs among enabled valid entries; enabled defaults to true', () => {
     const triggers = [{}, { enabled: true }, { enabled: false }]
     const previews = [
-      pv({ nextAt: 500, short: 'A' }),
-      pv({ nextAt: 100, short: 'B' }),
-      pv({ nextAt: 1, short: 'C' }),   // disabled — never wins
+      pv({ nextAtMs: 500, short: 'A' }),
+      pv({ nextAtMs: 100, short: 'B' }),
+      pv({ nextAtMs: 1, short: 'C' }),   // disabled — never wins
     ]
     expect(nextTriggerShort(triggers, previews)).toBe('B')
   })
-  it('skips invalid entries, null nextAt, and entries with no preview yet', () => {
+  it('skips invalid entries, null nextAtMs, and entries with no preview yet', () => {
     expect(nextTriggerShort(
       [{}, {}, {}],
-      [pv({ valid: false, nextAt: 1, short: 'bad' }), pv({ nextAt: null, short: 'none' }), pv({ nextAt: 9, short: 'ok' })],
+      [pv({ valid: false, nextAtMs: 1, short: 'bad' }), pv({ nextAtMs: null, short: 'none' }), pv({ nextAtMs: 9, short: 'ok' })],
     )).toBe('ok')
     // previews shorter than triggers: the uncovered entry is skipped, not crashed on
     expect(nextTriggerShort([{}, {}], [pv({ short: 'only' })])).toBe('only')
@@ -41,7 +41,7 @@ describe('nextTriggerShort', () => {
   it('null when nothing has an upcoming occurrence', () => {
     expect(nextTriggerShort([], [])).toBeNull()
     expect(nextTriggerShort([{ enabled: false }], [pv()])).toBeNull()
-    expect(nextTriggerShort([{}], [pv({ nextAt: null })])).toBeNull()
+    expect(nextTriggerShort([{}], [pv({ nextAtMs: null })])).toBeNull()
   })
 })
 

@@ -36,7 +36,7 @@ interface Model {
   connected: boolean | null
   version: string
   automations: Automation[]
-  // §7/§19 window: live headers + the 200 newest finished, kept current by
+  // §7/§19 window: live headers + the 50 newest finished, kept current by
   // the execution events — the Executions page fetches deeper pages itself.
   executions: Execution[]
   // §19 executionsTotal — the §9 Executions pill; every header the backend

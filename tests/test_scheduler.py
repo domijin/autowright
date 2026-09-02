@@ -702,7 +702,12 @@ def test_fire_trigger_version_gone_reports_not_started(store):
     before = len(store.execs)
     t = {"id": "t1", "kind": "cron", "enabled": True, "expression": "0 8 * * *"}
     assert fire_trigger(store, engine, a, t) is False
-    assert len(store.execs) == before  # nothing started, nothing recorded
+    # §7: nothing started, but the occurrence leaves its skipped record — a
+    # silent swallow would fire and vanish every occurrence forever.
+    assert len(store.execs) == before + 1
+    (h,) = [x for x in store.execs.values()]
+    assert h["status"] == "skipped"
+    assert h["note"] == f"version v{a['current_version']} no longer exists"
     assert a["_live"] == set()
 
 

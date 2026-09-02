@@ -762,12 +762,12 @@ describe('docLineCount / docModalFrame — the §11 document-editor toolbar coun
     expect(docLineCount('a\nb\nc')).toBe(3)
   })
 
-  it('sizes the card from the opened text: 44 + 36 + 34 + (lines + 6) * 21.25, floored and capped', () => {
+  it('sizes the card from the opened text: 44 + 36 + 34 + (lines + 6) * 19.8, floored and capped', () => {
     // an empty document still gets one line of room
-    expect(docModalFrame('')).toBe('clamp(440px, 263px, 82vh)')
-    expect(docModalFrame('a\nb\nc')).toBe('clamp(440px, 306px, 82vh)')
+    expect(docModalFrame('')).toBe('clamp(440px, 253px, 82vh)')
+    expect(docModalFrame('a\nb\nc')).toBe('clamp(440px, 293px, 82vh)')
     // a long document runs past the floor — 82vh is the only thing holding it
     const long = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n')
-    expect(docModalFrame(long)).toBe('clamp(440px, 4492px, 82vh)')
+    expect(docModalFrame(long)).toBe('clamp(440px, 4193px, 82vh)')
   })
 })

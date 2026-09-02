@@ -123,7 +123,7 @@ applies unchanged; the chat pane never collapses.
     carrying no stage at all (belt-and-braces — the backend always sets one) settles as
     one entry with the job's live stage label and the whole feed. **Per-step durations:**
     every feed bullet closes with its duration — a right-aligned quiet mono stamp in the
-    §7 execution-step style (10.5 px), formatted like the §7 duration labels ("0.4s" /
+    §14 row-level mono size (11.5 px), formatted like the §7 duration labels ("0.4s" /
     "1.4s" / "2m 13s") — while the header row stays a pure label, never stamped. The
     values are the §4.4 `eventDurationsMs` array the editor derives from the §8
     stage-timing stamps at the moment the stage settles: the frozen forms of the ticking
@@ -214,7 +214,7 @@ applies unchanged; the chat pane never collapses.
     bullets and supporting prose (the
     dismissed-blockers summary, "Previously resolved")
     is 11.5 px / 1.5–1.6, `--text-muted` or `--text-faint` by weight of the information;
-    activity/progress feed lines are all 11 px — history lines `--text-faint`, the live
+    activity/progress feed lines are all 11.5 px — history lines `--text-faint`, the live
     detail line `--text-muted` (color, not size, marks the working line).
   No entry hand-picks sizes outside these roles — a new entry kind joins one of the
   three.
@@ -797,7 +797,7 @@ without an action, open or collapsed — is exactly the framework card's header 
 left-column cards render through **one shared card template** (header row, collapsed hint,
 body top-hairline), so the treatment cannot drift per card; the collapsed hints and the
 in-card empty states share one text style (11.5px/1.5 faint sans) **and one left edge**
-(the 43 px eyebrow indent), so an empty card's text stays put when the card opens — a
+(the card's 18 px inset plus the caret column, flush with the eyebrow's first character), so an empty card's text stays put when the card opens — a
 card's description never changes size or position between its collapsed and open states.
 The collapsed line is **status-aware**: a card holding content shows a one-line preview of
 that content (single line, ellipsized — notes and build instructions show their first
@@ -931,7 +931,7 @@ editors enter with
   §9.2 step-script modal's code pane on its own: a §14 `Modal` card `min(860px, 92vw)` wide,
   `overflow: hidden`, no header row and nothing that scrolls the card as a whole, on the
   `--bg-code` ground. Its height is fixed for the life of the open modal — `clamp(440px,
-  <toolbar + footer + the opened text's lines at the editor's 12.5px/1.7 mono rhythm + its
+  <toolbar + footer + the opened text's lines at the editor's 12px/1.65 mono rhythm + its
   padding + six spare lines>, 82vh)` — so a short document gets a card that fits it with room
   to write and a long one caps at the viewport; text that outgrows the frame scrolls inside
   the editor and never resizes the card. A fixed 44 px **toolbar** (hairline bottom border)
@@ -944,7 +944,7 @@ editors enter with
   disabled while the text equals what the modal opened with). There is no ✕ — Cancel is the
   close. Below the toolbar the **editor** is one textarea filling the pane at full height:
   transparent on the pane's ground, borderless, no focus ring (the card is the focus),
-  12.5px/1.7 mono `--text-2`, soft-wrapping, padded 14 px top, 20 px left and bottom, and a
+  12px/1.65 mono `--text-2` (the step-script modal's rhythm), soft-wrapping, padded 14 px top, 18 px left and bottom, and a
   28 px right inset so no line runs under the thumb; it is its own §14 overlay-scrollbar pane
   with the thumb inset to `right: 6px` like the step-script modal (same 12 px corner
   reason). It is focused on open with the caret at the end of the text. Placeholders: spec
@@ -1278,7 +1278,7 @@ editors enter with
   call on demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
   test zone owns every test control — the test button never sits in the header: the test
   button with its hint / outcome / progress and their action rows, laid out per state
-  below. Both zones share the card's 20 px side padding. **A job in flight is never a
+  below. Both zones sit on the card's single 18 px horizontal inset (§14). **A job in flight is never a
   panel state** — neither a chat job nor a sync: the panel has no drafting state and no
   syncing state. During a chat job it keeps its current state with its controls disabled
   per the inputs lock; **while a sync runs or is armed** (a §8 `sync` job in flight

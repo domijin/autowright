@@ -8,7 +8,7 @@
 // unchanged and raise the discard confirm otherwise (the Modal's guardClose);
 // every path plays the §14 exit before the caller's state changes.
 import React, { useEffect, useRef, useState } from 'react'
-import { ConfirmModal, Modal, useOverlayThumb } from '../../ui'
+import { ConfirmModal, Eyebrow, Modal, useOverlayThumb } from '../../ui'
 
 export type DocKind = 'spec' | 'notes' | 'instructions'
 
@@ -40,7 +40,7 @@ export const DOC_META: Record<DocKind, {
 
 const TOOLBAR = 44
 const FOOTER = 36
-const LINE = 12.5 * 1.7
+const LINE = 12 * 1.65
 const PAD_Y = 14 + 20
 
 /** "<n> lines" for the editor's current text: a trailing final newline is not
@@ -56,8 +56,6 @@ export function docModalFrame(text: string): string {
   const lines = Math.max(1, docLineCount(text))
   return `clamp(440px, ${Math.ceil(TOOLBAR + FOOTER + PAD_Y + (lines + 6) * LINE)}px, 82vh)`
 }
-
-const EYEBROW: React.CSSProperties = { font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)', flex: 'none' }
 
 export function DocEditorModal({ kind, text, original, onChange, onSave, onDiscard, extra }: {
   kind: DocKind
@@ -116,7 +114,7 @@ export function DocEditorModal({ kind, text, original, onChange, onSave, onDisca
     <Modal
       onClose={() => (pending.current === 'save' ? onSave() : onDiscard())}
       width={860} ariaLabel={`Edit ${meta.file}`} guardClose={guardClose}
-      cardStyle={{ width: 'min(860px, 92vw)', overflow: 'hidden' }}
+      cardStyle={{ padding: 0, width: 'min(860px, 92vw)', overflow: 'hidden' }}
     >
       {(close) => {
         closeRef.current = close
@@ -126,9 +124,9 @@ export function DocEditorModal({ kind, text, original, onChange, onSave, onDisca
           }}>
             <div style={{
               height: TOOLBAR, flex: 'none', display: 'flex', alignItems: 'center', gap: 12,
-              padding: '0 14px 0 18px', borderBottom: '1px solid var(--hairline-dim)',
+              padding: '0 14px 0 18px', borderBottom: '1px solid var(--hairline)',
             }}>
-              <span style={EYEBROW}>{meta.eyebrow}</span>
+              <Eyebrow style={{ flex: 'none' }}>{meta.eyebrow}</Eyebrow>
               <span style={{
                 font: "400 11px var(--mono)", color: 'var(--text-deco)', flex: 1, minWidth: 0,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -160,7 +158,7 @@ export function DocEditorModal({ kind, text, original, onChange, onSave, onDisca
                 className="ad-scrollhide"
                 style={{
                   flex: 1, minHeight: 0, width: '100%', background: 'transparent', border: 'none', outline: 'none',
-                  color: 'var(--text-2)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 28px 20px 20px',
+                  color: 'var(--text-2)', font: "400 12px/1.65 var(--mono)", padding: '14px 28px 20px 20px',
                   resize: 'none', display: 'block', overflowY: 'auto', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
                 }}
               />
@@ -168,7 +166,7 @@ export function DocEditorModal({ kind, text, original, onChange, onSave, onDisca
             </div>
             <div style={{
               height: FOOTER, flex: 'none', display: 'flex', alignItems: 'center', padding: '0 20px',
-              borderTop: '1px solid var(--hairline-dim)', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)',
+              borderTop: '1px solid var(--hairline)', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)',
             }}>
               {meta.footer}
             </div>

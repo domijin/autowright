@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
 import type { Automation, ImportPreview, ImportSummary } from '../types'
-import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MiniBadge, Modal, P, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
+import { Badge, BtnGhost, BtnPrimary, ConfirmModal, EmptyState, Eyebrow, HeaderActions, MetaChip, MiniBadge, Modal, P, PageTitle, PULSE, resultChipColors, executingToast } from '../ui'
 import { usePlatformCopy } from '../platformCopy'
 import { useTriggerPreview } from '../triggers'
 
@@ -35,7 +35,7 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
     </div>
   )
   return (
-    <Modal onClose={onClose} width={460} cardStyle={{ padding: '22px 24px' }}>
+    <Modal onClose={onClose} width={460}>
       {(close) => (
         <>
           <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text)' }}>
@@ -97,11 +97,11 @@ function ImportSummaryModal({ name, automationId, summary, onClose }: {
             </>
           ))}
           {summary.packages.length > 0 && (
-            <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)', margin: '16px 0 0' }}>
+            <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)', margin: '16px 0 0' }}>
               {summary.packages.length} package{summary.packages.length === 1 ? ' is' : 's are'} installing in the background.
             </p>
           )}
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
             <BtnGhost onClick={close}>Close</BtnGhost>
             <BtnPrimary onClick={() => { close(); go('automation', { automationId }) }}>
               Open automation
@@ -155,7 +155,7 @@ function ImportModal({ onDone, onClose }: {
   }
 
   const errLine = (msg: string) => (
-    <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--red-text)', margin: '8px 0 0' }}>
+    <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--red-text)', margin: '8px 0 0' }}>
       {msg}
     </p>
   )
@@ -167,13 +167,13 @@ function ImportModal({ onDone, onClose }: {
   )
   const section = (title: string, body: React.ReactNode) => (
     <div style={{ marginTop: 16 }}>
-      <Eyebrow style={{ margin: '0 0 7px' }}>{title}</Eyebrow>
+      <Eyebrow style={{ margin: '0 0 8px' }}>{title}</Eyebrow>
       {body}
     </div>
   )
 
   return (
-    <Modal onClose={onClose} width={460} cardStyle={{ padding: '22px 24px' }}>
+    <Modal onClose={onClose} width={460}>
       {(close) => {
         const confirm = async () => {
           if (!pv || busy) return
@@ -213,11 +213,7 @@ function ImportModal({ onDone, onClose }: {
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '18px 0' }}>
               <div style={{ flex: 1, height: 1, background: 'var(--hairline)' }} />
-              <span style={{
-                font: `600 10.5px var(--mono)`, letterSpacing: '.08em', color: 'var(--text-faint)',
-              }}>
-                OR
-              </span>
+              <Eyebrow>OR</Eyebrow>
               <div style={{ flex: 1, height: 1, background: 'var(--hairline)' }} />
             </div>
             <button
@@ -225,7 +221,7 @@ function ImportModal({ onDone, onClose }: {
               onClick={() => { void chooseFile() }}
               disabled={!!busy}
               style={{
-                alignSelf: 'stretch', width: '100%', padding: '12px 15px', cursor: 'pointer',
+                alignSelf: 'stretch', width: '100%',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9,
               }}
             >
@@ -233,7 +229,7 @@ function ImportModal({ onDone, onClose }: {
               {busy === 'file' ? 'Reading…' : `Choose an .autowright file on this ${copy.machine}…`}
             </button>
             {error?.src === 'file' && errLine(error.msg)}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
               <BtnGhost onClick={close} disabled={!!busy}>Cancel</BtnGhost>
               <BtnPrimary onClick={() => { void fetchUrl() }} disabled={!url.trim() || !!busy}>
                 {busy === 'url' ? 'Fetching…' : 'Import'}
@@ -252,7 +248,7 @@ function ImportModal({ onDone, onClose }: {
             )}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-inset)',
-              border: '1px solid var(--hairline)', borderRadius: 7, padding: '8px 11px',
+              border: '1px solid var(--hairline)', borderRadius: 8, padding: '8px 11px',
               marginTop: 12,
             }}>
               <i
@@ -275,25 +271,19 @@ function ImportModal({ onDone, onClose }: {
             {pv.preview.triggers.length > 0 && section('TRIGGERS', (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {pv.preview.triggers.map((_, i) => trigPreviews[i] && (
-                  <span key={i} style={{
-                    fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
-                    color: 'var(--text-muted)', background: 'var(--hairline-dim)',
-                    borderRadius: 6, padding: '3px 8px',
-                  }}>
-                    {trigPreviews[i].label}
-                  </span>
+                  <MetaChip key={i}>{trigPreviews[i].label}</MetaChip>
                 ))}
               </div>
             ))}
             {pv.preview.steps.length > 0 && section('STEPS', pv.preview.steps.map((s, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '3px 0' }}>
                 <span style={{
-                  font: `600 10.5px var(--mono)`, color: 'var(--text-faint)',
+                  font: `500 11px var(--mono)`, color: 'var(--text-faint)',
                   width: 14, textAlign: 'right', flexShrink: 0,
                 }}>
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)' }}>{s.name}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.name}</span>
                 {s.agent && <MiniBadge c="var(--accent)" bg="var(--accent-bg)">AGENT</MiniBadge>}
               </div>
             )))}
@@ -317,17 +307,17 @@ function ImportModal({ onDone, onClose }: {
             <div style={{ borderTop: '1px solid var(--hairline)', marginTop: 18, paddingTop: 12 }}>
               {pv.preview.osMismatch && (
                 // §5.1/§9.1: the archive was exported on another platform.
-                <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--amber)', margin: '0 0 4px' }}>
+                <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--amber)', margin: '0 0 4px' }}>
                   Built on {osName(pv.preview.os)} — its steps may need rewriting before they run on this {copy.machine}.
                 </p>
               )}
               {[...pv.preview.secrets, ...pv.preview.agents].some((x) => x.matchedTo === null) && (
-                <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--amber)', margin: '0 0 4px' }}>
+                <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--amber)', margin: '0 0 4px' }}>
                   Some agents or secrets have no match on this {copy.machine} - the automation arrives needing attention.
                 </p>
               )}
               {pv.preview.packages.length > 0 && (
-                <p style={{ fontSize: 12, lineHeight: 1.5, color: 'var(--text-muted)', margin: '0 0 4px' }}>
+                <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)', margin: '0 0 4px' }}>
                   {pv.preview.packages.length} package{pv.preview.packages.length === 1 ? ' installs' : 's install'} with the import.
                 </p>
               )}
@@ -336,7 +326,7 @@ function ImportModal({ onDone, onClose }: {
               </p>
             </div>
             {error && errLine(error.msg)}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 22 }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
               <BtnGhost onClick={() => { setPv(null); setError(null) }} disabled={!!busy}>Back</BtnGhost>
               <BtnPrimary onClick={() => { void confirm() }} disabled={!!busy}>
                 {busy ? 'Importing…' : 'Import'}
@@ -390,7 +380,7 @@ function AutoCard({ a }: { a: Automation }) {
         go('automation', { automationId: a.id })
       }}
       style={{
-        borderRadius: 12, padding: '18px 20px',
+        padding: 18,
         display: 'flex', flexDirection: 'column', gap: 10,
       }}
     >
@@ -420,13 +410,9 @@ function AutoCard({ a }: { a: Automation }) {
       </div>
       <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-muted)', minHeight: 39 }}>{a.description}</p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-        <span style={{
-          fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
-          color: (a.allTriggersOff || a.triggers.length === 0) ? 'var(--text-faint)' : 'var(--text-muted)',
-          background: 'var(--hairline-dim)', borderRadius: 6, padding: '3px 8px',
-        }}>
+        <MetaChip c={(a.allTriggersOff || a.triggers.length === 0) ? 'var(--text-faint)' : undefined}>
           {a.triggerChip}
-        </span>
+        </MetaChip>
         {a.allTriggersOff && (
           <MiniBadge c="var(--gray)" bg="var(--gray-bg)">OFF</MiniBadge>
         )}
@@ -439,27 +425,16 @@ function AutoCard({ a }: { a: Automation }) {
         {a.problems.length > 0 && (
           // §9.1/§4.1: amber Needs fixing chip — tooltip lists every problem
           // label; the full detail lives in the §9.2 banner.
-          <span
-            title={a.problems.map((p) => p.label).join('\n')}
-            style={{
-              fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 11.5, letterSpacing: '.03em',
-              color: resultChipColors('attention').c,
-              background: resultChipColors('attention').bg,
-              borderRadius: 6, padding: '3px 10px',
-            }}
-          >
-            Needs fixing
+          <span title={a.problems.map((p) => p.label).join('\n')} style={{ display: 'inline-flex' }}>
+            <MetaChip c={resultChipColors('attention').c} bg={resultChipColors('attention').bg}>
+              Needs fixing
+            </MetaChip>
           </span>
         )}
         {a.resultChip && (
-          <span style={{
-            fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 11.5, letterSpacing: '.03em',
-            color: resultChipColors(a.resultStatus).c,
-            background: resultChipColors(a.resultStatus).bg,
-            borderRadius: 6, padding: '3px 10px',
-          }}>
+          <MetaChip c={resultChipColors(a.resultStatus).c} bg={resultChipColors(a.resultStatus).bg}>
             {a.resultChip}
-          </span>
+          </MetaChip>
         )}
       </div>
       {draftJob && (
@@ -504,7 +479,7 @@ export default function AutomationsList() {
   }
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '26px 30px 70px' }}>
       <PageTitle
         right={(
           <HeaderActions>

@@ -58,12 +58,12 @@ function RequestsPane() {
         {(names ?? []).map((n) => (
           <button
             key={n}
-            className="ad-nav-row"
+            className="ad-btn-bare ad-hover-row"
             onClick={() => setSel(n)}
             title={n}
             style={{
-              display: 'block', width: '100%', textAlign: 'left', padding: '2px 12px',
-              fontFamily: 'var(--mono)', fontSize: 11, whiteSpace: 'nowrap',
+              padding: '2px 12px',
+              fontFamily: 'var(--mono)', fontSize: 11.5, whiteSpace: 'nowrap',
               overflow: 'hidden', textOverflow: 'ellipsis',
               color: n === sel ? 'var(--text)' : 'var(--text-muted)',
               ...(n === sel ? { background: 'var(--bg-active)' } : null),
@@ -73,7 +73,7 @@ function RequestsPane() {
           </button>
         ))}
         {names && names.length === 0 && (
-          <div style={{ padding: '4px 12px', fontSize: 11.5, color: 'var(--text-faint)' }}>
+          <div style={{ padding: '4px 12px', fontSize: 12.5, color: 'var(--text-muted)' }}>
             No request logs yet — make a request with Developer mode on
           </div>
         )}
@@ -158,26 +158,21 @@ export default function DevLogOverlay() {
         {[REQUESTS, ...(tails ?? []).map((t) => t.name)].map((name) => (
           <button
             key={name}
-            className="ad-nav-row"
+            className="ad-btn-tab"
+            aria-pressed={name === active}
             onClick={() => { setTab(name); followRef.current = true }}
-            style={{
-              padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontFamily: 'var(--mono)',
-              color: name === active ? 'var(--text)' : 'var(--text-muted)',
-              ...(name === active ? { background: 'var(--bg-active)' } : null),
-            }}
           >
             {name}
           </button>
         ))}
         <div style={{ flex: 1 }} />
         <button
-          className="ad-nav-row"
+          className="ad-btn-icon"
           onClick={() => setOpen(false)}
           title="Close"
           aria-label="Close log overlay"
-          style={{ width: 22, height: 22, borderRadius: 6, color: 'var(--text-faint)' }}
         >
-          <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
+          <i className="fa-solid fa-xmark" />
         </button>
       </div>
       {active === REQUESTS ? <RequestsPane /> : (

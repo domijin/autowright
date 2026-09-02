@@ -13,7 +13,7 @@ export function RecentExecutions({ execs }: { execs: Execution[] }) {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
         <Eyebrow>RECENT EXECUTIONS</Eyebrow>
         <button className="ad-btn-text" onClick={() => go('executions')}>
-          All executions <i className="fa-solid fa-chevron-right" style={{ fontSize: 9 }} />
+          All executions <i className="fa-solid fa-chevron-right" style={{ fontSize: 10 }} />
         </button>
       </div>
       <div className="ad-card" style={{ overflow: 'hidden' }}>
@@ -23,17 +23,14 @@ export function RecentExecutions({ execs }: { execs: Execution[] }) {
             key={e.id}
             onClick={() => go('execution', { executionId: e.id })}
             style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '11px 18px',
+              display: 'flex', alignItems: 'center', gap: 14, padding: '9px 18px',
               borderBottom: i === execs.length - 1 ? 'none' : '1px solid var(--hairline-dim)',
               cursor: 'pointer',
             }}
           >
             <Badge
               status={e.status}
-              style={{
-                width: 88, display: 'inline-flex', justifyContent: 'center', flex: 'none',
-                animation: badgeAnim(e.status),
-              }}
+              style={{ flex: 'none', animation: badgeAnim(e.status) }}
             />
             <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)', flex: 'none' }}>{e.id.slice(0, 8)}</span>
             <span style={{ fontSize: 12.5, color: 'var(--text-muted)', flex: 'none' }}>

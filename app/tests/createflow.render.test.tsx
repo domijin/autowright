@@ -99,12 +99,8 @@ const draftBody = (call: number) =>
 // The ui.tsx Collapse always keeps its children mounted (happy-dom renders
 // them), so "collapsed" is asserted through the .ad-collapse open class.
 const collapseOf = (el: Element) => el.closest('.ad-collapse')!
-// A review card is the nearest ancestor carrying the shared cardStyle radius.
-const cardOf = (el: Element): HTMLElement => {
-  let n = el.parentElement
-  while (n && n.style.borderRadius !== '12px') n = n.parentElement
-  return n!
-}
+// A review card is the nearest ancestor carrying the §14 .ad-card chrome.
+const cardOf = (el: Element): HTMLElement => el.closest('.ad-card') as HTMLElement
 // §11 status-aware collapsed lines preview the granted names / first doc line,
 // duplicating row text — target the element inside an .ad-hover-row (checklist
 // rows), never the preview line (clicking that would toggle the card).
@@ -1161,8 +1157,9 @@ describe('CreateFlow chat staged actions (§8 param_values / triggers ops)', () 
     })
     render(<CreateFlow />)
     await waitFor(() => expect(screen.getByText('123')).toBeTruthy(), { timeout: 3000 })
+    // a disabled trigger falls back to the neutral MetaChip tint (§14)
     const off = screen.getByText('123') as HTMLElement
-    expect(off.style.color).toBe('var(--text-faint)')
+    expect(off.style.color).toBe('var(--text-muted)')
     expect(off.style.background).toBe('var(--hairline-dim)')
     const on = screen.getByText('0 8 * * *') as HTMLElement
     expect(on.style.color).toBe('var(--accent)')

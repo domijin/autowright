@@ -3,15 +3,16 @@
 // prefilled GitHub new-issue link. The app itself sends nothing anywhere:
 // opening the browser is the only outbound action, and the user reviews the
 // issue on GitHub before submitting.
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from '../store'
-import { BtnGhost, Modal, RadioRing, Toggle } from '../ui'
+import { BtnGhost, Eyebrow, Modal, RadioRing, Toggle } from '../ui'
 import { REPO_URL } from '../config'
 
 // §9.5: GitHub prefill URLs cap around 8 KB — clamp the body before encoding.
 const BODY_CAP = 6_000
 
-const label: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }
+// §14 form-label idiom: an Eyebrow 8 px above its field.
+const label: React.CSSProperties = { margin: '0 0 8px' }
 
 export default function ReportModal() {
   const version = useStore((s) => s.version)
@@ -61,67 +62,61 @@ export default function ReportModal() {
   return (
     <Modal onClose={() => useStore.setState({ reportOpen: false })} width={520} ariaLabel="Report an issue">
       {(close) => (
-        <div data-testid="report-modal" style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Report an issue</h2>
-            <div style={{ marginTop: 4, fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)' }}>
-              Reports are filed as GitHub issues — a GitHub account is required.
+        <div data-testid="report-modal">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <h2 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 600 }}>Report an issue</h2>
+              <div style={{ fontSize: 12.5, lineHeight: 1.6, color: 'var(--text-muted)' }}>
+                Reports are filed as GitHub issues — a GitHub account is required.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 18 }}>
+              {([['bug', 'Bug'], ['feature', 'Feature request']] as const).map(([k, l]) => (
+                <button key={k} className="ad-btn-bare ad-hover-row" onClick={() => setKind(k)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, width: 'auto' }}>
+                  <RadioRing selected={kind === k} />
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <Eyebrow style={label}>Title</Eyebrow>
+              <input
+                className="ad-input" value={title}
+                style={{ width: '100%', boxSizing: 'border-box' }}
+                placeholder="One-line summary"
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Eyebrow style={label}>{details.label}</Eyebrow>
+              <textarea
+                className="ad-input" rows={4} value={text}
+                style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical' }}
+                placeholder={details.placeholder}
+                onChange={(e) => setText(e.target.value)}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Toggle on={includeInfo} onChange={setIncludeInfo} title="Include environment info" />
+                <span style={{ fontSize: 13 }}>Include environment info</span>
+              </div>
+              {includeInfo && (
+                <pre style={{
+                  margin: 0, padding: '8px 10px', borderRadius: 8, background: 'var(--bg-code)',
+                  border: '1px solid var(--hairline-dim)', font: '11px var(--mono)',
+                  color: 'var(--text-muted)', whiteSpace: 'pre-wrap',
+                }}>{infoBlock}</pre>
+              )}
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 18 }}>
-            {([['bug', 'Bug'], ['feature', 'Feature request']] as const).map(([k, l]) => (
-              <button key={k} className="ad-btn-bare" onClick={() => setKind(k)}
-                style={{ display: 'flex', alignItems: 'center', gap: 7, width: 'auto', fontSize: 13 }}>
-                <RadioRing selected={kind === k} />
-                {l}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={label}>Title</span>
-            {/* §9.5: standard text-field dimensions — the §12 agent-form values */}
-            <input
-              className="ad-input" value={title}
-              style={{
-                width: '100%', boxSizing: 'border-box', padding: '11px 14px',
-                fontWeight: 400, fontSize: 13, lineHeight: 1.5, color: 'var(--text)',
-              }}
-              placeholder="One-line summary"
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={label}>{details.label}</span>
-            <textarea
-              className="ad-input" rows={4} value={text}
-              style={{
-                width: '100%', boxSizing: 'border-box', padding: '11px 14px',
-                fontWeight: 400, fontSize: 13, lineHeight: 1.5, color: 'var(--text)',
-                resize: 'vertical',
-              }}
-              placeholder={details.placeholder}
-              onChange={(e) => setText(e.target.value)}
-            />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Toggle on={includeInfo} onChange={setIncludeInfo} title="Include environment info" />
-              <span style={{ fontSize: 13 }}>Include environment info</span>
-            </div>
-            {includeInfo && (
-              <pre style={{
-                margin: 0, padding: '8px 10px', borderRadius: 7, background: 'var(--bg-code)',
-                border: '1px solid var(--hairline-dim)', font: '11px var(--mono)',
-                color: 'var(--text-muted)', whiteSpace: 'pre-wrap',
-              }}>{infoBlock}</pre>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 2 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
             <BtnGhost onClick={close}>Cancel</BtnGhost>
             <a
               data-testid="report-open"

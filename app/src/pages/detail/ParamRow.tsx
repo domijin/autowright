@@ -56,18 +56,18 @@ export function ParamRow({ automationId, p, last }: { automationId: string; p: P
   const labelBlock = (
     <div style={{ flex: 1, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{p.label}</span>
+        <span style={{ fontSize: 13.5, fontWeight: 600 }}>{p.label}</span>
         {p.kind === 'text' && !p.value && (
           <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>
         )}
       </div>
-      <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 3 }}>{p.help}</div>
+      <div style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)', marginTop: 3 }}>{p.help}</div>
     </div>
   )
 
   return (
     <div data-testid={`param-row-${p.name}`} style={{
-      padding: '14px 18px', borderBottom: last ? 'none' : '1px solid var(--hairline-dim)',
+      padding: '15px 18px', borderBottom: last ? 'none' : '1px solid var(--hairline-dim)',
       display: 'flex', gap: compact ? 18 : 8, flexDirection: compact ? 'row' : 'column',
       alignItems: compact ? 'center' : 'stretch',
     }}>

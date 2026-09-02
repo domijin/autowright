@@ -1,14 +1,14 @@
 // Shared step-list / param-editor module (§17): one StepList renders the
 // read-only step rows and the §9.2 step-script modal on the §11 create/edit
-// flow ('editor' variant — agent warning colors, package facts, inline step
-// numbers) and the §9.2 automation detail page ('detail' variant — gutter
-// numbers, accent-only tags), and one presentational ParamValueEditor renders
+// flow ('editor' variant — agent warning colors, package facts) and the §9.2
+// automation detail page ('detail' variant); both draw the same §14 list
+// row. One presentational ParamValueEditor renders
 // the five §4.2 value kinds (toggle/list/kv/number/text) for both the
 // editor's test-value card and the detail page's debounced ParamRow.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlatformCopy } from './platformCopy'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from './types'
-import { MiniBadge, Modal, ScrollArea, Tag, Toggle, agName, dispModel, highlightPythonLines, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
+import { Eyebrow, MiniBadge, Modal, ScrollArea, Tag, Toggle, agName, dispModel, highlightPythonLines, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
 
 // §4.1/§6.1 code-reference scan: literal quoted uuid subscripts only.
 const SECRET_REF_RE = /\bsecrets\[\s*["']([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']\s*\]/g
@@ -264,8 +264,8 @@ export function findInLines(lines: React.ReactNode[][], query: string): CodeMatc
   return out
 }
 
-const MARK: React.CSSProperties = { background: 'oklch(0.74 0.155 52 / 0.22)', color: 'inherit', borderRadius: 2 }
-const MARK_CURRENT: React.CSSProperties = { ...MARK, background: 'oklch(0.74 0.155 52 / 0.5)' }
+const MARK: React.CSSProperties = { background: 'var(--find-bg)', color: 'inherit', borderRadius: 2 }
+const MARK_CURRENT: React.CSSProperties = { ...MARK, background: 'var(--find-active-bg)' }
 
 // Wraps one line's matched ranges in <mark>s, keeping the token colors: a
 // styled token is split around the match and re-wrapped in its own span.
@@ -314,15 +314,14 @@ type StepTagDesc = {
   rowHidden?: boolean
 }
 
-// Per-variant Tag visuals for a tone; the two variants keep their historic
-// colors (editor agent chips use --accent-hover, detail uses --accent; detail
-// plain chips leave the Tag's default text color).
+// Per-variant Tag visuals for a tone; only the editor's plain chips differ
+// (they pin the muted text color; detail leaves the Tag's default).
 const tagVisual = (tone: StepTagDesc['tone'], editor: boolean): { c?: string; style: React.CSSProperties } =>
   tone === 'red'
-    ? { c: 'var(--red-text)', style: { background: 'var(--red-bg)', border: '1px solid oklch(0.7 0.19 25 / .4)' } }
+    ? { c: 'var(--red-text)', style: { background: 'var(--red-bg)', border: '1px solid var(--notice-red-border)' } }
     : tone === 'accent'
-      ? { c: editor ? 'var(--accent-hover)' : 'var(--accent)', style: { background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' } }
-      : { ...(editor ? { c: 'var(--text-muted)' } : {}), style: { background: 'var(--hairline-dim)', border: '1px solid var(--border-btn)' } }
+      ? { c: 'var(--accent)', style: { background: 'var(--accent-chip-bg)', border: '1px solid var(--border-card-hover)' } }
+      : { ...(editor ? { c: 'var(--text-muted)' } : {}), style: { background: 'var(--hairline-dim)' } }
 
 // The full ordered fact list for one step (§9.2/§11): agents, secrets,
 // packages (rowHidden on the detail variant), time limit, retries.
@@ -430,30 +429,8 @@ function StepRow({ step, i, last, editor, tags, onOpen }: {
       <i className="fa-solid fa-expand" style={{ fontSize: 12 }} />
     </span>
   )
-  if (editor) {
-    // §11: inline step-number prefix, no gutter column.
-    return (
-      <div style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
-        <button
-          className="ad-btn-bare ad-focus-inset ad-hover-row"
-          onClick={onOpen}
-          style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', cursor: 'pointer' }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ font: "600 13px var(--sans)" }}>
-                <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{i + 1}.</span> {step.name}
-              </div>
-              {tagNodes}
-            </div>
-            <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{step.description}</div>
-          </div>
-          {glyph}
-        </button>
-      </div>
-    )
-  }
-  // 'detail' variant — §9.2: gutter step number.
+  // §14 list row — one geometry for both variants: gutter step number,
+  // 13/600 name, 11.5 sub-line, divider suppressed on the last row.
   return (
     <div style={{ borderBottom: last ? 'none' : '1px solid var(--hairline-dim)' }}>
       <button className="ad-btn-bare ad-hover-row ad-focus-inset" onClick={onOpen} style={{ display: 'flex', alignItems: 'center', gap: 13, padding: '12px 18px', cursor: 'pointer' }}>
@@ -513,8 +490,6 @@ function StepKeys({ i, count, closing, onNav, onFind }: {
 // script in its own scroll pane. Only the code pane remounts through the §14
 // keyed fade (resetting its scroll) when the step switches; the navigator and
 // the toolbar stay put, so nothing under the pointer flashes.
-const EYEBROW: React.CSSProperties = { font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)', flex: 'none' }
-
 function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
   step: Step; j: number; viewed: boolean; editor: boolean; tags: StepTagDesc[]; facts: StepFactSection[]; onNav: () => void
 }) {
@@ -530,11 +505,16 @@ function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
       aria-current={viewed ? 'step' : undefined}
       onClick={viewed ? undefined : onNav}
       style={{
-        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 18px 9px 14px',
-        borderLeft: `2px solid ${viewed ? 'var(--accent)' : 'transparent'}`,
-        background: viewed ? 'rgba(255, 255, 255, 0.04)' : undefined,
+        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 18px',
         cursor: viewed ? 'text' : 'pointer',
-        ...(viewed ? { userSelect: 'text' as const, textAlign: 'left' as const } : {}),
+        // §14 selected row: the --bg-active wash plus an inset accent bar —
+        // never a border-left with asymmetric padding
+        ...(viewed
+          ? {
+            background: 'var(--bg-active)', boxShadow: 'inset 2px 0 0 var(--accent)',
+            userSelect: 'text' as const, textAlign: 'left' as const,
+          }
+          : {}),
       }}
     >
       <span style={{ font: "500 11px/18px var(--mono)", color: 'var(--text-faint)', width: 16, flex: 'none' }}>{j + 1}</span>
@@ -545,7 +525,7 @@ function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
         {viewed && (
           <>
             {step.description && (
-              <div style={{ font: "400 12px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 4 }}>{step.description}</div>
+              <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 4 }}>{step.description}</div>
             )}
             {/* §9.2 tag row: the same chips the step row carries (tooltips
                 hold the detail), plus package chips in the detail modal. */}
@@ -562,7 +542,7 @@ function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
               <div data-testid="step-facts" style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
                 {facts.map((sec) => (
                   <div key={sec.key} data-testid={`step-facts-${sec.key}`}>
-                    <div style={{ ...EYEBROW, marginBottom: 3 }}>{sec.label}</div>
+                    <Eyebrow style={{ marginBottom: 3 }}>{sec.label}</Eyebrow>
                     {sec.items.map((text, k) => (
                       <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>
                         <span aria-hidden style={{ color: 'var(--text-deco)', flex: 'none', width: 8, textAlign: 'center', userSelect: 'none' }}>•</span>
@@ -634,7 +614,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
   return (
     <Modal
       onClose={onClose} width={1120} ariaLabel={`Step ${i + 1} of ${steps.length}: ${step.name}`}
-      cardStyle={{ width: 'min(1120px, 92vw)', overflow: 'hidden' }}
+      cardStyle={{ padding: 0, width: 'min(1120px, 92vw)', overflow: 'hidden' }}
     >
       {(close, closing) => (
         <div className="ad-stepmodal" style={{ height: frame, display: 'flex', minWidth: 0 }}>
@@ -645,7 +625,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
             borderRight: '1px solid var(--hairline-dim)',
           }}>
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '16px 18px 8px 16px' }}>
-              <span style={EYEBROW}>STEPS</span>
+              <Eyebrow style={{ flex: 'none' }}>STEPS</Eyebrow>
               <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{steps.length}</span>
             </div>
             <ScrollArea wrapStyle={{ flex: 1, minHeight: 0 }}>
@@ -662,7 +642,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
               height: 44, flex: 'none', display: 'flex', alignItems: 'center', gap: 12,
               padding: '0 10px 0 18px', borderBottom: '1px solid var(--hairline-dim)',
             }}>
-              <span style={EYEBROW}>STEP {i + 1} OF {steps.length}</span>
+              <Eyebrow style={{ flex: 'none' }}>STEP {i + 1} OF {steps.length}</Eyebrow>
               <span style={{
                 font: "400 11px var(--mono)", color: 'var(--text-deco)', flex: 1, minWidth: 0,
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
@@ -674,7 +654,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 'none', marginLeft: 4 }}>
                 <button className="ad-btn-icon" aria-label="Find in script" aria-pressed={findOpen} onClick={openFind}>
-                  <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 11 }} />
+                  <i className="fa-solid fa-magnifying-glass" />
                 </button>
                 <button className="ad-btn-icon" aria-label="Previous step" disabled={i === 0} onClick={() => onNav(i - 1)}>
                   <i className="fa-solid fa-chevron-left" />
@@ -683,7 +663,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
                   <i className="fa-solid fa-chevron-right" />
                 </button>
                 <button className="ad-btn-icon" aria-label="Close" onClick={close}>
-                  <i className="fa-solid fa-xmark" style={{ fontSize: 14 }} />
+                  <i className="fa-solid fa-xmark" />
                 </button>
               </div>
             </div>
@@ -694,7 +674,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
               }}>
                 <input
                   ref={findInput}
-                  className="ad-input"
+                  className="ad-input compact"
                   placeholder="Find in script"
                   aria-label="Find in script"
                   value={query}
@@ -705,7 +685,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
                     else if (e.key === 'Escape') { e.stopPropagation(); closeFind() }
                     else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation()
                   }}
-                  style={{ width: 280, flex: '0 1 auto', minWidth: 0, font: "400 12px var(--sans)", color: 'var(--text)', padding: '4px 9px' }}
+                  style={{ width: 280, flex: '0 1 auto', minWidth: 0 }}
                 />
                 <span data-testid="find-counter" style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)', flex: 'none', width: 72, whiteSpace: 'nowrap' }}>
                   {counter}
@@ -717,7 +697,7 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
                   <i className="fa-solid fa-chevron-down" />
                 </button>
                 <button className="ad-btn-icon" aria-label="Close find" onClick={closeFind} style={{ marginLeft: 'auto' }}>
-                  <i className="fa-solid fa-xmark" style={{ fontSize: 14 }} />
+                  <i className="fa-solid fa-xmark" />
                 </button>
               </div>
             )}
@@ -819,6 +799,9 @@ export function StepList(props: StepListProps) {
 // card ('draft' variant) writes value + default immediately into the draft;
 // the §9.2 ParamRow ('detail' variant) keeps its local drafts and
 // debounce/PATCH plumbing and passes them through here.
+// §14 the list editor's entry/link count — one mono metadata line in both variants.
+const countStyle: React.CSSProperties = { font: "500 11px var(--mono)", color: 'var(--text-faint)' }
+
 export function ParamValueEditor({ p, variant, on, lines, rows, value, setOn, setLines, setRows, setText, setNumber, onFocus, onBlur }: {
   p: ParamDef
   variant: 'draft' | 'detail'
@@ -835,38 +818,37 @@ export function ParamValueEditor({ p, variant, on, lines, rows, value, setOn, se
   onBlur?: () => void // draft: number clamp; detail: flush (list/kv) or flush+reset (text/number)
 }) {
   const detail = variant === 'detail'
-  // 'draft' base input style (the create/edit flow's test-value editors)
-  const inputStyle: React.CSSProperties = {
-    flex: 1, minWidth: 0, color: 'var(--text)', font: "400 12px var(--mono)", padding: '7px 10px',
-  }
+  // 'draft' base input layout (the create/edit flow's test-value editors) —
+  // §14: .ad-input.compact owns the geometry, call sites only lay out
+  const inputStyle: React.CSSProperties = { flex: 1, minWidth: 0 }
   if (p.kind === 'toggle') {
     return <Toggle on={on} onChange={setOn} />
   }
   if (p.kind === 'number') {
     return (
       <input
-        className="ad-input"
+        className="ad-input compact mono"
         value={value}
         {...(detail ? { inputMode: 'numeric' as const } : {})}
         onChange={(e) => setNumber(e.target.value.replace(/[^0-9]/g, ''))}
         onFocus={onFocus}
         onBlur={onBlur}
         style={detail
-          ? { width: 70, fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 13, textAlign: 'center', padding: '6px 10px' }
-          : { ...inputStyle, flex: 'none', width: 84, textAlign: 'right' }}
+          ? { width: 70, textAlign: 'center' }
+          : { width: 84, textAlign: 'right' }}
       />
     )
   }
   if (p.kind === 'text') {
     return (
       <input
-        className="ad-input"
+        className="ad-input compact"
         value={value} placeholder={detail ? p.placeholder ?? '' : p.placeholder}
         onChange={(e) => setText(e.target.value)}
         onFocus={onFocus}
         onBlur={onBlur}
         style={detail
-          ? { width: '100%', maxWidth: 520, fontSize: 12.5, padding: '8px 12px' }
+          ? { width: '100%', maxWidth: 520 }
           : { ...inputStyle, width: '100%' }}
       />
     )
@@ -883,22 +865,17 @@ export function ParamValueEditor({ p, variant, on, lines, rows, value, setOn, se
           return (
             <div key={li} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input
-                className={`ad-input${invalid ? ' invalid' : ''}`}
+                className={`ad-input compact mono${invalid ? ' invalid' : ''}`}
                 value={ln}
                 onChange={(e) => setLines(lines.map((z, j) => (j === li ? e.target.value : z)))}
                 onBlur={detail ? onBlur : undefined}
-                style={detail
-                  ? {
-                    flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 12, padding: '7px 10px',
-                    ...(invalid ? { color: 'var(--red-text)' } : {}),
-                  }
-                  : { ...inputStyle, ...(invalid ? { color: 'var(--red-text)' } : {}) }}
+                style={{ ...inputStyle, ...(invalid ? { color: 'var(--red-text)' } : {}) }}
               />
               {invalid && (
                 <MiniBadge c="var(--red-text)" bg="var(--red-bg)" style={detail ? { flex: 'none' } : undefined}>NOT A VALID LINK</MiniBadge>
               )}
               <button className="ad-btn-x" onClick={() => setLines(lines.filter((_, j) => j !== li), true)} aria-label="Remove line">
-                <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
+                <i className="fa-solid fa-xmark" />
               </button>
             </div>
           )
@@ -908,11 +885,11 @@ export function ParamValueEditor({ p, variant, on, lines, rows, value, setOn, se
             + Add line
           </button>
           {detail ? (
-            <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11, color: 'var(--text-faint)' }}>
+            <span style={countStyle}>
               {lines.length}{p.validate ? ` lines · ${good} valid links${bad ? ` · ${bad} needs attention` : ''}` : ' entries'}
             </span>
           ) : p.validate ? (
-            <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>
+            <span style={countStyle}>
               {lines.length} lines · {good} valid links{bad > 0 ? ` · ${bad} needs attention` : ''}
             </span>
           ) : null}
@@ -928,25 +905,23 @@ export function ParamValueEditor({ p, variant, on, lines, rows, value, setOn, se
       {rows.map((r, ri) => (
         <div key={ri} style={detail ? { display: 'flex', gap: 6 } : { display: 'flex', alignItems: 'center', gap: 8 }}>
           <input
-            className="ad-input"
+            className="ad-input compact mono"
             value={r.key} placeholder={detail ? undefined : 'Key'}
             onChange={(e) => setRows(rows.map((z, j) => (j === ri ? { ...z, key: e.target.value } : z)))}
             onBlur={detail ? onBlur : undefined}
             style={detail
-              ? { flex: 1.3, minWidth: 0, color: 'var(--text-muted)', fontFamily: 'var(--mono)', fontSize: 11.5, padding: '7px 10px' }
+              ? { flex: 1.3, minWidth: 0 }
               : { ...inputStyle, flex: '0 1 38%' }}
           />
           <input
-            className="ad-input"
+            className="ad-input compact mono"
             value={r.value} placeholder={detail ? undefined : 'Value'}
             onChange={(e) => setRows(rows.map((z, j) => (j === ri ? { ...z, value: e.target.value } : z)))}
             onBlur={detail ? onBlur : undefined}
-            style={detail
-              ? { flex: 1, minWidth: 0, fontSize: 12, padding: '7px 10px' }
-              : inputStyle}
+            style={inputStyle}
           />
           <button className="ad-btn-x" onClick={() => setRows(rows.filter((_, j) => j !== ri), true)} aria-label={r.key.trim() ? `Remove ${r.key}` : 'Remove row'}>
-            <i className="fa-solid fa-xmark" style={{ fontSize: 12 }} />
+            <i className="fa-solid fa-xmark" />
           </button>
         </div>
       ))}

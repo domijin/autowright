@@ -561,7 +561,7 @@ export default function Onboarding() {
         {[`Your automations execute only on this ${copy.machine}`, `Secrets live in your ${copy.secretStore}`].map((p) => (
           <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
             <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green)' }} />
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p}</span>
+            <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{p}</span>
           </div>
         ))}
       </div>
@@ -602,10 +602,10 @@ export default function Onboarding() {
           Describe a job in plain words. Your AI writes it as scripts you can read. Autowright executes them on your schedule and shows you the result.
         </p>
 
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden' }}>
+        <div className="ad-card" style={{ overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--hairline)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontWeight: 600, fontSize: 13.5 }}>Getting Autowright ready</span>
+              <span style={{ fontWeight: 600, fontSize: 15 }}>Getting Autowright ready</span>
             </div>
           </div>
           <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -621,18 +621,12 @@ export default function Onboarding() {
             })}
           </div>
           {ob.smShowResult && (
-            <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline)', background: 'var(--bg-inset)', padding: '16px 18px' }}>
+            <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', background: 'var(--bg-inset)', padding: '16px 18px' }}>
               <Eyebrow style={{ marginBottom: 10 }}>READY</Eyebrow>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                 <MiniBadge c="var(--green)" bg="var(--green-bg)">All set</MiniBadge>
                 {chips.map((ch) => (
-                  <span key={ch} style={{
-                    display: 'inline-flex', padding: '3px 9px', borderRadius: 6, fontFamily: 'var(--mono)',
-                    fontWeight: 500, fontSize: 11.5, background: 'var(--hairline-dim)',
-                    color: 'var(--text-2)',
-                  }}>
-                    {ch}
-                  </span>
+                  <MiniBadge key={ch}>{ch}</MiniBadge>
                 ))}
               </div>
               <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--text-2)' }}>{para}</p>
@@ -643,7 +637,7 @@ export default function Onboarding() {
         <p style={{ fontSize: 13.5, lineHeight: 1.5, color: 'var(--text-muted)', margin: '20px 0 16px' }}>{nextPara}</p>
         {ob.smDone
           ? <button className="ad-btn-primary ad-anim-item" onClick={obToConnect}>{nextLabel}</button>
-          : <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12, color: 'var(--text-faint)' }}>Setting things up…</span>}
+          : <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11.5, color: 'var(--text-faint)' }}>Setting things up…</span>}
       </div>
     )
   }
@@ -665,16 +659,18 @@ export default function Onboarding() {
       .concat(ob.localFound ? [card(LOCAL_ID).phase] : [])
 
     return (
-      <div className="ad-anim-page" style={{ maxWidth: 720, margin: '0 auto', padding: '44px 32px 60px' }}>
+      <div className="ad-anim-page" style={{ maxWidth: 720, margin: '0 auto', padding: '30px 32px 60px' }}>
         <h1 style={{ fontWeight: 600, fontSize: 26, lineHeight: 1.25, letterSpacing: '-.02em', margin: '0 0 10px' }}>Connect your AI</h1>
         <p style={{ fontSize: 15, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 26px' }}>
           The AI only writes the scripts — Autowright executes them.
         </p>
 
         {ob.det === 'searching' && (
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, padding: 22, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <Spinner size={13} style={{ flex: 'none' }} />
-            <span style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>Looking for an AI already on this {copy.machine}…</span>
+          <div className="ad-card">
+            <LoadingRow
+              label={`Looking for an AI already on this ${copy.machine}…`}
+              style={{ padding: '16px 18px' }}
+            />
           </div>
         )}
 
@@ -700,8 +696,8 @@ export default function Onboarding() {
             )}
 
             {foundList.length === 0 && (
-              <div className="ad-anim-item" style={{
-                background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 10, padding: '12px 16px',
+              <div className="ad-anim-item ad-card" style={{
+                padding: '12px 18px',
                 marginBottom: 18, display: 'flex', alignItems: 'center', gap: 10,
               }}>
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-faint)', flex: 'none' }} />
@@ -713,10 +709,10 @@ export default function Onboarding() {
               <div className="ad-anim-item">
                 {foundList.length > 0 && (
                   <button
+                    className="ad-btn-text small"
                     onClick={() => up((o) => { o.sugOpen = !o.sugOpen })}
                     aria-expanded={ob.sugOpen}
                     style={{
-                      background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer',
                       display: 'flex', alignItems: 'center', gap: 7, marginBottom: ob.sugOpen ? 12 : 0,
                     }}
                   >
@@ -780,17 +776,14 @@ export default function Onboarding() {
       <div
         key={f.id}
         data-testid="onboard-agent-card"
-        style={{
-          background: 'var(--bg-card)', border: '1px solid var(--border-card)',
-          borderRadius: 12, padding: '16px 18px',
-          display: 'flex', alignItems: 'center', gap: 16,
-        }}
+        className="ad-card"
+        style={{ padding: 18, display: 'flex', alignItems: 'center', gap: 16 }}
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 15 }}>{f.name}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{f.detail}</div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-muted)', marginTop: 3 }}>{f.detail}</div>
           {c.phase === 'idle' && c.notReady && (
-            <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 4 }}>{c.notReady}</div>
+            <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--amber)', marginTop: 4 }}>{c.notReady}</div>
           )}
         </div>
         {c.phase === 'idle' && (f.signedIn === false ? (
@@ -820,7 +813,7 @@ export default function Onboarding() {
             className="ad-btn-primary ad-anim-item"
             onClick={() => obContinue(f.id)}
             disabled={ob.committing}
-            style={{ flex: 'none', opacity: ob.committing ? 0.6 : 1 }}
+            style={{ flex: 'none' }}
           >
             {ob.committing && ob.chosen === f.id ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -858,18 +851,15 @@ export default function Onboarding() {
     return (
       <div
         key={p.id}
-        style={{
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border-card)',
-          borderRadius: 12, padding: '16px 18px',
-        }}
+        className="ad-card"
+        style={{ padding: 18 }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 15 }}>{s.title}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{body}</div>
+            <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-muted)', marginTop: 3 }}>{body}</div>
             {c.phase === 'idle' && c.notReady && (
-              <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 4 }}>{c.notReady}</div>
+              <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--amber)', marginTop: 4 }}>{c.notReady}</div>
             )}
           </div>
           {c.phase === 'idle' && (isLocal && c.notReady ? (
@@ -904,7 +894,7 @@ export default function Onboarding() {
               className="ad-btn-primary ad-anim-item"
               onClick={() => obContinue(p.id)}
               disabled={ob.committing}
-              style={{ flex: 'none', opacity: ob.committing ? 0.6 : 1 }}
+              style={{ flex: 'none' }}
             >
               {ob.committing && ob.chosen === p.id ? (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

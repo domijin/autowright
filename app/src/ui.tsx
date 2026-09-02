@@ -137,7 +137,7 @@ export function Tag({ icon, children, c, title, style }: {
         }}>
           <div ref={bubble} role="tooltip" style={{
             background: 'var(--bg-menu)', border: '1px solid var(--border-input)',
-            borderRadius: 8, boxShadow: '0 18px 44px rgba(0,0,0,.5)', padding: '6px 10px',
+            borderRadius: 10, boxShadow: 'var(--shadow-menu)', padding: '6px 10px',
             font: '400 11.5px/1.5 var(--sans)', color: 'var(--text-2)',
             maxWidth: 320, width: 'max-content',
             animation: ENTER_UP,
@@ -164,13 +164,17 @@ export function Logo({ size = 26 }: { size?: number }) {
   )
 }
 
-export function Chip({ children, c, bg, style }: {
+/** §14 lowercase mono metadata chip — trigger chips (list + detail lede), tinted
+ * result chips ("5 of 6 checked"), execution-page outcome chips. One geometry;
+ * `c`/`bg` tint it. Never hand-built at a call site. */
+export function MetaChip({ children, c, bg, style }: {
   children: React.ReactNode; c?: string; bg?: string; style?: React.CSSProperties
 }) {
   return (
     <span style={{
-      fontFamily: 'var(--mono)', fontSize: 11, color: c ?? 'var(--text-muted)',
-      background: bg ?? 'var(--hairline-dim)', padding: '3px 10px', borderRadius: 16,
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 500, color: c ?? 'var(--text-muted)',
+      background: bg ?? 'var(--hairline-dim)', padding: '3px 8px', borderRadius: 6,
       whiteSpace: 'nowrap', ...style,
     }}>
       {children}
@@ -197,10 +201,7 @@ export function FailureNotice({ error, onView, onFix, style }: {
   style?: React.CSSProperties
 }) {
   return (
-    <div className="ad-anim-item" style={{
-      background: 'var(--notice-red-bg)', border: '1px solid var(--notice-red-border)',
-      borderRadius: 12, padding: '14px 18px', ...style,
-    }}>
+    <Notice tone="red" size="card" className="ad-anim-item" style={style}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <i className="fa-solid fa-circle-exclamation" style={{ color: 'var(--red)', fontSize: 12 }} />
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--red-text)' }}>
@@ -229,7 +230,120 @@ export function FailureNotice({ error, onView, onFix, style }: {
       }}>
         {error.message}
       </div>
+    </Notice>
+  )
+}
+
+/** §14 tinted notice banner — the one renderer. `slim` (default): radius 10,
+ * `11px 14px`, 7 px leading dot before `children`. `card`: radius 12,
+ * `14px 18px`, no dot (FailureNotice, the §9.2 needs-fixing and draft banners).
+ * `dashed` swaps the border style (the draft banner). */
+export function Notice({ tone, size = 'slim', dashed, className, style, children, testId }: {
+  tone: 'red' | 'amber' | 'accent' | 'cyan'; size?: 'slim' | 'card'; dashed?: boolean
+  className?: string; style?: React.CSSProperties; children: React.ReactNode; testId?: string
+}) {
+  const dot = { red: 'var(--red)', amber: 'var(--amber)', accent: 'var(--accent)', cyan: 'var(--cyan)' }[tone]
+  const card = size === 'card'
+  return (
+    <div className={className} data-testid={testId} style={{
+      background: `var(--notice-${tone}-bg)`,
+      border: `1px ${dashed ? 'dashed' : 'solid'} var(--notice-${tone}-border)`,
+      borderRadius: card ? 12 : 10, padding: card ? '14px 18px' : '11px 14px',
+      ...(card ? {} : { display: 'flex', alignItems: 'center', gap: 10 }),
+      fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2)',
+      ...style,
+    }}>
+      {!card && <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flex: 'none' }} />}
+      {card ? children : <div style={{ flex: 1, minWidth: 0 }}>{children}</div>}
     </div>
+  )
+}
+
+/** §14 in-card empty line — an empty list inside a card that has content around
+ * it (no triggers, no snapshots, no files). 12.5 muted, the card's row inset. */
+export function EmptyLine({ children, style, testId }: {
+  children: React.ReactNode; style?: React.CSSProperties; testId?: string
+}) {
+  return (
+    <div data-testid={testId} style={{ padding: '14px 18px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)', ...style }}>
+      {children}
+    </div>
+  )
+}
+
+/** §14 page/modal-body loading well — the one bare-spinner treatment. */
+export function PageLoading({ style }: { style?: React.CSSProperties }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0', ...style }}>
+      <Spinner size={24} />
+    </div>
+  )
+}
+
+/** §14 one-line status with a leading glyph — success (green check), warning
+ * (amber triangle) or failure (red exclamation). Replaces hand-built icon+label
+ * rows (Ollama detected, test succeeded / failed). */
+export function StatusLine({ tone, label, style }: {
+  tone: 'green' | 'amber' | 'red'; label: React.ReactNode; style?: React.CSSProperties
+}) {
+  const icon = { green: 'fa-check', amber: 'fa-triangle-exclamation', red: 'fa-circle-exclamation' }[tone]
+  const color = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red-text)' }[tone]
+  return (
+    <div className="ad-anim-item" style={{ display: 'flex', alignItems: 'center', gap: 8, ...style }}>
+      <i className={`fa-solid ${icon}`} style={{ color, fontSize: 13 }} />
+      <span style={{ fontWeight: 500, fontSize: 13, color }}>{label}</span>
+    </div>
+  )
+}
+
+/** §14 two-line popover row (version menus, agent picker). `onPick` makes it a
+ * pickable row with a 14 px check column; `header` renders the inert current
+ * row on the `--wash-hover` ground; `trailing` nests a row action (then the row
+ * is the §9 role="button" carve-out). */
+export function MenuItemRow({ title, sub, mono, subMono, selected, header, onPick, trailing, testId, style }: {
+  title: React.ReactNode; sub?: React.ReactNode; mono?: boolean; subMono?: boolean
+  selected?: boolean; header?: boolean; onPick?: () => void; trailing?: React.ReactNode
+  testId?: string; style?: React.CSSProperties
+}) {
+  const body = (
+    <>
+      {onPick && (
+        <span style={{ width: 14, flex: 'none', textAlign: 'center', color: 'var(--accent)' }}>
+          {selected ? <i className="fa-solid fa-check" style={{ fontSize: 10 }} /> : ''}
+        </span>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ font: `600 12.5px var(${mono ? '--mono' : '--sans'})`, color: header || selected ? 'var(--text)' : 'var(--text-2)' }}>{title}</div>
+        {sub && <div style={{ font: `400 11.5px/1.45 var(${subMono ? '--mono' : '--sans'})`, color: 'var(--text-muted)', marginTop: 1 }}>{sub}</div>}
+      </div>
+      {trailing}
+    </>
+  )
+  const base: React.CSSProperties = {
+    display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px',
+    borderBottom: '1px solid var(--hairline-dim)',
+    ...(header ? { background: 'var(--wash-hover)' } : {}),
+    // no inline background when unselected — .ad-hover-row's hover tint must win
+    ...(selected ? { background: 'var(--accent-hint-bg)' } : {}),
+    ...style,
+  }
+  if (!onPick) return <div data-testid={testId} style={base}>{body}</div>
+  if (trailing) {
+    return (
+      <div
+        className="ad-btn-bare ad-hover-row" role="button" tabIndex={0} data-testid={testId}
+        onClick={onPick}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPick() } }}
+        style={{ ...base, cursor: 'pointer' }}
+      >
+        {body}
+      </div>
+    )
+  }
+  return (
+    <button className="ad-btn-bare ad-hover-row" data-testid={testId} onClick={onPick} style={{ ...base, cursor: 'pointer' }}>
+      {body}
+    </button>
   )
 }
 
@@ -247,6 +361,7 @@ export function Eyebrow({ children, style }: { children: React.ReactNode; style?
 // §14 motion: the one executing pulse (badges, dots) and the shared
 // enter/exit pair for two-way surfaces (menus, toasts; Modal composes its own).
 export const PULSE = 'adPulse 1.4s ease-in-out infinite'
+export const BLINK = 'adBlink 1s step-end infinite'
 const ENTER_UP = 'adFadeUp var(--t-enter) var(--ease-enter) both'
 const EXIT_DOWN = 'adFadeOutDown var(--t-exit) var(--ease-exit) both'
 
@@ -256,7 +371,7 @@ export function Spinner({ size = 16, color, style }: {
   return (
     <span style={{
       display: 'inline-block', width: size, height: size, borderRadius: '50%',
-      border: '2px solid rgba(255,255,255,.15)', borderTopColor: color ?? 'var(--accent)',
+      border: '2px solid var(--spinner-track)', borderTopColor: color ?? 'var(--accent)',
       animation: 'adSpin .85s linear infinite', ...style,
     }} />
   )
@@ -265,7 +380,7 @@ export function Spinner({ size = 16, color, style }: {
 /** §14 the one progress bar — `percent: null` renders the indeterminate sliding bar. */
 export function ProgressBar({ percent }: { percent: number | null }) {
   return (
-    <div style={{ height: 4, borderRadius: 2, background: 'rgba(255,255,255,.08)', overflow: 'hidden' }}>
+    <div style={{ height: 4, borderRadius: 2, background: 'var(--wash-track)', overflow: 'hidden' }}>
       {percent !== null ? (
         <div style={{ height: '100%', background: 'var(--accent)', width: `${Math.round(percent)}%`, transition: 'width var(--t-enter) var(--ease-enter)' }} />
       ) : (
@@ -286,7 +401,7 @@ export function CommandBlock({ command }: { command: string }) {
   return (
     <div style={{
       marginTop: 10, background: 'var(--bg-inset)', border: '1px solid var(--hairline)',
-      borderRadius: 7, padding: '5px 6px 5px 11px', font: `400 11.5px var(--mono)`,
+      borderRadius: 8, padding: '5px 6px 5px 11px', font: `400 11.5px var(--mono)`,
       color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10,
     }}>
       <span style={{ flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{command}</span>
@@ -351,18 +466,9 @@ export function BackLink({ label, onClick, style }: {
   label: React.ReactNode; onClick: () => void; style?: React.CSSProperties
 }) {
   return (
-    <button className="ad-btn-text" onClick={onClick} style={style}>
+    <button className="ad-btn-text" onClick={onClick} style={{ display: 'block', marginBottom: 10, ...style }}>
       <i className="fa-solid fa-chevron-left" style={{ fontSize: 10 }} /> {label}
     </button>
-  )
-}
-
-export function GreenCheck({ label }: { label: string }) {
-  return (
-    <div className="ad-anim-item" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <i className="fa-solid fa-check" style={{ color: 'var(--green)', fontSize: 13 }} />
-      <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--green)' }}>{label}</span>
-    </div>
   )
 }
 
@@ -420,14 +526,14 @@ export function Toggle({ on, onChange, disabled, title }: {
       disabled={disabled}
       style={{
         width: 36, height: 21, borderRadius: 11, position: 'relative', flex: 'none',
-        border: '1px solid rgba(255,255,255,.08)',
-        background: on ? 'var(--accent)' : 'rgba(255,255,255,.12)',
+        border: '1px solid var(--wash-track)',
+        background: on ? 'var(--accent)' : 'var(--border-dashed)',
         transition: 'background var(--t-hover) var(--ease-enter)', opacity: disabled ? 0.5 : 1,
       }}
     >
       <span style={{
         position: 'absolute', top: 2, left: 2, width: 15, height: 15, borderRadius: '50%',
-        background: '#f2f4f7', transition: 'transform var(--t-hover) var(--ease-enter)',
+        background: 'var(--text)', transition: 'transform var(--t-hover) var(--ease-enter)',
         transform: on ? 'translateX(15px)' : 'translateX(0)',
       }} />
     </button>
@@ -450,7 +556,8 @@ export function RadioRing({ selected, size = 16 }: { selected: boolean; size?: n
     }}>
       <span style={{
         width: size - 8, height: size - 8, borderRadius: '50%', background: selected ? 'var(--accent)' : 'transparent',
-        transform: selected ? 'scale(1)' : 'scale(.4)', transition: 'all var(--t-hover) var(--ease-enter)',
+        transform: selected ? 'scale(1)' : 'scale(.4)',
+        transition: 'transform var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter)',
       }} />
     </span>
   )
@@ -496,7 +603,7 @@ export function usePopover(): [boolean, (v: boolean) => void, React.RefObject<HT
 export const menuStyle: React.CSSProperties = {
   position: 'absolute', zIndex: 60, background: 'var(--bg-menu)',
   border: '1px solid var(--border-input)', borderRadius: 10,
-  boxShadow: '0 18px 44px rgba(0,0,0,.5)', padding: 5, minWidth: 200,
+  boxShadow: 'var(--shadow-menu)', padding: 5, minWidth: 200,
 }
 
 /** §14 two-way popover menu: pass `show` instead of conditional rendering —
@@ -673,8 +780,8 @@ export function Toast({ msg }: { msg: string | null }) {
       onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) setShown(null) }}
       style={{
         position: 'fixed', bottom: 26, left: 0, right: 0, margin: '0 auto', width: 'fit-content', zIndex: 100,
-        background: 'var(--bg-toast)', border: '1px solid rgba(255,255,255,.12)',
-        boxShadow: '0 10px 30px rgba(0,0,0,.4)', borderRadius: 9, padding: '10px 18px',
+        background: 'var(--bg-toast)', border: '1px solid var(--border-dashed)',
+        boxShadow: 'var(--shadow-toast)', borderRadius: 9, padding: '10px 18px',
         fontSize: 12.5, fontWeight: 500, color: 'var(--text)', maxWidth: 520,
         animation: closing ? EXIT_DOWN : ENTER_UP,
       }}
@@ -711,14 +818,57 @@ export function HeaderActions({ children, style }: {
   )
 }
 
-export function PageTitle({ children, right, style }: {
-  children: React.ReactNode; right?: React.ReactNode; style?: React.CSSProperties
+/** §14 page header — the one title row. `children` is the title text (wrapped in
+ * `.ad-h1`); pass `raw` when the left side is a hand-built row of the `.ad-h1`
+ * plus inline metadata (rename pencil, version pill). `sub` renders the page
+ * subtitle 6 px under; the header ends 20 px above whatever follows. */
+export function PageTitle({ children, right, sub, raw, style }: {
+  children: React.ReactNode; right?: React.ReactNode; sub?: React.ReactNode
+  raw?: boolean; style?: React.CSSProperties
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, ...style }}>
-      <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-.01em' }}>{children}</h1>
-      {right}
+    <div style={{ marginBottom: 20, ...style }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 13 }}>
+        {raw
+          ? <div style={{ display: 'flex', alignItems: 'center', gap: 13, minWidth: 0, flex: 1 }}>{children}</div>
+          : <h1 className="ad-h1">{children}</h1>}
+        {right}
+      </div>
+      {sub && <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)' }}>{sub}</p>}
     </div>
+  )
+}
+
+/** §14 the one document viewer modal (§9.4 About documents, What's new): 680
+ * wide, 15/600 title, a 62 vh markdown scroller, Retry on a failed load, quiet
+ * Close. `text` null = still loading, `error` = the load failed. */
+export function DocModal({ title, text, error, onRetry, onClose, render }: {
+  title: React.ReactNode; text: string | null; error: boolean; onRetry: () => void
+  onClose: () => void; render: (text: string) => React.ReactNode
+}) {
+  return (
+    <Modal onClose={onClose} width={680}>
+      {(close) => (
+        <>
+          <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text)' }}>{title}</h2>
+          <ScrollArea wrapStyle={{ marginTop: 12 }} style={{ maxHeight: '62vh' }}>
+            {text !== null
+              ? render(text)
+              : error
+                ? (
+                  <div>
+                    <div style={{ fontSize: 12.5, color: 'var(--red-text)' }}>Couldn't load the document.</div>
+                    <button className="ad-btn-ghost" onClick={onRetry} style={{ marginTop: 10 }}>Retry</button>
+                  </div>
+                )
+                : <LoadingRow label="Loading…" />}
+          </ScrollArea>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
+            <BtnGhost onClick={close}>Close</BtnGhost>
+          </div>
+        </>
+      )}
+    </Modal>
   )
 }
 
@@ -782,7 +932,7 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog',
       onMouseDown={(e) => { if (e.target === e.currentTarget) escape() }}
       onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) finish() }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(5,7,10,.6)', zIndex,
+        position: 'fixed', inset: 0, background: 'var(--backdrop)', zIndex,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         animation: closing
           ? 'adFadeOut var(--t-exit) var(--ease-exit) both'
@@ -791,7 +941,7 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog',
     >
       <div role={role} aria-modal="true" aria-label={ariaLabel} style={{
         background: 'var(--bg-menu)', border: '1px solid var(--border-input)', borderRadius: 12,
-        boxShadow: '0 24px 60px rgba(0,0,0,.5)', width,
+        boxShadow: 'var(--shadow-modal)', width, padding: '22px 24px',
         animation: closing ? EXIT_DOWN : ENTER_UP,
         // §9: modal cards cap at 84vh and scroll inside — footer buttons can
         // never render off-screen on a small window.
@@ -815,7 +965,7 @@ export function ConfirmModal({ title, body, confirmLabel, danger, onConfirm, onC
   return (
     <Modal
       onClose={() => { if (confirmed.current) onConfirm(); else onCancel() }}
-      width={400} zIndex={90} cardStyle={{ padding: '22px 24px' }}
+      width={400} zIndex={90}
       role="alertdialog" ariaLabel={title}
     >
       {(close) => (
@@ -858,7 +1008,7 @@ export function BlockingOverlay({ open, width = 400, ariaLabel, children }: {
     <div
       onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) setMounted(false) }}
       style={{
-        position: 'fixed', inset: 0, background: 'rgba(5,7,10,.6)', zIndex: 120,
+        position: 'fixed', inset: 0, background: 'var(--backdrop)', zIndex: 120,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         animation: closing
           ? 'adFadeOut var(--t-exit) var(--ease-exit) both'
@@ -867,7 +1017,7 @@ export function BlockingOverlay({ open, width = 400, ariaLabel, children }: {
     >
       <div role="alertdialog" aria-modal="true" aria-label={ariaLabel} style={{
         background: 'var(--bg-menu)', border: '1px solid var(--border-input)', borderRadius: 12,
-        boxShadow: '0 24px 60px rgba(0,0,0,.5)', width, padding: '26px 24px',
+        boxShadow: 'var(--shadow-modal)', width, padding: '22px 24px',
         animation: closing ? EXIT_DOWN : ENTER_UP,
       }}>
         {children}

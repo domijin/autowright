@@ -39,15 +39,15 @@ export default function MenuBarPanel() {
     <div
       ref={ref}
       style={{
-        width: 334, background: 'rgba(32,36,44,.94)', borderRadius: 12,
-        border: '1px solid rgba(255,255,255,.1)', boxShadow: '0 18px 50px rgba(0,0,0,.55)',
+        width: 334, background: 'var(--bg-panel)', borderRadius: 12,
+        border: '1px solid var(--border-panel)', boxShadow: 'var(--shadow-panel)',
         overflow: 'hidden', fontFamily: 'var(--sans)',
         display: 'flex', flexDirection: 'column', maxHeight: 640,
       }}
     >
       <div style={{ padding: '11px 14px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flex: 'none' }}>
         <Eyebrow>Autowright</Eyebrow>
-        <div style={{ fontFamily: 'var(--mono)', fontSize: 11, fontWeight: 500, color: failed ? 'var(--red-text)' : 'var(--text-faint)' }}>{aggregate}</div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, fontWeight: 500, color: failed ? 'var(--red-text)' : 'var(--text-faint)' }}>{aggregate}</div>
       </div>
       <ScrollArea wrapStyle={{ minHeight: 0 }}>
         {automations.map((a) => {
@@ -94,7 +94,7 @@ export default function MenuBarPanel() {
                 {a.live.length ? '' : a.lastExecutionLabel}
               </span>
               <button
-                className="ad-btn-exec"
+                className="ad-btn-exec small"
                 onClick={(e) => {
                   e.stopPropagation()
                   if (!live) void api.executeNow(a.id, undefined, 'menubar').catch((err: Error) => showToast(err.message))
@@ -102,7 +102,6 @@ export default function MenuBarPanel() {
                 disabled={live}
                 title={live ? 'Executing…' : 'Execute now'}
                 aria-label={live ? 'Executing…' : 'Execute now'}
-                style={{ width: 24, height: 24, borderRadius: 6 }}
               >
                 <i
                   className={live ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play'}
@@ -113,14 +112,14 @@ export default function MenuBarPanel() {
           )
         })}
         {automations.length === 0 && (
-          <div style={{ padding: '14px 12px', fontSize: 12, color: 'var(--text-faint)' }}>
+          <div style={{ padding: '14px 14px', fontSize: 12.5, color: 'var(--text-muted)' }}>
             No automations yet — open Autowright to create one.
           </div>
         )}
       </ScrollArea>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '9px 16px', borderTop: '1px solid var(--hairline)', flex: 'none',
+        padding: '9px 14px', borderTop: '1px solid var(--hairline)', flex: 'none',
       }}>
         <button
           className="ad-btn-link"

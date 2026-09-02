@@ -3,7 +3,7 @@ import React, { useState } from 'react'
 import { api } from '../../api'
 import { useStore } from '../../store'
 import type { Automation } from '../../types'
-import { ConfirmModal, Eyebrow } from '../../ui'
+import { ConfirmModal, Eyebrow, Notice } from '../../ui'
 import { runAction } from './model'
 
 /** One `number` row per setting, using the same §9.2 compact-row layout as
@@ -53,20 +53,12 @@ export function ConcurrencyCard({ auto, showToast }: { auto: Automation; showToa
           onCommit={(v) => patch('maxParallel', v)}
         />
         {memSteps.length > 0 && (
-          <div className="ad-anim-item" style={{
-            margin: '12px 18px', background: 'var(--notice-amber-bg)',
-            border: '1px solid var(--notice-amber-border)', borderRadius: 10, padding: '11px 14px',
-            display: 'flex', alignItems: 'flex-start', gap: 10,
-            fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-2)',
-          }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)', flex: 'none', marginTop: 5 }} />
-            <span>
-              {memSteps.map(n => <code key={n} style={{ fontFamily: 'var(--mono)' }}>{n}</code>)
-                .reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
-              {memSteps.length === 1 ? ' writes' : ' write'} to memory. Parallel executions share one
-              memory directory, so two runs updating the same value can lose one of the updates.
-            </span>
-          </div>
+          <Notice tone="amber" className="ad-anim-item" style={{ margin: '12px 18px' }}>
+            {memSteps.map(n => <code key={n} style={{ fontFamily: 'var(--mono)' }}>{n}</code>)
+              .reduce<React.ReactNode[]>((acc, el, i) => i === 0 ? [el] : [...acc, ', ', el], [])}
+            {memSteps.length === 1 ? ' writes' : ' write'} to memory. Parallel executions share one
+            memory directory, so two runs updating the same value can lose one of the updates.
+          </Notice>
         )}
         <NumberSettingRow
           label="Max queued executions"
@@ -115,12 +107,12 @@ function NumberSettingRow(
 
   return (
     <div style={{
-      padding: '14px 18px', borderBottom: last ? 'none' : '1px solid var(--hairline-dim)',
+      padding: '15px 18px', borderBottom: last ? 'none' : '1px solid var(--hairline-dim)',
       display: 'flex', gap: 18, alignItems: 'center',
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
-        <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 3 }}>{help}</div>
+        <div style={{ fontSize: 13.5, fontWeight: 600 }}>{label}</div>
+        <div style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)', marginTop: 3 }}>{help}</div>
       </div>
       <input
         value={draft ?? String(value)}
@@ -140,11 +132,8 @@ function NumberSettingRow(
             setDraft((d) => (d === committed ? null : d)))
         }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-        className="ad-input"
-        style={{
-          width: 70, fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 13,
-          textAlign: 'center', padding: '6px 10px', flex: 'none',
-        }}
+        className="ad-input compact mono"
+        style={{ width: 70, textAlign: 'center' }}
       />
     </div>
   )

@@ -13,7 +13,10 @@ import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import type { Agent, ChatEntry } from '../types'
-import { BtnPrimary, ConfirmModal, HeaderActions, P, PULSE, PopMenu, ScrollArea, Spinner, usePopover } from '../ui'
+import {
+  BackLink, BtnPrimary, ConfirmModal, HeaderActions, MenuItemRow, Notice, PageLoading, PageTitle,
+  PopMenu, ScrollArea, usePopover,
+} from '../ui'
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
 import {
   type Rev, amendSpec, analyzeTestMessage, blockerLine, chatSinceBoundary, holdsDraftEdits, instructionCache,
@@ -993,23 +996,44 @@ export default function CreateFlow() {
           {/* header */}
           <div className="ad-anim-page" style={{ padding: '20px 0 0' }}>
             <div style={{
-              maxWidth: 1800, margin: '0 auto', padding: '0 30px 0 18px',
+              maxWidth: 1800, padding: '0 30px 0 18px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             }}>
-              <button className="ad-btn-text" onClick={() => void close()}>
-                <i className="fa-solid fa-chevron-left" style={{ fontSize: 10 }} /> {backLabel}
-              </button>
+              <BackLink label={backLabel} onClick={() => void close()} />
             </div>
           </div>
-          {!rev && (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
-              <Spinner size={24} />
-            </div>
-          )}
+          {!rev && <PageLoading />}
           {rev && (
-          <div className="ad-anim-page" style={{ maxWidth: 1800, margin: '0 auto', padding: '14px 30px 60px 18px' }}>
+          <div className="ad-anim-page" style={{ maxWidth: 1800, padding: '0 30px 70px 18px' }}>
             {/* title row */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 13, margin: '0 0 6px' }}>
+            <PageTitle
+              raw
+              style={{ marginBottom: 6 }}
+              right={(
+                <HeaderActions>
+                  {saveBlocked && !(isCreateEmpty && !anyJobBusy) && (
+                    <span style={{ font: "400 12.5px var(--sans)", color: 'var(--amber)' }}>
+                      {rev.syncBusy || rev.chatBusy
+                        ? jobStageTitle(rev)
+                        : 'Sync and review the steps before saving'}
+                    </span>
+                  )}
+                  <button className="ad-btn-text dim" disabled={busyRewrite} onClick={() => void startOver()}>
+                    {isEdit ? 'Discard draft' : 'Start over'}
+                  </button>
+                  {isEdit && (rev.touched || !!auto?.draft) && (
+                    <button className="ad-btn-ghost" onClick={() => void close()}>
+                      Keep draft
+                    </button>
+                  )}
+                  <BtnPrimary onClick={() => void doSave()} disabled={saveBlocked}>
+                    {isEdit && auto
+                      ? (viewingOld ? `Restore v${rev.viewing} as v${auto.version + 1}` : `Save as v${auto.version + 1}`)
+                      : 'Create automation'}
+                  </BtnPrimary>
+                </HeaderActions>
+              )}
+            >
               {nameEdit !== null ? (
                 <input
                   className={`ad-input${nameErr ? ' invalid' : ''}`}
@@ -1022,16 +1046,15 @@ export default function CreateFlow() {
                   onBlur={commitTitleRename}
                   autoFocus
                   style={{
-                    font: "600 20px var(--sans)", letterSpacing: '-.01em', padding: '2px 10px',
+                    // §14 sanctioned exception: the title rename field renders at the
+                    // .ad-h1 scale so the row never jumps between reading and editing.
+                    fontSize: 20, fontWeight: 600, letterSpacing: '-.01em', padding: '2px 10px',
                     minWidth: 0, flex: '0 1 auto', width: 420,
                   }}
                 />
               ) : canRename ? (
                 <div className="ad-title-rename always" title={draftName}>
-                  <h1 style={{
-                    font: "600 20px var(--sans)", letterSpacing: '-.01em', margin: 0,
-                    minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>
+                  <h1 className="ad-h1" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {titleText}
                   </h1>
                   <button className="pencil" title="Rename" onClick={() => setNameEdit(draftName)}>
@@ -1039,10 +1062,7 @@ export default function CreateFlow() {
                   </button>
                 </div>
               ) : (
-                <h1 style={{
-                  font: "600 20px var(--sans)", letterSpacing: '-.01em', margin: 0,
-                  minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                }}>
+                <h1 className="ad-h1" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {titleText}
                 </h1>
               )}
@@ -1055,19 +1075,12 @@ export default function CreateFlow() {
                   <PopMenu show={verOpen} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 360, padding: 0, overflow: 'hidden' }}>
                     {/* §4.4: the current version is never a selectable option — the Draft
                         is its working copy. Inert header only, like the detail-page menu. */}
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-                      borderBottom: '1px solid var(--hairline-dim)', background: 'rgba(255,255,255,.03)',
-                    }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ font: "600 12.5px var(--mono)", color: 'var(--text)' }}>
-                          v{auto.version} · current
-                        </div>
-                        <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 1 }}>
-                          Your draft builds on this — Save lands it as v{auto.version + 1}.
-                        </div>
-                      </div>
-                    </div>
+                    <MenuItemRow
+                      header
+                      mono
+                      title={`v${auto.version} · current`}
+                      sub={`Your draft builds on this — Save lands it as v${auto.version + 1}.`}
+                    />
                     {/* a long version history scrolls inside the menu instead of past the window */}
                     <ScrollArea style={{ maxHeight: '60vh' }}>
                       {([
@@ -1084,76 +1097,38 @@ export default function CreateFlow() {
                       ]).map((it) => {
                         const sel = rev.viewing === it.key
                         return (
-                          // div, not button — the older rows nest the delete button
-                          <div
+                          <MenuItemRow
                             key={String(it.key)}
-                            className="ad-btn-bare ad-hover-row"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => pickVersion(it.key)}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickVersion(it.key) } }}
-                            style={{
-                              display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', cursor: 'pointer',
-                              borderBottom: '1px solid var(--hairline-dim)',
-                              // no inline background when unselected — .ad-hover-row's hover tint must win
-                              ...(sel ? { background: 'var(--accent-hint-bg)' } : {}),
-                              transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
-                            }}
-                          >
-                            <span style={{ width: 14, flex: 'none', textAlign: 'center', font: "600 12px var(--mono)", color: 'var(--accent)' }}>{sel ? <i className="fa-solid fa-check" style={{ fontSize: 10 }} /> : ''}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ font: "600 12.5px var(--mono)", color: sel ? 'var(--text)' : 'var(--text-2)' }}>{it.label}</div>
-                              <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 1 }}>{it.sub}</div>
-                            </div>
-                            {'del' in it && it.del && (
+                            mono
+                            title={it.label}
+                            sub={it.sub}
+                            selected={sel}
+                            onPick={() => pickVersion(it.key)}
+                            trailing={'del' in it && it.del ? (
                               <button
                                 className="ad-btn-icon danger"
                                 title={`Delete v${it.key}`}
                                 aria-label={`Delete v${it.key}`}
                                 data-testid={`delete-version-${it.key}`}
                                 onClick={(e) => { e.stopPropagation(); setVerOpen(false); setDelVer(it.key as number) }}
-                                style={{ flex: 'none' }}
                               >
-                                <i className="fa-solid fa-trash-can" style={{ fontSize: 11 }} />
+                                <i className="fa-solid fa-trash-can" />
                               </button>
-                            )}
-                          </div>
+                            ) : undefined}
+                          />
                         )
                       })}
                     </ScrollArea>
                   </PopMenu>
                 </div>
               )}
-              <div style={{ flex: 1 }} />
-              <HeaderActions>
-                {saveBlocked && !(isCreateEmpty && !anyJobBusy) && (
-                  <span style={{ font: "400 12px var(--sans)", color: 'var(--amber)' }}>
-                    {rev.syncBusy || rev.chatBusy
-                      ? jobStageTitle(rev)
-                      : 'Sync and review the steps before saving'}
-                  </span>
-                )}
-                <button className="ad-btn-text dim" disabled={busyRewrite} onClick={() => void startOver()}>
-                  {isEdit ? 'Discard draft' : 'Start over'}
-                </button>
-                {isEdit && (rev.touched || !!auto?.draft) && (
-                  <button className="ad-btn-ghost" onClick={() => void close()}>
-                    Keep draft
-                  </button>
-                )}
-                <BtnPrimary onClick={() => void doSave()} disabled={saveBlocked}>
-                  {isEdit && auto
-                    ? (viewingOld ? `Restore v${rev.viewing} as v${auto.version + 1}` : `Save as v${auto.version + 1}`)
-                    : 'Create automation'}
-                </BtnPrimary>
-              </HeaderActions>
-            </div>
+            </PageTitle>
             {/* §4.1/§11: the title input's duplicate-name inline error — the
                 §12 agent-form treatment (red dot + red text, clears on typing) */}
             {nameEdit !== null && nameErr && (
               <div className="ad-anim-item" style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '0 0 8px' }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: P.red, flex: 'none' }} />
-                <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--red-text)' }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', flex: 'none' }} />
+                <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--red-text)' }}>
                   An automation named {nameErr} already exists — pick a different name.
                 </span>
               </div>
@@ -1162,7 +1137,7 @@ export default function CreateFlow() {
                 shows the static drafting lede until the draft holds a spec. The row is
                 height-stable: every state shares one fixed-height box. The drafting-agent
                 picker lives in the chat pane composer, not here. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 13, height: 26, minWidth: 0, margin: '0 0 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 13, height: 30, minWidth: 0, margin: '0 0 20px' }}>
               {!isEdit && rev.spec.length === 0 ? (
                 <p style={{
                   font: "400 13.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: 0, minWidth: 0,
@@ -1172,7 +1147,7 @@ export default function CreateFlow() {
                 </p>
               ) : descEdit !== null ? (
                 <input
-                  className="ad-input"
+                  className="ad-input compact"
                   value={descEdit}
                   onChange={(e) => setDescEdit(e.target.value)}
                   onKeyDown={(e) => {
@@ -1182,7 +1157,7 @@ export default function CreateFlow() {
                   onBlur={commitDescEdit}
                   autoFocus
                   placeholder="What this automation does — one line"
-                  style={{ font: "400 13.5px/1.6 var(--sans)", height: 26, padding: '0 10px', width: 640, maxWidth: '100%' }}
+                  style={{ height: 30, width: 640, maxWidth: '100%' }}
                 />
               ) : (
                 <div
@@ -1207,33 +1182,23 @@ export default function CreateFlow() {
 
             {/* old-version banner */}
             {viewingOld && auto && (
-              <div className="ad-anim-item" style={{
-                background: 'var(--notice-accent-bg)', border: '1px solid var(--notice-accent-border)',
-                borderRadius: 10, padding: '11px 14px', margin: '0 0 18px',
-                display: 'flex', alignItems: 'center', gap: 11,
-              }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flex: 'none' }} />
-                <span style={{ flex: 1, font: "400 12.5px/1.5 var(--sans)", color: 'var(--text)' }}>
-                  {`Loaded v${rev.viewing} from history. Saving restores it as v${auto.version + 1} — your draft stays in the Version menu.`}
-                </span>
-                <button className="ad-btn-soft" disabled={busyRewrite} onClick={() => pickVersion('draft')} style={{ flex: 'none' }}>
-                  Back to draft
-                </button>
-              </div>
+              <Notice tone="accent" className="ad-anim-item" style={{ margin: '0 0 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                  <span style={{ flex: 1 }}>
+                    {`Loaded v${rev.viewing} from history. Saving restores it as v${auto.version + 1} — your draft stays in the Version menu.`}
+                  </span>
+                  <button className="ad-btn-soft" disabled={busyRewrite} onClick={() => pickVersion('draft')} style={{ flex: 'none' }}>
+                    Back to draft
+                  </button>
+                </div>
+              </Notice>
             )}
 
             {/* live-execution note */}
             {isEdit && !!auto?.live.length && (
-              <div className="ad-anim-item" style={{
-                background: 'var(--notice-cyan-bg)', border: '1px solid var(--notice-cyan-border)',
-                borderRadius: 10, padding: '11px 14px', margin: '0 0 18px',
-                display: 'flex', alignItems: 'center', gap: 11,
-              }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--cyan)', animation: PULSE, flex: 'none' }} />
-                <span style={{ flex: 1, font: "400 12.5px/1.5 var(--sans)", color: 'var(--text)' }}>
-                  {`An execution is happening right now on v${auto.version}. Saving won’t interrupt it — that execution finishes on v${auto.version}. v${auto.version + 1} takes over from the next execution (${nextTriggerShort(auto.triggers, trigPreviews) ?? auto.triggerChip}).`}
-                </span>
-              </div>
+              <Notice tone="cyan" className="ad-anim-item" style={{ margin: '0 0 18px' }}>
+                {`An execution is happening right now on v${auto.version}. Saving won’t interrupt it — that execution finishes on v${auto.version}. v${auto.version + 1} takes over from the next execution (${nextTriggerShort(auto.triggers, trigPreviews) ?? auto.triggerChip}).`}
+              </Notice>
             )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.05fr) minmax(0,.95fr)', gap: 18, alignItems: 'start' }}>

@@ -183,7 +183,7 @@ row never wraps: the automation name is a single line that shrinks with ellipsis
 its tooltip), so the actions always sit on the title line at the same height as every other
 page's header buttons (same rule as the §11 Review title);
 below the title a mono metadata line: full execution id (copyable) · trigger · version ·
-started · duration. A §4.5 `test` execution additionally shows a **"Draft test"** chip in the
+started · duration. A §4.5 `test` execution additionally shows a **"Draft test"** `MetaChip` in the
 title row, never shows the "(deleted)" marker (a create-mode test has no automation by
 design), and hides Retry and Execute again — iteration on a draft happens from the editor's
 Build & test panel; Cancel and Skip step still work while it is live. Body stacks top to bottom: the
@@ -211,11 +211,11 @@ the machinery, then a single
 internal divider — one card, since the rail's selection drives the pane. Beneath the steps the
 rail holds the **PARAMETERS block** — per param: label, its help description, and the §4.2
 one-line summary value ("Values as used by this execution."). At the rail's bottom sits a quiet
-**workspace link** — a small ghost button, "Show workspace in Finder" — opening the execution's
+**workspace link** — a `.ad-btn-text.small` button, "Show workspace in Finder" — opening the execution's
 §5 `workspace/` dir (the scratch dir the steps ran in — for inspecting what a run left behind)
 per the §4.9 Show-in-Finder rule; deliberately low-key so it never competes with the RESULT
 card's Show in Finder, which is the user-facing output. The STEPS rail's rows are **selectable**: each row shows the status dot (pulsing
-while executing), name, a right-aligned attempt-count chip ("×2", mono, faint — only when the
+while executing), name, a right-aligned attempt-count `MetaChip` ("×2" — only when the
 step has more than one attempt; the count is the latest attempt's `number`, which survives the
 §4.5 prune) and the latest attempt's duration — rows carry no actions;
 skipping lives in the header's Skip-step button. Above step 1 sits a **"Setup log"**
@@ -254,7 +254,7 @@ note in the §7 truncation style reads "Truncated — showing the last 2000 line
 is on disk." It sits **above** the kept lines, since the dropped ones are the oldest and the
 pane's live auto-scroll owns the bottom. The complete log always stays in the §5 execution
 directory.
-The RESULT card, when the execution has no result, is a dashed placeholder ("No result") with a
+The RESULT card, when the execution has no result, is an `EmptyNotice` ("No result") with a
 status-specific reason (still executing / failed before a result was built / cancelled / no
 result produced); with a result it is a collapsible **Results section** holding a stack of individually
 collapsible **result views**, each with a chevron + title header and right-aligned mono meta
@@ -271,11 +271,11 @@ at the left, the file's content rendering inline below it when opened. Previewab
 three renderable kinds plus **text** (`csv json txt yaml yml log tsv xml`), shown as mono plain
 text, horizontally scrollable, capped at 200 KB / 2000 lines with a trailing "Truncated — use
 Show in Finder for the full file." note. Anything else (zip, pdf, xlsx, …) gets no chevron and a
-faint `no preview` tag. Every row body starts **collapsed** regardless of the surface, and its
+faint `no preview` `MetaChip`. Every row body starts **collapsed** regardless of the surface, and its
 bytes are fetched lazily on first open — expanding the footer itself costs no requests.
 Files present but none renderable → the section is just the footer.
-No files at all → the whole view stack (footer included) is replaced by a dashed
-placeholder card: "The latest execution didn't produce any result files."
+No files at all → the whole view stack (footer included) is replaced by an
+`EmptyNotice`: "The latest execution didn't produce any result files."
 Deleted-automation handling: historical name, marked deleted.
 
 **Executions list:** all executions across automations, §4.5 `test` executions included — a

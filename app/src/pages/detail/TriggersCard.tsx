@@ -3,9 +3,13 @@
 import React, { useState } from 'react'
 import { api } from '../../api'
 import type { Automation, DraftTrigger, Trigger } from '../../types'
-import { ConfirmModal, Eyebrow, MiniBadge, Toggle } from '../../ui'
+import { ConfirmModal, EmptyLine, Eyebrow, MiniBadge, Toggle } from '../../ui'
 import { AddTrigger, kindIcon, TriggerEditor } from './TriggerEditor'
 import { runAction } from './model'
+
+// §14 list rows: a --hairline-dim divider between rows, suppressed on the last.
+const rowDivider = (i: number, total: number): React.CSSProperties =>
+  (i === total - 1 ? {} : { borderBottom: '1px solid var(--hairline-dim)' })
 
 export function TriggersCard({ auto, statusText }: { auto: Automation; statusText: string }) {
   const [editTrig, setEditTrig] = useState<string | null>(null) // §9.2: id of the row swapped for the inline editor
@@ -38,9 +42,9 @@ export function TriggersCard({ auto, statusText }: { auto: Automation; statusTex
     <div style={{ marginBottom: 26 }}>
       <Eyebrow style={{ marginBottom: 10 }}>TRIGGERS</Eyebrow>
       <div className="ad-card">
-        <div style={{ padding: '13px 18px' }}>
-          {trigs.map((t) => t.id === editTrig ? (
-            <div key={t.id} className="ad-anim-item" style={{ padding: '5px 0' }}>
+        <div>
+          {trigs.map((t, i) => t.id === editTrig ? (
+            <div key={t.id} className="ad-anim-item" style={{ padding: '12px 18px', ...rowDivider(i, trigs.length) }}>
               <TriggerEditor
                 hasAppStart={trigs.some((x) => x.kind === 'app_start' && x.id !== t.id)}
                 initial={t}
@@ -55,8 +59,8 @@ export function TriggersCard({ auto, statusText }: { auto: Automation; statusTex
               />
             </div>
           ) : (
-            <div key={t.id} style={{ padding: '5px 0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div key={t.id} style={{ padding: '12px 18px', ...rowDivider(i, trigs.length) }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 13 }}>
                 <span style={{
                   width: 28, height: 28, borderRadius: 7,
                   background: t.enabled ? 'var(--accent-chip-bg)' : 'var(--hairline-dim)',
@@ -68,7 +72,7 @@ export function TriggersCard({ auto, statusText }: { auto: Automation; statusTex
                 </span>
                 <span
                   style={{
-                    flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12,
+                    flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 12.5,
                     color: t.enabled ? 'var(--text-2)' : 'var(--text-faint)',
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}
@@ -97,7 +101,7 @@ export function TriggersCard({ auto, statusText }: { auto: Automation; statusTex
               {/* §9.2: a message trigger's listener state — errors in red, connecting muted, connected silent */}
               {(t.kind === 'discord' || t.kind === 'imessage') && t.enabled && t.connection && t.connection.state !== 'connected' && (
                 <div className="ad-anim-item" style={{
-                  marginLeft: 40, marginTop: 2, fontFamily: 'var(--mono)', fontSize: 11,
+                  marginLeft: 41, marginTop: 2, fontFamily: 'var(--mono)', fontSize: 11.5,
                   color: t.connection.state === 'error' ? 'var(--red-text)' : 'var(--text-faint)',
                 }}>
                   {t.connection.state === 'error' ? t.connection.error ?? 'connection error' : 'connecting…'}
@@ -105,23 +109,18 @@ export function TriggersCard({ auto, statusText }: { auto: Automation; statusTex
               )}
             </div>
           ))}
-          {noTrigs && (
-            <div style={{
-              border: '1px dashed var(--border-dashed)', borderRadius: 8, padding: '9px 12px',
-              fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11.5, color: 'var(--text-faint)',
-            }}>
-              No triggers
-            </div>
-          )}
-          <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', marginTop: 8 }}>{statusText}</div>
-          <AddTrigger
-            hasAppStart={trigs.some((t) => t.kind === 'app_start')}
-            onAdd={(t) => putTriggers(
-              [...trigs, { ...t, enabled: true }],
-              // a whole-list replace keeps order — the added entry is last
-              (saved) => `Trigger added — ${saved.triggers[saved.triggers.length - 1]?.short ?? ''}.`,
-            )}
-          />
+          {noTrigs && <EmptyLine>No triggers</EmptyLine>}
+          <div style={{ padding: '12px 18px' }}>
+            <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{statusText}</div>
+            <AddTrigger
+              hasAppStart={trigs.some((t) => t.kind === 'app_start')}
+              onAdd={(t) => putTriggers(
+                [...trigs, { ...t, enabled: true }],
+                // a whole-list replace keeps order — the added entry is last
+                (saved) => `Trigger added — ${saved.triggers[saved.triggers.length - 1]?.short ?? ''}.`,
+              )}
+            />
+          </div>
         </div>
       </div>
       {removeTrig && (

@@ -9,17 +9,13 @@ import { SecretModal } from '../../SecretModal'
 import { useTriggerPreview } from '../../triggers'
 import { StepList, type StepHistory } from '../../steps'
 import type { Agent, SecretMeta, UnresolvedRefs } from '../../types'
-import { Caret, CheckBox, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary } from '../../ui'
+import { Caret, CheckBox, Collapse, EmptyLine, Eyebrow, MetaChip, MiniBadge, Notice, ScrollArea, agName, dispModel, paramSummary } from '../../ui'
 import { Markdown, SpecMarkdown } from '../../result'
 import { type AgentRef, type Rev, type SecretRef, applyTestValues, instrToMd, instructionCache, shortId, specToText, stepList, textToSpec } from './model'
 import { DocEditorModal } from './DocEditorModal'
 
-export const cardStyle: React.CSSProperties = {
-  background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden',
-}
-
-// §11: one text style for a card's collapsed hint AND its in-card empty
-// states — the description never changes size between collapsed and open
+// §11: one text style for a card's collapsed hint — the description never
+// changes size between collapsed and open
 export const cardHintFont = "400 11.5px/1.5 var(--sans)"
 
 // §11 status-aware collapsed line: the first meaningful text line of a
@@ -50,7 +46,7 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
   children: React.ReactNode
 }) {
   return (
-    <div style={cardStyle}>
+    <div className="ad-card" style={{ overflow: 'hidden' }}>
       <div
         // The header nests action buttons in `right`, so it stays a div with
         // button semantics (§9: never nest buttons) — Enter/Space toggle it.
@@ -62,7 +58,7 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
           if (inert || e.target !== e.currentTarget) return
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(!open) }
         }}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', cursor: inert ? 'default' : 'pointer', userSelect: 'none' }}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 18px', cursor: inert ? 'default' : 'pointer', userSelect: 'none' }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
           <Caret open={open} style={{ width: 14, flex: 'none', textAlign: 'center', color: 'var(--text-deco)' }} />
@@ -75,7 +71,7 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
           className="ad-btn-bare ad-focus-inset"
           onClick={() => onToggle(true)}
           style={{
-            padding: '0 20px 13px 43px', font: cardHintFont, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none',
+            padding: '0 18px 13px 41px', font: cardHintFont, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none',
             ...(preview != null ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : {}),
           }}
         >
@@ -92,29 +88,22 @@ function SectionCard({ eyebrow, open, onToggle, inert, right, hint, preview, chi
 // in-card empty state, hint-styled and hint-indented (§11: same left edge as
 // the collapsed line, so an empty card's text stays put when the card opens)
 function CardEmpty({ children }: { children: React.ReactNode }) {
-  return <div style={{ padding: '10px 20px 16px 43px', font: cardHintFont, color: 'var(--text-muted)' }}>{children}</div>
+  return <div style={{ padding: '10px 18px 16px 41px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{children}</div>
 }
 
 // §11: the one markdown body every card renders through — same padding, same
 // 440px max height with inner scroll, same full-bleed table allowance
 function CardMarkdown({ children }: { children: React.ReactNode }) {
   return (
-    <ScrollArea style={{ padding: '12px 20px 16px', maxHeight: 440 }}>
-      {/* 18px side padding + matching negative margin so Markdown's full-bleed tables (-18px) fit */}
-      <div style={{ padding: '0 18px', margin: '0 -18px' }}>{children}</div>
+    <ScrollArea style={{ padding: '14px 18px 16px', maxHeight: 440 }}>
+      {children}
     </ScrollArea>
   )
 }
 
 function WarnBanner({ text }: { text: string }) {
   return (
-    <div className="ad-anim-item" style={{
-      background: 'var(--notice-red-bg)', border: '1px solid var(--notice-red-border)',
-      borderRadius: 10, padding: '11px 14px', margin: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 9,
-    }}>
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--red)', flex: 'none', marginTop: 5 }} />
-      <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-2)' }}>{text}</div>
-    </div>
+    <Notice tone="amber" className="ad-anim-item" style={{ margin: '12px 18px' }}>{text}</Notice>
   )
 }
 
@@ -293,22 +282,22 @@ export function LeftColumn({
                   role="checkbox"
                   aria-checked={on}
                   className="ad-btn-bare ad-focus-inset ad-hover-row"
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
                 >
                   <CheckBox on={on} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ font: "600 12.5px var(--sans)" }}>{agName(g)}</div>
-                    <div style={{ font: "400 11.5px var(--sans)", color: 'var(--text-muted)' }}>{dispModel(g)}</div>
+                    <div style={{ font: "600 13px var(--sans)" }}>{agName(g)}</div>
+                    <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{dispModel(g)}</div>
                   </div>
                   {used.length > 0 && (
-                    <span style={{ font: "500 10px var(--mono)", color: 'var(--text-faint)', flex: 'none', whiteSpace: 'nowrap' }}>
+                    <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)', flex: 'none', whiteSpace: 'nowrap' }}>
                       called by step{used.length > 1 ? 's' : ''} {stepList(used)}
                     </span>
                   )}
                 </button>
               )
             })}
-            <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
+            <div style={{ padding: '12px 18px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
               Steps marked <i className="fa-solid fa-microchip" style={{ fontSize: 9, color: 'var(--accent-hover)' }} /> call one of these mid-execution — for the parts plain code can’t do, like reading a messy page or writing prose. Fewer enabled means more predictable executions.
             </div>
           </div>
@@ -359,14 +348,14 @@ export function LeftColumn({
                   role="checkbox"
                   aria-checked={on}
                   className="ad-btn-bare ad-focus-inset ad-hover-row"
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--hairline-dim)', cursor: 'pointer', userSelect: 'none', ...lockStyle }}
                 >
                   <CheckBox on={on} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ font: "500 12px var(--mono)", color: 'var(--text)' }}>{s.name}</div>
+                    <div style={{ font: "500 12.5px var(--mono)", color: 'var(--text)' }}>{s.name}</div>
                   </div>
                   {ref && (
-                    <span style={{ font: "500 10px var(--mono)", color: 'var(--text-faint)', flex: 'none', whiteSpace: 'nowrap' }}>
+                    <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)', flex: 'none', whiteSpace: 'nowrap' }}>
                       used by step{ref.steps.length > 1 ? 's' : ''} {stepList(ref.steps)}
                     </span>
                   )}
@@ -377,13 +366,13 @@ export function LeftColumn({
                 a new secret mints a NEW id (§4.8). The fix is a sync. */}
             {secMissing.map((r) => (
               <div key={r.id} style={{
-                display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px',
+                display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px',
                 borderBottom: '1px solid var(--hairline-dim)', ...lockStyle,
               }}>
                 <i className="fa-solid fa-triangle-exclamation" style={{ fontSize: 11, color: 'var(--red-text)' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: "500 12px var(--mono)", color: 'var(--red-text)' }}>{r.importedName ?? shortId(r.id)}</div>
-                  <div style={{ font: "400 11px var(--sans)", color: 'var(--text-muted)' }}>
+                  <div style={{ font: "500 12.5px var(--mono)", color: 'var(--red-text)' }}>{r.importedName ?? shortId(r.id)}</div>
+                  <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>
                     {r.importedName
                       ? `used by step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} - no match on this ${copy.machine}; pick a secret or ask your AI to fix it`
                       : `used by step${r.steps.length > 1 ? 's' : ''} ${stepList(r.steps)} — this secret no longer exists; sync the steps`}
@@ -392,18 +381,18 @@ export function LeftColumn({
               </div>
             ))}
             {secrets.length === 0 && secRefs.length === 0 && (
-              <div style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "400 12px var(--sans)", color: 'var(--text-muted)' }}>
+              <EmptyLine style={{ borderBottom: '1px solid var(--hairline-dim)' }}>
                 No secrets in your {copy.secretStore} yet — press New secret.
-              </div>
+              </EmptyLine>
             )}
             {/* §11: a secret added from this card is an explicit grant — auto-allowed on save */}
-            <div style={{ padding: '11px 20px 0', ...lockStyle }}>
+            <div style={{ padding: '12px 18px 0', ...lockStyle }}>
               <button className="ad-btn-accent-ghost small" onClick={() => setSecretModal(true)}>
                 <i className="fa-solid fa-plus" style={{ fontSize: 9, marginRight: 5 }} />
                 New secret
               </button>
             </div>
-            <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
+            <div style={{ padding: '12px 18px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
               Only checked secrets are handed to this automation at execution time — a step that asks for anything else fails. Values come from your {copy.secretStore} and never appear in scripts or logs.
             </div>
           </div>
@@ -516,9 +505,9 @@ export function LeftColumn({
           <CardMarkdown>
             {fw
               ? <Markdown text={fw} />
-              : <div style={{ font: "400 12px/1.65 var(--mono)", color: 'var(--text-2)' }}>Couldn’t load framework-instructions.md — reopen this page to retry.</div>}
+              : <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--red-text)' }}>Couldn’t load framework-instructions.md — reopen this page to retry.</div>}
           </CardMarkdown>
-          <div style={{ padding: '0 20px 16px', font: cardHintFont, color: 'var(--text-muted)' }}>
+          <div style={{ padding: '0 18px 16px', font: cardHintFont, color: 'var(--text-muted)' }}>
             framework-instructions.md — sent to your AI, word for word, with every drafting request. Updates with the app, nothing for you to maintain.
           </div>
       </SectionCard>
@@ -562,18 +551,16 @@ export function RightCards({
   return (
     <>
       {/* STEPS */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
+      <div className="ad-card" style={{ overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--hairline)' }}>
           <Eyebrow>STEPS · GENERATED</Eyebrow>
         </div>
         {/* §11 first build on Review: static placeholder — drafting progress
             lives in the thread; also shown on the create empty state */}
         {(drafting || isCreateEmpty) && (
-          <div style={{ padding: '14px 20px 16px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>
-            Steps appear here once the build finishes.
-          </div>
+          <EmptyLine>Steps appear here once the build finishes.</EmptyLine>
         )}
-        <div style={{ display: 'flex', flexDirection: 'column', opacity: outOfSync || busyRewrite ? 0.45 : 1, transition: 'opacity var(--t-hover) var(--ease-enter)', marginBottom: -1 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', opacity: outOfSync || busyRewrite ? 0.45 : 1, transition: 'opacity var(--t-hover) var(--ease-enter)' }}>
           <StepList variant="editor" steps={rev.steps} availAgents={availAgents} allAgents={agents} secrets={secrets} unresolvedReferences={unresolvedReferences} packages={rev.packages} history={stepHistory} viewing={rev.viewing} params={rev.params} />
         </div>
       </div>
@@ -581,23 +568,22 @@ export function RightCards({
       {/* TRIGGERS — display-only (§11): what saving stores — drafted crons
           merged over the saved list (§4.3); one-shots/on-off edited on the
           automation page */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
+      <div className="ad-card" style={{ overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--hairline)' }}>
           <Eyebrow>TRIGGERS</Eyebrow>
         </div>
         {drafting || isCreateEmpty ? (
-          <div style={{ padding: '13px 20px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>Triggers appear here once the build finishes.</div>
+          <EmptyLine>Triggers appear here once the build finishes.</EmptyLine>
         ) : (
-          <div style={{ padding: '13px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ padding: '13px 18px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             {rev.triggers.map((t, i) => trigPreviews[i] && (
-              <span key={i} style={{
-                font: "500 12px var(--mono)",
-                color: t.enabled ? 'var(--accent)' : 'var(--text-faint)',
-                background: t.enabled ? 'var(--accent-chip-bg)' : 'var(--hairline-dim)',
-                borderRadius: 6, padding: '3px 9px', whiteSpace: 'nowrap',
-              }}>
+              <MetaChip
+                key={i}
+                c={t.enabled ? 'var(--accent)' : undefined}
+                bg={t.enabled ? 'var(--accent-chip-bg)' : undefined}
+              >
                 {trigPreviews[i].label}
-              </span>
+              </MetaChip>
             ))}
             <span style={{ font: "400 11.5px var(--sans)", color: 'var(--text-faint)' }}>
               {rev.triggers.length > 0
@@ -610,16 +596,14 @@ export function RightCards({
 
       {/* PARAMETERS — display-only (§16): value input lives on the automation page,
           test-only values in the Test card */}
-      <div style={cardStyle}>
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
+      <div className="ad-card" style={{ overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--hairline)' }}>
           <Eyebrow>PARAMETERS</Eyebrow>
         </div>
         {drafting || isCreateEmpty ? (
-          <div style={{ padding: '14px 20px 16px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>Parameters appear here once the build finishes.</div>
+          <EmptyLine>Parameters appear here once the build finishes.</EmptyLine>
         ) : rev.params.length === 0 ? (
-          <div style={{ padding: '14px 20px 16px', font: "400 12.5px var(--sans)", color: 'var(--text-muted)' }}>
-            No settings needed — your AI didn’t ask for any.
-          </div>
+          <EmptyLine>No settings needed — your AI didn’t ask for any.</EmptyLine>
         ) : (
           <>
             {rev.params.map((p) => {
@@ -632,21 +616,21 @@ export function RightCards({
                 ? applyTestValues([live ?? p], { [p.name]: rev.paramValues[p.name] })[0]
                 : null
               return (
-                <div key={p.name} style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+                <div key={p.name} style={{ padding: '12px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                    <div style={{ font: "600 12.5px var(--sans)" }}>{p.label}</div>
-                    <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
+                    <div style={{ font: "600 13px var(--sans)" }}>{p.label}</div>
+                    <div style={{ font: "500 12.5px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '55%' }}>
                       {staged && (
-                        <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--accent)', marginRight: 8 }}>STAGED</span>
+                        <MiniBadge c="var(--accent)" bg="var(--accent-chip-bg)" style={{ marginRight: 8 }}>STAGED</MiniBadge>
                       )}
                       {paramSummary(staged ?? live ?? p)}
                     </div>
                   </div>
-                  <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 2 }}>{p.help}</div>
+                  <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 2 }}>{p.help}</div>
                 </div>
               )
             })}
-            <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
+            <div style={{ padding: '12px 18px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
               Values aren’t part of a version — set them on the automation page, or ask your AI here (staged values apply when you save). For a test, set test-only values in the Build & test panel — or ask your AI, which can also change the parameter definitions and set test values when it runs a test.
             </div>
           </>
@@ -656,8 +640,8 @@ export function RightCards({
       {/* CONCURRENCY — display-only (§11): the §4.1 settings; number inputs
           live on the automation page, chat stages changes (§8 `concurrency`).
           Always the two rows — no empty state, no collapse. */}
-      <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
+      <div className="ad-card" style={{ overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--hairline)' }}>
           <Eyebrow>CONCURRENCY</Eyebrow>
         </div>
         {([
@@ -668,17 +652,17 @@ export function RightCards({
         ]).map(({ label, key, fallback, help }) => {
           const staged = rev.concurrency?.[key]
           return (
-            <div key={key} style={{ padding: '11px 20px', borderBottom: key === 'maxQueued' ? 'none' : '1px solid var(--hairline-dim)' }}>
+            <div key={key} style={{ padding: '12px 18px', borderBottom: key === 'maxQueued' ? 'none' : '1px solid var(--hairline-dim)' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ font: "600 12.5px var(--sans)" }}>{label}</div>
-                <div style={{ font: "500 12px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                <div style={{ font: "600 13px var(--sans)" }}>{label}</div>
+                <div style={{ font: "500 12.5px var(--mono)", color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
                   {staged != null && (
-                    <span style={{ font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--accent)', marginRight: 8 }}>STAGED</span>
+                    <MiniBadge c="var(--accent)" bg="var(--accent-chip-bg)" style={{ marginRight: 8 }}>STAGED</MiniBadge>
                   )}
                   {staged ?? liveConcurrency?.[key] ?? fallback}
                 </div>
               </div>
-              <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 2 }}>{help}</div>
+              <div style={{ font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)', marginTop: 2 }}>{help}</div>
             </div>
           )
         })}
@@ -686,12 +670,12 @@ export function RightCards({
 
       {/* PACKAGES · PYTHON LIBRARIES (§6.2) — display-only, right column like
           Triggers/Parameters: the drafting pipeline owns the list */}
-      <div style={cardStyle}>
+      <div className="ad-card" style={{ overflow: 'hidden' }}>
         <button
           className={`ad-btn-bare ad-focus-inset${rev.packages.length > 0 ? ' ad-hover-row' : ''}`}
           disabled={rev.packages.length === 0}
           onClick={() => rev.packages.length > 0 && up({ pkgSecOpen: !pkgSecOpenEff })}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 20px', cursor: rev.packages.length > 0 ? 'pointer' : 'default', userSelect: 'none' }}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '12px 18px', cursor: rev.packages.length > 0 ? 'pointer' : 'default', userSelect: 'none' }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
             {rev.packages.length > 0 && (
@@ -708,24 +692,24 @@ export function RightCards({
           )}
         </button>
         {drafting || isCreateEmpty ? (
-          <div style={{ borderTop: '1px solid var(--hairline)', padding: '14px 20px 16px', font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>Packages appear here once the build finishes.</div>
+          <EmptyLine style={{ borderTop: '1px solid var(--hairline)' }}>Packages appear here once the build finishes.</EmptyLine>
         ) : rev.packages.length === 0 ? (
-          <div style={{ borderTop: '1px solid var(--hairline)', padding: '14px 20px 16px', font: "400 12.5px var(--sans)", color: 'var(--text-muted)' }}>
+          <EmptyLine style={{ borderTop: '1px solid var(--hairline)' }}>
             No extra packages — the steps use only the built-in libraries.
-          </div>
+          </EmptyLine>
         ) : (<>
           <Collapse open={!pkgSecOpenEff}>
             {/* §11 status-aware collapsed line — the card only collapses when the list is non-empty */}
-            <button className="ad-btn-bare ad-focus-inset" onClick={() => up({ pkgSecOpen: true })} style={{ padding: '0 20px 13px 43px', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <button className="ad-btn-bare ad-focus-inset" onClick={() => up({ pkgSecOpen: true })} style={{ padding: '0 18px 13px 41px', font: cardHintFont, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {rev.packages.map((p) => p.pip).join(' · ')}
             </button>
           </Collapse>
           <Collapse open={pkgSecOpenEff}>
           <div style={{ borderTop: '1px solid var(--hairline)' }}>
             {rev.packages.map((p) => (
-              <div key={p.pip} style={{ padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+              <div key={p.pip} style={{ padding: '12px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div style={{ flex: 1, minWidth: 0, font: "500 12px var(--mono)", color: 'var(--text)' }}>
+                  <div style={{ flex: 1, minWidth: 0, font: "500 12.5px var(--mono)", color: 'var(--text)' }}>
                     {p.pip}
                     {p.version && (
                       <span style={{ color: 'var(--text-faint)', marginLeft: 8 }}>{p.version}</span>
@@ -734,7 +718,7 @@ export function RightCards({
                       <span style={{ color: 'var(--accent)', marginLeft: 8 }}>→ {p.latest}</span>
                     )}
                   </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none', whiteSpace: 'nowrap', font: "600 10px var(--mono)",
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none', whiteSpace: 'nowrap', font: "600 11px var(--mono)",
                     color: p.status === 'installed' ? 'var(--green)'
                       : p.status === 'failed' ? 'var(--red)'
                         : p.status === 'missing' ? 'var(--amber)' : 'var(--text-faint)' }}>
@@ -745,7 +729,7 @@ export function RightCards({
                     {!p.status && 'checking…'}
                   </span>
                   {p.latest && p.status !== 'installing' && (
-                    <button className="ad-btn-soft" disabled={rev.pkgBusy || busyRewrite}
+                    <button className="ad-btn-text small" disabled={rev.pkgBusy || busyRewrite}
                       onClick={() => updatePkgs([p.pip])} style={{ flex: 'none' }}>
                       Update
                     </button>
@@ -753,7 +737,7 @@ export function RightCards({
                 </div>
                 {/* §11: the declaration's why — the card explains every install it asks the user to trust */}
                 {p.why && (
-                  <div style={{ margin: '3px 0 0', font: "400 11px/1.5 var(--sans)", color: 'var(--text-muted)' }}>{p.why}</div>
+                  <div style={{ margin: '3px 0 0', font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>{p.why}</div>
                 )}
                 {p.status === 'failed' && p.error && (
                   <div style={{ margin: '6px 0 0', font: "400 10.5px/1.5 var(--mono)", color: 'var(--red-text)', overflowWrap: 'break-word' }}>{p.error}</div>
@@ -761,29 +745,29 @@ export function RightCards({
               </div>
             ))}
             {rev.packages.filter((p) => p.latest).length >= 2 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
                 <span style={{ flex: 1, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                   Newer versions are available. Updating applies to every automation that uses the package.
                 </span>
-                <button className="ad-btn-soft" disabled={rev.pkgBusy || busyRewrite}
+                <button className="ad-btn-text small" disabled={rev.pkgBusy || busyRewrite}
                   onClick={() => updatePkgs(rev.packages.filter((p) => p.latest).map((p) => p.pip))} style={{ flex: 'none' }}>
                   Update all
                 </button>
               </div>
             )}
             {rev.packages.some((p) => p.status === 'missing' || p.status === 'failed') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
                 <span style={{ flex: 1, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
                   {rev.packages.some((p) => p.status === 'failed')
                     ? 'A package couldn’t be installed — check your connection, then retry. Saving still works; executions retry on their own too.'
                     : 'Some packages aren’t installed yet. Executions install them automatically — or install now.'}
                 </span>
-                <button className="ad-btn-soft" disabled={rev.pkgBusy || busyRewrite} onClick={installPkgs} style={{ flex: 'none' }}>
+                <button className="ad-btn-accent-ghost small" disabled={rev.pkgBusy || busyRewrite} onClick={installPkgs} style={{ flex: 'none' }}>
                   {rev.packages.some((p) => p.status === 'failed') ? 'Retry install' : 'Install'}
                 </button>
               </div>
             )}
-            <div style={{ padding: '11px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
+            <div style={{ padding: '12px 18px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
               Your AI picked these Python packages for the steps. They install automatically — nothing for you to run.
             </div>
           </div>

@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { LOG_TAIL, logKey, useStore } from '../store'
-import { BackLink, Badge, badgeOf, Chip, EmptyNotice, Eyebrow, FailureNotice, HeaderActions, logColor, paramSummary, PULSE, ScrollArea, Spinner, waitedLabel } from '../ui'
+import { BackLink, Badge, badgeOf, BLINK, EmptyLine, EmptyNotice, Eyebrow, FailureNotice, HeaderActions, LoadingRow, logColor, MetaChip, PageLoading, PageTitle, paramSummary, PULSE, ScrollArea, waitedLabel } from '../ui'
 import { ResultSection } from '../result'
 import type { Execution, ExecutionStep, LogLine, TriggerPayload } from '../types'
 
@@ -15,8 +15,7 @@ import type { Execution, ExecutionStep, LogLine, TriggerPayload } from '../types
 type Sel = { step: number | null; attempt: number | null }
 
 const rowBase: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 18px', width: '100%',
-  textAlign: 'left', cursor: 'pointer', background: 'none', border: 'none',
+  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 18px', cursor: 'pointer',
 }
 
 // Selected rows keep their inline background — it wins over the ad-hover-row hover.
@@ -30,12 +29,12 @@ function rowBg(selected: boolean): React.CSSProperties {
 function ExecLogRow({ selected, onSelect }: { selected: boolean; onSelect: () => void }) {
   return (
     <button
-      className="ad-hover-row"
+      className="ad-btn-bare ad-hover-row ad-focus-inset"
       onClick={onSelect}
       style={{ ...rowBase, ...rowBg(selected) }}
     >
-      <i className="fa-solid fa-terminal" style={{ fontSize: 8.5, width: 8, color: 'var(--text-faint)', flex: 'none' }} />
-      <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text-faint)', fontStyle: 'italic' }}>Setup log</span>
+      <i className="fa-solid fa-terminal" style={{ fontSize: 9, width: 8, color: 'var(--text-faint)', flex: 'none' }} />
+      <span style={{ flex: 1, fontSize: 11.5, color: 'var(--text-faint)', fontStyle: 'italic' }}>Setup log</span>
     </button>
   )
 }
@@ -49,7 +48,7 @@ function StepRow({ step, selected, onSelect }: {
   const dot = step.status === 'queued' ? 'var(--text-deco)' : badgeOf(step.status).c
   return (
     <button
-      className="ad-hover-row"
+      className="ad-btn-bare ad-hover-row ad-focus-inset"
       onClick={onSelect}
       style={{ ...rowBase, ...rowBg(selected) }}
     >
@@ -58,18 +57,18 @@ function StepRow({ step, selected, onSelect }: {
         animation: executing ? PULSE : 'none',
       }} />
       <span style={{
-        flex: 1, fontSize: 12.5, lineHeight: 1.4, minWidth: 0,
+        flex: 1, fontSize: 13, fontWeight: 500, lineHeight: 1.4, minWidth: 0,
         color: step.status === 'queued' ? 'var(--text-faint)' : 'var(--text-2)',
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>
         {step.name}
       </span>
       {latestN(step) > 1 && (
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-faint)', flex: 'none' }}>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)', flex: 'none' }}>
           ×{latestN(step)}
         </span>
       )}
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', flex: 'none' }}>{step.duration}</span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)', flex: 'none' }}>{step.duration}</span>
     </button>
   )
 }
@@ -102,10 +101,7 @@ function AttemptPill({ a, active, onSelect }: {
   )
 }
 
-const bodyCard: React.CSSProperties = {
-  background: 'var(--bg-card)', border: '1px solid var(--border-card)',
-  borderRadius: 12, padding: 22,
-}
+const bodyCard: React.CSSProperties = { padding: '16px 18px' }
 
 /** §7 TRIGGER MESSAGE block — the input that fired a message-triggered
  * execution. Shared between the queued waiting state and the ordinary page,
@@ -118,7 +114,7 @@ function TriggerMessage({ payload }: { payload: TriggerPayload }) {
     ? `#${discord.channelName}${discord.guildName ? ` · ${discord.guildName}` : ''}`
     : discord.channel)
   return (
-    <div style={bodyCard}>
+    <div className="ad-card" style={bodyCard}>
       <Eyebrow style={{ marginBottom: 10 }}>TRIGGER MESSAGE</Eyebrow>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 2 }}>
         <div style={{
@@ -139,7 +135,7 @@ function TriggerMessage({ payload }: { payload: TriggerPayload }) {
           </a>
         )}
       </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', marginBottom: 10 }}>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 10 }}>
         {new Date(payload.at).toLocaleString()}
       </div>
       <div style={{
@@ -160,7 +156,7 @@ function WaitingBody({ pos, total, payload }: {
 }) {
   return (
     <>
-      <div style={{ ...bodyCard, textAlign: 'center' }}>
+      <div className="ad-card" style={{ ...bodyCard, textAlign: 'center' }}>
         <div style={{ fontSize: 13.5, fontWeight: 500, marginBottom: 4 }}>Waiting for a free slot</div>
         {pos > 0 && (
           <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 4 }}>
@@ -279,7 +275,7 @@ export default function ExecutionPage() {
   if (!executionId) return null
 
   const shell = (body: React.ReactNode) => (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '20px 30px 70px' }}>
       <BackLink label="Executions" onClick={() => go('executions')} />
       {body}
     </div>
@@ -294,7 +290,7 @@ export default function ExecutionPage() {
           style={{ marginTop: 20 }}
         />
       ) : (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}><Spinner /></div>
+        <PageLoading />
       ),
     )
   }
@@ -358,10 +354,10 @@ export default function ExecutionPage() {
         : 'This execution didn’t produce a result.'
 
   const redactNote = (
-    <Chip style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10.5, fontWeight: 500 }}>
+    <MetaChip>
       <i className="fa-solid fa-key" style={{ fontSize: 8.5 }} />
       secrets redacted: {e.redactedSecrets?.join(', ')}
-    </Chip>
+    </MetaChip>
   )
 
   const selStep = sel?.step != null ? steps[sel.step] : undefined
@@ -371,22 +367,63 @@ export default function ExecutionPage() {
     <>
       {/* §7: the row never wraps — the name ellipsizes so the actions stay on
         * the title line at the same height as every other page header. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 13, margin: '14px 0 6px' }}>
+      <PageTitle
+        raw
+        style={{ marginBottom: 6 }}
+        right={
+          <HeaderActions>
+            {/* §9 rising prominence: ghosts, then danger-ghost, primary last. */}
+            {executing && liveIdx >= 0 && (
+              <button
+                className="ad-btn-ghost"
+                onClick={() => skipStep(liveIdx)}
+                title="Skip this step — kills it and continues with the next one"
+              >
+                Skip step
+              </button>
+            )}
+            {againQuiet && (
+              <button
+                className="ad-btn-ghost"
+                onClick={executeAgain}
+                title="Executes the automation again from the start"
+              >
+                Execute again
+              </button>
+            )}
+            {/* §6: one endpoint covers both — a queued entry leaves the queue and
+              * finishes skipped, a running one is killed. */}
+            {(executing || queued) && (
+              <button className="ad-btn-danger-ghost" onClick={cancelExecution}>
+                Cancel
+              </button>
+            )}
+            {retryPrimary && (
+              <button
+                className="ad-btn-primary"
+                onClick={retry}
+                title="Retries this execution from the failed step. Steps that already succeeded keep their results."
+              >
+                Retry
+              </button>
+            )}
+          </HeaderActions>
+        }
+      >
         <h1
-          className={canOpenAuto ? 'ad-link-title' : undefined}
+          className={`ad-h1${canOpenAuto ? ' ad-link-title' : ''}`}
           onClick={() => { if (canOpenAuto) go('automation', { automationId: e.automationId }) }}
           title={canOpenAuto ? `Open automation — ${e.automationName}` : e.automationName}
           style={{
-            fontSize: 20, fontWeight: 600, letterSpacing: '-.01em', margin: 0,
             cursor: canOpenAuto ? 'pointer' : 'default',
-            minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}
         >
           {e.automationName}
         </h1>
         {e.test && (
           /* §11 draft test — a create-mode test has no automation by design */
-          <Chip style={{ fontSize: 10.5, fontWeight: 600 }}>Draft test</Chip>
+          <MetaChip>Draft test</MetaChip>
         )}
         {e.automationDeleted && !e.test && (
           <span style={{ fontSize: 13, color: 'var(--text-faint)' }}>(deleted)</span>
@@ -395,46 +432,8 @@ export default function ExecutionPage() {
           status={e.status}
           style={executing ? { animation: PULSE } : undefined}
         />
-        <div style={{ flex: 1 }} />
-        <HeaderActions>
-          {/* §9 rising prominence: ghosts, then danger-ghost, primary last. */}
-          {executing && liveIdx >= 0 && (
-            <button
-              className="ad-btn-ghost"
-              onClick={() => skipStep(liveIdx)}
-              title="Skip this step — kills it and continues with the next one"
-            >
-              Skip step
-            </button>
-          )}
-          {againQuiet && (
-            <button
-              className="ad-btn-ghost"
-              onClick={executeAgain}
-              title="Executes the automation again from the start"
-            >
-              Execute again
-            </button>
-          )}
-          {/* §6: one endpoint covers both — a queued entry leaves the queue and
-            * finishes skipped, a running one is killed. */}
-          {(executing || queued) && (
-            <button className="ad-btn-danger-ghost" onClick={cancelExecution}>
-              Cancel
-            </button>
-          )}
-          {retryPrimary && (
-            <button
-              className="ad-btn-primary"
-              onClick={retry}
-              title="Retries this execution from the failed step. Steps that already succeeded keep their results."
-            >
-              Retry
-            </button>
-          )}
-        </HeaderActions>
-      </div>
-      <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 18 }}>
+      </PageTitle>
+      <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)', marginBottom: 20 }}>
         <span>{e.id}</span>
         {` · ${e.trigger}`}{e.versionLabel ? ` · ${e.versionLabel}` : ''}
         {/* A queued record has not started and has no duration (§7) — it reports
@@ -470,11 +469,8 @@ export default function ExecutionPage() {
 
           {/* Full-width RESULT card (§7) — the execution's outcome, above the machinery */}
           {!full ? (
-            <div style={{
-              background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12,
-              padding: 26, display: 'flex', justifyContent: 'center',
-            }}>
-              <Spinner />
+            <div className="ad-card" style={{ padding: '16px 18px' }}>
+              <LoadingRow label="Loading…" />
             </div>
           ) : result ? (
             <ResultSection label="RESULT" result={result} executionId={e.id} stamp={`${e.status}:${e.duration}`} />
@@ -488,18 +484,19 @@ export default function ExecutionPage() {
 
           {/* Execution card (§7): STEPS rail + LOGS pane in one card — the rail's
               selection drives the pane, so they share a border. */}
-          <div style={{
-            display: 'grid', gridTemplateColumns: '250px 1fr', alignItems: 'stretch',
-            background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden',
+          <div className="ad-card" style={{
+            display: 'grid', gridTemplateColumns: '250px 1fr', alignItems: 'stretch', overflow: 'hidden',
           }}>
-            <div style={{ padding: '14px 0', borderRight: '1px solid var(--hairline)', minWidth: 0 }}>
-              <Eyebrow style={{ padding: '0 18px', marginBottom: 10 }}>STEPS</Eyebrow>
+            <div style={{ paddingBottom: 14, borderRight: '1px solid var(--hairline)', minWidth: 0 }}>
+              <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--hairline)' }}>
+                <Eyebrow>STEPS</Eyebrow>
+              </div>
               {!full ? (
-                <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0 10px' }}><Spinner size={14} /></div>
+                <LoadingRow label="Loading steps…" style={{ padding: '14px 18px' }} />
               ) : steps.length === 0 ? (
-                <div style={{ padding: '2px 18px 6px', fontSize: 12, lineHeight: 1.5, color: 'var(--text-faint)' }}>
+                <EmptyLine>
                   {e.note ? `Nothing executed — ${e.note}.` : 'Nothing executed.'}
-                </div>
+                </EmptyLine>
               ) : (
                 <>
                   <ExecLogRow
@@ -521,12 +518,12 @@ export default function ExecutionPage() {
                   <Eyebrow style={{ marginBottom: 4 }}>PARAMETERS</Eyebrow>
                   {params.map((p) => (
                     <div key={p.name} style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '7px 0', borderTop: '1px solid var(--hairline-dim)' }}>
-                      <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{p.label}</span>
-                      {p.help && <span style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{p.help}</span>}
-                      <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-2)' }}>{paramSummary(p)}</span>
+                      <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>{p.label}</span>
+                      {p.help && <span style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)' }}>{p.help}</span>}
+                      <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-2)' }}>{paramSummary(p)}</span>
                     </div>
                   ))}
-                  <div style={{ fontSize: 10.5, lineHeight: 1.5, color: 'var(--text-muted)', paddingTop: 8, borderTop: '1px solid var(--hairline-dim)' }}>
+                  <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-muted)', paddingTop: 8, borderTop: '1px solid var(--hairline-dim)' }}>
                     Values as used by this execution.
                   </div>
                 </div>
@@ -550,7 +547,7 @@ export default function ExecutionPage() {
             <div style={{ background: 'var(--bg-code)', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                padding: '10px 18px', borderBottom: '1px solid var(--hairline-dim)',
+                padding: '12px 18px', borderBottom: '1px solid var(--hairline)',
               }}>
                 <Eyebrow style={{ display: 'inline-block' }}>
                   {sel?.step != null ? selStep?.name : 'Setup log'}
@@ -582,7 +579,7 @@ export default function ExecutionPage() {
                 style={{ maxHeight: 420, padding: '13px 18px', fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.75 }}
               >
                 {!full ? (
-                  <Spinner size={14} />
+                  <LoadingRow label="Loading log…" />
                 ) : (
                   <>
                     {/* §7 truncation notice — the dropped lines are the oldest,
@@ -608,18 +605,18 @@ export default function ExecutionPage() {
                       </div>
                     ))}
                     {logs.length === 0 && (
-                      <div style={{ color: 'var(--text-muted)' }}>
+                      <EmptyLine style={{ padding: 0 }}>
                         {steps.length === 0
                           ? 'No logs — this execution never started.'
                           : sel?.step == null
                             ? 'No setup events — installs, retries, and failures would appear here.'
                             : 'No log lines here.'}
-                      </div>
+                      </EmptyLine>
                     )}
                     {liveSelected && (
                       <span style={{
                         display: 'inline-block', width: 7, height: 13, background: 'var(--cyan)',
-                        animation: 'adBlink 1s step-end infinite', verticalAlign: 'middle', marginLeft: 2,
+                        animation: BLINK, verticalAlign: 'middle', marginLeft: 2,
                       }} />
                     )}
                   </>

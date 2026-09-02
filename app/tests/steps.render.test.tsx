@@ -137,8 +137,8 @@ describe('StepList (shared)', () => {
     // no per-step entry → the tooltip falls back to the declaration's why
     expect(pkgTag!.closest('span')?.getAttribute('aria-label')).toContain('— parse pages')
     expect(screen.getByText('no agent')).toBeTruthy()
-    // inline "1." number prefix (editor keeps the left edge free)
-    expect(screen.getByText('1.')).toBeTruthy()
+    // §14: both variants draw the same list row — a gutter step number
+    expect(screen.getByText('1')).toBeTruthy()
   })
 
   it('editor variant: a declared per-step package why wins the tooltip', () => {

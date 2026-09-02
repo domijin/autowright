@@ -5,25 +5,21 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
-import { BtnGhost, CommandBlock, Eyebrow, Modal, PageTitle, ProgressBar, ScrollArea, Toggle } from '../ui'
+import { CommandBlock, DocModal, Eyebrow, PageTitle, ProgressBar, Toggle } from '../ui'
 import { Markdown } from '../result'
 import { REPO_URL } from '../config'
+// §14 settings-row geometry lives in one place — the Settings page owns it.
+import { row, rowDivided, rowSub, rowTitle } from './SettingsPage'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }
 
-const rowTitle: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: 'var(--text)' }
-const rowSub: React.CSSProperties = { fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)', marginTop: 3 }
-const row: React.CSSProperties = {
-  padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-}
-const rowDivided: React.CSSProperties = { ...row, borderBottom: '1px solid var(--hairline-dim)' }
 const linkBtn: React.CSSProperties = { flex: 'none', textDecoration: 'none' }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-      <Eyebrow style={{ paddingLeft: 2 }}>{title}</Eyebrow>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <Eyebrow>{title}</Eyebrow>
       <div className="ad-card" style={card}>{children}</div>
     </div>
   )
@@ -193,7 +189,7 @@ export default function AboutPage() {
 
   return (
     <div className="ad-anim-page" style={{
-      maxWidth: 640, margin: '0 auto', padding: '26px 30px 70px',
+      maxWidth: 640, padding: '26px 30px 70px',
       display: 'flex', flexDirection: 'column', gap: 26,
     }}>
       <PageTitle style={{ marginBottom: 0 }}>About</PageTitle>
@@ -236,19 +232,13 @@ export default function AboutPage() {
               <CommandBlock command="brew upgrade --cask autowright" />
             )}
           </div>
+          {/* §9.4 persistent available-state highlight — the .armed variant.
+              Not on a brew-managed copy: there is no Download action to point at. */}
           <button
-            className="ad-btn-soft"
+            className={`ad-btn-soft${upd.state === 'available' && !brew ? ' armed' : ''}`}
             onClick={() => { void updBtn.run() }}
             disabled={updBtn.disabled}
-            // §9.4 persistent available-state highlight, same accent border as
-            // the selected-card pattern. Not on a brew-managed copy — there is
-            // no Download action to point at.
-            style={{
-              flex: 'none',
-              ...(upd.state === 'available' && !brew
-                ? { borderColor: 'var(--accent-sel)', color: 'var(--text)' }
-                : null),
-            }}
+            style={{ flex: 'none' }}
           >
             {updBtn.label}
           </button>
@@ -310,7 +300,7 @@ export default function AboutPage() {
             View
           </button>
         </div>
-        <div style={{ padding: '13px 20px', fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-faint)' }}>
+        <div style={{ padding: '13px 18px', fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-faint)' }}>
           Autowright is provided as is, without warranty of any kind (MIT License). Automations
           execute scripts written by an AI agent — those scripts can do anything your user account
           can do on this {copy.machine}. Review every change before you accept and execute it. You are
@@ -320,32 +310,14 @@ export default function AboutPage() {
       </Section>
 
       {doc && (
-        <Modal onClose={() => setDoc(null)} width={680} cardStyle={{ padding: '22px 24px' }}>
-          {(close) => (
-            <>
-              <h2 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: 'var(--text)' }}>
-                {DOCS[doc].title}
-              </h2>
-              <ScrollArea wrapStyle={{ marginTop: 12 }} style={{ maxHeight: '62vh' }}>
-                {docTexts[doc] !== undefined
-                  ? <Markdown text={docTexts[doc]} />
-                  : docErrs[doc]
-                    ? (
-                      <div>
-                        <div style={{ fontSize: 12.5, color: 'var(--red-text)' }}>Couldn't load the document.</div>
-                        <button className="ad-btn-ghost" onClick={() => loadDoc(doc)} style={{ marginTop: 10 }}>
-                          Retry
-                        </button>
-                      </div>
-                    )
-                    : <div style={rowSub}>Loading…</div>}
-              </ScrollArea>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-                <BtnGhost onClick={close}>Close</BtnGhost>
-              </div>
-            </>
-          )}
-        </Modal>
+        <DocModal
+          title={DOCS[doc].title}
+          text={docTexts[doc] ?? null}
+          error={!!docErrs[doc]}
+          onRetry={() => loadDoc(doc)}
+          onClose={() => setDoc(null)}
+          render={(t) => <Markdown text={t} />}
+        />
       )}
     </div>
   )

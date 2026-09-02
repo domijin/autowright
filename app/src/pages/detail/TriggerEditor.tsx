@@ -10,17 +10,6 @@ import type { SecretMeta, Trigger, TriggerKindFields } from '../../types'
 import { Caret, Collapse, MenuRow, MiniBadge, PopMenu, ScrollArea, usePopover } from '../../ui'
 import { useTriggerPreview } from '../../triggers'
 
-const pickChipStyle = (active: boolean): React.CSSProperties => ({
-  fontFamily: 'var(--mono)', fontWeight: 500, fontSize: 11,
-  background: active ? 'var(--accent-chip-bg)' : 'rgba(255,255,255,.04)',
-  border: `1px solid ${active ? 'oklch(0.74 0.155 52 / .4)' : 'var(--border-input)'}`,
-  color: active ? 'var(--accent)' : 'var(--text-2)', borderRadius: 6, padding: '4px 10px', flex: 'none',
-  transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter), border-color var(--t-hover) var(--ease-enter)',
-})
-
-// §9.2: every trigger field box shares one fixed height so side-by-side fields align
-const fieldStyle: React.CSSProperties = { fontFamily: 'var(--mono)', fontSize: 12, height: 30, padding: '0 10px' }
-
 const TZ_LIST: string[] = Intl.supportedValuesOf('timeZone')
 
 type AddableKind = 'cron' | 'time' | 'app_start' | 'discord' | 'imessage'
@@ -63,7 +52,7 @@ function ImsgPermissions() {
       <span style={{ width: 14, flex: 'none', textAlign: 'center' }}>{icon}</span>
       <span style={{ font: '500 11.5px var(--sans)', color: 'var(--text-2)', flex: 'none' }}>{name}</span>
       <span style={{
-        flex: 1, minWidth: 0, font: '400 11.5px/1.4 var(--sans)', color: 'var(--text-muted)',
+        flex: 1, minWidth: 0, font: '400 11.5px/1.45 var(--sans)', color: 'var(--text-muted)',
       }}>
         {note}
       </span>
@@ -74,7 +63,7 @@ function ImsgPermissions() {
   const dot = (c: string) => <i className="fa-solid fa-circle" style={{ color: c, fontSize: 7 }} />
   const btn = (label: string, onClick: () => void, spin = false) => (
     <button className="ad-btn-accent-ghost small" onClick={onClick} disabled={spin} style={{ flex: 'none' }}>
-      {spin && <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: 9, marginRight: 5 }} />}
+      {spin && <i className="fa-solid fa-spinner fa-spin" style={{ fontSize: 10, marginRight: 5 }} />}
       {label}
     </button>
   )
@@ -178,11 +167,8 @@ function TimeParts({ parts, invalid, onChange }: {
   }
   return (
     <div
-      className={`ad-input${invalid ? ' invalid' : ''}`}
-      style={{
-        display: 'flex', alignItems: 'center', ...fieldStyle,
-        padding: '0 9px', cursor: 'text',
-      }}
+      className={`ad-input compact mono${invalid ? ' invalid' : ''}`}
+      style={{ display: 'flex', alignItems: 'center', cursor: 'text' }}
     >
       {parts.map((p, i) => (
         <React.Fragment key={i}>
@@ -224,20 +210,20 @@ function TzPick({ timezone, onPick }: { timezone: string; onPick: (z: string) =>
         onClick={() => { setQ(''); setOpen(!open) }}
         title="Timezone the trigger's times read in"
       >
-        <i className="fa-solid fa-globe" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
+        <i className="fa-solid fa-globe" style={{ color: 'var(--text-faint)', fontSize: 10 }} />
         <span style={timezone ? {} : { fontWeight: 400, color: 'var(--text-muted)' }}>{timezone || 'Local time'}</span>
-        <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
+        <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 10 }} />
       </button>
       <PopMenu show={open} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 280 }}>
         {open && (
           <input
-            className="ad-input"
+            className="ad-input compact mono"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Filter timezones…"
             spellCheck={false}
             autoFocus
-            style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12, padding: '6px 9px', marginBottom: 4 }}
+            style={{ width: '100%', marginBottom: 4 }}
           />
         )}
         <ScrollArea style={{ maxHeight: 240 }}>
@@ -248,7 +234,7 @@ function TzPick({ timezone, onPick }: { timezone: string; onPick: (z: string) =>
             <MenuRow key={z} active={z === timezone} onClick={() => { setOpen(false); onPick(z) }}>{z}</MenuRow>
           ))}
           {needle && zones.length === 0 && (
-            <div style={{ padding: '9px 11px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-muted)' }}>
+            <div style={{ padding: '9px 14px', font: '400 11.5px/1.45 var(--sans)', color: 'var(--text-muted)' }}>
               No timezone matches.
             </div>
           )}
@@ -276,7 +262,7 @@ function SecretPick({ secrets, selected, onPick }: {
         title="The secret holding your Discord bot token"
         style={{ maxWidth: '100%' }}
       >
-        <i className="fa-solid fa-key" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
+        <i className="fa-solid fa-key" style={{ color: 'var(--text-faint)', fontSize: 10 }} />
         <span style={{
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           ...(selected ? {} : { fontWeight: 400, color: 'var(--text-muted)' }),
@@ -284,18 +270,18 @@ function SecretPick({ secrets, selected, onPick }: {
         }}>
           {live ? live.name : dangling ? `${selected.slice(0, 8)}…` : 'Choose the bot-token secret…'}
         </span>
-        <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
+        <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 10 }} />
       </button>
       <PopMenu show={open} style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 240 }}>
         {secrets.length === 0 ? (
-          <div style={{ padding: '9px 14px', font: '400 11px/1.5 var(--sans)', color: 'var(--text-muted)' }}>
+          <div style={{ padding: '9px 14px', font: '400 11.5px/1.45 var(--sans)', color: 'var(--text-muted)' }}>
             No secrets yet — press New secret.
           </div>
         ) : secrets.map((s) => {
           const sel = s.id === selected
           return (
             <button
-              className="ad-btn-bare"
+              className="ad-btn-bare ad-hover-row"
               key={s.id}
               onClick={() => { setOpen(false); onPick(s.id) }}
               style={{
@@ -309,7 +295,7 @@ function SecretPick({ secrets, selected, onPick }: {
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ font: `500 12px var(--mono)`, color: sel ? 'var(--text)' : 'var(--text-2)' }}>{s.name}</span>
+                  <span style={{ font: `500 12.5px var(--mono)`, color: sel ? 'var(--text)' : 'var(--text-2)' }}>{s.name}</span>
                   {!s.set && <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>}
                 </div>
                 {s.description && (
@@ -429,12 +415,14 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
           return (
             <button
               key={m.kind}
+              className="ad-btn-tab"
+              aria-pressed={kind === m.kind}
               onClick={() => { if (!taken) setKind(m.kind) }}
               disabled={taken}
               title={taken ? 'Already added' : undefined}
-              style={{ ...pickChipStyle(kind === m.kind), ...(taken ? { color: 'var(--text-deco)', cursor: 'default' } : {}) }}
+              style={{ flex: 'none' }}
             >
-              <i className={m.icon} style={{ fontSize: 9, marginRight: 5 }} />
+              <i className={m.icon} style={{ fontSize: 10, marginRight: 5 }} />
               {m.label}
             </button>
           )
@@ -479,21 +467,21 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       )}
       {kind === 'cron' ? (
         <input
-          className={`ad-input${exprBad ? ' invalid' : ''}`}
+          className={`ad-input compact mono${exprBad ? ' invalid' : ''}`}
           value={expression}
           onChange={(e) => setExpr(e.target.value)}
           placeholder="0 8 * * *   (minute hour day month weekday, Sun = 0)"
           spellCheck={false}
-          style={{ width: '100%', ...fieldStyle }}
+          style={{ width: '100%' }}
         />
       ) : kind === 'time' ? (
         <div style={{ display: 'flex', gap: 8 }}>
           <input
-            className={`ad-input${atBad ? ' invalid' : ''}`}
+            className={`ad-input compact mono${atBad ? ' invalid' : ''}`}
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            style={{ ...fieldStyle, colorScheme: 'dark' }}
+            style={{ colorScheme: 'dark' }}
           />
           <TimeParts
             parts={tparts}
@@ -504,17 +492,17 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       ) : kind === 'discord' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input
-            className={`ad-input${channel && !channelOk ? ' invalid' : ''}`}
+            className={`ad-input compact mono${channel && !channelOk ? ' invalid' : ''}`}
             value={channel}
             onChange={(e) => setChannel(e.target.value.trim())}
             placeholder="Channel id (numbers — right-click the channel → Copy Channel ID)"
             spellCheck={false}
-            style={{ width: '100%', ...fieldStyle }}
+            style={{ width: '100%' }}
           />
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <SecretPick secrets={secrets} selected={secret} onPick={setSecret} />
             <button className="ad-btn-accent-ghost small" onClick={() => setSecretModal(true)} style={{ flex: 'none' }}>
-              <i className="fa-solid fa-plus" style={{ fontSize: 9, marginRight: 5 }} />
+              <i className="fa-solid fa-plus" style={{ fontSize: 10, marginRight: 5 }} />
               New secret
             </button>
           </div>
@@ -526,29 +514,29 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
             />
           )}
           <input
-            className="ad-input"
+            className="ad-input compact"
             value={pattern}
             onChange={(e) => setPattern(e.target.value)}
             placeholder="Message filter — only messages containing… (optional)"
             title="Fires only when the message contains this text — case-insensitive, plain substring"
             spellCheck={false}
-            style={{ width: '100%', ...fieldStyle }}
+            style={{ width: '100%' }}
           />
           <input
-            className={`ad-input${author && !authorOk ? ' invalid' : ''}`}
+            className={`ad-input compact mono${author && !authorOk ? ' invalid' : ''}`}
             value={author}
             onChange={(e) => setAuthor(e.target.value)}
             placeholder="Sender filter — only messages from these user ids (optional)"
             spellCheck={false}
-            style={{ width: '100%', ...fieldStyle }}
+            style={{ width: '100%' }}
           />
-          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: -2 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: -2 }}>
             Fires only on messages from these Discord users — comma-separate several ids.
             A user id is a long number like 234567890123456789 — right-click their name →
             Copy User ID (needs Developer Mode, enabled in step 8).
           </div>
           <label style={{
-            display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, width: 'fit-content',
+            display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, width: 'fit-content',
             color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none',
           }}>
             <input type="checkbox" checked={mention} onChange={(e) => setMention(e.target.checked)} />
@@ -558,21 +546,21 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       ) : kind === 'imessage' ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <input
-            className={`ad-input${from && !fromOk ? ' invalid' : ''}`}
+            className={`ad-input compact mono${from && !fromOk ? ' invalid' : ''}`}
             value={from}
             onChange={(e) => setFrom(e.target.value)}
             placeholder="Sender — +15551234567 or an email"
             spellCheck={false}
-            style={{ width: '100%', ...fieldStyle }}
+            style={{ width: '100%' }}
           />
           <input
-            className="ad-input"
+            className="ad-input compact"
             value={pattern}
             onChange={(e) => setPattern(e.target.value)}
             placeholder="Message filter — only messages containing… (optional)"
             title="Fires only when the message contains this text — case-insensitive, plain substring"
             spellCheck={false}
-            style={{ width: '100%', ...fieldStyle }}
+            style={{ width: '100%' }}
           />
         </div>
       ) : null}
@@ -580,7 +568,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       {(kind === 'cron' || kind === 'time') && (
         // §9.2 "Catch up if missed": the §4.3 runIfMissed field (§6 wake catch-up)
         <label style={{
-          display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, width: 'fit-content',
+          display: 'flex', alignItems: 'center', gap: 7, fontSize: 11.5, width: 'fit-content',
           color: 'var(--text-2)', cursor: 'pointer', userSelect: 'none', marginTop: 8,
         }}>
           <input type="checkbox" checked={runIfMissed} onChange={(e) => setRunIfMissed(e.target.checked)} />
@@ -589,7 +577,7 @@ export function TriggerEditor({ hasAppStart, initial, onSave, onCancel }: {
       )}
       {(kind === 'cron' || kind === 'time') && (
         // §9.2 / §3 sleep disclaimer, one note: the first sentence follows the checkbox
-        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginTop: 6 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.45, marginTop: 6 }}>
           If this {copy.machine} sleeps through a scheduled time,{' '}
           {runIfMissed ? 'the automation executes once when it wakes.' : 'that time is skipped.'}
           {' '}{copy.sleepMissNote}
@@ -643,7 +631,7 @@ export function AddTrigger({ hasAppStart, onAdd }: { hasAppStart: boolean; onAdd
   if (!open) {
     return (
       <button className="ad-btn-dashed" onClick={() => setOpen(true)} style={{ marginTop: 9 }}>
-        <i className="fa-solid fa-plus" style={{ fontSize: 9 }} /> Add trigger
+        <i className="fa-solid fa-plus" style={{ fontSize: 10 }} /> Add trigger
       </button>
     )
   }

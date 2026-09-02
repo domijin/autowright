@@ -5,7 +5,7 @@ import { api } from '../../api'
 import { usePlatformCopy } from '../../platformCopy'
 import { useStore } from '../../store'
 import type { Automation, SnapshotSettings } from '../../types'
-import { Eyebrow, Toggle } from '../../ui'
+import { EmptyLine, Eyebrow, Toggle } from '../../ui'
 import { runAction } from './model'
 
 // §6.3 automatic-snapshot toggles — label + plain-language explanation per reason
@@ -95,14 +95,14 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
   return (
     <div style={{ marginBottom: 26 }}>
       <Eyebrow style={{ marginBottom: 10 }}>MEMORY</Eyebrow>
-      <div className="ad-card" style={{ padding: '13px 18px' }}>
+      <div className="ad-card" style={{ overflow: 'hidden' }}>
         <div
           // §14: keyed remount + opacity-only fade — the inline swap never jumps the row
           key={confirmClear ? 'clear' : snapAsk ? 'snap' : 'actions'}
           className="ad-anim-fade"
-          style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '12px 18px' }}
         >
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-muted)' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>
             {auto.memory.size} · {auto.memory.updated}
           </span>
           <div style={{ flex: 1 }} />
@@ -123,19 +123,15 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
           ) : snapAsk ? (
             <>
               <input
-                className="ad-input"
+                className="ad-input compact"
                 value={snapName}
                 onChange={(e) => setSnapName(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') doSnapshot() }}
                 placeholder="Name — optional"
                 autoFocus
-                style={{ width: 220, fontSize: 12, padding: '5px 10px' }}
+                style={{ width: 220 }}
               />
-              <button
-                className="ad-btn-soft"
-                onClick={doSnapshot}
-                style={{ border: '1px solid oklch(0.74 0.155 52 / .4)', color: 'var(--accent)', fontWeight: 600 }}
-              >
+              <button className="ad-btn-accent-ghost" onClick={doSnapshot}>
                 Save
               </button>
               <button className="ad-btn-soft" onClick={() => { setSnapAsk(false); setSnapName('') }}>
@@ -162,16 +158,20 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
             </>
           )}
         </div>
-        {(auto.snapshots ?? []).length > 0 && (
-          <div className="ad-anim-item" style={{ marginTop: 12, borderTop: '1px solid var(--hairline)' }}>
-            {(auto.snapshots ?? []).map((s) => (
+        <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)' }}>
+          {(auto.snapshots ?? []).length === 0
+            ? <EmptyLine>No snapshots yet.</EmptyLine>
+            : (auto.snapshots ?? []).map((s, i) => (
               <div
                 // §14: keyed remount + fade on the row's inline action/confirm swaps
                 key={`${s.id}:${snapRow?.snapshotId === s.id ? snapRow.kind : 'row'}`}
                 className="ad-anim-fade"
                 style={{
                   display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-                  padding: '9px 0', borderBottom: '1px solid var(--hairline-dim)',
+                  padding: '12px 18px',
+                  ...(i === (auto.snapshots ?? []).length - 1
+                    ? {}
+                    : { borderBottom: '1px solid var(--hairline-dim)' }),
                 }}
               >
                 {snapRow?.snapshotId === s.id && snapRow.kind === 'restore' ? (
@@ -183,14 +183,10 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
                     </span>
                     <div style={{ flex: 1 }} />
                     <button
-                      className="ad-btn-soft"
+                      className="ad-btn-accent-ghost"
                       onClick={() => doRestoreSnap(s.id)}
                       disabled={executing}
                       title={executing ? 'Blocked while an execution is live' : undefined}
-                      style={{
-                        border: '1px solid oklch(0.74 0.155 52 / .4)',
-                        color: 'var(--accent)', fontWeight: 600,
-                      }}
                     >
                       Restore
                     </button>
@@ -201,13 +197,13 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
                 ) : snapRow?.snapshotId === s.id && snapRow.kind === 'rename' ? (
                   <>
                     <input
-                      className="ad-input"
+                      className="ad-input compact"
                       value={renameVal}
                       onChange={(e) => setRenameVal(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') doRenameSnap(s.id) }}
                       placeholder="Name — optional"
                       autoFocus
-                      style={{ width: 220, fontSize: 12, padding: '5px 10px' }}
+                      style={{ width: 220 }}
                     />
                     <div style={{ flex: 1 }} />
                     <button className="ad-btn-text" onClick={() => doRenameSnap(s.id)}>
@@ -230,10 +226,10 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
                   </>
                 ) : (
                   <>
-                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-muted)' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
                       {s.name ?? 'Snapshot'}
                     </span>
-                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>
+                    <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)' }}>
                       {s.reason} · {s.version} · {s.size} · {s.files} {s.files === 1 ? 'file' : 'files'} · {s.when}
                     </span>
                     <div style={{ flex: 1 }} />
@@ -253,10 +249,9 @@ export function MemoryCard({ auto, executing }: { auto: Automation; executing: b
                 )}
               </div>
             ))}
-          </div>
-        )}
+        </div>
         {/* §6.3 automatic-snapshot toggles */}
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--hairline)' }}>
+        <div style={{ padding: '12px 18px', borderTop: '1px solid var(--hairline-dim)' }}>
           <Eyebrow style={{ marginBottom: 4 }}>AUTOMATIC SNAPSHOTS</Eyebrow>
           {SNAP_SETTINGS.map(({ key, label, help }) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '7px 0' }}>

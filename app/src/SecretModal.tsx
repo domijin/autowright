@@ -10,10 +10,8 @@ import { BtnGhost, BtnPrimary, Eyebrow, MiniBadge, Modal } from './ui'
 
 const NAME_RE = /^[A-Z][A-Z0-9_]*$/
 
-const inputStyle: React.CSSProperties = {
-  width: '100%', boxSizing: 'border-box', color: 'var(--text)',
-  font: `400 12.5px var(--mono)`, padding: '9px 11px',
-}
+// .ad-input owns padding and type (§14); call sites set only layout.
+const inputStyle: React.CSSProperties = { width: '100%', boxSizing: 'border-box' }
 
 export type SecretModalState =
   | { mode: 'add' }
@@ -47,7 +45,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
   const showTextarea = !hasStoredValue || replacing
 
   return (
-    <Modal onClose={onClose} width={460} cardStyle={{ padding: '22px 24px' }}>
+    <Modal onClose={onClose} width={460}>
       {(close) => {
         const save = async () => {
           if (isAdd) {
@@ -96,7 +94,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
                   ? 'The stored value stays as it is unless you replace it. A new value is used from the next execution onward.'
                   : 'This secret has no value yet. Automations that need it fail until you add one.'}
             </p>
-            <Eyebrow style={{ margin: '0 0 6px' }}>NAME</Eyebrow>
+            <Eyebrow style={{ margin: '0 0 8px' }}>NAME</Eyebrow>
             {isAdd ? (
               <input
                 className="ad-input"
@@ -111,12 +109,12 @@ export function SecretModal({ modal, onClose, onSaved }: {
             ) : (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-inset)',
-                border: '1px solid var(--hairline)', borderRadius: 7, padding: '9px 11px',
+                border: '1px solid var(--hairline)', borderRadius: 8, padding: '9px 11px',
               }}>
                 <i className="fa-solid fa-key" style={{ fontSize: 10, color: 'var(--text-faint)' }} />
-                <span style={{ font: `500 12px var(--mono)`, color: 'var(--text)' }}>{name}</span>
+                <span style={{ font: `500 12.5px var(--mono)`, color: 'var(--text)' }}>{name}</span>
                 <span style={{
-                  fontSize: 11, color: 'var(--text-faint)', marginLeft: 'auto',
+                  fontSize: 11.5, color: 'var(--text-faint)', marginLeft: 'auto',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
                   {modal.mode === 'edit'
@@ -125,9 +123,9 @@ export function SecretModal({ modal, onClose, onSaved }: {
                 </span>
               </div>
             )}
-            <Eyebrow style={{ margin: '16px 0 6px' }}>DESCRIPTION · OPTIONAL</Eyebrow>
+            <Eyebrow style={{ margin: '16px 0 8px' }}>DESCRIPTION · OPTIONAL</Eyebrow>
             <input
-              className="ad-input"
+              className="ad-input oneline-ph"
               value={description}
               onChange={(e) => setDesc(e.target.value)}
               onKeyDown={onKeyDown}
@@ -135,7 +133,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
               placeholder="What this secret is for — helps the drafting agent pick the right secret"
               style={inputStyle}
             />
-            <Eyebrow style={{ margin: '16px 0 6px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Eyebrow style={{ margin: '16px 0 8px', display: 'flex', alignItems: 'center', gap: 8 }}>
               VALUE
               {!isAdd && !hasStoredValue && (
                 <MiniBadge c="var(--amber)" bg="var(--amber-bg)">NOT SET</MiniBadge>
@@ -145,7 +143,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
               <>
                 <div style={{ position: 'relative' }}>
                   <textarea
-                    className="ad-input"
+                    className="ad-input mono"
                     value={value}
                     onChange={(e) => setValue(e.target.value)}
                     onKeyDown={onValueKeyDown}
@@ -158,14 +156,15 @@ export function SecretModal({ modal, onClose, onSaved }: {
                         ? 'Paste the new value, or leave blank to keep the current one'
                         : 'Paste the password or API key'}
                     style={{
-                      ...inputStyle, padding: '9px 62px 9px 11px', resize: 'vertical', minHeight: 60,
+                      // paddingRight clears the overlaid Show button — the class owns the rest.
+                      ...inputStyle, paddingRight: 62, resize: 'vertical', minHeight: 60,
                       WebkitTextSecurity: show ? 'none' : 'disc',
                     } as React.CSSProperties}
                   />
                   <button
                     className="ad-btn-text small"
                     onClick={() => setShow(!show)}
-                    style={{ position: 'absolute', right: 9, top: 11, borderRadius: 6 }}
+                    style={{ position: 'absolute', right: 9, top: 11 }}
                   >
                     {show ? 'Hide' : 'Show'}
                   </button>
@@ -183,10 +182,10 @@ export function SecretModal({ modal, onClose, onSaved }: {
             ) : (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-inset)',
-                border: '1px solid var(--hairline)', borderRadius: 7, padding: '9px 11px',
+                border: '1px solid var(--hairline)', borderRadius: 8, padding: '9px 11px',
               }}>
-                <span style={{ font: `400 12px var(--mono)`, color: 'var(--text-muted)' }}>{MASK}</span>
-                <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>Current value is kept secret</span>
+                <span style={{ font: `400 12.5px var(--mono)`, color: 'var(--text-muted)' }}>{MASK}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Current value is kept secret</span>
                 <button
                   className="ad-btn-text small"
                   onClick={() => setReplacing(true)}
@@ -196,7 +195,7 @@ export function SecretModal({ modal, onClose, onSaved }: {
                 </button>
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 22 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 18 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-faint)', marginRight: 'auto' }}>
                 <i className="fa-solid fa-lock" style={{ fontSize: 10 }} />
                 Stored in your {copy.machine}’s {copy.secretStore}

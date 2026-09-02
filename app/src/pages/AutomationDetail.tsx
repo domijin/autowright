@@ -7,8 +7,8 @@ import { useStore } from '../store'
 import type { Automation, Execution } from '../types'
 import {
   BackLink, Badge, BtnGhost, BtnPrimary, Caret, Collapse, ConfirmModal, EmptyNotice, executingToast,
-  Eyebrow, FailureNotice, HeaderActions, MenuRow, MiniBadge, Modal, PopMenu, ScrollArea, Toggle,
-  nextIn, usePopover,
+  Eyebrow, FailureNotice, HeaderActions, MenuItemRow, MenuRow, MetaChip, MiniBadge, Modal, Notice,
+  PageTitle, PopMenu, ScrollArea, Toggle, nextIn, usePopover,
 } from '../ui'
 import { StepList } from '../steps'
 import { nextTriggerShort, useTriggerPreview } from '../triggers'
@@ -190,69 +190,14 @@ export default function AutomationDetail() {
   const recentExecs = autoExecs.filter((e) => !e.test).slice(0, 6)
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '20px 30px 70px' }}>
       <BackLink label="Automations" onClick={() => go('automations')} />
 
-      {/* title row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 13, margin: '14px 0 6px' }}>
-        <h1
-          title={auto.name}
-          style={{
-            fontSize: 20, fontWeight: 600, letterSpacing: '-.01em', margin: 0,
-            minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}
-        >
-          {auto.name}
-        </h1>
-        <div ref={verRef} style={{ position: 'relative' }}>
-          <button className="ad-btn-pill" onClick={() => setVerOpen(!verOpen)}>
-            <span>v{auto.version}</span>
-            <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
-          </button>
-          <PopMenu
-            show={verOpen}
-            style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 360, padding: 0, overflow: 'hidden' }}
-          >
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-                borderBottom: '1px solid var(--hairline-dim)', background: 'rgba(255,255,255,.03)',
-              }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 12.5, color: 'var(--text)' }}>
-                    v{auto.version} · current
-                  </div>
-                  <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>
-                    What triggers and Execute now always use.
-                  </div>
-                </div>
-              </div>
-              <ScrollArea style={{ maxHeight: '60vh' }}>
-              {olderVersions.map((v) => (
-                <div key={v.version} style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-                  borderBottom: '1px solid var(--hairline-dim)',
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontFamily: 'var(--mono)', fontWeight: 600, fontSize: 12.5, color: 'var(--text-2)' }}>v{v.version}</div>
-                    <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 1 }}>
-                      {(v.note ? `${v.note} — ` : '') + v.when}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              </ScrollArea>
-              <div style={{
-                padding: '10px 14px', fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)',
-                background: 'var(--bg-card)',
-              }}>
-                Triggers and{' '}
-                <i className="fa-solid fa-play" style={{ fontSize: 9 }} /> Execute now always use the current version.
-                To make an older version current, open Edit and restore it from the Version menu.
-              </div>
-          </PopMenu>
-        </div>
-        <Badge status={auto.lastStatus} style={{ animation: badgeAnim(auto.lastStatus) }} />
-        <div style={{ flex: 1 }} />
+      {/* title row — §14 PageTitle with inline metadata (version pill, badge) */}
+      <PageTitle
+        raw
+        style={{ marginBottom: 6 }}
+        right={(
         <HeaderActions>
           <button className="ad-btn-ghost" onClick={() => setSurface('create', 'edit')}>
             Edit
@@ -262,11 +207,10 @@ export default function AutomationDetail() {
           </BtnPrimary>
           <div ref={actRef} style={{ position: 'relative' }}>
             <button
-              className="ad-btn-ghost"
+              className="ad-btn-ghost icon"
               onClick={() => setActOpen(!actOpen)}
               title="More actions"
               aria-label="Automation actions"
-              style={{ padding: '8px 11px' }}
             >
               <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
             </button>
@@ -282,11 +226,54 @@ export default function AutomationDetail() {
             </PopMenu>
           </div>
         </HeaderActions>
-      </div>
+        )}
+      >
+        <h1
+          className="ad-h1"
+          title={auto.name}
+          style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
+          {auto.name}
+        </h1>
+        <div ref={verRef} style={{ position: 'relative' }}>
+          <button className="ad-btn-pill" onClick={() => setVerOpen(!verOpen)}>
+            <span>v{auto.version}</span>
+            <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
+          </button>
+          <PopMenu
+            show={verOpen}
+            style={{ top: 'calc(100% + 6px)', left: 0, minWidth: 360, padding: 0, overflow: 'hidden' }}
+          >
+              <MenuItemRow
+                header mono
+                title={`v${auto.version} · current`}
+                sub="What triggers and Execute now always use."
+              />
+              <ScrollArea style={{ maxHeight: '60vh' }}>
+              {olderVersions.map((v) => (
+                <MenuItemRow
+                  key={v.version} mono
+                  title={`v${v.version}`}
+                  sub={(v.note ? `${v.note} — ` : '') + v.when}
+                />
+              ))}
+              </ScrollArea>
+              <div style={{
+                padding: '10px 14px', fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-faint)',
+                background: 'var(--bg-card)',
+              }}>
+                Triggers and{' '}
+                <i className="fa-solid fa-play" style={{ fontSize: 9 }} /> Execute now always use the current version.
+                To make an older version current, open Edit and restore it from the Version menu.
+              </div>
+          </PopMenu>
+        </div>
+        <Badge status={auto.lastStatus} style={{ animation: badgeAnim(auto.lastStatus) }} />
+      </PageTitle>
 
       {/* §9.2 lede row: the automation's description (read-only — editing lives on the edit page)
           with the §4.3 trigger status chip beside it; chip stands alone when description is empty */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 20px' }}>
         {auto.description && (
           <p
             title={auto.description}
@@ -299,30 +286,26 @@ export default function AutomationDetail() {
             {auto.description}
           </p>
         )}
-        <span style={{
-          flex: 'none',
-          display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'var(--mono)', fontWeight: 500,
-          fontSize: 11.5, color: trigChipOn ? 'var(--accent)' : 'var(--gray)',
-          background: trigChipOn ? 'var(--accent-chip-bg)' : 'var(--gray-bg)',
-          borderRadius: 6, padding: '3px 9px',
-          transition: 'color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter)',
-        }}>
+        <MetaChip
+          c={trigChipOn ? 'var(--accent)' : 'var(--gray)'}
+          bg={trigChipOn ? 'var(--accent-chip-bg)' : 'var(--gray-bg)'}
+          style={{
+            flex: 'none',
+            transition: 'color var(--t-hover) var(--ease-enter), background var(--t-hover) var(--ease-enter)',
+          }}
+        >
           <i
             className={executing ? 'fa-solid fa-spinner fa-spin' : (allOff || noTrigs) ? 'fa-solid fa-pause' : 'fa-solid fa-clock'}
             style={{ fontSize: 9 }}
           />
           {trigChip}
-        </span>
+        </MetaChip>
       </div>
 
       {/* §9.2/§4.1 needs-fixing banner — pure problems rendering: no probe,
           no dismiss state; it disappears by the problems being fixed. */}
       {auto.problems.length > 0 && (
-        <div className="ad-anim-item" style={{
-          margin: '0 0 24px', background: 'var(--notice-amber-bg)',
-          border: '1px solid var(--notice-amber-border)',
-          borderRadius: 12, padding: '12px 16px',
-        }}>
+        <Notice tone="amber" size="card" className="ad-anim-item" style={{ margin: '0 0 24px' }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--amber)', marginBottom: 6 }}>
             This automation needs fixing
           </div>
@@ -347,14 +330,13 @@ export default function AutomationDetail() {
               ) : null}
             </div>
           ))}
-        </div>
+        </Notice>
       )}
 
       {/* §4.4 draft banner */}
       {auto.draft && (
-        <div className="ad-anim-item" style={{
-          margin: '0 0 24px', background: 'var(--bg-card)', border: '1px dashed oklch(0.74 0.155 52 / .45)',
-          borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12,
+        <Notice tone="accent" size="card" dashed className="ad-anim-item" style={{
+          margin: '0 0 24px', display: 'flex', alignItems: 'center', gap: 12,
         }}>
           <MiniBadge c="var(--accent)" bg="var(--accent-chip-bg)" style={{ flex: 'none' }}>Draft</MiniBadge>
           <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-2)' }}>
@@ -370,7 +352,7 @@ export default function AutomationDetail() {
           <button className="ad-btn-text dim" onClick={discardDraft} style={{ flex: 'none' }}>
             Discard
           </button>
-        </div>
+        </Notice>
       )}
 
       {/* latest result */}
@@ -439,9 +421,7 @@ export default function AutomationDetail() {
       {/* steps */}
       {steps.length > 0 && (
         <div style={{ marginBottom: 26 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10 }}>
-            <Eyebrow>STEPS</Eyebrow>
-          </div>
+          <Eyebrow style={{ marginBottom: 10 }}>STEPS</Eyebrow>
           <div className="ad-card" style={{ overflow: 'hidden' }}>
             {/* §9.2: one agent tag per entry id in a step's agents list,
                 resolved to the live agent's name; empty →
@@ -472,12 +452,12 @@ export default function AutomationDetail() {
             <button
               className="ad-btn-bare ad-hover-row ad-focus-inset"
               onClick={() => setSpecOpen(!specOpen)}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 18px', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 18px', cursor: 'pointer' }}
             >
               <Eyebrow>SPEC</Eyebrow>
               <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-muted)' }}>{auto.specMeta}</span>
               <div style={{ flex: 1 }} />
-              <span style={{ color: 'var(--text-faint)', fontSize: 11 }}>
+              <span style={{ color: 'var(--text-faint)', fontSize: 11.5 }}>
                 <Caret open={specOpen} openDeg={180} closedDeg={0} /> {specOpen ? 'collapse' : 'expand'}
               </span>
             </button>
@@ -494,7 +474,7 @@ export default function AutomationDetail() {
       )}
 
       {exportAsk && (
-        <Modal onClose={() => setExportAsk(false)} width={440} cardStyle={{ padding: '22px 24px' }}>
+        <Modal onClose={() => setExportAsk(false)} width={440}>
           {(close) => {
             // §5.1/§9.2: fetch the archive, then hand it to the native save dialog.
             const doExport = async () => {
@@ -523,7 +503,7 @@ export default function AutomationDetail() {
                   </div>
                   <Toggle on={exportValues} onChange={setExportValues} />
                 </div>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 22 }}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end', marginTop: 18 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-faint)', marginRight: 'auto' }}>
                     <i className="fa-solid fa-lock" style={{ fontSize: 10 }} />
                     Secret values and memory are never included in the file
@@ -563,7 +543,7 @@ export default function AutomationDetail() {
       {execAsk === 'full' && (
         <Modal
           onClose={() => setExecAsk(null)} width={400} zIndex={90}
-          cardStyle={{ padding: '22px 24px' }}
+         
           role="alertdialog" ariaLabel="Execution and queue capacity is full"
         >
           {(close) => (

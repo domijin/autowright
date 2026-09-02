@@ -11,9 +11,8 @@ import { useStore } from '../../store'
 import { useTriggerPreview } from '../../triggers'
 import { ParamValueEditor } from '../../steps'
 import type { Agent, Automation, ChatEntry, DraftTrigger, ParamDef } from '../../types'
-import { Eyebrow, GreenCheck, ProgressBar, Spinner } from '../../ui'
+import { Eyebrow, LoadingRow, ProgressBar, Spinner, StatusLine } from '../../ui'
 import { type Rev, analyzeTestMessage, applyTestValues, serializeDraft } from './model'
-import { cardStyle } from './SectionCards'
 
 // ---------- param value editor wrapper (§4.2 kinds — §11 test values) ----------
 
@@ -35,7 +34,7 @@ function ParamEditor({ p, upd }: { p: ParamDef; upd: (patch: Record<string, unkn
   }
   if (p.kind === 'toggle') {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '13px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '13px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
         <div>
           <div style={{ font: "600 13px var(--sans)" }}>{p.label}</div>
           <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 3 }}>{p.help}</div>
@@ -46,7 +45,7 @@ function ParamEditor({ p, upd }: { p: ParamDef; upd: (patch: Record<string, unkn
   }
   if (p.kind === 'number') {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '13px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '13px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ font: "600 13px var(--sans)" }}>{p.label}</div>
           <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 3 }}>{p.help}</div>
@@ -63,7 +62,7 @@ function ParamEditor({ p, upd }: { p: ParamDef; upd: (patch: Record<string, unkn
   }
   // list / kv / text — stacked label + help over the full-width control
   return (
-    <div style={{ padding: '14px 20px 15px', borderBottom: '1px solid var(--hairline-dim)' }}>
+    <div style={{ padding: '14px 18px 15px', borderBottom: '1px solid var(--hairline-dim)' }}>
       <div style={{ font: "600 13px var(--sans)" }}>{p.label}</div>
       <div style={{ font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)', margin: '3px 0 9px' }}>{p.help}</div>
       <ParamValueEditor {...valueProps} />
@@ -180,7 +179,7 @@ export function BuildTestPanel({
   // treatment — never bordered or filled boxes); the class owns the padding,
   // and the rows wrap so a button is never clipped.
   const panelBtnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap' }
-  const panelRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 18px' }
+  const panelRowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 10px' }
   // §11 test-setup disclosure: Test draft never starts a test —
   // it expands the setup section below the action row — the Run test row first,
   // then every option at once (param editors, trigger message). Entered values survive a
@@ -339,14 +338,14 @@ export function BuildTestPanel({
   const buildZone = outOfSync && !rev.syncBusy && !rev.pendingSync
 
   return (
-    <div ref={rootRef} style={cardStyle}>
-      <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--hairline)' }}>
+    <div ref={rootRef} className="ad-card" style={{ overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid var(--hairline)' }}>
         <Eyebrow>BUILD &amp; TEST</Eyebrow>
       </div>
       {/* build zone — state 1 only (out of sync, no sync running or armed);
           an in-sync workflow shows no indicator at all */}
       {buildZone && (
-      <div style={{ padding: '12px 20px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+      <div style={{ padding: '12px 18px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* the indicator sits in an 18px box matching the title's line-height,
               so it stays centered on the first line even when the text wraps */}
@@ -389,7 +388,7 @@ export function BuildTestPanel({
           beside the sync-first hint — but a still-executing test keeps its
           Cancel */}
       {buildZone && (
-        <div style={{ padding: '12px 20px 14px', borderTop: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ padding: '12px 18px 14px', borderTop: '1px solid var(--hairline)', display: 'flex', alignItems: 'center', gap: 12 }}>
           {testLive ? (
             <button className="ad-btn-text" onClick={cancelTest} style={panelBtnStyle}>
               Cancel
@@ -416,13 +415,13 @@ export function BuildTestPanel({
             {test ? (
               /* §11: status + progress only — the live step timeline,
                  logs, and result live on the test's execution page */
-              <div style={{ padding: '12px 20px 14px' }}>
+              <div style={{ padding: '12px 18px 14px' }}>
                 {!testExec ? (
-                  <Spinner size={13} />
+                  <LoadingRow label="Loading the test…" />
                 ) : (
                   <>
                     {testLive ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, font: "400 12px var(--sans)", color: 'var(--text-2)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, font: "400 12.5px var(--sans)", color: 'var(--text-2)' }}>
                         <Spinner size={13} />
                         <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           Executing
@@ -431,14 +430,11 @@ export function BuildTestPanel({
                         </span>
                       </div>
                     ) : testExec.status === 'succeeded' ? (
-                      <GreenCheck label="Test succeeded — the memory copy was discarded." />
+                      <StatusLine tone="green" label="Test succeeded — the memory copy was discarded." />
                     ) : testExec.status === 'failed' ? (
-                      <div className="ad-anim-item" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <i className="fa-solid fa-triangle-exclamation" style={{ color: 'var(--amber)', fontSize: 13 }} />
-                        <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--amber)' }}>Test failed.</span>
-                      </div>
+                      <StatusLine tone="amber" label="Test failed." />
                     ) : (
-                      <div style={{ font: "400 12px var(--sans)", color: 'var(--text-faint)' }}>
+                      <div style={{ font: "400 12.5px var(--sans)", color: 'var(--text-faint)' }}>
                         Test {testExec.status}.
                       </div>
                     )}
@@ -487,14 +483,11 @@ export function BuildTestPanel({
             ) : rev.lastTest ? (
               /* §11: persisted last-test summary (test.yaml) — a resumed
                  draft shows the outcome instead of throwing it away */
-              <div style={{ padding: '12px 20px 14px', font: "400 12px var(--sans)" }}>
+              <div style={{ padding: '12px 18px 14px', font: "400 12.5px var(--sans)" }}>
                 {rev.lastTest.status === 'succeeded' ? (
-                  <GreenCheck label={`Last test succeeded — ${rev.lastTest.when}.`} />
+                  <StatusLine tone="green" label={`Last test succeeded — ${rev.lastTest.when}.`} />
                 ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <i className="fa-solid fa-triangle-exclamation" style={{ color: 'var(--amber)', fontSize: 13 }} />
-                    <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--amber)' }}>Last test failed — {rev.lastTest.when}.</span>
-                  </div>
+                  <StatusLine tone="amber" label={`Last test failed — ${rev.lastTest.when}.`} />
                 )}
                 <div style={{ ...panelRowStyle, marginTop: 8 }}>
                   {syncGhostBtn}
@@ -507,7 +500,7 @@ export function BuildTestPanel({
                  side with the ghost sync, and the plain-words
                  status-and-side-effects line — which wraps below the
                  buttons when space runs out */
-              <div style={{ ...panelRowStyle, padding: '10px 20px 12px' }}>
+              <div style={{ ...panelRowStyle, padding: '10px 18px 12px' }}>
                 {syncGhostBtn}
                 {testToggleBtn('Test draft')}
                 <span style={{ flex: '1 1 320px', minWidth: 0, font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
@@ -521,7 +514,7 @@ export function BuildTestPanel({
               Run test is the only control that starts a test; View execution
               rides beside it when a test record exists */}
           {testOpen && !testLive && (
-            <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', padding: '8px 20px 10px', ...lockStyle }}>
+            <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', padding: '8px 18px 10px', ...lockStyle }}>
               <div style={panelRowStyle}>
                 <button
                   className="ad-btn-text"
@@ -557,9 +550,9 @@ export function BuildTestPanel({
               every option at once below the run row */}
           {testOpen && !testLive && rev.params.length > 0 && testParams !== null && (
             <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
-              <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-muted)' }}>
+              <Eyebrow style={{ padding: '10px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
                 PARAMETER VALUES · THIS TEST ONLY
-              </div>
+              </Eyebrow>
               {testParams.map((p) => (
                 <ParamEditor
                   key={p.name} p={p}
@@ -572,10 +565,10 @@ export function BuildTestPanel({
               setup section */}
           {testOpen && !testLive && msgTriggers.length > 0 && testMock !== null && (
             <div className="ad-anim-item" style={{ borderTop: '1px solid var(--hairline-dim)', ...lockStyle }}>
-              <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--hairline-dim)', font: "600 10px var(--mono)", letterSpacing: '.09em', color: 'var(--text-muted)' }}>
+              <Eyebrow style={{ padding: '10px 18px', borderBottom: '1px solid var(--hairline-dim)' }}>
                 TRIGGER MESSAGE · THIS TEST ONLY
-              </div>
-              <div style={{ padding: '13px 20px 3px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              </Eyebrow>
+              <div style={{ padding: '13px 18px 3px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {msgTriggers.length > 1 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     {msgTriggers.map((t, i) => (
@@ -593,24 +586,24 @@ export function BuildTestPanel({
                   </div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ flex: 'none', width: 64, font: "600 10px var(--mono)", letterSpacing: '.07em', color: 'var(--text-faint)' }}>FROM</span>
+                  <Eyebrow style={{ flex: 'none', width: 64 }}>FROM</Eyebrow>
                   <input
-                    className="ad-input" value={testMock.sender}
+                    className="ad-input compact mono" value={testMock.sender}
                     onChange={(e) => setTestMock({ ...testMock, sender: e.target.value })}
-                    style={{ flex: 1, minWidth: 0, color: 'var(--text)', font: "400 12px var(--mono)", padding: '7px 10px' }}
+                    style={{ flex: 1, minWidth: 0 }}
                   />
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ flex: 'none', width: 64, font: "600 10px var(--mono)", letterSpacing: '.07em', color: 'var(--text-faint)' }}>MESSAGE</span>
+                  <Eyebrow style={{ flex: 'none', width: 64 }}>MESSAGE</Eyebrow>
                   <input
-                    className="ad-input" value={testMock.text}
+                    className="ad-input compact mono" value={testMock.text}
                     placeholder="The message that starts this test"
                     onChange={(e) => setTestMock({ ...testMock, text: e.target.value })}
-                    style={{ flex: 1, minWidth: 0, color: 'var(--text)', font: "400 12px var(--mono)", padding: '7px 10px' }}
+                    style={{ flex: 1, minWidth: 0 }}
                   />
                 </div>
               </div>
-              <div style={{ padding: '10px 20px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
+              <div style={{ padding: '10px 18px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
                 Applies to this test only — nothing is saved; leave the message empty to test without one.{' '}
                 {msgTriggers[testMock.idx]?.kind === 'discord'
                   ? 'A step’s reply() posts to the real Discord channel.'

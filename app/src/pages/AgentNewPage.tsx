@@ -6,7 +6,7 @@ import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
 import type { Agent } from '../types'
-import { BackLink, BtnPrimary, ConfirmModal, Eyebrow, GreenCheck, LoadingRow, ManualInstallLine, MenuRow, MiniBadge, P, PopMenu, ProgressBar, RadioRing, usePopover } from '../ui'
+import { BackLink, BtnPrimary, ConfirmModal, EmptyNotice, Eyebrow, HeaderActions, LoadingRow, ManualInstallLine, MenuRow, MiniBadge, P, PageTitle, PopMenu, ProgressBar, RadioRing, StatusLine, usePopover } from '../ui'
 
 type HarnessId = 'claude' | 'gemini' | 'codex' | 'opencode'
 
@@ -425,48 +425,47 @@ export default function AgentNewPage() {
   if (missingEdit) return null // redirecting to Agents (effect above)
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 720, margin: '0 auto', padding: '20px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 720, padding: '20px 30px 70px' }}>
       <BackLink label="Agents" onClick={() => go('agents')} style={{ marginBottom: 10 }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px' }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-.01em', margin: 0, flex: 1 }}>
-          {editAgent ? 'Edit agent' : 'Add an agent'}
-        </h1>
-        {/* §12: edit-mode overflow menu — the agent actions moved off the card. */}
-        {editAgent && (
-          <div ref={menuRef} style={{ position: 'relative' }}>
-            <button
-              className="ad-btn-ghost"
-              onClick={() => setMenuOpen(!menuOpen)}
-              title="More actions"
-              aria-label="Agent actions"
-              style={{ padding: '8px 11px' }}
-            >
-              <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
-            </button>
-            <PopMenu show={menuOpen} style={{ top: 'calc(100% + 6px)', right: 0, minWidth: 190 }}>
-              {checkReady && (
-                <MenuRow onClick={() => { setMenuOpen(false); void recheck() }}>
-                  <i className="fa-solid fa-plug" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-                  Check connection
+      <PageTitle
+        raw
+        sub="Pick the harness that writes your automations, then choose which model it uses. The agent never executes anything — Autowright does."
+        right={editAgent && (
+          <HeaderActions>
+            {/* §12: edit-mode overflow menu — the agent actions moved off the card. */}
+            <div ref={menuRef} style={{ position: 'relative' }}>
+              <button
+                className="ad-btn-ghost icon"
+                onClick={() => setMenuOpen(!menuOpen)}
+                title="More actions"
+                aria-label="Agent actions"
+              >
+                <i className="fa-solid fa-ellipsis" style={{ fontSize: 12 }} />
+              </button>
+              <PopMenu show={menuOpen} style={{ top: 'calc(100% + 6px)', right: 0, minWidth: 190 }}>
+                {checkReady && (
+                  <MenuRow onClick={() => { setMenuOpen(false); void recheck() }}>
+                    <i className="fa-solid fa-plug" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                    Check connection
+                  </MenuRow>
+                )}
+                {checkReady && !liveAgent?.default && (
+                  <MenuRow onClick={() => { setMenuOpen(false); void makeDefault() }}>
+                    <i className="fa-solid fa-star" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                    Make default
+                  </MenuRow>
+                )}
+                <MenuRow danger onClick={() => { setMenuOpen(false); setDelOpen(true) }}>
+                  <i className="fa-solid fa-trash-can" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
+                  Remove agent…
                 </MenuRow>
-              )}
-              {checkReady && !liveAgent?.default && (
-                <MenuRow onClick={() => { setMenuOpen(false); void makeDefault() }}>
-                  <i className="fa-solid fa-star" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-                  Make default
-                </MenuRow>
-              )}
-              <MenuRow danger onClick={() => { setMenuOpen(false); setDelOpen(true) }}>
-                <i className="fa-solid fa-trash-can" style={{ fontSize: 11, width: 14, textAlign: 'center', marginRight: 9 }} />
-                Remove agent…
-              </MenuRow>
-            </PopMenu>
-          </div>
+              </PopMenu>
+            </div>
+          </HeaderActions>
         )}
-      </div>
-      <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 22px' }}>
-        Pick the harness that writes your automations, then choose which model it uses. The agent never executes anything — Autowright does.
-      </p>
+      >
+        <h1 className="ad-h1">{editAgent ? 'Edit agent' : 'Add an agent'}</h1>
+      </PageTitle>
 
       {fix === 'needs' && (
         <AmberNotice
@@ -480,22 +479,19 @@ export default function AgentNewPage() {
         <LoadingRow label="Reconnecting…" style={{ marginBottom: 22 }} />
       )}
 
-      <Eyebrow style={{ margin: '0 0 10px' }}>NAME</Eyebrow>
+      <Eyebrow style={{ margin: '0 0 8px' }}>NAME</Eyebrow>
       <input
         ref={nameRef}
         className={`ad-input${nameErr ? ' invalid' : ''}`}
         value={name}
         onChange={(e) => { setName(e.target.value); if (e.target.value.trim()) setNameErr(null) }}
         placeholder="Name this agent"
-        style={{
-          width: '100%', boxSizing: 'border-box', padding: '11px 14px', fontWeight: 500, fontSize: 13,
-          color: 'var(--text)', marginBottom: 16,
-        }}
+        style={{ width: '100%', boxSizing: 'border-box', marginBottom: 16 }}
       />
       {nameErr && (
         <div className="ad-anim-item" style={{ display: 'flex', alignItems: 'center', gap: 7, margin: '-10px 0 16px' }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: P.red, flex: 'none' }} />
-          <span style={{ fontWeight: 500, fontSize: 12, color: 'var(--red-text)' }}>
+          <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--red-text)' }}>
             {nameErr === 'taken'
               ? `An agent named ${name.trim()} already exists — pick a different name.`
               : 'A name is required — give this agent a name before saving.'}
@@ -503,21 +499,17 @@ export default function AgentNewPage() {
         </div>
       )}
 
-      <Eyebrow style={{ margin: '0 0 10px' }}>DESCRIPTION <span style={{ color: 'var(--text-faint)' }}>· OPTIONAL</span></Eyebrow>
+      <Eyebrow style={{ margin: '0 0 8px' }}>DESCRIPTION <span style={{ color: 'var(--text-faint)' }}>· OPTIONAL</span></Eyebrow>
       <textarea
         className="ad-input"
         value={description}
         onChange={(e) => setDesc(e.target.value)}
         placeholder="What this agent is for — shown on the Agents page and given to the drafting agent"
         rows={2}
-        style={{
-          width: '100%', boxSizing: 'border-box', padding: '11px 14px',
-          fontWeight: 400, fontSize: 13, lineHeight: 1.5, color: 'var(--text)',
-          resize: 'vertical', marginBottom: 22,
-        }}
+        style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', marginBottom: 22 }}
       />
 
-      <Eyebrow style={{ margin: '0 0 10px' }}>HARNESS</Eyebrow>
+      <Eyebrow style={{ margin: '0 0 8px' }}>HARNESS</Eyebrow>
       <div role="radiogroup" aria-label="Harness" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         {HARNESSES.map((h) => {
           const on = harness === h.id
@@ -534,8 +526,7 @@ export default function AgentNewPage() {
               style={{
                 // Selected chrome overrides .ad-card-click's base + hover.
                 ...(on ? { background: 'var(--bg-card-sel)', borderColor: 'var(--accent-sel)' } : {}),
-                borderRadius: 12, padding: '16px 18px',
-                display: 'flex', flexDirection: 'column', gap: 7,
+                padding: 18, display: 'flex', flexDirection: 'column', gap: 7,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
@@ -601,11 +592,8 @@ export default function AgentNewPage() {
 
       {harness && hInstalled && (
         <>
-          <Eyebrow style={{ margin: '0 0 10px' }}>MODEL</Eyebrow>
-          <div role="radiogroup" aria-label="Model" style={{
-            background: 'var(--bg-card)', border: '1px solid var(--border-card)',
-            borderRadius: 12, overflow: 'hidden', marginBottom: 16,
-          }}>
+          <Eyebrow style={{ margin: '0 0 8px' }}>MODEL</Eyebrow>
+          <div className="ad-card" role="radiogroup" aria-label="Model" style={{ overflow: 'hidden', marginBottom: 16 }}>
             {([
               { id: 'default' as const, name: 'Default model', note: DEFAULT_NOTE[harness], disabled: false },
               // §4.7: a user-typed model string — valid with every harness
@@ -627,7 +615,7 @@ export default function AgentNewPage() {
                   aria-disabled={md.disabled || undefined}
                   onClick={() => { if (md.disabled) return; setMode(md.id); setModel(null) }}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px',
+                    display: 'flex', alignItems: 'center', gap: 11, padding: '12px 18px',
                     borderBottom: i === arr.length - 1 ? 'none' : '1px solid var(--hairline-dim)',
                     width: '100%', textAlign: 'left', cursor: md.disabled ? 'default' : 'pointer',
                     opacity: md.disabled ? 0.45 : 1,
@@ -635,8 +623,8 @@ export default function AgentNewPage() {
                 >
                   <RadioRing selected={on} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, fontSize: 13, color: on ? 'var(--text)' : 'var(--text-2)' }}>{md.name}</div>
-                    <div style={{ fontSize: 12, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 2 }}>{md.note}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: on ? 'var(--text)' : 'var(--text-2)' }}>{md.name}</div>
+                    <div style={{ fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-muted)', marginTop: 2 }}>{md.note}</div>
                   </div>
                 </button>
               )
@@ -645,16 +633,13 @@ export default function AgentNewPage() {
 
           {mode === 'custom' && (
             <>
-              <Eyebrow style={{ margin: '0 0 10px' }}>MODEL NAME</Eyebrow>
+              <Eyebrow style={{ margin: '0 0 8px' }}>MODEL NAME</Eyebrow>
               <input
-                className="ad-input"
+                className="ad-input mono"
                 value={model ?? ''}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder={CUSTOM_PLACEHOLDER[harness]}
-                style={{
-                  width: '100%', boxSizing: 'border-box', padding: '11px 14px',
-                  font: `500 13px var(--mono)`, color: 'var(--text)', marginBottom: 16,
-                }}
+                style={{ width: '100%', boxSizing: 'border-box', marginBottom: 16 }}
               />
             </>
           )}
@@ -693,18 +678,15 @@ export default function AgentNewPage() {
           )}
           {needsOllama && ready && (
             <div style={{ marginBottom: 16 }}>
-              <GreenCheck label="Ollama is installed and active." />
+              <StatusLine tone="green" label="Ollama is installed and active." />
             </div>
           )}
 
           {mode === 'ollama' && ready && (
             <>
-              <Eyebrow style={{ margin: '0 0 10px' }}>LOCAL MODEL</Eyebrow>
+              <Eyebrow style={{ margin: '0 0 8px' }}>LOCAL MODEL</Eyebrow>
               {models.length > 0 ? (
-                <div role="radiogroup" aria-label="Local model" style={{
-                  background: 'var(--bg-card)', border: '1px solid var(--border-card)',
-                  borderRadius: 12, overflow: 'hidden', marginBottom: 14,
-                }}>
+                <div className="ad-card" role="radiogroup" aria-label="Local model" style={{ overflow: 'hidden', marginBottom: 14 }}>
                   {models.map((n, i) => {
                     const on = model === n
                     const sug = SUGGESTED.find((s) => s.id === n)
@@ -716,49 +698,42 @@ export default function AgentNewPage() {
                         aria-checked={on}
                         onClick={() => setModel(n)}
                         style={{
-                          display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px',
+                          display: 'flex', alignItems: 'center', gap: 11, padding: '12px 18px',
                           borderBottom: i === models.length - 1 ? 'none' : '1px solid var(--hairline-dim)',
                           cursor: 'pointer',
                         }}
                       >
                         <RadioRing selected={on} />
-                        <span style={{ flex: 1, font: `500 13px var(--mono)`, color: on ? 'var(--text)' : 'var(--text-2)', textAlign: 'left' }}>{n}</span>
+                        <span style={{ flex: 1, font: `500 12.5px var(--mono)`, color: on ? 'var(--text)' : 'var(--text-2)', textAlign: 'left' }}>{n}</span>
                         <span style={{ font: `400 11px var(--mono)`, color: 'var(--text-faint)' }}>{sug?.meta ?? ''}</span>
                       </button>
                     )
                   })}
                 </div>
               ) : (
-                <div style={{
-                  background: 'var(--bg-card)', border: '1px dashed var(--border-dashed)', borderRadius: 10,
-                  padding: '13px 16px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.5, color: 'var(--text-muted)',
-                }}>
-                  No local models installed yet — download one below and it will show up here.
-                </div>
+                <EmptyNotice
+                  body="No local models installed yet — download one below and it will show up here."
+                  style={{ marginBottom: 14 }}
+                />
               )}
 
-              <Eyebrow style={{ margin: '0 0 10px' }}>DOWNLOAD A MODEL</Eyebrow>
+              <Eyebrow style={{ margin: '0 0 8px' }}>DOWNLOAD A MODEL</Eyebrow>
               {!pulling ? (
                 <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                   <input
-                    className="ad-input"
+                    className="ad-input mono"
                     value={pullText}
                     onChange={(e) => setPullText(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') startPull(pullText) }}
                     placeholder="e.g. qwen3-coder:30b"
-                    style={{
-                      flex: 1, padding: '11px 14px', font: `500 13px var(--mono)`, color: 'var(--text)',
-                    }}
+                    style={{ flex: 1 }}
                   />
                   <BtnPrimary onClick={() => startPull(pullText)} style={{ flex: 'none' }}>
                     Download
                   </BtnPrimary>
                 </div>
               ) : (
-                <div style={{
-                  background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 10,
-                  padding: '13px 16px', marginBottom: 12,
-                }}>
+                <div className="ad-card" style={{ padding: '16px 18px', marginBottom: 12 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
                     <span style={{ fontWeight: 500, fontSize: 12.5, color: 'var(--text-2)' }}>
                       Downloading <span style={{ font: `500 12px var(--mono)`, color: 'var(--text)' }}>{pulling}</span>…
@@ -782,7 +757,7 @@ export default function AgentNewPage() {
                   download card replaces, so mid-pull they'd be inert. */}
               {!pulling && sugRows.length > 0 && (
                 <>
-                  <Eyebrow style={{ margin: '0 0 10px' }}>SUGGESTED</Eyebrow>
+                  <Eyebrow style={{ margin: '0 0 8px' }}>SUGGESTED</Eyebrow>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
                     {sugRows.map((sg) => (
                       <button
@@ -804,7 +779,7 @@ export default function AgentNewPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ad-chip-btn"
-                style={{ textDecoration: 'none', marginBottom: 22 }}
+                style={{ marginBottom: 22 }}
               >
                 Browse more models on Ollama <span style={{ fontWeight: 400, fontSize: 11 }}>↗</span>
               </a>

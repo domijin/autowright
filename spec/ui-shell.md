@@ -278,7 +278,7 @@ animation animates `transform` and would knock the toast off-center while it pla
 - The §14 focus ring must never be clipped: controls inside an `overflow: hidden` card use
   the inset variant (`.ad-focus-inset` — outline-offset −2 px) so the ring draws inside the
   clip instead of being cut.
-- A page whose data hasn't loaded yet renders a centered `LoadingRow` — never a blank pane.
+- A page whose data hasn't loaded yet renders `PageLoading` (the §14 centered spinner well) — never a blank pane.
 - A render failure is **contained to the page it happened in**: the content region is wrapped
   in an error boundary, so a throwing page is replaced by the §14 dashed notice ("Something
   went wrong on this page" over the error message) carrying a "Back to Automations" button
@@ -324,8 +324,9 @@ service was registered but never started — macOS Gatekeeper may be blocking an
 Details in app.log."). Connection retries continue even in this state.
 
 **Page-header actions.** Every page's top-right header actions render in one shared cluster
-(`HeaderActions` — flex row, 10 px gap, vertically centered), whether the page uses the shared
-`PageTitle` right slot or a hand-rolled title row. Order left → right by rising prominence:
+(`HeaderActions` — flex row, 10 px gap, vertically centered), always in the shared
+`PageTitle`'s right slot (§14: every page renders its title row through `PageTitle`; pages with
+inline title metadata pass a `raw` row). Order left → right by rising prominence:
 dim text buttons, then ghost, then danger-ghost, then the single accent primary — the primary
 is always rightmost, with one exception: an icon-only overflow ellipsis (⋯) sits at the far
 right edge, after the primary. At most one primary per header, and a list page's main create
@@ -406,7 +407,7 @@ attention tint; its tooltip lists every problem label, one per line — the full
 lives in the §9.2 banner), result-summary chip when
 the last execution set one (tinted by `resultStatus` with the §7 chip colors — same tint as the detail
 and execution pages), and
-a square accent-filled **inline execute button** per card (rounded square, solid accent/orange
+a per-card `.ad-btn-exec` **inline execute button** (the §14 square icon button — the class owns fill, hover and size; rounded square, solid accent/orange
 background with a dark play icon — same fill treatment as the primary button; hover brightens;
 while that automation is executing it swaps to a spinner, dims, and is disabled — tooltip
 explains why). The card carries no last-execution label — `lastExecutionLabel` appears on the detail page and in the
@@ -474,7 +475,7 @@ plain toast (§7).
 Sections top to bottom:
 
 - Optional **Needs fixing banner** — shown first, whenever the §4.1 `problems` list is
-  non-empty: an amber-bordered banner (the §7 attention tint), title "This automation
+  non-empty: a card-sized amber `Notice` (§14 — radius 12, `14px 18px`), title "This automation
   needs fixing", then one row per problem in §4.1 order — the problem's `label` as the row
   text, with a quiet right-aligned action link per kind: `secret-unset` → **Open Secrets**
   (navigates to the Secrets page); `secret-missing`, `secret-unresolved`,
@@ -510,7 +511,7 @@ Sections top to bottom:
 - **TRIGGERS** card — one row per trigger (kind icon — fa-clock for
   cron, fa-calendar-day for time, fa-rocket for app start, fa-brands fa-discord for discord,
   fa-comment for imessage;
-  §4.3 `label`, followed by a muted **NO CATCH-UP** tag (the §9.1 OFF-tag treatment) when
+  §4.3 `label`, followed by a muted **NO CATCH-UP** `MiniBadge` (the §9.1 OFF-badge treatment) when
   the trigger's §4.3 `runIfMissed` is false; a fa-pen **edit** button — every kind except app start, which has nothing to
   edit; per-row on/off toggle;
   remove × — removing confirms first (`ConfirmModal`: "Remove this trigger?" /
@@ -667,14 +668,14 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   the menu. A non-local choice is
   stored as the trigger's §4.3 `timezone`, and the preview line (labels and "next:") reflects it,
   with "next:" always shown in local time. Empty list renders a
-  dashed "No triggers" row. Trigger edits apply immediately (§19 PATCH) — no version, no AI.
+  an `EmptyLine` ("No triggers" — the §14 in-card empty line). Trigger edits apply immediately (§19 PATCH) — no version, no AI.
   No Execute-now button here — manual execution lives in the title row and the menu bar.
 - **PARAMETERS** — directly editable here per the §4.2 edit behaviors; caption "Changes apply on
   the next execution." Row layout splits by control size:
   `toggle` and `number` rows keep label + control on one line — the label side flexes to the
   available width, the control sits vertically centered at the row's right edge, and the help
   text runs below the label at full width. `text`, `list`, and `kv` rows stack — label (with
-  the amber NOT SET tag when a text param has no value) and full-width help on top, the editor
+  the amber NOT SET `MiniBadge` when a text param has no value) and full-width help on top, the editor
   underneath spanning the full card width (text inputs capped at 520px).
 - **CONCURRENCY** card — the §6 settings, rendered for every automation (manual executions
   can run in parallel and queue via the §9.2 capacity popup, so the card is never inert). Two `number`
@@ -770,12 +771,12 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   card's edge) — so the accent bar alone marks the step: no box around a row, a chevron,
   or anything behind the backdrop. The viewed row carries a 2 px accent
   bar down its left edge and a faint fill, and expands beneath its name to hold the
-  step's description (12 muted) and its **tag row**: the same §14 `Tag` chips the step
+  step's description (11.5 muted — the §14 list-row sub-line) and its **tag row**: the same §14 `Tag` chips the step
   row carries (same variant colors, red states, and tooltip bubbles; agents, secrets,
   packages, time limit, retries), wrapping freely, and then the step's **fact list**: labeled sections
   derived from a literal-only scan of the script — the same kind of scan the secret and
   import tags use — so users can see what a step reaches and touches without reading the
-  code. Each section is a faint mono eyebrow (10.5 px, letter-spaced, `--text-faint`) over
+  code. Each section is an `Eyebrow` (the §14 primitive — 10 px/600 mono, `.09em`, `--text-faint`) over
   one bullet per item (a `--text-deco` dot, then 11.5 sans `--text-muted` text with a
   hanging indent); a section with nothing to show is absent, and so is the whole list when
   every section is. In order:
@@ -837,7 +838,7 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   never overlap code.
   **Find in script.** The find button, or ⌘F / Ctrl+F while the modal is open, opens a
   36 px **find bar** under the toolbar (hairline bottom border, same ground; it stays open
-  and keeps its query across step flips), left-aligned: a 280 px `.ad-input` text field
+  and keeps its query across step flips), left-aligned: a 280 px `.ad-input.compact` text field
   (placeholder "Find in script", focused on open — ⌘F on an open bar refocuses and
   selects its text; capped rather than full-width so its focus border never reads as a
   band across the code), a faint mono match counter in a fixed 72 px slot ("2 of 7";
@@ -964,11 +965,11 @@ sections with Settings' anatomy (mono eyebrow + card of rows) — **APP**,
 lands in one of these or a new eyebrow here, never on Settings.
 
 Document rows (Privacy policy, Terms of service, Open-source libraries, What's
-new) share one **doc modal** pattern:
+new) render through the §14 `DocModal` primitive — one **doc modal** pattern:
 width 680, `h2` title, body caps at 62 vh and scrolls, content
 rendered through the shared §4.5 Markdown renderer, quiet Close in the footer.
 Each document loads through a dynamic `?raw` import so it stays out of the main
-bundle, fetched once on first open. A failed load never strands the modal on
+bundle, fetched once on first open. The fetching body is a `LoadingRow`; a failed load never strands the modal on
 "Loading…": the body swaps to a `--red-text` line ("Couldn't load the document.")
 with a bordered **Retry** button that re-attempts the import. The three LEGAL
 documents share one modal local to this page; the What's-new document renders in
@@ -1146,7 +1147,7 @@ closing restores nothing because nothing changed. Contents, top to bottom:
   it?". Text entered survives toggling the type — only label/placeholder swap. Used verbatim
   in the issue body.
 - Both fields carry the app's standard text-field dimensions (`.ad-input` +
-  `padding: 11px 14px`) and share one text style — 13 px / weight 400 / line-height 1.5 —
+  the class owns its `11px 14px` padding and 13 px/1.5 type — the modal sets nothing inline) and share one text style —
   so title and body read identically.
 - **Include environment info** — toggle (the shared §14 Toggle: this row is a settings-style
   switch, not a §14 checkbox), default on, with the rendered info block visible below it (mono, muted) so the
@@ -1465,7 +1466,7 @@ pull input: link "Browse more models on Ollama ↗" (opens https://ollama.com/li
 **Secrets.** List with add/edit modal, masked values, delete confirm (§4.8 — the confirm
 modal is titled "Delete this secret?" with the danger action "Delete secret"). The list's NAME
 cell shows the secret's `description` as a muted sub-line when present, and an amber **NOT SET** tag
-(same tag style as §9.2's NOT SET param tag) when the secret is a §4.8 placeholder — the tag
+(the same `MiniBadge` as §9.2's NOT SET param badge) when the secret is a §4.8 placeholder — the tag
 clears once a value is saved, and the placeholder's VALUE cell shows a faint "—" instead of
 the mask. The name field is a
 single-line input (Enter saves, Escape closes); its placeholder is a hint, not a literal example
@@ -1491,7 +1492,7 @@ usual) with a "Keep current value" text button under it that returns to the kept
 discards anything typed. The intro copy in this state: "The stored value stays as it is
 unless you replace it. A new value is used from the next execution onward." Editing a §4.8
 **placeholder** (`set: false`) shows the textarea directly, because there an empty field is
-the truth: the VALUE eyebrow carries the amber NOT SET tag, the placeholder reads "Paste the
+the truth: the VALUE eyebrow carries the amber NOT SET `MiniBadge`, the placeholder reads "Paste the
 password or API key", and the intro copy reads "This secret has no value yet. Automations
 that need it fail until you add one." (a blank save still just updates the description).
 A new secret saved with a
@@ -1529,12 +1530,12 @@ rows list scrolls (native overlay scrollbar, per the §14 no-custom-scrollbar ru
 header and footer stay pinned. The window tracks the panel's full rendered
 (border-box) height, rounded up, via a `ResizeObserver` — a content-only measure
 (`scrollHeight`) excludes the 1 px border, and a single measure at first render runs
-before fonts finish loading; either way the footer's bottom edge gets clipped. Header row with "AUTOWRIGHT" eyebrow left and aggregate status right (mono 11 px; "All good
+before fonts finish loading; either way the footer's bottom edge gets clipped. Header row with "AUTOWRIGHT" eyebrow left and aggregate status right (mono 11.5 px; "All good
 · N automation(s)" — pluralized by count — or "N need(s) attention" in red; the count is
 automations failed or §4.1 overdue, matching the dot), one row per automation (7 px status dot —
 pulsing while executing, name, mono sub-line colored by state: cyan "Executing now…" / red when failed
 / accent for a result chip / faint otherwise, relative time right-aligned in a 56 px column, then
-the §9.1 square inline execute button (`ad-btn-exec`, 24 px: solid accent with a play glyph →
+the §9.1 square inline execute button (`.ad-btn-exec.small` — the §14 24 px/radius-6 variant that owns the size: solid accent with a play glyph →
 spinner + disabled while executing, tooltip explains) at the row's right edge — the same run
 button as the Automations list). Row click opens the app on that automation; execute
 button triggers a "Menu bar" execution. Footer: accent "Open Autowright" link + version. Click-outside

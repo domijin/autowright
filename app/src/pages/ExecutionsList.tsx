@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
 import { useStore } from '../store'
-import { Badge, EmptyNotice, PageTitle, PULSE, waitedLabel } from '../ui'
+import { Badge, EmptyNotice, Eyebrow, HeaderActions, PageTitle, PULSE, waitedLabel } from '../ui'
 import type { Execution } from '../types'
 
 // §7: the sections' own order — the live segments carry the section names.
@@ -18,19 +18,14 @@ type Filter = (typeof FILTERS)[number]
 
 const GRID = '2fr 1.1fr .8fr .6fr 1fr'
 
-const headCell: React.CSSProperties = {
-  fontFamily: 'var(--mono)', fontSize: 9.5, fontWeight: 600,
-  letterSpacing: '.09em', color: 'var(--text-faint)',
-}
-
 function Row({ e, onOpen, queued }: { e: Execution; onOpen: () => void; queued?: boolean }) {
   return (
     <button
-      className="ad-btn-bare ad-hover-row"
+      className="ad-btn-bare ad-hover-row ad-focus-inset"
       data-testid="execution-row"
       onClick={onOpen}
       style={{
-        display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '11px 18px',
+        display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '9px 18px',
         borderBottom: '1px solid var(--hairline-dim)', alignItems: 'center', cursor: 'pointer',
       }}
     >
@@ -44,7 +39,7 @@ function Row({ e, onOpen, queued }: { e: Execution; onOpen: () => void; queued?:
           )}
         </div>
         <div style={{
-          fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2,
+          fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)', marginTop: 2,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>
           {/* §7: short id — first 8 chars, same as the detail page's RECENT EXECUTIONS rows */}
@@ -78,16 +73,16 @@ function Table({ rows, go, queued }: {
   rows: Execution[]; go: (page: 'execution', ids: { executionId: string }) => void; queued?: boolean
 }) {
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden' }}>
+    <div className="ad-card" style={{ overflow: 'hidden' }}>
       <div style={{
         display: 'grid', gridTemplateColumns: GRID, gap: 10, padding: '10px 18px',
         borderBottom: '1px solid var(--hairline)',
       }}>
-        <span style={headCell}>AUTOMATION</span>
-        <span style={headCell}>STATUS</span>
-        <span style={headCell}>TRIGGER</span>
-        <span style={headCell}>{queued ? 'QUEUED FOR' : 'DURATION'}</span>
-        <span style={headCell}>{queued ? 'QUEUED AT' : 'STARTED'}</span>
+        <Eyebrow>AUTOMATION</Eyebrow>
+        <Eyebrow>STATUS</Eyebrow>
+        <Eyebrow>TRIGGER</Eyebrow>
+        <Eyebrow>{queued ? 'QUEUED FOR' : 'DURATION'}</Eyebrow>
+        <Eyebrow>{queued ? 'QUEUED AT' : 'STARTED'}</Eyebrow>
       </div>
       {rows.map((e) => (
         <Row key={e.id} e={e} queued={queued} onOpen={() => go('execution', { executionId: e.id })} />
@@ -96,7 +91,9 @@ function Table({ rows, go, queued }: {
   )
 }
 
-const sectionLabel: React.CSSProperties = { ...headCell, display: 'block', margin: '0 0 8px 2px' }
+// §14 section rhythm: the eyebrow sits 10 px above its table, and
+// eyebrow-labelled sections are 26 px apart.
+const sectionLabel: React.CSSProperties = { marginBottom: 10 }
 
 // §7 Finished paging: retention defaults to 90 days and `keepForever` turns
 // cleanup off entirely, so history is unbounded — it moves in pages of 50,
@@ -247,21 +244,23 @@ export default function ExecutionsList() {
   }
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '26px 30px 70px' }}>
       <PageTitle
         right={
-          <div className="ad-seg" role="group" aria-label="Filter executions">
-            {FILTERS.map((f) => (
-              <button
-                key={f}
-                className="ad-seg-btn"
-                aria-pressed={filt === f}
-                onClick={() => setFilt(f)}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          <HeaderActions>
+            <div className="ad-seg" role="group" aria-label="Filter executions">
+              {FILTERS.map((f) => (
+                <button
+                  key={f}
+                  className="ad-seg-btn"
+                  aria-pressed={filt === f}
+                  onClick={() => setFilt(f)}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+          </HeaderActions>
         }
       >
         Executions
@@ -269,13 +268,13 @@ export default function ExecutionsList() {
 
       {filt === 'All' && executing.length > 0 && (
         <>
-          <span style={sectionLabel}>EXECUTING</span>
+          <Eyebrow style={sectionLabel}>EXECUTING</Eyebrow>
           <Table rows={executing} go={go} />
         </>
       )}
       {filt === 'All' && queued.length > 0 && (
         <>
-          <span style={{ ...sectionLabel, marginTop: executing.length > 0 ? 22 : 0 }}>QUEUED</span>
+          <Eyebrow style={{ ...sectionLabel, marginTop: executing.length > 0 ? 26 : 0 }}>QUEUED</Eyebrow>
           <Table rows={queued} go={go} queued />
         </>
       )}
@@ -296,7 +295,7 @@ export default function ExecutionsList() {
         )
       ) : (
         <>
-          {labelled && <span style={{ ...sectionLabel, marginTop: 22 }}>FINISHED</span>}
+          {labelled && <Eyebrow style={{ ...sectionLabel, marginTop: 26 }}>FINISHED</Eyebrow>}
           {/* §7: no empty card while the segment's first fetch is on the
             * wire — the card means the server answered empty. */}
           {finished.length === 0 && !firstFetchDone ? null

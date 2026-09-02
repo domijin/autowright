@@ -3,7 +3,7 @@
 import { useEffect, type MouseEvent } from 'react'
 import { useStore, type AgentCheck } from '../store'
 import type { Agent } from '../types'
-import { BtnPrimary, EmptyState, Eyebrow, LoadingRow, MiniBadge, P, PageTitle, dispModel } from '../ui'
+import { BtnPrimary, EmptyState, Eyebrow, HeaderActions, LoadingRow, MiniBadge, P, PageTitle, dispModel } from '../ui'
 
 
 function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) {
@@ -61,7 +61,7 @@ function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) 
         e.preventDefault()
         go('agentNew', { agentEditId: ag.id })
       }}
-      style={{ borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}
+      style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 10 }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontWeight: 600, fontSize: 15 }}>{ag.name || ag.harness}</span>
@@ -101,27 +101,16 @@ function AgentCard({ ag, check }: { ag: Agent; check: AgentCheck | undefined }) 
                 key={u.id}
                 className="ad-chip-btn"
                 onClick={(e) => { e.stopPropagation(); go('automation', { automationId: u.id }) }}
-                style={{ cursor: 'pointer' }}
               >
                 {u.name}
               </button>
             ) : (
-              <span
-                key={u.id}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 7,
-                  background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.09)',
-                  borderRadius: 16, color: 'var(--text-muted)', font: `500 12px var(--sans)`,
-                  padding: '6px 13px',
-                }}
-              >
-                {u.name}
-              </span>
+              <span key={u.id} className="ad-chip-btn static">{u.name}</span>
             )
           })}
         </div>
       ) : (
-        <div style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>Not used by any automation yet.</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Not used by any automation yet.</div>
       )}
       {(checking || connecting) && (
         <LoadingRow
@@ -157,16 +146,13 @@ export default function AgentsPage() {
   }, [agents])
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '26px 30px 70px' }}>
       <PageTitle
-        style={{ marginBottom: 6 }}
-        right={<BtnPrimary onClick={() => go('agentNew')}>Add agent</BtnPrimary>}
+        sub="The AI that writes your automations. It never executes anything — Autowright does that. New automations use your default agent."
+        right={<HeaderActions><BtnPrimary onClick={() => go('agentNew')}>Add agent</BtnPrimary></HeaderActions>}
       >
         Agents
       </PageTitle>
-      <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', margin: '0 0 20px' }}>
-        The AI that writes your automations. It never executes anything — Autowright does that. New automations use your default agent.
-      </p>
       {agents.length > 0 ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(310px,1fr))', gap: 14 }}>
           {agents.map((ag) => (

@@ -7,7 +7,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from './api'
 import { usePlatformCopy } from './platformCopy'
-import { Caret, Collapse, EmptyNotice, Eyebrow, resultChipColors, Spinner } from './ui'
+import { Caret, Collapse, EmptyLine, EmptyNotice, Eyebrow, LoadingRow, MetaChip, resultChipColors, Tag } from './ui'
 import type { ResultFile, ExecutionResult, SpecBlock } from './types'
 
 const MD_EXT = ['md', 'markdown']
@@ -51,32 +51,24 @@ function ViewCard({ title, kind, meta, mono = true, defaultOpen = true, children
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden' }}>
+    <div className="ad-card" style={{ overflow: 'hidden' }}>
       <button
-        className="ad-btn-text"
+        className="ad-btn-bare ad-hover-row ad-focus-inset"
         onClick={() => setOpen(!open)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left',
-          padding: '13px 18px', cursor: 'pointer', background: 'none',
+          display: 'flex', alignItems: 'center', gap: 9, padding: '12px 18px', cursor: 'pointer',
         }}
       >
         <Caret open={open} style={{ fontSize: 10, width: 10, flex: 'none' }} />
         <span style={{
-          fontFamily: mono ? 'var(--mono)' : undefined, fontSize: mono ? 12.5 : 13,
-          fontWeight: 600, color: 'var(--text)',
+          fontFamily: mono ? 'var(--mono)' : undefined, fontSize: 12.5,
+          fontWeight: 500, color: 'var(--text)',
         }}>
           {title}
         </span>
-        {kind && (
-          <span style={{
-            fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-faint)',
-            border: '1px solid var(--border-input)', borderRadius: 6, padding: '2px 8px',
-          }}>
-            {kind}
-          </span>
-        )}
+        {kind && <Tag>{kind}</Tag>}
         <span style={{ flex: 1 }} />
-        {meta && <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>{meta}</span>}
+        {meta && <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)' }}>{meta}</span>}
       </button>
       <Collapse open={open}>{children}</Collapse>
     </div>
@@ -216,7 +208,7 @@ function FileBody({ executionId, file, kind, stamp }: {
   }, [executionId, file.name, file.size, stamp])
   if (err) {
     return (
-      <div style={{ padding: '0 18px 14px', fontSize: 12.5, color: 'var(--text-faint)' }}>
+      <div style={{ padding: '0 18px 14px', fontSize: 12.5, color: 'var(--red-text)' }}>
         Couldn’t load {file.name} — {err}
       </div>
     )
@@ -224,9 +216,9 @@ function FileBody({ executionId, file, kind, stamp }: {
   if (kind === 'img') {
     return imgUrl
       ? <div style={{ padding: '0 18px 16px' }}><img src={imgUrl} alt={file.name} style={{ maxWidth: '100%', borderRadius: 8 }} /></div>
-      : <div style={{ padding: '0 18px 16px' }}><Spinner size={14} /></div>
+      : <LoadingRow label="Loading…" style={{ padding: '14px 18px' }} />
   }
-  if (text === null) return <div style={{ padding: '0 18px 16px' }}><Spinner size={14} /></div>
+  if (text === null) return <LoadingRow label="Loading…" style={{ padding: '14px 18px' }} />
   if (kind === 'md') return <div style={{ padding: '2px 18px 16px' }}><Markdown text={text} /></div>
   if (kind === 'text') return <TextView text={text} />
   return <HtmlView html={text} />
@@ -252,41 +244,36 @@ function FileRow({ executionId, file, stamp, last }: {
   const kind = previewKind(file.name)
   const [open, setOpen] = useState(false)
   const [opened, setOpened] = useState(false)
-  const border = last ? 'none' : '1px solid var(--hairline)'
+  const border = last ? 'none' : '1px solid var(--hairline-dim)'
   const row = (
     <>
       {kind
         ? <Caret open={open} style={{ fontSize: 10, width: 14, flex: 'none', color: 'var(--text-faint)' }} />
         : <i className="fa-solid fa-file-lines" style={{ fontSize: 11, color: 'var(--text-faint)', width: 14, flex: 'none' }} />}
-      <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-2)', overflowWrap: 'break-word' }}>
+      <span style={{ flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 12.5, fontWeight: 500, color: 'var(--text-2)', overflowWrap: 'break-word' }}>
         {file.name}
       </span>
       {!kind && (
-        <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--text-faint)', flex: 'none' }}>no preview</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)', flex: 'none' }}>no preview</span>
       )}
-      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)', flex: 'none' }}>{file.size}</span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)', flex: 'none' }}>{file.size}</span>
     </>
   )
   const rowStyle: React.CSSProperties = {
-    display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
-    padding: '9px 0', background: 'none',
+    display: 'flex', alignItems: 'center', gap: 10, padding: '12px 18px',
   }
   if (!kind) return <div style={{ ...rowStyle, borderBottom: border }}>{row}</div>
   return (
     <div style={{ borderBottom: border }}>
       <button
-        className="ad-btn-text"
+        className="ad-btn-bare ad-hover-row ad-focus-inset"
         onClick={() => { setOpen(!open); setOpened(true) }}
         style={{ ...rowStyle, cursor: 'pointer' }}
       >
         {row}
       </button>
       <Collapse open={open}>
-        {opened && (
-          <div style={{ margin: '0 -18px' }}>
-            <FileBody executionId={executionId} file={file} kind={kind} stamp={stamp} />
-          </div>
-        )}
+        {opened && <FileBody executionId={executionId} file={file} kind={kind} stamp={stamp} />}
       </Collapse>
     </div>
   )
@@ -299,13 +286,13 @@ function FilesFooter({ files, path, executionId, stamp, defaultOpen = true }: {
   const copy = usePlatformCopy()
   return (
     <ViewCard title={`FILES · ${files.length}`} mono defaultOpen={defaultOpen}>
-      <div style={{ padding: '0 18px 12px' }}>
+      <div style={{ paddingBottom: 12 }}>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 10,
-          borderBottom: '1px solid var(--hairline)',
+          display: 'flex', alignItems: 'center', gap: 10, padding: '0 18px 10px',
+          borderBottom: '1px solid var(--hairline-dim)',
         }}>
           <span style={{
-            flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)',
+            flex: 1, minWidth: 0, fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)',
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', direction: 'rtl', textAlign: 'left',
           }}>
             {path ?? ''}
@@ -323,9 +310,7 @@ function FilesFooter({ files, path, executionId, stamp, defaultOpen = true }: {
         {files.map((f, i) => (
           <FileRow key={f.name} executionId={executionId} file={f} stamp={stamp} last={i === files.length - 1} />
         ))}
-        {files.length === 0 && (
-          <div style={{ padding: '9px 0', fontSize: 12, color: 'var(--text-faint)' }}>No files.</div>
-        )}
+        {files.length === 0 && <EmptyLine>No files.</EmptyLine>}
       </div>
     </ViewCard>
   )
@@ -351,21 +336,14 @@ export function ResultSection({ label, result, executionId, stamp, compact }: {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <button
-          className="ad-btn-text"
+          className="ad-btn-text small"
           onClick={() => setOpen(!open)}
-          style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', background: 'none', padding: 0 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}
         >
           <Caret open={open} style={{ fontSize: 10, width: 10 }} />
-          <Eyebrow style={{ color: 'var(--text-faint)' }}>{label}</Eyebrow>
+          <Eyebrow>{label}</Eyebrow>
         </button>
-        {chip && (
-          <span style={{
-            display: 'inline-flex', padding: '3px 10px', borderRadius: 6, fontFamily: 'var(--mono)',
-            fontWeight: 600, fontSize: 11.5, letterSpacing: '.03em', background: bg, color: c,
-          }}>
-            {chip}
-          </span>
-        )}
+        {chip && <MetaChip c={c} bg={bg}>{chip}</MetaChip>}
         {result.when && (
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11.5, color: 'var(--text-faint)' }}>{result.when}</span>
         )}
@@ -374,7 +352,7 @@ export function ResultSection({ label, result, executionId, stamp, compact }: {
         {empty ? (
           <EmptyNotice body="The latest execution didn’t produce any result files." />
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {views.map((f) => <FileView key={f.name} executionId={executionId} file={f} stamp={stamp} />)}
             <FilesFooter
               files={files} path={result.path} executionId={executionId} stamp={stamp}

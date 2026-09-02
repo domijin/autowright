@@ -85,7 +85,7 @@ describe('§9.1 Needs fixing chip', () => {
     ] })])
     render(<AutomationsList />)
     const chip = screen.getByText('Needs fixing')
-    expect(chip.getAttribute('title')).toBe(
+    expect(chip.closest('[title]')?.getAttribute('title')).toBe(
       'Secret API_KEY has no value yet — add it on the Secrets page.\n'
       + 'Built on Windows — its steps may need rewriting before they run on this Mac.')
   })

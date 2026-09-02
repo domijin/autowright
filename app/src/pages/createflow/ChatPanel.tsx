@@ -8,7 +8,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { usePlatformCopy } from '../../platformCopy'
 import { useStore } from '../../store'
 import type { Agent, ChatEntry } from '../../types'
-import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, durationLabel, usePopover, waitedLabel } from '../../ui'
+import { BtnGhost, BtnPrimary, ConfirmModal, Eyebrow, MenuItemRow, PopMenu, ScrollArea, Spinner, agName, anyModalOpen, dispModel, durationLabel, usePopover, waitedLabel } from '../../ui'
 import { devlogOverlayOpen } from '../../devlog'
 import { Markdown } from '../../result'
 import { type Rev, answerHeader, jobStageTitle, stageDoingBullet } from './model'
@@ -36,8 +36,8 @@ function GlyphBox({ children }: { children: React.ReactNode }) {
 /** §11 operation-block bullet — `• `-prefixed description line running the
     pane's full width, flush left with the glyph (never indented under the
     title). `ellipsis` keeps activity-feed lines single-line. */
-function OpBullet({ text, ellipsis, size, color, duration }: {
-  text: string; ellipsis?: boolean; size?: number; color?: string
+function OpBullet({ text, ellipsis, color, duration }: {
+  text: string; ellipsis?: boolean; color?: string
   // §11 per-step duration stamp — right-aligned quiet mono, the §7
   // execution-step style, so the two step lists read alike
   duration?: string
@@ -45,7 +45,7 @@ function OpBullet({ text, ellipsis, size, color, duration }: {
   return (
     <div style={{
       display: 'flex', alignItems: 'baseline', gap: 8,
-      font: `400 ${size ?? 11}px/1.5 var(--sans)`, color: color ?? 'var(--text-faint)',
+      font: '400 11.5px/1.5 var(--sans)', color: color ?? 'var(--text-faint)',
     }}>
       <span style={{
         flex: 1, minWidth: 0,
@@ -101,30 +101,17 @@ function AgentPick({ agents, selected, onPick, disabled }: {
         <i className="fa-solid fa-caret-down" style={{ color: 'var(--text-faint)', fontSize: 9 }} />
       </button>
       <PopMenu show={open} style={{ bottom: 'calc(100% + 6px)', left: 0, minWidth: 290 }}>
-          {agents.map((g) => {
-            const sel = !!selected && g.id === selected.id
-            return (
-              <button
-                key={g.id}
-                className="ad-btn-bare ad-hover-row"
-                onClick={() => { setOpen(false); onPick(g) }}
-                style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 14px', cursor: 'pointer',
-                  borderBottom: '1px solid var(--hairline-dim)',
-                  // no inline background when unselected — .ad-hover-row's hover tint must win
-                  ...(sel ? { background: 'var(--accent-hint-bg)' } : {}),
-                  transition: 'background var(--t-hover) var(--ease-enter), color var(--t-hover) var(--ease-enter)',
-                }}
-              >
-                <span style={{ width: 14, flex: 'none', textAlign: 'center', font: "600 12px var(--mono)", color: 'var(--accent)' }}>{sel ? <i className="fa-solid fa-check" style={{ fontSize: 10 }} /> : ''}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ font: "600 12.5px var(--sans)", color: sel ? 'var(--text)' : 'var(--text-2)' }}>{agName(g)}</div>
-                  <div style={{ font: "400 11.5px/1.45 var(--mono)", color: 'var(--text-muted)', marginTop: 1 }}>{dispModel(g)}</div>
-                </div>
-              </button>
-            )
-          })}
-          <div style={{ padding: '9px 14px', font: "400 11px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
+          {agents.map((g) => (
+            <MenuItemRow
+              key={g.id}
+              title={agName(g)}
+              sub={dispModel(g)}
+              subMono
+              selected={!!selected && g.id === selected.id}
+              onPick={() => { setOpen(false); onPick(g) }}
+            />
+          ))}
+          <div style={{ padding: '9px 14px', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
             Writes the spec and generates the steps for this automation. Autowright still executes everything.
           </div>
       </PopMenu>
@@ -309,11 +296,10 @@ export function ChatPanel({
   const awaitingAnswer = lastEntry?.kind === 'answer' && lastEntry.title === 'Question for you'
 
   return (
-    <div style={{
+    <div className="ad-card" style={{
       width: 'clamp(340px, 26vw, 420px)', flex: 'none', alignSelf: 'flex-start',
       position: 'sticky', top: panelTop, marginTop: 6, marginLeft: 12,
       height: `calc(100vh - ${panelTop + 12}px)`,
-      background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12,
       display: 'flex', flexDirection: 'column', overflow: 'hidden',
     }}>
       {/* thread — no header row (§11); the composer below carries the pane's identity */}
@@ -322,10 +308,10 @@ export function ChatPanel({
       <ScrollArea scrollRef={chatScrollRef} testId="chat-thread" wrapStyle={{ flex: 1, minHeight: 0 }} style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column' }}>
         {rev.chat.length === 0 && !anyJobBusy && (isCreateEmpty ? (
           <div style={{ padding: '10px 4px' }}>
-            <h2 style={{ font: "600 19px/1.3 var(--sans)", letterSpacing: '-.02em', margin: '0 0 8px' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 600, margin: '0 0 8px' }}>
               What should Autowright do for you?
             </h2>
-            <p style={{ font: "400 12.5px/1.6 var(--sans)", color: 'var(--text-muted)', margin: '0 0 20px' }}>
+            <p style={{ font: "400 12.5px/1.55 var(--sans)", color: 'var(--text-muted)', margin: '0 0 20px' }}>
               Describe the job in plain words. Your AI writes it as scripts — you review everything before it executes.
             </p>
             <Eyebrow>OR START FROM AN EXAMPLE</Eyebrow>
@@ -378,7 +364,7 @@ export function ChatPanel({
                 marginTop: mt,
                 font: "500 12.5px/1.5 var(--sans)", color: 'var(--text-2)',
                 background: 'var(--bg-inset)', border: '1px solid var(--hairline)',
-                borderRadius: 9, padding: '8px 12px', alignSelf: 'flex-end', maxWidth: '92%',
+                borderRadius: 10, padding: '8px 12px', alignSelf: 'flex-end', maxWidth: '92%',
                 whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
               }}>
                 {e.text}
@@ -549,7 +535,6 @@ export function ChatPanel({
             </div>
             {e.boundary && (
               <OpBullet
-                size={11.5}
                 color="var(--text-faint)"
                 text="The messages above are from that draft — your AI no longer reads them."
               />
@@ -699,10 +684,7 @@ export function ChatPanel({
                 : awaitingAnswer ? 'Answer here…'
                   : isCreateEmpty ? 'Describe the job — one sentence is enough.'
                     : 'Change something, or ask a question…'}
-            style={{
-              width: '100%', color: 'var(--text)', font: "400 12.5px/1.5 var(--sans)", padding: '8px 12px',
-              resize: 'none', overflow: 'hidden', display: 'block',
-            }}
+            style={{ width: '100%', resize: 'none', overflow: 'hidden', display: 'block' }}
           />
           {/* composer toolbar (§11) — the drafting-agent picker is a property of the
               message being sent, so it is chosen here; Send is a quiet pill-height
@@ -722,21 +704,20 @@ export function ChatPanel({
               />
               {/* §11 Clear chat — icon-only dim button with a confirm step */}
               <button
-                className="ad-btn-text dim" data-testid="chat-clear"
+                className="ad-btn-icon" data-testid="chat-clear"
                 title="Clear chat" aria-label="Clear chat"
                 disabled={anyJobBusy || testLive || viewingOld || rev.chat.length === 0}
                 onClick={() => setConfirmClear(true)}
-                style={{ flex: 'none' }}
               >
-                <i className="fa-solid fa-eraser" style={{ fontSize: 11 }} />
+                <i className="fa-solid fa-eraser" />
               </button>
             </div>
             {anyJobBusy ? (
-              <button className="ad-btn-pill action" onClick={cancelJob} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              <button className="ad-btn-pill action" onClick={cancelJob} style={{ flex: 'none' }}>
                 Cancel
               </button>
             ) : (
-              <button className="ad-btn-pill action" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              <button className="ad-btn-pill action" disabled={inputDisabled || !chatText.trim()} onClick={sendMessage} style={{ flex: 'none' }}>
                 Send
               </button>
             )}

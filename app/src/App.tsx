@@ -1,6 +1,6 @@
 // App shell (§9): hover-expanding floating nav rail + independently scrolling content,
 // state-driven nav.
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useStore } from './store'
 import { CountPill, Logo, ScrollArea, Spinner, Toast } from './ui'
 import DevLogOverlay from './devlog'
@@ -32,6 +32,13 @@ const NAV: { page: string; label: string; icon: string }[] = [
 const BOTTOM_NAV: typeof NAV = [
   { page: 'about', label: 'About', icon: 'fa-circle-info' },
 ]
+
+// §9 nav-row geometry — one copy for the page rows, the update row and the
+// Report-an-issue row; .ad-nav-row owns the hover.
+const navRow: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
+  borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',
+}
 
 function Sidebar() {
   const page = useStore((s) => s.page)
@@ -87,11 +94,7 @@ function Sidebar() {
                 data-testid="nav-update"
                 className="ad-nav-row"
                 onClick={() => go('about', { automationId: null, executionId: null })}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
-                  borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',
-                  color: 'var(--accent)',
-                }}
+                style={{ ...navRow, color: 'var(--accent)' }}
               >
                 <i className="fa-solid fa-download" style={{ width: 16, fontSize: 12 }} />
                 <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Update available</span>
@@ -105,11 +108,7 @@ function Sidebar() {
                 data-testid="nav-report-issue"
                 className="ad-nav-row"
                 onClick={() => useStore.setState({ reportOpen: true })}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
-                  borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',
-                  color: 'var(--text-muted)',
-                }}
+                style={{ ...navRow, color: 'var(--text-muted)' }}
               >
                 <i className="fa-solid fa-bug" style={{ width: 16, fontSize: 12, opacity: 0.85 }} />
                 <span className="ad-rail-reveal" style={{ flex: 1, whiteSpace: 'nowrap' }}>Report an issue</span>
@@ -123,8 +122,7 @@ function Sidebar() {
                   className={'ad-nav-row' + (active ? ' active' : '')}
                   onClick={() => go(n.page as never, { automationId: null, executionId: null })}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '8px 11px',
-                    borderRadius: 7, fontSize: 13, fontWeight: 500, textAlign: 'left',
+                    ...navRow,
                     color: active ? 'var(--text)' : 'var(--text-muted)',
                     ...(active ? { background: 'var(--accent-hint-bg)' } : null),
                   }}
@@ -198,7 +196,7 @@ function BootSplash({ waiting }: { waiting: boolean }) {
           </div>
           {waiting && (failDetail || stuck) && (
             <div className="ad-anim-fade">
-              <div style={{ color: 'var(--text-muted)', fontSize: 12.5, opacity: 0.7, maxWidth: 420, textAlign: 'center' }}>
+              <div style={{ color: 'var(--text-faint)', fontSize: 12.5, maxWidth: 420, textAlign: 'center' }}>
                 {failDetail ?? 'Still waiting — quitting and reopening Autowright restarts the backend service.'}
               </div>
             </div>

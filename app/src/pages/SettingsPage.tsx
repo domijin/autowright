@@ -4,17 +4,23 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api'
 import { usePlatformCopy } from '../platformCopy'
 import { useStore } from '../store'
-import { BlockingOverlay, CommandBlock, ConfirmModal, Eyebrow, LoadingRow, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
+import { BlockingOverlay, CommandBlock, ConfirmModal, Eyebrow, PageLoading, PageTitle, RadioRing, Spinner, Toggle } from '../ui'
 
 // Card chrome comes from the shared .ad-card class; only overflow is local.
 const card: React.CSSProperties = { overflow: 'hidden' }
 
-const rowTitle: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: 'var(--text)' }
-const rowSub: React.CSSProperties = { fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)', marginTop: 3 }
+// §14 settings row — the one geometry for every Settings and About row; the
+// About page imports these so the two pages can't drift.
+export const rowTitle: React.CSSProperties = { fontSize: 13.5, fontWeight: 600, color: 'var(--text)' }
+export const rowSub: React.CSSProperties = { fontSize: 12, lineHeight: 1.55, color: 'var(--text-muted)', marginTop: 3 }
+export const row: React.CSSProperties = {
+  padding: '15px 18px', display: 'flex', alignItems: 'center', gap: 20,
+}
+export const rowDivided: React.CSSProperties = { ...row, borderBottom: '1px solid var(--hairline-dim)' }
 
 const pathBox: React.CSSProperties = {
   marginTop: 10, background: 'var(--bg-inset)', border: '1px solid var(--hairline)',
-  borderRadius: 7, padding: '7px 11px', font: `400 11.5px var(--mono)`, color: 'var(--text-muted)',
+  borderRadius: 8, padding: '7px 11px', font: `400 11.5px var(--mono)`, color: 'var(--text-muted)',
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 }
 
@@ -180,11 +186,9 @@ export default function SettingsPage() {
   // not a blank pane, while they load.
   if (!settings) {
     return (
-      <div className="ad-anim-page" style={{ maxWidth: 640, margin: '0 auto', padding: '26px 30px 70px' }}>
+      <div className="ad-anim-page" style={{ maxWidth: 640, padding: '26px 30px 70px' }}>
         <PageTitle style={{ marginBottom: 0 }}>Settings</PageTitle>
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '60px 0' }}>
-          <LoadingRow label="Loading…" />
-        </div>
+        <PageLoading />
       </div>
     )
   }
@@ -213,20 +217,17 @@ export default function SettingsPage() {
 
   return (
     <div className="ad-anim-page" style={{
-      maxWidth: 640, margin: '0 auto', padding: '26px 30px 70px',
+      maxWidth: 640, padding: '26px 30px 70px',
       display: 'flex', flexDirection: 'column', gap: 26,
     }}>
       <PageTitle style={{ marginBottom: 0 }}>Settings</PageTitle>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <Eyebrow style={{ paddingLeft: 2 }}>GENERAL</Eyebrow>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Eyebrow>GENERAL</Eyebrow>
         <div className="ad-card" style={card}>
-          <div style={{
-            padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-            // The card's last visible row never carries a separator — every
-            // row below this one can be the one that's gone.
-            ...(trayPanel || keepAwakeOn || notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
-          }}>
+          {/* The card's last visible row never carries a separator — every
+              row below this one can be the one that's gone. */}
+          <div style={trayPanel || keepAwakeOn || notificationsOn ? rowDivided : row}>
             <div style={{ flex: 1 }}>
               <div style={rowTitle}>Launch at login</div>
               <div style={rowSub}>{copy.loginSub}</div>
@@ -240,10 +241,7 @@ export default function SettingsPage() {
           </div>
           {/* §4.9: only where the shell has a tray — hidden on Linux (§13). */}
           {trayPanel && (
-            <div style={{
-              padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-              ...(keepAwakeOn || notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
-            }}>
+            <div style={keepAwakeOn || notificationsOn ? rowDivided : row}>
               <div style={{ flex: 1 }}>
                 <div style={rowTitle}>Show in the {copy.menuBar}</div>
                 <div style={rowSub}>The quickest way to execute an automation.</div>
@@ -252,10 +250,7 @@ export default function SettingsPage() {
             </div>
           )}
           {keepAwakeOn && (
-            <div style={{
-              padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-              ...(notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
-            }}>
+            <div style={notificationsOn ? rowDivided : row}>
               <div style={{ flex: 1 }}>
                 <div style={rowTitle}>Keep this {copy.machine} awake</div>
                 <div style={rowSub}>Prevents this {copy.machine} from sleeping so schedules and message triggers keep firing. The display can still sleep. {copy.sleepNote}</div>
@@ -264,7 +259,7 @@ export default function SettingsPage() {
             </div>
           )}
           {notificationsOn && (
-            <div style={{ padding: '15px 20px' }}>
+            <div style={{ ...row, display: 'block' }}>
               <div style={rowTitle}>Notify me</div>
               <div role="radiogroup" aria-label="Notify me" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 11 }}>
                 {([
@@ -275,14 +270,11 @@ export default function SettingsPage() {
                   return (
                     <button
                       key={o.value}
-                      className="ad-btn-bare"
+                      className="ad-btn-bare ad-hover-row"
                       role="radio"
                       aria-checked={on}
                       onClick={() => patch({ notifications: o.value })}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
-                        transition: 'background var(--t-hover) var(--ease-enter)',
-                      }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
                     >
                       <RadioRing selected={on} size={15} />
                       <span style={{ fontSize: 13, color: on ? 'var(--text)' : 'var(--text-muted)' }}>{o.label}</span>
@@ -295,32 +287,29 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <Eyebrow style={{ paddingLeft: 2 }}>EXECUTION HISTORY</Eyebrow>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Eyebrow>EXECUTION HISTORY</Eyebrow>
         <div className="ad-card" style={card}>
           {!settings.keepForever && (
-            <div style={{ padding: '15px 20px', borderBottom: '1px solid var(--hairline-dim)', display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={rowDivided}>
               <div style={{ flex: 1 }}>
                 <div style={rowTitle}>Keep executions for</div>
                 <div style={rowSub}>Older executions and logs are removed automatically.</div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
                 <input
-                  className="ad-input"
+                  className="ad-input compact mono"
                   value={days}
                   onChange={(e) => setDays(e.target.value.replace(/[^0-9]/g, ''))}
                   onBlur={onDaysBlur}
                   inputMode="numeric"
-                  style={{
-                    width: 64, color: 'var(--text)', font: `500 12.5px var(--mono)`,
-                    textAlign: 'center', padding: '8px 10px',
-                  }}
+                  style={{ width: 64, textAlign: 'center' }}
                 />
                 <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>days</span>
               </div>
             </div>
           )}
-          <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={row}>
             <div style={{ flex: 1 }}>
               <div style={rowTitle}>Keep execution history forever</div>
               <div style={rowSub}>
@@ -334,10 +323,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <Eyebrow style={{ paddingLeft: 2 }}>ON THIS {copy.machine.toUpperCase()}</Eyebrow>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Eyebrow>ON THIS {copy.machine.toUpperCase()}</Eyebrow>
         <div className="ad-card" style={card}>
-          <div style={{ padding: '15px 20px', borderBottom: '1px solid var(--hairline-dim)' }}>
+          <div style={{ ...rowDivided, display: 'block' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={rowTitle}>Automations &amp; settings</div>
@@ -356,7 +345,7 @@ export default function SettingsPage() {
             </div>
             <div style={pathBox}>{settings.appPath ?? ''}</div>
           </div>
-          <div style={{ padding: '15px 20px' }}>
+          <div style={{ ...row, display: 'block' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={rowTitle}>
@@ -381,8 +370,8 @@ export default function SettingsPage() {
       </div>
 
       {cli !== null && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <Eyebrow style={{ paddingLeft: 2 }}>COMMAND LINE</Eyebrow>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Eyebrow>COMMAND LINE</Eyebrow>
           <div className="ad-card" style={card}>
             {(() => {
               // §4.9: at most one second row — the missing warning (toggle on,
@@ -394,10 +383,7 @@ export default function SettingsPage() {
               const pathRow = cli.state === 'installed' && settings.cliEnabled
               return (
                 <>
-                  <div style={{
-                    padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-                    ...(warnRow || pathRow ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
-                  }}>
+                  <div style={warnRow || pathRow ? rowDivided : row}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={rowTitle}>The <code>autowright</code> command</div>
                       <div style={rowSub}>
@@ -415,14 +401,14 @@ export default function SettingsPage() {
                     )}
                   </div>
                   {pathRow && (
-                    <div style={{ padding: '15px 20px' }}>
+                    <div style={{ ...row, display: 'block' }}>
                       <div style={rowTitle}>Add it to your PATH</div>
                       <div style={rowSub}>{copy.pathHint}</div>
                       <CommandBlock command={copy.pathCommand} />
                     </div>
                   )}
                   {warnRow && (
-                    <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+                    <div style={row}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ ...rowTitle, color: 'var(--amber)' }}>The <code>autowright</code> CLI is missing</div>
                         <div style={rowSub}>
@@ -445,10 +431,10 @@ export default function SettingsPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-        <Eyebrow style={{ paddingLeft: 2 }}>DEVELOPER</Eyebrow>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <Eyebrow>DEVELOPER</Eyebrow>
         <div className="ad-card" style={card}>
-          <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={row}>
             <div style={{ flex: 1 }}>
               <div style={rowTitle}>Developer mode</div>
               <div style={rowSub}>
@@ -461,10 +447,10 @@ export default function SettingsPage() {
       </div>
 
       {window.autowright && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <Eyebrow style={{ paddingLeft: 2 }}>QUIT</Eyebrow>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Eyebrow>QUIT</Eyebrow>
           <div className="ad-card" style={card}>
-            <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={row}>
               <div style={{ flex: 1 }}>
                 <div style={rowTitle}>Quit Autowright entirely</div>
                 <div style={rowSub}>
@@ -489,10 +475,10 @@ export default function SettingsPage() {
       )}
 
       {window.autowright && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-          <Eyebrow style={{ paddingLeft: 2 }}>RESET</Eyebrow>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <Eyebrow>RESET</Eyebrow>
           <div className="ad-card" style={card}>
-            <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div style={row}>
               <div style={{ flex: 1 }}>
                 <div style={rowTitle}>Delete all data and quit app</div>
                 <div style={rowSub}>

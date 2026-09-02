@@ -1105,7 +1105,8 @@ editors enter with
   the drafting agent per the §8 selection rule — changing it happens through the spec or
   build instructions plus sync (or the agent-enablement card), not per step. Step rows open the same §9.2 step-script modal (whole-row click, expand-glyph-only
   right-edge affordance with the "View script" tooltip, no text label; one step shows at a
-  time, with previous / next and the arrow keys flipping inside the modal). The step number
+  time, with the modal's step navigator, previous / next, and the arrow keys flipping inside
+  it). The step number
   prefixes the title ("1. Fetch page" — faint mono numeral, title styling unchanged) instead
   of occupying a left gutter column, keeping the row's left edge free on narrow windows.
   The editor's modal draws its §9.2 package facts from the draft's declared packages

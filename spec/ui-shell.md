@@ -747,38 +747,50 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   click target whose only right-edge affordance is an expand glyph (`fa-expand`): no
   "view script" text label, so narrow windows don't crush the row's middle column, and the
   glyph carries a "View script" `title` tooltip). Clicking a row opens the **step-script
-  modal**, a large §14 `Modal` card: `min(1000px, 92vw)` wide, content column fixed at
-  82vh so flipping between steps never resizes the frame, `overflow: hidden` on the
-  card. There is no header row: the card is one §14 overlay-scrollbar pane, with a
-  floating control cluster pinned to the card's top-right corner, three `.ad-btn-icon`
-  buttons on a solid `--bg-menu` rounded backdrop so content scrolling beneath stays
-  behind it: previous / next step chevrons (disabled at the ends; the ← / → arrow keys
-  navigate too) and a close ✕ (Escape and backdrop click also close, standard `Modal`
-  behavior). The cluster sits outside the keyed-fade remount, so the buttons never
-  flash while flipping steps. The pane leads with a faint mono "STEP N OF M" eyebrow
-  and the step name (right-padded clear of the cluster; both scroll away with the
-  content), then the step description, then the step's **tag row**: the same §14 `Tag`
-  chips the step row carries (same variant colors, red states, and tooltip bubbles;
-  agents, secrets, packages, time limit, retries), wrapping freely. The one difference
-  from the rows: package chips appear here in both variants (the §11 editor modal reads
-  the draft's declared packages, the detail modal the automation record's §6.2
-  `packages` list) while the detail ROWS still omit them. All detail lives in the
-  chips' §14 tooltips ("Why an agent" included); the modal writes out no sentences and
-  a fact family with nothing to show simply has no chip (the time-limit chip always
-  renders). Below the chips, the script inside an **inset code card** (20px
-  margins, hairline border, 8px radius, `--bg-code`, never full-bleed): a card header
-  line carrying the step's §4.1 version-folder filename in faint mono (fallback
-  "script"; the one place that filename appears in the UI) with a right-aligned
-  "`<n>` lines" count ("1 line" in the singular; a script's single trailing final
-  newline is neither rendered nor counted), then the script with §11 `PyCode`
-  highlighting. The card is
-  content-sized: a short script yields a small card with the pane's own background
-  below it, never an empty code field. Nothing full-bleed sits under the scrollbar and
-  the pane background is uniform, so the §14 overlay thumb never crosses a color
-  boundary; the modal still insets it to `right: 6px` (from the app-wide 3px) so the
-  card's 12px corner radius never slices its bottom into a wedge. Switching steps
-  remounts the body with the §14 keyed fade, which also resets its scroll. One step
-  shows at a time; there is no inline expansion. Step tags are
+  modal**, a large §14 `Modal` card laid out as a two-column viewer: `min(1120px, 92vw)`
+  wide, `overflow: hidden`, no header row and nothing that scrolls the card as a whole. Its
+  height is fixed for the life of the open modal, so flipping between steps never resizes
+  the frame, and sized to the automation's LONGEST script: the code pane's toolbar plus
+  every line at its 12px/1.65 mono rhythm plus its padding, floored at 440px (room for the
+  navigator) and capped at 82vh — an automation of short steps gets a card that fits them,
+  never a mostly empty one. The left
+  **step navigator** column (280 px, the card's own `--bg-menu` ground, hairline right
+  border) is its own §14 overlay-scrollbar pane: a faint mono "STEPS" eyebrow with the
+  step count right-aligned, then one row per step in order — the number in faint mono, then
+  the name (13/600 `--text` on the viewed row, 500 `--text-muted` on the others, hover
+  brightening them). Clicking a row views that step; while keyboard focus sits in the
+  navigator it follows the viewed row (an arrow-key flip after a row click never leaves a
+  stale focus ring on a step no longer viewed). The viewed row carries a 2 px accent
+  bar down its left edge and a faint fill, and expands beneath its name to hold the
+  step's description (12 muted) and its **tag row**: the same §14 `Tag` chips the step
+  row carries (same variant colors, red states, and tooltip bubbles; agents, secrets,
+  packages, time limit, retries), wrapping freely. Only the viewed row expands, so the
+  navigator reads as a table of contents with one open entry. The one difference from
+  the rows: package chips appear here in both variants (the §11 editor modal reads the
+  draft's declared packages, the detail modal the automation record's §6.2 `packages`
+  list) while the detail ROWS still omit them. All detail lives in the chips' §14
+  tooltips ("Why an agent" included); the modal writes out no sentences and a fact
+  family with nothing to show simply has no chip (the time-limit chip always renders).
+  The right **code pane** fills the rest of the card at full height on the `--bg-code`
+  ground, so a short script never leaves empty modal beneath it: a fixed 44 px toolbar
+  (hairline bottom border) carries, left, the faint mono "STEP N OF M" eyebrow followed
+  by the step's §4.1 version-folder filename in dimmer mono (fallback "script"; the one
+  place that filename appears in the UI) and, right, a "`<n>` lines" count ("1 line" in
+  the singular; a script's single trailing final newline is neither rendered nor counted)
+  and the control cluster — previous / next step chevrons as `.ad-btn-icon` buttons
+  (disabled at the ends; the ← / → arrow keys navigate too) and a close ✕ (Escape and
+  backdrop click also close, standard `Modal` behavior). The toolbar never scrolls, so the
+  filename and the controls stay put through a long script and never overlap code.
+  Below it the script sits in its own overlay-scrollbar pane with a line-number gutter
+  (faint mono, right-aligned, unselectable) beside every line and §11 `PyCode`
+  highlighting; a long line wraps under its own number rather than scrolling sideways, and
+  the code keeps a 28 px right inset so no line ever runs under the overlay thumb.
+  The pane's ground is uniform, so the §14 overlay thumb never crosses a color boundary;
+  the modal insets it to `right: 6px` (from the app-wide 3px) so the card's 12px corner
+  radius never slices its bottom into a wedge. Switching steps remounts the code pane with
+  the §14 keyed fade (which also resets its scroll); the navigator and the toolbar
+  cluster stay mounted, so the row under the pointer and the buttons never flash while
+  flipping. One step shows at a time; there is no inline expansion. Step tags are
   display-only — never menus, and every tag carries a plain-language tooltip (the §14 Tag
   tooltip bubble — custom, not the native `title`) explaining
   what it shows (one shape everywhere: what the tag is, then " — `<why>`" appended when a

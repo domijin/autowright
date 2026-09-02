@@ -5,10 +5,10 @@
 // numbers, accent-only tags), and one presentational ParamValueEditor renders
 // the five §4.2 value kinds (toggle/list/kv/number/text) for both the
 // editor's test-value card and the detail page's debounced ParamRow.
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { usePlatformCopy } from './platformCopy'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from './types'
-import { MiniBadge, Modal, PyCode, ScrollArea, Tag, Toggle, agName, dispModel, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
+import { MiniBadge, Modal, ScrollArea, Tag, Toggle, agName, dispModel, highlightPythonLines, stepRetriesLabel, stepRetriesTitle, stepTimeoutLabel, stepTimeoutTitle, validUrl } from './ui'
 
 // §4.1/§6.1 code-reference scan: literal quoted uuid subscripts only.
 const SECRET_REF_RE = /\bsecrets\[\s*["']([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["']\s*\]/g
@@ -255,92 +255,159 @@ function StepArrowKeys({ i, count, closing, onNav }: {
   return null
 }
 
-// §9.2 step-script modal: one large Modal card, content column fixed at 82vh
-// so flipping between steps never resizes the frame. No header row: the card
-// is one overlay-scrollbar pane leading with the "STEP N OF M" eyebrow and
-// the step name (they scroll away with the content), then the description,
-// the tag row (the same §14 chips the step row carries, tooltips holding the
-// detail, plus the detail variant's modal-only package chips), and the script
-// inside a content-sized inset code card whose header line carries the §4.1
-// version-folder filename (its one appearance in the UI) and a line count. Prev / next / close float
-// as a cluster pinned to the card's top-right corner on a solid backdrop,
-// outside the §14 keyed fade that remounts the pane (and resets its scroll)
-// when the step switches, so the buttons never flash while flipping.
-function StepModal({ steps, i, editor, tags, onNav, onClose }: {
-  steps: Step[]; i: number; editor: boolean; tags: StepTagDesc[]
+// §9.2 step-script modal: a two-column viewer on one large Modal card, 82vh
+// tall so flipping between steps never resizes the frame. Left, the step
+// navigator: every step as a row, the viewed one expanded to hold its
+// description and tag row (the same §14 chips the step row carries, tooltips
+// holding the detail, plus the detail variant's modal-only package chips).
+// Right, the code pane at full height on the code ground: a fixed toolbar
+// (STEP N OF M eyebrow, the §4.1 version-folder filename — its one appearance
+// in the UI — the line count, prev / next / close) over the line-numbered
+// script in its own scroll pane. Only the code pane remounts through the §14
+// keyed fade (resetting its scroll) when the step switches; the navigator and
+// the toolbar stay put, so nothing under the pointer flashes.
+const EYEBROW: React.CSSProperties = { font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)', flex: 'none' }
+
+function StepNavRow({ step, j, viewed, editor, tags, onNav }: {
+  step: Step; j: number; viewed: boolean; editor: boolean; tags: StepTagDesc[]; onNav: () => void
+}) {
+  const ref = useRef<HTMLButtonElement>(null)
+  // An arrow-key flip after a row click would leave the clicked row's
+  // focus ring on a step no longer viewed — two rows reading as current. While
+  // focus sits in the navigator it follows the viewed row; focus resting on
+  // the toolbar buttons (or nowhere) is left alone.
+  useEffect(() => {
+    const el = ref.current
+    if (!viewed || !el || document.activeElement === el) return
+    if (document.activeElement?.closest('.ad-stepnav')) el.focus({ preventScroll: true })
+  }, [viewed])
+  return (
+    <button
+      ref={ref}
+      className="ad-btn-bare ad-hover-row ad-focus-inset"
+      aria-current={viewed ? 'step' : undefined}
+      onClick={onNav}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 18px 9px 14px',
+        borderLeft: `2px solid ${viewed ? 'var(--accent)' : 'transparent'}`,
+        background: viewed ? 'rgba(255, 255, 255, 0.04)' : undefined,
+        cursor: viewed ? 'default' : 'pointer',
+      }}
+    >
+      <span style={{ font: "500 11px/18px var(--mono)", color: 'var(--text-faint)', width: 16, flex: 'none' }}>{j + 1}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ font: `${viewed ? 600 : 500} 13px/18px var(--sans)`, color: viewed ? 'var(--text)' : 'var(--text-muted)' }}>
+          {step.name}
+        </div>
+        {viewed && (
+          <>
+            {step.description && (
+              <div style={{ font: "400 12px/1.5 var(--sans)", color: 'var(--text-muted)', marginTop: 4 }}>{step.description}</div>
+            )}
+            {/* §9.2 tag row: the same chips the step row carries (tooltips
+                hold the detail), plus package chips in the detail modal. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 8 }}>
+              {tags.map((t) => {
+                const v = tagVisual(t.tone, editor)
+                return <Tag key={t.key} icon={t.icon} c={v.c} title={t.title} style={v.style}>{t.label}</Tag>
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </button>
+  )
+}
+
+// §9.2: the frame is sized once per open to the automation's LONGEST script
+// (toolbar + lines at the code pane's 12px/1.65 rhythm + its padding),
+// floored at 440px for the navigator and capped at 82vh — stable across
+// flips, yet an automation of short steps gets a card that fits them
+// instead of a mostly empty one.
+export function stepModalFrame(steps: Step[]): string {
+  const longest = Math.max(1, ...steps.map((s) => (s.code || '').replace(/\n$/, '').split('\n').length))
+  return `clamp(440px, ${Math.ceil(44 + 38 + longest * 12 * 1.65)}px, 82vh)`
+}
+
+function StepModal({ steps, i, editor, tagsByStep, onNav, onClose }: {
+  steps: Step[]; i: number; editor: boolean; tagsByStep: StepTagDesc[][]
   onNav: (i: number) => void; onClose: () => void
 }) {
   const step = steps[i]
   // A script's single trailing final newline is neither rendered nor counted —
   // it would show as a blank last line and count one line too many (§9.2).
   const code = (editor ? (step.code || '# script not written yet') : step.code || '').replace(/\n$/, '')
-  const lineCount = code.split('\n').length
+  const lines = useMemo(() => highlightPythonLines(code), [code])
+  const lineCount = lines.length
+  const frame = stepModalFrame(steps)
   return (
     <Modal
-      onClose={onClose} width={1000} ariaLabel={`Step ${i + 1} of ${steps.length}: ${step.name}`}
-      cardStyle={{ width: 'min(1000px, 92vw)', overflow: 'hidden' }}
+      onClose={onClose} width={1120} ariaLabel={`Step ${i + 1} of ${steps.length}: ${step.name}`}
+      cardStyle={{ width: 'min(1120px, 92vw)', overflow: 'hidden' }}
     >
       {(close, closing) => (
-        <div className="ad-stepmodal" style={{ height: '82vh', position: 'relative', minWidth: 0 }}>
+        <div className="ad-stepmodal" style={{ height: frame, display: 'flex', minWidth: 0 }}>
           <StepArrowKeys i={i} count={steps.length} closing={closing} onNav={onNav} />
-          <div style={{
-            position: 'absolute', top: 12, right: 14, zIndex: 1,
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: 'var(--bg-menu)', borderRadius: 8, padding: 2,
+          {/* step navigator */}
+          <div className="ad-stepnav" style={{
+            width: 280, flex: 'none', minHeight: 0, display: 'flex', flexDirection: 'column',
+            borderRight: '1px solid var(--hairline-dim)',
           }}>
-            <button className="ad-btn-icon" aria-label="Previous step" disabled={i === 0} onClick={() => onNav(i - 1)}>
-              <i className="fa-solid fa-chevron-left" />
-            </button>
-            <button className="ad-btn-icon" aria-label="Next step" disabled={i === steps.length - 1} onClick={() => onNav(i + 1)}>
-              <i className="fa-solid fa-chevron-right" />
-            </button>
-            <button className="ad-btn-icon" aria-label="Close" onClick={close}>
-              <i className="fa-solid fa-xmark" style={{ fontSize: 14 }} />
-            </button>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '16px 18px 8px 16px' }}>
+              <span style={EYEBROW}>STEPS</span>
+              <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)' }}>{steps.length}</span>
+            </div>
+            <ScrollArea wrapStyle={{ flex: 1, minHeight: 0 }}>
+              <div style={{ paddingBottom: 12 }}>
+                {steps.map((s, j) => (
+                  <StepNavRow key={j} step={s} j={j} viewed={j === i} editor={editor} tags={tagsByStep[j]} onNav={() => onNav(j)} />
+                ))}
+              </div>
+            </ScrollArea>
           </div>
-          <ScrollArea key={i} className="ad-anim-fade" wrapStyle={{ height: '100%' }}>
-            <div style={{ padding: '16px 20px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ paddingRight: 108 }}>
-                <div style={{ font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)' }}>
-                  STEP {i + 1} OF {steps.length}
-                </div>
-                <div style={{ fontSize: 16, fontWeight: 600, marginTop: 3, letterSpacing: '-.01em' }}>
-                  {step.name}
-                </div>
-              </div>
-              {step.description && (
-                <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-2)' }}>{step.description}</div>
-              )}
-              {/* §9.2 tag row: the same chips the step row carries (tooltips
-                  hold the detail), plus package chips in the detail modal. */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-                {tags.map((t) => {
-                  const v = tagVisual(t.tone, editor)
-                  return <Tag key={t.key} icon={t.icon} c={v.c} title={t.title} style={v.style}>{t.label}</Tag>
-                })}
-              </div>
-            </div>
+          {/* code pane */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-code)' }}>
             <div style={{
-              margin: '0 20px 20px', border: '1px solid var(--hairline-dim)', borderRadius: 8,
-              background: 'var(--bg-code)', overflow: 'hidden',
+              height: 44, flex: 'none', display: 'flex', alignItems: 'center', gap: 12,
+              padding: '0 10px 0 18px', borderBottom: '1px solid var(--hairline-dim)',
             }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-                padding: '8px 16px', borderBottom: '1px solid var(--hairline-dim)',
+              <span style={EYEBROW}>STEP {i + 1} OF {steps.length}</span>
+              <span style={{
+                font: "400 11px var(--mono)", color: 'var(--text-deco)', flex: 1, minWidth: 0,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}>
-                <span style={{ font: "500 10.5px var(--mono)", letterSpacing: '.05em', color: 'var(--text-faint)' }}>
-                  {step.file || 'script'}
-                </span>
-                <span style={{ font: "500 10.5px var(--mono)", color: 'var(--text-faint)', flex: 'none' }}>
-                  {lineCount} {lineCount === 1 ? 'line' : 'lines'}
-                </span>
+                {step.file || 'script'}
+              </span>
+              <span style={{ font: "500 11px var(--mono)", color: 'var(--text-faint)', flex: 'none' }}>
+                {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 2, flex: 'none', marginLeft: 4 }}>
+                <button className="ad-btn-icon" aria-label="Previous step" disabled={i === 0} onClick={() => onNav(i - 1)}>
+                  <i className="fa-solid fa-chevron-left" />
+                </button>
+                <button className="ad-btn-icon" aria-label="Next step" disabled={i === steps.length - 1} onClick={() => onNav(i + 1)}>
+                  <i className="fa-solid fa-chevron-right" />
+                </button>
+                <button className="ad-btn-icon" aria-label="Close" onClick={close}>
+                  <i className="fa-solid fa-xmark" style={{ fontSize: 14 }} />
+                </button>
               </div>
-              <PyCode code={code} style={{
-                margin: 0, padding: '14px 16px', font: "400 11.5px/1.75 var(--mono)", color: 'var(--code-text)',
-                whiteSpace: 'pre-wrap', overflowWrap: 'break-word', minWidth: 0,
-              }} />
             </div>
-          </ScrollArea>
+            <ScrollArea key={i} className="ad-anim-fade" wrapStyle={{ flex: 1, minHeight: 0 }}>
+              <div style={{
+                // 28px right padding keeps the longest line clear of the overlay thumb
+                display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', padding: '14px 28px 24px 0',
+                font: "400 12px/1.65 var(--mono)", color: 'var(--code-text)',
+              }}>
+                {lines.map((ln, n) => (
+                  <React.Fragment key={n}>
+                    <span style={{ textAlign: 'right', padding: '0 16px 0 18px', color: 'var(--text-deco)', userSelect: 'none' }}>{n + 1}</span>
+                    <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{ln}</span>
+                  </React.Fragment>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
         </div>
       )}
     </Modal>
@@ -393,7 +460,7 @@ export function StepList(props: StepListProps) {
       {current !== null && (
         <StepModal
           steps={steps} i={current} editor={editor}
-          tags={tagsByStep[current]}
+          tagsByStep={tagsByStep}
           onNav={setViewing}
           onClose={() => setViewing(null)}
         />

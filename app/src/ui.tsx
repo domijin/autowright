@@ -932,6 +932,32 @@ export function highlightPython(code: string): React.ReactNode[] {
   return out
 }
 
+// The highlighted stream split into lines for a line-numbered view: every
+// '\n' — the tokenizer's own newline tokens and the newlines inside a
+// multi-line token (triple-quoted strings) — starts a new line, a split token
+// reopening with the same style on the next one, so per-line rendering never
+// loses a docstring's color. Highlighting a script per line instead would
+// mis-tokenize every docstring continuation.
+export function highlightPythonLines(code: string): React.ReactNode[][] {
+  const lines: React.ReactNode[][] = [[]]
+  let key = 0
+  const push = (text: string, style?: React.CSSProperties) => {
+    const parts = text.split('\n')
+    parts.forEach((part, i) => {
+      if (i > 0) lines.push([])
+      if (!part) return
+      lines[lines.length - 1].push(style ? <span key={key++} style={style}>{part}</span> : part)
+    })
+  }
+  for (const node of highlightPython(code)) {
+    if (typeof node === 'string') push(node)
+    else if (React.isValidElement<{ style?: React.CSSProperties; children?: string }>(node)) {
+      push(String(node.props.children ?? ''), node.props.style)
+    }
+  }
+  return lines
+}
+
 // Highlighted Python <pre>. Pass the same style/className the plain <pre> used;
 // per-token colors override the base text color for recognized tokens. The
 // tokenizer walks the whole script, so it only reruns when the code changes —

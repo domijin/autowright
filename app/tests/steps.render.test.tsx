@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from '../src/types'
-import { ParamValueEditor, StepList, stepPackageTags, stepSecretTags } from '../src/steps'
+import { ParamValueEditor, StepList, stepModalFrame, stepPackageTags, stepSecretTags } from '../src/steps'
 
 afterEach(() => cleanup())
 
@@ -40,7 +40,7 @@ describe('StepList (shared)', () => {
     expect(screen.getByText('1')).toBeTruthy()
     // clicking the row opens the step-script modal, which holds the script
     fireEvent.click(screen.getByText('Fetch page'))
-    expect(screen.getByText(new RegExp(MAIL_ID), { selector: 'pre *, pre' })).toBeTruthy()
+    expect(screen.getByRole('dialog').textContent).toContain(`secrets["${MAIL_ID}"]`)
   })
 
   it('detail variant: a dangling secret or agent id renders the red deleted state', () => {
@@ -253,18 +253,24 @@ describe('step-script modal', () => {
   const renderDetail = () => render(
     <StepList variant="detail" steps={TWO_STEPS} agents={[AGENT]} secrets={SECRETS} packages={[]} fallbackAgent="Cloud writer" />,
   )
-  // the step name renders twice once the modal is up (row + modal header)
+  // the step name renders twice once the modal is up (row + navigator row)
   const openFirst = () => fireEvent.click(screen.getAllByText('Fetch page')[0])
+  // the navigator row naming a step (the dialog's only buttons carrying text)
+  const navRow = (name: string) => Array.from(screen.getByRole('dialog').querySelectorAll('button'))
+    .find((b) => b.textContent?.includes(name)) as HTMLButtonElement
 
-  it('detail variant: a row opens the dialog with the STEP N OF M eyebrow, the code-card filename and the tag row', () => {
+  it('detail variant: a row opens the dialog with the STEP N OF M eyebrow, the toolbar filename and the tag row', () => {
     renderDetail()
     openFirst()
     expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Step 1 of 2: Fetch page')
-    // the eyebrow is the step counter alone — the filename rides the code card
+    // the eyebrow is the step counter alone — the filename rides the toolbar
     expect(screen.getByText(/STEP 1 OF 2/).textContent).toBe('STEP 1 OF 2')
     expect(screen.getByText('01-fetch-page.py')).toBeTruthy()
+    // the navigator lists every step, the viewed one marked current
+    expect(navRow('Fetch page').getAttribute('aria-current')).toBe('step')
+    expect(navRow('Send mail').getAttribute('aria-current')).toBeNull()
     // the modal repeats the row's chips — the secret chip now renders twice
-    // (row + modal), each carrying the same §14 tooltip sentence
+    // (row + the navigator's expanded row), each carrying the same §14 tooltip sentence
     const chips = screen.getAllByText('MAIL_PASSWORD')
     expect(chips).toHaveLength(2)
     for (const chip of chips) {
@@ -287,7 +293,7 @@ describe('step-script modal', () => {
     expect(screen.queryByText(/retr/)).toBeNull()
   })
 
-  it('the code card counts the script lines, singular at one, ignoring the trailing final newline', () => {
+  it('the code pane numbers every line and counts them, singular at one, ignoring the trailing final newline', () => {
     const steps = [
       // trailing \n — the file-final newline is neither rendered nor counted
       step({ name: 'Three liner', code: 'a = 1\nb = 2\nsend(a + b)\n' }),
@@ -298,10 +304,15 @@ describe('step-script modal', () => {
     )
     fireEvent.click(screen.getAllByText('Three liner')[0])
     expect(screen.getByText('3 lines')).toBeTruthy()
-    // no filename on the step → the code card header falls back to 'script'
+    // no filename on the step → the toolbar falls back to 'script'
     expect(screen.getByText('script')).toBeTruthy()
+    // a line-number gutter beside every rendered line, and no fourth row
+    const gutter = () => Array.from(screen.getByRole('dialog').querySelectorAll('span'))
+      .filter((el) => (el.style as CSSStyleDeclaration).userSelect === 'none').map((el) => el.textContent)
+    expect(gutter()).toEqual(['1', '2', '3'])
     fireEvent.click(screen.getByLabelText('Next step'))
     expect(screen.getByText('1 line')).toBeTruthy()
+    expect(gutter()).toEqual(['1'])
   })
 
   it('detail variant: package chips are modal-only — absent from the row, present once opened', () => {
@@ -320,17 +331,51 @@ describe('step-script modal', () => {
       .toBe('This step uses the bs4 Python package — parse pages')
   })
 
-  it('detail variant: next/prev buttons and the arrow keys flip steps, guarded at both ends', () => {
+  it('detail variant: next/prev buttons, the navigator rows and the arrow keys flip steps, guarded at both ends', () => {
     renderDetail()
     openFirst()
     fireEvent.click(screen.getByLabelText('Next step'))
     expect(screen.getByText('STEP 2 OF 2')).toBeTruthy()
     expect((screen.getByLabelText('Next step') as HTMLButtonElement).disabled).toBe(true)
+    // only the viewed navigator row expands to show its description
+    expect(navRow('Send mail').getAttribute('aria-current')).toBe('step')
+    expect(screen.getByRole('dialog').textContent).toContain('mails it')
+    expect(screen.getByRole('dialog').textContent).not.toContain('reads it')
+    // clicking a navigator row views that step
+    fireEvent.click(navRow('Fetch page'))
+    expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+    fireEvent.click(screen.getByLabelText('Next step'))
     fireEvent.keyDown(document, { key: 'ArrowLeft' })
     expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
     // ArrowLeft at the first step is a no-op, never an underflow
     fireEvent.keyDown(document, { key: 'ArrowLeft' })
     expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+  })
+
+  it('focus follows the viewed row while it sits in the navigator, and stays put elsewhere', () => {
+    renderDetail()
+    openFirst()
+    // a click leaves focus on the clicked row; an arrow flip moves it to the viewed row
+    navRow('Send mail').focus()
+    fireEvent.click(navRow('Send mail'))
+    expect(document.activeElement).toBe(navRow('Send mail'))
+    fireEvent.keyDown(document, { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(navRow('Fetch page'))
+    // focus resting on the toolbar is left alone
+    const next = screen.getByLabelText('Next step') as HTMLButtonElement
+    next.focus()
+    fireEvent.click(next)
+    expect(document.activeElement).toBe(next)
+  })
+
+  it('the frame height follows the longest script, floored and capped', () => {
+    // jsdom drops clamp() from the CSSOM, so the sizing rule is asserted on the helper
+    // toolbar 44 + padding 38 + 100 lines at 12px/1.65 = 2062 → the 82vh cap applies
+    expect(stepModalFrame([step({ code: 'a' }), step({ code: Array(100).fill('x').join('\n') })]))
+      .toBe('clamp(440px, 2062px, 82vh)')
+    // two lines (the trailing newline uncounted): 44 + 38 + 39.6 → 122, floored to 440
+    expect(stepModalFrame([step({ code: 'a\nb\n' })])).toBe('clamp(440px, 122px, 82vh)')
+    expect(stepModalFrame([step({ code: '' })])).toBe('clamp(440px, 102px, 82vh)')
   })
 
   it('editor variant: an empty script reads as the placeholder, and swapped steps close the modal', () => {
@@ -339,7 +384,7 @@ describe('step-script modal', () => {
       <StepList variant="editor" steps={steps} availAgents={[AGENT]} allAgents={[AGENT]} secrets={[]} packages={[]} />,
     )
     fireEvent.click(screen.getAllByText('Empty step')[0])
-    expect(document.querySelector('pre')?.textContent).toBe('# script not written yet')
+    expect(screen.getByRole('dialog').textContent).toContain('# script not written yet')
     // §11: a sync/undo hands the list a new steps array — the modal closes
     rerender(
       <StepList

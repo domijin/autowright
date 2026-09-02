@@ -4,7 +4,7 @@
 import React from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  nextIn, paramSummary, validUrl, badgeOf, resultChipColors, P, highlightPython,
+  nextIn, paramSummary, validUrl, badgeOf, resultChipColors, P, highlightPython, highlightPythonLines,
   executingToast, stepTimeoutLabel, stepRetriesLabel, stepRetriesTitle, waitedLabel, durationLabel, dispModel, agName, logColor,
 } from '../src/ui'
 import type { ParamDef, Step } from '../src/types'
@@ -232,6 +232,30 @@ function tokens(code: string): Tok[] {
   })
 }
 const tok = (ts: Tok[], text: string) => ts.find((t) => t.text === text)
+
+describe('highlightPythonLines', () => {
+  const lineToks = (code: string) => highlightPythonLines(code).map((ln) => ln.map((n) => {
+    if (typeof n === 'string') return { text: n }
+    const e = n as React.ReactElement<{ style?: React.CSSProperties; children?: React.ReactNode }>
+    return { text: String(e.props.children), color: e.props.style?.color }
+  }))
+
+  it('splits the stream at newlines, reopening a multi-line docstring token per line in the string color', () => {
+    const lines = lineToks('"""Doc.\n\nMore."""\nx = 1')
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toEqual([{ text: '"""Doc.', color: COLOR.string }])
+    expect(lines[1]).toEqual([]) // the blank docstring line carries no node
+    expect(lines[2]).toEqual([{ text: 'More."""', color: COLOR.string }])
+    expect(lines[3].map((t) => t.text).join('')).toBe('x = 1')
+    expect(lines[3][0]).toEqual({ text: 'x' })
+    expect(lines[3].find((t) => t.text === '1')?.color).toBe(COLOR.number)
+  })
+
+  it('keeps an empty script and trailing blank lines as rows', () => {
+    expect(lineToks('')).toEqual([[]])
+    expect(lineToks('a\n\n')).toHaveLength(3)
+  })
+})
 
 describe('highlightPython', () => {
   const code = [

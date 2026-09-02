@@ -41,12 +41,13 @@ function panelWindowExtras() {
 
 function panelAfterCreate(_panel) {}
 
-// §13 placement: Linux panels sit on any screen edge, so anchor to the tray
-// click point against the work area — a click in the top half drops the panel
-// just below the top edge (the macOS shape); one in the bottom half anchors
-// the panel's bottom edge just above the bottom at its *real* height (the
-// Windows height-aware shape, re-anchored on every resize-panel). Clamped
-// inside the work area horizontally either way.
+// §13 (2026-09-01): Linux ships NO tray surface — `trayPanel` is false below,
+// so main.cjs never asks for these. StatusNotifier hosts may not render the
+// icon at all (stock GNOME needs an extension), activate through a context
+// menu the app doesn't have, and don't deliver a reliable `click` — a tray
+// that may be invisible or unopenable is worse than none. The functions stand
+// in only to keep the module surfaces identical (same idiom as fallback.cjs);
+// the checked-in trayLinux PNGs stay for a future revisit.
 function panelPosition(pt, display, height) {
   const h = Number.isFinite(height) ? height : 640
   const wa = display.workArea
@@ -57,9 +58,6 @@ function panelPosition(pt, display, height) {
   return { x: Math.round(x), y: Math.round(y) }
 }
 
-// §13: real colored assets for the StatusNotifier panel (22/44 px) — hosts
-// don't recolor template images, so the light glyph ships pre-rendered by
-// scripts/gen_tray_icon.py beside the mac and Windows sets.
 function trayIconSpec(alert) {
   return { file: alert ? 'trayLinuxAlert.png' : 'trayLinux.png', template: false }
 }
@@ -259,13 +257,13 @@ function serviceDiagnostics(log) {
     })
 }
 
-// §13: the tray is best-effort on Linux (stock GNOME needs a user extension
-// for StatusNotifier items) — the flag stays true so the icon is attempted;
-// the §3 window-all-closed discriminator covers a host with no tray.
+// §13 (2026-09-01): no tray surface on Linux — see the tray block above. With
+// no dock and no tray, the §9 close rule quits the UI on the last window
+// close; the systemd backend keeps firing regardless.
 // §9: no application menu — the native frame would draw Electron's stock
 // File/Edit/View/Window bar, which nothing in the app uses, so the shell
 // suppresses it (editing shortcuts are Chromium-native and survive).
-const capabilities = { trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: false, desktopEntry: true }
+const capabilities = { trayPanel: false, loginItem: true, dockIcon: false, updates: true, appMenu: false, desktopEntry: true }
 
 module.exports = {
   OS_TOKEN,

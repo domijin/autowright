@@ -997,7 +997,11 @@ menuBarIcon: bool       — "Show in the menu bar" ("The quickest way to execute
   outright (it can only ever be Autowright's own stale slot) and `electron.app.Electron`
   only when its command references the running binary (the generic name may belong to
   another app's dev shell). `menuBarIcon` creates or
-  destroys the tray icon live (no restart; hiding it also hides an open §13 panel).
+  destroys the tray icon live (no restart; hiding it also hides an open §13 panel). The
+  row renders only where the shell has a tray at all — the §9.4 platform-info bridge
+  carries the shell's `trayPanel` capability, and on Linux (no tray surface, §13
+  2026-09-01 decision) the row hides; the stored value stays for §20 CLI parity and is
+  inert there.
 keepAwake: bool (default true) — "Keep this Mac awake" ("Prevents this Mac from sleeping so
   schedules and message triggers keep firing. The display can still sleep. Works best on an
   always-on Mac like a Mac mini or Mac Studio. A MacBook that is asleep would not trigger

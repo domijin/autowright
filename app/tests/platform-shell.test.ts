@@ -152,12 +152,14 @@ describe('§9 capability flags', () => {
     expect(win32.capabilities).toEqual({
       trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: true, desktopEntry: false,
     })
-    // §13: the Linux tray is best-effort (stock GNOME needs an extension) —
-    // the flag stays true so the icon is attempted. §9: no application menu —
+    // §13 (2026-09-01): Linux ships no tray surface at all — StatusNotifier
+    // hosts may not render the icon, activate via a menu the app doesn't
+    // have, and don't deliver a reliable click; with no dock either, the §9
+    // close rule quits the UI on last window close. §9: no application menu —
     // the stock File/Edit/View/Window bar is suppressed. §3: the AppImage
     // launcher entry is the one desktop-integration surface, Linux-only.
     expect(linux.capabilities).toEqual({
-      trayPanel: true, loginItem: true, dockIcon: false, updates: true, appMenu: false, desktopEntry: true,
+      trayPanel: false, loginItem: true, dockIcon: false, updates: true, appMenu: false, desktopEntry: true,
     })
   })
 

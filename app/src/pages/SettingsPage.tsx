@@ -71,6 +71,16 @@ export default function SettingsPage() {
     void window.autowright?.cliStatus().then((s) => setCli(s)).catch(() => {})
   }, [])
 
+  // §4.9: the "Show in the menu bar" row exists only where the shell has a
+  // tray (trayPanel false on Linux, §13) — default true so macOS/Windows and
+  // the browser dev harness render it without waiting on the bridge.
+  const [trayPanel, setTrayPanel] = useState(true)
+  useEffect(() => {
+    void window.autowright?.platformInfo?.()
+      .then((p) => { if (p && p.trayPanel === false) setTrayPanel(false) })
+      .catch(() => {})
+  }, [])
+
   // §3 reset-progress pushes drive the overlay's stage line. Ignored while the
   // overlay is down — no stray push may raise it (only confirming does).
   useEffect(() => {
@@ -211,10 +221,15 @@ export default function SettingsPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
         <Eyebrow style={{ paddingLeft: 2 }}>GENERAL</Eyebrow>
         <div className="ad-card" style={card}>
-          <div style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20, borderBottom: '1px solid var(--hairline-dim)' }}>
+          <div style={{
+            padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
+            // The card's last visible row never carries a separator — every
+            // row below this one can be the one that's gone.
+            ...(trayPanel || keepAwakeOn || notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
+          }}>
             <div style={{ flex: 1 }}>
               <div style={rowTitle}>Launch at login</div>
-              <div style={rowSub}>Autowright starts quietly in the {copy.menuBar}.</div>
+              <div style={rowSub}>{copy.loginSub}</div>
             </div>
             <Toggle
               // §4.9: the OS login item follows the stored setting — App.tsx
@@ -223,18 +238,19 @@ export default function SettingsPage() {
               onChange={(v) => patch({ login: v })}
             />
           </div>
-          <div style={{
-            padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
-            // The card's last visible row never carries a separator — either
-            // gated row below can be the one that's gone.
-            ...(keepAwakeOn || notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
-          }}>
-            <div style={{ flex: 1 }}>
-              <div style={rowTitle}>Show in the {copy.menuBar}</div>
-              <div style={rowSub}>The quickest way to execute an automation.</div>
+          {/* §4.9: only where the shell has a tray — hidden on Linux (§13). */}
+          {trayPanel && (
+            <div style={{
+              padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,
+              ...(keepAwakeOn || notificationsOn ? { borderBottom: '1px solid var(--hairline-dim)' } : {}),
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={rowTitle}>Show in the {copy.menuBar}</div>
+                <div style={rowSub}>The quickest way to execute an automation.</div>
+              </div>
+              <Toggle on={settings.menuBarIcon} onChange={(v) => patch({ menuBarIcon: v })} />
             </div>
-            <Toggle on={settings.menuBarIcon} onChange={(v) => patch({ menuBarIcon: v })} />
-          </div>
+          )}
           {keepAwakeOn && (
             <div style={{
               padding: '15px 20px', display: 'flex', alignItems: 'center', gap: 20,

@@ -210,7 +210,12 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   macOS notifications itself via `osascript -e 'display notification …'` — works headless with no
   UI process; the Electron app never posts.
 - **Overdue sweep** — once an hour on the scheduler tick (beside the retention sweep, same
-  cadence), the backend evaluates every automation's §4.1 `overdue` state. An automation
+  cadence — though the retention sweep only *decides* on the tick: its deletes run on their
+  own worker thread, single-flight, because a first sweep after a retention change can
+  rmtree a huge backlog and a tick stalled past the grace window would make the
+  missed-executions rule above misread scheduler lag as sleep and drop a
+  `runIfMissed: false` occurrence the Mac never slept through), the backend evaluates
+  every automation's §4.1 `overdue` state. An automation
   observed overdue at **two consecutive sweeps** gets one macOS notification — title the
   automation's name, body "Scheduled executions are being missed." — and its
   `automation.changed` event is published so open surfaces update live. Two sweeps, not

@@ -48,6 +48,9 @@ class Scheduler:
         self._warned_rewind: set[tuple[str, str]] = set()
         self._stop = threading.Event()
         self._last_retention = clock()
+        # §6: the live retention worker, single-flight — the tick never starts
+        # a second sweep while one is still deleting.
+        self._retention_thread: threading.Thread | None = None
         # §6 overdue sweep: hourly observations, in-memory only (§4.1
         # derived-not-stored). streak counts consecutive overdue sightings per
         # automation; notified re-arms when the automation recovers.
@@ -107,15 +110,18 @@ class Scheduler:
         # abort the tick or the other sweep. The wall clock is not monotonic
         # (DST fall-back, NTP steps): a negative delta counts as due — a
         # rewound clock must never stall a sweep for up to an hour.
+        # §6: the retention sweep only *decides* here — its deletes run on
+        # their own worker thread (single-flight): a first sweep after a
+        # retention change can rmtree a huge backlog, and a tick stalled past
+        # GRACE_S would make the runIfMissed drop rule misread scheduler lag
+        # as sleep.
         retention_wait = (now - self._last_retention).total_seconds()
-        if retention_wait > 3600 or retention_wait < 0:
+        if ((retention_wait > 3600 or retention_wait < 0)
+                and not (self._retention_thread and self._retention_thread.is_alive())):
             self._last_retention = now
-            try:
-                removed = self.store.retention_cleanup()
-                if removed:
-                    hub.publish("automation.changed")
-            except Exception:  # noqa: BLE001
-                log.exception("retention sweep failed")
+            self._retention_thread = threading.Thread(
+                target=self._retention_sweep, daemon=True, name="ad-retention")
+            self._retention_thread.start()
         overdue_wait = (now - self._last_overdue).total_seconds()
         if overdue_wait > 3600 or overdue_wait < 0:
             self._last_overdue = now
@@ -222,6 +228,17 @@ class Scheduler:
         # within a tick rather than waiting for the next firing.
         if drain:
             drain_queue(self.store, self.engine, a["id"])
+
+    def _retention_sweep(self) -> None:
+        """§5 hourly retention pass, off the tick thread (§6): deletes expired
+        records and publishes automation.changed only when something was
+        actually removed."""
+        try:
+            removed = self.store.retention_cleanup()
+            if removed:
+                hub.publish("automation.changed")
+        except Exception:  # noqa: BLE001
+            log.exception("retention sweep failed")
 
     def _record_drop(self, a: dict, t: dict) -> None:
         with self.store.lock:

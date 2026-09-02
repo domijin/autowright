@@ -678,15 +678,25 @@ def test_retention_sweep_runs_hourly_and_publishes(store, monkeypatch):
     events = []
     monkeypatch.setattr(sched_mod.hub, "publish",
                         lambda ev, **kw: events.append(ev))
+    def sweep_done():
+        # §6: the sweep's deletes run on their own worker thread — the tick
+        # only starts it; tests join so the assertions see the finished pass.
+        t = sched._retention_thread
+        if t is not None:
+            t.join(timeout=10)
+
     sched._tick()
+    sweep_done()
     assert h_old["id"] in store.execs  # not an hour yet — nothing swept
     clock.now += timedelta(hours=2)
     sched._tick()
+    sweep_done()
     assert h_old["id"] not in store.execs
     assert "automation.changed" in events
     events.clear()
     clock.now += timedelta(hours=2)
     sched._tick()  # nothing left to remove → no publish
+    sweep_done()
     assert "automation.changed" not in events
 
 

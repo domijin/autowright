@@ -913,6 +913,9 @@ ipcMain.handle('platform-info', () => ({
   // Bundle version — the §9.5 fallback while the store's /state version
   // hasn't landed (the block must never show a bare "v").
   version: app.getVersion(),
+  // §4.9: the shell's tray capability — the "Show in the menu bar" row
+  // renders only where a tray exists (false on Linux, §13).
+  trayPanel: !!caps.trayPanel,
 }))
 ipcMain.handle('apply-settings', (_e, s) => applyShellSettings(s))
 ipcMain.handle('tray-alert', (_e, on) => {

@@ -703,7 +703,7 @@ export function RightCards({
             <span style={{ font: "400 11.5px var(--sans)", color: 'var(--text-faint)' }}>
               {rev.triggers.length > 0
                 ? 'Executes even when the app is closed. Ask the AI in chat to change these, or use the automation page — chat changes apply when you save.'
-                : `No triggers — executes only via Execute now and the ${copy.menuBar}.`}
+                : `No triggers — executes only via ${copy.manualOnlyShort}.`}
             </span>
           </div>
         )}

@@ -33,9 +33,22 @@ export interface PlatformCopy {
   // copy that names where the `autowright` command is used.
   terminalNoun: string
   // §9 table: the §13 surface's own name — "menu bar" on macOS, "tray" on
-  // Windows. Interpolated into the sentences that name it ("starts quietly in
-  // the …", "Show in the …", "Execute now and the … still work").
+  // Windows. Interpolated into the §4.9 "Show in the …" row title, which hides
+  // on Linux (§4.9) — the sentences below carry their own Linux forms, because
+  // Linux has no §13 surface to name and drops the clause instead.
   menuBar: string
+  // §4.9 login row: the whole sub-copy sentence — Linux drops the surface
+  // clause ("Autowright starts when you log in.").
+  loginSub: string
+  // §9.2 recurring closer: the sentence that follows a schedule-status line —
+  // "Execute now and the menu bar still work." / "Execute now still works."
+  manualStillWorks: string
+  // §9.2 no-triggers line: the phrase after "executes only " — the manual
+  // surfaces, spelled out.
+  manualOnlyLong: string
+  // §11 review card: the phrase after "executes only via " — the same manual
+  // surfaces, in the short form.
+  manualOnlyShort: string
   // §4.9 keepAwake row: the §3 sleep disclaimer sentence — what the idle-sleep
   // assertion cannot do (a closed-lid laptop runs nothing until it wakes).
   sleepNote: string
@@ -55,6 +68,10 @@ const MACOS: PlatformCopy = {
   cliBinDir: '~/.local/bin',
   terminalNoun: 'the Terminal',
   menuBar: 'menu bar',
+  loginSub: 'Autowright starts quietly in the menu bar.',
+  manualStillWorks: 'Execute now and the menu bar still work.',
+  manualOnlyLong: 'when you press Execute now or use the menu bar',
+  manualOnlyShort: 'Execute now and the menu bar',
   sleepNote: 'Works best on an always-on Mac like a Mac mini or Mac Studio. A MacBook that is asleep would not trigger the automation.',
   sleepMissNote: 'This is not an issue on Mac mini or Mac Studio, but a MacBook that is asleep will not fire on schedule.',
 }
@@ -72,6 +89,10 @@ const WINDOWS: PlatformCopy = {
   cliBinDir: '%LOCALAPPDATA%\\Autowright\\bin',
   terminalNoun: 'a terminal',
   menuBar: 'tray',
+  loginSub: 'Autowright starts quietly in the tray.',
+  manualStillWorks: 'Execute now and the tray still work.',
+  manualOnlyLong: 'when you press Execute now or use the tray',
+  manualOnlyShort: 'Execute now and the tray',
   sleepNote: 'Works best on an always-on desktop PC. A laptop that is asleep would not trigger the automation.',
   sleepMissNote: 'This is not an issue on an always-on desktop PC, but a laptop that is asleep will not fire on schedule.',
 }
@@ -89,7 +110,14 @@ const LINUX: PlatformCopy = {
   pathCommand: 'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.profile',
   cliBinDir: '~/.local/bin',
   terminalNoun: 'a terminal',
+  // §13 2026-09-01: Linux ships no tray surface, so nothing names one — the
+  // §4.9 "Show in the …" row hides here and the sentences below drop the
+  // clause. The token stays filled for the type's sake only.
   menuBar: 'tray',
+  loginSub: 'Autowright starts when you log in.',
+  manualStillWorks: 'Execute now still works.',
+  manualOnlyLong: 'when you press Execute now',
+  manualOnlyShort: 'Execute now',
   sleepNote: 'Works best on an always-on desktop PC. A laptop that is asleep would not trigger the automation.',
   sleepMissNote: 'This is not an issue on an always-on desktop PC, but a laptop that is asleep will not fire on schedule.',
 }

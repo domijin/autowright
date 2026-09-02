@@ -117,13 +117,14 @@ export default function AutomationDetail() {
     : noNext ? auto.triggerChip
     : `${auto.triggerChip} · next in ${countdown}`
   // §9 per-OS copy rule: the §13 surface is the "menu bar" on macOS, the
-  // "tray" on Windows.
+  // "tray" on Windows, and nothing at all on Linux — so the manual-surface
+  // phrasing comes from the table whole, never interpolated.
   const trigStatusText = executing ? 'Executing now… the triggers are unchanged.'
-    : noTrigs ? `No triggers set — executes only when you press Execute now or use the ${copy.menuBar}.`
-    : allOff ? `All triggers are off — won’t execute on its own. Execute now and the ${copy.menuBar} still work.`
-    : msgListening ? `Listening for ${listenWhat} — executes when a matching message arrives. Execute now and the ${copy.menuBar} still work.`
-    : appStartOnly ? `Executes when this app next starts — Execute now and the ${copy.menuBar} still work.`
-    : noNext ? `No upcoming occurrence — Execute now and the ${copy.menuBar} still work.`
+    : noTrigs ? `No triggers set — executes only ${copy.manualOnlyLong}.`
+    : allOff ? `All triggers are off — won’t execute on its own. ${copy.manualStillWorks}`
+    : msgListening ? `Listening for ${listenWhat} — executes when a matching message arrives. ${copy.manualStillWorks}`
+    : appStartOnly ? `Executes when this app next starts — ${copy.manualStillWorks}`
+    : noNext ? `No upcoming occurrence — ${copy.manualStillWorks}`
     : `Next execution in ${countdown}${nextShort ? ` (${nextShort})` : ''} · executes even when the app is closed.`
   const trigChipOn = executing || (!allOff && !noTrigs)
   const execLabel = executing ? 'Executing…' : 'Execute now'

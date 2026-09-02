@@ -179,8 +179,9 @@ chrome with a native `titleBarOverlay` colored `--bg-titlebar`,
 and the §3 electron-updater NSIS update feed); `linux.cjs` carries the Linux values (XDG
 roots, `python/bin/python3`
 bundled-interpreter layout, the POSIX shim and login-shell PATH probe shared with macOS,
-native window frame — no custom title bar or vibrancy for v1 — colored tray assets with
-work-area-anchored panel placement on any screen edge, the §4.9 login setting honored via
+native window frame — no custom title bar or vibrancy for v1 — no tray surface
+(`trayPanel` false, the §13 2026-09-01 decision: the window plus the systemd backend
+service are the whole Linux surface), the §4.9 login setting honored via
 an XDG-autostart `.desktop` file, the §3 launch-time desktop-integration reconcile — the
 `~/.local/share` launcher entry + hicolor icon that give the AppImage's window its icon
 and an app-grid entry — and the §3 electron-updater AppImage update feed);

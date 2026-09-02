@@ -88,7 +88,10 @@ running behind it. Either way an app that is running is an app the user can see.
 tray-and-dock app and stays resident. On Windows there is no dock: closing the window keeps
 the app resident **only while the §4.9 `menuBarIcon` tray icon is showing**; with the tray
 hidden, closing the last window quits the UI (the §3 backend service is unaffected either
-way — quitting the UI never stops it; §4.9 `login` still controls the next start). The
+way — quitting the UI never stops it; §4.9 `login` still controls the next start). On
+Linux there is neither a dock nor a tray (§13 — Linux ships no tray surface), so closing
+the last window always quits the UI; automations keep firing in the §3 systemd backend
+regardless. The
 discriminator is the shell capability `dockIcon`, never a platform sniff: a platform with a
 dock stays resident unconditionally; without one, residency requires a **live** tray
 reference (the stored setting is never consulted — a tray that failed to create must not
@@ -148,9 +151,14 @@ secret-write 503s has no Windows analogue and becomes plain "— try again"; on 
 becomes "— unlock your keyring and try again" (the Secret Service store does lock) ·
 `Show in Finder` → `Show in Explorer`, on Linux `Show in file manager` (reveal semantics
 unchanged; the file-manager noun inside longer phrases is `file manager`) ·
-`menu bar` → `tray`
-(the §13 surface's name on both — "starts quietly in the tray", "Show in the tray",
-"Execute now and the tray still work") · the §4.9 keepAwake row's sleep disclaimer
+`menu bar` → `tray` on Windows
+(the §13 surface's name there — "starts quietly in the tray", "Show in the tray",
+"Execute now and the tray still work"); on Linux there is no tray surface at all (§13
+2026-09-01), so the sentences that name it drop the clause instead of renaming it: the
+§4.9 login row's sub-copy becomes "Autowright starts when you log in.", the §9.2/§11
+manual-surfaces lines become "when you press Execute now" / "via Execute now", and the
+recurring closer "Execute now and the menu bar still work." becomes "Execute now still
+works." (the §4.9 "Show in the menu bar" row itself hides on Linux, §4.9) · the §4.9 keepAwake row's sleep disclaimer
 (`sleepNote`) "Works best on an always-on Mac like a Mac mini or Mac Studio. A MacBook
 that is asleep would not trigger the automation." → "Works best on an always-on desktop
 PC. A laptop that is asleep would not trigger the automation." on both · the §9.2 trigger
@@ -1454,22 +1462,21 @@ Panel placement is per-OS (§2 `panelPosition`): macOS anchors under the menu-ba
 Windows anchors the panel's bottom edge just above the taskbar's work area and re-anchors
 on **every** `resize-panel` (the §13 height growth), so the panel hugs the taskbar at its
 real height instead of assuming the 640 px cap — a taskbar docked to another edge still
-gets a fully on-screen panel. Linux generalizes the same height-aware logic to any edge —
-panels sit anywhere there: a tray click in the top half of the work area drops the panel
-just below the top edge (the macOS shape), one in the bottom half anchors its bottom edge
-just above the bottom (the Windows shape), clamped inside the work area horizontally, and
-it re-anchors on every `resize-panel` the same way. The Windows tray icon uses real
+gets a fully on-screen panel. The Windows tray icon uses real
 colored assets
 (`trayWin.png`/`@2x` and the alert variant — light glyph legible on the dark taskbar,
 rendered by `scripts/gen_tray_icon.py` beside the mac template PNGs), never the mac
-black template images, which disappear on a dark taskbar. Linux gets its own colored pair
-the same way (`trayLinux.png`/`@2x` + `trayLinuxAlert`, 22/44 px — the StatusNotifierItem
-panel convention; StatusNotifier hosts don't recolor template images). The Linux tray is
-**best-effort**: Electron rides libappindicator/StatusNotifier, and stock GNOME needs a
-user extension to show those items at all — `capabilities.trayPanel` stays true (the icon
-is attempted), and the §3 `window-all-closed` discriminator (no dock + no live tray →
-quit) plus the §4.9 `menuBarIcon` setting remain the safety net where no tray host
-exists.
+black template images, which disappear on a dark taskbar. **Linux ships no tray surface
+at all** (decided 2026-09-01): Electron's tray rides libappindicator/StatusNotifier,
+where stock GNOME needs a user extension to render the icon, hosts conventionally
+activate through a context menu the app doesn't have, and `click` isn't a reliable
+activation event — a tray that may be invisible or unopenable is worse than none.
+`capabilities.trayPanel` is false on Linux, so the shell never creates the tray or the
+§13 panel and the §4.9 `menuBarIcon` row hides (§4.9); the window plus the §3 systemd
+backend service are the whole Linux surface, and closing the last window quits the UI
+(§9 close rule). The checked-in `trayLinux.png` pair stays in the repo (rendered by
+`scripts/gen_tray_icon.py` with the others) against a future revisit but nothing
+consults it.
 
 **Deep-link mechanism:** a row click sends the target `'/app?automation=<id>'` to the main process.
 With no main window, the window is created loading that hash and the renderer's boot reads

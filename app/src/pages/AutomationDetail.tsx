@@ -190,7 +190,7 @@ export default function AutomationDetail() {
   const recentExecs = autoExecs.filter((e) => !e.test).slice(0, 6)
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '20px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 30px 70px' }}>
       <BackLink label="Automations" onClick={() => go('automations')} />
 
       {/* title row — §14 PageTitle with inline metadata (version pill, badge) */}

@@ -244,7 +244,7 @@ export default function ExecutionsList() {
   }
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '26px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
       <PageTitle
         right={
           <HeaderActions>

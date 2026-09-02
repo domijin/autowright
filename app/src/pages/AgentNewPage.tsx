@@ -425,7 +425,7 @@ export default function AgentNewPage() {
   if (missingEdit) return null // redirecting to Agents (effect above)
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 720, padding: '20px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 720, margin: '0 auto', padding: '20px 30px 70px' }}>
       <BackLink label="Agents" onClick={() => go('agents')} style={{ marginBottom: 10 }} />
       <PageTitle
         raw

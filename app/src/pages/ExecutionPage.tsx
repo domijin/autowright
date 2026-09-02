@@ -275,7 +275,7 @@ export default function ExecutionPage() {
   if (!executionId) return null
 
   const shell = (body: React.ReactNode) => (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '20px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '20px 30px 70px' }}>
       <BackLink label="Executions" onClick={() => go('executions')} />
       {body}
     </div>

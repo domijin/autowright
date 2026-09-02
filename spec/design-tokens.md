@@ -313,9 +313,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   one frame, one rhythm, one card, one row family, one field family, app-wide:
   - **Page frame:** gutter `26px 30px 70px`; pages that open with a `BackLink` use top 20
     (the link supplies the rest). Max width 1200 px (Review page 1800 px, forms 720 px,
-    Settings/About 640 px); every frame is left-aligned at the gutter — a narrow page is
-    never a centered column, so page titles share one x across the app. Onboarding is its own full-height frame (`30px 32px 60px`
-    body on both steps).
+    Settings/About 640 px); every frame is horizontally centered in the pane (`margin: 0 auto`),
+    so a narrow page reads as a centered column rather than hugging the sidebar rail. Onboarding
+    is its own full-height frame (`30px 32px 60px` body on both steps).
   - **Page header:** the `PageTitle` primitive on every page — `.ad-h1` title, `right`
     slot holding a `HeaderActions` cluster (§9), optional `sub` subtitle (13 px/1.6
     `--text-muted`, 6 px under the title). 20 px below the header (title or subtitle,

@@ -186,7 +186,7 @@ export default function SettingsPage() {
   // not a blank pane, while they load.
   if (!settings) {
     return (
-      <div className="ad-anim-page" style={{ maxWidth: 640, padding: '26px 30px 70px' }}>
+      <div className="ad-anim-page" style={{ maxWidth: 640, margin: '0 auto', padding: '26px 30px 70px' }}>
         <PageTitle style={{ marginBottom: 0 }}>Settings</PageTitle>
         <PageLoading />
       </div>
@@ -217,7 +217,7 @@ export default function SettingsPage() {
 
   return (
     <div className="ad-anim-page" style={{
-      maxWidth: 640, padding: '26px 30px 70px',
+      maxWidth: 640, margin: '0 auto', padding: '26px 30px 70px',
       display: 'flex', flexDirection: 'column', gap: 26,
     }}>
       <PageTitle style={{ marginBottom: 0 }}>Settings</PageTitle>

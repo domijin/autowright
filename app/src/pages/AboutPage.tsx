@@ -189,7 +189,7 @@ export default function AboutPage() {
 
   return (
     <div className="ad-anim-page" style={{
-      maxWidth: 640, padding: '26px 30px 70px',
+      maxWidth: 640, margin: '0 auto', padding: '26px 30px 70px',
       display: 'flex', flexDirection: 'column', gap: 26,
     }}>
       <PageTitle style={{ marginBottom: 0 }}>About</PageTitle>

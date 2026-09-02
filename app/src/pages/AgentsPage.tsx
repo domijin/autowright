@@ -146,7 +146,7 @@ export default function AgentsPage() {
   }, [agents])
 
   return (
-    <div className="ad-anim-page" style={{ maxWidth: 1200, padding: '26px 30px 70px' }}>
+    <div className="ad-anim-page" style={{ maxWidth: 1200, margin: '0 auto', padding: '26px 30px 70px' }}>
       <PageTitle
         sub="The AI that writes your automations. It never executes anything — Autowright does that. New automations use your default agent."
         right={<HeaderActions><BtnPrimary onClick={() => go('agentNew')}>Add agent</BtnPrimary></HeaderActions>}

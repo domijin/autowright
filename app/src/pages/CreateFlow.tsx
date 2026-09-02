@@ -996,7 +996,7 @@ export default function CreateFlow() {
           {/* header */}
           <div className="ad-anim-page" style={{ padding: '20px 0 0' }}>
             <div style={{
-              maxWidth: 1800, padding: '0 30px 0 18px',
+              maxWidth: 1800, margin: '0 auto', padding: '0 30px 0 18px',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             }}>
               <BackLink label={backLabel} onClick={() => void close()} />
@@ -1004,7 +1004,7 @@ export default function CreateFlow() {
           </div>
           {!rev && <PageLoading />}
           {rev && (
-          <div className="ad-anim-page" style={{ maxWidth: 1800, padding: '0 30px 70px 18px' }}>
+          <div className="ad-anim-page" style={{ maxWidth: 1800, margin: '0 auto', padding: '0 30px 70px 18px' }}>
             {/* title row */}
             <PageTitle
               raw

@@ -5,8 +5,9 @@
 // param value kinds with each variant's cosmetic contract.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { highlightPythonLines } from '../src/ui'
 import type { Agent, PackageDep, ParamDef, SecretMeta, Step, UnresolvedRefs } from '../src/types'
-import { ParamValueEditor, StepList, stepAgentPrompts, stepChange, stepFacts, stepFiles, stepHosts, stepMemory, stepModalFrame, stepPackageTags, stepParams, stepSecretTags } from '../src/steps'
+import { ParamValueEditor, StepList, findInLines, stepAgentPrompts, stepChange, stepFacts, stepFiles, stepHosts, stepMemory, stepModalFrame, stepPackageTags, stepParams, stepSecretTags } from '../src/steps'
 
 afterEach(() => cleanup())
 
@@ -442,6 +443,102 @@ describe('step-script modal', () => {
     expect(document.querySelectorAll('span[title="View script"]')).toHaveLength(2)
     openFirst()
     expect(screen.queryByText('Hide script')).toBeNull()
+  })
+})
+
+describe('find in script (§9.2)', () => {
+  const CODE = 'def send(x):\n    return Send(x)  # send it\nlog("done")'
+  const renderOne = () => {
+    render(
+      <StepList variant="detail" steps={[step({ name: 'Finder', code: CODE })]} agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer" />,
+    )
+    fireEvent.click(screen.getAllByText('Finder')[0])
+  }
+  const marks = () => Array.from(document.querySelectorAll('mark')).map((m) => `${m.textContent}:${m.getAttribute('data-match')}`)
+  const counter = () => screen.getByTestId('find-counter').textContent
+
+  it('findInLines: case-insensitive substring hits in document order, none for an empty query', () => {
+    const lines = highlightPythonLines(CODE)
+    expect(findInLines(lines, '')).toEqual([])
+    expect(findInLines(lines, 'send')).toEqual([
+      { line: 0, start: 4, end: 8 }, { line: 1, start: 11, end: 15 }, { line: 1, start: 22, end: 26 },
+    ])
+  })
+
+  it('the find button opens the bar; typing marks every hit, the first as current, with a counter', () => {
+    renderOne()
+    expect(screen.queryByTestId('find-bar')).toBeNull()
+    fireEvent.click(screen.getByLabelText('Find in script'))
+    expect(screen.getByLabelText('Find in script', { selector: 'button' }).getAttribute('aria-pressed')).toBe('true')
+    const input = screen.getByPlaceholderText('Find in script') as HTMLInputElement
+    expect(counter()).toBe('')
+    fireEvent.change(input, { target: { value: 'SEND' } })
+    // the marks keep the token's text and split around the match: "send" inside "Send(" keeps its call color
+    expect(marks()).toEqual(['send:current', 'Send:hit', 'send:hit'])
+    expect(counter()).toBe('1 of 3')
+    fireEvent.change(input, { target: { value: 'nothing here' } })
+    expect(marks()).toEqual([])
+    expect(counter()).toBe('No matches')
+    expect((screen.getByLabelText('Next match') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('next / previous and Enter / Shift+Enter step through matches, wrapping at the ends', () => {
+    renderOne()
+    fireEvent.click(screen.getByLabelText('Find in script'))
+    const input = screen.getByPlaceholderText('Find in script')
+    fireEvent.change(input, { target: { value: 'send' } })
+    fireEvent.click(screen.getByLabelText('Next match'))
+    expect(counter()).toBe('2 of 3')
+    expect(marks()[1]).toBe('Send:current')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(counter()).toBe('1 of 3') // wrapped
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    expect(counter()).toBe('3 of 3')
+    fireEvent.click(screen.getByLabelText('Previous match'))
+    expect(counter()).toBe('2 of 3')
+  })
+
+  it('Escape in the field closes the bar, not the modal; arrow keys in the field never flip the step', () => {
+    render(
+      <StepList
+        variant="detail" steps={[step({ name: 'Finder', code: CODE }), step({ name: 'Other', code: 'x' })]}
+        agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer"
+      />,
+    )
+    fireEvent.click(screen.getAllByText('Finder')[0])
+    fireEvent.click(screen.getByLabelText('Find in script'))
+    const input = screen.getByPlaceholderText('Find in script')
+    fireEvent.keyDown(input, { key: 'ArrowRight' })
+    expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+    fireEvent.change(input, { target: { value: 'send' } })
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByTestId('find-bar')).toBeNull()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(document.querySelectorAll('mark')).toHaveLength(0)
+    // the query is cleared with the bar
+    fireEvent.click(screen.getByLabelText('Find in script'))
+    expect((screen.getByPlaceholderText('Find in script') as HTMLInputElement).value).toBe('')
+  })
+
+  it('⌘F opens the bar, and the query survives a step flip while the current match resets', () => {
+    render(
+      <StepList
+        variant="detail" steps={[step({ name: 'Finder', code: CODE }), step({ name: 'Other', code: 'send(1)\nsend(2)' })]}
+        agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer"
+      />,
+    )
+    fireEvent.click(screen.getAllByText('Finder')[0])
+    fireEvent.keyDown(document, { key: 'f', metaKey: true })
+    expect(screen.getByTestId('find-bar')).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText('Find in script'), { target: { value: 'send' } })
+    fireEvent.click(screen.getByLabelText('Next match'))
+    expect(counter()).toBe('2 of 3')
+    fireEvent.click(screen.getByLabelText('Next step'))
+    expect(screen.getByTestId('find-bar')).toBeTruthy()
+    expect((screen.getByPlaceholderText('Find in script') as HTMLInputElement).value).toBe('send')
+    expect(counter()).toBe('1 of 2')
+    expect(marks()).toEqual(['send:current', 'send:hit'])
   })
 })
 

@@ -829,10 +829,32 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   by the step's §4.1 version-folder filename in dimmer mono (fallback "script"; the one
   place that filename appears in the UI) and, right, a "`<n>` lines" count ("1 line" in
   the singular; a script's single trailing final newline is neither rendered nor counted)
-  and the control cluster — previous / next step chevrons as `.ad-btn-icon` buttons
-  (disabled at the ends; the ← / → arrow keys navigate too) and a close ✕ (Escape and
-  backdrop click also close, standard `Modal` behavior). The toolbar never scrolls, so the
-  filename and the controls stay put through a long script and never overlap code.
+  and the control cluster — a find button (`fa-magnifying-glass`, "Find in script",
+  `aria-pressed` while the find bar is open), previous / next step chevrons as
+  `.ad-btn-icon` buttons (disabled at the ends; the ← / → arrow keys navigate too) and a
+  close ✕ (Escape and backdrop click also close, standard `Modal` behavior). The toolbar
+  never scrolls, so the filename and the controls stay put through a long script and
+  never overlap code.
+  **Find in script.** The find button, or ⌘F / Ctrl+F while the modal is open, opens a
+  36 px **find bar** under the toolbar (hairline bottom border, same ground; it stays open
+  and keeps its query across step flips), left-aligned: a 280 px `.ad-input` text field
+  (placeholder "Find in script", focused on open — ⌘F on an open bar refocuses and
+  selects its text; capped rather than full-width so its focus border never reads as a
+  band across the code), a faint mono match counter in a fixed 72 px slot ("2 of 7";
+  "No matches" for a query that hits nothing; blank while the field is empty — the slot
+  is fixed so a changing count never nudges the field), previous / next match chevrons
+  (`fa-chevron-up` / `-down` `.ad-btn-icon`, "Previous match" / "Next match", disabled
+  with no matches, wrapping at the ends) and, at the bar's right end, a close ✕ ("Close
+  find"). The bar carries no magnifier of its own — the toolbar's pressed find button is
+  the state. Matching is a
+  case-insensitive substring search over the script's rendered lines; every hit is
+  wrapped in a `<mark>` on an accent-tinted ground (accent at 22 %, current match at
+  50 %, radius 2, token color kept), and the current match is kept in view: the code pane
+  scrolls so it sits mid-pane (never the page). Enter in the field steps to the next
+  match, Shift+Enter to the previous; Escape in the field closes the find bar and clears
+  the query without closing the modal, and the ← / → keys type in the field instead of
+  flipping steps (the flip keys ignore every editable target). Typing a new query or
+  flipping steps returns to the first match.
   Below it the script sits in its own overlay-scrollbar pane with a line-number gutter
   (faint mono, right-aligned, unselectable) beside every line and §11 `PyCode`
   highlighting; a long line wraps under its own number rather than scrolling sideways, and

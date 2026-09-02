@@ -760,60 +760,66 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   the name (13/600 `--text` on the viewed row, 500 `--text-muted` on the others, hover
   brightening them). Clicking a row views that step; while keyboard focus sits in the
   navigator it follows the viewed row (an arrow-key flip after a row click never leaves a
-  stale focus ring on a step no longer viewed). The viewed row carries a 2 px accent
+  stale focus ring on a step no longer viewed; a click on a row, which swaps that row's
+  element, lands focus on the new viewed block too). The unviewed rows are buttons; the viewed
+  row is a plain, text-selectable block (`user-select: text`, focusable only
+  programmatically) — clicking it would do nothing, and a button would stop the user from
+  dragging over its name, description, chips and facts to highlight and copy them, which
+  is exactly what a host or a file name in the fact list is for. The viewed row carries a 2 px accent
   bar down its left edge and a faint fill, and expands beneath its name to hold the
   step's description (12 muted) and its **tag row**: the same §14 `Tag` chips the step
   row carries (same variant colors, red states, and tooltip bubbles; agents, secrets,
-  packages, time limit, retries), wrapping freely, and then the step's **fact list**: short
-  plain-word lines (11.5 sans `--text-muted`, a faint 10 px leading icon each) derived from a
-  literal-only scan of the script — the same kind of scan the secret and import tags use —
-  so users can see what a step reaches and touches without reading the code. In order,
-  each present only when the scan finds something:
-  - `fa-sliders` **Uses the “**`<label>`**” parameter** — every distinct `params["<name>"]` /
-    `params.get("<name>")` literal, each shown under its §4.2 definition's `label` (the raw
-    name when no definition matches) in curly quotes, so a multi-word label keeps a visible
-    boundary from the sentence around it; joined "the “A” parameter" / "the “A” and “B”
-    parameters" / "the “A”, “B” and “C” parameters". The inputs come first, so the list reads as a sentence:
-    what the step takes in, then what it reaches, then what it hands on.
-  - `fa-globe` **Talks to** `<host>` — every distinct `http(s)://` host literal in the
-    script, comma-joined in order of appearance (an f-string host with an interpolation
-    is not a literal and is skipped).
-  - `fa-comment` **Asks the agent** — one line per `agent` / `agents["…"]` `.ask` / `.read` /
-    `.write` call site whose first string-literal argument is the prompt (adjacent literals
-    joined, as Python concatenates them, so a prompt split across lines is never quoted from
-    its first piece alone), quoted with whitespace collapsed and truncated to 72 characters
-    with an ellipsis; call sites with
-    no literal prompt fold into one trailing "Asks the agent `<n>` more time(s)" line ("Asks
-    the agent" alone when no call site has a literal). The user sees what is sent to the AI,
-    not just which agent.
-  - `fa-file-import` **Reads** `<file>` **from step** `<n>` / `fa-file-export` **Hands**
-    `<file>` **to step** `<n>` — workspace-relative file literals the script opens
+  packages, time limit, retries), wrapping freely, and then the step's **fact list**: labeled sections
+  derived from a literal-only scan of the script — the same kind of scan the secret and
+  import tags use — so users can see what a step reaches and touches without reading the
+  code. Each section is a faint mono eyebrow (10.5 px, letter-spaced, `--text-faint`) over
+  one bullet per item (a `--text-deco` dot, then 11.5 sans `--text-muted` text with a
+  hanging indent); a section with nothing to show is absent, and so is the whole list when
+  every section is. In order:
+  - **PARAMETERS** — one bullet per distinct `params["<name>"]` / `params.get("<name>")`
+    literal, each shown under its §4.2 definition's `label` (the raw name when no
+    definition matches). The inputs come first, so the list reads top-down: what the step
+    takes in, what it reaches, what it hands on.
+  - **WEBSITES** — one bullet per distinct `http(s)://` host literal in the script, in order
+    of appearance (an f-string host with an interpolation is not a literal and is skipped).
+  - **ASKS THE AGENT** — one bullet per `agent` / `agents["…"]` `.ask` / `.read` / `.write`
+    call site whose first string-literal argument is the prompt (adjacent literals joined,
+    as Python concatenates them, so a prompt split across lines is never quoted from its
+    first piece alone), in curly quotes with whitespace collapsed and, past 72 characters,
+    truncated at the last word boundary before that limit with an ellipsis (never
+    mid-word); call sites with no literal prompt fold into one trailing
+    "`<n>` more call(s)" bullet ("`<n>` call(s)" when no call site has a literal). The user
+    sees what is sent to the AI, not just which agent.
+  - **FILES** — one bullet per workspace-relative file literal the script opens
     (`open("<f>"[, "<mode>"])`, `Path("<f>").read_*` / `.write_*` / `.open`), a write mode
     (`w`, `a`, `x`) or a `write_*` method marking a write, else a read; absolute, `~`,
-    `..`, and interpolated names are skipped. A read names the nearest EARLIER step that
-    writes the same file ("Reads links.json" alone when none does); a write names the
-    LATER steps that read it ("Hands found.json to steps 3 and 4"; "Writes found.json"
-    when none does). Together they make the pipeline's hand-offs legible.
-  - `fa-brain` **Reads** `<key>` **from memory** / **Saves** `<key>` **to memory** — the
-    §6.1 `memory.load("<key>")` / `memory.save("<key>")` literals.
-  - `fa-code-commit` the **change badge**: the step's script compared by NAME across the
-    automation's stored versions (the §4.1 record's current version plus its `versions`
-    history): "Unchanged since v`<k>`" (the earliest version in an unbroken run of
-    identical scripts back from the viewed one), "Changed in v`<n>`" (identical to none
+    `..`, and interpolated names are skipped. Reads first: "Reads `<f>` from step `<n>`"
+    naming the nearest EARLIER step that writes the same file ("Reads `<f>`" alone when
+    none does); then writes: "Hands `<f>` to step `<n>`" naming the LATER steps that read
+    it ("Hands `<f>` to steps 3 and 4"; "Writes `<f>`" when none does). Together they make
+    the pipeline's hand-offs legible.
+  - **MEMORY** — "Reads `<key>`" / "Saves `<key>`" bullets for the §6.1
+    `memory.load("<key>")` / `memory.save("<key>")` literals.
+  - **VERSION** — the one-bullet change badge: the step's script compared by NAME across
+    the automation's stored versions (the §4.1 record's current version plus its
+    `versions` history): "Unchanged since v`<k>`" (the earliest version in an unbroken run
+    of identical scripts back from the viewed one), "Changed in v`<n>`" (identical to none
     of its predecessor's, which does carry a same-named step), "New in v`<n>`" (no
     predecessor carries the name). The §11 editor's modal compares the Draft against the
     current version — "Changed in this draft" / "New in this draft" — and an old version
     viewed from the Version menu against ITS predecessors; a create-flow draft with no
-    stored automation shows no badge.
-  The facts are lines, not chips, because hosts, prompts and file names are too long for a
-  chip; they carry no tooltip — the line is already the plain-language sentence. Only the
+    stored automation shows no VERSION section.
+  Bullets are text, not chips, because hosts, prompts and file names are too long for a
+  chip; they carry no tooltip — the section label plus the bullet is already the plain
+  language. The dots are unselectable, so a copied selection reads as the labels and
+  lines alone. Only the
   viewed row expands, so the navigator reads as a table of contents with one open entry. The one difference from
   the rows: package chips appear here in both variants (the §11 editor modal reads the
   draft's declared packages, the detail modal the automation record's §6.2 `packages`
   list) while the detail ROWS still omit them. All detail lives in the chips' §14
-  tooltips ("Why an agent" included); beyond the fact list's one-line facts the modal
-  writes out no sentences, and a fact family with nothing to show simply has no chip or
-  line (the time-limit chip always renders).
+  tooltips ("Why an agent" included); beyond the fact list's bullets the modal writes out
+  no sentences, and a fact family with nothing to show simply has no chip or section (the
+  time-limit chip always renders).
   The right **code pane** fills the rest of the card at full height on the `--bg-code`
   ground, so a short script never leaves empty modal beneath it: a fixed 44 px toolbar
   (hairline bottom border) carries, left, the faint mono "STEP N OF M" eyebrow followed
@@ -827,7 +833,9 @@ one fixed 30 px height, so fields sitting side by side align exactly. An out-of-
   Below it the script sits in its own overlay-scrollbar pane with a line-number gutter
   (faint mono, right-aligned, unselectable) beside every line and §11 `PyCode`
   highlighting; a long line wraps under its own number rather than scrolling sideways, and
-  the code keeps a 28 px right inset so no line ever runs under the overlay thumb.
+  the code keeps a 28 px right inset so no line ever runs under the overlay thumb. The
+  gutter numbers are unselectable and an empty line still carries its newline, so a
+  drag-selected stretch of code copies as the script's own text, blank lines included.
   The pane's ground is uniform, so the §14 overlay thumb never crosses a color boundary;
   the modal insets it to `right: 6px` (from the app-wide 3px) so the card's 12px corner
   radius never slices its bottom into a wedge. Switching steps remounts the code pane with

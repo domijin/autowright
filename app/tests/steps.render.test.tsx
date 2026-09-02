@@ -255,9 +255,10 @@ describe('step-script modal', () => {
   )
   // the step name renders twice once the modal is up (row + navigator row)
   const openFirst = () => fireEvent.click(screen.getAllByText('Fetch page')[0])
-  // the navigator row naming a step (the dialog's only buttons carrying text)
-  const navRow = (name: string) => Array.from(screen.getByRole('dialog').querySelectorAll('button'))
-    .find((b) => b.textContent?.includes(name)) as HTMLButtonElement
+  // the navigator row naming a step: a button when unviewed, a plain
+  // text-selectable block when viewed (§9.2)
+  const navRow = (name: string) => Array.from(screen.getByRole('dialog').querySelectorAll('.ad-stepnav button, .ad-stepnav [aria-current]'))
+    .find((b) => b.textContent?.includes(name)) as HTMLElement
 
   it('detail variant: a row opens the dialog with the STEP N OF M eyebrow, the toolbar filename and the tag row', () => {
     renderDetail()
@@ -315,6 +316,16 @@ describe('step-script modal', () => {
     expect(gutter()).toEqual(['1'])
   })
 
+  it('an empty script line renders a newline so a copied selection keeps blank lines', () => {
+    render(
+      <StepList variant="detail" steps={[step({ name: 'Gappy', code: 'a = 1\n\nb = 2' })]} agents={[AGENT]} secrets={[]} packages={[]} fallbackAgent="Cloud writer" />,
+    )
+    fireEvent.click(screen.getAllByText('Gappy')[0])
+    const cells = Array.from(screen.getByRole('dialog').querySelectorAll('span'))
+      .filter((el) => (el.style as CSSStyleDeclaration).whiteSpace === 'pre-wrap').map((el) => el.textContent)
+    expect(cells).toEqual(['a = 1', '\n', 'b = 2'])
+  })
+
   it('detail variant: package chips are modal-only — absent from the row, present once opened', () => {
     const packages: PackageDep[] = [{ pip: 'beautifulsoup4', import: 'bs4', why: 'parse pages' }]
     const steps = [step({ name: 'Parse page', code: 'import bs4' })]
@@ -350,6 +361,22 @@ describe('step-script modal', () => {
     // ArrowLeft at the first step is a no-op, never an underflow
     fireEvent.keyDown(document, { key: 'ArrowLeft' })
     expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+  })
+
+  it('the viewed navigator row is a text-selectable block, the others are buttons', () => {
+    renderDetail()
+    openFirst()
+    const viewed = navRow('Fetch page')
+    expect(viewed.tagName).toBe('DIV')
+    expect(viewed.style.userSelect).toBe('text')
+    expect(viewed.getAttribute('tabindex')).toBe('-1')
+    expect(navRow('Send mail').tagName).toBe('BUTTON')
+    // clicking the viewed block is inert; clicking a button row views it and swaps roles
+    fireEvent.click(viewed)
+    expect(screen.getByText(/STEP 1 OF 2/)).toBeTruthy()
+    fireEvent.click(navRow('Send mail'))
+    expect(navRow('Send mail').tagName).toBe('DIV')
+    expect(navRow('Fetch page').tagName).toBe('BUTTON')
   })
 
   it('focus follows the viewed row while it sits in the navigator, and stays put elsewhere', () => {
@@ -429,11 +456,16 @@ describe('navigator facts (§9.2 literal scans)', () => {
       'agents["550e8400-e29b-41d4-a716-446655440000"].ask(f"Summarize {x}")',
       'note = agent.ask(prompt)',
       "agent.write(rows, '" + 'x'.repeat(80) + "')",
+      'agent.ask("Return the canonical reading page URL for this manga, or an empty string when unsure")',
     ].join('\n')
     const r = stepAgentPrompts(code)
-    expect(r.count).toBe(4)
-    // the f-string is still a literal prompt; the variable prompt has none
-    expect(r.prompts).toEqual(['newest chapter: number, title, date', 'Summarize {x}', `${'x'.repeat(71)}…`])
+    expect(r.count).toBe(5)
+    // the f-string is still a literal prompt; the variable prompt has none;
+    // a long prompt cuts at a word boundary (an unbroken token at the limit)
+    expect(r.prompts).toEqual([
+      'newest chapter: number, title, date', 'Summarize {x}', `${'x'.repeat(71)}…`,
+      'Return the canonical reading page URL for this manga, or an empty…',
+    ])
   })
 
   it('stepAgentPrompts: adjacent literals join as Python concatenates them', () => {
@@ -490,43 +522,42 @@ describe('navigator facts (§9.2 literal scans)', () => {
     expect(stepChange(st('Fetch', 'a'), 1, [])).toBeNull()
   })
 
-  it('stepFacts: ordered lines with file hand-offs resolved across steps', () => {
+  it('stepFacts: ordered sections of bullets, file hand-offs resolved across steps, empty sections dropped', () => {
     const steps: Step[] = [
       { name: 'Read list', description: '', code: 'rows = memory.load("sources", [])\njson.dump(rows, open("links.json", "w"))' },
-      { name: 'Check', description: '', code: 'links = json.load(open("links.json"))\nr = fetch_page("https://example.org/a")\nx = agent.read(r, "newest chapter")\nagent.ask(p)\njson.dump(x, open("found.json", "w"))' },
+      { name: 'Check', description: '', code: 'links = json.load(open("links.json"))\nr = fetch_page("https://example.org/a")\nr2 = fetch_page("https://b.io")\nx = agent.read(r, "newest chapter")\nagent.ask(p)\njson.dump(x, open("found.json", "w"))' },
       { name: 'Compare', description: '', code: 'a = json.load(open("found.json"))\nb = json.load(open("links.json"))\nmemory.save("seen", a)\nopen("report.html", "w")' },
       { name: 'Send', description: '', code: 'open("found.json")' },
     ]
-    expect(stepFacts(steps, 0, undefined, undefined).map((f) => f.text)).toEqual([
-      'Hands links.json to steps 2 and 3', 'Reads sources from memory',
+    const flat = (secs: ReturnType<typeof stepFacts>) => secs.map((s) => [s.label, ...s.items])
+    expect(flat(stepFacts(steps, 0, undefined, undefined))).toEqual([
+      ['FILES', 'Hands links.json to steps 2 and 3'], ['MEMORY', 'Reads sources'],
     ])
-    expect(stepFacts(steps, 1, undefined, undefined).map((f) => f.text)).toEqual([
-      'Talks to example.org', 'Asks the agent “newest chapter”', 'Asks the agent 1 more time',
-      'Reads links.json from step 1', 'Hands found.json to steps 3 and 4',
+    expect(flat(stepFacts(steps, 1, undefined, undefined))).toEqual([
+      ['WEBSITES', 'example.org', 'b.io'], ['ASKS THE AGENT', '“newest chapter”', '1 more call'],
+      ['FILES', 'Reads links.json from step 1', 'Hands found.json to steps 3 and 4'],
     ])
     const c = stepFacts(steps, 2, 2, [{ version: 2, steps }, { version: 1, steps: [] }])
-    expect(c.map((f) => f.text)).toEqual([
-      'Reads found.json from step 2', 'Reads links.json from step 1', 'Writes report.html', 'Saves seen to memory', 'New in v2',
+    expect(flat(c)).toEqual([
+      ['FILES', 'Reads found.json from step 2', 'Reads links.json from step 1', 'Writes report.html'],
+      ['MEMORY', 'Saves seen'], ['VERSION', 'New in v2'],
     ])
-    expect(c.map((f) => f.icon)).toEqual(['fa-file-import', 'fa-file-import', 'fa-file-export', 'fa-brain', 'fa-code-commit'])
-    // no literal prompt at all → the bare line
-    expect(stepFacts([{ name: 'x', description: '', code: 'agent.ask(p)' }], 0, undefined, undefined).map((f) => f.text)).toEqual(['Asks the agent'])
-    // params lead the list, labeled through their §4.2 definition, raw name when none matches
+    expect(c.map((s) => s.key)).toEqual(['files', 'memory', 'version'])
+    // no literal prompt at all → the bare count
+    expect(flat(stepFacts([{ name: 'x', description: '', code: 'agent.ask(p)\nagent.ask(q)' }], 0, undefined, undefined))).toEqual([['ASKS THE AGENT', '2 calls']])
+    // params lead, one bullet each, labeled through their §4.2 definition, raw name when none matches
     const defs: ParamDef[] = [
       { name: 'recipients', kind: 'list', label: 'Recipients', help: '' },
       { name: 'subject', kind: 'text', label: 'Subject line', help: '' },
     ]
     const pcode = 'to = params["recipients"]\ns = params.get("subject")\nx = params["extra"]\nr = fetch_page("https://a.io")'
-    const pf = stepFacts([{ name: 'p', description: '', code: pcode }], 0, undefined, undefined, defs)
-    expect(pf.map((f) => f.text)).toEqual(['Uses the “Recipients”, “Subject line” and “extra” parameters', 'Talks to a.io'])
-    expect(pf[0].icon).toBe('fa-sliders')
-    expect(stepFacts([{ name: 'p', description: '', code: 'params["subject"]' }], 0, undefined, undefined, defs).map((f) => f.text))
-      .toEqual(['Uses the “Subject line” parameter'])
-    expect(stepFacts([{ name: 'p', description: '', code: 'params["a"], params["b"]' }], 0, undefined, undefined).map((f) => f.text))
-      .toEqual(['Uses the “a” and “b” parameters'])
+    expect(flat(stepFacts([{ name: 'p', description: '', code: pcode }], 0, undefined, undefined, defs)))
+      .toEqual([['PARAMETERS', 'Recipients', 'Subject line', 'extra'], ['WEBSITES', 'a.io']])
+    // nothing found → no sections at all
+    expect(stepFacts([{ name: 'p', description: '', code: 'x = 1' }], 0, undefined, undefined)).toEqual([])
   })
 
-  it('the navigator shows the fact list under the viewed row only', () => {
+  it('the navigator shows the fact sections under the viewed row only', () => {
     const steps: Step[] = [
       step({ name: 'Pull', code: 'r = fetch_page("https://example.org")\njson.dump(r, open("out.json", "w"))' }),
       step({ name: 'Use', code: 'open("out.json")' }),
@@ -540,10 +571,10 @@ describe('navigator facts (§9.2 literal scans)', () => {
     // rows carry no facts
     expect(screen.queryByTestId('step-facts')).toBeNull()
     fireEvent.click(screen.getAllByText('Pull')[0])
-    const facts = () => Array.from(screen.getAllByTestId('step-facts')).map((el) => el.textContent)
-    expect(facts()).toEqual(['Talks to example.orgHands out.json to step 2New in v1'])
+    const sections = () => Array.from(screen.getByTestId('step-facts').children).map((el) => el.textContent)
+    expect(sections()).toEqual(['WEBSITES•example.org', 'FILES•Hands out.json to step 2', 'VERSION•New in v1'])
     fireEvent.click(screen.getByLabelText('Next step'))
-    expect(facts()).toEqual(['Reads out.json from step 1New in v1'])
+    expect(sections()).toEqual(['FILES•Reads out.json from step 1', 'VERSION•New in v1'])
   })
 })
 

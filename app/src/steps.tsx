@@ -122,7 +122,12 @@ export function stepAgentPrompts(code: string): { count: number; prompts: string
       next.lastIndex = lit.index! + lit[0].length
       for (let nm = next.exec(inner); nm; nm = next.exec(inner)) text += unquote(nm[1])
       text = text.replace(/\s+/g, ' ').trim()
-      if (text) prompts.push(text.length > 72 ? `${text.slice(0, 71)}…` : text)
+      if (!text) continue
+      if (text.length <= 72) { prompts.push(text); continue }
+      // cut at the last word boundary inside the limit, never mid-word
+      const head = text.slice(0, 71)
+      const cut = head.lastIndexOf(' ')
+      prompts.push(`${(cut > 40 ? head.slice(0, cut) : head).trimEnd()}…`)
     }
   }
   return { count, prompts }
@@ -202,50 +207,42 @@ export function stepChange(step: Step, viewing: number | 'draft', history: StepH
   }
 }
 
-export type StepFact = { icon: string; text: string }
+// One §9.2 fact section: an eyebrow label over one bullet per item.
+export type StepFactSection = { key: string; label: string; items: string[] }
 
-// The ordered fact list for one step (§9.2), with the file hand-offs resolved
-// against the other steps.
-export function stepFacts(steps: Step[], i: number, viewing: number | 'draft' | undefined, history: StepHistory[] | undefined, params: ParamDef[] = []): StepFact[] {
+// The ordered fact sections for one step (§9.2), with the file hand-offs
+// resolved against the other steps; empty sections are dropped.
+export function stepFacts(steps: Step[], i: number, viewing: number | 'draft' | undefined, history: StepHistory[] | undefined, params: ParamDef[] = []): StepFactSection[] {
   const step = steps[i]
   const code = step.code || ''
-  const facts: StepFact[] = []
+  const sections: StepFactSection[] = []
   const listWord = (xs: string[]) => xs.length === 1 ? xs[0] : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`
-  const names = stepParams(code).map((k) => `“${params.find((p) => p.name === k)?.label || k}”`)
-  if (names.length) facts.push({ icon: 'fa-sliders', text: `Uses the ${listWord(names)} parameter${names.length === 1 ? '' : 's'}` })
-  const hosts = stepHosts(code)
-  if (hosts.length) facts.push({ icon: 'fa-globe', text: `Talks to ${hosts.join(', ')}` })
+  sections.push({ key: 'params', label: 'PARAMETERS', items: stepParams(code).map((k) => params.find((p) => p.name === k)?.label || k) })
+  sections.push({ key: 'hosts', label: 'WEBSITES', items: stepHosts(code) })
   const ag = stepAgentPrompts(code)
-  for (const p of ag.prompts) facts.push({ icon: 'fa-comment', text: `Asks the agent “${p}”` })
+  const agentItems = ag.prompts.map((p) => `“${p}”`)
   const rest = ag.count - ag.prompts.length
-  if (rest > 0) {
-    facts.push({
-      icon: 'fa-comment',
-      text: ag.prompts.length
-        ? `Asks the agent ${rest} more time${rest === 1 ? '' : 's'}`
-        : rest === 1 ? 'Asks the agent' : `Asks the agent ${rest} times`,
-    })
-  }
+  if (rest > 0) agentItems.push(`${rest} ${ag.prompts.length ? 'more ' : ''}call${rest === 1 ? '' : 's'}`)
+  sections.push({ key: 'agent', label: 'ASKS THE AGENT', items: agentItems })
   const files = steps.map((s) => stepFiles(s.code || ''))
   const stepsWord = (ns: number[]) => `step${ns.length === 1 ? '' : 's'} ${listWord(ns.map(String))}`
+  const fileItems: string[] = []
   for (const f of files[i].reads) {
     let producer: number | null = null
     for (let j = i - 1; j >= 0; j--) if (files[j].writes.includes(f)) { producer = j + 1; break }
-    facts.push({ icon: 'fa-file-import', text: producer ? `Reads ${f} from step ${producer}` : `Reads ${f}` })
+    fileItems.push(producer ? `Reads ${f} from step ${producer}` : `Reads ${f}`)
   }
   for (const f of files[i].writes) {
     const consumers: number[] = []
     for (let j = i + 1; j < steps.length; j++) if (files[j].reads.includes(f)) consumers.push(j + 1)
-    facts.push({ icon: 'fa-file-export', text: consumers.length ? `Hands ${f} to ${stepsWord(consumers)}` : `Writes ${f}` })
+    fileItems.push(consumers.length ? `Hands ${f} to ${stepsWord(consumers)}` : `Writes ${f}`)
   }
+  sections.push({ key: 'files', label: 'FILES', items: fileItems })
   const mem = stepMemory(code)
-  for (const k of mem.loads) facts.push({ icon: 'fa-brain', text: `Reads ${k} from memory` })
-  for (const k of mem.saves) facts.push({ icon: 'fa-brain', text: `Saves ${k} to memory` })
-  if (viewing !== undefined && history) {
-    const change = stepChange(step, viewing, history)
-    if (change) facts.push({ icon: 'fa-code-commit', text: change })
-  }
-  return facts
+  sections.push({ key: 'memory', label: 'MEMORY', items: [...mem.loads.map((k) => `Reads ${k}`), ...mem.saves.map((k) => `Saves ${k}`)] })
+  const change = viewing !== undefined && history ? stepChange(step, viewing, history) : null
+  sections.push({ key: 'version', label: 'VERSION', items: change ? [change] : [] })
+  return sections.filter((sec) => sec.items.length > 0)
 }
 
 // ---------- step rows + step-script modal ----------
@@ -453,29 +450,38 @@ function StepArrowKeys({ i, count, closing, onNav }: {
 const EYEBROW: React.CSSProperties = { font: "600 10.5px var(--mono)", letterSpacing: '.08em', color: 'var(--text-faint)', flex: 'none' }
 
 function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
-  step: Step; j: number; viewed: boolean; editor: boolean; tags: StepTagDesc[]; facts: StepFact[]; onNav: () => void
+  step: Step; j: number; viewed: boolean; editor: boolean; tags: StepTagDesc[]; facts: StepFactSection[]; onNav: () => void
 }) {
-  const ref = useRef<HTMLButtonElement>(null)
+  const ref = useRef<HTMLElement>(null)
   // An arrow-key flip after a row click would leave the clicked row's
   // focus ring on a step no longer viewed — two rows reading as current. While
   // focus sits in the navigator it follows the viewed row; focus resting on
-  // the toolbar buttons (or nowhere) is left alone.
+  // the toolbar buttons is left alone. A clicked button row unmounts as it
+  // becomes the viewed block (focus falls to the body), so the body counts
+  // as "in the navigator" here.
   useEffect(() => {
     const el = ref.current
     if (!viewed || !el || document.activeElement === el) return
-    if (document.activeElement?.closest('.ad-stepnav')) el.focus({ preventScroll: true })
+    const active = document.activeElement
+    if (!active || active === document.body || active.closest('.ad-stepnav')) el.focus({ preventScroll: true })
   }, [viewed])
+  // §9.2: the viewed row is a plain, text-selectable block — a button would
+  // stop the user from dragging over its description, chips and facts to
+  // copy them, and clicking the viewed row does nothing anyway.
+  const Row: 'div' | 'button' = viewed ? 'div' : 'button'
   return (
-    <button
-      ref={ref}
-      className="ad-btn-bare ad-hover-row ad-focus-inset"
+    <Row
+      ref={ref as React.Ref<HTMLDivElement & HTMLButtonElement>}
+      className={`${viewed ? '' : 'ad-btn-bare ad-hover-row '}ad-focus-inset`}
       aria-current={viewed ? 'step' : undefined}
-      onClick={onNav}
+      tabIndex={viewed ? -1 : undefined}
+      onClick={viewed ? undefined : onNav}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 18px 9px 14px',
         borderLeft: `2px solid ${viewed ? 'var(--accent)' : 'transparent'}`,
         background: viewed ? 'rgba(255, 255, 255, 0.04)' : undefined,
-        cursor: viewed ? 'default' : 'pointer',
+        cursor: viewed ? 'text' : 'pointer',
+        ...(viewed ? { userSelect: 'text' as const, textAlign: 'left' as const } : {}),
       }}
     >
       <span style={{ font: "500 11px/18px var(--mono)", color: 'var(--text-faint)', width: 16, flex: 'none' }}>{j + 1}</span>
@@ -497,14 +503,19 @@ function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
               })}
             </div>
             {/* §9.2 fact list: what the script reaches and touches, from a
-                literal-only scan — lines, not chips (hosts, prompts and file
-                names are too long for a chip). */}
+                literal-only scan — labeled sections of bullets, not chips
+                (hosts, prompts and file names are too long for a chip). */}
             {facts.length > 0 && (
-              <div data-testid="step-facts" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 10 }}>
-                {facts.map((f, k) => (
-                  <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>
-                    <i className={`fa-solid ${f.icon}`} style={{ fontSize: 10, color: 'var(--text-deco)', width: 12, textAlign: 'center', flex: 'none', marginTop: 3 }} />
-                    <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{f.text}</span>
+              <div data-testid="step-facts" style={{ display: 'flex', flexDirection: 'column', gap: 9, marginTop: 12 }}>
+                {facts.map((sec) => (
+                  <div key={sec.key} data-testid={`step-facts-${sec.key}`}>
+                    <div style={{ ...EYEBROW, marginBottom: 3 }}>{sec.label}</div>
+                    {sec.items.map((text, k) => (
+                      <div key={k} style={{ display: 'flex', alignItems: 'flex-start', gap: 7, font: "400 11.5px/1.45 var(--sans)", color: 'var(--text-muted)' }}>
+                        <span aria-hidden style={{ color: 'var(--text-deco)', flex: 'none', width: 8, textAlign: 'center', userSelect: 'none' }}>•</span>
+                        <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{text}</span>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -512,7 +523,7 @@ function StepNavRow({ step, j, viewed, editor, tags, facts, onNav }: {
           </>
         )}
       </div>
-    </button>
+    </Row>
   )
 }
 
@@ -527,7 +538,7 @@ export function stepModalFrame(steps: Step[]): string {
 }
 
 function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }: {
-  steps: Step[]; i: number; editor: boolean; tagsByStep: StepTagDesc[][]; factsByStep: StepFact[][]
+  steps: Step[]; i: number; editor: boolean; tagsByStep: StepTagDesc[][]; factsByStep: StepFactSection[][]
   onNav: (i: number) => void; onClose: () => void
 }) {
   const step = steps[i]
@@ -599,7 +610,8 @@ function StepModal({ steps, i, editor, tagsByStep, factsByStep, onNav, onClose }
                 {lines.map((ln, n) => (
                   <React.Fragment key={n}>
                     <span style={{ textAlign: 'right', padding: '0 16px 0 18px', color: 'var(--text-deco)', userSelect: 'none' }}>{n + 1}</span>
-                    <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{ln}</span>
+                    {/* an empty line carries a newline so a copied selection keeps its blank lines */}
+                    <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{ln.length ? ln : '\n'}</span>
                   </React.Fragment>
                 ))}
               </div>

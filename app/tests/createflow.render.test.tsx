@@ -1382,12 +1382,12 @@ describe('CreateFlow draft undo (§11)', () => {
     send('Change it')
     await waitFor(() => expect(screen.getByText('Spec updated.')).toBeTruthy(), { timeout: 3000 })
     expect(screen.getAllByText('Undo this change')).toHaveLength(1)
-    const specCard = cardOf(screen.getByText('SPEC'))
-    fireEvent.click(within(specCard).getByText('Edit'))
-    fireEvent.change(screen.getByDisplayValue(/Rewritten body\./),
+    fireEvent.click(screen.getByTestId('spec-edit'))
+    fireEvent.change(screen.getByTestId('spec-editor'),
       { target: { value: '# My auto\nHand-tuned body.' } })
-    fireEvent.click(within(specCard).getByText('Save'))
-    expect(screen.getByText('Hand-tuned body.')).toBeTruthy()
+    fireEvent.click(within(screen.getByTestId('doc-editor')).getByText('Save'))
+    // §14: the document editor plays its exit before the save applies
+    await waitFor(() => expect(screen.getByText('Hand-tuned body.')).toBeTruthy())
     expect(screen.queryByText('Undo this change')).toBeNull()
   })
 })
@@ -1626,7 +1626,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     expect(screen.getByText(/isn’t allowed here/)).toBeTruthy()
   })
 
-  it('NOTES card: collapsed by default, view/edit works, and never marks the workflow out of sync', () => {
+  it('NOTES card: collapsed by default, view/edit works, and never marks the workflow out of sync', async () => {
     storeMod.useStore.setState({
       automations: [{ ...AUTO, notes: '- Site rate-limits at 10 rpm' } as unknown as Automation],
     })
@@ -1637,9 +1637,9 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     expect(collapseOf(body).classList.contains('open')).toBe(true)
     const card = cardOf(screen.getByText('NOTES'))
     fireEvent.click(within(card).getByText('Edit'))
-    fireEvent.change(card.querySelector('textarea')!, { target: { value: '- Pruned' } })
-    fireEvent.click(within(card).getByText('Save'))
-    expect(bodyLi('Pruned')).toBeTruthy()
+    fireEvent.change(screen.getByTestId('notes-editor'), { target: { value: '- Pruned' } })
+    fireEvent.click(within(screen.getByTestId('doc-editor')).getByText('Save'))
+    await waitFor(() => expect(bodyLi('Pruned')).toBeTruthy())
     // §4.1: notes never mark the workflow out of sync or block saving
     expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
     expect(screen.queryByText(/out of sync/)).toBeNull()
@@ -1671,18 +1671,20 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     expect(analyze.disabled).toBe(true)
   })
 
-  it('NOTES card: Edit is offered even while the notes are empty', () => {
+  it('NOTES card: Edit is offered even while the notes are empty', async () => {
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('NOTES'))
     const card = cardOf(screen.getByText('NOTES'))
     expect(within(card).getAllByText(/No notes yet/).length).toBeGreaterThan(0)
     fireEvent.click(within(card).getByText('Edit'))
-    // §11: the editor caps at the Build-instructions 440px and scrolls inside
-    const ta = card.querySelector('textarea')!
-    expect(ta.style.maxHeight).toBe('440px')
+    // §11: Edit opens the document editor on an empty notes.md
+    const modal = screen.getByTestId('doc-editor')
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Edit notes.md')
+    expect(within(modal).getByTestId('doc-lines').textContent).toBe('0 lines')
+    const ta = screen.getByTestId('notes-editor')
     fireEvent.change(ta, { target: { value: '- Added by hand' } })
-    fireEvent.click(within(card).getByText('Save'))
-    expect(bodyLi('Added by hand')).toBeTruthy()
+    fireEvent.click(within(modal).getByText('Save'))
+    await waitFor(() => expect(bodyLi('Added by hand')).toBeTruthy())
   })
 
   it('rename pencils hide on the create empty state and show once a revision exists', () => {
@@ -1971,14 +1973,14 @@ describe('CreateFlow send/sync edit guard + settle flush + poll retry (§11)', (
     const card = cardOf(screen.getByText('BUILD INSTRUCTIONS'))
     fireEvent.click(screen.getByText('BUILD INSTRUCTIONS'))
     fireEvent.click(within(card).getByText('Edit'))
-    fireEvent.change(card.querySelector('textarea')!, { target: { value: '- new rule' } })
+    fireEvent.change(screen.getByTestId('instructions-editor'), { target: { value: '- new rule' } })
     fireEvent.click(screen.getByText('Sync spec'))
     const dialog = screen.getByRole('alertdialog')
     expect(within(dialog).getByText('Discard your instruction edits?')).toBeTruthy()
     fireEvent.click(within(dialog).getByText('Cancel'))
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
     expect(mockedApi.postDraftJob).not.toHaveBeenCalled()
-    expect((card.querySelector('textarea') as HTMLTextAreaElement).value).toBe('- new rule')
+    expect((screen.getByTestId('instructions-editor') as HTMLTextAreaElement).value).toBe('- new rule')
   })
 
   it('Fix with AI waits for the stored thread - the job carries the kept history and the seed', async () => {
@@ -2159,5 +2161,122 @@ describe('§5.1/§11 imported unresolved references', () => {
       'Step 1 uses a secret that no longer exists (33333333…) — the execution would fail there.'
       + ' Sync the steps to rewrite them.')).toBeTruthy()
     expect(screen.queryByText('STRIPE_KEY')).toBeNull()
+  })
+})
+
+describe('document-editor modal (§11)', () => {
+  beforeEach(armPendingPoll)
+
+  // The card's Edit is the only way in; the modal portals to document.body, so
+  // every assertion inside it scopes to the doc-editor testid (the toolbar
+  // eyebrow repeats the card's own).
+  const openSpec = () => {
+    fireEvent.click(screen.getByTestId('spec-edit'))
+    return screen.getByTestId('doc-editor')
+  }
+  const openNotes = () => {
+    fireEvent.click(screen.getByText('NOTES'))
+    fireEvent.click(within(cardOf(screen.getByText('NOTES'))).getByText('Edit'))
+    return screen.getByTestId('doc-editor')
+  }
+
+  it('spec Edit opens the editor on spec.md — toolbar, live line count, Save gated on a change', () => {
+    render(<CreateFlow />)
+    const modal = openSpec()
+    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe('Edit spec.md')
+    expect(within(modal).getByText('SPEC')).toBeTruthy()
+    expect(within(modal).getByText('spec.md')).toBeTruthy()
+    // the seeded spec serializes to "# My auto" + "Does things."
+    expect(within(modal).getByTestId('doc-lines').textContent).toBe('2 lines')
+    expect((within(modal).getByText('Save') as HTMLButtonElement).disabled).toBe(true)
+    expect(within(modal).getByText('Saving rewrites the steps to match the new spec.')).toBeTruthy()
+    fireEvent.change(screen.getByTestId('spec-editor'), { target: { value: '# My auto\nOne\nTwo\n' } })
+    // a trailing newline is not a line of its own
+    expect(within(modal).getByTestId('doc-lines').textContent).toBe('3 lines')
+    expect((within(modal).getByText('Save') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('Cancel with unchanged text closes silently', async () => {
+    render(<CreateFlow />)
+    const modal = openSpec()
+    fireEvent.click(within(modal).getByText('Cancel'))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('doc-editor')).toBeNull())
+    expect(screen.getByText('Does things.')).toBeTruthy()
+  })
+
+  it('Cancel with changed text asks first: its Cancel keeps the text, Discard edits drops it', async () => {
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByTestId('spec-edit'))
+    fireEvent.change(screen.getByTestId('spec-editor'), { target: { value: '# My auto\nTyped change.' } })
+    fireEvent.click(within(screen.getByTestId('doc-editor')).getByText('Cancel'))
+    const dialog = screen.getByRole('alertdialog')
+    expect(within(dialog).getByText('Discard your spec edits?')).toBeTruthy()
+    // cancelling the confirm returns to the editor with the typing intact
+    fireEvent.click(within(dialog).getByText('Cancel'))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    expect((screen.getByTestId('spec-editor') as HTMLTextAreaElement).value).toBe('# My auto\nTyped change.')
+    // discarding closes both cards and leaves the spec as it was
+    fireEvent.click(within(screen.getByTestId('doc-editor')).getByText('Cancel'))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Discard edits'))
+    await waitFor(() => expect(screen.queryByTestId('doc-editor')).toBeNull())
+    expect(screen.getByText('Does things.')).toBeTruthy()
+    expect(screen.queryByText('Typed change.')).toBeNull()
+  })
+
+  it('Escape and a backdrop click raise the same discard confirm', async () => {
+    render(<CreateFlow />)
+    openNotes()
+    fireEvent.change(screen.getByTestId('notes-editor'), { target: { value: '- Typed by hand' } })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(within(screen.getByRole('alertdialog')).getByText('Discard your notes edits?')).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Cancel'))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+    // the backdrop is the dialog card's own parent (§14 Modal)
+    fireEvent.mouseDown(screen.getByRole('dialog').parentElement!)
+    expect(within(screen.getByRole('alertdialog')).getByText('Discard your notes edits?')).toBeTruthy()
+    expect(screen.getByTestId('doc-editor')).toBeTruthy()
+  })
+
+  it('⌘S saves the spec; with nothing typed it does nothing', async () => {
+    render(<CreateFlow />)
+    openSpec()
+    fireEvent.keyDown(document, { key: 's', metaKey: true })
+    expect(screen.getByTestId('doc-editor')).toBeTruthy()
+    expect(storeMod.useStore.getState().toast).toBeNull()
+    fireEvent.change(screen.getByTestId('spec-editor'), { target: { value: '# My auto\nHand-tuned body.' } })
+    fireEvent.keyDown(document, { key: 's', metaKey: true })
+    await waitFor(() => expect(screen.queryByTestId('doc-editor')).toBeNull())
+    expect(screen.getByText('Hand-tuned body.')).toBeTruthy()
+    expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
+    expect(storeMod.useStore.getState().toast)
+      .toBe('Spec saved — the workflow is out of sync. Sync the steps before saving.')
+  })
+
+  it('the build-instructions editor carries Reset to default, which disables once applied', async () => {
+    const { instructionCache } = await import('../src/pages/createflow/model')
+    instructionCache.defaultBuild = '- rules' // the mocked GET /instructions payload
+    render(<CreateFlow />)
+    fireEvent.click(screen.getByText('BUILD INSTRUCTIONS'))
+    const card = cardOf(screen.getByText('BUILD INSTRUCTIONS'))
+    fireEvent.click(within(card).getByText('Edit'))
+    const modal = screen.getByTestId('doc-editor')
+    expect((within(modal).getByText('Reset to default') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(within(modal).getByText('Reset to default'))
+    expect((screen.getByTestId('instructions-editor') as HTMLTextAreaElement).value).toBe('- rules')
+    expect((within(modal).getByText('Reset to default') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('one document at a time: the notes Save closes the editor and lands in the card', async () => {
+    storeMod.useStore.setState({
+      automations: [{ ...AUTO, notes: '- Site rate-limits at 10 rpm' } as unknown as Automation],
+    })
+    render(<CreateFlow />)
+    openNotes()
+    expect(screen.getAllByTestId('doc-editor')).toHaveLength(1)
+    fireEvent.change(screen.getByTestId('notes-editor'), { target: { value: '- Pruned by hand' } })
+    fireEvent.click(within(screen.getByTestId('doc-editor')).getByText('Save'))
+    await waitFor(() => expect(screen.queryByTestId('doc-editor')).toBeNull())
+    expect(bodyLi('Pruned by hand')).toBeTruthy()
   })
 })

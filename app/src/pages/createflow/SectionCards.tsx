@@ -9,9 +9,10 @@ import { SecretModal } from '../../SecretModal'
 import { useTriggerPreview } from '../../triggers'
 import { StepList, type StepHistory } from '../../steps'
 import type { Agent, SecretMeta, UnresolvedRefs } from '../../types'
-import { Caret, CheckBox, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary, useOverlayThumb } from '../../ui'
+import { Caret, CheckBox, Collapse, Eyebrow, ScrollArea, agName, dispModel, paramSummary } from '../../ui'
 import { Markdown, SpecMarkdown } from '../../result'
 import { type AgentRef, type Rev, type SecretRef, applyTestValues, instrToMd, instructionCache, shortId, specToText, stepList, textToSpec } from './model'
+import { DocEditorModal } from './DocEditorModal'
 
 export const cardStyle: React.CSSProperties = {
   background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 12, overflow: 'hidden',
@@ -149,7 +150,6 @@ export interface LeftColumnProps {
   instrOpenEff: boolean
   notesOpenEff: boolean
   showToast: (msg: string, ms?: number) => void
-  setConfirmSpecCancel: (v: boolean) => void
 }
 
 export function LeftColumn({
@@ -158,17 +158,16 @@ export function LeftColumn({
   agWarn, agNone, agNotEnabled, agMissing, agFallbackIdx,
   secWarn, secNotAllowed, secMissing, secRefs,
   specOpenEff, agSecOpenEff, secSecOpenEff, instrOpenEff, notesOpenEff,
-  showToast, setConfirmSpecCancel,
+  showToast,
 }: LeftColumnProps) {
   // §9 per-OS copy rule: the secret-store name the SECRETS card names.
   const copy = usePlatformCopy()
   // §11 Secrets card New secret modal — a secret saved here is auto-allowed.
   const [secretModal, setSecretModal] = useState(false)
-  // §14 overlay-scrollbar thumb for the spec editor textarea (a textarea can't
-  // host the thumb node itself, so the pane wires it up via this hook).
-  const specThumb = useOverlayThumb()
-  const instrThumb = useOverlayThumb()
-  const notesThumb = useOverlayThumb()
+  // §11 document-editor modal: the three manual edits are mutually exclusive,
+  // so at most one of these is open; each Save applies exactly what the old
+  // in-card Save did, and the modal fires it after its exit animation.
+  const docEdit = rev.specEdit ? 'spec' : rev.notesEdit ? 'notes' : rev.instrEdit ? 'instructions' : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -176,92 +175,37 @@ export function LeftColumn({
       <SectionCard
         eyebrow="SPEC"
         open={specOpenEff}
-        // §11: inert while the card is force-open being edited
-        inert={rev.specEdit}
         onToggle={(o) => up({ specSecOpen: o })}
         hint="What the automation should do, in plain words. The AI regenerates the steps from this document when it changes."
-        right={specOpenEff && (!rev.specEdit ? (
-            <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-            <button
-              // §11: an old version is browsed read-only — editing
-              // here would mark the draft dirty and lock Restore
-              // behind a disabled sync button.
-              className="ad-btn-text small ad-focus-inset" data-testid="spec-edit"
-              disabled={busyRewrite || viewingOld || testLive}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (busyRewrite || viewingOld || testLive) return
-                const t = specToText(rev.spec)
-                up({
-                  instrDraft: null, instrEdit: false, notesDraft: null, notesEdit: false,
-                  specText: t, specTextOrig: t, specEdit: true,
-                })
-              }}
-            >
-              Edit
-            </button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-              <button
-                className="ad-btn-text dim small ad-focus-inset"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (rev.specText !== rev.specTextOrig) { setConfirmSpecCancel(true); return }
-                  up({ specEdit: false, specText: '', specTextOrig: '' })
-                }}                        >
-                Cancel
-              </button>
-              <button
-                className="ad-btn-link small ad-focus-inset"
-                disabled={rev.specText === rev.specTextOrig}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (rev.specText === rev.specTextOrig) return
-                  // §11 draft undo: a manual Save under the snapshot clears it
-                  up({
-                    undo: null,
-                    spec: textToSpec(rev.specText), specEdit: false, specText: '', specTextOrig: '',
-                    dirty: true, touched: true,
-                  })
-                  showToast('Spec saved — the workflow is out of sync. Sync the steps before saving.', 5800)
-                }}                        >
-                Save
-              </button>
-            </div>
-          ))}
+        right={specOpenEff && (
+          <button
+            // §11: an old version is browsed read-only — editing
+            // here would mark the draft dirty and lock Restore
+            // behind a disabled sync button.
+            className="ad-btn-text small ad-focus-inset" data-testid="spec-edit"
+            disabled={busyRewrite || viewingOld || testLive}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (busyRewrite || viewingOld || testLive) return
+              const t = specToText(rev.spec)
+              up({
+                instrDraft: null, instrEdit: false, notesDraft: null, notesEdit: false,
+                specText: t, specTextOrig: t, specEdit: true,
+              })
+            }}
+            style={{ flex: 'none' }}
+          >
+            Edit
+          </button>
+        )}
       >
-        {rev.specEdit ? (
-          <>
-            <div className="ad-scrollwrap" style={{ position: 'relative' }}>
-              <textarea
-                data-testid="spec-editor"
-                value={rev.specText} rows={1}
-                ref={(el) => { specThumb.attach(el); if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
-                onChange={(e) => up({ specText: e.target.value, touched: true })}
-                onScroll={specThumb.onScroll}
-                style={{
-                  width: '100%', background: 'var(--bg-inset)', border: 'none', color: 'var(--text-2)',
-                  font: "400 12.5px/1.7 var(--mono)", padding: '12px 20px 18px', resize: 'none', outline: 'none', display: 'block',
-                  minHeight: 92, maxHeight: 440, overflowY: 'auto',
-                }}
-                className="ad-scrollhide"
-              />
-              {specThumb.node}
-            </div>
-            <div style={{ padding: '9px 20px', borderTop: '1px solid var(--hairline-dim)', font: "400 11.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
-              Saving rewrites the steps to match the new spec.
-            </div>
-          </>
-        ) : (
-          isCreateEmpty ? (
+        {isCreateEmpty ? (
             <CardEmpty>The spec appears here as your AI writes it — describe the job in the chat to start.</CardEmpty>
           ) : (
             <CardMarkdown>
               <SpecMarkdown blocks={rev.spec} />
             </CardMarkdown>
-          )
-        )}
+          )}
       </SectionCard>
 
       {/* NOTES — §4.1 agent-owned working knowledge (§11): agent-written
@@ -270,80 +214,34 @@ export function LeftColumn({
       <SectionCard
         eyebrow="NOTES"
         open={notesOpenEff}
-        inert={rev.notesEdit}
         onToggle={(o) => up({ notesSecOpen: o })}
         hint="No notes yet — your AI records what it learns (page quirks, dead ends, fixes) as you build and test."
         preview={rev.notes.trim() ? docPreview(rev.notes) : null}
-        right={<>
-          {notesOpenEff && !rev.notesEdit && (
-            <button
-              // §11: an old version is browsed read-only — notes saved onto a
-              // vX view would vanish on Restore or a version switch.
-              className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (busyRewrite || viewingOld) return
-                up({
-                  specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false,
-                  notesDraft: rev.notes, notesEdit: true, notesSecOpen: true,
-                })
-              }}
-              style={{ flex: 'none' }}
-            >
-              Edit
-            </button>
-          )}
-          {notesOpenEff && rev.notesEdit && (
-            <span style={{ display: 'flex', gap: 9, alignItems: 'center', flex: 'none' }}>
-              <button
-                className="ad-btn-text dim small ad-focus-inset"
-                onClick={(e) => { e.stopPropagation(); up({ notesDraft: null, notesEdit: false }) }}
-              >
-                Cancel
-              </button>
-              <button
-                className="ad-btn-link small ad-focus-inset"
-                disabled={rev.notesDraft == null || rev.notesDraft === rev.notes}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (rev.notesDraft == null || rev.notesDraft === rev.notes) return
-                  // §4.1: a notes change never marks the workflow out of sync;
-                  // §11 draft undo: a manual Save under the snapshot clears it
-                  up({ notes: rev.notesDraft, notesDraft: null, notesEdit: false, touched: true, undo: null })
-                }}
-              >
-                Save
-              </button>
-            </span>
-          )}
-        </>}
-      >
-        {!rev.notesEdit && (
-          rev.notes.trim() ? (
-            <CardMarkdown>
-              <Markdown text={rev.notes} />
-            </CardMarkdown>
-          ) : (
-            <CardEmpty>No notes yet — your AI records what it learns (page quirks, dead ends, fixes) as you build and test.</CardEmpty>
-          )
+        right={notesOpenEff && (
+          <button
+            // §11: an old version is browsed read-only — notes saved onto a
+            // vX view would vanish on Restore or a version switch.
+            className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (busyRewrite || viewingOld) return
+              up({
+                specEdit: false, specText: '', specTextOrig: '', instrDraft: null, instrEdit: false,
+                notesDraft: rev.notes, notesEdit: true,
+              })
+            }}
+            style={{ flex: 'none' }}
+          >
+            Edit
+          </button>
         )}
-        {rev.notesEdit && (
-          <div className="ad-scrollwrap" style={{ position: 'relative' }}>
-            <textarea
-              value={rev.notesDraft ?? rev.notes} rows={1}
-              ref={(el) => { notesThumb.attach(el); if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
-              onChange={(e) => up({ notesDraft: e.target.value })}
-              onScroll={notesThumb.onScroll}
-              placeholder="Markdown — your AI’s working knowledge for this automation. Prune anything stale or wrong."
-              style={{
-                width: '100%', background: 'var(--bg-inset)', border: 'none',
-                color: 'var(--text-2)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
-                resize: 'none', outline: 'none', display: 'block', minHeight: 92, maxHeight: 440, overflowY: 'auto',
-              }}
-              className="ad-scrollhide"
-            />
-            {notesThumb.node}
-          </div>
+      >
+        {rev.notes.trim() ? (
+          <CardMarkdown>
+            <Markdown text={rev.notes} />
+          </CardMarkdown>
+        ) : (
+          <CardEmpty>No notes yet — your AI records what it learns (page quirks, dead ends, fixes) as you build and test.</CardEmpty>
         )}
       </SectionCard>
 
@@ -526,88 +424,87 @@ export function LeftColumn({
       <SectionCard
         eyebrow="BUILD INSTRUCTIONS"
         open={instrOpenEff}
-        inert={rev.instrEdit}
         onToggle={(o) => up({ instrSecOpen: o })}
         hint="Standing rules your AI follows every time it writes or edits this automation."
         preview={rev.instructions.trim() ? docPreview(rev.instructions) : null}
-        right={<>
-          {instrOpenEff && !rev.instrEdit && (
-            <button
-              // §11: an old version is browsed read-only — an instruction save
-              // here would mark the draft dirty while Sync now and Restore are
-              // both locked (viewingOld), a dead end with no escape.
-              className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld || testLive}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (busyRewrite || viewingOld || testLive) return
-                up({
-                  specEdit: false, specText: '', specTextOrig: '', notesDraft: null, notesEdit: false,
-                  instrDraft: rev.instructions, instrEdit: true, instrSecOpen: true,
-                })
-              }}
-              style={{ flex: 'none' }}
-            >
-              Edit
-            </button>
-          )}
-          {instrOpenEff && rev.instrEdit && (
-            <span style={{ display: 'flex', gap: 9, alignItems: 'center', flex: 'none' }}>
-              <button
-                className="ad-btn-text dim small ad-focus-inset"
-                disabled={!instructionCache.defaultBuild || (rev.instrDraft ?? rev.instructions) === instructionCache.defaultBuild}
-                onClick={(e) => { e.stopPropagation(); up({ instrDraft: instructionCache.defaultBuild }) }}
-              >
-                Reset to default
-              </button>
-              <button
-                className="ad-btn-text dim small ad-focus-inset"
-                onClick={(e) => { e.stopPropagation(); up({ instrDraft: null, instrEdit: false }) }}                        >
-                Cancel
-              </button>
-              <button
-                className="ad-btn-link small ad-focus-inset"
-                disabled={rev.instrDraft == null || rev.instrDraft === rev.instructions}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (rev.instrDraft == null || rev.instrDraft === rev.instructions) return
-                  // §11 draft undo: a manual Save under the snapshot clears it
-                  up({ instructions: rev.instrDraft, instrDraft: null, instrEdit: false, touched: true, dirty: true, undo: null })
-                  showToast('Instructions saved — the workflow is out of sync. Sync the steps before saving.', 5800)
-                }}                        >
-                Save
-              </button>
-            </span>
-          )}
-        </>}
-      >
-        {!rev.instrEdit && (
-          rev.instructions.trim() ? (
-            <CardMarkdown>
-              <Markdown text={instrToMd(rev.instructions)} />
-            </CardMarkdown>
-          ) : (
-            <CardEmpty>No instructions yet — press Edit to add standing rules.</CardEmpty>
-          )
+        right={instrOpenEff && (
+          <button
+            // §11: an old version is browsed read-only — an instruction save
+            // here would mark the draft dirty while Sync now and Restore are
+            // both locked (viewingOld), a dead end with no escape.
+            className="ad-btn-text small ad-focus-inset" disabled={busyRewrite || viewingOld || testLive}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (busyRewrite || viewingOld || testLive) return
+              up({
+                specEdit: false, specText: '', specTextOrig: '', notesDraft: null, notesEdit: false,
+                instrDraft: rev.instructions, instrEdit: true,
+              })
+            }}
+            style={{ flex: 'none' }}
+          >
+            Edit
+          </button>
         )}
-        {rev.instrEdit && (
-          <div className="ad-scrollwrap" style={{ position: 'relative' }}>
-            <textarea
-              value={rev.instrDraft ?? rev.instructions} rows={1}
-              ref={(el) => { instrThumb.attach(el); if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` } }}
-              onChange={(e) => up({ instrDraft: e.target.value })}
-              onScroll={instrThumb.onScroll}
-              placeholder="Markdown — one rule per line: “Prefer Python.” “Never delete files — move them to the Trash.”"
-              style={{
-                width: '100%', background: 'var(--bg-inset)', border: 'none',
-                color: 'var(--text-2)', font: "400 12.5px/1.7 var(--mono)", padding: '14px 20px',
-                resize: 'none', outline: 'none', display: 'block', minHeight: 92, maxHeight: 440, overflowY: 'auto',
-              }}
-              className="ad-scrollhide"
-            />
-            {instrThumb.node}
-          </div>
+      >
+        {rev.instructions.trim() ? (
+          <CardMarkdown>
+            <Markdown text={instrToMd(rev.instructions)} />
+          </CardMarkdown>
+        ) : (
+          <CardEmpty>No instructions yet — press Edit to add standing rules.</CardEmpty>
         )}
       </SectionCard>
+
+      {/* §11 document-editor modal — one document at a time */}
+      {docEdit === 'spec' && (
+        <DocEditorModal
+          kind="spec" text={rev.specText} original={rev.specTextOrig}
+          // §11: typing is editor state only — Save marks the draft touched
+          onChange={(t) => up({ specText: t })}
+          onDiscard={() => up({ specEdit: false, specText: '', specTextOrig: '' })}
+          onSave={() => {
+            // §11 draft undo: a manual Save under the snapshot clears it
+            up({
+              undo: null,
+              spec: textToSpec(rev.specText), specEdit: false, specText: '', specTextOrig: '',
+              dirty: true, touched: true,
+            })
+            showToast('Spec saved — the workflow is out of sync. Sync the steps before saving.', 5800)
+          }}
+        />
+      )}
+      {docEdit === 'notes' && (
+        <DocEditorModal
+          kind="notes" text={rev.notesDraft ?? rev.notes} original={rev.notes}
+          onChange={(t) => up({ notesDraft: t })}
+          onDiscard={() => up({ notesDraft: null, notesEdit: false })}
+          // §4.1: a notes change never marks the workflow out of sync;
+          // §11 draft undo: a manual Save under the snapshot clears it
+          onSave={() => up({ notes: rev.notesDraft ?? rev.notes, notesDraft: null, notesEdit: false, touched: true, undo: null })}
+        />
+      )}
+      {docEdit === 'instructions' && (
+        <DocEditorModal
+          kind="instructions" text={rev.instrDraft ?? rev.instructions} original={rev.instructions}
+          onChange={(t) => up({ instrDraft: t })}
+          onDiscard={() => up({ instrDraft: null, instrEdit: false })}
+          onSave={() => {
+            // §11 draft undo: a manual Save under the snapshot clears it
+            up({ instructions: rev.instrDraft ?? rev.instructions, instrDraft: null, instrEdit: false, touched: true, dirty: true, undo: null })
+            showToast('Instructions saved — the workflow is out of sync. Sync the steps before saving.', 5800)
+          }}
+          extra={
+            <button
+              className="ad-btn-text dim small ad-focus-inset"
+              disabled={!instructionCache.defaultBuild || (rev.instrDraft ?? rev.instructions) === instructionCache.defaultBuild}
+              onClick={() => up({ instrDraft: instructionCache.defaultBuild })}
+            >
+              Reset to default
+            </button>
+          }
+        />
+      )}
 
       {/* FRAMEWORK INSTRUCTIONS */}
       <SectionCard

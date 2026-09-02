@@ -737,9 +737,13 @@ const topModal = () =>
  * Ask panel) must yield to the modal stack instead of closing underneath it. */
 export const anyModalOpen = () => modalStack.length > 0
 
-export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog', ariaLabel, children }: {
+export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog', ariaLabel, guardClose, children }: {
   onClose: () => void; width: number; zIndex?: number; cardStyle?: React.CSSProperties
   role?: 'dialog' | 'alertdialog'; ariaLabel?: string
+  // §14: an escape-path guard — Escape and a backdrop click ask it first, and
+  // a `false` keeps the modal open (the caller raises its own confirm, which
+  // stacks above this card). Explicit buttons call `close` directly.
+  guardClose?: () => boolean
   // `closing` is true through the ~200 ms exit animation, during which the
   // children stay mounted — a child with its own key/pointer handlers must
   // stop acting on the card the user is already dismissing.
@@ -748,11 +752,14 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog',
   const [closing, setClosing] = useState(false)
   const closed = useRef(false)
   const finish = () => { if (!closed.current) { closed.current = true; onClose() } }
+  const guard = useRef(guardClose)
+  guard.current = guardClose
+  const escape = () => { if (!guard.current || guard.current()) setClosing(true) }
   useEffect(() => {
     const entry = { id: Symbol('modal'), z: zIndex }
     modalStack.push(entry)
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && topModal()?.id === entry.id) setClosing(true)
+      if (e.key === 'Escape' && topModal()?.id === entry.id) escape()
     }
     document.addEventListener('keydown', onKey)
     return () => {
@@ -772,7 +779,7 @@ export function Modal({ onClose, width, zIndex = 60, cardStyle, role = 'dialog',
   // the modal would anchor to the scrolled page instead of the viewport (§9).
   return createPortal(
     <div
-      onMouseDown={(e) => { if (e.target === e.currentTarget) setClosing(true) }}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) escape() }}
       onAnimationEnd={(e) => { if (closing && e.target === e.currentTarget) finish() }}
       style={{
         position: 'fixed', inset: 0, background: 'rgba(5,7,10,.6)', zIndex,

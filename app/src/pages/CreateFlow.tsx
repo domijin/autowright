@@ -71,7 +71,6 @@ export default function CreateFlow() {
   const [nameErr, setNameErr] = useState<string | null>(null)
   const [descEdit, setDescEdit] = useState<string | null>(null)
   const [chatText, setChatText] = useState('')
-  const [confirmSpecCancel, setConfirmSpecCancel] = useState(false)
   // §11: sending a chat message or starting a sync while a manual edit holds
   // unsaved changes first asks through the editing card's discard confirm -
   // confirming discards and proceeds, cancelling aborts the send with the
@@ -359,11 +358,11 @@ export default function CreateFlow() {
     return { availAgents, agentStepIdx, agNotEnabled, agMissing, agFallbackIdx, agNone, secNotAllowed, secMissing, agWarn, secWarn, agentGap, secretGap }
   }, [rev?.steps, rev?.enabledAgents, rev?.allowedSecrets, agents, secrets, secRefs, unresolvedRefs]) // eslint-disable-line react-hooks/exhaustive-deps
   const { availAgents, agentStepIdx, agNotEnabled, agMissing, agFallbackIdx, agNone, secNotAllowed, secMissing, agWarn, secWarn, agentGap, secretGap } = derived
-  // §11: the spec card defaults open and is force-open while being edited;
-  // the agents and secrets cards default collapsed
-  // and are forced open while their warnings show (Packages pattern).
-  const specOpenEff = !!rev?.specEdit
-    || ((rev?.specSecOpen ?? null) == null ? true : !!rev?.specSecOpen)
+  // §11: the spec card defaults open (manual edits happen in the
+  // document-editor modal, so no card is held open by one); the agents and
+  // secrets cards default collapsed and are forced open while their warnings
+  // show (Packages pattern).
+  const specOpenEff = (rev?.specSecOpen ?? null) == null ? true : !!rev?.specSecOpen
   const agSecOpenEff = !!rev?.agSecOpen || agWarn
   const secSecOpenEff = !!rev?.secSecOpen || secWarn
   // §11 Packages card: default collapsed when everything is installed; forced
@@ -372,13 +371,13 @@ export default function CreateFlow() {
   const pkgSecOpenEff = (((rev?.pkgSecOpen ?? null) == null ? pkgProblem : !!rev?.pkgSecOpen) || pkgProblem || !!rev?.pkgBusy)
   // §11 BUILD INSTRUCTIONS card: defaults collapsed in create and edit alike
   const instrOpenEff = !!rev?.instrSecOpen
-  // §11 NOTES card: defaults collapsed; forced open while being edited
-  const notesOpenEff = !!rev?.notesEdit || (((rev?.notesSecOpen ?? null) == null) ? false : !!rev?.notesSecOpen)
+  // §11 NOTES card: defaults collapsed
+  const notesOpenEff = ((rev?.notesSecOpen ?? null) == null) ? false : !!rev?.notesSecOpen
   const viewingOld = isEdit && !!rev && !!auto && rev.viewing !== 'draft' && rev.viewing !== auto.version
   // §5: permissions are never versioned — a grant gap never blocks restoring an
   // old version; it fails at execution time instead (the cards still warn).
   const outOfSync = !!rev && (rev.dirty || (!viewingOld && (agentGap || secretGap)))
-  const saveBlocked = !!rev && (outOfSync || rev.syncBusy || rev.chatBusy || rev.specEdit
+  const saveBlocked = !!rev && (outOfSync || rev.syncBusy || rev.chatBusy
     || (!isEdit && rev.steps.length === 0))
   const busyRewrite = !!rev && (rev.syncBusy || rev.chatBusy)
   // §11: one agent job at a time — the chat input and every job starter gate on this.
@@ -1131,8 +1130,7 @@ export default function CreateFlow() {
                   <span style={{ font: "400 12px var(--sans)", color: 'var(--amber)' }}>
                     {rev.syncBusy || rev.chatBusy
                       ? jobStageTitle(rev)
-                      : rev.specEdit ? 'Finish editing the spec first — save or cancel your edits'
-                        : 'Sync and review the steps before saving'}
+                      : 'Sync and review the steps before saving'}
                   </span>
                 )}
                 <button className="ad-btn-text dim" disabled={busyRewrite} onClick={() => void startOver()}>
@@ -1270,7 +1268,6 @@ export default function CreateFlow() {
                 instrOpenEff={instrOpenEff}
                 notesOpenEff={notesOpenEff}
                 showToast={showToast}
-                setConfirmSpecCancel={setConfirmSpecCancel}
               />
 
               {/* ===== right column ===== */}
@@ -1332,17 +1329,6 @@ export default function CreateFlow() {
           danger
           onConfirm={() => { const v = delVer; setDelVer(null); void deleteVersion(v) }}
           onCancel={() => setDelVer(null)}
-        />
-      )}
-
-      {confirmSpecCancel && (
-        <ConfirmModal
-          title="Discard your spec edits?"
-          body="The changes you typed into the spec editor will be lost."
-          confirmLabel="Discard edits"
-          danger
-          onConfirm={() => { setConfirmSpecCancel(false); up({ specEdit: false, specText: '', specTextOrig: '' }) }}
-          onCancel={() => setConfirmSpecCancel(false)}
         />
       )}
 

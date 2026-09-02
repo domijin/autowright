@@ -264,7 +264,10 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   - Modals (shared `Modal` shell in `ui.tsx`: backdrop + card, used by the secret add/edit
     modal and `ConfirmModal`) animate both ways, and every dismissal path (backdrop click,
     Escape, Cancel, save/confirm) plays the exit before unmount; confirm actions fire after
-    the exit finishes. The one blocking exception is `BlockingOverlay` (the §4.9 reset
+    the exit finishes. A modal may guard its escape paths (`guardClose`): Escape and a
+    backdrop click first ask it whether the dismissal may proceed, so an editor holding
+    unsaved text raises its discard confirm instead of closing — the confirm stacks above
+    it and Escape closes only the top-most card. The one blocking exception is `BlockingOverlay` (the §4.9 reset
     progress overlay): the same backdrop + card and both-ways motion, but no user dismissal
     path at all — no Escape, no backdrop click, no buttons; it closes only programmatically
     (its `open` prop, which plays the exit before unmount).

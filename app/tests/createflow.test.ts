@@ -16,6 +16,7 @@ import {
   applyTriggerOps, coerceParamValue,
   stripTrigger,
 } from '../src/pages/CreateFlow'
+import { docLineCount, docModalFrame } from '../src/pages/createflow/DocEditorModal'
 
 const step = (over: Partial<Step> = {}): Step =>
   ({ name: 's', description: '', code: '', ...over })
@@ -750,5 +751,23 @@ describe('sameTriggerList — the §11/§19 re-attach trigger guard', () => {
     const { sameTriggerList } = await import('../src/pages/createflow/model')
     expect(sameTriggerList(null, [])).toBe(true)
     expect(sameTriggerList(null, [cron('0 8 * * *')])).toBe(false)
+  })
+})
+
+describe('docLineCount / docModalFrame — the §11 document-editor toolbar count and frame', () => {
+  it('counts lines with an empty editor at zero and a trailing newline uncounted', () => {
+    expect(docLineCount('')).toBe(0)
+    expect(docLineCount('a')).toBe(1)
+    expect(docLineCount('a\nb\n')).toBe(2)
+    expect(docLineCount('a\nb\nc')).toBe(3)
+  })
+
+  it('sizes the card from the opened text: 44 + 36 + 34 + (lines + 6) * 21.25, floored and capped', () => {
+    // an empty document still gets one line of room
+    expect(docModalFrame('')).toBe('clamp(440px, 263px, 82vh)')
+    expect(docModalFrame('a\nb\nc')).toBe('clamp(440px, 306px, 82vh)')
+    // a long document runs past the floor — 82vh is the only thing holding it
+    const long = Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n')
+    expect(docModalFrame(long)).toBe('clamp(440px, 4492px, 82vh)')
   })
 })

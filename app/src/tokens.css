@@ -491,10 +491,11 @@ textarea:disabled, input:disabled { opacity: .45; }
   background: oklch(1 0 0 / 0.25);
   pointer-events: none;
 }
-/* §9.2 step-script modal: the scroll pane runs full-bleed to the card edge, so
-   at right:3px the card's 12px corner radius slices the thumb's bottom into a
-   wedge; 6px keeps its whole travel clear of the curve. */
-.ad-stepmodal .ad-thumb { right: 6px; }
+/* §9.2 step-script modal and the §11 document-editor modal: the scroll pane
+   runs full-bleed to the card edge, so at right:3px the card's 12px corner
+   radius slices the thumb's bottom into a wedge; 6px keeps its whole travel
+   clear of the curve. */
+.ad-stepmodal .ad-thumb, .ad-docmodal .ad-thumb { right: 6px; }
 /* keep the textarea resize grip theme-colored — without this it flips to the
    default light square */
 ::-webkit-resizer {

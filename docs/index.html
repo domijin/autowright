@@ -185,9 +185,17 @@
   header{padding:22px 0}
   .hrow{display:flex; align-items:center; gap:11px}
   .brand{font-weight:600; font-size:15.5px; letter-spacing:-.01em}
-  .hrow .gh{margin-left:auto; font-size:13px; color:var(--muted); border:1px solid rgba(255,255,255,.11);
-    border-radius:8px; padding:7px 14px; transition:border-color .15s, color .15s}
-  .hrow .gh:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+  .hrow .repo{margin-left:auto; display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--muted);
+    border:1px solid rgba(255,255,255,.11); border-radius:8px; padding:7px 12px; transition:border-color .15s, color .15s}
+  .hrow .repo:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+  .hrow .repo .gico{width:15px; height:15px; fill:currentColor}
+  .hrow .repo .stars{display:inline-flex; align-items:center; gap:5px; margin-left:1px; padding-left:9px;
+    border-left:1px solid rgba(255,255,255,.11); font-variant-numeric:tabular-nums; color:var(--faint)}
+  .hrow .repo:hover .stars{color:var(--muted)}
+  .hrow .repo .stars svg{width:11px; height:11px; fill:currentColor; position:relative; top:-1px}
+  .hrow .repo .stars [data-stars]{display:inline-block; min-width:3ch; opacity:0; transition:opacity .2s}
+  .hrow .repo .stars.on [data-stars]{opacity:1}
+  .hrow .repo .stars[hidden]{display:none}
 
   /* hero */
   .hero{padding:66px 0 40px; text-align:center}
@@ -465,6 +473,8 @@ if (/Mac|iPhone|iPad|iPod/i.test(awPlatform)) {
     <symbol id="fa-apple" viewBox="0 0 384 512"><path fill="currentColor" d="M319.1 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7-55.8 .9-115.1 44.5-115.1 133.2 0 26.2 4.8 53.3 14.4 81.2 12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zM262.5 104.5c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></symbol>
     <symbol id="fa-windows" viewBox="0 0 448 512"><path fill="currentColor" d="M0 93.7l183.6-25.3 0 177.4-183.6 0 0-152.1zM0 418.3l183.6 25.3 0-175.2-183.6 0 0 149.9zm203.8 28l244.2 33.7 0-211.6-244.2 0 0 177.9zm0-380.6l0 180.1 244.2 0 0-213.8-244.2 33.7z"/></symbol>
     <symbol id="fa-discord" viewBox="0 0 576 512"><path fill="currentColor" d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1 .1s-.6 .4-.8 .8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2c-41.3 7.1-81.6 19.6-119.7 37.1-.3 .1-.6 .4-.8 .7-76.2 113.8-97.1 224.9-86.9 334.5 0 .3 .1 .5 .2 .8s.3 .4 .5 .6c44.4 32.9 94 58 146.8 74.2 .4 .1 .8 .1 1.1 0s.7-.4 .9-.7c11.3-15.4 21.4-31.8 30-48.8 .1-.2 .2-.5 .2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6 .2-.9 .3-.5 .6-.7c3.1-2.3 6.2-4.7 9.1-7.1 .3-.2 .6-.4 .9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1 .7-.2 1-.2s.7 .2 .9 .4c2.9 2.4 6 4.9 9.1 7.2 .2 .2 .4 .4 .6 .7s.2 .6 .2 .9-.1 .6-.3 .9-.4 .5-.6 .6c-14.7 8.6-30 15.9-45.9 21.8-.2 .1-.5 .2-.7 .4s-.3 .4-.4 .7-.1 .5-.1 .8 .1 .5 .2 .8c8.8 17 18.8 33.3 30 48.8 .2 .3 .6 .6 .9 .7s.8 .1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2 .2-.2 .4-.4 .5-.6s.2-.5 .2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2zm195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2z"/></symbol>
+    <symbol id="fa-github" viewBox="0 0 496 512"><path fill="currentColor" d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3 .3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5 .3-6.2 2.3zm44.2-1.7c-2.9 .7-4.9 2.6-4.6 4.9 .3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3 .7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3 .3 2.9 2.3 3.9 1.6 1 3.6 .7 4.3-.7 .7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3 .7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3 .7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></symbol>
+    <symbol id="fa-star" viewBox="0 0 576 512"><path fill="currentColor" d="M316.9 18c-5.3-11-16.5-18-28.8-18s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329l-24.6 145.7c-2 12 3 24.2 12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9-19.3 12.9-31.3L448.1 329l104.2-103.1c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9-25.7-21.7L390.9 150.3 326.4 18z"/></symbol>
     <symbol id="fa-rotate" viewBox="0 0 512 512"><path fill="currentColor" d="M480.1 192l7.9 0c13.3 0 24-10.7 24-24l0-144c0-9.7-5.8-18.5-14.8-22.2S477.9 .2 471 7L419.3 58.8C375 22.1 318 0 256 0 127 0 20.3 95.4 2.6 219.5 .1 237 12.2 253.2 29.7 255.7s33.7-9.7 36.2-27.1C79.2 135.5 159.3 64 256 64 300.4 64 341.2 79 373.7 104.3L327 151c-6.9 6.9-8.9 17.2-5.2 26.2S334.3 192 344 192l136.1 0zm29.4 100.5c2.5-17.5-9.7-33.7-27.1-36.2s-33.7 9.7-36.2 27.1c-13.3 93-93.4 164.5-190.1 164.5-44.4 0-85.2-15-117.7-40.3L185 361c6.9-6.9 8.9-17.2 5.2-26.2S177.7 320 168 320L24 320c-13.3 0-24 10.7-24 24L0 488c0 9.7 5.8 18.5 14.8 22.2S34.1 511.8 41 505l51.8-51.8C137 489.9 194 512 256 512 385 512 491.7 416.6 509.4 292.5z"/></symbol>
   </defs>
 </svg>
@@ -474,9 +484,39 @@ if (/Mac|iPhone|iPad|iPod/i.test(awPlatform)) {
     <div class="hrow">
       <svg class="mark"><use href="#aw"/></svg>
       <div class="brand">Autowright</div>
-      <a class="gh" href="https://github.com/hansololz/autowright">GitHub</a>
+      <a class="repo" href="https://github.com/hansololz/autowright" aria-label="Autowright on GitHub"><svg class="gico" aria-hidden="true"><use href="#fa-github"/></svg><span class="label">GitHub</span><span class="stars"><svg aria-hidden="true"><use href="#fa-star"/></svg><span data-stars></span></span></a>
     </div>
   </header>
+<script>
+// header GitHub pill star count. The star slot is reserved from the first paint so the
+// pill never changes width; the last count seen is remembered in localStorage and shown
+// at once, then one unauthenticated GitHub API request refreshes it. With nothing cached
+// and no count from the API, the star section hides and the pill reads just "GitHub".
+(function () {
+  var boxes = document.querySelectorAll(".hrow .repo .stars");
+  var ok = function (n) { return typeof n === "number" && isFinite(n) && n >= 0; };
+  var show = function (n) {
+    var text = n < 1000 ? String(n) : (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    boxes.forEach(function (box) {
+      box.querySelector("[data-stars]").textContent = text;
+      box.classList.add("on");
+      box.closest("a").setAttribute("aria-label", "Autowright on GitHub, " + n + " stars");
+    });
+  };
+  var cached = null;
+  try { var raw = localStorage.getItem("aw-stars"); if (raw !== null) cached = Number(raw); } catch (e) {}
+  if (ok(cached)) show(cached);
+  fetch("https://api.github.com/repos/hansololz/autowright", { headers: { Accept: "application/vnd.github+json" } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (repo) {
+      var n = repo && repo.stargazers_count;
+      if (!ok(n)) return Promise.reject();
+      try { localStorage.setItem("aw-stars", String(n)); } catch (e) {}
+      show(n);
+    })
+    .catch(function () { if (!ok(cached)) boxes.forEach(function (box) { box.hidden = true; }); });
+})();
+</script>
 
   <section class="hero">
     <div class="eyebrow">Autowright · open source · runs locally</div>
@@ -485,7 +525,6 @@ if (/Mac|iPhone|iPad|iPod/i.test(awPlatform)) {
     <div class="ctas">
       <a class="btn primary" data-download="darwin-arm64" href="https://github.com/hansololz/autowright/releases/latest" aria-label="Download for macOS"><svg class="ico" aria-hidden="true"><use href="#fa-apple"/></svg><span class="label">Download for macOS</span></a>
       <a class="btn ghost" data-download="win32-x86_64" href="https://github.com/hansololz/autowright/releases/latest" title="The Windows build is unsigned, so SmartScreen will warn before it runs." aria-label="Download for Windows"><svg class="ico" aria-hidden="true"><use href="#fa-windows"/></svg><span class="label">Download for Windows</span></a>
-      <a class="btn ghost" href="https://github.com/hansololz/autowright">View source</a>
     </div>
     <div class="platform">MIT licensed · <a data-download="linux-x86_64" href="https://github.com/hansololz/autowright/releases/latest" aria-label="Download for Linux (experimental)">Linux (Experimental)</a></div>
   </section>

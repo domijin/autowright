@@ -44,9 +44,17 @@
   .hrow{display:flex; align-items:center; gap:11px}
   .home{display:flex; align-items:center; gap:11px}
   .brand{font-weight:600; font-size:15.5px; letter-spacing:-.01em}
-  .hrow .gh{margin-left:auto; font-size:13px; color:var(--muted); border:1px solid rgba(255,255,255,.11);
-    border-radius:8px; padding:7px 14px; transition:border-color .15s, color .15s}
-  .hrow .gh:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+  .hrow .repo{margin-left:auto; display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--muted);
+    border:1px solid rgba(255,255,255,.11); border-radius:8px; padding:7px 12px; transition:border-color .15s, color .15s}
+  .hrow .repo:hover{border-color:rgba(255,255,255,.25); color:var(--text)}
+  .hrow .repo .gico{width:15px; height:15px; fill:currentColor}
+  .hrow .repo .stars{display:inline-flex; align-items:center; gap:5px; margin-left:1px; padding-left:9px;
+    border-left:1px solid rgba(255,255,255,.11); font-variant-numeric:tabular-nums; color:var(--faint)}
+  .hrow .repo:hover .stars{color:var(--muted)}
+  .hrow .repo .stars svg{width:11px; height:11px; fill:currentColor; position:relative; top:-1px}
+  .hrow .repo .stars [data-stars]{display:inline-block; min-width:3ch; opacity:0; transition:opacity .2s}
+  .hrow .repo .stars.on [data-stars]{opacity:1}
+  .hrow .repo .stars[hidden]{display:none}
 
   /* document */
   article{padding:54px 0 40px}
@@ -94,6 +102,8 @@
         <path d="M 277 580 L 423 580"/>
       </g>
     </symbol>
+    <symbol id="fa-github" viewBox="0 0 496 512"><path fill="currentColor" d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3 .3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5 .3-6.2 2.3zm44.2-1.7c-2.9 .7-4.9 2.6-4.6 4.9 .3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3 .7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3 .3 2.9 2.3 3.9 1.6 1 3.6 .7 4.3-.7 .7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3 .7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3 .7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></symbol>
+    <symbol id="fa-star" viewBox="0 0 576 512"><path fill="currentColor" d="M316.9 18c-5.3-11-16.5-18-28.8-18s-23.4 7-28.8 18L195 150.3 51.4 171.5c-12 1.8-22 10.2-25.7 21.7s-.7 24.2 7.9 32.7L137.8 329l-24.6 145.7c-2 12 3 24.2 12.9 31.3s23 8 33.8 2.3l128.3-68.5 128.3 68.5c10.8 5.7 23.9 4.9 33.8-2.3s14.9-19.3 12.9-31.3L448.1 329l104.2-103.1c8.6-8.5 11.7-21.2 7.9-32.7s-13.7-19.9-25.7-21.7L390.9 150.3 326.4 18z"/></symbol>
   </defs>
 </svg>
 
@@ -104,9 +114,39 @@
         <svg class="mark"><use href="#aw"/></svg>
         <div class="brand">Autowright</div>
       </a>
-      <a class="gh" href="https://github.com/hansololz/autowright">GitHub</a>
+      <a class="repo" href="https://github.com/hansololz/autowright" aria-label="Autowright on GitHub"><svg class="gico" aria-hidden="true"><use href="#fa-github"/></svg><span class="label">GitHub</span><span class="stars"><svg aria-hidden="true"><use href="#fa-star"/></svg><span data-stars></span></span></a>
     </div>
   </header>
+<script>
+// header GitHub pill star count. The star slot is reserved from the first paint so the
+// pill never changes width; the last count seen is remembered in localStorage and shown
+// at once, then one unauthenticated GitHub API request refreshes it. With nothing cached
+// and no count from the API, the star section hides and the pill reads just "GitHub".
+(function () {
+  var boxes = document.querySelectorAll(".hrow .repo .stars");
+  var ok = function (n) { return typeof n === "number" && isFinite(n) && n >= 0; };
+  var show = function (n) {
+    var text = n < 1000 ? String(n) : (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+    boxes.forEach(function (box) {
+      box.querySelector("[data-stars]").textContent = text;
+      box.classList.add("on");
+      box.closest("a").setAttribute("aria-label", "Autowright on GitHub, " + n + " stars");
+    });
+  };
+  var cached = null;
+  try { var raw = localStorage.getItem("aw-stars"); if (raw !== null) cached = Number(raw); } catch (e) {}
+  if (ok(cached)) show(cached);
+  fetch("https://api.github.com/repos/hansololz/autowright", { headers: { Accept: "application/vnd.github+json" } })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (repo) {
+      var n = repo && repo.stargazers_count;
+      if (!ok(n)) return Promise.reject();
+      try { localStorage.setItem("aw-stars", String(n)); } catch (e) {}
+      show(n);
+    })
+    .catch(function () { if (!ok(cached)) boxes.forEach(function (box) { box.hidden = true; }); });
+})();
+</script>
 
   <article>
     <div class="eyebrow">Legal</div>

@@ -389,7 +389,26 @@ migrate-on-load migration so data written by released versions keeps loading (§
   concrete (short sentences, real nouns like Python, Keychain, scheduler, cron), never
   padded with explanation a developer does not need, and never marketing filler. Page
   structure, in order: header
-  (mark + wordmark + GitHub link) · hero (an accent eyebrow that leads with the product
+  (mark + wordmark on the left; on the right, `margin-left: auto`, a "GitHub" pill
+  linking to the repo, `aria-label` "Autowright on GitHub": 13 px muted text in a faint
+  1 px border, a GitHub mark (`#fa-github`) before the "GitHub" label, and after the label
+  a star count - a `#fa-star` glyph (11 px, nudged 1 px up from the flex center so its
+  bottom-heavy shape sits level with the digits) plus the repo's `stargazers_count`, which page JS
+  fetches on load from `https://api.github.com/repos/hansololz/autowright`
+  (unauthenticated, one request per page load, no token). The pill must not change
+  width or flash when the count arrives: the star glyph and a fixed-minimum-width
+  (`3ch`, tabular figures, so counts up to 999 and "NNk" never move the pill; a
+  four-character count such as "1.2k" widens it once, on the first visit only) number slot render from the first paint, the number itself
+  is transparent until known and fades in (`opacity` transition, 0.2 s), and the last
+  count seen is remembered in `localStorage` (`aw-stars`, guarded try/catch) so a repeat
+  visit shows it immediately, before the fetch, from an inline script placed right after
+  the header markup. The fetch then replaces it. With no JS the pill shows the star glyph
+  and an empty slot; when the fetch fails (rate limit, offline, non-numeric response) and
+  nothing is cached, the whole star section is hidden and the pill reads just "GitHub".
+  The count is rendered as-is under 1000 and otherwise as thousands with one decimal and
+  a `k` suffix (1234 → "1.2k", 12000 → "12k"), separated from the label by a thin faint
+  divider; once a count is shown the `aria-label` becomes "Autowright on GitHub, N
+  stars") · hero (an accent eyebrow that leads with the product
   name - "Autowright · open source · runs locally", so the brand appears as page text above
   the fold, not only in the wordmark - headline, one-paragraph pitch, two download
   buttons: "Download for macOS" (primary, accent) and "Download for Windows" (ghost
@@ -416,7 +435,7 @@ migrate-on-load migration so data written by released versions keeps loading (§
   artifact's `github.com/…/releases/download/…` URL, so the click downloads the
   installer with the version in its filename; an anchor whose entry is missing or
   malformed is left alone. The static fallback `href` (no JS, fetch failure) is the
-  repo's latest-release GitHub page. Then "View source" (ghost), and under the buttons
+  repo's latest-release GitHub page. Under the buttons
   a mono platform line "MIT licensed · Linux (Experimental)", where "Linux (Experimental)"
   is an underlined text link (`.platform a`, `text-decoration: underline`, same faint
   color, inheriting on hover) carrying `data-download="linux-x86_64"` so the same
@@ -498,7 +517,7 @@ migrate-on-load migration so data written by released versions keeps loading (§
   terms of service as web pages at `https://autowright.ai/privacy` and
   `https://autowright.ai/terms` (GitHub Pages serves the extensionless paths; the footers
   and sitemap use them). Each is a self-contained page sharing the landing page's tokens,
-  fonts, inlined AW mark, header row (mark, brand linking home, GitHub pill), and footer
+  fonts, inlined AW mark, header row (mark, brand linking home, GitHub pill with star count and its fetch script), and footer
   verbatim, with no demo, reveal animation, or JSON-LD; the two legal pages are identical
   in markup and CSS apart from their content. Body: a single `<article>` - "Legal" eyebrow,
   `<h1>` ("Privacy policy" / "Terms of service"), a mono "Last updated" line, then the

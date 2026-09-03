@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.0 - 2026-09-02
+
+- Step scripts now open in a full-page viewer: a step navigator on the left, a line-numbered script pane on the right, and prev/next stepping through the whole automation without leaving the modal.
+- Each step in the viewer lists what it actually does in plain words - the parameters it reads, the websites it contacts, what it asks the agent, files it hands to later steps, memory keys it touches, and whether it differs from the saved version.
+- Find-in-script arrives in the step viewer: press ⌘F (Ctrl+F on Windows and Linux) or the magnifier to search a script, step through matches, and keep the search when you flip to another step.
+- Editing the spec, notes, or build instructions now opens a proper editor over the page instead of turning the card into a text box, with a line count, ⌘S to save, and a confirm before discarding unsaved text.
+- The BUILD & TEST panel splits into separate BUILD and TEST cards, each a single status line with its buttons on the right. Test runs open in a modal that shows the same live rail and logs as the execution page, and a test result is marked stale once you change the steps it ran against.
+- On Windows and Linux the app calls the tray a tray instead of the menu bar, in trigger labels, CLI output, and scheduling notes. Linux drops the tray icon and panel entirely, so closing the last window quits the app.
+- Stopping, deleting, or retrying an execution now reliably ends everything it started, including agent processes, and history cleanup no longer runs on the scheduler's clock, so a large cleanup can't delay a scheduled run.
+- Fixed a paging glitch in the Executions list that could skip or repeat rows at the boundary between pages.
+
 ## v0.8.3 - 2026-08-31
 
 - A What's-new changelog is now built into the app: open it from the About page to read the release notes for this and earlier versions.

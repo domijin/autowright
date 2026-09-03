@@ -389,9 +389,7 @@ Dev workflow:
   never the file installed apps read - the same on-main rule the tap preflight applies to
   the `homebrew-tap` checkout, applied to this repo), if the tag `v<version>` already
   exists (checked locally and on `origin`, before
-  anything is modified), or if the new version is not strictly higher than the current
-  `VERSION` (semver ordering: numeric core compared field by field; on an equal core a
-  release outranks any pre-release, and two pre-releases compare lexically), or if the
+  anything is modified), or if the
   `docs/CHANGELOG.md` (§17) has no `## v<version>` section heading for the version
   being released — the §9.4 What's-new notes are written before the release is cut, never
   after. That last refusal is not a bare error: `release.sh` depends on

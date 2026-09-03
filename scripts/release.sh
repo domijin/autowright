@@ -295,22 +295,6 @@ push_feed() {
   echo "· update feed pushed (v$version, darwin-$ARCH)"
 }
 
-# semver_gt <a> <b> — true when a is strictly higher than b. Numeric core compared
-# field by field; on an equal core a release outranks any pre-release, and two
-# pre-releases compare lexically (close enough to semver for this repo's tags).
-semver_gt() {
-  local a_core="${1%%-*}" b_core="${2%%-*}" a_pre="" b_pre=""
-  [ "$1" = "$a_core" ] || a_pre="${1#*-}"
-  [ "$2" = "$b_core" ] || b_pre="${2#*-}"
-  if [ "$a_core" != "$b_core" ]; then
-    [ "$(printf '%s\n%s\n' "$a_core" "$b_core" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)" = "$a_core" ]
-    return
-  fi
-  [ -z "$a_pre" ] && [ -n "$b_pre" ] && return 0
-  [ -n "$a_pre" ] && [ -n "$b_pre" ] && [ "$a_pre" != "$b_pre" ] \
-    && [ "$(printf '%s\n%s\n' "$a_pre" "$b_pre" | sort | tail -1)" = "$a_pre" ]
-}
-
 [ $# -eq 1 ] || usage
 MODE="$1"
 
@@ -329,11 +313,6 @@ if [ "$MODE" != "--sync" ] && [ "$MODE" != "--check" ] \
   if git -C "$ROOT" rev-parse -q --verify "refs/tags/v$MODE" > /dev/null \
      || git -C "$ROOT" ls-remote --exit-code --tags origin "refs/tags/v$MODE" > /dev/null 2>&1; then
     echo "tag v$MODE already exists — pick a new version"
-    exit 1
-  fi
-  CURRENT="$(tr -d '[:space:]' < "$VERSION_FILE")"
-  if [ -n "$CURRENT" ] && ! semver_gt "$MODE" "$CURRENT"; then
-    echo "version $MODE is not higher than current $CURRENT"
     exit 1
   fi
   # §17/§18 changelog gate: the §9.4 What's-new notes are written (and, per the

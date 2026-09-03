@@ -273,10 +273,11 @@ def _git(*args: str) -> str | None:
 
 def _committed_version() -> str:
     """The last *committed* `VERSION`. The working-tree file is never the one
-    compared: `release.sh <version>` runs this suite with the bump still
-    uncommitted (the feed is written only once the GitHub release is live), so
-    mid-release it legitimately runs ahead of every feed. Falls back to the
-    file outside a git checkout."""
+    compared: `release-start.sh` writes the bump for the developer to commit,
+    and `release.sh` then runs this suite before the GitHub release exists
+    (the feed is written only once it is live), so between the bump and the
+    release it legitimately runs ahead of every feed. Falls back to the file
+    outside a git checkout."""
     committed = _git("show", "HEAD:VERSION")
     return committed if committed is not None else _read("VERSION").strip()
 
@@ -285,9 +286,9 @@ def _published_versions() -> set[str]:
     """§18: the versions the newest published release can be at - what the mac
     feed must match. The committed `VERSION` counts as published once its
     `v<version>` tag exists in this checkout, and is then the only answer. While
-    that tag is absent the release may not have been cut yet (a bump committed
-    ahead of its release looks exactly like `release.sh` mid-run: `VERSION`
-    written, feed still at the previous release), so the previous release - the
+    that tag is absent the release has not been cut yet (`release-start.sh`
+    commits the bump ahead of the release, so `VERSION` is written while the
+    feed still sits at the previous release), so the previous release - the
     newest `v*` tag reachable from HEAD - is accepted too."""
     version = _committed_version()
     if _git("rev-parse", "-q", "--verify", f"refs/tags/v{version}") is not None:
@@ -297,8 +298,8 @@ def _published_versions() -> set[str]:
 
 
 def test_a_macos_feed_tracks_the_version_file():
-    """§18: releases are cut from macOS by `release.sh`, which bumps `VERSION`
-    *and* rewrites the built arch's update feed in the same run. So the mac
+    """§18: releases are cut from macOS by `release.sh`, which cuts the release
+    `VERSION` names *and* rewrites the built arch's update feed in the same run. So the mac
     feed for the arch the release was built on always equals the newest
     published release; a mismatch means the feed write or its push was lost
     (recover with `release.sh --feed`). Any arch satisfies it - the guard does
@@ -398,10 +399,10 @@ def test_changelog_headings_are_section_headings():
 
 def test_changelog_has_an_entry_for_the_current_version():
     """§17/§18: `release.sh` refuses to cut a version with no entry, so the
-    entry must exist by the time `VERSION` names it. Deliberately "an entry
-    exists", not "the top entry matches": notes for the *next* version may be
-    written and committed ahead of the release (the preflight requires exactly
-    that), so a newer entry sitting above the current one is legitimate."""
+    entry must exist by the time `VERSION` names it (`release-start.sh` drafts
+    both together). Deliberately "an entry exists", not "the top entry
+    matches": notes for the *next* version are written and committed ahead of
+    the release, so a newer entry sitting above the current one is legitimate."""
     version = _read("VERSION").strip()
     versions = _changelog_versions()
     assert version in versions, (

@@ -668,7 +668,8 @@ the update bullets below).
   Pages path, and never the legacy `feed.json` - that file is frozen at 0.6.1 (§3 bridge)
   and would silently stop livecheck reporting anything newer - so the cask stays
   checkable by `brew livecheck` and would be autobump-eligible
-  if it ever moved to core. Version bumps are `release.sh`'s job (§18), never a manual edit,
+  if it ever moved to core. Version bumps are `release-start.sh`'s job (§18), never a manual
+edit,
   and the same publish step re-pins the livecheck URL on every release: it is the one line
   naming the feed host, and a stale one fails silently (`brew livecheck` simply stops
   reporting a version).
@@ -734,8 +735,12 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
 - **Release:** Windows artifacts get their own `windows-scripts/release.ps1` (build via `prod.ps1`,
   publish installer + blockmap to the same GitHub release as the mac artifacts, rewrite
   `release/win32-x86_64/latest.yml` and the `win32-x86_64` entry in
-  `docs/downloads.json`); `release.sh` stays bash/BSD-sed and runs on
-  macOS. A release that ships both platforms is two script runs against one tag/version.
+  `docs/downloads.json`). It is append-only: it requires the GitHub release
+  `v<VERSION>` to exist already (prepared by `release-start.sh` and cut by `release.sh`,
+  both bash/BSD-sed on macOS), a clean working tree, and the checkout on `main` (the feed
+  it pushes is served from the `/main/` raw URL, §3), and never creates a release, tag,
+  or version bump. A release that ships every platform is one preparation plus one
+  script run per OS against one tag/version.
   The `docs/index.html` download CTA (§17) offers the Windows installer as a second,
   ghost-style button that reads the `win32-x86_64` entry of `docs/downloads.json`.
 
@@ -844,10 +849,12 @@ refuses, the package manager owns updates).
 - **Unsigned, by design:** Linux has no Gatekeeper or SmartScreen equivalent — the
   AppImage ships unsigned and no signing/notarization leg exists (the Windows sign-later
   principle, without the later).
-- **Release:** `linux-scripts/release.sh` publishes the Linux half of a release — the
-  Windows model (`release.ps1`), not the mac one: it never creates a release, tag, or
-  version bump. It requires the GitHub release `v<version>` to exist already (cut from
-  macOS by `release.sh`) and a clean working tree, runs the full test suite in the §15
+- **Release:** `linux-scripts/release.sh` publishes the Linux half of a release - the
+  append-only model shared with `release.ps1`, not the mac one: it never creates a
+  release, tag, or version bump. It requires the GitHub release `v<version>` to exist
+  already (prepared by `release-start.sh` and cut from macOS by `release.sh`), a clean
+  working tree, and the checkout on `main` (the feed it pushes is served from the
+  `/main/` raw URL, §3), runs the full test suite in the §15
   shift-left order (any failure aborts before anything is built or uploaded), builds via
   `linux-scripts/prod.sh`, uploads the AppImage to that release with
   `--clobber` (idempotent — a re-run replaces the asset; the block map rides embedded
@@ -858,7 +865,7 @@ refuses, the package manager owns updates).
   rewrite — plus the `linux-x86_64` entry in `docs/downloads.json`, and commits + pushes
   just those files. The feed is written only after the
   upload succeeds, so it never names a URL that is not live. A release that ships all
-  three platforms is three script runs against one tag/version.
+  three platforms is one preparation plus three script runs against one tag/version.
 
 **Headless mode (decided).** The backend and CLI must work with no GUI ever launched — the §20
 CLI is enabled, so the full surface below is live:

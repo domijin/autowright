@@ -146,9 +146,9 @@ as ANSI and fails to parse the scripts' non-ASCII result lines); and the §17
 `docs/CHANGELOG.md` carries a `## v<version> - <date>` entry for the current `VERSION` with its
 version headings in strictly descending semver order (newest first, no duplicates). The
 changelog guard deliberately checks "an entry exists", not "the top entry matches":
-notes for the *next* version may be written and committed ahead of running `release.sh`
-(its §18 preflight requires exactly that), and a pre-written newer entry above the
-current version's is legitimate.
+notes for the *next* version are written and committed ahead of running `release.sh`
+(the §18 `release-start.sh` step produces exactly that), and a pre-written newer entry
+above the current version's is legitimate.
 
 The same file guards the §3 update feeds under `release/` and the §17
 `docs/downloads.json` index, which nothing else reads at test time - their only real
@@ -162,18 +162,19 @@ actually open (`.zip` for the mac electron-updater/Squirrel path, `.exe` for the
 updater, `.AppImage` for the AppImage updater); no feed is *newer* than `VERSION` (it
 would name a release that does not exist - the reverse is legitimate and deliberately
 unflagged, since each leg rewrites only its own feed); at least one `darwin-<arch>` feed
-equals the newest *published* release (`release.sh` bumps `VERSION` and rewrites the mac
-feed in one run, so a lagging mac feed means a lost feed write or push - recover with
-`release.sh --feed`). Published is decided by the release tag, not by `VERSION` alone:
+equals the newest *published* release (`release.sh` cuts the release `VERSION` names and
+rewrites the mac feed in one run, so a lagging mac feed means a lost feed write or push -
+recover with `release.sh --feed`). Published is decided by the release tag, not by `VERSION` alone:
 the last committed `VERSION` (`git show HEAD:VERSION`, falling back to the file outside a
 git checkout) counts as published once its `v<version>` tag exists in the local checkout,
-and the feed must then equal it; while that tag is absent the release may not have been
-cut yet - `release.sh <version>` runs this very suite before the GitHub release exists and
-writes the feed only once it is live, and a bump committed ahead of its release is the
-same picture - so the feed may equal either that `VERSION` or the previous release, the
+and the feed must then equal it; while that tag is absent the release has not been cut
+yet - `release-start.sh` bumps `VERSION` and the developer commits it ahead of the
+release, and `release.sh` then runs this very suite before the GitHub release exists and
+writes the feed only once it is live - so the feed may equal either that `VERSION` or
+the previous release, the
 newest `v*` tag reachable from `HEAD` (`git describe --tags --abbrev=0 --match 'v*'`).
-The working-tree `VERSION` is never compared: mid-release it legitimately runs ahead of
-every feed. Until the v0.6.1 release first writes `latest-mac.yml`, the legacy feed
+The working-tree `VERSION` is never compared: between `release-start.sh` and the commit
+it legitimately runs ahead of every feed. Until the v0.6.1 release first writes `latest-mac.yml`, the legacy feed
 satisfies this check;
 each `docs/downloads.json` entry names a release-download URL embedding its own version
 and, where that key's feed exists, matches the feed's version - for `win32`/`linux` it
@@ -387,65 +388,87 @@ Dev workflow:
   (`backend/build/`, `backend/*.egg-info/`) is deleted immediately afterwards, because a
   stale full copy of the package tree there is invisible to the running app yet poisons
   every repo-wide search.
-- **`./scripts/release.sh <version>`** — cuts a release end to end: sets the app version,
-  builds the distributable, and publishes it as a GitHub release. Steps, in order:
-  refuses if the working tree is dirty (the release commit must contain only the version
-  bump), if the checkout is not on `main` (the §3 feed URLs are pinned to
-  `raw.githubusercontent.com/…/main/release/…`, so a feed committed on any other branch is
-  never the file installed apps read - the same on-main rule the tap preflight applies to
-  the `homebrew-tap` checkout, applied to this repo), if the tag `v<version>` already
-  exists (checked locally and on `origin`, before
-  anything is modified), or if the
-  `docs/CHANGELOG.md` (§17) has no `## v<version>` section heading for the version
-  being released — the §9.4 What's-new notes are written before the release is cut, never
-  after. That last refusal is not a bare error: `release.sh` depends on
-  `update-changelog.sh` (below) for it, running `update-changelog.sh <version>` to draft
-  the missing section into the changelog (the tree was just proven clean, so the draft is
-  the only change it leaves behind), printing the draft, and exiting non-zero with the
-  instruction to curate the section by hand, commit it, and re-run `release.sh <version>`.
-  A release is therefore never cut without notes, and never cut on the same run that
-  drafted them - the curation step is deliberately a separate invocation. If the draft
-  itself fails (last tag not fetched, `claude` CLI missing, no changes since the last
-  release), its own message is the one shown and the release stops there; validates the
-  argument (semver: `MAJOR.MINOR.PATCH`, optional
-  pre-release suffix); writes it to the repo-root `VERSION` file (the single version source, §17) and
-  syncs it into the three version sites: `app/package.json` (`"version"`),
-  `backend/pyproject.toml` (`version =`), and `backend/autowright/__init__.py`
-  (`__version__`); runs the full test suite before anything is committed or built
-  (`build.sh --deps` for the venv/node_modules, then `scripts/tests/fast.sh`, then
-  `pytest -m integration`, then `npm run test:e2e` — §15 shift-left order; any failure
-  aborts the release with the bump uncommitted); commits the bump via `scripts/commit.sh`
-  (AI-generated message; skipped when the version is unchanged) and pushes; invokes
-  `prod.sh` to produce the versioned `.app` + DMG + update zip (which re-checks the
-  artifacts itself: the
-  in-bundle import smoke test and the Gatekeeper assessment);
-  then runs `gh release create v<version> <DMG> <zip> --title "v<version>"
-  --notes-file <notes>` to tag the pushed commit and upload the DMG (the §3 install
-  artifact) and the zip (the §3 update artifact). The release body is the curated
-  `docs/CHANGELOG.md` section for the version, never GitHub's commit-derived
-  auto-notes: `<notes>` is a temp file holding the lines below the `## v<version>`
+- **`./scripts/release-start.sh <version>`** - prepares the repo for a release, the first
+  of the three steps a release is (`release-start.sh` prepares, the developer curates and
+  commits, `release.sh` cuts; the Windows and Linux legs then append their artifacts).
+  Validates the argument (semver `MAJOR.MINOR.PATCH`, optional pre-release suffix; a
+  leading `v` is accepted and stripped) and requires it to order semver-higher than the
+  current `VERSION` (numeric base first; a release beats its own pre-releases;
+  pre-releases compare lexically - the same rule `release.sh` re-applies before cutting).
+  The current `VERSION` must itself be released already: its `v<VERSION>` tag must exist
+  after a `git fetch --tags` (`gh release create` tags on GitHub only, so the local
+  checkout learns of release tags through that fetch), otherwise the script refuses with
+  the hint to cut it with `release.sh` first - a version whose release never went out is
+  re-cut, never skipped over. It also refuses when the tag `v<version>` already exists.
+  Then, in order: drafts the `## v<version> - <today>` section of `docs/CHANGELOG.md`
+  (§17) - it collects the `v<VERSION>..HEAD` commit subjects and bodies plus the range
+  diffstat, and a porcelain summary and diffstat of uncommitted work (release notes are
+  drafted while the release's changes often still sit uncommitted, and a dirty tree is
+  allowed here for exactly that reason), each block size-capped, and asks Claude (Opus 5,
+  `claude --model claude-opus-5 -p`, prompt on stdin) for the user-facing bullet list:
+  the two newest changelog sections ride along as voice examples, and the prompt demands
+  `- ` bullet lines only, written for users (never a commit dump, internal-only changes
+  skipped, plain hyphens, no em dash). The reply is cleaned (code-fence and blank lines
+  dropped, any em dash replaced with a plain hyphen) and rejected, with the raw output
+  printed, unless every remaining line is a `- ` bullet; on success the section is
+  inserted directly above the previous newest section and printed. A section that
+  already exists for `<version>` is kept untouched (so a re-run never overwrites curated
+  notes). Only then writes `<version>` to the repo-root `VERSION` file (the single
+  version source, §17) and syncs it into the three version sites via `release.sh --sync`
+  - the draft is the failure-prone step, so a failed run leaves the version untouched.
+  Nothing is committed: the script ends by printing the next steps (curate the section,
+  commit with `commit.sh`, run `release.sh`). Fails if the `claude` CLI is missing,
+  there are no changes since `v<VERSION>`, or the model returns nothing usable.
+  Developer-only: agents never run this script (`.claude/CLAUDE.md` forbids it).
+- **`./scripts/release.sh`** - cuts the release the committed `VERSION` names, end to end:
+  builds the distributable and publishes it as a GitHub release. Takes no version - the
+  version was chosen by `release-start.sh`; an argument that looks like one is refused
+  with the hint to run `release-start.sh <version>` instead. Preflight, all before
+  anything is modified: refuses if the working tree is dirty (the release preparation
+  must be committed first - the release is cut from a commit, and the feed commit lands
+  on top of it), if the checkout is not on `main` (the §3 feed URLs are pinned to
+  `raw.githubusercontent.com/…/main/release/…`, so a feed committed on any other branch
+  is never the file installed apps read - the same on-main rule the tap preflight applies
+  to the `homebrew-tap` checkout, applied to this repo), if the tag `v<VERSION>` already
+  exists (checked locally and on `origin`), if `VERSION` does not order semver-higher
+  than the newest `v*` tag reachable from `HEAD` (after a tag fetch - the previous
+  release), if the three version sites do not match `VERSION` (the `--check` gate; a
+  mismatch means the `release-start.sh` sync was never committed), or if
+  `docs/CHANGELOG.md` (§17) has no `## v<VERSION>` section or the section's body is
+  empty - the §9.4 What's-new notes are written and committed before the release is cut,
+  never after, and `release.sh` never drafts them itself: the hint names
+  `release-start.sh`. The `homebrew-tap` preflight (below) runs last. Then: runs the
+  full test suite (`build.sh --deps` for the venv/node_modules, then
+  `scripts/tests/fast.sh`, then `pytest -m integration`, then `npm run test:e2e` - §15
+  shift-left order; any failure aborts the release before anything is pushed or built);
+  pushes `HEAD` to `origin` (the release tags the pushed commit; nothing is committed
+  here - the tree was proven clean); invokes `prod.sh` to produce the versioned `.app` +
+  DMG + update zip (which re-checks the artifacts itself: the in-bundle import smoke test
+  and the Gatekeeper assessment); then runs `gh release create v<VERSION> <DMG> <zip>
+  --title "v<VERSION>" --notes-file <notes>` to tag the pushed commit and upload the DMG
+  (the §3 install artifact) and the zip (the §3 update artifact). The release body is the
+  curated `docs/CHANGELOG.md` section for the version, never GitHub's commit-derived
+  auto-notes: `<notes>` is a temp file holding the lines below the `## v<VERSION>`
   heading up to the next `## ` heading (or end of file), leading and trailing blank
   lines trimmed, so the GitHub release page, the §9.4 What's-new modal, and the file on
-  GitHub all show the same words. A section whose body is empty (heading only) is
-  refused before the release is created, with the bump already committed and pushed but
-  no tag cut, so the notes can be filled in and the same version re-run;
-  then rewrites the built arch's update feed (`release/darwin-<arch>/latest-mac.yml`, §3 —
+  GitHub all show the same words;
+  then rewrites the built arch's update feed (`release/darwin-<arch>/latest-mac.yml`, §3 -
   the zip's release download URL plus its base64 sha512 and byte size, computed from the
   built zip) and its
-  `darwin-<arch>` entry in the §17 `docs/downloads.json` download index (the DMG URL) —
+  `darwin-<arch>` entry in the §17 `docs/downloads.json` download index (the DMG URL) -
   plus, exactly when the version being released is `0.6.1`, the one-time §3 legacy-bridge
   rewrite of `release/darwin-<arch>/feed.json` to point stranded 0.6.0 installs at the
-  0.6.1 DMG (any other version leaves `feed.json` untouched, frozen) — and commits +
+  0.6.1 DMG (any other version leaves `feed.json` untouched, frozen) - and commits +
   pushes them with a plain git commit; finally updates the §3 Homebrew cask in the separate
   `homebrew-tap` repository and pushes it to that repo's `main`. Requires the `gh` CLI,
   authenticated (`gh auth login`); fails with a hint otherwise. Files are rewritten only
   when their version actually differs, so an unchanged `pyproject.toml` mtime never
   churns the `.backend-stamp` dependency re-install. The version-site rewrites probe the
-  sed dialect once (GNU `-i` vs BSD `-i ''`), so `--sync`/`--check` — and therefore
-  `build.sh` — run on Linux as well as macOS; the release flow itself stays macOS-only.
-  Modes (version-only — no build, no
-  git/GitHub actions): **`--sync`** rewrites the three sites from `VERSION` without
-  taking a new version (what `build.sh` runs); **`--check`** verifies all three match
+  sed dialect once (GNU `-i` vs BSD `-i ''`), so `--sync`/`--check` - and therefore
+  `build.sh` - run on Linux as well as macOS; the release flow itself stays macOS-only.
+  Modes (version-only - no build, no
+  git/GitHub actions): **`--sync`** rewrites the three sites from `VERSION` (what
+  `build.sh` and `release-start.sh` run); **`--check`** verifies all three match
   `VERSION` and exits non-zero listing every mismatch (what `prod.sh` runs).
   - **`--feed` (recovery).** Sibling of `--cask`, for the other half of the post-release
     tail: it re-runs only the feed step - rewrite `release/darwin-<arch>/latest-mac.yml`
@@ -518,20 +541,25 @@ Dev workflow:
   `build/linux/Autowright-<version>-linux-x86_64.AppImage`, unsigned by design (§3),
   plus `latest-linux.yml` (the §3 Linux update feed; the script verifies both exist —
   the block map is embedded in the AppImage itself, §3, never a separate artifact).
-- **`./linux-scripts/release.sh`** — the Linux release half (bash; §17 `linux-scripts/`, §3
-  Linux packaging block), modeled on `release.ps1` rather than `release.sh`: it never
-  creates a release, tag, or version bump — those stay with `release.sh` on macOS. Steps,
-  in order: requires an authenticated `gh`, an existing GitHub release `v<VERSION>` (fails
-  with the cut-it-from-macOS hint otherwise), and a clean working tree; runs the full test
+- **`./linux-scripts/release.sh`** - the Linux release half (bash; §17 `linux-scripts/`, §3
+  Linux packaging block), the append-only model shared with `release.ps1`: it never
+  creates a release, tag, or version bump - the version is prepared by
+  `release-start.sh` and the release cut by `release.sh`, both on macOS; this leg only
+  adds the Linux artifact to the release those produced. Steps,
+  in order: requires an authenticated `gh`, an existing GitHub release `v<VERSION>` for
+  the repo-root `VERSION` (fails with the cut-it-from-macOS hint otherwise), a clean
+  working tree, and the checkout on `main` (the feed it pushes is fetched from the
+  `/main/` raw URL, §3 - a feed committed elsewhere is never the file installed apps
+  read); runs the full test
   suite in the §15 shift-left order (`build.sh --deps`, `scripts/tests/fast.sh`,
-  `pytest -m integration`, `npm run test:e2e` — the same suite `release.sh` runs; any
+  `pytest -m integration`, `npm run test:e2e` - the same suite `release.sh` runs; any
   failure aborts before anything is built or uploaded); builds the AppImage via
   `linux-scripts/prod.sh` (which re-checks the three-site version gate); uploads the
   AppImage to the
-  existing release with `gh release upload --clobber` (idempotent — a re-run replaces the
+  existing release with `gh release upload --clobber` (idempotent - a re-run replaces the
   asset; the block map rides embedded in the AppImage, §3); then rewrites `release/linux-x86_64/latest-linux.yml` from the build
-  output — the bare artifact name replaced with the released binary's download URL, the
-  `release.ps1` rewrite in sed — plus the `linux-x86_64` entry in the §17
+  output - the bare artifact name replaced with the released binary's download URL, the
+  `release.ps1` rewrite in sed - plus the `linux-x86_64` entry in the §17
   `docs/downloads.json` download index, and commits + pushes just those files (§3:
   written only after the upload, so the feed never names a URL that is not live).
 - **`./scripts/dev.sh`** — fastest dev loop, with hot reloading: invokes `build.sh --deps` only
@@ -738,27 +766,3 @@ Dev workflow:
   empty message, does not push, developer-only — mapped per-OS: the prompt goes to
   `claude -p` on **stdin** instead of as an argument — Linux caps a single argv string at
   `MAX_ARG_STRLEN` (128 KiB), which a real diff overflows.
-- **`./scripts/update-changelog.sh <version>`**: drafts the §17 `docs/CHANGELOG.md` section for
-  `<version>` (a leading `v` is accepted and stripped; the version must match the release
-  shape `MAJOR.MINOR.PATCH[-prerelease]` and order semver-higher than the last release,
-  same ordering rule as `release.sh`). The last released version is the newest `## v`
-  heading in the changelog; its `v<last>` git tag must exist (fix hint: `git fetch
-  --tags`), and the script refuses a version that already has a section. It collects the
-  `v<last>..HEAD` commit subjects and bodies plus the range diffstat, and a porcelain
-  summary and diffstat of uncommitted work (release notes are drafted while the release's
-  changes often still sit uncommitted), each block size-capped, and asks Claude (Opus 5,
-  `claude --model claude-opus-5 -p`, prompt on stdin) for the user-facing bullet list:
-  the two newest changelog sections ride along as voice examples, and the prompt demands
-  `- ` bullet lines only, written for users (never a commit dump, internal-only changes
-  skipped, plain hyphens, no em dash). The reply is cleaned (code-fence and blank lines
-  dropped, any em dash replaced with a plain hyphen) and rejected, with the raw output
-  printed, unless every remaining line is a `- ` bullet. On success the new
-  `## v<version> - <today>` section is inserted directly above the previous newest
-  section and printed. The result is a draft: the developer curates it by hand before
-  `release.sh` cuts the version (its §17 changelog gate and the §15 drift guards still
-  apply unchanged). Run by hand ahead of a release, or by `release.sh <version>` itself
-  when its changelog gate finds no section for the version (above) - the same script
-  either way, so both entry points draft identically. Fails if the `claude` CLI is missing, the changelog has no `## v`
-  heading, there are no changes since `v<last>`, or the model returns nothing usable.
-  Developer-only: agents never run this script (`.claude/CLAUDE.md` forbids it).
-

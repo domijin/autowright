@@ -318,13 +318,15 @@ migrate-on-load migration so data written by released versions keeps loading (§
   (§14) — invoked from `app/` as `./node_modules/.bin/electron ../scripts/gen_icon.cjs`;
   `commit.sh` stages all uncommitted changes, generates a commit message via
   `claude --model claude-opus-5 -p` from the staged diff, and commits;
-  `update-changelog.sh` drafts the next `docs/CHANGELOG.md` section for a given version
+  `release-start.sh <version>` prepares the repo for a release: requires the version to
+  order semver-higher than the released one, drafts the next `docs/CHANGELOG.md` section
   from the git history since the last released tag via `claude --model claude-opus-5 -p`,
-  §18;
-  `release.sh` sets the app version from the repo-root `VERSION` file, invokes
-  `prod.sh` to build the release distributable, publishes the DMG (install artifact) and
-  the update zip as a
-  GitHub release via `gh`, rewrites the §3 update feed under the repo-root `release/`
+  then writes the repo-root `VERSION` file and syncs the three version sites - nothing
+  committed, §18;
+  `release.sh` cuts the release the committed `VERSION` names: invokes
+  `prod.sh` to build the release distributable, creates the GitHub release via `gh` with
+  the changelog section as its notes and the DMG (install artifact) plus the update zip
+  attached, rewrites the §3 update feed under the repo-root `release/`
   and the built arch's entry in the §17 `docs/downloads.json` distributable index, and
   last publishes the §3 Homebrew cask to the separate `homebrew-tap` repository, §18;
   `tests/fast.sh` runs the cheap test tiers cheapest-first (§15 shift-left order), §18;
@@ -582,10 +584,11 @@ migrate-on-load migration so data written by released versions keeps loading (§
   development). Not part of the app build and not used by anything in the repo — the real backend
   package is `backend/`; never install `autowright` from PyPI. Uploaded by the developer via
   `scripts/pip-release.sh` (§18).
-- `VERSION` — single source of truth for the app version (one line, semver). Synced into
-  `app/package.json`, `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
-  `scripts/release.sh` (§18); `build.sh` re-syncs on every build and `prod.sh` refuses to
-  build on mismatch.
+- `VERSION` — single source of truth for the app version (one line, semver). Bumped only
+  by `scripts/release-start.sh` (§18), never by hand; synced into `app/package.json`,
+  `backend/pyproject.toml`, and `backend/autowright/__init__.py` by
+  `scripts/release.sh --sync` (§18); `build.sh` re-syncs on every build and `prod.sh`
+  refuses to build on mismatch.
 - `README.md` — the top-level readme; §2's component list follows it.
 - `pytest.ini` — pytest configuration for the `tests/` suite.
 - `.design-sync/` — DesignSync workspace for UI component iteration: `config.json`,
@@ -606,11 +609,10 @@ migrate-on-load migration so data written by released versions keeps loading (§
   (raw import into the renderer bundle, same mechanism as `PRIVACY.md`), read by GitHub
   visitors in place, and published verbatim as the body of each version's GitHub release
   (`release.sh` passes the section to `gh release create --notes-file`, §18). Written by
-  the developer before each release
-  (`scripts/update-changelog.sh` drafts the section from the git history since the last
-  release for the developer to curate, §18): `release.sh`
-  refuses to cut a version that has no entry, and on that miss invokes
-  `update-changelog.sh` itself to draft the section before stopping (§18), and a §15 drift
+  the developer before each release: `scripts/release-start.sh` drafts the section from
+  the git history since the last release for the developer to curate and commit (§18),
+  `release.sh` refuses to cut a version whose entry is missing or empty and never drafts
+  one itself (§18), and a §15 drift
   guard requires an entry for the current `VERSION` and keeps the headings in descending
   semver order.
 - `docs/PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About

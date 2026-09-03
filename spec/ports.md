@@ -32,12 +32,6 @@ selectors, done via `app/e2e/harness.ts` `COPY`). Each remaining item moves into
   in-app (§9.4); needs a per-OS seam (the app's own store-name table is
   `paths.py:50-51`). The §9.4 legal-disclaimer copy in `spec/ui-shell.md` ("on this
   Mac") shares the problem.
-- **Release-script hygiene twins.** `windows-scripts/release.ps1:77-78` and
-  `linux-scripts/release.sh:77-78` both carry the stale "GitHub Pages serves the yml"
-  comment (feeds moved to raw in 0c4e6f5), and neither has the current-branch guard the
-  mac leg has (`scripts/release.sh` `require_main_branch`) while both push `origin HEAD`
-  with feed URLs hardcoding `/main/` — a release cut from a topic branch leaves raw
-  serving the old feed.
 - **`managedInstall` answers false on both** (`win32.cjs:122-124`, `linux.cjs:153-156`);
   the probe may later detect a distro-package / winget-style managed install.
 - **Release messaging: Windows is advertised as a regular build; Linux is advertised as

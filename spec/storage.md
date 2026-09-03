@@ -169,7 +169,7 @@ automations/<uuid>/
     test.yaml                  # §11 last-test summary: status (succeeded | failed),
                                # when (finished-at ISO timestamp), and execution_id —
                                # written when a test ends, wiped at each test start, deleted
-                               # with the draft; lets a resumed draft's Build & test panel show the
+                               # with the draft; lets a resumed draft's TEST card show the
                                # last outcome and link to the test's execution page. The
                                # test's workspace/result/logs live on its execution record
                                # (§4.5 test executions), not in this container.

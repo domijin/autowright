@@ -500,7 +500,7 @@ export function useDraftJob(d: DraftJobDeps) {
         }
         if (empty) chat.push(newEntry({ kind: 'error', text: 'The agent returned an empty response.' }))
         // §11 action chaining: arm the sync/test pendings; the watcher
-        // effect (Build & test panel) fires them against fresh state.
+        // effect (TEST card) fires them against fresh state.
         if (willSync) next = { ...next, pendingSync: true }
         if (actions.test) next = { ...next, pendingTest: { values: actions.testValues ?? null } }
         return { ...next, chat }

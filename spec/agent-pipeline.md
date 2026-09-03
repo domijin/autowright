@@ -361,7 +361,7 @@ build in one turn);
 omit it when the user signals more changes are coming or asks for a spec-only edit
 ("don't build the steps yet", "first change X — I'll add more after") — a deferred
 build is never invisible: the §11 out-of-sync state, the rewrite entry's inline Sync
-now action, and the panel's Sync now button all remain. Request `test: true` only when
+now action, and the BUILD card's Sync now button all remain. Request `test: true` only when
 the user asks for a test or the change fixes a failed run and needs verifying — never
 speculatively. Stacked spec-only rewrites then build once at the end, instead of one
 steps build per message. Request `undo: true` only when the user explicitly asks to
@@ -437,7 +437,7 @@ chat job never touches the draft container, the dirty flag, or any stored file �
 editor applies the whole outcome (§11).
 
 **The sync call — build the steps** (mode `sync` — the §11 chained sync a chat response
-arms, the panel's Sync now, a repair-block apply: always against the provided spec — a
+arms, the BUILD card's Sync now, a repair-block apply: always against the provided spec — a
 `spec` in the §19 body wins over the stored version's). Prompt sections in order:
 
 1. `framework-instructions.md` (verbatim).

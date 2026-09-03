@@ -81,7 +81,7 @@ interface Model {
   // §19 lazy logs, per execution: logKey(step, attempt) → fetched lines,
   // extended live by matching exec.log events (deduped by sequence)
   execLogs: Record<string, Record<string, LogLine[]>>
-  // §11 test — the live test execution the editor's Build & test panel tracks.
+  // §11 test — the live test execution the editor's TEST card tracks.
   // Steps, status, and logs live on the ordinary exec record (executionFull[executionId],
   // kept fresh by exec.* events).
   test: { executionId: string } | null

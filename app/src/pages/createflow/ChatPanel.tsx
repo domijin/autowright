@@ -138,7 +138,7 @@ export interface ChatPanelProps {
   sendMessage: () => void
   undoDraft: () => void
   runSync: () => void
-  // §11 turn action row: starts a draft test through the Build & test panel —
+  // §11 turn action row: starts a draft test through the TEST card —
   // the same run as its Run test button
   runDraftTest: () => void
   // §11 turn action row: sends the canned analyze message — null while the

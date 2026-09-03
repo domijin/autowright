@@ -46,18 +46,25 @@ describe('edit draft e2e', () => {
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
     await page.getByTestId('test-draft-toggle').waitFor({ timeout: 10_000 })
 
-    // §11 draft test — the pristine draft is in sync, so the Build & test
-    // panel's Test executes v1's real steps on scratch memory. (The spec-edit
-    // path is exercised after the run — an out-of-sync draft can't be tested.)
+    // §11 draft test — the pristine draft is in sync, so the TEST card's Test
+    // draft opens the test-run modal, whose Run test executes v1's real steps
+    // on scratch memory. (The spec-edit path is exercised after the run — an
+    // out-of-sync draft can't be tested.)
     await page.getByTestId('test-draft-toggle').click()
     await page.getByRole('button', { name: 'Run test' }).click()
-    await page.getByText('Test succeeded — the memory copy was discarded.').waitFor({ timeout: 60_000 })
+    // the outcome lands in the modal footer and on the TEST card behind it
+    await page.getByText('Test succeeded — the memory copy was discarded.').first()
+      .waitFor({ timeout: 60_000 })
     // §11: the settled test also lands as a quiet system chip in the chat thread.
     await page.getByText('Test succeeded.', { exact: true }).waitFor()
     await shot(page, 'edit-draft-test.png')
+    // §11: closing never cancels a test — and nothing on the page below is
+    // clickable until the modal is gone.
+    await page.keyboard.press('Escape')
+    await page.getByTestId('test-modal').waitFor({ state: 'hidden', timeout: 10_000 })
 
-    // The test is a real execution record: View execution (inside the reopened setup
-    // section's run row) shows the step's log line.
+    // The test is a real execution record: Test draft reopens the modal on the
+    // settled run, whose View execution shows the step's log line.
     await page.getByTestId('test-draft-toggle').click()
     await page.getByRole('button', { name: 'View execution' }).click()
     await page.getByText('Draft test').waitFor({ timeout: 10_000 })
@@ -87,7 +94,7 @@ describe('edit draft e2e', () => {
     await specBox.fill(`${cur}\nDistinctive spec addendum e2e.`)
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await page.getByText('Distinctive spec addendum e2e.').waitFor({ timeout: 10_000 })
-    // §11 Build & test panel: out of sync locks the Test button behind a sync
+    // §11 BUILD and TEST cards: out of sync locks Test draft behind a sync
     await page.getByText(/these steps still match the old spec/).waitFor({ timeout: 10_000 })
     await page.getByText('Sync first — a test executes the steps as generated from the spec.').waitFor()
     expect(await page.getByTestId('test-draft-toggle').isDisabled()).toBe(true)

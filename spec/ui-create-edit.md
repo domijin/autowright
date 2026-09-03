@@ -258,17 +258,16 @@ applies unchanged; the chat pane never collapses.
     snapshot: a response that changed nothing offers no undo.
   - **Sync now** (`fa-rotate`) — while the workflow is dirty and out of sync, sync is
     not disabled, and no pending sync is armed; the same §8 sync call and gating as the
-    panel's button (this pill replaces the one the rewrite entry used to carry).
+    BUILD card's button (this pill replaces the one the rewrite entry used to carry).
   - **Test draft** (`fa-vial`) — while the workflow is in sync, steps exist, and
     nothing is drafting; it **starts a draft test immediately** — the same run the
-    panel's Run test starts, using the panel's current setup values (the seeded
-    values — drafted §8 `test_values` included — when the setup section was never
-    opened) — and scrolls the Build & test
-    panel into view, where the live test takes over as usual. Unlike the panel's
-    same-named disclosure toggle (which only opens the setup section), the pill runs
-    the test; the setup section stays where fine-tuning lives.
+    test-run modal's Run test starts, using the TEST card's current setup values (the
+    seeded values — drafted §8 `test_values` included — when the modal was never
+    opened) — and opens the test-run modal on the live run. Unlike the TEST card's
+    same-named launcher (which only opens the modal), the pill runs the test; the
+    modal's setup phase stays where fine-tuning lives.
   - **Analyze failure** (`fa-magnifying-glass`) — while the draft's tracked test
-    settled failed; sends the canned analyze chat message exactly like the panel's
+    settled failed; sends the canned analyze chat message exactly like the TEST card's
     button, with the same gating.
 - **Input:** pinned footer composer, two stacked rows. Top row: a full-width auto-growing
   textarea — the **ask-box pattern** referenced throughout this spec: sized to its
@@ -391,7 +390,7 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
     closes the group. The draft-undo anchor follows the flush: it re-anchors below
     the last flushed chip;
     `sync: true` arms a **pending sync**: a watcher fires it as soon as no
-    §8 job or draft test is running — immediately when the panel is idle (exactly as if
+    §8 job or draft test is running — immediately when nothing runs (exactly as if
     the user pressed Sync now), otherwise automatically the moment the running work
     finishes. While the user is viewing an old version the watcher instead clears both
     pendings (sync and test) **silently** — no system entry, no toast; the discard is
@@ -399,8 +398,8 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
     `test: true` arms a **pending test** that starts the moment the workflow is in sync —
     immediately when it already is, after the chained sync succeeds otherwise (`test: true`
     implies the sync when the workflow is out of sync, §8) — using `test_values` as the
-    test's §19 `paramValues` (they also pre-fill the panel's expanded test-value editors;
-    absent `test_values`, the test runs on the panel's seeded values like the
+    test's §19 `paramValues` (they also pre-fill the test-run modal's test-value editors;
+    absent `test_values`, the test runs on the TEST card's seeded values like the
     Test-the-draft pill — drafted §8 manifest `test_values` included);
     the pending test is dropped, with the system entry "Test skipped — the steps aren't in
     sync with the spec.", when the sync fails, blocks, or is
@@ -474,7 +473,7 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
   picks up exactly where it left off. Pressing **Esc**
   anywhere on the page fires the same cancel while a §8 job is in flight — it is a
   keyboard shortcut for this Cancel button, nothing more (it never cancels a draft test,
-  whose Cancel lives in the Build & test panel), and it yields to surfaces that own Esc
+  whose Cancel lives in the TEST card and the test-run modal), and it yields to surfaces that own Esc
   while open: the modal stack and the §9.3 developer log overlay. **Settles cancel;
   leaves don't:** Discard draft and Start over cancel an in-flight chat job (client-side,
   beside the §19 owner cancel), but merely leaving the editor — navigation anywhere,
@@ -491,7 +490,7 @@ prompt reverts as soon as any entry follows the question); while viewing an old 
   Cancel anywhere. The draft **test** is not a §8 job and never appears here: while a test
   is executing the input stays, disabled with the hint "Wait for the test to finish." (a
   rewrite would pull the workflow out from under the running test), and the test's live
-  controls (progress, Cancel, View execution) stay in the Build & test panel.
+  controls (progress, Cancel, Open test) stay in the TEST card and the test-run modal.
 - **Create empty state:** headline "What should Autowright do for you?" over the thread
   area, the sub-line "Describe the job in plain words. Your AI writes it as scripts — you
   review everything before it executes." beneath it, then an "OR START FROM AN EXAMPLE"
@@ -638,16 +637,16 @@ job and no separate drafting state — while the first turn runs:
   surface: the §8 stage labels with the activity feed beneath (recent §8 `events` as dim
   history over the live `detail` line), so a minutes-long call never looks stuck and web
   reads / retries stay visible. No detail (a non-streaming harness) leaves just the
-  stage label. The Build & test panel never moves during the first turn: the chat job,
-  the chained sync it arms, and the sync's landing all leave it in its single test zone
-  (a sync in flight or armed is never a panel state — Build & test panel below), so the
+  stage label. The BUILD and TEST cards never move during the first turn: the chat job,
+  the chained sync it arms, and the sync's landing all leave them in their in-sync rows
+  (a sync in flight or armed is never a card state — BUILD card and TEST card below), so the
   right column's spacing holds from send to done and "Syncing the workflow…" is read in
-  the thread, never in the panel.
+  the thread, never in the cards.
 - **Failures** — a `failed` job means a harness error or crash (§8: a validation
   double-failure never ends `failed` — it settles `blocked` with diagnosed blockers, handled
   under Blockers below). A failed chat job renders in the thread as a red-tinted error
   entry with the §8 failure message — the user resends or rephrases from the composer. A
-  failed chained sync leaves the landed spec with the workflow out of sync — the panel's
+  failed chained sync leaves the landed spec with the workflow out of sync — the BUILD card's
   Sync now rebuilds the steps (an empty-steps draft can always rebuild; never a dead end).
   The editor's job poll tolerates transient fetch errors: it keeps the job tracked
   and gives up (with the failure entry) only after three consecutive poll failures.
@@ -691,7 +690,7 @@ from the turn action row's pill styling) — a quiet **Dismiss** plus, by source
   in-editor spec under a `## Constraints & resolutions` section (created on first use,
   extended after), one bullet per blocker — "`reason` — `fix`" — then runs a §8 `sync`
   against the amended spec and the thread progress entry re-enters "Syncing the workflow"
-  (the panel keeps its test zone — a sync is never a panel state). The
+  (the BUILD card keeps its in-sync row — a sync is never a card state). The
   resolutions live in the spec document itself, so they survive later edits and syncs and
   version like any spec text. If the rebuild blocks again the new entry carries a muted
   "Previously resolved" list of this session's earlier resolutions, so a fix that didn't
@@ -713,7 +712,7 @@ Apply button remains useful until a sync lands.
 Dismiss collapses the entry to a one-line muted summary ("N blockers — dismissed";
 singular "1 blocker — dismissed"; led by a faint `fa-ban` glyph, left-aligned like all
 agent output) and, for
-sync blocks, leaves the workflow out of sync with the spec editable and the panel
+sync blocks, leaves the workflow out of sync with the spec editable and the BUILD card
 showing out of sync. A completed sync collapses any pending blockers entry the same way —
 its blockers describe steps that no longer exist. No automatic loop cap — the cycle is
 user-driven and Start over/Dismiss always exits.
@@ -777,8 +776,8 @@ shows: "An execution is happening right now on vN. Saving won't interrupt it —
 vN+1 takes over from the next execution (`<short label of the next trigger>`)." Sections (left column: spec, notes,
 agents, secrets, instructions, framework — the spec and the agent's working notes on top, the
 grant cards under them, the standing-rules cards last: build instructions second-last, the
-read-only framework reference closing the column; right column: the Build & test panel on top,
-then steps, triggers, parameters, concurrency, packages). Motion on this page follows §14: every collapsible card
+read-only framework reference closing the column; right column: the BUILD card, then the TEST
+card, then steps, triggers, parameters, concurrency, packages). Motion on this page follows §14: every collapsible card
 animates open/closed through the Collapse primitive — the body **and** the collapsed hint,
 which hand off as a crossfade per the §14 collapsible motion (content fades while the rows
 resize; open decelerates at `--t-enter`, close accelerates at `--t-exit`) — never clipped
@@ -831,7 +830,7 @@ editors enter with
   agent — the automation's agent, falling back to the default agent — receiving the
   in-editor draft and grants) replaces the spec and marks the workflow out of sync exactly
   like a manual spec edit (toast "Spec updated — the workflow is out of sync. Sync the steps
-  before saving."), and the Build & test panel's "Sync now" rebuilds the steps later; while
+  before saving."), and the BUILD card's "Sync now" rebuilds the steps later; while
   the chat job is in flight the Save hint shows its live §8 stage title ("Working on the
   request…" / "Updating the documents…"), and cancelling it
   from the composer's Cancel button leaves the draft untouched (toast "Edit stopped — the
@@ -968,7 +967,7 @@ editors enter with
   one document at a time — and the drafts behind them (`specText` / `instrDraft` /
   `notesDraft`) remain editor state, never serialized into the §4.4 draft.
 - **Dirty gating** — any spec/instruction/chat-rewrite change marks the workflow out of sync and
-  **blocks saving** until the Build & test panel's "Sync now" button makes one §8 `sync` call
+  **blocks saving** until the BUILD card's "Sync now" button makes one §8 `sync` call
   regenerating the steps ("Steps synced with the spec — review them, then save."). The
   out-of-sync state persists with the draft (§4.4 `outOfSync`) and is restored on resume —
   keeping a locked draft and reopening it must not unlock Save around the gate. Grant
@@ -994,9 +993,9 @@ editors enter with
   version is viewed (a settling test's run chip, flushed workflow receipts) stay in
   the thread when the user returns to the draft; a view switch never removes a
   shown block. Sync
-  state lives in the **Build & test panel** (its own section below) at the top of the right
+  state lives in the **BUILD card** (its own section below) at the top of the right
   column, **above** the Steps card rather than inside it, because a sync rewrites the steps and
-  the parameter definitions, not just the step list. Outside a sync the panel's sync button is disabled
+  the parameter definitions, not just the step list. Outside a sync the card's sync button is disabled
   (never hidden) while any other §8 job is in flight, while viewing an old
   version, while a draft test is executing (below), and while the steps list AND the spec
   are both empty — a spec-only draft (steps
@@ -1006,12 +1005,12 @@ editors enter with
   the spec Edit button and the thread's undo row, the chat input (its own busy hint above), the
   agent-enablement and secret-allowance checkbox rows (and the missing-secret add row and the
   Secrets card's New secret button), the
-  build-instructions Edit button, the Build & test panel's test-values editors and its Test
-  button, the version menu, the drafting-agent picker, and Discard draft / Start over. The only
+  build-instructions Edit button, the TEST card's Test draft button and the test-run modal's
+  test-value editors and Run test, the version menu, the drafting-agent picker, and Discard draft / Start over. The only
   live control is the running job's Cancel button (the composer's). **Rewrites
   lock while a test
   executes** — while a draft test is executing, every affordance that would rewrite the
-  workflow under the running test disables: the panel's sync button, the spec card's Edit,
+  workflow under the running test disables: the BUILD card's sync button, the spec card's Edit,
   the thread's undo row, the chat input, and the build-instructions Edit.
   Grant toggles, test-parameter editors, and navigation stay live — the test's inputs were
   snapshotted at start (a grant change surfaces through the ordinary out-of-sync state,
@@ -1019,9 +1018,9 @@ editors enter with
   45 % opacity, default cursor, no hover response. The step list dims to the same 45 % opacity
   whenever it can't be trusted as-is: while the workflow is out of sync, while a sync is
   rewriting the steps, and while an agent spec rewrite is in flight. The Steps card header carries no in-sync badge (no "in sync with
-  spec" check) — sync state lives only in the panel. The composer's
+  spec" check) — sync state lives only in the BUILD card. The composer's
   **Cancel** button cancels the in-flight sync (`DELETE /drafts/{jobId}`) no matter
-  how it was started (the panel, a repair-block apply, a chat-armed pending sync): the steps and spec
+  how it was started (the BUILD card, a repair-block apply, a chat-armed pending sync): the steps and spec
   are left untouched and the workflow returns to its pre-sync state, announced by a toast
   (never a system chip) — "Sync stopped — the workflow is still out of sync." when it was
   out of sync when the sync started, "Sync stopped — nothing changed." when it wasn't (an
@@ -1029,10 +1028,10 @@ editors enter with
   blockers entry (source: sync; Blockers above): its
   primary amends the in-editor spec (same `## Constraints & resolutions` rule) and
   repeats the sync; dismissing it leaves the workflow out of sync with
-  the panel still showing it. Disabled Save shows an amber hint ("Sync and review the steps before saving" /
+  the BUILD card still showing it. Disabled Save shows an amber hint ("Sync and review the steps before saving" /
   the running job's live §8 stage title —
   "Working on the request…" / "Updating the documents…" / "Syncing the workflow…"); saving is also
-  blocked while any §8 job is in flight, and the panel's sync button disables while one is.
+  blocked while any §8 job is in flight, and the BUILD card's sync button disables while one is.
   Disabling an enabled agent that steps still call locks saving
   through the derived grant gap above (toast "Steps X, Y are out of sync — `<agent>` is no
   longer available here. Re-enable it or sync the steps before saving."). The out-of-sync
@@ -1082,13 +1081,13 @@ editors enter with
   Footer: "Values
   aren't part of a version — set them on the automation page, or ask your AI here (staged
   values apply when you save). For a test, set
-  test-only values in the Build & test panel — or ask your AI, which can also change the
+  test-only values in the test-run modal — or ask your AI, which can also change the
   parameter definitions and set test values when it runs a test." (The AI changes
   definitions only through the spec + sync, and never sets a test trigger message — the
-  §8 actions carry `test_values` / `param_values`; the message mock stays a panel-only
+  §8 actions carry `test_values` / `param_values`; the message mock stays a modal-only
   input.)
   Value input lives on the §9.2 detail page
-  (§4.2 edit behaviors) and, test-only, in the Build & test panel at the top of the column.
+  (§4.2 edit behaviors) and, test-only, in the test-run modal opened from the TEST card.
   Empty state:
   "No settings needed — your AI didn't ask for any."
 - **CONCURRENCY** card — display-only in both modes, directly below the Parameters card: the
@@ -1251,88 +1250,91 @@ editors enter with
   `default-build-instructions.md` as the fallback pre-fill for the Build instructions card.
   Collapsed hint and footer copy: built-in instructions the AI reads before writing anything,
   word for word — they update with the app, nothing for the user to maintain.
-- **BUILD & TEST panel** — the top card of the right column, merging the workflow's sync
-  state (Dirty gating above) and the draft test into one build→test surface: sync, then
-  test, in one place. Same card background as the other cards (`--bg-card` /
-  `--border-card`); the panel never disappears — only its content changes with state.
-  **Posture: quiet when fine, loud only when blocking.** Chat is the primary way to build
-  and test — a chat message can request the sync and the test through the §8 actions — so
-  the panel stays a status surface with one-click escape hatches and shouts only when
-  saving is genuinely blocked. Concretely: the panel has **no green state** — an in-sync
-  workflow shows no indicator dot at all (the dot is amber while out of sync, absent
-  otherwise — never a spinner, never faint, and never green: a status that asks
-  nothing must not draw the eye), and at most one accent-primary button ever renders:
-  **Sync now** while out of sync. Every other panel button is a compact borderless **text
-  button** (the card-header treatment above — never a bordered or filled box): the state's
-  main actions (the Test draft setup toggle, the setup section's Run
-  test, a live test's Cancel) muted, every other action (View execution, Analyze failure,
-  Sync spec) faint — the test controls included: a failed test never blocks saving,
-  so testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
-  space runs out — a panel button is never clipped.
-  **Layout.** The header row holds only the `BUILD & TEST` eyebrow, never a button. In
-  state 1 (out of sync) a **build zone** renders below it:
-  the amber dot + status line, the explainer line beneath it indented to the status
-  text's left edge, and the accent-primary **Sync now** right-aligned at the zone's top —
-  disabled per Dirty gating, never hidden — with the **test
-  zone** under a hairline. In the in-sync states (2–4) there is no build zone and the
-  panel is a **single test zone** under the header hairline; sync access stays as a faint
-  **Sync spec** text button riding the test zone's action row (the same §8 `sync`
-  call on demand; disabled per Dirty gating — e.g. while a test executes — never hidden). The
-  test zone owns every test control — the test button never sits in the header: the test
-  button with its hint / outcome / progress and their action rows, laid out per state
-  below. Both zones sit on the card's single 18 px horizontal inset (§14). **A job in flight is never a
-  panel state** — neither a chat job nor a sync: the panel has no drafting state and no
-  syncing state. During a chat job it keeps its current state with its controls disabled
-  per the inputs lock; **while a sync runs or is armed** (a §8 `sync` job in flight
-  however started — Sync now, Sync spec, a repair-block apply, a chat-armed pending sync —
-  or a pending sync waiting to fire) the workflow **counts as in sync for the panel**:
-  the build zone does not render and the panel shows the in-sync test zone (states 2–4,
-  by the test's own state) with its controls disabled per the inputs lock. The sync's
-  live surface is the thread progress entry alone — its "Syncing the workflow…" title,
-  the live `detail` line, and the event feed — with the **Cancel** in the composer
-  (cancel semantics under Dirty gating above). So a sync started from the in-sync test
-  zone (Sync spec, or the first turn's chained sync) never moves the panel at all, and
-  one started by Sync now trades the build zone for the test zone at the click, not at
-  the landing. When the sync fails, blocks, or is cancelled the workflow is out of sync
-  again and the build zone renders then. States, first match wins:
-  1. **Out of sync** (and no sync running or armed) — build zone: amber dot, the reason
-     line and saving-is-locked
-     explainer (Dirty gating above), primary **Sync now**; the test zone shows the test
-     button disabled beside the muted hint "Sync first — a test executes the steps as
-     generated from the spec." — a test always runs steps that match the spec, never stale
-     ones. Exception: while a test is still executing, its Cancel button renders in place
-     of the disabled test button — a live test is never left uncancellable.
-  2. **In sync, test executing** — the live status line, progress bar, and the action row
-     Cancel + the disabled faint **Sync spec** (below) + View execution; the test-setup
-     section stays hidden while the test executes.
-  3. **In sync, test settled** — the outcome line over the action row faint **Sync
-     spec** / **Test draft** and, on failure, **Analyze failure**, which sends
-     the canned analyze chat message (below). Test draft is the same setup toggle as
-     state 4 — reopening shows the values the last test used — and **View execution** lives
-     only inside the setup section's run row, not on the action row.
-  4. **In sync, never tested** — one action row: the faint **Sync spec** directly
-     beside the muted **Test draft** setup toggle — always side by side, nothing
-     between them — with the plain-words status-and-side-effects line — "In sync with
-     the spec. A test executes the real steps on this Mac — emails send, files move;
-     memory is a scratch copy." — wrapping below the buttons when space runs out (the
-     line keeps its wording while a sync runs — the panel is quiet; the thread says
-     what is happening).
-  The test-setup section (below) renders only in the in-sync states (2–4) and never
-  while a test is executing. **Run test** is additionally gated on steps existing and no
-  §8 job being in flight (inputs-lock above); the setup toggle disables under the same
-  inputs-lock. Both also disable while an old version is viewed (like the sync
-  button): an old version is never synced or tested.
+- **BUILD card and TEST card** — the top two cards of the right column, 14 px apart (the
+  §14 stacked-card gap), BUILD above TEST: build, then test, read top to bottom. They
+  replaced the earlier merged "BUILD & TEST" panel once the test run moved into the
+  test-run modal (below): with no live run surface left in the column, each card holds a
+  single-purpose status row, and one card per concern reads cleaner than two zones under
+  one eyebrow. Both use the §14 card-header idiom — the header row holds only the
+  eyebrow (`BUILD` / `TEST`), never a button — and neither card ever disappears; only its
+  body changes with state. **Posture: quiet when fine, loud only when blocking.** Chat is
+  the primary way to build and test — a chat message can request the sync and the test
+  through the §8 actions — so the cards stay status surfaces with one-click escape
+  hatches and shout only when saving is genuinely blocked. Concretely: **no green state**
+  in either card (an in-sync workflow shows no indicator dot at all — the dot is amber
+  while out of sync, absent otherwise — never a spinner, never faint, never green: a
+  status that asks nothing must not draw the eye), and at most one accent-primary button
+  across both cards: **Sync now** while out of sync. Every other card button is a compact
+  borderless **text button** (the card-header treatment above — never a bordered or filled
+  box): a state's main action (Test draft, Open test, a live test's Cancel) muted, every
+  other action (Sync spec, Analyze failure) faint — a failed test never blocks saving, so
+  testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
+  space runs out — a card button is never clipped. Both bodies sit on the card's single
+  18 px horizontal inset (§14). **A job in flight is never a card state** — neither a
+  chat job nor a sync: the cards have no drafting state and no syncing state. During a
+  chat job they keep their current state with their controls disabled per the inputs
+  lock; **while a sync runs or is armed** (a §8 `sync` job in flight however started —
+  Sync now, Sync spec, a repair-block apply, a chat-armed pending sync — or a pending sync
+  waiting to fire) the workflow **counts as in sync for both cards**: BUILD shows its
+  in-sync row and TEST its in-sync states, controls disabled per the inputs lock. The
+  sync's live surface is the thread progress entry alone — its "Syncing the workflow…"
+  title, the live `detail` line, and the event feed — with the **Cancel** in the composer
+  (cancel semantics under Dirty gating above). So a sync started from the in-sync row
+  (Sync spec, or the first turn's chained sync) never moves either card, and one started
+  by Sync now trades the out-of-sync row for the in-sync row at the click, not at the
+  landing. When the sync fails, blocks, or is cancelled the workflow is out of sync again
+  and the out-of-sync row renders then.
+  **BUILD card** — the workflow's sync state, two rows, first match wins:
+  1. **Out of sync** (and no sync running or armed): the amber dot + status line naming
+     the cause (Dirty gating above: "The workflow is out of sync — these steps still match
+     the old spec." / "… — steps call an agent that isn't enabled." / "… — steps use a
+     secret that isn't allowed."), the saving-is-locked explainer beneath it indented to
+     the status text's left edge ("Sync the steps to the new spec, then review them.
+     Saving is locked until you do — nothing ships unreviewed." / "Re-enable the agent, or
+     sync the steps so they only call agents available here. Saving is locked until you
+     do." / "Re-allow the secret, or sync the steps so they only use secrets allowed here.
+     Saving is locked until you do."), and the accent-primary **Sync now** right-aligned
+     at the row's top — disabled per Dirty gating, never hidden.
+  2. **In sync** (or a sync running or armed): the muted status line "In sync with the
+     spec." — no dot — with the faint **Sync spec** text button right-aligned on the same
+     row (the same §8 `sync` call on demand; disabled per Dirty gating — e.g. while a test
+     executes — never hidden). The line keeps its wording while a sync runs — the card is
+     quiet; the thread says what is happening.
+  **TEST card** — the draft test's launcher and last outcome; the run itself lives in the
+  test-run modal. Body: a status block over an action row, states first match wins:
+  1. **Test executing** (a tracked live test, however started — also while the workflow
+     is out of sync: a live test is never left uncancellable): the live status line
+     (spinner + "Executing — step 2 of 5 · <step name>"), a progress bar (terminal steps
+     over total), and the action row muted **Open test** (opens the modal on the live run)
+     + muted **Cancel**.
+  2. **Out of sync** (BUILD shows its out-of-sync row): the disabled muted **Test draft**
+     beside the muted hint "Sync first — a test executes the steps as generated from the
+     spec." — a test always runs steps that match the spec, never stale ones.
+  3. **Test settled** (a tracked record): the outcome line ("Test succeeded — the memory
+     copy was discarded." green / "Test failed." amber / "Test cancelled." faint) over the
+     action row muted **Test draft** (opens the modal on the settled run) and, on failure,
+     faint **Analyze failure** (sends the canned analyze chat message, below).
+  4. **Last test** (a resumed draft's persisted summary, below, with no tracked record):
+     "Last test succeeded — <when>." green / "Last test failed — <when>." amber, over
+     **Test draft** — which opens the modal on that run while its record still exists and
+     on the setup phase otherwise.
+  5. **Never tested**: **Test draft** beside the muted side-effects line "A test executes
+     the real steps on this Mac — emails send, files move; memory is a scratch copy."
+     (wrapping below the button when space runs out).
+  Test draft never starts a test — it opens the modal; only the modal's Run test does.
+  It disables under the inputs lock (a §8 job in flight), while an old version is viewed
+  (like the sync button: an old version is never synced or tested), and while the draft
+  has no steps. Open test and Cancel stay live under every lock.
   **Test** — executes the draft's **real steps** as a **test execution record** (§4.5:
   `test: true`, `versionLabel: "Test"`, `trigger: "Test"`) through the exact engine path a real
   execution takes (there is no simulation mode): the record and its `steps/` (the sent
   draft's scripts), `workspace/`, `result/`, and per-step-attempt logs all live under
   `executions/<uuid>/`, progress streams over the ordinary `execution.*` WS events, and the
-  result, failure diagnostics, and secret redaction work exactly as in §7. The panel's
-  setup toggle always reads **"Test draft"** — the label never changes once a test
-  outcome exists (a live test shows Cancel in its place) — and the setup section's run
-  button reads
-  **"Run test"** — never "Execute", which is reserved for real
-  executions (§9.2 "Execute now", §7 "Execute again"). A test uses: in-editor param
+  result, failure diagnostics, and secret redaction work exactly as in §7. The launcher
+  always reads **"Test draft"** — the label never changes once a test outcome exists (a
+  live test shows Open test + Cancel in its place) — and the modal's run button reads
+  **"Run test"** — never "Execute", which is reserved for real executions (§9.2 "Execute
+  now", §7 "Execute again"). A test uses: in-editor param
   values and grants (never the stored automation's), and **scratch memory** — copied to a
   temp dir from the draft container's `memory/` when it exists (edit mode falls back to
   the automation's memory dir; create mode to empty) and discarded when the test ends, so
@@ -1356,96 +1358,135 @@ editors enter with
   client-side too (Discard draft / Start over — belt-and-braces beside the server-side
   owner cancel; merely leaving the page cancels nothing, §19 background continuation).
   Deleting the automation deletes them too.
-  **Test setup section (create and edit mode):** the test button (**Test draft**)
-  is a **disclosure toggle**, not the run trigger — it never starts a
-  test. It carries a caret (pointing left collapsed, down expanded — the §9.2 step-row
-  caret language) and expands the test-setup section **below** the action row, opened by
-  a dim hairline (the zone's top hairline stays the only full divider). The section
-  shows **every test option at once** — no nested toggles, nothing behind a second
-  click:
-  - The **run row opens the section** — first, above the option sub-blocks, so it is
-    never buried under a long param list: the muted **Run test** button — the only
-    control that starts a test — and, when a test record exists, the faint **View
-    execution** beside it (the settled states' only View-execution home — the action
-    rows never carry it), over the this-test-only note, worded to what the draft has — "Values
-    and the message apply to this test only — nothing is saved." (params and message
-    triggers both), "These values apply to this test only — nothing is saved."
-    (params only), "The message applies to this test only — nothing is saved."
-    (message triggers only) — and omitted entirely when the draft has neither.
-  - When the draft has params: the `PARAMETER VALUES · THIS TEST ONLY` eyebrow, then one
-    editor per param (§4.2 kinds), prefilled in edit mode with the automation's current
-    values (draft default when a param is new) and in create mode with the draft
-    defaults — and, over that base in both modes, the draft's **drafted test values**
-    (the §8 sync-call manifest `test_values`, riding the sync payload as
-    `testValues`): the agent that just built the steps entered them, so they are the
-    freshest signal, and the user edits them freely like any prefill. The values ride
-    the §19 `paramValues` body field and apply to this test
-    only — nothing is stored, and the read-only Parameters card is untouched. Untouched
-    prefills send the same values a closed section would use — the seeded values above
-    (stored values / draft defaults, drafted test values on top), exactly like
-    executing the draft.
-    **Drafted test values are draft state:** kept on the editor's working copy, replaced
-    whenever a later sync payload carries a `testValues` map (kept when it
-    doesn't — a name no current param matches simply seeds nothing), covered by the
-    Draft-undo snapshot, persisted with the draft as the §4.4 draft-only `test_values`
-    key (a kept draft resumes with them), and gone when the draft settles — they ride
-    the draft, never the automation.
-  - When the editor's trigger list (the TRIGGERS card list) holds a message trigger
-    (§4.3 discord/imessage, `enabled` state irrelevant): the `TRIGGER MESSAGE · THIS TEST
-    ONLY` eyebrow, a trigger picker when the list holds several message triggers (the
-    §4.3 long labels; single-trigger lists skip the picker), a **From** field (prefilled
-    with the trigger's `from` for iMessage, "Test" for Discord; switching the picked
-    trigger re-prefills it), and a **Message** text field (empty, placeholder-hinted).
-    The mock rides the §19 `triggerMock` body field **only when the message text is
-    nonempty** — left empty the test runs without a payload; nothing is ever stored, and
-    the trigger list is untouched. The sub-section's footer says so and names the reply
-    behavior plainly: applies to this test only; a step's `reply()` posts to the
-    **real** Discord channel, and an iMessage reply can't send from a mocked message
-    (§6.1). The built §4.5 payload is snapshotted on the test record like a real
-    firing's, so the test's execution page shows the message and sender like any message
-    execution's; the record's trigger label stays "Test".
-  Clicking the toggle again collapses the section; starting a test collapses it too
-  (its inputs were snapshotted), and it stays hidden while the test executes. The
-  entered values survive a collapse — reopening shows them again; seeding happens only
-  when the section opens without prior values. A change to the draft's param
-  definitions or trigger list collapses the section and drops its values. A chat-armed
-  test with values (§8 actions) pre-fills the param editors, so reopening the setup
-  shows what ran. The resolved values are snapshotted on the test record, so its execution
-  page shows them like any execution's. Side effects outside memory are real (emails
-  send, files move, notifications post per settings) and the card says so plainly.
-  **The panel stays compact — status + progress, no logs:** while the test executes it
-  shows a status line ("Executing — step 2 of 5 · <step name>"), a progress bar (terminal
-  steps over total), and a **"View execution"** button opening the test's §7 execution page, where
-  the live step timeline, streaming logs, and (when finished) the full result views are the
-  ordinary execution-page surfaces — one run UI everywhere instead of a second, smaller one
-  in the panel. When the test finishes the panel shows the outcome line ("Test succeeded —
-  the memory copy was discarded." green / "Test failed." amber / "Test cancelled." faint);
-  View execution then lives only in the setup section's run row. Navigating
-  away from the editor no longer cancels a live test — it is a real record, visible and
-  cancellable from its execution page; re-entering the editor re-attaches the card to a
-  still-executing test. **The outcome is never thrown away with the editing session:** a
-  finished test writes the last-test summary `test.yaml` (§5 — status succeeded | failed,
-  finished-at, and the test execution's id) into the draft container, wiped at the next test
-  start and deleted with the draft. It rides the draft payload as `test` ({ status, when:
-  §4.1 started-label, executionId }) — on the automation's `draft` object and on `GET /draft/pending` —
-  and a resumed draft's panel renders it in place of the never-tested row: a status line
-  ("Last test succeeded — <when>." green / "Last test failed — <when>." amber); the setup
-  section's run row shows View execution while the record still exists (retention may outlive
-  it — the button hides when the record is gone). A live test always
-  takes over the panel. **When a test settles the thread hears about it:** the editor
-  appends a run-settled **system** entry — "Test succeeded." / "Test failed at step
+  **Side effects** outside memory are real (emails send, files move, notifications post per
+  settings) and the card and the modal say so plainly. Navigating away from the editor
+  never cancels a live test — it is a real record, visible and cancellable from its
+  execution page; re-entering the editor re-attaches the TEST card to a still-executing
+  test. **The outcome is never thrown away with the editing session:** a finished test
+  writes the last-test summary `test.yaml` (§5 — status succeeded | failed, finished-at,
+  and the test execution's id) into the draft container, wiped at the next test start and
+  deleted with the draft. It rides the draft payload as `test` ({ status, when: §4.1
+  started-label, executionId }) — on the automation's `draft` object and on `GET
+  /draft/pending` — and a resumed draft's TEST card renders it as state 4 above (the
+  modal opens on the run while the record still exists — retention may outlive it). A live
+  test always takes over the card. **When a test settles the thread hears about it:** the
+  editor appends a run-settled **system** entry — "Test succeeded." / "Test failed at step
   `<name>` — `<message>`." — so follow-up messages have an anchor and the agent's
-  CONVERSATION context names the run. **On failure nothing analyzes by itself:** the panel
-  shows the "Test failed" line plus an **"Analyze failure"** button on the action row —
-  it sends the **canned analyze chat message** "The test failed at step `<name>` — figure
-  out why. If the automation is at fault, fix it; if it's something I need to do on this
-  Mac, tell me what to do and how instead." as an ordinary §8 chat job
-  (gated exactly like the chat input, so it disables while any §8 job is in flight): the
-  §8 RECENT EXECUTIONS context carries the failing run's error and log tails, and the response —
-  an explanation, a spec rewrite, actions that resync and retest — lands in the thread
-  like any chat outcome. Build-time blockers and execution-time failures stay one
-  convergent repair loop in one place, the chat thread. Advisory: a failed test never
-  blocks saving.
+  CONVERSATION context names the run. **On failure nothing analyzes by itself:** the card
+  (and the modal's toolbar) offer **"Analyze failure"** — it sends the **canned analyze
+  chat message** "The test failed at step `<name>` — figure out why. If the automation is
+  at fault, fix it; if it's something I need to do on this Mac, tell me what to do and
+  how instead." as an ordinary §8 chat job (gated exactly like the chat input, so it
+  disables while any §8 job is in flight): the §8 RECENT EXECUTIONS context carries the
+  failing run's error and log tails, and the response — an explanation, a spec rewrite,
+  actions that resync and retest — lands in the thread like any chat outcome. Build-time
+  blockers and execution-time failures stay one convergent repair loop in one place, the
+  chat thread. Advisory: a failed test never blocks saving.
+- **Test-run modal** — the one surface for setting up, watching, and reading a draft
+  test; the TEST card only launches it and reports the outcome. It is the §9.2
+  step-script modal's two-column frame carrying the §7 execution page's **STEPS rail +
+  LOGS pane** (one shared execution view, §7 — the modal is not a second, smaller run
+  UI): a §14 `Modal` card `min(1120px, 92vw)` wide, `overflow: hidden`, no header row and
+  nothing that scrolls the card as a whole, height fixed for the life of the open modal
+  at `clamp(440px, 680px, 82vh)` (logs stream, so the frame follows the viewport, never
+  the content). **Opening:** Test draft / Open test on the TEST card, and the thread's
+  Test-the-draft pill (which starts the test and opens the modal on the live run — the
+  user asked to watch it). A chat-armed `test` action (§8) never opens it — the agent's
+  answer is being read; the card shows the run with Open test. **Phases**, the modal's
+  own state: **setup** (no tracked test record, or after Run again) and **run** (a
+  tracked record exists — live or settled; opening with a record lands here). The
+  **left rail** (280 px, dim-hairline right border) heads with the `STEPS` eyebrow and a
+  right-aligned mono step count; in the setup phase it lists the draft's steps as inert
+  rows (a faint dot + the name — what will run, in order), in the run phase it is the §7
+  rail as-is: the "Setup log" pseudo-row over the selectable step rows (status dot
+  pulsing while executing, name, attempt-count chip, duration), auto-following the live
+  step until the user selects a row, auto-selecting the failed step on a failed run
+  (§7 selection rules). The **right pane** sits on `--bg-code` with a fixed 44 px
+  **toolbar** (hairline bottom border) and the body beneath:
+  - **Setup phase.** Toolbar: the `TEST DRAFT` eyebrow left; right, the accent-link
+    **Run test** — the only control that starts a test, and the modal's only accent
+    control — then the ✕ `.ad-btn-icon` close. Run test is gated on steps existing, the
+    workflow being in sync, no §8 job in flight, no live test, and no old version viewed
+    (its tooltip names the reason while disabled). Body (its own §14 overlay-scrollbar
+    pane): the this-test-only note first, worded to what the draft has — "Values and the
+    message apply to this test only — nothing is saved." (params and message triggers
+    both), "These values apply to this test only — nothing is saved." (params only), "The
+    message applies to this test only — nothing is saved." (message triggers only) — then
+    every test option at once, nothing behind a second click:
+    - When the draft has params: the `PARAMETER VALUES · THIS TEST ONLY` eyebrow, then one
+      editor per param (§4.2 kinds; settings-row geometry for toggle and number, stacked
+      label + help over the control for list, kv and text), prefilled in edit mode with
+      the automation's current values (draft default when a param is new) and in create
+      mode with the draft defaults — and, over that base in both modes, the draft's
+      **drafted test values** (the §8 sync-call manifest `test_values`, riding the sync
+      payload as `testValues`): the agent that just built the steps entered them, so they
+      are the freshest signal, and the user edits them freely like any prefill. The values
+      ride the §19 `paramValues` body field and apply to this test only — nothing is
+      stored, and the read-only Parameters card is untouched. Untouched prefills send the
+      same values a never-opened modal would use — the seeded values above (stored values /
+      draft defaults, drafted test values on top), exactly like executing the draft.
+      **Drafted test values are draft state:** kept on the editor's working copy, replaced
+      whenever a later sync payload carries a `testValues` map (kept when it doesn't — a
+      name no current param matches simply seeds nothing), covered by the Draft-undo
+      snapshot, persisted with the draft as the §4.4 draft-only `test_values` key (a kept
+      draft resumes with them), and gone when the draft settles — they ride the draft,
+      never the automation.
+    - When the editor's trigger list (the TRIGGERS card list) holds a message trigger
+      (§4.3 discord/imessage, `enabled` state irrelevant): the `TRIGGER MESSAGE · THIS
+      TEST ONLY` eyebrow, a trigger picker when the list holds several message triggers
+      (the §4.3 long labels; single-trigger lists skip the picker), a **From** field
+      (prefilled with the trigger's `from` for iMessage, "Test" for Discord; switching the
+      picked trigger re-prefills it), and a **Message** text field (empty,
+      placeholder-hinted). The mock rides the §19 `triggerMock` body field **only when the
+      message text is nonempty** — left empty the test runs without a payload; nothing is
+      ever stored, and the trigger list is untouched. The sub-block's footer says so and
+      names the reply behavior plainly: applies to this test only; a step's `reply()`
+      posts to the **real** Discord channel, and an iMessage reply can't send from a
+      mocked message (§6.1). The built §4.5 payload is snapshotted on the test record like
+      a real firing's, so the run shows the message and sender like any message
+      execution's; the record's trigger label stays "Test".
+    - Neither: the `EmptyLine` "No parameters or message triggers — the test runs the
+      steps as they are."
+    The entered values are TEST-card state, not modal state: closing the modal keeps
+    them and reopening shows them again; seeding happens only when the modal first opens
+    without prior values. A change to the draft's param definitions or trigger list drops
+    them. A chat-armed test with values (§8 actions) pre-fills the param editors, so
+    opening the modal afterwards shows what ran. The resolved values are snapshotted on
+    the test record, so its execution page shows them like any execution's. Under the
+    inputs lock (a §8 job in flight) the editors and Run test disable in place; the modal
+    stays open.
+  - **Run phase.** Toolbar: left, the selected log's name as the eyebrow ("Setup log", or
+    the step name, suffixed " · LIVE" while that step's latest attempt is executing), the
+    §7 attempt pills when the selected step retried, and the §7 redaction chip; right, the
+    phase's controls then ✕: while the test **executes**, faint **Skip step** (the §7
+    skip of the live step) and muted **Cancel** (`DELETE`s the run like the execution
+    page's Cancel); once **settled**, the accent-link **Run again** (returns the modal
+    to the setup phase with the entered values intact — the settled record stays until
+    the next Run test replaces it), faint **View execution** (closes the modal and opens
+    the run's §7 execution page — the full result views live there), and, on failure,
+    faint **Analyze failure** (sends the canned analyze chat message above and closes
+    the modal, so the thread it lands in is on screen). Body: the §7 LOGS pane at full
+    pane height — the color-coded log view with the 2000-line cap and truncation note,
+    lazy per-selection fetch, live streaming with auto-scroll and the blinking cursor,
+    and the §7 empty states. Nothing else from the execution page renders here — no
+    RESULT card, no failure notice, no parameters block: the modal is for watching the
+    steps run; reading the result is one click away.
+  A 36 px **footer** spans the whole card (hairline top border, the cards' 11.5 sans
+  muted style) and is the run's status line: setup — "Real steps execute on this Mac —
+  emails send, files move; memory is a scratch copy."; executing — a pulsing accent dot,
+  "Executing — step 2 of 5 · <step name>", and a 160 px progress bar right-aligned
+  (terminal steps over total); settled — the `StatusLine` outcome "Test succeeded — the
+  memory copy was discarded." (green) / "Test failed at step “<name>” — <message>."
+  (amber; "Test failed — <message>." when the error names no step) / "Test cancelled."
+  (faint) / "Test <status>." for any other terminal status; a record still loading —
+  "Loading the test…". **Closing** (✕, Escape, a backdrop click) never cancels a test —
+  the TEST card shows the run and reopening re-attaches to it; the modal owns Esc while
+  open like every modal (the page-level Esc shortcut yields, Input above). Starting a
+  test from the modal keeps it open: the pane flips from the setup form to the live log
+  at the click, the rail rows gain their status dots as the record lands, and the footer
+  turns into the progress line. The modal never renders during the create empty state
+  (there is no draft to test) and closes itself when the draft settles (Discard draft,
+  Start over, save, Create), since the run it shows is deleted with the draft.
 
 **Fix-with-AI entry (§7/§9.2).** Opening the editor through a failed execution's **Fix with
 AI** button behaves as: open edit mode on that automation (resuming a stored draft when one

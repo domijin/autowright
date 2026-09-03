@@ -44,12 +44,18 @@ describe('create flow e2e', () => {
     await page.getByText('Notify only on changes').first().waitFor()
     await shot(page, 'create-review.png')
 
-    // Test: the toggle opens the setup section; Run test starts the real
+    // Test: Test draft opens the test-run modal; its Run test starts the real
     // draft execution through the engine (scratch memory).
     await page.getByTestId('test-draft-toggle').click()
     await page.getByRole('button', { name: 'Run test' }).click()
-    await page.getByText('Test succeeded — the memory copy was discarded.').waitFor({ timeout: 60_000 })
+    // the outcome lands in the modal footer and on the TEST card behind it
+    await page.getByText('Test succeeded — the memory copy was discarded.').first()
+      .waitFor({ timeout: 60_000 })
     await shot(page, 'create-test-succeeded.png')
+    // §11: closing never cancels a test — and nothing on the page below is
+    // clickable until the modal is gone.
+    await page.keyboard.press('Escape')
+    await page.getByTestId('test-modal').waitFor({ state: 'hidden', timeout: 10_000 })
 
     // Create → lands on the automation's detail page.
     await page.getByRole('button', { name: 'Create automation' }).click()

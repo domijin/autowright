@@ -2,7 +2,7 @@
 // instructions, framework — all through the one shared SectionCard template
 // (header row, status-aware collapsed line, body top-hairline). RightCards:
 // the display-only steps / triggers / parameters / packages cards under the
-// Build & test panel. The page shell wires state and derived gating in.
+// BUILD and TEST cards. The page shell wires state and derived gating in.
 import React, { useState } from 'react'
 import { usePlatformCopy } from '../../platformCopy'
 import { SecretModal } from '../../SecretModal'
@@ -515,7 +515,7 @@ export function LeftColumn({
   )
 }
 
-// ---------- right column (below the Build & test panel) ----------
+// ---------- right column (below the BUILD and TEST cards) ----------
 
 export interface RightCardsProps {
   stepHistory?: StepHistory[] // §9.2 change badge: the stored revisions (edit mode only)
@@ -631,7 +631,7 @@ export function RightCards({
               )
             })}
             <div style={{ padding: '12px 18px', font: "400 11.5px/1.55 var(--sans)", color: 'var(--text-muted)' }}>
-              Values aren’t part of a version — set them on the automation page, or ask your AI here (staged values apply when you save). For a test, set test-only values in the Build & test panel — or ask your AI, which can also change the parameter definitions and set test values when it runs a test.
+              Values aren’t part of a version — set them on the automation page, or ask your AI here (staged values apply when you save). For a test, set test-only values in the test-run modal — or ask your AI, which can also change the parameter definitions and set test values when it runs a test.
             </div>
           </>
         )}

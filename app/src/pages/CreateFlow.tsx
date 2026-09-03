@@ -5,8 +5,8 @@
 // dirty-gating block, the title row / lede / banners, and the version menu.
 // The pieces live under ./createflow/: model.ts (the pure Rev model + helpers),
 // useDraftJob.ts (§8 job orchestration — chat/sync + every cancel path),
-// ChatPanel.tsx (thread + composer), BuildTestPanel.tsx (sync state + draft
-// test), SectionCards.tsx (the left/right review cards). The step list and
+// ChatPanel.tsx (thread + composer), BuildTestCards.tsx (the BUILD and TEST
+// cards) + TestRunModal.tsx (the draft test's modal), SectionCards.tsx (the left/right review cards). The step list and
 // param editors are shared with the detail page via ../steps.
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
@@ -25,7 +25,7 @@ import {
 } from './createflow/model'
 import { useDraftJob } from './createflow/useDraftJob'
 import { ChatPanel } from './createflow/ChatPanel'
-import { BuildTestPanel } from './createflow/BuildTestPanel'
+import { BuildCard, TestCard } from './createflow/BuildTestCards'
 import { LeftColumn, RightCards } from './createflow/SectionCards'
 
 // The pure helpers moved to ./createflow/model (and ../steps for the shared
@@ -390,7 +390,7 @@ export default function CreateFlow() {
   // loadExecution lands).
   const testExec = test ? executionFull[test.executionId] ?? executions.find((e) => e.id === test.executionId) : undefined
   const testLive = testExec?.status === 'executing'
-  // Sync panel: the button disables (never hides) while any §8 job runs,
+  // BUILD card: the sync button disables (never hides) while any §8 job runs,
   // while viewing an old version, while a draft test is executing
   // (§11 rewrites-lock: nothing rewrites the workflow under a running test),
   // and while steps AND spec are both
@@ -436,10 +436,10 @@ export default function CreateFlow() {
   }, [rev, chatReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // §11 turn action row wiring: the Test-the-draft pill starts a draft test
-  // through the Build & test panel (signal consumed there — same run as its
-  // Run test button); the Analyze-the-failure pill sends the canned message
-  // exactly like the panel's button — null while the tracked test didn't
-  // settle failed, hiding the pill.
+  // through the TEST card (signal consumed there — same run as the modal's
+  // Run test button, and it opens the modal); the Analyze-the-failure pill
+  // sends the canned message exactly like the card's button — null while the
+  // tracked test didn't settle failed, hiding the pill.
   const [testRunSignal, setTestRunSignal] = useState(0)
   const analyzeFailure = test && testExec?.status === 'failed'
     ? () => {
@@ -1237,7 +1237,14 @@ export default function CreateFlow() {
 
               {/* ===== right column ===== */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <BuildTestPanel
+                <BuildCard
+                  rev={rev}
+                  outOfSync={outOfSync}
+                  syncDisabled={syncDisabled}
+                  agentGap={agentGap}
+                  runSync={() => guardManualEdit(() => void jobs.runSync())}
+                />
+                <TestCard
                   rev={rev}
                   up={up}
                   appendEntry={appendEntry}
@@ -1247,14 +1254,13 @@ export default function CreateFlow() {
                   anyJobBusy={anyJobBusy}
                   busyRewrite={busyRewrite}
                   viewingOld={viewingOld}
-                  syncDisabled={syncDisabled}
-                  agentGap={agentGap}
                   lockStyle={lockStyle}
                   runSync={() => guardManualEdit(() => void jobs.runSync())}
                   flushHeldChips={jobs.flushHeldChips}
                   sendChat={async (text?: string, executionId?: string) =>
                     guardManualEdit(() => void jobs.sendChat(text, executionId))}
                   runTestSignal={testRunSignal}
+                  isCreateEmpty={isCreateEmpty}
                 />
                 <RightCards
                   rev={rev}

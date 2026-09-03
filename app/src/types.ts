@@ -418,7 +418,7 @@ export interface DraftPayload {
   // only at save/create
   concurrency?: ConcurrencyStage
   // §8/§11: call 2's drafted best-effort test values (manifest `test_values`) —
-  // seed the Build & test setup and the closed-section test runs; draft-only
+  // seed the test-run modal's setup and the never-opened test runs; draft-only
   testValues?: Record<string, unknown>
   // §4.4/§11: the dirty-gate state rides the draft — a kept out-of-sync draft
   // must resume with saving still locked

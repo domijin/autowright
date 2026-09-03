@@ -1,7 +1,8 @@
 // Component tests for the §11 create/edit page: grant checkboxes keeping
-// unchecked agents/secrets out of every drafting-job payload (§8), the Build &
-// test panel, blockers thread entries, applying chat responses, the footer
-// action block, and the left-column cards. CreateFlow renders for real
+// unchecked agents/secrets out of every drafting-job payload (§8), the BUILD
+// and TEST cards with the test-run modal, blockers thread entries, applying
+// chat responses, the footer action block, and the left-column cards.
+// CreateFlow renders for real
 // (happy-dom) in edit mode with the store seeded and the api module mocked;
 // payload assertions read the exact POST /drafts bodies.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -30,6 +31,11 @@ vi.mock('../src/api', () => ({
     checkPackages: vi.fn(async () => ({ packages: [] })),
     outdatedPackages: vi.fn(async () => ({ packages: [] })),
     postTest: vi.fn(async () => ({ executionId: 'e1' })),
+    // §7 run controls the test-run modal drives on the tracked record
+    cancelExecution: vi.fn(async () => ({})),
+    skipStep: vi.fn(async () => ({})),
+    getExecution: vi.fn(() => Promise.reject(new Error('offline'))),
+    getExecutionLogs: vi.fn(async () => ({ lines: [] })),
     analyzeExec: vi.fn(async () => ({})),
     getAutomation: vi.fn(async () => ({})),
     // §4.4/§19 delete an old version (editor version menu)
@@ -210,7 +216,7 @@ describe('CreateFlow grant checkboxes → drafting payloads (§8/§11)', () => {
   })
 })
 
-describe('CreateFlow Build & test panel (§11)', () => {
+describe('CreateFlow BUILD and TEST cards (§11)', () => {
   it('out of sync (grant gap): Sync now shows, Test disables with the sync-first hint', async () => {
     // an agent step pinned to g2 — unchecking g2 opens a derived grant gap
     storeMod.useStore.setState({
@@ -236,24 +242,26 @@ describe('CreateFlow Build & test panel (§11)', () => {
     expect((screen.getByText('Test draft').closest('button')!).disabled).toBe(false)
   })
 
-  it('in sync: quiet panel — no indicator dot, no accent button, one test row', () => {
+  it('in sync: quiet cards — no indicator dot, no accent button, one test row', () => {
     render(<CreateFlow />)
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
-    // §11 quiet posture: the in-sync build zone is gone (no green dot, no status
-    // line) — the panel is a single test row with the ghost sync escape hatch
-    expect(within(panel).getByText(/In sync with the spec/)).toBeTruthy()
-    expect(panel.querySelector('.ad-btn-primary')).toBeNull()
+    const buildCard = screen.getByTestId('build-card')
+    const testCard = screen.getByTestId('test-card')
+    // §11 quiet posture: the in-sync BUILD card carries no dot and no accent
+    // button — just the muted line with the faint sync escape hatch
+    expect(within(buildCard).getByText(/In sync with the spec/)).toBeTruthy()
+    expect(buildCard.querySelector('.ad-btn-primary')).toBeNull()
+    expect(testCard.querySelector('.ad-btn-primary')).toBeNull()
     // §11 button treatment: compact borderless text buttons — main action
     // muted, the sync escape hatch faint; never bordered or filled boxes
-    const testBtn = within(panel).getByText('Test draft').closest('button')!
+    const testBtn = within(testCard).getByText('Test draft').closest('button')!
     expect(testBtn.disabled).toBe(false)
     expect(testBtn.classList.contains('ad-btn-text')).toBe(true)
-    const syncBtn = within(panel).getByText('Sync spec').closest('button')!
+    const syncBtn = within(buildCard).getByText('Sync spec').closest('button')!
     expect(syncBtn.classList.contains('ad-btn-text')).toBe(true)
     expect(syncBtn.classList.contains('dim')).toBe(true)
   })
 
-  it('Test draft is a disclosure: setup shows every option at once, only Run test starts it', async () => {
+  it('Test draft opens the modal: setup shows every option at once, only Run test starts it', async () => {
     armPendingPoll()
     storeMod.useStore.setState({
       automations: [{
@@ -263,27 +271,30 @@ describe('CreateFlow Build & test panel (§11)', () => {
       } as unknown as Automation],
     })
     render(<CreateFlow />)
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
-    // collapsed: no setup section, no Run test
-    expect(within(panel).queryByText('Run test')).toBeNull()
-    expect(within(panel).queryByText('PARAMETER VALUES · THIS TEST ONLY')).toBeNull()
-    // the toggle expands the setup — it never starts a test
-    fireEvent.click(within(panel).getByText('Test draft'))
+    // closed: no modal, no Run test
+    expect(screen.queryByTestId('test-modal')).toBeNull()
+    expect(screen.queryByText('Run test')).toBeNull()
+    // the launcher opens the modal — it never starts a test
+    fireEvent.click(within(screen.getByTestId('test-card')).getByText('Test draft'))
     expect(mockedApi.postTest).not.toHaveBeenCalled()
-    // both option groups render together — no nested toggles
-    expect(within(panel).getByText('PARAMETER VALUES · THIS TEST ONLY')).toBeTruthy()
-    expect(within(panel).getByText('TRIGGER MESSAGE · THIS TEST ONLY')).toBeTruthy()
+    // the modal is portaled to the body; both option groups render together
+    const modal = screen.getByTestId('test-modal')
+    expect(within(modal).getByTestId('test-setup')).toBeTruthy()
+    expect(within(modal).getByText('PARAMETER VALUES · THIS TEST ONLY')).toBeTruthy()
+    expect(within(modal).getByText('TRIGGER MESSAGE · THIS TEST ONLY')).toBeTruthy()
     // Run test is the only control that starts a test
-    fireEvent.click(within(panel).getByText('Run test'))
+    fireEvent.click(within(modal).getByText('Run test'))
     await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1))
     const body = (mockedApi.postTest as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
     expect(body.paramValues).toEqual({ city: 'Oslo' })
     expect(body.triggerMock).toBeUndefined() // empty message → no payload
-    // starting the test collapsed the setup section
-    expect(within(panel).queryByText('Run test')).toBeNull()
+    // §11: starting the test keeps the modal open and flips it to the run
+    // phase — the setup form (and its Run test) is gone
+    await waitFor(() => expect(screen.queryByText('Run test')).toBeNull())
+    expect(screen.getByTestId('test-modal')).toBeTruthy()
   })
 
-  it('drafted §8 test_values drive a closed-section run and seed the setup editors', async () => {
+  it('drafted §8 test_values drive a never-opened-modal run and seed the setup editors', async () => {
     armPendingPoll()
     storeMod.useStore.setState({
       automations: [{
@@ -305,19 +316,21 @@ describe('CreateFlow Build & test panel (§11)', () => {
     fireEvent.click(screen.getByText('Sync spec'))
     await waitFor(() => expect(screen.getByText('Steps synced with the spec.')).toBeTruthy(), { timeout: 3000 })
     // §11 turn action row: the Test-the-draft pill starts the test with the
-    // setup section never opened — the drafted values still ride the run
+    // modal never opened — the drafted values still ride the run
     const row = screen.getByTestId('chat-turn-actions')
     fireEvent.click(within(row).getByText('Test draft'))
     await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1), { timeout: 3000 })
     const body = (mockedApi.postTest as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
     expect(body.paramValues).toEqual({ city: 'Bergen' })
+    // the pill opens the modal too — the user asked to watch the run
+    await waitFor(() => expect(screen.getByTestId('test-modal')).toBeTruthy())
     // §11 setup seeding: the drafted value lands over the stored/default base
     await waitFor(() => expect(storeMod.useStore.getState().test).toBeTruthy())
     storeMod.useStore.setState({ test: null })
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
-    await waitFor(() => expect(within(panel).getByText('Test draft')).toBeTruthy())
-    fireEvent.click(within(panel).getByText('Test draft'))
-    expect(within(panel).getByDisplayValue('Bergen')).toBeTruthy()
+    // with no tracked record left the open modal falls back to the setup phase
+    const modal = screen.getByTestId('test-modal')
+    await waitFor(() => expect(within(modal).getByTestId('test-setup')).toBeTruthy())
+    expect(within(modal).getByDisplayValue('Bergen')).toBeTruthy()
   })
 
   it('a diagnosed blocked sync lands a thread blockers entry with the build-failure headline', async () => {
@@ -360,6 +373,107 @@ describe('CreateFlow Build & test panel (§11)', () => {
     await waitFor(() => expect(screen.getByText('Your AI hit a blocker')).toBeTruthy(), { timeout: 3000 })
     // the notes land like a chat notes rewrite — chip after the blockers entry
     expect(screen.getByText('Notes updated.')).toBeTruthy()
+  })
+})
+
+describe('CreateFlow test-run modal (§11)', () => {
+  beforeEach(armPendingPoll)
+  // The modal drives navigation through the store's go — swap it for a spy and
+  // put the real action back, since the shared beforeEach never restores it.
+  let realGo: ReturnType<typeof storeMod.useStore.getState>['go']
+  beforeEach(() => { realGo = storeMod.useStore.getState().go })
+  afterEach(() => storeMod.useStore.setState({ go: realGo }))
+
+  // §4.5 test record: `test: true`, versionLabel "Test", the draft's steps
+  const testRun = (over: Record<string, unknown> = {}) => ({
+    id: 'e9', automationId: 'a1', automationName: 'My auto', automationDeleted: false, versionLabel: 'Test',
+    status: 'executing', trigger: 'Test', triggerSender: null, test: true,
+    duration: '', started: '', startedMs: 1, endedMs: 0, queuedMs: 0, note: null, error: null,
+    steps: [
+      { name: 'Fetch pages', status: 'succeeded', duration: '1s', attempts: [{ number: 1, status: 'succeeded', duration: '1s', startedMs: 1 }] },
+      { name: 'Send mail', status: 'executing', duration: '', attempts: [{ number: 1, status: 'executing', duration: '', startedMs: 2 }] },
+    ],
+    ...over,
+  })
+  const seedRun = (over: Record<string, unknown> = {}) => {
+    const run = testRun(over)
+    storeMod.useStore.setState({
+      test: { executionId: 'e9' }, executions: [run] as never, executionFull: { e9: run } as never,
+    })
+  }
+
+  it('a live run: Skip step + Cancel in the toolbar, the progress line in the footer; Escape never cancels', async () => {
+    seedRun()
+    render(<CreateFlow />)
+    // the live card opens the modal on the run — the run phase, never the setup
+    fireEvent.click(within(screen.getByTestId('test-card')).getByText('Open test'))
+    const modal = screen.getByTestId('test-modal')
+    expect(within(modal).queryByText('TEST DRAFT')).toBeNull()
+    expect(within(modal).getByText('STEPS')).toBeTruthy()
+    // §11 live toolbar: faint Skip step + muted Cancel
+    expect(within(modal).getByText('Skip step')).toBeTruthy()
+    expect(within(modal).getByText('Cancel')).toBeTruthy()
+    expect(within(modal).queryByText('Run again')).toBeNull()
+    // the footer is the run's status line
+    expect(within(screen.getByTestId('test-footer')).getByText('Executing — step 2 of 2 · Send mail')).toBeTruthy()
+    // Skip step skips the live step by index (§7)
+    fireEvent.click(within(modal).getByText('Skip step'))
+    await waitFor(() => expect(mockedApi.skipStep).toHaveBeenCalledWith('e9', 1))
+    // §11: closing never cancels the test — the card keeps showing the run
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('test-modal')).toBeNull())
+    expect(mockedApi.cancelExecution).not.toHaveBeenCalled()
+    expect(within(screen.getByTestId('test-card')).getByText('Open test')).toBeTruthy()
+  })
+
+  it('a settled failed run: Run again returns to the setup phase, View execution opens the run', async () => {
+    seedRun({
+      status: 'failed', duration: '2s', endedMs: 3,
+      error: { step: 'Send mail', message: 'boom', reason: null },
+      steps: [
+        { name: 'Fetch pages', status: 'succeeded', duration: '1s', attempts: [{ number: 1, status: 'succeeded', duration: '1s', startedMs: 1 }] },
+        { name: 'Send mail', status: 'failed', duration: '1s', attempts: [{ number: 1, status: 'failed', duration: '1s', startedMs: 2 }] },
+      ],
+    })
+    // the spy stands in for the store's go before the first render — the card
+    // reads it through a selector, so swapping it mid-test would need a flush
+    const go = vi.fn()
+    storeMod.useStore.setState({ go })
+    render(<CreateFlow />)
+    // the settled card opens the modal on its run
+    fireEvent.click(within(screen.getByTestId('test-card')).getByText('Test draft'))
+    const modal = screen.getByTestId('test-modal')
+    expect(within(modal).getByText('Run again')).toBeTruthy()
+    expect(within(modal).getByText('View execution')).toBeTruthy()
+    expect(within(modal).getByText('Analyze failure')).toBeTruthy()
+    expect(within(modal).queryByText('Skip step')).toBeNull()
+    // the footer names the failing step and the message
+    expect(within(screen.getByTestId('test-footer')).getByText('Test failed at step “Send mail” — boom.')).toBeTruthy()
+    // View execution closes the modal and opens the run's §7 execution page
+    fireEvent.click(within(modal).getByText('View execution'))
+    expect(go).toHaveBeenCalledWith('execution', { executionId: 'e9' })
+    await waitFor(() => expect(screen.queryByTestId('test-modal')).toBeNull())
+    // Run again returns the reopened modal to the setup phase — nothing starts
+    fireEvent.click(within(screen.getByTestId('test-card')).getByText('Test draft'))
+    fireEvent.click(within(screen.getByTestId('test-modal')).getByText('Run again'))
+    const setup = screen.getByTestId('test-modal')
+    expect(within(setup).getByText('TEST DRAFT')).toBeTruthy()
+    expect(within(setup).getByTestId('test-setup')).toBeTruthy()
+    expect(mockedApi.postTest).not.toHaveBeenCalled()
+  })
+
+  it('Open test reopens the modal on the live run after it was closed', async () => {
+    seedRun()
+    render(<CreateFlow />)
+    const card = () => screen.getByTestId('test-card')
+    fireEvent.click(within(card()).getByText('Open test'))
+    fireEvent.click(within(screen.getByTestId('test-modal')).getByLabelText('Close'))
+    await waitFor(() => expect(screen.queryByTestId('test-modal')).toBeNull())
+    // re-attaching: the same run, still the run phase
+    fireEvent.click(within(card()).getByText('Open test'))
+    const modal = screen.getByTestId('test-modal')
+    expect(within(modal).getByText('Cancel')).toBeTruthy()
+    expect(within(modal).queryByText('TEST DRAFT')).toBeNull()
   })
 })
 
@@ -1403,39 +1517,41 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect(within(thread).getByText('Working on the request…')).toBeTruthy()
     expect(spinnersIn(document.body).length).toBe(1)
     expect(spinnersIn(thread).length).toBe(1) // the progress entry's
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
-    expect(spinnersIn(panel).length).toBe(0)
-    expect(within(panel).queryByText('Cancel')).toBeNull()
+    for (const card of [screen.getByTestId('build-card'), screen.getByTestId('test-card')]) {
+      expect(spinnersIn(card).length).toBe(0)
+      expect(within(card).queryByText('Cancel')).toBeNull()
+    }
     expect(screen.getAllByText('Cancel').length).toBe(1) // the composer's
   })
 
-  it('sync job: the sync line lives in the thread and the Save hint, never the panel; spinner in the thread, Cancel in the composer', () => {
+  it('sync job: the sync line lives in the thread and the Save hint, never the cards; spinner in the thread, Cancel in the composer', () => {
     render(<CreateFlow />)
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
-    const before = panel.textContent
+    const cards = () => [screen.getByTestId('build-card'), screen.getByTestId('test-card')]
+    const before = cards().map((c) => c.textContent).join('|')
     fireEvent.click(screen.getByText('Sync spec'))
     // the same live line renders in the thread and as the Save hint (one
     // unified stage vocabulary; no agent · model attribution — the composer's
-    // picker names the agent) — and nowhere in the panel: §11 a sync in
-    // flight is never a panel state
+    // picker names the agent) — and nowhere in the cards: §11 a sync in
+    // flight is never a card state
     expect(screen.getAllByText('Syncing the workflow…').length).toBe(2)
-    expect(within(panel).queryByText('Syncing the workflow…')).toBeNull()
-    // the panel keeps its in-sync test zone byte for byte — it never moves
-    expect(panel.textContent).toBe(before)
-    expect(within(panel).getByText(/In sync with the spec\./)).toBeTruthy()
+    for (const card of cards()) expect(within(card).queryByText('Syncing the workflow…')).toBeNull()
+    // both cards keep their in-sync bodies byte for byte — they never move
+    expect(cards().map((c) => c.textContent).join('|')).toBe(before)
+    const buildCard = screen.getByTestId('build-card')
+    expect(within(buildCard).getByText(/In sync with the spec\./)).toBeTruthy()
     // §11: never an empty section — the live entry shows the stage's canned
     // description bullet until the stream produces a feed
     expect(screen.getByText('• Building the steps from the spec')).toBeTruthy()
     expect(spinnersIn(document.body).length).toBe(1)
     expect(spinnersIn(screen.getByTestId('chat-thread')).length).toBe(1)
-    expect(spinnersIn(panel).length).toBe(0)
-    expect(within(panel).queryByText('Cancel')).toBeNull()
+    for (const card of cards()) expect(spinnersIn(card).length).toBe(0)
+    for (const card of cards()) expect(within(card).queryByText('Cancel')).toBeNull()
     expect(screen.getAllByText('Cancel').length).toBe(1)
-    // the panel's sync button disables instead of turning into a cancel
-    expect((within(panel).getByText('Sync spec').closest('button')!).disabled).toBe(true)
+    // the BUILD card's sync button disables instead of turning into a cancel
+    expect((within(buildCard).getByText('Sync spec').closest('button')!).disabled).toBe(true)
   })
 
-  it('Sync now: its own sync hides the build zone at the click — the test zone shows, disabled (§11)', () => {
+  it('Sync now: its own sync hides the out-of-sync row at the click — the in-sync rows show, disabled (§11)', () => {
     storeMod.useStore.setState({
       automations: [{
         ...AUTO,
@@ -1444,17 +1560,18 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     })
     render(<CreateFlow />)
     fireEvent.click(screen.getByText('qwen3:8b')) // open a grant gap → out of sync
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
-    expect(within(panel).getByText('Sync now')).toBeTruthy()
+    const buildCard = () => screen.getByTestId('build-card')
+    const testCard = () => screen.getByTestId('test-card')
+    expect(within(buildCard()).getByText('Sync now')).toBeTruthy()
     fireEvent.click(screen.getByText('Sync now'))
-    // the build zone is gone: no amber reason line, no Sync now, no hint;
-    // the in-sync test zone takes its place with its controls locked
-    expect(within(panel).queryByText('Sync now')).toBeNull()
-    expect(within(panel).queryByText(/out of sync/)).toBeNull()
-    expect(within(panel).queryByText(/Sync first/)).toBeNull()
-    expect(within(panel).queryByText('Syncing the workflow…')).toBeNull()
-    expect((within(panel).getByText('Sync spec').closest('button')!).disabled).toBe(true)
-    expect((within(panel).getByText('Test draft').closest('button')!).disabled).toBe(true)
+    // the out-of-sync row is gone: no amber reason line, no Sync now, no hint;
+    // both in-sync rows take their place with their controls locked
+    expect(within(buildCard()).queryByText('Sync now')).toBeNull()
+    expect(within(buildCard()).queryByText(/out of sync/)).toBeNull()
+    expect(within(testCard()).queryByText(/Sync first/)).toBeNull()
+    expect(within(buildCard()).queryByText('Syncing the workflow…')).toBeNull()
+    expect((within(buildCard()).getByText('Sync spec').closest('button')!).disabled).toBe(true)
+    expect((within(testCard()).getByText('Test draft').closest('button')!).disabled).toBe(true)
     // the live surface is the thread progress entry (plus the Save hint)
     expect(screen.getAllByText('Syncing the workflow…').length).toBe(2)
   })
@@ -1485,14 +1602,14 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     await waitFor(() => expect(screen.getByText('• Installing requests…')).toBeTruthy(), { timeout: 5000 })
     expect(screen.getAllByText('Syncing the workflow…').length).toBeGreaterThan(0)
     expect(screen.queryByText('Installing the packages…')).toBeNull()
-    // §11: the chained sync never moves the Build & test panel — no build
-    // zone (the rewrite dirtied the draft, but the armed/running sync counts
-    // as in sync for the panel), the sync line only in the thread + Save hint
-    const panel = cardOf(screen.getByText('BUILD & TEST'))
-    expect(within(panel).queryByText('Sync now')).toBeNull()
-    expect(within(panel).queryByText(/out of sync/)).toBeNull()
-    expect(within(panel).queryByText('Syncing the workflow…')).toBeNull()
-    expect(within(panel).getByText(/In sync with the spec\./)).toBeTruthy()
+    // §11: the chained sync never moves the BUILD card — no out-of-sync row
+    // (the rewrite dirtied the draft, but the armed/running sync counts as in
+    // sync for the cards), the sync line only in the thread + Save hint
+    const buildCard = screen.getByTestId('build-card')
+    expect(within(buildCard).queryByText('Sync now')).toBeNull()
+    expect(within(buildCard).queryByText(/out of sync/)).toBeNull()
+    expect(within(buildCard).queryByText('Syncing the workflow…')).toBeNull()
+    expect(within(buildCard).getByText(/In sync with the spec\./)).toBeTruthy()
   })
 
   it('Esc cancels a chat job like the composer Cancel and returns the prompt to the input', () => {
@@ -1882,7 +1999,8 @@ describe('CreateFlow old-version view: thread survival + test gating (§11)', ()
     fireEvent.click(screen.getByText('v1'))
     const toggle = screen.getByTestId('test-draft-toggle') as HTMLButtonElement
     expect(toggle.disabled).toBe(true)
-    fireEvent.click(toggle) // inert - the setup section never opens
+    fireEvent.click(toggle) // inert - the modal never opens
+    expect(screen.queryByTestId('test-modal')).toBeNull()
     expect(screen.queryByText('Run test')).toBeNull()
     expect(mockedApi.postTest).not.toHaveBeenCalled()
     // back on the draft the toggle re-enables

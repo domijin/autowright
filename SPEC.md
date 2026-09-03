@@ -29,7 +29,7 @@ words from other languages except established technical terms.
   §9.3 developer log overlay · §9.4 about page · §9.5 report issue modal) ·
   §10 onboarding · §12 agents & secrets pages · §13 menu bar →
   [spec/ui-shell.md](spec/ui-shell.md) ·
-  §11 create/edit flow → [spec/ui-create-edit.md](spec/ui-create-edit.md) ·
+  §11 create/edit flow (incl. BUILD/TEST cards · test-run modal) → [spec/ui-create-edit.md](spec/ui-create-edit.md) ·
   §14 design tokens → [spec/design-tokens.md](spec/design-tokens.md)
 - **Dev:** §15 dev/test knobs · §16 test seed data · §18 commands →
   [spec/dev-test.md](spec/dev-test.md) · §17 repository (below, in this file)

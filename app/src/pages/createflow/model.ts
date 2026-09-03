@@ -189,7 +189,7 @@ export interface Rev {
   // null when nothing is staged (the card then shows the stored/default values)
   concurrency: ConcurrencyStage | null
   // §8/§11 drafted test values (call 2's manifest `test_values`) — seed the
-  // Build & test setup editors and the closed-section test runs; draft state,
+  // test-run modal's setup editors and the never-opened test runs; draft state,
   // replaced when a later create/sync payload carries a new map
   testValues: Record<string, unknown> | null
   packages: PackageDep[]    // §6.2 declared packages — display-only, the pipeline owns the list

@@ -370,7 +370,7 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
     content around it (no triggers, no snapshots, no files, no matching steps). Bare
     `Spinner`s and ad-hoc "Loading…" text are not loading states.
   - **Modals:** the `Modal` card pads `22px 24px` by default (`cardStyle` zeroes it for the
-    full-bleed §9.2/§11 editor modals); title 15/600, 6 px above the subtitle; footer
+    full-bleed §9.2/§11 viewer, editor and test-run modals); title 15/600, 6 px above the subtitle; footer
     buttons in a right-aligned flex row, gap 10, 18 px above. `DocModal` (`ui.tsx`) is the
     one document viewer (§9.4 About documents and the What's new modal).
   - **Icons:** trailing row chevrons 10 px, back-link chevron 10 px, status dots 7 px,

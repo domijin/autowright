@@ -186,7 +186,7 @@ below the title a mono metadata line: full execution id (copyable) · trigger ·
 started · duration. A §4.5 `test` execution additionally shows a **"Draft test"** `MetaChip` in the
 title row, never shows the "(deleted)" marker (a create-mode test has no automation by
 design), and hides Retry and Execute again — iteration on a draft happens from the editor's
-Build & test panel; Cancel and Skip step still work while it is live. Body stacks top to bottom: the
+TEST card and test-run modal; Cancel and Skip step still work while it is live. Body stacks top to bottom: the
 failure notice (failed executions only), a full-width **RESULT card**, then — on executions
 carrying a §4.5 `triggerPayload` — the **TRIGGER MESSAGE** block (the same block the queued
 page shows), one card:
@@ -208,7 +208,11 @@ The message is the
 run's input — steps read it via §6.1 — so the page keeps it visible below the outcome and above
 the machinery, then a single
 **execution card** that joins the **STEPS rail** (left) and the **LOGS pane** (right) with an
-internal divider — one card, since the rail's selection drives the pane. Beneath the steps the
+internal divider — one card, since the rail's selection drives the pane. The rail and pane are
+one shared **execution view** (`executionView.tsx`: the rows, the selection and auto-follow
+rules, the lazy log fetch, the live auto-scroll and cap) that the §11 test-run modal renders
+inside its frame — one run UI, two homes; the page adds the parameters block and workspace
+link to the rail, the modal adds its toolbar controls to the pane. Beneath the steps the
 rail holds the **PARAMETERS block** — per param: label, its help description, and the §4.2
 one-line summary value ("Values as used by this execution."). At the rail's bottom sits a quiet
 **workspace link** — a `.ad-btn-text.small` button, "Show workspace in Finder" — opening the execution's
@@ -279,7 +283,7 @@ No files at all → the whole view stack (footer included) is replaced by an
 Deleted-automation handling: historical name, marked deleted.
 
 **Executions list:** all executions across automations, §4.5 `test` executions included — a
-Build & test run lands here like any other (the §11 panel's View-run button stays as a
+draft test lands here like any other (the §11 test-run modal's View execution button stays as a
 shortcut). A test row reads like any row: `automationName` is the §11 shadow record's name (the
 automation's; in create mode the draft's name, "New automation" fallback), never marked
 "(deleted)" (a create-mode test has no automation by design), and its trigger column prints

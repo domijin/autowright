@@ -3064,8 +3064,12 @@ def test_execute_trigger_menubar_and_validation(client, monkeypatch):
     eid = r.json()["executionId"]
     _until_finished(events, eid)
     # §4.5: the record stores the machine kind; the label derives at serialization
+    # from the running platform — "Menu bar" on macOS, "Tray" everywhere else
+    from autowright.paths import current_os
+
     assert store.execs[eid]["trigger"] == "menubar"
-    assert client.get(f"/executions/{eid}").json()["trigger"] == "Menu bar"
+    expected_label = "Menu bar" if current_os() == "macos" else "Tray"
+    assert client.get(f"/executions/{eid}").json()["trigger"] == expected_label
 
 
 def test_execute_queue_mode(client):

@@ -56,7 +56,7 @@ describe('edit draft e2e', () => {
     await page.getByText('Test succeeded — the memory copy was discarded.').first()
       .waitFor({ timeout: 60_000 })
     // §11: the settled test also lands as a quiet system chip in the chat thread.
-    await page.getByText('Test succeeded.', { exact: true }).waitFor()
+    await page.getByTestId('chat-thread').getByText('Test succeeded.', { exact: true }).waitFor()
     await shot(page, 'edit-draft-test.png')
     // §11: closing never cancels a test — and nothing on the page below is
     // clickable until the modal is gone.
@@ -95,8 +95,8 @@ describe('edit draft e2e', () => {
     await page.getByRole('button', { name: 'Save', exact: true }).click()
     await page.getByText('Distinctive spec addendum e2e.').waitFor({ timeout: 10_000 })
     // §11 BUILD and TEST cards: out of sync locks Test draft behind a sync
-    await page.getByText(/these steps still match the old spec/).waitFor({ timeout: 10_000 })
-    await page.getByText('Sync first — a test executes the steps as generated from the spec.').waitFor()
+    await page.getByText(/steps still match the old spec/).waitFor({ timeout: 10_000 })
+    await page.getByTestId('test-card').getByText('Sync the steps before testing.', { exact: true }).waitFor()
     expect(await page.getByTestId('test-draft-toggle').isDisabled()).toBe(true)
 
     // Back to the detail page: leaving the editor kept the draft — discard it
@@ -113,7 +113,7 @@ describe('edit draft e2e', () => {
     // editor reopens with the earlier chips still there, behind the
     // backend-appended "Draft discarded." boundary marker.
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    await page.getByText('Test succeeded.', { exact: true }).waitFor({ timeout: 10_000 })
+    await page.getByTestId('chat-thread').getByText('Test succeeded.', { exact: true }).waitFor({ timeout: 10_000 })
     await page.getByText('Draft discarded.', { exact: true }).waitFor()
     // the marker explains the history, and the marker-terminated thread offers
     // no action pills (§11 history-inert rule — no dangling Test-draft pill)

@@ -33,7 +33,7 @@ describe('edit loop e2e', () => {
     await specBox.waitFor({ timeout: 10_000 })
     await specBox.fill(`${await specBox.inputValue()}\nDistinctive sync requirement e2e.`)
     await page.getByRole('button', { name: 'Save', exact: true }).click()
-    await page.getByText(/these steps still match the old spec/).waitFor({ timeout: 10_000 })
+    await page.getByText(/steps still match the old spec/).waitFor({ timeout: 10_000 })
 
     // Sync: the real §8 steps call — the fake claude returns its canonical
     // steps envelope, and the panel returns to the in-sync state.

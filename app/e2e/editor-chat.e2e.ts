@@ -136,10 +136,11 @@ describe('editor chat e2e', () => {
     await page.getByText('Fixed — rebuilding the steps and running a test.').waitFor({ timeout: 60_000 })
     await page.getByText('Notes updated.', { exact: true }).waitFor({ timeout: 20_000 })
     await page.getByText('Steps synced with the spec.', { exact: true }).waitFor({ timeout: 60_000 })
-    // The chained test executes the synced draft's real steps; the settled
-    // run lands as a quiet system chip in the thread (§11).
-    await page.getByText('Test succeeded.', { exact: true }).waitFor({ timeout: 60_000 })
-    await page.getByText('Test succeeded — the memory copy was discarded.').waitFor()
+    // The chained test executes the synced draft's real steps without opening
+    // the modal: the settled run lands as a quiet system chip in the thread
+    // and as the TEST card's settled row (§11).
+    await page.getByTestId('chat-thread').getByText('Test succeeded.', { exact: true }).waitFor({ timeout: 60_000 })
+    await page.getByTestId('test-card').getByText('Test succeeded.', { exact: true }).waitFor()
     await shot(page, 'editor-chat-chain.png')
   }, 120_000)
 

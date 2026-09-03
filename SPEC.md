@@ -411,13 +411,17 @@ migrate-on-load migration so data written by released versions keeps loading (§
   `downloads.json` distributable index (relative URL, so it also works when the page
   is served from a sub-path in local previews) and rewrites each download anchor's
   `href` to the `url` of the index entry named by the anchor's `data-download` value
-  (`darwin-arm64` → the DMG, `win32-x86_64` → the NSIS `.exe`) — the released
+  (`darwin-arm64` → the DMG, `win32-x86_64` → the NSIS `.exe`, `linux-x86_64` → the
+  AppImage) — the released
   artifact's `github.com/…/releases/download/…` URL, so the click downloads the
   installer with the version in its filename; an anchor whose entry is missing or
   malformed is left alone. The static fallback `href` (no JS, fetch failure) is the
   repo's latest-release GitHub page. Then "View source" (ghost), and under the buttons
-  a mono platform line "MIT licensed · Linux coming soon" (Linux
-  gets no button until its port is stable, per `spec/ports.md`)) · an animated app-window demo
+  a mono platform line "MIT licensed · Linux (Experimental)", where "Linux (Experimental)"
+  is an underlined text link (`.platform a`, `text-decoration: underline`, same faint
+  color, inheriting on hover) carrying `data-download="linux-x86_64"` so the same
+  rewrite points it at the AppImage; Linux gets no button until its port is stable, per
+  `spec/ports.md`) · an animated app-window demo
   that mirrors the §11 chat thread (46 px icon rail with the §9 nav icon set —
   bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
   page icons inlined as the actual Font Awesome solid SVG paths, copied from the app's
@@ -540,8 +544,9 @@ migrate-on-load migration so data written by released versions keeps loading (§
   release leg (alongside that leg's §3 update feed in the repo-root §17 `release/` — the
   feeds themselves are not part of this site), so every entry names the newest release
   that actually carries that OS's artifact. The page consumes `darwin-arm64` and
-  `win32-x86_64` (the Windows button); `linux-x86_64` is served but not
-  yet consumed - Linux stays "coming soon" until that port is stable (`spec/ports.md`).
+  `win32-x86_64` (the Windows button) and `linux-x86_64` (the "Linux (Experimental)"
+  text link in the platform line - a link, not a button, until that port is stable,
+  `spec/ports.md`).
 - `release/` — the §3 per-OS update feeds, one directory per OS:
   `darwin-<arch>/latest-mac.yml` (electron-updater, rewritten by `scripts/release.sh`;
   beside it `darwin-<arch>/feed.json`, the legacy Squirrel.Mac feed 0.6.0 installs read,

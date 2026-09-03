@@ -226,6 +226,8 @@
   html.windows a[data-download="win32-x86_64"]{background:var(--accent); border-color:transparent; color:var(--on-accent)}
   html.windows a[data-download="win32-x86_64"]:hover{background:var(--accent-hover); border-color:transparent; color:var(--on-accent)}
   .platform{margin-top:14px; font-family:var(--mono); font-size:11px; color:var(--faint)}
+  .platform a{text-decoration:underline; text-underline-offset:2px}
+  .platform a:hover{color:var(--text)}
 
   /* demo window */
   .demo{padding:34px 0 8px; position:relative}
@@ -485,7 +487,7 @@ if (/Mac|iPhone|iPad|iPod/i.test(awPlatform)) {
       <a class="btn ghost" data-download="win32-x86_64" href="https://github.com/hansololz/autowright/releases/latest" title="The Windows build is unsigned, so SmartScreen will warn before it runs." aria-label="Download for Windows"><svg class="ico" aria-hidden="true"><use href="#fa-windows"/></svg><span class="label">Download for Windows</span></a>
       <a class="btn ghost" href="https://github.com/hansololz/autowright">View source</a>
     </div>
-    <div class="platform">MIT licensed · Linux coming soon</div>
+    <div class="platform">MIT licensed · <a data-download="linux-x86_64" href="https://github.com/hansololz/autowright/releases/latest" aria-label="Download for Linux (experimental)">Linux (Experimental)</a></div>
   </section>
 
   <section class="demo">
@@ -650,7 +652,7 @@ if (/Mac|iPhone|iPad|iPod/i.test(awPlatform)) {
       <a class="btn primary" data-download="darwin-arm64" href="https://github.com/hansololz/autowright/releases/latest" aria-label="Download for macOS"><svg class="ico" aria-hidden="true"><use href="#fa-apple"/></svg><span class="label">Download for macOS</span></a>
       <a class="btn ghost" data-download="win32-x86_64" href="https://github.com/hansololz/autowright/releases/latest" title="The Windows build is unsigned, so SmartScreen will warn before it runs." aria-label="Download for Windows"><svg class="ico" aria-hidden="true"><use href="#fa-windows"/></svg><span class="label">Download for Windows</span></a>
     </div>
-    <div class="platform">Free · open source · Linux coming soon</div>
+    <div class="platform">Free · open source · <a data-download="linux-x86_64" href="https://github.com/hansololz/autowright/releases/latest" aria-label="Download for Linux (experimental)">Linux (Experimental)</a></div>
   </section>
 
   <footer>
@@ -881,7 +883,8 @@ if (/Mac|iPhone|iPad|iPod/i.test(awPlatform)) {
 <script>
 // download buttons - each points at its OS's latest versioned installer via the
 // same-origin downloads.json index (rewritten by each OS's release leg); the anchor's
-// data-download value names its index entry (darwin-arm64 = DMG, win32-x86_64 = exe).
+// data-download value names its index entry (darwin-arm64 = DMG, win32-x86_64 = exe,
+// linux-x86_64 = AppImage, the platform-line text link).
 // The static href (the releases page) stays as the no-JS / fetch-failure fallback.
 fetch("downloads.json")
   .then((r) => (r.ok ? r.json() : Promise.reject()))

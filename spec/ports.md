@@ -40,13 +40,15 @@ selectors, done via `app/e2e/harness.ts` `COPY`). Each remaining item moves into
   serving the old feed.
 - **`managedInstall` answers false on both** (`win32.cjs:122-124`, `linux.cjs:153-156`);
   the probe may later detect a distro-package / winget-style managed install.
-- **Release messaging: Windows is advertised as a regular build; Linux is not advertised
-  yet.** The `experimental` tag on the download page's "Download for Windows" button and
+- **Release messaging: Windows is advertised as a regular build; Linux is advertised as
+  experimental, as a text link rather than a button.** The `experimental` tag on the download page's "Download for Windows" button and
   the README's Windows "unstable" wording were dropped together (2026-09-02); the build
   is still unsigned, so both keep the SmartScreen note. The page (`docs/index.html`,
   §17) offers the Windows installer as a ghost-style button that reads the
   `win32-x86_64` entry of `downloads.json`. Linux stays **unstable** in the README
-  (lagging, and failing on Ubuntu 24.04+) and "coming soon" on the page; Linux gets no
+  (lagging, and failing on Ubuntu 24.04+); on the page it is the underlined
+  "Linux (Experimental)" text link in the mono platform line under the buttons, which
+  reads the `linux-x86_64` entry (the AppImage) the same way (2026-09-02). Linux gets no
   button until its port is stable - when it is, add its button + copy the same way.
 
 ## Windows

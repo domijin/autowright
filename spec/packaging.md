@@ -737,7 +737,7 @@ and dropped (dormant project; the name-sharing Squirrel.Mac stays on macOS uncha
   `docs/downloads.json`); `release.sh` stays bash/BSD-sed and runs on
   macOS. A release that ships both platforms is two script runs against one tag/version.
   The `docs/index.html` download CTA (§17) offers the Windows installer as a second,
-  `experimental`-tagged button that reads the `win32-x86_64` entry of `docs/downloads.json`.
+  ghost-style button that reads the `win32-x86_64` entry of `docs/downloads.json`.
 
 **Linux packaging & updates (decided — AppImage + electron-builder + electron-updater).**
 The Linux distributable is a

@@ -393,17 +393,20 @@ migrate-on-load migration so data written by released versions keeps loading (§
   name - "Autowright · open source · runs locally", so the brand appears as page text above
   the fold, not only in the wordmark - headline, one-paragraph pitch, two download
   buttons: "Download for macOS" (primary, accent) and "Download for Windows" (ghost
-  style, its label followed by an inline mono uppercase `experimental` tag, black text
-  on a solid accent fill - the
-  Windows port is the README's "unstable" early build: unsigned, so SmartScreen warns;
-  the anchor's `title` says so in one sentence, and its `aria-label` is "Download for
-  Windows (experimental)". On Apple devices the Windows button collapses to an icon-only
-  ghost button: an inline `<head>` script adds the `apple` class to `<html>` before first
-  paint (so the full button never flashes) when the UA platform matches
-  Mac/iPhone/iPad/iPod, and CSS keyed off `html.apple` hides the label and tag and shows
-  the Font Awesome brands `windows` glyph (`#fa-windows` symbol, inlined like the other
-  icons); the `title`, `aria-label`, and platform line still carry the experimental
-  status. Elsewhere the full labelled button shows). Each is a direct download of that
+  style - the Windows build is unsigned, so SmartScreen warns; the anchor's `title`
+  says so in one sentence, and its `aria-label` is "Download for
+  Windows". The buttons adapt to the visitor's OS: an inline `<head>` script adds the
+  `apple` class to `<html>` when the UA platform matches Mac/iPhone/iPad/iPod, else the
+  `windows` class when it matches Windows, before first paint (so the wrong styling
+  never flashes). On Apple devices CSS keyed off `html.apple` collapses the Windows
+  button to an icon-only ghost button - it hides the label and shows the Font Awesome
+  brands `windows` glyph (`#fa-windows` symbol, inlined like the other icons); the
+  `title` and `aria-label` still carry the unsigned/SmartScreen note. On Windows
+  devices CSS keyed off `html.windows` swaps the roles: the macOS button collapses
+  the same way to an icon-only ghost button (brands `apple` glyph, `#fa-apple`; its
+  `aria-label` "Download for macOS" keeps it accessible) and the Windows button takes
+  the primary accent styling. Elsewhere both full labelled buttons show, macOS
+  primary). Each is a direct download of that
   OS's latest versioned installer: on load, page JS fetches the same-origin
   `downloads.json` distributable index (relative URL, so it also works when the page
   is served from a sub-path in local previews) and rewrites each download anchor's
@@ -413,7 +416,7 @@ migrate-on-load migration so data written by released versions keeps loading (§
   installer with the version in its filename; an anchor whose entry is missing or
   malformed is left alone. The static fallback `href` (no JS, fetch failure) is the
   repo's latest-release GitHub page. Then "View source" (ghost), and under the buttons
-  a mono platform line "MIT licensed · Windows experimental · Linux coming soon" (Linux
+  a mono platform line "MIT licensed · Linux coming soon" (Linux
   gets no button until its port is stable, per `spec/ports.md`)) · an animated app-window demo
   that mirrors the §11 chat thread (46 px icon rail with the §9 nav icon set —
   bolt, clock-rotate-left, microchip, key, sliders, circle-info pinned at the bottom — and all
@@ -473,7 +476,7 @@ migrate-on-load migration so data written by released versions keeps loading (§
   running tasks itself, and which macOS versions it needs. Answers restate facts already
   spec'd elsewhere (§1 promises, §5 triggers, §6 execution, §13 agents) and must stay true to
   them; each is two or three sentences and names "Autowright" rather than "it"; the
-  requirements answer also states that the Windows build is experimental and unsigned
+  requirements answer also states that the Windows build is unsigned
   and that Linux is planned · closing
   download CTA (the same two feed-driven direct-download buttons as the hero — every
   download anchor carries `data-download` naming its index entry; the JSON-LD
@@ -537,7 +540,7 @@ migrate-on-load migration so data written by released versions keeps loading (§
   release leg (alongside that leg's §3 update feed in the repo-root §17 `release/` — the
   feeds themselves are not part of this site), so every entry names the newest release
   that actually carries that OS's artifact. The page consumes `darwin-arm64` and
-  `win32-x86_64` (the experimental Windows button); `linux-x86_64` is served but not
+  `win32-x86_64` (the Windows button); `linux-x86_64` is served but not
   yet consumed - Linux stays "coming soon" until that port is stable (`spec/ports.md`).
 - `release/` — the §3 per-OS update feeds, one directory per OS:
   `darwin-<arch>/latest-mac.yml` (electron-updater, rewritten by `scripts/release.sh`;

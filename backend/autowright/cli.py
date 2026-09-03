@@ -863,7 +863,11 @@ def cmd_trigger_list(c: Client, args) -> None:
         _pjson(triggers)
         return
     if not triggers:
-        print("no triggers — executes only via `automation execute` or the menu bar")
+        # §9 per-OS copy rule: name the §13 surface the way this OS does, or
+        # drop the clause where there is none (Linux).
+        surface = paths.tray_surface_name()
+        tail = f" or the {surface}" if surface else ""
+        print(f"no triggers — executes only via `automation execute`{tail}")
     for i, t in enumerate(triggers, 1):
         print(f"{i}. {t['label']}" + _trigger_marks(t))
 
@@ -1215,6 +1219,16 @@ def cmd_agent_check(c: Client, args) -> None:
 
 
 # ---------------------------------------------------------------- settings
+
+def _menu_bar_icon_help() -> str:
+    """§9 per-OS copy rule for the `settings set` help: the §13 surface is the
+    menu bar on macOS and the tray on Windows; Linux has none, and the key
+    still parses and stores there (§4.9) — say so."""
+    surface = paths.tray_surface_name()
+    if surface is None:
+        return "show the tray icon (Linux has no tray, so this is ignored)"
+    return f"show the {surface} icon"
+
 
 SETTINGS_KEYS = {"login": bool, "menuBarIcon": bool, "keepAwake": bool, "automaticUpdateCheck": bool,
                  "notifications": str, "days": int, "keepForever": bool, "developerMode": bool,
@@ -2262,7 +2276,7 @@ def build_parser(full: bool = CLI_ENABLED) -> argparse.ArgumentParser:
                     "\n"
                     "Settings and what they take:\n"
                     "  login=on|off                 start Autowright when you log in\n"
-                    "  menuBarIcon=on|off           show the menu bar icon\n"
+                    f"  menuBarIcon=on|off           {_menu_bar_icon_help()}\n"
                     "  keepAwake=on|off             stop this machine sleeping, so schedules\n"
                     "                               keep firing (the display can still sleep);\n"
                     "                               works best on an always-on desktop; a\n"

@@ -142,7 +142,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   accent **Retry** (tooltip "Retries this execution from the failed step. Steps that already
   succeeded keep their results.").
   Succeeded / cancelled / interrupted executions get only the quiet "Execute again".
-- Trigger labels (derived at serialization from the stored §4.5 kinds): Manual, Menu bar,
+- Trigger labels (derived at serialization from the stored §4.5 kinds): Manual, Menu bar
+  (Tray on Windows and Linux — the §9 per-OS copy rule; the app reads the label off the
+  machine that serializes it),
   Cron, Once, App start, Discord, iMessage. `interrupted` covers e.g. "Mac went to sleep" — applied
   by startup recovery when a restarted backend finds stale `executing` executions; recovery
   first SIGKILLs the record's persisted step process group (`pgid`, §4.5) when that group

@@ -735,7 +735,8 @@ version: int | null — the executed version number; null unless kind is `versio
 trigger: manual | menubar | cron | time | app_start | discord | imessage | test (future:
   pubsub) — the machine kind of what started the execution; stored as data, never the UI
   copy. The serialized `trigger` is the derived display label (manual → "Manual",
-  menubar → "Menu bar", cron → "Cron", time → "Once", app_start → "App start",
+  menubar → "Menu bar" on macOS and "Tray" on Windows and Linux (the §9 per-OS copy rule —
+  the one label that names a platform surface), cron → "Cron", time → "Once", app_start → "App start",
   discord → "Discord", imessage → "iMessage", test → "Test", and the reserved
   pubsub → "Pub/Sub" — present in the backend label map for §4.3's reserved kind only; the
   API refuses to store pubsub triggers, so no record ever carries it and the renderer's

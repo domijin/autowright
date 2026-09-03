@@ -163,7 +163,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   A dropped one-shot is consumed unfired (§4.3 spent rule). **Drop record:** when the drop
   leaves an automation with nothing firing in that tick, the scheduler writes one `skipped`
   execution record for it (trigger kind = the dropped trigger's, note "missed while this
-  Mac was asleep (run if missed is off for this trigger)"; §4.6 reserves `skipped` for
+  Mac was asleep (run if missed is off for this trigger)" - "Mac" is the §9 per-OS machine
+  noun, resolved through `paths.machine_noun()` when the record is written, so a Windows or
+  Linux record says "this PC"; §4.6 reserves `skipped` for
   exactly "never ran", and for a one-shot this is the only trace the user gets); when
   another trigger of the same automation catches up in the same tick, the drop is silent -
   the execution covers it, and the one-per-wake rule holds. Dropped moments never make the

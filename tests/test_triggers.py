@@ -343,10 +343,13 @@ def test_cron_display_dow_edge_parity():
     assert cron_display("0 8 * * 6") == ("Saturdays at 8:00", "Sat 8:00")
 
 
-def test_trigger_exec_labels():
+def test_trigger_exec_labels(monkeypatch):
     # §4.5: executions store the trigger's machine kind; the display label is
-    # derived at serialization by storage.trigger_label.
+    # derived at serialization by storage.trigger_label. `menubar` is the one
+    # label that names a platform surface, so it follows the §9 per-OS rule.
+    from autowright import paths
     from autowright.storage import trigger_label
+    monkeypatch.setattr(paths, "current_os", lambda: "macos")
 
     assert trigger_label("cron") == "Cron"
     assert trigger_label("app_start") == "App start"
@@ -355,6 +358,10 @@ def test_trigger_exec_labels():
     assert trigger_label("manual") == "Manual"
     assert trigger_label("menubar") == "Menu bar"
     assert trigger_label("test") == "Test"
+    for token in ("windows", "linux"):
+        monkeypatch.setattr(paths, "current_os", lambda token=token: token)
+        assert trigger_label("menubar") == "Tray"
+        assert trigger_label("manual") == "Manual"
 
 
 @pytest.mark.skipif(not hasattr(time, "tzset"), reason="POSIX-only tzset")

@@ -259,7 +259,7 @@ export interface Execution {
   automationDeleted: boolean
   versionLabel: string
   status: Status
-  trigger: 'Manual' | 'Menu bar' | 'Cron' | 'Once' | 'App start' | 'Discord' | 'iMessage' | 'Test'  // §4.5 labels
+  trigger: 'Manual' | 'Menu bar' | 'Tray' | 'Cron' | 'Once' | 'App start' | 'Discord' | 'iMessage' | 'Test'  // §4.5 labels ('Tray' = menubar on Windows/Linux, §9)
   triggerSender: string | null  // §4.5 — payload sender on every row ("Discord · Dave · v3")
   test: boolean  // §4.5 test executions — §11 draft tests
   duration: string

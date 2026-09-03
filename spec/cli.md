@@ -281,7 +281,9 @@ stores; an unknown name exits 1 with the candidate list) (`--author` repeats and
 the trigger's one `author` list), or `--imessage <from>
 [--pattern <text>]` for a §4.3 imessage trigger), `trigger on|off <n>`, and
 `trigger remove <n>`
-edit the stored list directly (1-based indexes as printed by `trigger list`, which appends
+edit the stored list directly (1-based indexes as printed by `trigger list`, whose
+empty-list line names the §13 surface per the §9 per-OS copy rule — "… or the menu bar"
+on macOS, "… or the tray" on Windows, and no surface clause on Linux — and which appends
 " (no catch-up)" to a row whose `runIfMissed` is false, after the " (off)" marker when both
 apply) via the §19
 PATCH; a cron minted by `trigger add` lands `source: user` (§4.3 — user-minted crons

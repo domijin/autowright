@@ -11,7 +11,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from . import timefmt, triggers as triggerlib
+from . import paths, timefmt, triggers as triggerlib
 from .engine import Engine
 from .events import hub
 from .firing import drain_queue, finish_never_ran, fire_trigger
@@ -24,7 +24,10 @@ TICK_S = float(os.environ.get("AUTOWRIGHT_TICK_S", "15"))  # §15 knob, config o
 # notices it was slept through, not merely seen a tick late. Derived from the
 # tick period; no knob of its own (§15).
 GRACE_S = max(60.0, 4 * TICK_S)
-DROP_NOTE = "missed while this Mac was asleep (run if missed is off for this trigger)"
+def drop_note() -> str:
+    """§6 drop-record note. "Mac" is the §9 per-OS machine noun, resolved when
+    the record is written (a Windows or Linux record says "this PC")."""
+    return f"missed while this {paths.machine_noun()} was asleep (run if missed is off for this trigger)"
 
 
 class Scheduler:
@@ -246,8 +249,8 @@ class Scheduler:
                 return  # deleted mid-tick, no record for a gone automation
             try:
                 h = self.store.create_execution(a, "version", a["current_version"], t["kind"],
-                                                steps=[], status="skipped", note=DROP_NOTE)
-                finish_never_ran(self.store, h, DROP_NOTE, finished_at=timefmt.now_iso())
+                                                steps=[], status="skipped", note=drop_note())
+                finish_never_ran(self.store, h, drop_note(), finished_at=timefmt.now_iso())
             except Exception:  # noqa: BLE001
                 log.exception("recording a dropped occurrence on %r failed", a.get("name"))
 

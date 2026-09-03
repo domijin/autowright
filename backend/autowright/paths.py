@@ -51,6 +51,26 @@ def secret_store_name(token: str | None = None) -> str:
     return names.get(token or current_os(), "Keychain")
 
 
+def tray_surface_name(token: str | None = None) -> str | None:
+    """§9 per-OS copy rule: the §13 surface's own name in running prose —
+    "menu bar" on macOS, "tray" on Windows, and None on Linux, which ships no
+    tray surface at all (§13 2026-09-01) so callers drop the clause instead of
+    naming one. The backend half of the renderer table's `menuBar` entry."""
+    os_token = token or current_os()
+    if os_token == "linux":
+        return None
+    return "menu bar" if os_token == "macos" else "tray"
+
+
+def tray_trigger_label(token: str | None = None) -> str:
+    """§4.5/§9: the display label of a `menubar` execution trigger — "Menu bar"
+    on macOS, "Tray" everywhere else (a `menubar` record only reaches Linux
+    inside a data folder carried over from another OS, and "Tray" is the
+    nearest name it has). Derived at serialization from the running platform,
+    never stored (§4.5)."""
+    return "Menu bar" if (token or current_os()) == "macos" else "Tray"
+
+
 def console_python() -> str:
     """§2 console-interpreter rule: the interpreter for Python children the
     backend spawns (the §6.1 executor, §6.2 pip) and for the §3 discovery

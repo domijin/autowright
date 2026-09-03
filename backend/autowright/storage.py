@@ -35,7 +35,9 @@ AGENT_REF_RE = re.compile(r"\bagents\[\s*[\"'](" + _UUID + r")[\"']\s*\]")
 log = logging.getLogger("autowright.storage")
 
 # §4.5 trigger display labels — derived at serialization, never stored. The
-# stored value is always the machine kind on the left.
+# stored value is always the machine kind on the left. `menubar` is the one
+# label that names a platform surface, so it resolves per-OS through
+# paths.tray_trigger_label (§9) rather than this static map.
 TRIGGER_LABELS = {
     "manual": "Manual", "menubar": "Menu bar", "cron": "Cron", "time": "Once",
     "app_start": "App start", "discord": "Discord", "imessage": "iMessage",
@@ -44,6 +46,8 @@ TRIGGER_LABELS = {
 
 
 def trigger_label(kind: str | None) -> str:
+    if kind == "menubar":
+        return paths.tray_trigger_label()
     return TRIGGER_LABELS.get(kind or "", kind or "")
 
 

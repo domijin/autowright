@@ -1042,7 +1042,7 @@ def test_run_if_missed_off_drops_slept_through_cron(store, monkeypatch):
     span is dropped, the baseline advances to now, one skipped record with the
     drop note is written, and the next natural occurrence fires normally."""
     from datetime import datetime
-    from autowright.scheduler import DROP_NOTE
+    from autowright.scheduler import drop_note
     from conftest import make_version
 
     clock = _Clock(datetime(2026, 7, 10, 10, 30))
@@ -1058,7 +1058,7 @@ def test_run_if_missed_off_drops_slept_through_cron(store, monkeypatch):
     assert sched._baseline[(a["id"], "t1")] == clock.now
     recs = _drop_records(store, a["id"])
     assert len(recs) == 1
-    assert recs[0]["note"] == DROP_NOTE
+    assert recs[0]["note"] == drop_note()
     assert recs[0]["trigger"] == "cron"
     assert recs[0]["duration_ms"] == 0
     sched._tick()
@@ -1223,7 +1223,7 @@ def test_run_if_missed_drop_records_are_per_automation(store, monkeypatch):
     """§6: two automations slept through in the same tick each get their own
     single drop record; the one-record rule is per automation, not global."""
     from datetime import datetime
-    from autowright.scheduler import DROP_NOTE
+    from autowright.scheduler import drop_note
     from conftest import make_version
 
     clock = _Clock(datetime(2026, 7, 10, 10, 40))
@@ -1242,7 +1242,7 @@ def test_run_if_missed_drop_records_are_per_automation(store, monkeypatch):
     for auto in (a, b):
         recs = _drop_records(store, auto["id"])
         assert len(recs) == 1
-        assert recs[0]["note"] == DROP_NOTE
+        assert recs[0]["note"] == drop_note()
         assert recs[0]["trigger"] == "cron"
 
 

@@ -153,8 +153,20 @@ becomes "— unlock your keyring and try again" (the Secret Service store does l
 unchanged; the file-manager noun inside longer phrases is `file manager`) ·
 `menu bar` → `tray` on Windows
 (the §13 surface's name there — "starts quietly in the tray", "Show in the tray",
-"Execute now and the tray still work"); on Linux there is no tray surface at all (§13
-2026-09-01), so the sentences that name it drop the clause instead of renaming it: the
+"Execute now and the tray still work"). The backend-served strings that name the surface
+follow the same token through `paths.tray_surface_name` / `paths.tray_trigger_label`
+(the backend half of the renderer's `menuBar` entry, drift-guarded like the other two
+helpers, §15): the §4.5 execution trigger label `Menu bar` → `Tray` (derived at
+serialization from the running platform, so a record's label always names the surface
+of the machine showing it), the §20 CLI `trigger list` empty line "no triggers — executes
+only via `automation execute` or the menu bar" → "… or the tray", and the CLI `settings
+set` help line "show the menu bar icon" → "show the tray icon"; on Linux there is no
+tray surface at all (§13
+2026-09-01), so the sentences that name it drop the clause instead of renaming it (the
+CLI empty line becomes "no triggers — executes only via `automation execute`", the
+settings help line "show the tray icon (Linux has no tray, so this is ignored)" — the key
+still parses and stores, §4.9 — and the trigger label stays `Tray`, the only case a
+`menubar` record reaches Linux being a data folder carried over from another OS): the
 §4.9 login row's sub-copy becomes "Autowright starts when you log in.", the §9.2/§11
 manual-surfaces lines become "when you press Execute now" / "via Execute now", and the
 recurring closer "Execute now and the menu bar still work." becomes "Execute now still

@@ -1132,6 +1132,23 @@ def test_copy_table_secret_store_name():
     assert paths.secret_store_name("linux") == "system keyring"
 
 
+def test_copy_table_tray_surface_name():
+    """§9 per-OS copy rule, backend half of the renderer table's `menuBar`
+    entry: "menu bar" on macOS, "tray" on Windows, and None on Linux (§13: no
+    tray surface, so callers drop the clause)."""
+    assert paths.tray_surface_name("macos") == "menu bar"
+    assert paths.tray_surface_name("windows") == "tray"
+    assert paths.tray_surface_name("linux") is None
+
+
+def test_copy_table_tray_trigger_label():
+    """§4.5/§9: the `menubar` execution trigger label — "Menu bar" on macOS,
+    "Tray" on Windows and Linux."""
+    assert paths.tray_trigger_label("macos") == "Menu bar"
+    assert paths.tray_trigger_label("windows") == "Tray"
+    assert paths.tray_trigger_label("linux") == "Tray"
+
+
 def test_copy_table_defaults_to_the_running_platform(monkeypatch):
     """Both helpers default to `current_os()` — the caller never has to know
     which platform it is on. An empty token is the same as none (the renderer's
@@ -1143,7 +1160,11 @@ def test_copy_table_defaults_to_the_running_platform(monkeypatch):
         assert paths.machine_noun("") == paths.machine_noun(token)
         assert paths.secret_store_name() == paths.secret_store_name(token)
         assert paths.secret_store_name("") == paths.secret_store_name(token)
+        assert paths.tray_surface_name() == paths.tray_surface_name(token)
+        assert paths.tray_trigger_label() == paths.tray_trigger_label(token)
     assert paths.machine_noun("plan9") == "PC"
+    assert paths.tray_surface_name("plan9") == "tray"
+    assert paths.tray_trigger_label("plan9") == "Tray"
     assert paths.secret_store_name("plan9") == "Keychain"
 
 

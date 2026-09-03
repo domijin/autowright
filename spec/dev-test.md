@@ -162,13 +162,19 @@ actually open (`.zip` for the mac electron-updater/Squirrel path, `.exe` for the
 updater, `.AppImage` for the AppImage updater); no feed is *newer* than `VERSION` (it
 would name a release that does not exist - the reverse is legitimate and deliberately
 unflagged, since each leg rewrites only its own feed); at least one `darwin-<arch>` feed
-equals the last *committed* `VERSION` - `git show HEAD:VERSION`, falling back to the file
-outside a git checkout (`release.sh` bumps `VERSION` and rewrites the mac feed in one run,
-so a lagging mac feed means a lost feed write or push - recover with `release.sh --feed`;
-the committed copy is the one compared because `release.sh <version>` runs this very suite
-with the bump still uncommitted and writes the feed only after the GitHub release is live,
-so mid-release the working-tree file legitimately runs ahead of every feed; until the
-v0.6.1 release first writes `latest-mac.yml`, the legacy feed satisfies this check);
+equals the newest *published* release (`release.sh` bumps `VERSION` and rewrites the mac
+feed in one run, so a lagging mac feed means a lost feed write or push - recover with
+`release.sh --feed`). Published is decided by the release tag, not by `VERSION` alone:
+the last committed `VERSION` (`git show HEAD:VERSION`, falling back to the file outside a
+git checkout) counts as published once its `v<version>` tag exists in the local checkout,
+and the feed must then equal it; while that tag is absent the release may not have been
+cut yet - `release.sh <version>` runs this very suite before the GitHub release exists and
+writes the feed only once it is live, and a bump committed ahead of its release is the
+same picture - so the feed may equal either that `VERSION` or the previous release, the
+newest `v*` tag reachable from `HEAD` (`git describe --tags --abbrev=0 --match 'v*'`).
+The working-tree `VERSION` is never compared: mid-release it legitimately runs ahead of
+every feed. Until the v0.6.1 release first writes `latest-mac.yml`, the legacy feed
+satisfies this check;
 each `docs/downloads.json` entry names a release-download URL embedding its own version
 and, where that key's feed exists, matches the feed's version - for `win32`/`linux` it
 must offer the very URL the feed names, while the `darwin` entries offer the DMG beside

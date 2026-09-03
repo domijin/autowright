@@ -259,31 +259,53 @@ def test_legacy_bridge_feeds_stay_frozen():
                 "different release")
 
 
-def _committed_version() -> str:
-    """The last *committed* `VERSION` - what the newest published release can
-    be. `release.sh <version>` runs this suite with the bump still uncommitted
-    (the feed is written only once the GitHub release is live), so mid-release
-    the working-tree file legitimately runs ahead of every feed; the committed
-    copy does not. Falls back to the file outside a git checkout."""
+def _git(*args: str) -> str | None:
+    """Stdout of a git command against the repo, or None outside a git checkout
+    (or when the command fails - a missing tag, no tags at all)."""
     try:
         return subprocess.run(
-            ["git", "-C", str(REPO), "show", "HEAD:VERSION"],
+            ["git", "-C", str(REPO), *args],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
-        return _read("VERSION").strip()
+        return None
+
+
+def _committed_version() -> str:
+    """The last *committed* `VERSION`. The working-tree file is never the one
+    compared: `release.sh <version>` runs this suite with the bump still
+    uncommitted (the feed is written only once the GitHub release is live), so
+    mid-release it legitimately runs ahead of every feed. Falls back to the
+    file outside a git checkout."""
+    committed = _git("show", "HEAD:VERSION")
+    return committed if committed is not None else _read("VERSION").strip()
+
+
+def _published_versions() -> set[str]:
+    """§18: the versions the newest published release can be at - what the mac
+    feed must match. The committed `VERSION` counts as published once its
+    `v<version>` tag exists in this checkout, and is then the only answer. While
+    that tag is absent the release may not have been cut yet (a bump committed
+    ahead of its release looks exactly like `release.sh` mid-run: `VERSION`
+    written, feed still at the previous release), so the previous release - the
+    newest `v*` tag reachable from HEAD - is accepted too."""
+    version = _committed_version()
+    if _git("rev-parse", "-q", "--verify", f"refs/tags/v{version}") is not None:
+        return {version}
+    previous = _git("describe", "--tags", "--abbrev=0", "--match", "v*", "HEAD")
+    return {version, previous[1:]} if previous else {version}
 
 
 def test_a_macos_feed_tracks_the_version_file():
     """§18: releases are cut from macOS by `release.sh`, which bumps `VERSION`
     *and* rewrites the built arch's update feed in the same run. So the mac
-    feed for the arch the release was built on always equals the committed
-    `VERSION`; a mismatch means the feed write or its push was lost (recover
-    with `release.sh --feed`). Any arch satisfies it - the guard does not care
-    which machine cut the release, only that the mac half is not stale. Until
-    the 0.6.1 release first writes `latest-mac.yml`, the legacy bridge feeds
-    are the mac feeds, so they count as candidates too."""
-    version = _committed_version()
+    feed for the arch the release was built on always equals the newest
+    published release; a mismatch means the feed write or its push was lost
+    (recover with `release.sh --feed`). Any arch satisfies it - the guard does
+    not care which machine cut the release, only that the mac half is not
+    stale. Until the 0.6.1 release first writes `latest-mac.yml`, the legacy
+    bridge feeds are the mac feeds, so they count as candidates too."""
+    published = _published_versions()
     darwin = {key: facts for key, facts in _present_feeds().items()
               if key.startswith("darwin-")}
     for key, rel in LEGACY_FEEDS.items():
@@ -291,9 +313,9 @@ def test_a_macos_feed_tracks_the_version_file():
             legacy_version, legacy_urls = _feed_facts(rel)
             darwin[f"{key}-legacy"] = (rel, legacy_version, legacy_urls)
     assert darwin, "no darwin feed under release/ - the mac update feed is gone"
-    assert any(feed_version == version for _rel, feed_version, _urls in darwin.values()), (
-        f"no darwin feed is at the committed VERSION ({version}); found "
-        f"{ {rel: v for rel, v, _ in darwin.values()} }. Re-publish with "
+    assert any(feed_version in published for _rel, feed_version, _urls in darwin.values()), (
+        f"no darwin feed is at the newest published release ({' or '.join(sorted(published))}); "
+        f"found { {rel: v for rel, v, _ in darwin.values()} }. Re-publish with "
         "`./scripts/release.sh --feed`.")
 
 

@@ -1217,10 +1217,12 @@ def test_draft_test_is_a_test_execution_record(store, monkeypatch):
     a = store.create_automation(ver, "Draft Tester", None)
     store.save_draft(a, ver)
 
-    eid = tr.start(engine, ver, a, [], [], {})
+    eid = tr.start(engine, ver, a, [], [], {}, steps_fingerprint="1:0badf00d")
     wait_done(engine, eid)
     dd = store.auto_dir(a) / "draft"
     wait_test_summary(dd)
+    # §19/§21: the renderer's opaque steps fingerprint is stored verbatim on the summary
+    assert store.draft_test_json(dd)["stepsFingerprint"] == "1:0badf00d"
 
     h = store.execs[eid]
     assert h["kind"] == "test" and h["trigger"] == "test"

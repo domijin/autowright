@@ -12,16 +12,41 @@ import { usePlatformCopy } from '../../platformCopy'
 import { useStore } from '../../store'
 import { useTriggerPreview } from '../../triggers'
 import type { Automation, ChatEntry, DraftTrigger, ParamDef } from '../../types'
-import { Eyebrow, LoadingRow, ProgressBar, Spinner, StatusLine } from '../../ui'
-import { type Rev, analyzeTestMessage, applyTestValues, serializeDraft } from './model'
+import { Eyebrow, Spinner } from '../../ui'
+import { type Rev, analyzeTestMessage, applyTestValues, serializeDraft, stepsFingerprint } from './model'
 import { type MsgTrigger, type TestMock, TestRunModal } from './TestRunModal'
 
 // §11 card buttons: compact borderless text buttons (the card-header
 // treatment — never bordered or filled boxes); the class owns the padding,
 // and the rows wrap so a button is never clipped.
 const btnStyle: React.CSSProperties = { flex: 'none', whiteSpace: 'nowrap' }
-const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 10px' }
-const hintFont = "400 11.5px/1.5 var(--sans)"
+// §11: each card body is exactly one row — status text left (a single line
+// that shrinks with ellipsis, full text in its tooltip), buttons right, never
+// wrapping or clipping.
+const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px 12px' }
+const textStyle: React.CSSProperties = {
+  flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+  font: "400 12.5px/1.5 var(--sans)", color: 'var(--text-muted)',
+}
+const btnsStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }
+
+/** The row's toned outcome — the §14 StatusLine icon + text, ellipsized like
+ * RowText so a long "Last test failed — <when>." never wraps the row. */
+function ToneText({ tone, children }: { tone: 'green' | 'amber'; children: string }) {
+  const color = tone === 'green' ? 'var(--green)' : 'var(--amber)'
+  return (
+    <>
+      <i className={`fa-solid ${tone === 'green' ? 'fa-check' : 'fa-triangle-exclamation'}`} style={{ color, fontSize: 13, flex: 'none' }} />
+      <RowText style={{ font: "500 13px/1.5 var(--sans)", color, marginLeft: -4 }}>{children}</RowText>
+    </>
+  )
+}
+
+/** A one-line status text — ellipsized, with the full text (or a longer
+ * explainer) in the tooltip. */
+function RowText({ children, title, style }: { children: React.ReactNode; title?: string; style?: React.CSSProperties }) {
+  return <span style={{ ...textStyle, ...style }} title={title ?? (typeof children === 'string' ? children : undefined)}>{children}</span>
+}
 
 function CardHeader({ label }: { label: string }) {
   return (
@@ -49,37 +74,30 @@ export function BuildCard({ rev, outOfSync, syncDisabled, agentGap, runSync }: B
   // done never moves the card. A failed / blocked / cancelled sync leaves the
   // workflow out of sync and the out-of-sync row renders then.
   const showOutOfSync = outOfSync && !rev.syncBusy && !rev.pendingSync
+  const outOfSyncText = rev.dirty ? 'Out of sync — steps still match the old spec.'
+    : agentGap ? 'Out of sync — a step’s agent isn’t enabled.'
+      : 'Out of sync — a step’s secret isn’t allowed.'
   return (
     <div className="ad-card" data-testid="build-card" style={{ overflow: 'hidden' }}>
       <CardHeader label="BUILD" />
       {showOutOfSync ? (
-        <div style={{ padding: '12px 18px 14px', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* the indicator sits in an 18px box matching the title's line-height,
-                so it stays centered on the first line even when the text wraps */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-              <span style={{ height: 18, display: 'flex', alignItems: 'center', flex: 'none' }}>
-                {/* §11: never a spinner here (the live surface is the thread
-                    progress entry) and never green — amber marks out of sync */}
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)' }} />
-              </span>
-              <span style={{ minWidth: 0, font: "500 12.5px/18px var(--sans)", color: 'var(--text)' }}>
-                {rev.dirty ? 'The workflow is out of sync — these steps still match the old spec.'
-                  : agentGap ? 'The workflow is out of sync — steps call an agent that isn’t enabled.'
-                    : 'The workflow is out of sync — steps use a secret that isn’t allowed.'}
-              </span>
-            </div>
-            <div style={{ font: hintFont, color: 'var(--text-muted)', margin: '2px 0 0 16px' }}>
-              {rev.dirty ? 'Sync the steps to the new spec, then review them. Saving is locked until you do — nothing ships unreviewed.'
-                : agentGap ? 'Re-enable the agent, or sync the steps so they only call agents available here. Saving is locked until you do.'
-                  : 'Re-allow the secret, or sync the steps so they only use secrets allowed here. Saving is locked until you do.'}
-            </div>
-          </div>
+        <div style={rowStyle}>
+          {/* §11: never a spinner here (the live surface is the thread progress
+              entry) and never green — amber marks out of sync */}
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)', flex: 'none' }} />
+          <RowText
+            style={{ font: "500 12.5px/1.5 var(--sans)", color: 'var(--text)' }}
+            title={`${outOfSyncText} ${rev.dirty ? 'Sync the steps to the new spec, then review them. Saving is locked until you do — nothing ships unreviewed.'
+              : agentGap ? 'Re-enable the agent, or sync the steps so they only call agents available here. Saving is locked until you do.'
+                : 'Re-allow the secret, or sync the steps so they only use secrets allowed here. Saving is locked until you do.'}`}
+          >
+            {outOfSyncText}
+          </RowText>
           {/* §11: the one accent-primary button — Sync now; disabled per Dirty
               gating (another job in flight, an old version, a live test), never
-              hidden. Its own sync hides this row (above). */}
+              hidden. Its own sync swaps this row for the in-sync one (above). */}
           <button
-            className="ad-btn-primary" data-testid="sync-steps"
+            className="ad-btn-primary small" data-testid="sync-steps"
             disabled={syncDisabled}
             onClick={runSync}
             style={btnStyle}
@@ -88,10 +106,8 @@ export function BuildCard({ rev, outOfSync, syncDisabled, agentGap, runSync }: B
           </button>
         </div>
       ) : (
-        <div style={{ ...rowStyle, padding: '10px 18px 12px', justifyContent: 'space-between' }}>
-          <span style={{ flex: '1 1 200px', minWidth: 0, font: "400 12.5px/1.5 var(--sans)", color: 'var(--text-muted)' }}>
-            In sync with the spec.
-          </span>
+        <div style={rowStyle}>
+          <RowText>In sync with the spec.</RowText>
           {/* §11: sync access on demand — faint, disabled per Dirty gating, never hidden */}
           <button className="ad-btn-text dim" disabled={syncDisabled} onClick={runSync} style={btnStyle}>
             Sync spec
@@ -153,6 +169,9 @@ export function TestCard({
   // §11 test trigger message: the mock rides §19 `triggerMock` only when the
   // message text is nonempty — an empty message runs the test without a payload.
   const [testMock, setTestMock] = useState<TestMock | null>(null)
+  // §11 stale-outcome rule: the fingerprint of the steps the tracked test ran
+  // against (null for a re-attached test — unknown, so never stale).
+  const [testedFp, setTestedFp] = useState<string | null>(null)
 
   // §11: the tracked test is an ordinary execution record — steps/status render
   // off it (executionFull carries the body; the header list covers the gap before
@@ -210,7 +229,6 @@ export function TestCard({
     : String(p.value ?? ''),
   ]))
   const testSteps = (test && executionFull[test.executionId]?.steps) ?? []
-  const testDone = testSteps.filter((s) => s.status !== 'queued' && s.status !== 'executing').length
   const testLiveIdx = testSteps.findIndex((s) => s.status === 'executing')
 
   // A live test survives leaving the editor — re-attach the card on entry.
@@ -243,14 +261,17 @@ export function TestCard({
       }
       // The tracked settled test is replaced only once the POST succeeds
       // (beginTest below) — a 409/error must not erase the last outcome.
+      const fp = stepsFingerprint(rev.steps)
       const { executionId } = await api.postTest({
         draft: serializeDraft(rev),
+        stepsFingerprint: fp, // §11 stale-outcome rule — stored on the summary
         ...(isEdit && auto ? { automationId: auto.id } : {}), // edit: scratch memory copies the automation's
         ...(values ? { paramValues: values } : {}), // §11 test-only values
         ...(mock ? { triggerMock: mock } : {}), // §11 test trigger message — only when text is nonempty
         enabledAgents: rev.enabledAgents, allowedSecrets: rev.allowedSecrets,
       })
       beginTest(executionId)
+      setTestedFp(fp)
     } catch (e) {
       showToast((e as Error).message)
     }
@@ -331,14 +352,22 @@ export function TestCard({
     }
   }, [testExec?.status]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // §11: the out-of-sync state the BUILD card shows — a sync in flight or
-  // armed counts as in sync for both cards.
-  const showOutOfSync = outOfSync && !rev.syncBusy && !rev.pendingSync
-  // §11 state 4: a resumed last test opens the modal on its run while the
-  // record still exists (retention may outlive it).
+  // §11: the TEST card gates on out of sync AND on a sync running or armed —
+  // the steps are about to be rewritten, so nothing about them is testable.
+  const showGate = outOfSync || rev.syncBusy || !!rev.pendingSync
+  // §11 stale-outcome rule: an outcome belongs to the steps it ran against.
+  // Compare the fingerprint of the tested steps with today's; unknown (a
+  // re-attached test, an old summary without one) is never stale.
+  const fp = stepsFingerprint(rev.steps)
+  const stale = test
+    ? testedFp !== null && testedFp !== fp
+    : !!rev.lastTest && !!rev.lastTest.stepsFingerprint && rev.lastTest.stepsFingerprint !== fp
+  // §11 state 5: a resumed last test opens the modal on its run while the
+  // record still exists (retention may outlive it); a stale outcome opens
+  // the setup phase for the new steps instead.
   const lastTestId = rev.lastTest?.executionId && executions.some((e) => e.id === rev.lastTest!.executionId)
     ? rev.lastTest.executionId : null
-  const runExecutionId = test ? test.executionId : lastTestId
+  const runExecutionId = stale ? null : test ? test.executionId : lastTestId
   // §11: Test draft never starts a test — it opens the modal; disabled under
   // the inputs lock, while an old version is viewed, and with no steps.
   const launchDisabled = busyRewrite || viewingOld || rev.steps.length === 0
@@ -348,7 +377,7 @@ export function TestCard({
     </button>
   )
   const runDisabledReason = rev.steps.length === 0 ? 'Sync the workflow first — there are no steps to test.'
-    : showOutOfSync || outOfSync ? 'Sync first — a test executes the steps as generated from the spec.'
+    : showGate ? 'Sync first — a test executes the steps as generated from the spec.'
       : busyRewrite ? 'Wait for the current request to finish.'
         : testLive ? 'A test is already executing.'
           : viewingOld ? 'An old version is never tested — restore it first.'
@@ -358,98 +387,84 @@ export function TestCard({
     <>
       <div className="ad-card" data-testid="test-card" style={{ overflow: 'hidden' }}>
         <CardHeader label="TEST" />
-        <div style={{ padding: '12px 18px 14px' }}>
-          {test && testLive ? (
-            /* state 1 — executing: status + progress; the run itself lives in the modal */
-            !testExec ? (
-              <LoadingRow label="Loading the test…" />
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, font: "400 12.5px var(--sans)", color: 'var(--text-2)' }}>
-                  <Spinner size={13} />
-                  <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    Executing
-                    {testSteps.length > 0 ? ` — step ${Math.max(testLiveIdx, 0) + 1} of ${testSteps.length}` : ''}
-                    {testLiveIdx >= 0 ? ` · ${testSteps[testLiveIdx].name}` : ''}
-                  </span>
-                </div>
-                {testSteps.length > 0 && (
-                  <div style={{ margin: '11px 0 3px' }}>
-                    <ProgressBar percent={(testDone / testSteps.length) * 100} />
-                  </div>
-                )}
-                <div style={{ ...rowStyle, marginTop: 8 }}>
-                  <button className="ad-btn-text" onClick={() => setModalOpen(true)} style={btnStyle}>
-                    Open test
-                  </button>
-                  <button className="ad-btn-text" onClick={cancelTest} style={btnStyle}>
-                    Cancel
-                  </button>
-                </div>
-              </>
-            )
-          ) : showOutOfSync ? (
-            /* state 2 — out of sync: the launcher disabled beside the sync-first hint */
-            <div style={rowStyle}>
-              <button className="ad-btn-text" data-testid="test-draft-toggle" disabled style={btnStyle}>
-                Test draft
+        {test && testLive ? (
+          /* state 1 — executing: spinner + step count; the run itself (and its
+             progress bar) lives in the modal */
+          <div style={rowStyle}>
+            <Spinner size={13} style={{ flex: 'none' }} />
+            <RowText style={{ color: 'var(--text-2)' }}>
+              {!testExec ? 'Loading the test…' : `Executing${testSteps.length > 0 ? ` — step ${Math.max(testLiveIdx, 0) + 1} of ${testSteps.length}` : ''}${testLiveIdx >= 0 ? ` · ${testSteps[testLiveIdx].name}` : ''}`}
+            </RowText>
+            <div style={btnsStyle}>
+              <button className="ad-btn-text" onClick={() => setModalOpen(true)} style={btnStyle}>
+                Open test
               </button>
-              <span style={{ flex: '1 1 200px', minWidth: 0, font: hintFont, color: 'var(--text-muted)' }}>
-                Sync first — a test executes the steps as generated from the spec.
-              </span>
+              <button className="ad-btn-text" onClick={cancelTest} style={btnStyle}>
+                Cancel
+              </button>
             </div>
-          ) : test ? (
-            /* state 3 — settled */
-            !testExec ? (
-              <LoadingRow label="Loading the test…" />
+          </div>
+        ) : showGate ? (
+          /* state 2 — out of sync, or a sync running or armed: the launcher
+             disabled beside the gate text (never an old outcome mid-rewrite) */
+          <div style={rowStyle}>
+            <RowText>Sync the steps before testing.</RowText>
+            <button className="ad-btn-text" data-testid="test-draft-toggle" disabled style={btnStyle}>
+              Test draft
+            </button>
+          </div>
+        ) : stale ? (
+          /* state 3 — steps changed since the last test: the old outcome no
+             longer applies; Test draft opens the setup for the new steps */
+          <div style={rowStyle}>
+            <RowText title="The steps were rewritten after this test — its outcome no longer applies.">
+              Test the new changes.
+            </RowText>
+            {launchBtn}
+          </div>
+        ) : test ? (
+          /* state 4 — settled: the short outcome; the full wording is the modal footer's */
+          <div style={rowStyle}>
+            {!testExec ? (
+              <RowText>Loading the test…</RowText>
+            ) : testExec.status === 'succeeded' ? (
+              <ToneText tone="green">Test succeeded.</ToneText>
+            ) : testExec.status === 'failed' ? (
+              <ToneText tone="amber">Test failed.</ToneText>
             ) : (
-              <>
-                {testExec.status === 'succeeded' ? (
-                  <StatusLine tone="green" label="Test succeeded — the memory copy was discarded." />
-                ) : testExec.status === 'failed' ? (
-                  <StatusLine tone="amber" label="Test failed." />
-                ) : (
-                  <div style={{ font: "400 12.5px var(--sans)", color: 'var(--text-faint)' }}>
-                    Test {testExec.status}.
-                  </div>
-                )}
-                <div style={{ ...rowStyle, marginTop: 8 }}>
-                  {launchBtn}
-                  {/* §11: sends the canned analyze chat message — the whole
-                      repair loop lives in the thread. Disabled while a job
-                      runs, never hidden. */}
-                  {testExec.status === 'failed' && (
-                    <button className="ad-btn-text dim" disabled={anyJobBusy} onClick={runAnalyze} style={btnStyle}>
-                      <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze failure
-                    </button>
-                  )}
-                </div>
-              </>
-            )
-          ) : rev.lastTest ? (
-            /* state 4 — persisted last-test summary (test.yaml): a resumed
-               draft shows the outcome instead of throwing it away */
-            <>
-              {rev.lastTest.status === 'succeeded' ? (
-                <StatusLine tone="green" label={`Last test succeeded — ${rev.lastTest.when}.`} />
-              ) : (
-                <StatusLine tone="amber" label={`Last test failed — ${rev.lastTest.when}.`} />
-              )}
-              <div style={{ ...rowStyle, marginTop: 8 }}>{launchBtn}</div>
-            </>
-          ) : (
-            /* state 5 — never tested: the quiet launcher (testing never
-               shouts — a failed test never blocks saving) beside the
-               plain-words side-effects line, which wraps below when space
-               runs out */
-            <div style={rowStyle}>
+              <RowText style={{ color: 'var(--text-faint)' }}>Test {testExec.status}.</RowText>
+            )}
+            <div style={btnsStyle}>
               {launchBtn}
-              <span style={{ flex: '1 1 200px', minWidth: 0, font: hintFont, color: 'var(--text-muted)' }}>
-                A test executes the real steps on this {copy.machine} — emails send, files move; memory is a scratch copy.
-              </span>
+              {/* §11: sends the canned analyze chat message — the whole repair
+                  loop lives in the thread. Disabled while a job runs, never hidden. */}
+              {testExec?.status === 'failed' && (
+                <button className="ad-btn-text dim" disabled={anyJobBusy} onClick={runAnalyze} style={btnStyle}>
+                  <i className="fa-solid fa-magnifying-glass" style={{ fontSize: 10 }} /> Analyze failure
+                </button>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        ) : rev.lastTest ? (
+          /* state 5 — persisted last-test summary (test.yaml): a resumed
+             draft shows the outcome instead of throwing it away */
+          <div style={rowStyle}>
+            {rev.lastTest.status === 'succeeded' ? (
+              <ToneText tone="green">{`Last test succeeded — ${rev.lastTest.when}.`}</ToneText>
+            ) : (
+              <ToneText tone="amber">{`Last test failed — ${rev.lastTest.when}.`}</ToneText>
+            )}
+            {launchBtn}
+          </div>
+        ) : (
+          /* state 6 — never tested: the quiet launcher (testing never shouts —
+             a failed test never blocks saving); the side-effects warning is
+             the modal footer's */
+          <div style={rowStyle}>
+            <RowText>Not tested yet.</RowText>
+            {launchBtn}
+          </div>
+        )}
       </div>
       {modalOpen && (
         <TestRunModal
@@ -467,7 +482,7 @@ export function TestCard({
           onCancel={cancelTest}
           onSkip={skipStep}
           onViewExecution={() => { if (runExecutionId) go('execution', { executionId: runExecutionId }) }}
-          onAnalyze={test && testExec?.status === 'failed' ? runAnalyze : null}
+          onAnalyze={test && !stale && testExec?.status === 'failed' ? runAnalyze : null}
           analyzeDisabled={anyJobBusy}
           lockStyle={lockStyle}
           machine={copy.machine}

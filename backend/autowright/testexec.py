@@ -28,7 +28,8 @@ RESULT_EXCERPT = 2000  # chars of result.md shown for a detailed successful exec
 
 def start(engine: Engine, draft: dict, auto: dict | None,
           enabled_agents: list, allowed_secrets: list, param_values: dict,
-          trigger_payload: dict | None = None) -> str:
+          trigger_payload: dict | None = None,
+          steps_fingerprint: str | None = None) -> str:
     """Create and launch the test execution record; returns its exec id.
     Raises RuntimeError while the container already has a live test (§19 409)."""
     container_id = auto["id"] if auto else None  # §4.5: null automationId on create-mode tests
@@ -96,7 +97,9 @@ def start(engine: Engine, draft: dict, auto: dict | None,
         mem_dir.mkdir(parents=True, exist_ok=True)
         (dbase / "test.yaml").unlink(missing_ok=True)  # wiped at each test start (§5)
 
-        h["_test"] = {"vdir": str(steps_dir), "mem": str(mem_dir)}
+        # §11 stale-outcome rule: the renderer's opaque steps fingerprint rides
+        # the record to the summary write below (`steps_fingerprint`, §5).
+        h["_test"] = {"vdir": str(steps_dir), "mem": str(mem_dir), "fp": steps_fingerprint}
         state = {"proc": None, "cancel": False}
         with engine._lock:
             engine._live[h["id"]] = state
@@ -144,11 +147,15 @@ def _run(engine: Engine, shadow: dict, ver: dict, h: dict, state: dict,
             # §5 test.yaml — the last-test summary a resumed draft's Test card
             # shows; deleted with the draft. A failed test is NOT analyzed here —
             # analysis is a user-sent §8 chat message reading executions_context.
-            save_yaml(dbase / "test.yaml", {
+            summary = {
                 "status": h["status"],
                 "when": timefmt.now_iso(),
                 "execution_id": h["id"],
-            })
+            }
+            fp = (h.get("_test") or {}).get("fp")
+            if fp:  # additive, written only when the client sent one (§21)
+                summary["steps_fingerprint"] = fp
+            save_yaml(dbase / "test.yaml", summary)
     if orphaned:
         store.delete_execution(h["id"])
 

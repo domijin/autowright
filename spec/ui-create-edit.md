@@ -638,10 +638,10 @@ job and no separate drafting state — while the first turn runs:
   history over the live `detail` line), so a minutes-long call never looks stuck and web
   reads / retries stay visible. No detail (a non-streaming harness) leaves just the
   stage label. The BUILD and TEST cards never move during the first turn: the chat job,
-  the chained sync it arms, and the sync's landing all leave them in their in-sync rows
-  (a sync in flight or armed is never a card state — BUILD card and TEST card below), so the
-  right column's spacing holds from send to done and "Syncing the workflow…" is read in
-  the thread, never in the cards.
+  the chained sync it arms, and the sync's landing all leave BUILD in its in-sync row
+  (a sync in flight or armed is never a BUILD state — BUILD card below) and TEST on its
+  one-line gate text (BUILD card and TEST card below), so the right column's spacing holds
+  from send to done and "Syncing the workflow…" is read in the thread, never in the cards.
 - **Failures** — a `failed` job means a harness error or crash (§8: a validation
   double-failure never ends `failed` — it settles `blocked` with diagnosed blockers, handled
   under Blockers below). A failed chat job renders in the thread as a red-tinted error
@@ -1268,59 +1268,85 @@ editors enter with
   borderless **text button** (the card-header treatment above — never a bordered or filled
   box): a state's main action (Test draft, Open test, a live test's Cancel) muted, every
   other action (Sync spec, Analyze failure) faint — a failed test never blocks saving, so
-  testing never shouts. Action rows lay their buttons out horizontally and **wrap** when
-  space runs out — a card button is never clipped. Both bodies sit on the card's single
-  18 px horizontal inset (§14). **A job in flight is never a card state** — neither a
+  testing never shouts. **Each card body is exactly one row** — status text on the left,
+  buttons on the right — so the two cards read as two status lines over the Steps card:
+  the text is a single line that shrinks with ellipsis (full text in its tooltip) and the
+  buttons never wrap or clip; anything longer than a line (explainers, side-effect
+  warnings, the full outcome) lives in the test-run modal's footer or the Save hint, never
+  in the cards. Both rows sit on the card's single 18 px horizontal inset (§14). **A job in flight is never a card state** — neither a
   chat job nor a sync: the cards have no drafting state and no syncing state. During a
   chat job they keep their current state with their controls disabled per the inputs
   lock; **while a sync runs or is armed** (a §8 `sync` job in flight however started —
   Sync now, Sync spec, a repair-block apply, a chat-armed pending sync — or a pending sync
-  waiting to fire) the workflow **counts as in sync for both cards**: BUILD shows its
-  in-sync row and TEST its in-sync states, controls disabled per the inputs lock. The
-  sync's live surface is the thread progress entry alone — its "Syncing the workflow…"
+  waiting to fire) the workflow **counts as in sync for the BUILD card**: it shows its
+  in-sync row, controls disabled per the inputs lock — while the **TEST card treats a
+  running or armed sync exactly like out of sync** (its "Sync the steps before testing."
+  row, below): the steps are about to be rewritten, so nothing about them is testable
+  yet. The sync's live surface is the thread progress entry alone — its "Syncing the workflow…"
   title, the live `detail` line, and the event feed — with the **Cancel** in the composer
   (cancel semantics under Dirty gating above). So a sync started from the in-sync row
-  (Sync spec, or the first turn's chained sync) never moves either card, and one started
+  (Sync spec, or the first turn's chained sync) never moves the BUILD card, and one started
   by Sync now trades the out-of-sync row for the in-sync row at the click, not at the
   landing. When the sync fails, blocks, or is cancelled the workflow is out of sync again
   and the out-of-sync row renders then.
-  **BUILD card** — the workflow's sync state, two rows, first match wins:
-  1. **Out of sync** (and no sync running or armed): the amber dot + status line naming
-     the cause (Dirty gating above: "The workflow is out of sync — these steps still match
-     the old spec." / "… — steps call an agent that isn't enabled." / "… — steps use a
-     secret that isn't allowed."), the saving-is-locked explainer beneath it indented to
-     the status text's left edge ("Sync the steps to the new spec, then review them.
-     Saving is locked until you do — nothing ships unreviewed." / "Re-enable the agent, or
-     sync the steps so they only call agents available here. Saving is locked until you
-     do." / "Re-allow the secret, or sync the steps so they only use secrets allowed here.
-     Saving is locked until you do."), and the accent-primary **Sync now** right-aligned
-     at the row's top — disabled per Dirty gating, never hidden.
-  2. **In sync** (or a sync running or armed): the muted status line "In sync with the
-     spec." — no dot — with the faint **Sync spec** text button right-aligned on the same
-     row (the same §8 `sync` call on demand; disabled per Dirty gating — e.g. while a test
-     executes — never hidden). The line keeps its wording while a sync runs — the card is
-     quiet; the thread says what is happening.
+  **BUILD card** — the workflow's sync state, one row, first match wins:
+  1. **Out of sync** (and no sync running or armed): the amber dot + the status text
+     naming the cause (Dirty gating above: "Out of sync — steps still match the old spec."
+     / "Out of sync — a step's agent isn't enabled." / "Out of sync — a step's secret isn't
+     allowed."; the row's tooltip carries the text plus the longer
+     explainer — "Sync the steps to the new spec, then review them. Saving is locked until
+     you do — nothing ships unreviewed." / "Re-enable the agent, or sync the steps so they
+     only call agents available here. Saving is locked until you do." / "Re-allow the
+     secret, or sync the steps so they only use secrets allowed here. Saving is locked
+     until you do."), and the accent-primary **Sync now** on the right — the row-height
+     `.ad-btn-primary.small` (§14), so the out-of-sync row is exactly as tall as every
+     other card row — disabled per Dirty gating, never hidden. The Save button's amber hint says saving is locked; the
+     card does not repeat it.
+  2. **In sync** (or a sync running or armed): the muted status text "In sync with the
+     spec." — no dot — with the faint **Sync spec** text button on the right (the same §8
+     `sync` call on demand; disabled per Dirty gating — e.g. while a test executes — never
+     hidden). The text keeps its wording while a sync runs — the card is quiet; the thread
+     says what is happening.
   **TEST card** — the draft test's launcher and last outcome; the run itself lives in the
-  test-run modal. Body: a status block over an action row, states first match wins:
+  test-run modal. One row, status text left and buttons right, first match wins:
   1. **Test executing** (a tracked live test, however started — also while the workflow
-     is out of sync: a live test is never left uncancellable): the live status line
-     (spinner + "Executing — step 2 of 5 · <step name>"), a progress bar (terminal steps
-     over total), and the action row muted **Open test** (opens the modal on the live run)
-     + muted **Cancel**.
-  2. **Out of sync** (BUILD shows its out-of-sync row): the disabled muted **Test draft**
-     beside the muted hint "Sync first — a test executes the steps as generated from the
-     spec." — a test always runs steps that match the spec, never stale ones.
-  3. **Test settled** (a tracked record): the outcome line ("Test succeeded — the memory
-     copy was discarded." green / "Test failed." amber / "Test cancelled." faint) over the
-     action row muted **Test draft** (opens the modal on the settled run) and, on failure,
-     faint **Analyze failure** (sends the canned analyze chat message, below).
-  4. **Last test** (a resumed draft's persisted summary, below, with no tracked record):
-     "Last test succeeded — <when>." green / "Last test failed — <when>." amber, over
-     **Test draft** — which opens the modal on that run while its record still exists and
-     on the setup phase otherwise.
-  5. **Never tested**: **Test draft** beside the muted side-effects line "A test executes
-     the real steps on this Mac — emails send, files move; memory is a scratch copy."
-     (wrapping below the button when space runs out).
+     is out of sync: a live test is never left uncancellable): a spinner + "Executing —
+     step 2 of 5 · <step name>" (the step name takes the ellipsis; the step count is the
+     row's only progress — the modal has the bar), and on the right muted **Open test**
+     (opens the modal on the live run) then muted **Cancel**.
+  2. **Out of sync, or a sync running or armed**: the muted text "Sync the steps
+     before testing." with the disabled muted **Test draft** on the right — a test always
+     runs steps that match the spec, never stale ones, and while a sync is rewriting them
+     the row holds this gate text rather than flashing an old outcome.
+  3. **Steps changed since the last test** (a previous outcome — tracked record or
+     resumed summary — whose steps a sync has since rewritten): the muted text "Test the
+     new changes." (tooltip: "The steps were rewritten after this test — its outcome no
+     longer applies.") with **Test draft** on the right, which opens the modal on the
+     **setup** phase for the new steps, never on the old run. **An outcome belongs to the
+     steps it ran against:** the card fingerprints the draft's steps (files + code) when a
+     test starts (sent along as §19 `stepsFingerprint`) and treats the outcome as stale once
+     the fingerprint differs — a landed sync, a draft undo, a resumed draft whose steps
+     moved on. Grant toggles never change
+     the fingerprint, so re-checking a grant brings the outcome back. The old run stays a
+     real record (Executions list) until the next test replaces it; the stale outcome never
+     offers Analyze failure. A new test start resets the fingerprint.
+  4. **Test settled** (a tracked record): the outcome — the `StatusLine` icon + text
+     "Test succeeded." green / "Test failed." amber (ellipsized like the row's other
+     texts), or the faint "Test cancelled." (the full outcome
+     wording, memory note and failure message included, is the modal footer's) — with
+     muted **Test draft** (opens the modal on the settled run) and, on failure, faint
+     **Analyze failure** (sends the canned analyze chat message, below) on the right.
+  5. **Last test** (a resumed draft's persisted summary, below, with no tracked record):
+     "Last test succeeded — <when>." green / "Last test failed — <when>." amber, with
+     **Test draft** on the right — which opens the modal on that run while its record
+     still exists and on the setup phase otherwise. The summary carries the steps
+     fingerprint the test ran against (§19 `stepsFingerprint` — the renderer's opaque hash
+     over the steps' files and code, sent with the test start and stored verbatim), so a
+     resumed draft whose steps were re-synced after the test lands in state 3 instead; a
+     summary without one (§21 old shape) is never stale.
+  6. **Never tested**: the muted text "Not tested yet." with **Test draft** on the right.
+     The side-effects warning ("Real steps execute on this Mac — emails send, files move;
+     memory is a scratch copy.") is the modal footer's, read before Run test.
   Test draft never starts a test — it opens the modal; only the modal's Run test does.
   It disables under the inputs lock (a §8 job in flight), while an old version is viewed
   (like the sync button: an old version is never synced or tested), and while the draft
@@ -1359,7 +1385,7 @@ editors enter with
   owner cancel; merely leaving the page cancels nothing, §19 background continuation).
   Deleting the automation deletes them too.
   **Side effects** outside memory are real (emails send, files move, notifications post per
-  settings) and the card and the modal say so plainly. Navigating away from the editor
+  settings) and the modal's setup footer says so plainly. Navigating away from the editor
   never cancels a live test — it is a real record, visible and cancellable from its
   execution page; re-entering the editor re-attaches the TEST card to a still-executing
   test. **The outcome is never thrown away with the editing session:** a finished test

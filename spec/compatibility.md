@@ -68,6 +68,15 @@ Interaction with existing rules:
 Newest first. One entry per compatibility decision: what changed, the migration, the first
 version that writes the new shape, and the oldest shape still read.
 
+- **2026-09-03 - `steps_fingerprint` added to the draft `test.yaml` summary.** The §11
+  last-test summary gains one optional key holding the opaque steps fingerprint the renderer
+  sent with `POST /tests` (§19 `stepsFingerprint`), written only when the client sent one.
+  Additive: an absent key is the old shape and reads as `stepsFingerprint: null` on the draft
+  payload, which the §11 TEST card treats as "unknown — not stale" (today's behavior). No
+  data rewrite; recognition is structural (absent key). First version writing the new
+  shape: the next release after 2026-09-03; oldest shape still read: v0.6.0 (key absent).
+  Fixture test: `tests/test_storage.py::test_draft_test_summary_without_fingerprint_loads`.
+
 - **2026-08-30 - `runIfMissed` added to cron/time triggers in automation.yaml.** A §4.3
   cron or one-shot trigger gains one optional key, `runIfMissed`, written only when false
   (the user opted the trigger out of the §6 wake catch-up). Additive: an absent key is the

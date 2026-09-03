@@ -1963,7 +1963,10 @@ class Store:
         when = ""
         if t.get("when") and (dt := lenient_local(t["when"])):
             when = timefmt.started_label(dt)
-        return {"status": t["status"], "when": when, "executionId": t.get("execution_id")}
+        fp = t.get("steps_fingerprint")
+        return {"status": t["status"], "when": when, "executionId": t.get("execution_id"),
+                # §21: absent on summaries written before the key existed → null
+                "stepsFingerprint": fp if isinstance(fp, str) and fp else None}
 
     def latest_result_json(self, a: dict) -> dict | None:
         hs = sorted((h for h in self.execs.values()

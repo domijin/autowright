@@ -167,7 +167,9 @@ automations/<uuid>/
                                # execution and draft re-save, deleted with the draft — Draft
                                # executions never touch the live memory/ dir
     test.yaml                  # §11 last-test summary: status (succeeded | failed),
-                               # when (finished-at ISO timestamp), and execution_id —
+                               # when (finished-at ISO timestamp), execution_id, and the
+                               # optional steps_fingerprint (§19: the renderer's opaque
+                               # fingerprint of the tested steps, §21 additive) —
                                # written when a test ends, wiped at each test start, deleted
                                # with the draft; lets a resumed draft's TEST card show the
                                # last outcome and link to the test's execution page. The

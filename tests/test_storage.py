@@ -1655,3 +1655,24 @@ def test_trigger_run_if_missed_false_round_trips(store, home, caplog):
         s4.load_all()
     assert s4.autos[a["id"]]["triggers"] == []
     assert any("malformed trigger" in rec.message for rec in caplog.records)
+
+
+def test_draft_test_summary_without_fingerprint_loads(store):
+    """§21 (2026-09-03): a test.yaml written before `steps_fingerprint` existed is the
+    old shape — it loads with `stepsFingerprint: null`; a summary carrying the key echoes
+    it verbatim (§19: opaque to the backend)."""
+    from autowright.yamlio import save_yaml
+    a = store.create_automation(make_version(), "Fp", None)
+    container = store.auto_dir(a) / "draft"
+    container.mkdir(parents=True, exist_ok=True)
+    save_yaml(container / "test.yaml", {
+        "status": "succeeded", "when": "2026-09-01T10:00:00.000000+00:00", "execution_id": "e1",
+    })
+    j = store.draft_test_json(container)
+    assert j["status"] == "succeeded" and j["executionId"] == "e1"
+    assert j["stepsFingerprint"] is None
+    save_yaml(container / "test.yaml", {
+        "status": "failed", "when": "2026-09-01T10:00:00.000000+00:00", "execution_id": "e2",
+        "steps_fingerprint": "2:deadbeef",
+    })
+    assert store.draft_test_json(container)["stepsFingerprint"] == "2:deadbeef"

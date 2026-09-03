@@ -771,3 +771,30 @@ describe('docLineCount / docModalFrame — the §11 document-editor toolbar coun
     expect(docModalFrame(long)).toBe('clamp(440px, 4193px, 82vh)')
   })
 })
+
+// ---- §11 stale-outcome rule: the steps fingerprint ----
+import { stepsFingerprint } from '../src/pages/createflow/model'
+
+describe('stepsFingerprint (§11 stale-outcome rule)', () => {
+  const steps = [
+    step({ file: '01-a.py', name: 'Fetch', code: 'log("a")' }),
+    step({ file: '02-b.py', name: 'Send', code: 'log("b")' }),
+  ]
+
+  it('an empty step list is the bare FNV-1a offset basis', () => {
+    expect(stepsFingerprint([])).toBe('0:811c9dc5')
+  })
+
+  it('the same steps always answer the same "<count>:<8 hex>" string', () => {
+    expect(stepsFingerprint(steps)).toBe(stepsFingerprint(steps.map((s) => ({ ...s }))))
+    expect(stepsFingerprint(steps)).toMatch(/^\d+:[0-9a-f]{8}$/)
+    expect(stepsFingerprint([])).toMatch(/^\d+:[0-9a-f]{8}$/)
+  })
+
+  it('changed code, a renamed file, or a reorder each change it', () => {
+    const base = stepsFingerprint(steps)
+    expect(stepsFingerprint([steps[0], { ...steps[1], code: 'log("c")' }])).not.toBe(base)
+    expect(stepsFingerprint([{ ...steps[0], file: '01-renamed.py' }, steps[1]])).not.toBe(base)
+    expect(stepsFingerprint([steps[1], steps[0]])).not.toBe(base)
+  })
+})

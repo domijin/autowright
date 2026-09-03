@@ -80,6 +80,9 @@ export interface DraftTest {
   status: 'succeeded' | 'failed'
   when: string
   executionId?: string | null
+  // §11 stale-outcome rule: the renderer's fingerprint of the tested steps
+  // (§19, stored verbatim in test.yaml); null on summaries written without one
+  stepsFingerprint?: string | null
 }
 
 export interface VersionInfo {

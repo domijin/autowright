@@ -317,7 +317,7 @@ remain plain dicts (§2).
   `{ name }` — rename; null/"" clears · `POST /automations/{id}/memory/snapshots/{snapshot_id}/restore`
   — §6.3 restore (409 while live) · `DELETE /automations/{id}/memory/snapshots/{snapshot_id}` —
   delete the snapshot; unknown `snapshot_id` answers 404
-- `POST /tests` `{ automationId?, draft, enabledAgents?, allowedSecrets?, paramValues?, triggerMock? }`
+- `POST /tests` `{ automationId?, draft, enabledAgents?, allowedSecrets?, paramValues?, triggerMock?, stepsFingerprint? }`
   → `{ executionId }` — the §11 Test: starts a §4.5 **test execution record** of the sent draft's
   steps (§4.5 kind `test`, trigger kind `test` — serialized as `test: true`, `versionLabel: "Test"`,
   `trigger: "Test"`; a stale `automationId` answers 404; 409
@@ -346,8 +346,12 @@ remain plain dicts (§2).
   the run's error and log tails (the §11 canned analyze messages; Fix-with-AI names the
   execution via the `/drafts` `executionId` field). A finished test writes the §11 last-test summary
   (`test.yaml`, §5) into the draft container; it rides the draft payload as `test`
-  ({ status: succeeded | failed, when, executionId }) on the automation's `draft` object and on
-  `GET /draft/pending`.
+  ({ status: succeeded | failed, when, executionId, stepsFingerprint }) on the automation's
+  `draft` object and on `GET /draft/pending`. `stepsFingerprint` is the §11 stale-outcome
+  key: an **opaque string the renderer computes** over the draft's steps (files + code) and
+  sends with `POST /tests`; the backend stores it verbatim (`steps_fingerprint`, written only
+  when sent) and echoes it back, never computing or comparing it — null when the summary
+  carries none.
 - `POST /packages/check` `{ packages: [{ pip, import }] }` → `{ packages: [{ pip, import,
   status: installed | missing, version? }] }` — the fast §6.2 installed-check, never runs
   pip; `version` is the real installed version, present when installed (backs the §11

@@ -175,6 +175,9 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   transition: background var(--t-hover) var(--ease-enter);
 }
 .ad-btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+/* §14: the row-height primary — 6px 12px so it sits in a one-line card row at the
+   same height as .ad-btn-text (the §11 BUILD card's Sync now) */
+.ad-btn-primary.small { padding: 6px 12px; border-radius: 7px; }
 /* link-as-button (§9.5 Open GitHub issue): the global a / a:hover link color +
    underline must never leak into an anchor styled as a primary button */
 a.ad-btn-primary, a.ad-btn-primary:hover {

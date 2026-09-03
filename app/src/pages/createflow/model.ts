@@ -442,6 +442,27 @@ export function mergeDraftTriggers(cur: DraftTrigger[], drafted: DraftTrigger[])
   return [...next, ...userCrons, ...cur.filter((t) => t.kind !== 'cron'), ...added.map((d) => ({ ...d, enabled: true }))]
 }
 
+/** §11 stale-outcome rule: an opaque fingerprint of the draft's steps (files +
+ * code, in order) — FNV-1a 32-bit as 8 hex digits over a separator-joined
+ * string. Sent with a test start (§19 `stepsFingerprint`) and compared with the
+ * current steps to tell whether a test outcome still describes them. */
+export function stepsFingerprint(steps: Step[]): string {
+  let h = 0x811c9dc5
+  const feed = (s: string) => {
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i)
+      h = Math.imul(h, 0x01000193) >>> 0
+    }
+  }
+  for (const s of steps) {
+    feed(s.file ?? '')
+    feed('\u0000')
+    feed(s.code ?? '')
+    feed('\u0001')
+  }
+  return `${steps.length}:${h.toString(16).padStart(8, '0')}`
+}
+
 export function serializeDraft(r: Rev): DraftPayload {
   return {
     name: r.name, description: r.description, note: r.note,

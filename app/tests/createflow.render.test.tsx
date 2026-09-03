@@ -8,6 +8,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { Agent, Automation, SecretMeta } from '../src/types'
+// §11 stale-outcome rule: the card's own hash, so the assertions never restate it
+import { stepsFingerprint } from '../src/pages/createflow/model'
 
 vi.mock('../src/api', () => ({
   connectInfo: vi.fn(async () => false),
@@ -231,11 +233,11 @@ describe('CreateFlow BUILD and TEST cards (§11)', () => {
     const agentRow = () => screen.getByText('qwen3:8b')
     fireEvent.click(agentRow())     // uncheck the agent the step calls
     expect(screen.getByText('Sync now')).toBeTruthy()
-    expect(screen.getByText(/steps call an agent that isn’t enabled/)).toBeTruthy()
+    expect(screen.getByText(/a step’s agent isn’t enabled/)).toBeTruthy()
     // the Test button stays visible but disabled, with the §11 hint
     const testBtn = screen.getByText('Test draft').closest('button')!
     expect(testBtn.disabled).toBe(true)
-    expect(screen.getByText('Sync first — a test executes the steps as generated from the spec.')).toBeTruthy()
+    expect(screen.getByText('Sync the steps before testing.')).toBeTruthy()
     // re-checking the grant clears the gap instantly — Test re-enables
     fireEvent.click(agentRow())
     expect(screen.getByText('Sync spec')).toBeTruthy()
@@ -331,6 +333,139 @@ describe('CreateFlow BUILD and TEST cards (§11)', () => {
     const modal = screen.getByTestId('test-modal')
     await waitFor(() => expect(within(modal).getByTestId('test-setup')).toBeTruthy())
     expect(within(modal).getByDisplayValue('Bergen')).toBeTruthy()
+  })
+
+  // §4.5 test record for a settled tracked test — the card renders off it
+  const settledRun = (over: Record<string, unknown> = {}) => ({
+    id: 'e1', automationId: 'a1', automationName: 'My auto', automationDeleted: false, versionLabel: 'Test',
+    status: 'succeeded', trigger: 'Test', triggerSender: null, test: true,
+    duration: '1s', started: '', startedMs: 1, endedMs: 2, queuedMs: 0, note: null, error: null,
+    steps: [{ name: 'Fetch pages', status: 'succeeded', duration: '1s', attempts: [{ number: 1, status: 'succeeded', duration: '1s', startedMs: 1 }] }],
+    ...over,
+  })
+  const seedSettled = (over: Record<string, unknown> = {}) => {
+    const run = settledRun(over)
+    storeMod.useStore.setState({
+      test: { executionId: 'e1' }, executions: [run] as never, executionFull: { e1: run } as never,
+    })
+  }
+
+  it('a running sync gates the card over a settled outcome (§11 state 2)', () => {
+    armPendingPoll()
+    seedSettled()
+    render(<CreateFlow />)
+    const card = () => screen.getByTestId('test-card')
+    expect(within(card()).getByText('Test succeeded.')).toBeTruthy()
+    // §11: the sync is about to rewrite the steps — the outcome gives way to
+    // the gate rather than flashing an answer about steps that are leaving
+    fireEvent.click(screen.getByText('Sync spec'))
+    expect(within(card()).queryByText('Test succeeded.')).toBeNull()
+    expect(within(card()).getByText('Sync the steps before testing.')).toBeTruthy()
+    expect((within(card()).getByText('Test draft').closest('button')!).disabled).toBe(true)
+  })
+
+  it('a chat-armed sync gates it too — nothing was rewritten, the sync alone gates (§11 state 2)', async () => {
+    armPendingPoll()
+    // an answer-only response that chains a sync: the draft stays in sync, so
+    // only the armed/running sync can gate the TEST card
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'chat',
+      draft: { spec: null, answer: 'On it.', actions: { sync: true } },
+    })
+    seedSettled()
+    render(<CreateFlow />)
+    fireEvent.change(screen.getByPlaceholderText('Change something, or ask a question…'),
+      { target: { value: 'Rebuild the steps' } })
+    fireEvent.click(screen.getByText('Send'))
+    // the chained sync's POST went out and its poll never answers — it stays in flight
+    await waitFor(() => expect(mockedApi.postDraftJob).toHaveBeenCalledTimes(2), { timeout: 3000 })
+    expect(draftBody(1).mode).toBe('sync')
+    expect(within(screen.getByTestId('build-card')).getByText(/In sync with the spec/)).toBeTruthy()
+    const card = screen.getByTestId('test-card')
+    expect(within(card).getByText('Sync the steps before testing.')).toBeTruthy()
+    expect(within(card).queryByText('Test succeeded.')).toBeNull()
+    expect((within(card).getByText('Test draft').closest('button')!).disabled).toBe(true)
+  })
+
+  it('a landed sync makes the outcome stale: Test the new changes, the setup phase on open (§11 state 3)', async () => {
+    armPendingPoll()
+    render(<CreateFlow />)
+    const card = () => screen.getByTestId('test-card')
+    // run a test against today's steps — the POST carries their fingerprint
+    fireEvent.click(within(card()).getByText('Test draft'))
+    fireEvent.click(within(screen.getByTestId('test-modal')).getByText('Run test'))
+    await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1))
+    const body = (mockedApi.postTest as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(body.stepsFingerprint).toBe(stepsFingerprint(AUTO.steps))
+    expect(typeof body.stepsFingerprint).toBe('string')
+    fireEvent.click(within(screen.getByTestId('test-modal')).getByLabelText('Close'))
+    await waitFor(() => expect(screen.queryByTestId('test-modal')).toBeNull())
+    // the run settles failed — the settled row offers the repair loop
+    act(() => seedSettled({
+      status: 'failed', endedMs: 3, error: { step: 'Fetch pages', message: 'boom', reason: null },
+      steps: [{ name: 'Fetch pages', status: 'failed', duration: '1s', attempts: [{ number: 1, status: 'failed', duration: '1s', startedMs: 1 }] }],
+    }))
+    expect(within(card()).getByText('Test failed.')).toBeTruthy()
+    expect(within(card()).getByText('Analyze failure')).toBeTruthy()
+    // a sync lands rewritten step code — the outcome no longer describes the steps
+    ;(mockedApi.getDraftJob as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'j1', status: 'done', stage: null, detail: null, error: null, mode: 'sync',
+      draft: {
+        steps: [{ file: '01-a.py', name: 'Fetch pages', description: '', code: 'log("b")' }],
+        params: [], packages: [],
+      },
+    })
+    fireEvent.click(screen.getByText('Sync spec'))
+    await waitFor(() => expect(screen.getByText('Steps synced with the spec.')).toBeTruthy(), { timeout: 3000 })
+    const stale = within(card()).getByText('Test the new changes.')
+    expect(stale.getAttribute('title'))
+      .toBe('The steps were rewritten after this test — its outcome no longer applies.')
+    expect(within(card()).queryByText('Test failed.')).toBeNull()
+    // the launcher stays live, and a stale outcome never offers the repair loop
+    expect((within(card()).getByText('Test draft').closest('button')!).disabled).toBe(false)
+    expect(within(card()).queryByText('Analyze failure')).toBeNull()
+    // opening it lands on the setup phase for the new steps, never the old run
+    fireEvent.click(within(card()).getByText('Test draft'))
+    const modal = screen.getByTestId('test-modal')
+    expect(within(modal).getByText('TEST DRAFT')).toBeTruthy()
+    expect(within(modal).getByTestId('test-setup')).toBeTruthy()
+    expect(within(modal).queryByText('Run again')).toBeNull()
+    expect(within(modal).queryByText('View execution')).toBeNull()
+  })
+
+  // §11 state 5: a resumed draft's persisted last-test summary (test.yaml)
+  const withLastTest = (test: Record<string, unknown>) => ({
+    ...AUTO,
+    draft: {
+      spec: AUTO.spec, steps: AUTO.steps, instructions: AUTO.instructions, notes: '',
+      params: [], packages: [], test,
+    },
+  } as unknown as Automation)
+
+  it('a resumed summary whose fingerprint moved on reads as stale (§11 state 3)', () => {
+    armPendingPoll()
+    storeMod.useStore.setState({
+      automations: [withLastTest({ status: 'succeeded', when: '2 h ago', executionId: 'e-old', stepsFingerprint: 'stale-fp' })],
+    })
+    render(<CreateFlow />)
+    const card = screen.getByTestId('test-card')
+    expect(within(card).getByText('Test the new changes.')).toBeTruthy()
+    expect(within(card).queryByText('Last test succeeded — 2 h ago.')).toBeNull()
+  })
+
+  it('a resumed summary without a fingerprint is never stale (§21 old shape)', () => {
+    // null and absent alike: unknown steps behind an outcome never make it stale
+    for (const fp of [null, undefined]) {
+      armPendingPoll()
+      storeMod.useStore.setState({
+        automations: [withLastTest({ status: 'succeeded', when: '2 h ago', executionId: 'e-old', stepsFingerprint: fp })],
+      })
+      render(<CreateFlow />)
+      const card = screen.getByTestId('test-card')
+      expect(within(card).getByText('Last test succeeded — 2 h ago.')).toBeTruthy()
+      expect(within(card).queryByText('Test the new changes.')).toBeNull()
+      cleanup()
+    }
   })
 
   it('a diagnosed blocked sync lands a thread blockers entry with the build-failure headline', async () => {
@@ -619,7 +754,7 @@ describe('CreateFlow blockers thread entries (§11)', () => {
     expect(screen.getByText('Apply to the spec & sync')).toBeTruthy()
     // the chat rewrite landed the spec and the workflow is out of sync
     expect(screen.getByText('Watches things.')).toBeTruthy()
-    expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
+    expect(screen.getByText('Out of sync — steps still match the old spec.')).toBeTruthy()
   })
 
   it('a markdown link in a blocker renders as a clickable anchor', async () => {
@@ -981,7 +1116,7 @@ describe('CreateFlow chat response application (§11)', () => {
     expect(answer.compareDocumentPosition(rewrite) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     // the rewrite applied to the spec card and marked the workflow out of sync
     expect(screen.getByText('Now with weekends.')).toBeTruthy()
-    expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
+    expect(screen.getByText('Out of sync — steps still match the old spec.')).toBeTruthy()
     expect(storeMod.useStore.getState().toast)
       .toBe('Spec updated — the workflow is out of sync. Sync the steps before saving.')
   })
@@ -1137,7 +1272,7 @@ describe('CreateFlow chat response application (§11)', () => {
     await waitFor(() => expect(screen.getByText('Notes updated.')).toBeTruthy(), { timeout: 3000 })
     expect(bodyLi('The site rate-limits at 10 rpm')).toBeTruthy() // NOTES card content
     expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
-    expect(screen.queryByText(/out of sync/)).toBeNull()
+    expect(screen.queryByText(/Out of sync/)).toBeNull()
   })
 
   it('actions.sync chains a sync job right after the rewrite lands', async () => {
@@ -1405,7 +1540,7 @@ describe('CreateFlow draft undo (§11)', () => {
     render(<CreateFlow />)
     send('Toughen the rules')
     await waitFor(() => expect(screen.getByText('Build instructions updated.')).toBeTruthy(), { timeout: 3000 })
-    expect(screen.getByText(/out of sync/)).toBeTruthy()
+    expect(screen.getByText(/Out of sync/)).toBeTruthy()
     const undos = screen.getAllByText('Undo this change')
     expect(undos).toHaveLength(1)
     // the row sits directly beneath the anchoring chip
@@ -1527,7 +1662,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
   it('sync job: the sync line lives in the thread and the Save hint, never the cards; spinner in the thread, Cancel in the composer', () => {
     render(<CreateFlow />)
     const cards = () => [screen.getByTestId('build-card'), screen.getByTestId('test-card')]
-    const before = cards().map((c) => c.textContent).join('|')
+    const buildBefore = screen.getByTestId('build-card').textContent
     fireEvent.click(screen.getByText('Sync spec'))
     // the same live line renders in the thread and as the Save hint (one
     // unified stage vocabulary; no agent · model attribution — the composer's
@@ -1535,10 +1670,15 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     // flight is never a card state
     expect(screen.getAllByText('Syncing the workflow…').length).toBe(2)
     for (const card of cards()) expect(within(card).queryByText('Syncing the workflow…')).toBeNull()
-    // both cards keep their in-sync bodies byte for byte — they never move
-    expect(cards().map((c) => c.textContent).join('|')).toBe(before)
+    // the BUILD card keeps its in-sync body byte for byte — it never moves
+    expect(screen.getByTestId('build-card').textContent).toBe(buildBefore)
     const buildCard = screen.getByTestId('build-card')
     expect(within(buildCard).getByText(/In sync with the spec\./)).toBeTruthy()
+    // §11: the TEST card treats a running sync exactly like out of sync — the
+    // steps are about to be rewritten, so it holds the gate row instead
+    const testCard = screen.getByTestId('test-card')
+    expect(within(testCard).getByText('Sync the steps before testing.')).toBeTruthy()
+    expect((within(testCard).getByText('Test draft').closest('button')!).disabled).toBe(true)
     // §11: never an empty section — the live entry shows the stage's canned
     // description bullet until the stream produces a feed
     expect(screen.getByText('• Building the steps from the spec')).toBeTruthy()
@@ -1551,7 +1691,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     expect((within(buildCard).getByText('Sync spec').closest('button')!).disabled).toBe(true)
   })
 
-  it('Sync now: its own sync hides the out-of-sync row at the click — the in-sync rows show, disabled (§11)', () => {
+  it('Sync now: its own sync hides the out-of-sync row at the click — BUILD goes quiet, TEST keeps the gate (§11)', () => {
     storeMod.useStore.setState({
       automations: [{
         ...AUTO,
@@ -1564,11 +1704,12 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     const testCard = () => screen.getByTestId('test-card')
     expect(within(buildCard()).getByText('Sync now')).toBeTruthy()
     fireEvent.click(screen.getByText('Sync now'))
-    // the out-of-sync row is gone: no amber reason line, no Sync now, no hint;
-    // both in-sync rows take their place with their controls locked
+    // the out-of-sync row is gone: no amber reason line, no Sync now — the
+    // in-sync row takes its place with its control locked, while the TEST card
+    // keeps the §11 gate row (a running sync gates it exactly like out of sync)
     expect(within(buildCard()).queryByText('Sync now')).toBeNull()
-    expect(within(buildCard()).queryByText(/out of sync/)).toBeNull()
-    expect(within(testCard()).queryByText(/Sync first/)).toBeNull()
+    expect(within(buildCard()).queryByText(/Out of sync/)).toBeNull()
+    expect(within(testCard()).getByText('Sync the steps before testing.')).toBeTruthy()
     expect(within(buildCard()).queryByText('Syncing the workflow…')).toBeNull()
     expect((within(buildCard()).getByText('Sync spec').closest('button')!).disabled).toBe(true)
     expect((within(testCard()).getByText('Test draft').closest('button')!).disabled).toBe(true)
@@ -1607,7 +1748,7 @@ describe('CreateFlow thread progress entry + input lock (§11)', () => {
     // sync for the cards), the sync line only in the thread + Save hint
     const buildCard = screen.getByTestId('build-card')
     expect(within(buildCard).queryByText('Sync now')).toBeNull()
-    expect(within(buildCard).queryByText(/out of sync/)).toBeNull()
+    expect(within(buildCard).queryByText(/Out of sync/)).toBeNull()
     expect(within(buildCard).queryByText('Syncing the workflow…')).toBeNull()
     expect(within(buildCard).getByText(/In sync with the spec\./)).toBeTruthy()
   })
@@ -1704,7 +1845,7 @@ describe('CreateFlow clear chat (§11)', () => {
     expect(screen.queryByText('Undo this change')).toBeNull()
     expect(clearBtn().disabled).toBe(true) // empty again
     // the draft itself is untouched: still out of sync from the rewrite
-    expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
+    expect(screen.getByText('Out of sync — steps still match the old spec.')).toBeTruthy()
     // the composer still works
     expect((screen.getByPlaceholderText('Change something, or ask a question…') as HTMLTextAreaElement).disabled).toBe(false)
   })
@@ -1756,7 +1897,7 @@ describe('CreateFlow left-column cards + test-failure repair (§11)', () => {
     await waitFor(() => expect(bodyLi('Pruned')).toBeTruthy())
     // §4.1: notes never mark the workflow out of sync or block saving
     expect(screen.getByText(/In sync with the spec/)).toBeTruthy()
-    expect(screen.queryByText(/out of sync/)).toBeNull()
+    expect(screen.queryByText(/Out of sync/)).toBeNull()
     expect((screen.getByText('Save as v2').closest('button')!).disabled).toBe(false)
   })
 
@@ -1982,11 +2123,14 @@ describe('CreateFlow old-version view: thread survival + test gating (§11)', ()
       executions: [testRow('succeeded')] as never,
       executionFull: { e9: testRow('succeeded') } as never,
     })
-    await waitFor(() => expect(screen.getByText('Test succeeded.')).toBeTruthy())
+    // §11: the settled TEST card carries the same short line - the chip is the
+    // thread's own, so both assertions read the thread
+    const thread = () => screen.getByTestId('chat-thread')
+    await waitFor(() => expect(within(thread()).getByText('Test succeeded.')).toBeTruthy())
     // returning to the draft keeps the live thread - the chip never vanishes
     fireEvent.click(screen.getByText('Back to draft'))
     expect(screen.queryByText(/Loaded v1 from history/)).toBeNull()
-    expect(screen.getByText('Test succeeded.')).toBeTruthy()
+    expect(within(thread()).getByText('Test succeeded.')).toBeTruthy()
   })
 
   it('viewing an old version disables the test controls - an old version is never tested', async () => {
@@ -2363,7 +2507,7 @@ describe('document-editor modal (§11)', () => {
     fireEvent.keyDown(document, { key: 's', metaKey: true })
     await waitFor(() => expect(screen.queryByTestId('doc-editor')).toBeNull())
     expect(screen.getByText('Hand-tuned body.')).toBeTruthy()
-    expect(screen.getByText('The workflow is out of sync — these steps still match the old spec.')).toBeTruthy()
+    expect(screen.getByText('Out of sync — steps still match the old spec.')).toBeTruthy()
     expect(storeMod.useStore.getState().toast)
       .toBe('Spec saved — the workflow is out of sync. Sync the steps before saving.')
   })

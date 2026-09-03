@@ -169,6 +169,9 @@ class TestStart(BaseModel):
     allowedSecrets: list[StrictStr] = None
     paramValues: dict[StrictStr, Any] = None
     triggerMock: dict[str, Any] | None = None
+    # §11 stale-outcome rule: the renderer's opaque fingerprint of the tested
+    # steps, stored verbatim in test.yaml and echoed on the draft payload.
+    stepsFingerprint: StrictStr | None = None
 
 
 class PackageRef(BaseModel):

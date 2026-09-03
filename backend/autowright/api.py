@@ -1248,7 +1248,8 @@ def post_test(body: models.TestStart) -> dict:
         allowed = auto["allowed_secrets"] if auto else [s["id"] for s in store.secrets]
     try:
         execution_id = testexec.start(engine, d, auto, enabled, allowed,
-                                 body.paramValues or {}, trigger_payload=payload)
+                                 body.paramValues or {}, trigger_payload=payload,
+                                 steps_fingerprint=body.stepsFingerprint)
     except RuntimeError as e:  # §19: one live test per draft container
         raise HTTPException(409, str(e)) from e
     return {"executionId": execution_id}

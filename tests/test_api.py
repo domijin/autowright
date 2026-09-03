@@ -2580,7 +2580,8 @@ def test_test_grant_arrays_propagate(client, monkeypatch):
 
     captured = {}
 
-    def fake_start(engine, d, auto, enabled, allowed, param_values, trigger_payload=None):
+    def fake_start(engine, d, auto, enabled, allowed, param_values, trigger_payload=None,
+                   steps_fingerprint=None):
         captured["enabled"], captured["allowed"] = enabled, allowed
         return "exec-x"
 

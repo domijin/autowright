@@ -124,7 +124,9 @@ Part of the Autowright spec. Index and § map: [SPEC.md](../SPEC.md). § numbers
   `.ad-btn-soft`, `.ad-btn-dashed`, `.ad-btn-accent-ghost`, `.ad-btn-danger-ghost`) and
   9 px 16 px on the borderless filled `.ad-btn-primary` — same rendered box. Borderless text
   buttons (`.ad-btn-text`, `.ad-btn-link`) are 500 13 px with 6 px 4 px padding. Dense in-card
-  editors get sanctioned compact sizes, still class-owned: `.ad-btn-accent-ghost.small`
+  editors get sanctioned compact sizes, still class-owned: `.ad-btn-primary.small` (6 px
+  12 px, radius 7 — the row-height primary that sits level with `.ad-btn-text` in a one-line
+  card row: the §11 BUILD card's Sync now), `.ad-btn-accent-ghost.small`
   (500 11.5 px mono, 5 px 11 px, radius 7 — the §9.2 trigger editor's Add/Save, New secret, and
   permission-checklist buttons), `.ad-btn-text.small` (11.5 px, no padding — the §9.2 setup
   guide disclosure toggles and §11 card-header actions), and `.ad-btn-link.small` (11.5 px,

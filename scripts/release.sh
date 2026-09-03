@@ -480,9 +480,25 @@ else
   ZIP="$ROOT/build/Autowright-$VERSION-darwin-$ARCH.zip"
   [ -f "$DMG" ] || { echo "DMG missing after build: $DMG"; exit 1; }
   [ -f "$ZIP" ] || { echo "update zip missing after build: $ZIP"; exit 1; }
-  echo "· creating GitHub release v$VERSION"
+  # The release body is the curated §17 docs/CHANGELOG.md section for this version
+  # (the lines under its "## v<version>" heading, up to the next "## " heading),
+  # never GitHub's commit-derived auto-notes, so the release page, the §9.4 What's-new
+  # modal, and the file on GitHub say the same thing. The gate above proved the
+  # heading exists; a heading with an empty body still refuses here, before the tag
+  # is cut, so the notes can be filled in and the same version re-run.
+  NOTES_FILE="$(mktemp)"
+  trap 'rm -f "$NOTES_FILE"' EXIT
+  awk -v v="$VERSION" '
+    /^## /           { if (on) exit; on = ($2 == ("v" v)); next }
+    !on              { next }
+    /^[[:space:]]*$/ { if (started) pending++; next }
+                     { for (; pending > 0; pending--) print ""; started = 1; print }
+  ' "$ROOT/docs/CHANGELOG.md" > "$NOTES_FILE"
+  [ -s "$NOTES_FILE" ] \
+    || { echo "docs/CHANGELOG.md '## v$VERSION' section is empty - write the release notes before releasing"; exit 1; }
+  echo "· creating GitHub release v$VERSION (notes from docs/CHANGELOG.md)"
   gh release create "v$VERSION" "$DMG" "$ZIP" \
-    --title "v$VERSION" --generate-notes
+    --title "v$VERSION" --notes-file "$NOTES_FILE"
 
   # ---- update feed (SPEC §3): latest-mac.yml for this arch, raw from GitHub ----
   # Written only after the release exists, so the feed never points at a URL

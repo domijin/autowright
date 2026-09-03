@@ -576,8 +576,10 @@ migrate-on-load migration so data written by released versions keeps loading (§
   `## v<version> - <YYYY-MM-DD>` section per released version, newest first, each a short
   curated list of user-facing changes (features, UI, fixes — written for users, never a
   commit dump; plain hyphens, no em dash). Rendered in-app in the §9.4 What's-new modal
-  (raw import into the renderer bundle, same mechanism as `PRIVACY.md`) and read by GitHub
-  visitors in place. Written by the developer before each release
+  (raw import into the renderer bundle, same mechanism as `PRIVACY.md`), read by GitHub
+  visitors in place, and published verbatim as the body of each version's GitHub release
+  (`release.sh` passes the section to `gh release create --notes-file`, §18). Written by
+  the developer before each release
   (`scripts/update-changelog.sh` drafts the section from the git history since the last
   release for the developer to curate, §18): `release.sh`
   refuses to cut a version that has no entry, and on that miss invokes

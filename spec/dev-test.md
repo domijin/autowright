@@ -416,8 +416,15 @@ Dev workflow:
   artifacts itself: the
   in-bundle import smoke test and the Gatekeeper assessment);
   then runs `gh release create v<version> <DMG> <zip> --title "v<version>"
-  --generate-notes` to tag the pushed commit and upload the DMG (the §3 install
-  artifact) and the zip (the §3 update artifact);
+  --notes-file <notes>` to tag the pushed commit and upload the DMG (the §3 install
+  artifact) and the zip (the §3 update artifact). The release body is the curated
+  `docs/CHANGELOG.md` section for the version, never GitHub's commit-derived
+  auto-notes: `<notes>` is a temp file holding the lines below the `## v<version>`
+  heading up to the next `## ` heading (or end of file), leading and trailing blank
+  lines trimmed, so the GitHub release page, the §9.4 What's-new modal, and the file on
+  GitHub all show the same words. A section whose body is empty (heading only) is
+  refused before the release is created, with the bump already committed and pushed but
+  no tag cut, so the notes can be filled in and the same version re-run;
   then rewrites the built arch's update feed (`release/darwin-<arch>/latest-mac.yml`, §3 —
   the zip's release download URL plus its base64 sha512 and byte size, computed from the
   built zip) and its

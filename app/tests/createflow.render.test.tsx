@@ -396,7 +396,7 @@ describe('CreateFlow BUILD and TEST cards (§11)', () => {
     fireEvent.click(within(screen.getByTestId('test-modal')).getByText('Run test'))
     await waitFor(() => expect(mockedApi.postTest).toHaveBeenCalledTimes(1))
     const body = (mockedApi.postTest as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
-    expect(body.stepsFingerprint).toBe(stepsFingerprint(AUTO.steps))
+    expect(body.stepsFingerprint).toBe(stepsFingerprint(AUTO.steps!))
     expect(typeof body.stepsFingerprint).toBe('string')
     fireEvent.click(within(screen.getByTestId('test-modal')).getByLabelText('Close'))
     await waitFor(() => expect(screen.queryByTestId('test-modal')).toBeNull())

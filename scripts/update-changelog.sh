@@ -7,6 +7,8 @@
 # user-facing bullet list in the house voice. Inserts the new
 # "## v<version> - <today>" section above the previous newest one and prints it.
 # The section is a draft: curate it by hand before release.sh cuts the version.
+# Run by hand, or by release.sh <version> when its changelog gate finds no section
+# for the version (it drafts, then stops for curation).
 #
 # Developer-only: agents must never run this script.
 #

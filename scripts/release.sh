@@ -17,7 +17,10 @@
 #                                    last publish the §3 Homebrew cask to the
 #                                    homebrew-tap repo. Needs a clean working tree,
 #                                    an authenticated `gh` CLI, and a committed
-#                                    docs/CHANGELOG.md entry for the version (§18).
+#                                    docs/CHANGELOG.md entry for the version (§18);
+#                                    when the entry is missing it runs
+#                                    update-changelog.sh to draft one and stops for
+#                                    the developer to curate + commit, then re-run.
 #   ./scripts/release.sh --sync      rewrite the sites from VERSION (build.sh runs this)
 #   ./scripts/release.sh --check     verify all sites match VERSION; exit 1 listing
 #                                    mismatches (prod.sh refuses to build on failure)
@@ -334,9 +337,18 @@ if [ "$MODE" != "--sync" ] && [ "$MODE" != "--check" ] \
     exit 1
   fi
   # §17/§18 changelog gate: the §9.4 What's-new notes are written (and, per the
-  # clean-tree rule above, committed) before the release is cut, never after.
+  # clean-tree rule above, committed) before the release is cut, never after. A
+  # missing entry is drafted on the spot by update-changelog.sh (the tree is clean,
+  # so the draft is the only change left behind), then this run stops: the draft is
+  # curated by hand and committed before release.sh is run again. A release is never
+  # cut on the same run that drafted its notes.
   if ! grep -Eq "^## v${MODE//./\\.}( |\$)" "$ROOT/docs/CHANGELOG.md" 2> /dev/null; then
-    echo "docs/CHANGELOG.md has no '## v$MODE' entry — write the release notes before releasing"
+    echo "docs/CHANGELOG.md has no '## v$MODE' entry - drafting it (update-changelog.sh)"
+    echo
+    "$ROOT/scripts/update-changelog.sh" "$MODE"
+    echo
+    echo "release not cut: curate the '## v$MODE' section in docs/CHANGELOG.md, commit it,"
+    echo "then re-run: $(basename "$0") $MODE"
     exit 1
   fi
   tap_preflight

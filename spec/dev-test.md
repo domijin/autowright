@@ -394,7 +394,15 @@ Dev workflow:
   release outranks any pre-release, and two pre-releases compare lexically), or if the
   `docs/CHANGELOG.md` (§17) has no `## v<version>` section heading for the version
   being released — the §9.4 What's-new notes are written before the release is cut, never
-  after; validates the
+  after. That last refusal is not a bare error: `release.sh` depends on
+  `update-changelog.sh` (below) for it, running `update-changelog.sh <version>` to draft
+  the missing section into the changelog (the tree was just proven clean, so the draft is
+  the only change it leaves behind), printing the draft, and exiting non-zero with the
+  instruction to curate the section by hand, commit it, and re-run `release.sh <version>`.
+  A release is therefore never cut without notes, and never cut on the same run that
+  drafted them - the curation step is deliberately a separate invocation. If the draft
+  itself fails (last tag not fetched, `claude` CLI missing, no changes since the last
+  release), its own message is the one shown and the release stops there; validates the
   argument (semver: `MAJOR.MINOR.PATCH`, optional
   pre-release suffix); writes it to the repo-root `VERSION` file (the single version source, §17) and
   syncs it into the three version sites: `app/package.json` (`"version"`),
@@ -737,7 +745,9 @@ Dev workflow:
   `## v<version> - <today>` section is inserted directly above the previous newest
   section and printed. The result is a draft: the developer curates it by hand before
   `release.sh` cuts the version (its §17 changelog gate and the §15 drift guards still
-  apply unchanged). Fails if the `claude` CLI is missing, the changelog has no `## v`
+  apply unchanged). Run by hand ahead of a release, or by `release.sh <version>` itself
+  when its changelog gate finds no section for the version (above) - the same script
+  either way, so both entry points draft identically. Fails if the `claude` CLI is missing, the changelog has no `## v`
   heading, there are no changes since `v<last>`, or the model returns nothing usable.
   Developer-only: agents never run this script (`.claude/CLAUDE.md` forbids it).
 

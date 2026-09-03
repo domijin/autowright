@@ -580,8 +580,10 @@ migrate-on-load migration so data written by released versions keeps loading (§
   visitors in place. Written by the developer before each release
   (`scripts/update-changelog.sh` drafts the section from the git history since the last
   release for the developer to curate, §18): `release.sh`
-  refuses to cut a version that has no entry (§18), and a §15 drift guard requires an
-  entry for the current `VERSION` and keeps the headings in descending semver order.
+  refuses to cut a version that has no entry, and on that miss invokes
+  `update-changelog.sh` itself to draft the section before stopping (§18), and a §15 drift
+  guard requires an entry for the current `VERSION` and keeps the headings in descending
+  semver order.
 - `docs/PRIVACY.md` — the privacy policy, canonical copy: rendered in-app on the §9.4 About
   page (raw import into the renderer bundle), read by GitHub visitors in place, and
   mirrored verbatim into the `docs/privacy.html` web page (above).

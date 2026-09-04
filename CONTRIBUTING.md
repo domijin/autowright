@@ -6,13 +6,19 @@ Thank you for wanting to improve Autowright. This page covers how to propose
 
 ## Product ideas and feature requests
 
-GitHub Issues are the right place for product ideas. Discussions are not enabled
+**GitHub Issues** are the intake for product ideas. Discussions are not enabled
 on this repo.
 
 **Open an issue** rather than a pull request when the work is still a design
 question — for example what to build, why it matters, or how it should feel.
 PRs that implement a feature before the maintainer has agreed on direction are
 usually harder to review and more likely to be declined.
+
+**GitHub Projects** (this repository's Projects board) are the proposed place for
+product idea and feature **planning** after an issue exists: triage, priority,
+and roadmap status. Contributors open or discuss via issues; the maintainer
+(and anyone they invite) moves accepted ideas through the project. Do not treat
+the project board as a substitute for filing a feature request issue.
 
 ### Before you open an issue
 
@@ -45,11 +51,13 @@ concrete proposal are enough.
 The maintainer may:
 
 - Ask clarifying questions
-- Accept the direction and invite a PR (or implement it themselves)
+- Accept the direction, add the issue to the repo **Project** for planning, and
+  invite a PR (or implement it themselves)
 - Defer or decline, with a short reason when possible
 
 Closing an issue does not mean the idea is bad; it may not fit current
-priorities or the product's local-first constraints.
+priorities or the product's local-first constraints. An idea on the Project
+board is a planning signal, not a commitment to ship on a date.
 
 ## Bugs and other issues
 
